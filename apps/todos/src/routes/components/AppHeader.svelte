@@ -6,12 +6,15 @@
 	import ArrowDownToLineIcon from '@lucide/svelte/icons/arrow-down-to-line';
 	import ChevronDownIcon from '@lucide/svelte/icons/chevron-down';
 	import FolderIcon from '@lucide/svelte/icons/folder';
+	import GitMergeIcon from '@lucide/svelte/icons/git-merge';
 	import PanelLeftIcon from '@lucide/svelte/icons/panel-left';
 	import SquareTerminalIcon from '@lucide/svelte/icons/square-terminal';
 	import {
 		commitAndPushToast,
 		commitLine,
 		filesLine,
+		mergeLine,
+		mergeOutcomeLine,
 		pullLine,
 		pullOutcomeLine,
 		pushLine,
@@ -43,6 +46,7 @@
 	const commit = $derived(commitLine(todos.git));
 	const remote = $derived(pushLine(todos.git));
 	const pull = $derived(pullLine(todos.git));
+	const merge = $derived(mergeLine(todos.git));
 	const summary = $derived(summaryLine({ files, uncommitted, commit, remote }));
 	const details = $derived<[string, string, StatusLine | undefined][]>([
 		['Files', 'status-files', files],
@@ -50,6 +54,7 @@
 		['Last commit', 'status-last-commit', commit],
 		['Remote', 'status-remote', remote],
 		['Last pull', 'status-pull', pull],
+		['Last merge', 'status-merge', merge],
 	]);
 
 	/** The directory on this computer, when the todos are in one. */
@@ -60,6 +65,17 @@
 	const hasRemote = $derived(todos.git.remote !== undefined);
 	const NO_REMOTE =
 		'This folder has no Git remote, so there is nothing to pull from or push to.';
+	/**
+	 * Offered only where the folder merges (a browser folder) and the last
+	 * check saw commits on both sides. Pull stays fast-forward only.
+	 */
+	const offerMerge = $derived(
+		hasRemote &&
+			todos.folder.git.mergeUnsupported === undefined &&
+			todos.git.sync.state === 'observed' &&
+			todos.git.sync.value.ahead > 0 &&
+			todos.git.sync.value.behind > 0,
+	);
 
 	const tones: Record<StatusLine['tone'], string> = {
 		neutral: 'bg-muted-foreground/50',
@@ -69,12 +85,13 @@
 		error: 'bg-destructive',
 	};
 
-	let working = $state<'commit' | 'pull' | 'fetch' | undefined>();
+	let working = $state<'commit' | 'pull' | 'fetch' | 'merge' | undefined>();
 	const busy = $derived(
 		working !== undefined ||
 			todos.git.activity.commit.active ||
 			todos.git.activity.push.active ||
-			todos.git.activity.pull.active,
+			todos.git.activity.pull.active ||
+			todos.git.activity.merge.active,
 	);
 
 	/** Outcome toasts use the status lines' wording, so the toast and the details agree. */
@@ -112,6 +129,15 @@
 		working = 'pull';
 		try {
 			show(pullOutcomeLine(await todos.pull()));
+		} finally {
+			working = undefined;
+		}
+	}
+
+	async function mergeRemote() {
+		working = 'merge';
+		try {
+			show(mergeOutcomeLine(await todos.merge()));
 		} finally {
 			working = undefined;
 		}
@@ -216,6 +242,19 @@
 	</Popover.Root>
 
 	<div class="ml-auto flex shrink-0 items-center gap-1.5">
+		{#if offerMerge}
+			<Button
+				variant="outline"
+				size="sm"
+				disabled={busy}
+				tooltip="Combine the remote's commits with yours in a new commit. Nothing is pushed."
+				data-testid="merge-incoming"
+				onclick={mergeRemote}
+			>
+				{#if working === 'merge'}<Spinner class="size-3.5" />{:else}<GitMergeIcon />{/if}
+				<span class="max-sm:sr-only">Merge incoming changes</span>
+			</Button>
+		{/if}
 		<Button
 			variant="outline"
 			size="sm"

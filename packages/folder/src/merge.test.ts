@@ -1,0 +1,789 @@
+/**
+ * Browser Merge Tests
+ *
+ * `mergeIncoming` merges the fetched remote head into a clean browser folder
+ * with one two-parent commit, published with its files and index in one
+ * IndexedDB transaction. These run the real browser backend and
+ * isomorphic-git over fake IndexedDB; the journey also fetches over real Git
+ * smart HTTP and reopens the database.
+ *
+ * Key behaviors:
+ * - Independent root KV keys merge into sorted `kv.json`; the commit's
+ *   parents are exactly the pinned head and the pinned fetched commit
+ * - Competing root keys, a deleted versus changed `kv.json`, and a nested
+ *   `kv.json` merged by lines return structured conflicts and write nothing
+ * - A two-sided change to bytes isomorphic-git would not merge faithfully
+ *   (invalid UTF-8, a lone carriage return) is a conflict; one-sided binary
+ *   changes keep their exact bytes
+ * - A save to an unchanged path, a new file at an incoming path, staging, or
+ *   a branch move between planning and publication refuses the whole update
+ * - A directory folder reports the merge as unsupported
+ *
+ * See also:
+ * - `kv-merge.test.ts` for the key-level merge itself
+ * - `git/history-ordering.test.ts` for incoming updates that land partly
+ */
+import {
+	afterAll,
+	afterEach,
+	beforeAll,
+	describe,
+	expect,
+	test,
+} from 'bun:test';
+import { createHash } from 'node:crypto';
+import { mkdir, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
+import { IDBFactory, IDBKeyRange } from 'fake-indexeddb';
+import * as isogit from 'isomorphic-git';
+import { expectErr, expectOk } from 'wellcrafted/testing';
+import { openFolder as openBrowserFolder } from './browser.js';
+import {
+	createBrowserFileBoundary,
+	type IndexedDbEnvironment,
+	openFolderDatabase,
+	STORES,
+} from './browser-store.js';
+import { hashBytes } from './capture.js';
+import { defineFolder, type Folder, field } from './contract.js';
+import { openNativeFolder } from './directory.test-support.js';
+import type { GitBackend } from './git/backend.js';
+import { createBrowserGitBackend } from './git/browser-backend.js';
+import { WORKDIR } from './git/browser-fs.js';
+import { createHistory } from './git/history.js';
+import { writeCommitObject, writeFilesTree } from './git/objects.js';
+import {
+	createBareRemote,
+	GIT_ENV,
+	git,
+	gitHttpFetch,
+	scratch,
+} from './git-http.test-support.js';
+
+const author = { name: 'Merger', email: 'merger@example.test' };
+const encoder = new TextEncoder();
+const decoder = new TextDecoder();
+const bytesOf = (value: string | Uint8Array) =>
+	typeof value === 'string' ? encoder.encode(value) : value;
+
+type Tree = Record<string, string | Uint8Array>;
+
+/** A browser folder whose fetched head is whatever commit a test names. */
+async function setup(
+	overrides: (real: GitBackend) => Partial<GitBackend> = () => ({}),
+) {
+	const environment = { indexedDB: new IDBFactory(), IDBKeyRange };
+	const db = await openFolderDatabase('epicenter-folder:merge', environment);
+	const boundary = createBrowserFileBoundary(db, environment);
+	const real = await createBrowserGitBackend({
+		db,
+		environment,
+		lockName: 'merge',
+		branch: 'main',
+		remote: { url: 'http://unused.test/remote.git', branch: 'main' },
+	});
+	const backend: GitBackend = { ...real, ...overrides(real) };
+	const landed: string[] = [];
+	const history = createHistory({
+		backend,
+		boundary,
+		author,
+		commitOnEdit: false,
+		landed: (paths) => landed.push(...paths),
+	});
+
+	async function write(path: string, value: string | Uint8Array) {
+		const bytes = bytesOf(value);
+		expectOk(
+			await boundary.apply([
+				{ kind: 'overwrite', path, bytes, sha256: await hashBytes(bytes) },
+			]),
+		);
+	}
+	async function remove(path: string) {
+		expectOk(await boundary.apply([{ kind: 'remove', path }]));
+	}
+	/** Commit the folder as it is, through the ordinary whole-folder commit. */
+	async function commit() {
+		const outcome = await history.commit();
+		if (outcome.status !== 'committed')
+			throw new Error(`Expected a commit, got ${outcome.status}`);
+		return outcome.oid;
+	}
+	/** A commit another owner made: exactly `tree` on top of `parent`. */
+	function commitOf(parent: string, tree: Tree) {
+		return real.withObjects(async (access) =>
+			writeCommitObject(access, {
+				tree: await writeFilesTree(
+					access,
+					new Map(
+						Object.entries(tree).map(([path, value]) => [path, bytesOf(value)]),
+					),
+				),
+				parents: [parent],
+				message: 'Another owner',
+				author,
+			}),
+		);
+	}
+	/** Record `oid` as the fetched remote head, as a fetch would. */
+	function track(oid: string) {
+		return real.withObjects((access) =>
+			isogit.writeRef({
+				...access,
+				ref: 'refs/remotes/origin/main',
+				value: oid,
+				force: true,
+			}),
+		);
+	}
+	async function read(path: string) {
+		return expectOk(await boundary.read(path)).bytes;
+	}
+	function parents(oid: string) {
+		return real.withObjects(
+			async (access) =>
+				(await isogit.readCommit({ ...access, oid })).commit.parent,
+		);
+	}
+	/**
+	 * Every key and value of the live stores, hashed. Objects are left out:
+	 * a refused merge may leave unreachable ones, which change nothing a
+	 * person or Git reads.
+	 */
+	async function dump() {
+		const result: Record<string, string> = {};
+		for (const store of Object.values(STORES)) {
+			const tx = db.transaction(store, 'readonly');
+			const [keys, values] = await Promise.all(
+				[
+					tx.objectStore(store).getAllKeys(),
+					tx.objectStore(store).getAll(),
+				].map(
+					(request) =>
+						new Promise<unknown[]>((resolve, reject) => {
+							request.onsuccess = () => resolve(request.result as unknown[]);
+							request.onerror = () => reject(request.error);
+						}),
+				),
+			);
+			(keys as string[]).forEach((key, index) => {
+				if (key.startsWith('/git/objects/')) return;
+				const value = (values as unknown[])[index];
+				result[`${store}:${key}`] =
+					value instanceof Uint8Array
+						? createHash('sha256').update(value).digest('hex')
+						: JSON.stringify(value);
+			});
+		}
+		return result;
+	}
+	/** The live state, after one status look has refreshed the index's stat cache. */
+	async function settledDump() {
+		expectOk(await history.paths());
+		return dump();
+	}
+
+	/**
+	 * Commit `base`, then `theirs` on it as the fetched head, then `ours` as
+	 * the local head. Each side names every file it has.
+	 */
+	async function diverge({
+		base,
+		ours,
+		theirs,
+	}: {
+		base: Tree;
+		ours: Tree;
+		theirs: Tree;
+	}) {
+		for (const [path, value] of Object.entries(base)) await write(path, value);
+		const baseOid = await commit();
+		const theirsOid = await commitOf(baseOid, theirs);
+		for (const path of Object.keys(base))
+			if (!(path in ours)) await remove(path);
+		for (const [path, value] of Object.entries(ours)) await write(path, value);
+		const oursOid = await commit();
+		await track(theirsOid);
+		return { base: baseOid, ours: oursOid, theirs: theirsOid };
+	}
+
+	return {
+		db,
+		real,
+		history,
+		landed,
+		write,
+		remove,
+		read,
+		parents,
+		dump,
+		settledDump,
+		diverge,
+		close: async () => {
+			await history.close();
+			db.close();
+		},
+	};
+}
+
+const opened: { close(): Promise<void> }[] = [];
+afterEach(async () => {
+	for (const item of opened.splice(0)) await item.close();
+});
+
+async function folder(overrides?: (real: GitBackend) => Partial<GitBackend>) {
+	const made = await setup(overrides);
+	opened.push(made);
+	return made;
+}
+
+/** Expect a merge refused with `name`, and nothing live changed by it. */
+async function refusedUntouched(
+	made: Awaited<ReturnType<typeof setup>>,
+	head: string,
+) {
+	const before = await made.settledDump();
+	const refused = expectErr(await made.history.mergeIncoming());
+	expect(await made.dump()).toEqual(before);
+	expect(await made.real.readBranch()).toBe(head);
+	expect(made.landed).toEqual([]);
+	return refused;
+}
+
+describe('root kv.json', () => {
+	test('independent keys merge into sorted kv.json under a commit with both original parents', async () => {
+		const made = await folder();
+		const sides = await made.diverge({
+			base: {
+				'kv.json': '{"theme":"light","lang":"en"}\n',
+				'notes.md': 'notes\n',
+			},
+			ours: {
+				'kv.json': '{"theme":"dark","lang":"en"}\n',
+				'notes.md': 'notes\n',
+			},
+			theirs: {
+				'kv.json': '{ "lang": "zh", "theme": "light" }',
+				'notes.md': 'notes\n',
+			},
+		});
+
+		const merged = expectOk(await made.history.mergeIncoming());
+
+		expect(merged).toMatchObject({
+			status: 'merged',
+			from: sides.ours,
+			fetched: sides.theirs,
+			changedPaths: ['kv.json'],
+		});
+		if (merged.status !== 'merged') return;
+		expect(await made.real.readBranch()).toBe(merged.to);
+		expect(await made.parents(merged.to)).toEqual([sides.ours, sides.theirs]);
+		expect(decoder.decode(await made.read('kv.json'))).toBe(
+			'{\n  "lang": "zh",\n  "theme": "dark"\n}\n',
+		);
+		expect(decoder.decode(await made.read('notes.md'))).toBe('notes\n');
+		expect(expectOk(await made.history.paths())).toEqual([]);
+		expect(expectOk(await made.history.status()).changes).toEqual([]);
+		expect(made.landed).toEqual(['kv.json']);
+		expect(made.history.snapshot.lastMerge?.result).toEqual({
+			data: merged,
+			error: null,
+		});
+	});
+
+	test('competing values for one key are a structured conflict that writes nothing', async () => {
+		const made = await folder();
+		const sides = await made.diverge({
+			base: { 'kv.json': '{"theme":"light","lang":"en"}' },
+			ours: { 'kv.json': '{"theme":"dark","lang":"en"}' },
+			theirs: { 'kv.json': '{"theme":"blue","lang":"zh"}' },
+		});
+
+		const refused = await refusedUntouched(made, sides.ours);
+
+		expect(refused.name).toBe('Conflicted');
+		if (refused.name !== 'Conflicted') return;
+		expect(refused.conflicts).toEqual([
+			{
+				reason: 'kvKey',
+				path: 'kv.json',
+				key: 'theme',
+				base: '"light"',
+				ours: '"dark"',
+				theirs: '"blue"',
+			},
+		]);
+		expect(made.history.snapshot.lastMerge?.result.error?.name).toBe(
+			'Conflicted',
+		);
+	});
+
+	test('both sides adding kv.json merge by key', async () => {
+		const made = await folder();
+		const sides = await made.diverge({
+			base: { 'notes.md': 'notes\n' },
+			ours: { 'notes.md': 'notes\n', 'kv.json': '{"theme":"dark"}' },
+			theirs: { 'notes.md': 'notes\n', 'kv.json': '{"lang":"zh"}' },
+		});
+
+		const merged = expectOk(await made.history.mergeIncoming());
+
+		expect(merged.status).toBe('merged');
+		expect(await made.parents((await made.real.readBranch()) ?? '')).toEqual([
+			sides.ours,
+			sides.theirs,
+		]);
+		expect(decoder.decode(await made.read('kv.json'))).toBe(
+			'{\n  "lang": "zh",\n  "theme": "dark"\n}\n',
+		);
+	});
+
+	test('a deletion merges against an unchanged kv.json and conflicts with changed values', async () => {
+		const deleted = await folder();
+		await deleted.diverge({
+			base: { 'kv.json': '{"theme":"light"}', 'a.md': 'a\n' },
+			ours: { 'a.md': 'a\n' },
+			theirs: { 'kv.json': '{"theme":"light"}', 'a.md': 'a\n', 'b.md': 'b\n' },
+		});
+		expect(expectOk(await deleted.history.mergeIncoming())).toMatchObject({
+			status: 'merged',
+			changedPaths: ['b.md'],
+		});
+		expect((await deleted.history.paths()).data).toEqual([]);
+		expect(expectOk(await deleted.history.status()).changes).toEqual([]);
+		expect(decoder.decode(await deleted.read('b.md'))).toBe('b\n');
+		expect(Object.keys(await deleted.dump())).not.toContain(
+			'inventory:kv.json',
+		);
+
+		const competing = await folder();
+		const sides = await competing.diverge({
+			base: { 'kv.json': '{"theme":"light"}' },
+			ours: {},
+			theirs: { 'kv.json': '{"theme":"dark"}' },
+		});
+		const refused = await refusedUntouched(competing, sides.ours);
+		expect(refused).toMatchObject({
+			name: 'Conflicted',
+			conflicts: [{ reason: 'kvFile', path: 'kv.json' }],
+		});
+	});
+
+	test('a nested kv.json merges by lines, so separate keys on one line conflict', async () => {
+		const made = await folder();
+		const sides = await made.diverge({
+			base: {
+				'kv.json': '{"a":1,"b":1}',
+				'archive/kv.json': '{"a":1,"b":1}\n',
+			},
+			ours: {
+				'kv.json': '{"a":2,"b":1}',
+				'archive/kv.json': '{"a":2,"b":1}\n',
+			},
+			theirs: {
+				'kv.json': '{"a":1,"b":2}',
+				'archive/kv.json': '{"a":1,"b":2}\n',
+			},
+		});
+
+		const refused = await refusedUntouched(made, sides.ours);
+
+		// The root file alone would have merged; only the nested one conflicts.
+		expect(refused).toMatchObject({
+			name: 'Conflicted',
+			conflicts: [{ reason: 'content', path: 'archive/kv.json' }],
+		});
+	});
+});
+
+describe('ordinary files', () => {
+	test('independent line edits merge, and a one-sided binary change keeps its exact bytes', async () => {
+		const made = await folder();
+		const audio = Uint8Array.from([0xff, 0x00, 0xfe, 0x0d, 0x80, 0x00, 0x0a]);
+		const changedAudio = Uint8Array.from([0xff, 0x00, 0x01, 0x0d, 0x0d, 0xc3]);
+		const sides = await made.diverge({
+			base: { 'notes.md': 'one\ntwo\nthree\nfour\nfive\n', 'take.bin': audio },
+			ours: { 'notes.md': 'ONE\ntwo\nthree\nfour\nfive\n', 'take.bin': audio },
+			theirs: {
+				'notes.md': 'one\ntwo\nthree\nfour\nFIVE\n',
+				'take.bin': changedAudio,
+			},
+		});
+
+		const merged = expectOk(await made.history.mergeIncoming());
+
+		expect(merged).toMatchObject({
+			status: 'merged',
+			from: sides.ours,
+			fetched: sides.theirs,
+			changedPaths: ['notes.md', 'take.bin'],
+		});
+		expect(decoder.decode(await made.read('notes.md'))).toBe(
+			'ONE\ntwo\nthree\nfour\nFIVE\n',
+		);
+		expect(await made.read('take.bin')).toEqual(changedAudio);
+		expect(expectOk(await made.history.paths())).toEqual([]);
+	});
+
+	test('two-sided edits to bytes that are not UTF-8 are refused before isomorphic-git decodes them', async () => {
+		// isomorphic-git 1.38.5 merges these cleanly into EF BF BD where the FF
+		// was; Git keeps the FF.
+		const made = await folder();
+		const file = (left: string, right: string) =>
+			Uint8Array.from([
+				0xff,
+				...encoder.encode(`\n${left}\nkeep1\nkeep2\nkeep3\n${right}\n`),
+			]);
+		const sides = await made.diverge({
+			base: {
+				'raw.txt': file('left0', 'right0'),
+				'cr.txt': 'a\rb\nkeep\nkeep\nkeep\nz\n',
+			},
+			ours: {
+				'raw.txt': file('left1', 'right0'),
+				'cr.txt': 'A\rb\nkeep\nkeep\nkeep\nz\n',
+			},
+			theirs: {
+				'raw.txt': file('left0', 'right1'),
+				'cr.txt': 'a\rb\nkeep\nkeep\nkeep\nZ\n',
+			},
+		});
+
+		const refused = await refusedUntouched(made, sides.ours);
+
+		// A lone carriage return is a line break isomorphic-git's split drops.
+		expect(refused).toMatchObject({
+			name: 'Conflicted',
+			conflicts: [
+				{ reason: 'binary', path: 'cr.txt' },
+				{ reason: 'binary', path: 'raw.txt' },
+			],
+		});
+		expect(await made.read('raw.txt')).toEqual(file('left1', 'right0'));
+	});
+
+	test('a deletion against a change, and competing lines, are reported together', async () => {
+		const made = await folder();
+		const sides = await made.diverge({
+			base: { 'gone.md': 'kept\n', 'both.md': 'base\n' },
+			ours: { 'both.md': 'ours\n' },
+			theirs: { 'gone.md': 'changed\n', 'both.md': 'theirs\n' },
+		});
+
+		const refused = await refusedUntouched(made, sides.ours);
+
+		expect(refused).toMatchObject({
+			name: 'Conflicted',
+			conflicts: [
+				{ reason: 'content', path: 'both.md' },
+				{ reason: 'deleted', path: 'gone.md', deletedBy: 'ours' },
+			],
+		});
+	});
+
+	test('a merge attribute that changes how a path merges is refused', async () => {
+		const made = await folder();
+		const sides = await made.diverge({
+			base: {
+				'.gitattributes': '*.md merge=union\n',
+				'a.md': '1\n2\n3\n4\n5\n',
+			},
+			ours: {
+				'.gitattributes': '*.md merge=union\n',
+				'a.md': 'x\n2\n3\n4\n5\n',
+			},
+			theirs: {
+				'.gitattributes': '*.md merge=union\n',
+				'a.md': '1\n2\n3\n4\ny\n',
+			},
+		});
+
+		const refused = await refusedUntouched(made, sides.ours);
+
+		expect(refused).toMatchObject({
+			name: 'Unmergeable',
+			paths: ['a.md'],
+		});
+	});
+
+	test('a fast-forward is still a fast-forward', async () => {
+		const made = await folder();
+		await made.write('a.md', 'a\n');
+		const base = await (async () => {
+			const outcome = await made.history.commit();
+			return outcome.status === 'committed' ? outcome.oid : '';
+		})();
+		const next = await made.real.withObjects(async (access) =>
+			writeCommitObject(access, {
+				tree: await writeFilesTree(
+					access,
+					new Map([['a.md', encoder.encode('b\n')]]),
+				),
+				parents: [base],
+				message: 'Next',
+				author,
+			}),
+		);
+		await made.real.withObjects((access) =>
+			isogit.writeRef({
+				...access,
+				ref: 'refs/remotes/origin/main',
+				value: next,
+				force: true,
+			}),
+		);
+		expect(expectOk(await made.history.mergeIncoming())).toEqual({
+			status: 'fastForwarded',
+			from: base,
+			to: next,
+			changedPaths: ['a.md'],
+		});
+	});
+});
+
+describe('publication baseline', () => {
+	const SIDES = {
+		base: { 'kv.json': '{"theme":"light","lang":"en"}', 'quiet.md': 'quiet\n' },
+		ours: { 'kv.json': '{"theme":"dark","lang":"en"}', 'quiet.md': 'quiet\n' },
+		theirs: {
+			'kv.json': '{"theme":"light","lang":"zh"}',
+			'quiet.md': 'quiet\n',
+			'incoming.md': 'incoming\n',
+		},
+	};
+
+	/**
+	 * Merge with `meanwhile` run after planning and before publication, and
+	 * expect the whole update refused with the live state exactly as
+	 * `meanwhile` left it.
+	 */
+	async function interrupted(
+		meanwhile: (made: Awaited<ReturnType<typeof setup>>) => Promise<void>,
+	) {
+		let made!: Awaited<ReturnType<typeof setup>>;
+		let before: Record<string, string> | undefined;
+		made = await folder((real) => ({
+			async publishIncoming(plan) {
+				await meanwhile(made);
+				before = await made.dump();
+				return real.publishIncoming(plan);
+			},
+		}));
+		const sides = await made.diverge(SIDES);
+		expectOk(await made.history.paths());
+		const refused = expectErr(await made.history.mergeIncoming());
+		expect(before).toBeDefined();
+		expect(await made.dump()).toEqual(before!);
+		expect(made.landed).toEqual([]);
+		return { made, sides, refused };
+	}
+
+	test('a save to a path the merge does not change refuses it', async () => {
+		const { made, sides, refused } = await interrupted((made) =>
+			made.write('quiet.md', 'saved meanwhile\n'),
+		);
+		expect(refused).toMatchObject({
+			name: 'Refused',
+			error: { name: 'Conflict', path: 'quiet.md' },
+		});
+		expect(await made.real.readBranch()).toBe(sides.ours);
+		expect(decoder.decode(await made.read('quiet.md'))).toBe(
+			'saved meanwhile\n',
+		);
+	});
+
+	test('a new file at a path the merge adds refuses it', async () => {
+		const { made, sides, refused } = await interrupted((made) =>
+			made.write('incoming.md', 'mine\n'),
+		);
+		expect(refused).toMatchObject({
+			name: 'Refused',
+			error: { name: 'Exists', path: 'incoming.md' },
+		});
+		expect(await made.real.readBranch()).toBe(sides.ours);
+		expect(decoder.decode(await made.read('incoming.md'))).toBe('mine\n');
+	});
+
+	test('staging between the clean check and the index capture refuses it', async () => {
+		let armed = false;
+		let afterStage: Record<string, string> | undefined;
+		let made!: Awaited<ReturnType<typeof setup>>;
+		made = await folder((real) => ({
+			async indexMatchesHead(captured) {
+				const clean = await real.indexMatchesHead(captured);
+				if (armed) {
+					armed = false;
+					await made.write('kv.json', '{"theme":"staged","lang":"en"}');
+					await real.stage(['kv.json']);
+					await made.write('kv.json', SIDES.ours['kv.json']);
+					afterStage = await made.dump();
+				}
+				return clean;
+			},
+		}));
+		const sides = await made.diverge(SIDES);
+		armed = true;
+		const refused = expectErr(await made.history.mergeIncoming());
+		expect(refused.name).toBe('StagedChanges');
+		expect(await made.real.readBranch()).toBe(sides.ours);
+		expect(await made.dump()).toEqual(afterStage!);
+	});
+
+	test('staging after the clean check refuses it', async () => {
+		const { made, sides, refused } = await interrupted((made) =>
+			made.real.withObjects((access) =>
+				isogit.remove({ ...access, dir: WORKDIR, filepath: 'quiet.md' }),
+			),
+		);
+		expect(refused.name).toBe('StagedChanges');
+		expect(await made.real.readBranch()).toBe(sides.ours);
+	});
+
+	test('a branch move after planning refuses it', async () => {
+		let moved: string | undefined;
+		const { made, refused } = await interrupted(async (made) => {
+			moved = (await made.real.readRemoteTracking())!;
+			const head = await made.real.readBranch();
+			expect((await made.real.casBranch(head, moved)).ok).toBe(true);
+		});
+		expect(refused).toMatchObject({
+			name: 'BranchMoved',
+			actual: moved,
+			filesApplied: false,
+		});
+		expect(decoder.decode(await made.read('kv.json'))).toBe(
+			SIDES.ours['kv.json'],
+		);
+	});
+});
+
+describe('the browser journey', () => {
+	const definition = defineFolder({
+		id: 'so.epicenter.mergetest',
+		kv: { theme: field.string(), lang: field.string() },
+		tables: {},
+	});
+	type Opened = Folder<typeof definition>;
+	const originalFetch = globalThis.fetch;
+	const originalEnv = { ...process.env };
+	beforeAll(() => {
+		Object.assign(process.env, {
+			GIT_CONFIG_GLOBAL: GIT_ENV.GIT_CONFIG_GLOBAL,
+			GIT_CONFIG_NOSYSTEM: '1',
+		});
+	});
+	afterAll(() => {
+		globalThis.fetch = originalFetch;
+		for (const key of ['GIT_CONFIG_GLOBAL', 'GIT_CONFIG_NOSYSTEM'])
+			if (originalEnv[key] === undefined) delete process.env[key];
+			else process.env[key] = originalEnv[key];
+	});
+
+	async function open(environment: IndexedDbEnvironment): Promise<Opened> {
+		const opened = expectOk(
+			await openBrowserFolder({
+				definition,
+				browser: {
+					author,
+					commitOnEdit: false,
+					remote: { url: 'http://git.test/remote.git', branch: 'main' },
+					indexedDb: environment,
+				},
+			}),
+		);
+		return opened;
+	}
+
+	test('fetched light/zh and local dark/en merge to dark/zh, and stay merged after reopening', async () => {
+		const root = await scratch('merge-journey-');
+		const bare = await createBareRemote(root);
+		globalThis.fetch = await gitHttpFetch(root);
+		const environment = { indexedDB: new IDBFactory(), IDBKeyRange };
+		let folder = await open(environment);
+		try {
+			expectOk(await folder.kv.create({ theme: 'light', lang: 'en' }));
+			expect((await folder.git.commitAndPush()).push.status).toBe('pushed');
+
+			// Another program changes the language and pushes.
+			const upstream = join(root, 'upstream');
+			await git(root, 'clone', '--quiet', bare, upstream);
+			await writeFile(
+				join(upstream, 'kv.json'),
+				'{\n\t"theme": "light",\n\t"lang": "zh"\n}\n',
+			);
+			await git(upstream, 'commit', '--quiet', '-am', 'Chinese');
+			await git(upstream, 'push', '--quiet', 'origin', 'main');
+			const remoteHead = await git(bare, 'rev-parse', 'main');
+
+			// This folder changes the theme and commits without pushing.
+			expectOk(await folder.kv.update({ theme: 'dark' }));
+			const local = await folder.git.commit();
+			if (local.status !== 'committed') throw new Error(local.status);
+			const fetched = expectOk(await folder.git.fetch()).oid;
+			expect(fetched).toBe(remoteHead);
+			expect(expectErr(await folder.git.pullFastForward()).name).toBe(
+				'Diverged',
+			);
+
+			const merged = expectOk(await folder.git.mergeIncoming());
+			expect(merged).toMatchObject({
+				status: 'merged',
+				from: local.oid,
+				fetched: remoteHead,
+				changedPaths: ['kv.json'],
+			});
+			const [head] = expectOk(await folder.git.log(1));
+			expect(head?.parents).toEqual([local.oid, remoteHead]);
+			expect(
+				decoder.decode(expectOk(await folder.files.read('kv.json')).bytes),
+			).toBe('{\n  "lang": "zh",\n  "theme": "dark"\n}\n');
+			expect(expectOk(await folder.git.paths())).toEqual([]);
+			expect(expectOk(await folder.git.status()).changes).toEqual([]);
+			// Nothing was pushed.
+			expect(await git(bare, 'rev-parse', 'main')).toBe(remoteHead);
+
+			await folder.close();
+			folder = await open(environment);
+			expect(expectOk(await folder.kv.get())?.values).toEqual({
+				theme: 'dark',
+				lang: 'zh',
+			});
+			expect(expectOk(await folder.git.log(1))[0]?.oid).toBe(head?.oid);
+			expect(expectOk(await folder.git.status()).changes).toEqual([]);
+			expect(expectOk(await folder.git.paths())).toEqual([]);
+		} finally {
+			await folder.close();
+		}
+	});
+});
+
+test('a directory folder reports the merge as unsupported and changes nothing', async () => {
+	const root = await scratch('merge-directory-');
+	const local = join(root, 'local');
+	await mkdir(local);
+	const definition = defineFolder({
+		id: 'so.epicenter.mergedirectory',
+		kv: {},
+		tables: {},
+	});
+	const directory = await openNativeFolder({
+		root: local,
+		definition,
+		git: {
+			author,
+			commitOnEdit: false,
+			remote: { url: join(root, 'remote.git'), branch: 'main' },
+		},
+	});
+	try {
+		expect(directory.git.mergeUnsupported).toBeString();
+		expect(expectErr(await directory.git.mergeIncoming())).toMatchObject({
+			name: 'Unsupported',
+			reason: directory.git.mergeUnsupported,
+		});
+	} finally {
+		await directory.close();
+	}
+});

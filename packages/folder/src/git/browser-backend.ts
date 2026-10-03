@@ -12,23 +12,28 @@ import * as git from 'isomorphic-git';
 import {
 	applyInTransaction,
 	type IndexedDbEnvironment,
+	type InventoryRecord,
+	Refusal,
 	request,
 	STORES,
 	writeTransaction,
 } from '../browser-store.js';
+import { FileError } from '../errors.js';
+import { isPortablePath } from '../paths.js';
 import { isAttributesPath, normalizingAttribute } from './attributes.js';
 import type {
 	Admitted,
 	CasResult,
-	FastForwardPlan,
 	GitBackend,
 	GitRemote,
+	IncomingPlan,
 	PathStatus,
 	StatusCode,
 } from './backend.js';
 import { createGitSession, GITDIR, WORKDIR } from './browser-fs.js';
 import { abortableHttp } from './http.js';
 import { createMutex } from './mutex.js';
+import { capturedIndexMatchesHead } from './captured-index.js';
 import {
 	commitTree,
 	logCommits,
@@ -45,6 +50,63 @@ class BranchMoved {
 	constructor(readonly actual: string | undefined) {}
 }
 
+class IndexChanged {}
+
+const sameBytes = (
+	left: Uint8Array | undefined,
+	right: Uint8Array | undefined,
+) =>
+	left === undefined || right === undefined
+		? left === right
+		: left.byteLength === right.byteLength &&
+			left.every((byte, index) => byte === right[index]);
+
+/**
+ * Inside an open transaction: require every portable file and the index to be
+ * what the plan observed. A changed or removed file is a `Conflict`, a new one
+ * is `Exists`, and a changed index is `IndexChanged`. Each aborts the
+ * transaction before anything is written.
+ */
+async function requireBaseline(
+	tx: IDBTransaction,
+	indexKey: string,
+	baseline: IncomingPlan['baseline'],
+) {
+	const inventory = tx.objectStore(STORES.inventory);
+	const keys = (await request(inventory.getAllKeys())) as string[];
+	const records = (await request(inventory.getAll())) as InventoryRecord[];
+	const present = new Set<string>();
+	for (const [index, path] of keys.entries()) {
+		if (!isPortablePath(path)) continue;
+		present.add(path);
+		const expected = baseline.files.get(path);
+		if (expected === undefined)
+			throw new Refusal(FileError.Exists({ path }).error);
+		const actual = records[index]!.sha256;
+		if (actual !== expected)
+			throw new Refusal(
+				FileError.Conflict({
+					path,
+					expectedSha256: expected,
+					actualSha256: actual,
+				}).error,
+			);
+	}
+	for (const [path, expected] of baseline.files)
+		if (!present.has(path))
+			throw new Refusal(
+				FileError.Conflict({
+					path,
+					expectedSha256: expected,
+					actualSha256: undefined,
+				}).error,
+			);
+	const index = (await request(tx.objectStore(STORES.git).get(indexKey))) as
+		| Uint8Array
+		| undefined;
+	if (!sameBytes(index, baseline.index)) throw new IndexChanged();
+}
+
 export async function createBrowserGitBackend({
 	db,
 	environment,
@@ -59,6 +121,7 @@ export async function createBrowserGitBackend({
 	remote: GitRemote | undefined;
 }): Promise<GitBackend> {
 	const branchKey = `${GITDIR}/refs/heads/${branch}`;
+	const indexKey = `${GITDIR}/index`;
 	const trackingKey = `${GITDIR}/refs/remotes/${REMOTE_NAME}/${remote?.branch ?? branch}`;
 	const queue = createMutex();
 
@@ -326,12 +389,20 @@ export async function createBrowserGitBackend({
 			const ignored = gitignoreMatcher(current);
 			return new Set(candidates.filter((path) => ignored(path)));
 		},
-		async indexMatchesHead() {
+		async indexMatchesHead(captured) {
+			if (captured !== undefined)
+				return withObjects((access) => capturedIndexMatchesHead(access, captured));
 			const rows = await withObjects((access) => matrix(access));
 			return rows.every(([, head, , stage]) =>
 				head === 0 ? stage === 0 : stage === 1,
 			);
 		},
+		async readIndex() {
+			return (await request(
+				db.transaction(STORES.git).objectStore(STORES.git).get(indexKey),
+			)) as Uint8Array | undefined;
+		},
+		mergeUnsupported: undefined,
 		async pathStatus() {
 			const rows = await withObjects((access) => matrix(access));
 			const result: PathStatus[] = [];
@@ -560,9 +631,10 @@ export async function createBrowserGitBackend({
 				}
 			});
 		},
-		async publishFastForward(plan: FastForwardPlan) {
+		async publishIncoming(plan: IncomingPlan) {
 			// Compute index entries for the new head, then publish files, index,
-			// and the branch in one transaction.
+			// and the branch in one transaction. Nothing is written unless every
+			// file, the index, and the branch are still what the plan observed.
 			const session = createGitSession(db, environment);
 			for (const filepath of plan.paths)
 				await git.resetIndex({
@@ -577,6 +649,7 @@ export async function createBrowserGitBackend({
 				db,
 				[STORES.inventory, STORES.contents, STORES.directories, STORES.git],
 				async (tx) => {
+					await requireBaseline(tx, indexKey, plan.baseline);
 					await applyInTransaction(tx, environment, plan.changes);
 					const store = tx.objectStore(STORES.git);
 					const value = (await request(store.get(branchKey))) as
@@ -590,15 +663,14 @@ export async function createBrowserGitBackend({
 				},
 			);
 			if (result.error === null) return { status: 'published' };
-			if (
-				result.error.name === 'Io' &&
-				result.error.cause instanceof BranchMoved
-			)
+			const cause = result.error.name === 'Io' ? result.error.cause : undefined;
+			if (cause instanceof BranchMoved)
 				return {
 					status: 'branchMoved',
-					actual: result.error.cause.actual,
+					actual: cause.actual,
 					filesApplied: false,
 				};
+			if (cause instanceof IndexChanged) return { status: 'indexChanged' };
 			return { status: 'refused', error: result.error };
 		},
 	};

@@ -5,7 +5,7 @@
  * literal path), directories the shell created (`directories`), and private
  * Git state (`git`, keyed by its private path). Git never writes portable
  * paths; the portable file boundary never writes Git state, except when an
- * incoming fast-forward publishes both in one transaction.
+ * incoming fast-forward or merge publishes both in one transaction.
  *
  * Bytes are hashed before a transaction opens. Inside a transaction there are
  * only IndexedDB requests, so the stored-sha256 comparison and the write

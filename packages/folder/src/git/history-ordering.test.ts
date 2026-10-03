@@ -250,7 +250,7 @@ for (const status of ['partial', 'indexFailed', 'branchMoved'] as const) {
 		} = await setup((base) => ({
 			readRemoteTracking: async () => incoming,
 			// Files land, then the index or branch step fails.
-			async publishFastForward(plan): Promise<PublishResult> {
+			async publishIncoming(plan): Promise<PublishResult> {
 				const applied = await landing.apply(plan.changes);
 				expect(applied.error).toBeNull();
 				const error = FileError.Io({
@@ -430,8 +430,8 @@ test('a published fast-forward stays successful when its observation cannot be r
 	const { db, real, base, history, write, commitOf } = await setup(
 		(backend) => ({
 			readRemoteTracking: async () => incoming,
-			async publishFastForward(plan) {
-				const result = await backend.publishFastForward(plan);
+			async publishIncoming(plan) {
+				const result = await backend.publishIncoming(plan);
 				if (result.status === 'published') failRead = true;
 				return result;
 			},

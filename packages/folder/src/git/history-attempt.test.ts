@@ -663,6 +663,7 @@ test('closing waits for an attempt already inside the protection, refuses a comm
 			push: { active: false },
 			fetch: { active: false },
 			pull: { active: false },
+			merge: { active: false },
 		});
 		// The commit that finished during close stayed local.
 		expect(probe.pushes).toBe(0);

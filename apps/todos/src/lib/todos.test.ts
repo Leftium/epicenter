@@ -1491,6 +1491,7 @@ test('calls made after close began are refused without folder or terminal work',
 		push: { status: 'closed' },
 	});
 	expect((await todos.pull()).error?.name).toBe('Closed');
+	expect((await todos.merge()).error?.name).toBe('Closed');
 	todos.terminal.command = 'touch shell.txt';
 	await todos.terminal.run();
 	expect(todos.terminal.runs.at(-1)?.result?.exitCode).toBe(1);
@@ -1637,6 +1638,56 @@ test('a fetch that answers after close began does not start the fast-forward', a
 	calls.length = 0;
 	release();
 	expect((await pulling).error?.name).toBe('Closed');
+	expect(calls).toEqual([]);
+});
+
+test('merge fetches, then merges what was fetched, and pushes nothing', async () => {
+	const { calls, adapt } = recordingFolder();
+	const todos = await open(adapt);
+	const { git } = todos.folder;
+	const merged = {
+		status: 'merged' as const,
+		from: 'a'.repeat(40),
+		to: 'c'.repeat(40),
+		fetched: 'b'.repeat(40),
+		changedPaths: ['kv.json'],
+	};
+	git.fetch = async () => {
+		calls.push('git.fetch');
+		return Ok({ status: 'fetched', oid: merged.fetched });
+	};
+	git.mergeIncoming = async () => {
+		calls.push('git.mergeIncoming');
+		return Ok(merged);
+	};
+	calls.length = 0;
+	expect(expectOk(await todos.merge())).toEqual(merged);
+	expect(calls.filter((call) => call.startsWith('git.'))).toEqual([
+		'git.fetch',
+		'git.mergeIncoming',
+	]);
+});
+
+test('where the folder cannot merge, merge fetches nothing and says why', async () => {
+	const { calls, adapt } = recordingFolder();
+	const todos = await open((folder) => {
+		const adapted = adapt(folder);
+		return {
+			...adapted,
+			git: {
+				...adapted.git,
+				mergeUnsupported: 'not in this place',
+				get snapshot() {
+					return folder.git.snapshot;
+				},
+			},
+		};
+	});
+	calls.length = 0;
+	expect((await todos.merge()).error).toMatchObject({
+		name: 'Unsupported',
+		reason: 'not in this place',
+	});
 	expect(calls).toEqual([]);
 });
 

@@ -49,11 +49,12 @@ import {
 	type FolderHistory,
 } from './folder.js';
 import type { StatusCode } from './git/backend.js';
-import { GitError, PullError } from './git/errors.js';
+import { GitError, MergeError, PullError } from './git/errors.js';
 import type {
 	CommitOutcome,
 	FetchOutcome,
 	GitSnapshot,
+	MergeOutcome,
 	PullOutcome,
 	PushOutcome,
 } from './git/history.js';
@@ -303,6 +304,9 @@ type Observed<T> =
 			readonly error: string | undefined;
 	  };
 
+const MERGE_UNSUPPORTED =
+	'merging diverged histories is not available in the desktop app yet';
+
 function snapshotFromWire(wire: WireGitSnapshot): GitSnapshot {
 	return Object.freeze({
 		branch: wire.branch,
@@ -318,7 +322,7 @@ function snapshotFromWire(wire: WireGitSnapshot): GitSnapshot {
 			ahead: sync.ahead,
 			behind: sync.behind,
 		})),
-		activity: wire.activity,
+		activity: { ...wire.activity, merge: { active: false } },
 		lastCommit:
 			wire.lastCommit === null
 				? undefined
@@ -350,6 +354,7 @@ function snapshotFromWire(wire: WireGitSnapshot): GitSnapshot {
 								? Ok(pullOutcome(wire.lastPull.result.value))
 								: Err(pullError(wire.lastPull.result.error)),
 					},
+		lastMerge: undefined,
 		closed: wire.closed,
 	});
 }
@@ -715,6 +720,13 @@ function createHistory(
 				if (result.settled === 'refused') return Err(pullError(result.error));
 				return Ok(pullOutcome(result.data));
 			}),
+		// The desktop owner merges nothing yet; nothing is sent to it.
+		mergeIncoming: () =>
+			client.local<Result<MergeOutcome, MergeError | PullError | GitError>>(
+				closed,
+				async () => MergeError.Unsupported({ reason: MERGE_UNSUPPORTED }),
+			),
+		mergeUnsupported: MERGE_UNSUPPORTED,
 		paths: () =>
 			observe(
 				'status',

@@ -33,6 +33,8 @@ import type {
 	FilesObservation,
 	GitError,
 	GitSnapshot,
+	MergeError,
+	MergeOutcome,
 	PullError,
 	PullOutcome,
 	PushOutcome,
@@ -84,6 +86,18 @@ export type FolderGit = {
 	}): Promise<Result<FetchOutcome, GitError>>;
 	/** Apply the fetched remote head only as a clean fast-forward. */
 	pullFastForward(): Promise<Result<PullOutcome, PullError | GitError>>;
+	/**
+	 * Merge the fetched remote head into a clean folder: a fast-forward when
+	 * possible, otherwise one commit with the branch head and the fetched head
+	 * as parents. Root `kv.json` merges by key; other files by Git's rules.
+	 * A conflict or refusal changes no file, index entry, or ref. Never pushes.
+	 * Only a browser folder merges; elsewhere this is `Unsupported`.
+	 */
+	mergeIncoming(): Promise<
+		Result<MergeOutcome, MergeError | PullError | GitError>
+	>;
+	/** Why `mergeIncoming` is unavailable here, or `undefined` when it is available. */
+	readonly mergeUnsupported: string | undefined;
 	/** Per-path staged and unstaged state, as `git status` reports it. */
 	paths(): Promise<Result<PathStatus[], GitError>>;
 	/** Staged authoring requires `commitOnEdit: false`. */
@@ -237,6 +251,8 @@ function createFolderGit(history: FolderHistory): FolderGit {
 		push: (options) => history.push(options),
 		fetch: (options) => history.fetch(options),
 		pullFastForward: () => history.pullFastForward(),
+		mergeIncoming: () => history.mergeIncoming(),
+		mergeUnsupported: history.mergeUnsupported,
 		paths: () => history.paths(),
 		stage: (paths) => history.stage(paths),
 		commitStaged: (message) => history.commitStaged(message),

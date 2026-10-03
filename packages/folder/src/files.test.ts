@@ -386,6 +386,8 @@ describe('a save never reads its bytes back', () => {
 			push: unused,
 			fetch: unused,
 			pullFastForward: unused,
+			mergeIncoming: unused,
+			mergeUnsupported: undefined,
 			paths: unused,
 			stage: unused,
 			commitStaged: unused,

@@ -7,16 +7,21 @@
  * Key behaviors:
  * - Observed divergence gives fixed guidance, never the push transport's text
  * - A pull refused as diverged gives the same guidance, chosen by error name
+ * - A merge stopped by conflicts names each file and what each side did,
+ *   without library vocabulary; a merge reports that nothing was pushed
  * - The header leads with current state, not a neutral past commit attempt
  * - Observation times are absolute
  */
 import { expect, test } from 'bun:test';
-import { type GitSnapshot, PullError } from '@epicenter/folder';
+import { type GitSnapshot, MergeError, PullError } from '@epicenter/folder';
+import { Ok } from 'wellcrafted/result';
 import {
 	commitAndPushToast,
 	commitLine,
 	DIVERGED,
 	filesLine,
+	mergeLine,
+	mergeOutcomeLine,
 	pullOutcomeLine,
 	pushLine,
 	summaryLine,
@@ -51,11 +56,19 @@ function snapshot(overrides: Partial<GitSnapshot> = {}): GitSnapshot {
 			stale: false,
 			error: undefined,
 		},
-		activity: { scan: idle, commit: idle, push: idle, fetch: idle, pull: idle },
+		activity: {
+			scan: idle,
+			commit: idle,
+			push: idle,
+			fetch: idle,
+			pull: idle,
+			merge: idle,
+		},
 		lastCommit: undefined,
 		lastPush: undefined,
 		lastFetch: undefined,
 		lastPull: undefined,
+		lastMerge: undefined,
 		closed: false,
 		...overrides,
 	};
@@ -108,6 +121,60 @@ test('observed divergence gives guidance instead of the push error', () => {
 test('a pull refused as diverged gives the same guidance', () => {
 	const refused = PullError.Diverged({ head: 'a', fetched: 'b' });
 	expect(pullOutcomeLine(refused).detail).toBe(DIVERGED);
+});
+
+test('a merge that stopped on conflicts names each file and what each side did', () => {
+	const line = mergeOutcomeLine(
+		MergeError.Conflicted({
+			conflicts: [
+				{
+					reason: 'kvKey',
+					path: 'kv.json',
+					key: 'theme',
+					base: '"light"',
+					ours: '"dark"',
+					theirs: null,
+				},
+				{ reason: 'content', path: 'todos/a.md' },
+				{ reason: 'deleted', path: 'notes.md', deletedBy: 'theirs' },
+				{ reason: 'binary', path: 'take.webm' },
+			],
+		}),
+	);
+	expect(line).toMatchObject({ short: 'Conflicts', tone: 'error' });
+	expect(line.detail).toBe(
+		[
+			'kv.json: "theme" is "dark" here and not set on the remote (was "light")',
+			'todos/a.md: both sides changed the same lines',
+			'notes.md: changed here and deleted on the remote',
+			'take.webm: both sides changed it, and it cannot be combined line by line',
+			'Nothing was changed.',
+		].join('\n'),
+	);
+	for (const jargon of ['kvKey', 'binary', 'ours', 'theirs', 'Conflicted'])
+		expect(`${line.label}\n${line.detail}`).not.toContain(jargon);
+});
+
+test('a merged result says what changed and that nothing was pushed', () => {
+	const line = mergeOutcomeLine(
+		Ok({
+			status: 'merged',
+			from: 'a'.repeat(40),
+			to: 'c'.repeat(40),
+			fetched: 'b'.repeat(40),
+			changedPaths: ['kv.json'],
+		}),
+	);
+	expect(line).toEqual({
+		label: 'Merged 1 file',
+		detail: 'aaaaaaa + bbbbbbb → ccccccc\nNot pushed yet.',
+		tone: 'good',
+	});
+	const busy = snapshot({
+		activity: { ...snapshot().activity, merge: { active: true } },
+	});
+	expect(mergeLine(busy)).toEqual({ label: 'Merging…', tone: 'busy' });
+	expect(pushLine(busy).label).toBe('Merging…');
 });
 
 test('the header leads with current state, not a neutral past commit attempt', () => {

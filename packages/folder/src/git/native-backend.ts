@@ -11,7 +11,7 @@
  */
 import { spawn } from 'node:child_process';
 import * as nodeFs from 'node:fs';
-import { rename, stat, writeFile } from 'node:fs/promises';
+import { readFile, rename, stat, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import type * as git from 'isomorphic-git';
 import type { FileBoundary } from '../boundary.js';
@@ -24,6 +24,7 @@ import type {
 	StatusCode,
 } from './backend.js';
 import { createMutex } from './mutex.js';
+import { capturedIndexMatchesHead } from './captured-index.js';
 import { nativeCheckpointProblem } from './native-checkpoint.js';
 import type { CommitSummary, ObjectAccess } from './objects.js';
 
@@ -306,7 +307,9 @@ export async function createNativeGitBackend({
 				throw new GitCommandError(['check-ignore'], result.code, result.stderr);
 			return new Set(text(result.stdout).split('\0').filter(Boolean));
 		},
-		async indexMatchesHead() {
+		async indexMatchesHead(captured) {
+			if (captured !== undefined)
+				return backend.withObjects((access) => capturedIndexMatchesHead(access, captured));
 			const head = await resolve(branchRef);
 			const result = await run(
 				head === undefined
@@ -320,6 +323,18 @@ export async function createNativeGitBackend({
 			if (result.code === 1) return false;
 			throw new GitCommandError(['diff'], result.code, result.stderr);
 		},
+		async readIndex() {
+			try {
+				return new Uint8Array(await readFile(join(gitdir, 'index')));
+			} catch (cause) {
+				if ((cause as { code?: string }).code === 'ENOENT') return undefined;
+				throw cause;
+			}
+		},
+		// Merging here would apply ordered file steps outside one transaction,
+		// with Git's own merge rules beside this folder's. Neither is built.
+		mergeUnsupported:
+			'merging diverged histories is not available for a folder on disk yet',
 		async pathStatus() {
 			const result = await run([
 				'status',
@@ -430,7 +445,9 @@ export async function createNativeGitBackend({
 			}
 			return resolve(trackingRef);
 		},
-		async publishFastForward(plan): Promise<PublishResult> {
+		// The baseline is not checked here: each step carries its own file
+		// condition, and other programs are met only at Git's lock files.
+		async publishIncoming(plan): Promise<PublishResult> {
 			const applied = await boundary.apply(plan.changes);
 			if (applied.error) {
 				if (applied.error.name === 'Partial')

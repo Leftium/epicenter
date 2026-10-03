@@ -12,6 +12,7 @@
 import type { FileChange } from '../boundary.js';
 import type { FileError, FileStep } from '../errors.js';
 import type { DeclaredAttribute } from './attributes.js';
+import type { CapturedIndex } from './captured-index.js';
 import type {
 	Author,
 	CommitSummary,
@@ -37,18 +38,34 @@ export type CasResult =
 	| { readonly ok: true }
 	| { readonly ok: false; readonly actual: string | undefined };
 
-/** An incoming fast-forward prepared against observed files and refs. */
-export type FastForwardPlan = {
+/**
+ * An incoming fast-forward or merge, prepared against observed files and
+ * refs. `nextHead` is the fetched commit or the merge commit; `changes` turn
+ * the files of `expectedHead` into its tree.
+ */
+export type IncomingPlan = {
 	readonly expectedHead: string | undefined;
 	readonly nextHead: string;
 	readonly changes: readonly FileChange[];
 	readonly paths: readonly string[];
+	/**
+	 * What the folder held when the update was planned: the SHA-256 of every
+	 * portable file, and the exact index bytes checked for cleanliness. The browser
+	 * requires both unchanged inside its publication transaction. A folder on
+	 * disk checks only each changed file's own condition, best effort.
+	 */
+	readonly baseline: {
+		readonly files: ReadonlyMap<string, string>;
+		readonly index: Uint8Array | undefined;
+	};
 };
 
 export type PublishResult =
 	| { readonly status: 'published' }
 	/** Nothing was written. */
 	| { readonly status: 'refused'; readonly error: FileError }
+	/** Browser only: the index changed after it was observed. Nothing was written. */
+	| { readonly status: 'indexChanged' }
 	/** Nothing was written (browser); or files and index were applied first (native). */
 	| {
 			readonly status: 'branchMoved';
@@ -123,7 +140,15 @@ export type GitBackend = {
 		candidates: readonly string[],
 		current: ReadonlyMap<string, Uint8Array>,
 	): Promise<ReadonlySet<string>>;
-	indexMatchesHead(): Promise<boolean>;
+	/** When supplied, checks these exact captured bytes against this pinned head. */
+	indexMatchesHead(captured?: CapturedIndex): Promise<boolean>;
+	/** The index file's stored bytes, or `undefined` when there is none. */
+	readIndex(): Promise<Uint8Array | undefined>;
+	/**
+	 * Why this folder does not merge diverged histories, or `undefined` when it
+	 * does. Only the browser merges; it publishes the result in one transaction.
+	 */
+	readonly mergeUnsupported: string | undefined;
 	pathStatus(): Promise<PathStatus[]>;
 	/** Stage current contents of `paths`, including deletions; `'all'` stages everything. */
 	stage(paths: readonly string[] | 'all'): Promise<void>;
@@ -146,5 +171,6 @@ export type GitBackend = {
 	push(oid: string, signal: AbortSignal): Promise<void>;
 	/** Fetch the configured remote branch; returns its commit, or undefined if absent. */
 	fetch(signal: AbortSignal): Promise<string | undefined>;
-	publishFastForward(plan: FastForwardPlan): Promise<PublishResult>;
+	/** Publish files, index, and branch for an incoming fast-forward or merge. */
+	publishIncoming(plan: IncomingPlan): Promise<PublishResult>;
 };

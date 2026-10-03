@@ -101,7 +101,7 @@ is not the desktop adapter, and it does not watch the directory.
 | `kv` | Root `kv.json`, a sparse map of declared values. A snapshot is a text capture: `path`, exact `source`, and `sha256`, beside the stored `values` that validated, `parseError`, and `issues`. `get()` returns `undefined` only for absence; readable text that is not a JSON object is a snapshot with a `parseError`. `inspect(source)` interprets text without reading anything. `create(values)` saves a new file from the supplied values and refuses with `Exists` when one is there. `update(values)` reads current source once, assigns the supplied keys, and conditionally publishes without retry; a missing file is `NotFound`. An update changes only the values it assigns: unknown keys, number spellings, and formatting stay exact. See [Reading and saving kv.json](#reading-and-saving-kvjson). |
 | `files` | Ordinary files at literal paths. See below. |
 | `batch(collect)` | Several mutations in one application with one history request. See below. |
-| `git` | A status snapshot, `status()`, `commit()`, `commitAndPush()`, `push()`, `fetch()`, `pullFastForward()`, and `paths()`, `stage()`, `commitStaged(message)`, `diff()`, `log()`. |
+| `git` | A status snapshot, `status()`, `commit()`, `commitAndPush()`, `push()`, `fetch()`, `pullFastForward()`, `mergeIncoming()` and `mergeUnsupported`, and `paths()`, `stage()`, `commitStaged(message)`, `diff()`, `log()`. |
 | `location` | `{ kind: 'indexedDb', database }` or `{ kind: 'directory', root }`. For showing to a person. File paths are never joined onto it. |
 | `onFilesChanged(listener)` | A hint that paths changed, so read again. Returns the function that stops listening. |
 | `terminal({ cwd })` | A shell over the folder's files and history. |
@@ -415,8 +415,8 @@ nesting beyond 64 containers return `kind: 'invalid'` and the first invalid
 output. Callers must decode bytes without replacing invalid UTF-8.
 
 The function does not apply field schemas, write files, or choose a winner for
-competing edits. History currently pulls by fast-forward only; Git merge driver
-and synchronization integration are separate work.
+competing edits. A browser folder's `git.mergeIncoming()` uses it for root
+`kv.json`; see [Merging incoming changes](#merging-incoming-changes).
 
 ### Batches
 
@@ -645,10 +645,48 @@ directory entry ask `git check-attr --source`; the browser evaluates the
 commit's attribute files the same way, matching patterns as a case-insensitive
 checkout does.
 
-A browser publishes files, index, and branch in one transaction. A folder on
-disk applies ordered file steps, updates the index, and moves the branch last;
-a failure reports the steps that completed, marks the saved-files observation
-stale, and requests no commit.
+A browser publishes files, index, and branch in one transaction. Inside it,
+every portable file must still have the hash the update captured, no new file
+may have appeared, and the index must be the bytes its clean check left;
+otherwise nothing is written and the update is `Refused` or `StagedChanges`.
+A folder on disk applies ordered file steps, updates the index, and moves the
+branch last; a failure reports the steps that completed, marks the saved-files
+observation stale, and requests no commit.
+
+### Merging incoming changes
+
+`mergeIncoming()` applies the fetched remote head when histories diverged. It
+pins the branch head and the fetched head, requires the same clean folder as
+`pullFastForward()`, and refuses the same incoming commits. A branch that is
+behind fast-forwards; a branch that is ahead or equal changes nothing. It
+never pushes, and `pullFastForward()` still refuses divergence.
+
+Diverged histories need exactly one merge base; none or several is
+`UnsupportedHistory`. The merge writes one commit whose parents are the pinned
+head and the pinned fetched commit, and publishes its files, a clean index,
+and the branch in one transaction.
+
+- Root `kv.json` changed on both sides merges by key with `mergeKv`, and is
+  saved with sorted keys. A nested `kv.json` is an ordinary file.
+- Every other path follows Git's rules through isomorphic-git's merge.
+  Unchanged, identical, and one-sided changes keep their exact bytes.
+- A file both sides changed merges by lines only when all its versions are
+  UTF-8 with no NUL byte and no line break the line merge would drop: a lone
+  carriage return, U+2028, or U+2029. isomorphic-git 1.38.5 would otherwise
+  replace bytes, so such a file is a `binary` conflict.
+- A `merge` attribute other than Git's default on such a file is
+  `Unmergeable`, as is a link, executable, or submodule among its versions.
+
+Competing changes are `Conflicted`, with one entry per reason: `kvKey` with
+the raw base, ours, and theirs values of the key; `kvFile` when one side
+deleted `kv.json` and the other changed it; `kvInvalid`; `content` for
+competing lines; `binary`; `deleted` for a delete against a change; and
+`shape` for a file against a directory. A conflict or refusal writes no file,
+index entry, or ref; unreachable objects may remain.
+
+Only a browser folder merges. In the desktop app and a directory folder,
+`mergeUnsupported` says why and `mergeIncoming()` returns `Unsupported`
+without sending or changing anything.
 
 A whole-folder commit or fast-forward on disk writes every file as plain
 `100644` bytes, so it is refused in a repository it would misrepresent:

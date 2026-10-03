@@ -22,8 +22,11 @@
  * automatic commit attempt that ran, a push is attempted if the branch is
  * ahead and no push is running; nothing is owed if it is not. A caller that
  * stops waiting before its push or fetch starts leaves no transport behind.
- * Incoming changes are explicit: `fetch` records the remote head, and
- * `pullFastForward` publishes a clean fast-forward through the file boundary.
+ * Incoming changes are explicit: `fetch` records the remote head,
+ * `pullFastForward` publishes a clean fast-forward, and `mergeIncoming`
+ * publishes a clean fast-forward or a two-parent merge (browser only). Both
+ * go through one publication owner, which in the browser requires every
+ * captured file and the index unchanged inside its transaction.
  *
  * Status scans take no protection. Callers who ask while a scan is running
  * share the one scan that follows it, so a burst of requests costs two scans
@@ -37,8 +40,14 @@ import { describe } from '../errors.js';
 import { callObserver } from '../observer.js';
 import { ancestors, collisionKey, pathProblem } from '../paths.js';
 import { hashBytes } from '../capture.js';
-import type { GitBackend, GitRemote, PathStatus } from './backend.js';
-import { GitError, PullError } from './errors.js';
+import type {
+	GitBackend,
+	GitRemote,
+	IncomingPlan,
+	PathStatus,
+} from './backend.js';
+import { GitError, MergeError, PullError } from './errors.js';
+import { mergeBases, prepareMerge } from './merge.js';
 import { commitSubject, messageProblem, type PathChange } from './messages.js';
 import {
 	type Author,
@@ -51,13 +60,14 @@ import {
 	isAncestor,
 	readBlob,
 	readTreeFiles,
+	type TreeFile,
 	writeCommitObject,
 	writeFilesTree,
 } from './objects.js';
 import { createPassRunner, type PassRunner } from './runner.js';
 import { sourceFiles } from './scope.js';
 
-export { GitError, PullError };
+export { GitError, MergeError, PullError };
 
 export type CommitOutcome =
 	| {
@@ -118,6 +128,18 @@ export type PullOutcome =
 			readonly changedPaths: readonly string[];
 	  };
 
+/** A merge fast-forwards when it can, and otherwise records a two-parent commit. */
+export type MergeOutcome =
+	| PullOutcome
+	| {
+			readonly status: 'merged';
+			readonly from: string;
+			/** The merge commit. Its parents are `from` and `fetched`. */
+			readonly to: string;
+			readonly fetched: string;
+			readonly changedPaths: readonly string[];
+	  };
+
 export type Observation<T> =
 	| { readonly state: 'unknown'; readonly error: string | undefined }
 	| {
@@ -160,6 +182,7 @@ export type GitSnapshot = {
 		readonly push: Activity;
 		readonly fetch: Activity;
 		readonly pull: Activity;
+		readonly merge: Activity;
 	};
 	readonly lastCommit: Attempt<CommitOutcome> | undefined;
 	readonly lastPush: Attempt<PushOutcome> | undefined;
@@ -168,6 +191,14 @@ export type GitSnapshot = {
 		| undefined;
 	readonly lastPull:
 		| Attempt<{ readonly result: Result<PullOutcome, PullError | GitError> }>
+		| undefined;
+	readonly lastMerge:
+		| Attempt<{
+				readonly result: Result<
+					MergeOutcome,
+					MergeError | PullError | GitError
+				>;
+		  }>
 		| undefined;
 	readonly closed: boolean;
 };
@@ -202,8 +233,8 @@ export function createHistory({
 	 * not interrupted.
 	 */
 	const closing = new AbortController();
-	/** Commits and pulls of this handle that are waiting or running. */
-	const running = { commit: 0, pull: 0 };
+	/** Commits, pulls, and merges of this handle that are waiting or running. */
+	const running = { commit: 0, pull: 0, merge: 0 };
 	/** The backend's protection, waited for unless closing gets there first. */
 	const exclusive = <T>(work: () => Promise<T>) =>
 		backend.exclusive(work, closing.signal);
@@ -220,6 +251,7 @@ export function createHistory({
 	let lastPush: GitSnapshot['lastPush'];
 	let lastFetch: GitSnapshot['lastFetch'];
 	let lastPull: GitSnapshot['lastPull'];
+	let lastMerge: GitSnapshot['lastMerge'];
 	let remoteSeq = 0;
 	/** Git work of this handle, other than runner passes, that close waits for. */
 	const admittedWork = new Set<Promise<unknown>>();
@@ -247,11 +279,13 @@ export function createHistory({
 				push: activity(pushRunner),
 				fetch: activity(fetchRunner),
 				pull: { active: running.pull > 0 },
+				merge: { active: running.merge > 0 },
 			},
 			lastCommit,
 			lastPush,
 			lastFetch,
 			lastPull,
+			lastMerge,
 			closed: closing.signal.aborted,
 		});
 		// A snapshot is published from inside saves and passes. A subscriber
@@ -490,11 +524,11 @@ export function createHistory({
 	}
 
 	/**
-	 * Run one commit or pull of this handle. It counts as active from the
-	 * moment it is asked for, including any wait for the backend's protection,
-	 * and `close()` waits for it. `work` must not reject.
+	 * Run one commit, pull, or merge of this handle. It counts as active from
+	 * the moment it is asked for, including any wait for the backend's
+	 * protection, and `close()` waits for it. `work` must not reject.
 	 */
-	function owned<T>(kind: 'commit' | 'pull', work: () => Promise<T>) {
+	function owned<T>(kind: keyof typeof running, work: () => Promise<T>) {
 		running[kind]++;
 		const completion = Promise.withResolvers<T>();
 		const settled = completion.promise.finally(() => {
@@ -617,190 +651,392 @@ export function createHistory({
 		onChange: () => emit(),
 	});
 
+	/** The pinned branch head and fetched remote head, and how they relate. */
+	type Pinned =
+		| {
+				readonly relation: 'upToDate';
+				readonly head: string | undefined;
+				readonly fetched: string;
+		  }
+		| {
+				readonly relation: 'fastForward';
+				readonly head: string | undefined;
+				readonly fetched: string;
+		  }
+		| {
+				readonly relation: 'ahead' | 'diverged';
+				readonly head: string;
+				readonly fetched: string;
+		  };
+
+	/** Pin both heads for one incoming update, inside the backend's protection. */
+	async function pinIncoming(): Promise<Result<Pinned, PullError>> {
+		const blocked = await wholeFolderProblem();
+		if (blocked !== undefined) return PullError.Blocked({ reason: blocked });
+		const fetched = await backend.readRemoteTracking();
+		if (fetched === undefined) return PullError.NoFetchedHead();
+		const head = await backend.readBranch();
+		if (head === fetched) return Ok({ relation: 'upToDate', head, fetched });
+		if (
+			head === undefined ||
+			(await backend.withObjects((access) => isAncestor(access, head, fetched)))
+		)
+			return Ok({ relation: 'fastForward', head, fetched });
+		const contained = await backend.withObjects((access) =>
+			isAncestor(access, fetched, head),
+		);
+		return Ok({ relation: contained ? 'ahead' : 'diverged', head, fetched });
+	}
+
+	/** The folder an incoming update found clean, and what its publication requires. */
+	type Clean = {
+		readonly raw: ReadonlyMap<string, Uint8Array>;
+		readonly committed: ReadonlyMap<string, TreeFile>;
+		readonly current: ReadonlyMap<string, Uint8Array>;
+		readonly baseline: IncomingPlan['baseline'];
+	};
+
+	/**
+	 * The entire folder must be clean, including staged changes. The baseline
+	 * is the hash of every captured file and the exact index bytes checked
+	 * against the pinned head. A browser publication requires both unchanged, so the clean
+	 * observation recorded after it holds for the folder it published over.
+	 */
+	async function cleanFolder(
+		head: string | undefined,
+	): Promise<Result<Clean, PullError>> {
+		const raw = await capture();
+		const committed = await headFiles(head);
+		const current = await source(raw, committed);
+		const dirty = diffFileMaps(committed, await hashFiles(current));
+		if (dirty.length > 0)
+			return PullError.Dirty({ paths: dirty.map((change) => change.path) });
+		const index = await backend.readIndex();
+		if (!(await backend.indexMatchesHead({ head, bytes: index })))
+			return PullError.StagedChanges();
+		const files = new Map<string, string>();
+		for (const [path, bytes] of raw) files.set(path, await hashBytes(bytes));
+		return Ok({ raw, committed, current, baseline: { files, index } });
+	}
+
+	/** Refuse a tree, the files of `commit`, that this folder cannot write as plain bytes. */
+	async function representable(
+		commit: string,
+		files: ReadonlyMap<string, TreeFile>,
+	): Promise<Result<undefined, PullError>> {
+		const unsupported = [...files]
+			.filter(([, entry]) => entry.mode !== '100644')
+			.map(([path]) => path);
+		if (unsupported.length > 0)
+			return PullError.Unrepresentable({
+				paths: unsupported,
+				reason:
+					'symbolic links, submodules, and executable files are not plain folder files',
+			});
+		const invalid = [...files.keys()].filter(
+			(path) => pathProblem(path) !== undefined,
+		);
+		if (invalid.length > 0)
+			return PullError.Unrepresentable({
+				paths: invalid,
+				reason: 'some paths are not valid folder paths',
+			});
+		// An update writes each blob's bytes as they are stored. A commit that
+		// declares a filter or a conversion for a path means something else by
+		// those bytes: under `filter=lfs` the blob is a pointer, not the audio.
+		// Every path is asked about, against the commit's own attributes, so a
+		// commit that only adds an attribute over a file it does not touch is
+		// refused as well.
+		const declared = await backend.incomingAttribute(commit, files);
+		if (declared !== undefined)
+			return PullError.Unrepresentable({
+				paths: [declared.path],
+				reason: `the incoming commit declares the Git attribute ${declared.attribute}, and this folder does not apply attribute filters or conversion`,
+			});
+		const folded = new Map<string, string>();
+		for (const path of files.keys()) {
+			const key = collisionKey(path);
+			const existing = folded.get(key);
+			if (existing !== undefined)
+				return PullError.Unrepresentable({
+					paths: [existing, path],
+					reason: 'paths collide on case-insensitive filesystems',
+				});
+			folded.set(key, path);
+		}
+		return Ok(undefined);
+	}
+
+	/**
+	 * Publish `target`, the tree of `nextHead`, over the clean folder at
+	 * `head`. The one publication owner for fast-forwards and merges. Returns
+	 * the paths it changed.
+	 */
+	async function publishIncoming({
+		capturedAt,
+		head,
+		nextHead,
+		target,
+		clean,
+	}: {
+		capturedAt: number;
+		head: string | undefined;
+		nextHead: string;
+		target: ReadonlyMap<string, TreeFile>;
+		clean: Clean;
+	}): Promise<Result<readonly string[], PullError>> {
+		const { raw, current } = clean;
+		const changes = diffFileMaps(clean.committed, target);
+		// Ignored and untracked files are preserved, never overwritten.
+		const rawPaths = [...raw.keys()];
+		const colliding = changes
+			.filter((change) => change.kind === 'add')
+			.map((change) => change.path)
+			.filter(
+				(path) =>
+					raw.has(path) ||
+					ancestors(path).some((parent) => raw.has(parent)) ||
+					rawPaths.some((existing) => existing.startsWith(`${path}/`)),
+			);
+		if (colliding.length > 0) return PullError.Collision({ paths: colliding });
+		const removals: FileChange[] = [];
+		const writes: FileChange[] = [];
+		for (const change of changes) {
+			const bytes = current.get(change.path);
+			if (change.kind === 'delete') {
+				if (bytes === undefined)
+					return PullError.Dirty({ paths: [change.path] });
+				removals.push({
+					kind: 'remove',
+					path: change.path,
+					expectedSha256: await hashBytes(bytes),
+				});
+				continue;
+			}
+			const next = await backend.withObjects((access) =>
+				readBlob(access, target.get(change.path)!.oid),
+			);
+			const write = {
+				path: change.path,
+				bytes: next,
+				sha256: await hashBytes(next),
+			};
+			writes.push(
+				bytes === undefined
+					? { kind: 'create', ...write }
+					: {
+							kind: 'replace',
+							...write,
+							expectedSha256: await hashBytes(bytes),
+						},
+			);
+		}
+		const changedPaths = changes.map((change) => change.path);
+		const published = await backend.publishIncoming({
+			expectedHead: head,
+			nextHead,
+			changes: [...removals, ...writes],
+			paths: changedPaths,
+			baseline: clean.baseline,
+		});
+		switch (published.status) {
+			case 'published':
+				await observeCommitted(capturedAt, nextHead);
+				landed(changedPaths);
+				return Ok(changedPaths);
+			case 'refused':
+				return PullError.Refused({ error: published.error });
+			case 'indexChanged':
+				return PullError.StagedChanges();
+			case 'partial':
+				markLanded();
+				landed(
+					published.applied.flatMap((step) =>
+						step.kind === 'move' ? [step.from, step.to] : [step.path],
+					),
+				);
+				return PullError.Partial({
+					applied: published.applied,
+					error: published.error,
+				});
+			case 'branchMoved':
+				if (published.filesApplied) {
+					markLanded();
+					landed(changedPaths);
+				}
+				return PullError.BranchMoved({
+					actual: published.actual,
+					filesApplied: published.filesApplied,
+				});
+			case 'indexFailed':
+				markLanded();
+				landed(changedPaths);
+				return PullError.IndexFailed({ error: published.error });
+		}
+	}
+
+	/** Apply the fetched head as a fast-forward of the clean folder. */
+	async function fastForward(
+		capturedAt: number,
+		head: string | undefined,
+		fetched: string,
+	): Promise<Result<PullOutcome, PullError>> {
+		const clean = await cleanFolder(head);
+		if (clean.error) return clean;
+		const incoming = await headFiles(fetched);
+		const refused = await representable(fetched, incoming);
+		if (refused.error) return refused;
+		const published = await publishIncoming({
+			capturedAt,
+			head,
+			nextHead: fetched,
+			target: incoming,
+			clean: clean.data,
+		});
+		if (published.error) return published;
+		return Ok({
+			status: 'fastForwarded',
+			from: head,
+			to: fetched,
+			changedPaths: published.data,
+		});
+	}
+
 	async function pull(): Promise<Result<PullOutcome, PullError | GitError>> {
 		if (backend.remote === undefined) return GitError.NoRemote();
 		return exclusive(async () => {
-			const blocked = await wholeFolderProblem();
-			if (blocked !== undefined) return PullError.Blocked({ reason: blocked });
 			const capturedAt = ++clock;
-			const fetched = await backend.readRemoteTracking();
-			if (fetched === undefined) return PullError.NoFetchedHead();
-			const head = await backend.readBranch();
-			if (head === fetched) return Ok({ status: 'upToDate', head });
-			if (head !== undefined) {
-				const fastForward = await backend.withObjects((access) =>
-					isAncestor(access, head, fetched),
-				);
-				if (!fastForward) {
-					const contained = await backend.withObjects((access) =>
-						isAncestor(access, fetched, head),
-					);
-					if (contained) return Ok({ status: 'ahead', head });
-					return PullError.Diverged({ head, fetched });
-				}
-			}
-			// The entire folder must be clean, including staged changes.
-			const raw = await capture();
-			const committed = await headFiles(head);
-			const current = await source(raw, committed);
-			const dirty = diffFileMaps(committed, await hashFiles(current));
-			if (dirty.length > 0)
-				return PullError.Dirty({ paths: dirty.map((change) => change.path) });
-			if (!(await backend.indexMatchesHead())) return PullError.StagedChanges();
-
-			const incoming = await headFiles(fetched);
-			const unsupported = [...incoming]
-				.filter(([, entry]) => entry.mode !== '100644')
-				.map(([path]) => path);
-			if (unsupported.length > 0)
-				return PullError.Unrepresentable({
-					paths: unsupported,
-					reason:
-						'symbolic links, submodules, and executable files are not plain folder files',
-				});
-			const invalid = [...incoming.keys()].filter(
-				(path) => pathProblem(path) !== undefined,
-			);
-			if (invalid.length > 0)
-				return PullError.Unrepresentable({
-					paths: invalid,
-					reason: 'some paths are not valid folder paths',
-				});
-			// The fast-forward writes each blob's bytes as they are stored. A
-			// commit that declares a filter or a conversion for a path means
-			// something else by those bytes: under `filter=lfs` the blob is a
-			// pointer, not the audio. Every incoming path is asked about, against
-			// the fetched commit's own attributes, so a commit that only adds an
-			// attribute over a file it does not touch is refused as well.
-			const declared = await backend.incomingAttribute(fetched, incoming);
-			if (declared !== undefined)
-				return PullError.Unrepresentable({
-					paths: [declared.path],
-					reason: `the incoming commit declares the Git attribute ${declared.attribute}, and this folder does not apply attribute filters or conversion`,
-				});
-			const folded = new Map<string, string>();
-			for (const path of incoming.keys()) {
-				const key = collisionKey(path);
-				const existing = folded.get(key);
-				if (existing !== undefined)
-					return PullError.Unrepresentable({
-						paths: [existing, path],
-						reason: 'paths collide on case-insensitive filesystems',
+			const pinned = await pinIncoming();
+			if (pinned.error) return pinned;
+			const incoming = pinned.data;
+			switch (incoming.relation) {
+				case 'upToDate':
+					return Ok({ status: 'upToDate', head: incoming.head });
+				case 'ahead':
+					return Ok({ status: 'ahead', head: incoming.head });
+				case 'diverged':
+					return PullError.Diverged({
+						head: incoming.head,
+						fetched: incoming.fetched,
 					});
-				folded.set(key, path);
-			}
-
-			const changes = diffFileMaps(committed, incoming);
-			// Ignored and untracked files are preserved, never overwritten.
-			const rawPaths = [...raw.keys()];
-			const colliding = changes
-				.filter((change) => change.kind === 'add')
-				.map((change) => change.path)
-				.filter(
-					(path) =>
-						raw.has(path) ||
-						ancestors(path).some((parent) => raw.has(parent)) ||
-						rawPaths.some((existing) => existing.startsWith(`${path}/`)),
-				);
-			if (colliding.length > 0)
-				return PullError.Collision({ paths: colliding });
-			const removals: FileChange[] = [];
-			const writes: FileChange[] = [];
-			for (const change of changes) {
-				const bytes = current.get(change.path);
-				if (change.kind === 'delete') {
-					if (bytes === undefined)
-						return PullError.Dirty({ paths: [change.path] });
-					removals.push({
-						kind: 'remove',
-						path: change.path,
-						expectedSha256: await hashBytes(bytes),
-					});
-					continue;
-				}
-				const next = await backend.withObjects((access) =>
-					readBlob(access, incoming.get(change.path)!.oid),
-				);
-				const write = {
-					path: change.path,
-					bytes: next,
-					sha256: await hashBytes(next),
-				};
-				writes.push(
-					bytes === undefined
-						? { kind: 'create', ...write }
-						: {
-								kind: 'replace',
-								...write,
-								expectedSha256: await hashBytes(bytes),
-							},
-				);
-			}
-			const changedPaths = changes.map((change) => change.path);
-			const published = await backend.publishFastForward({
-				expectedHead: head,
-				nextHead: fetched,
-				changes: [...removals, ...writes],
-				paths: changedPaths,
-			});
-			switch (published.status) {
-				case 'published':
-					await observeCommitted(capturedAt, fetched);
-					landed(changedPaths);
-					return Ok({
-						status: 'fastForwarded',
-						from: head,
-						to: fetched,
-						changedPaths,
-					});
-				case 'refused':
-					return PullError.Refused({ error: published.error });
-				case 'partial':
-					markLanded();
-					landed(
-						published.applied.flatMap((step) =>
-							step.kind === 'move' ? [step.from, step.to] : [step.path],
-						),
-					);
-					return PullError.Partial({
-						applied: published.applied,
-						error: published.error,
-					});
-				case 'branchMoved':
-					if (published.filesApplied) {
-						markLanded();
-						landed(changedPaths);
-					}
-					return PullError.BranchMoved({
-						actual: published.actual,
-						filesApplied: published.filesApplied,
-					});
-				case 'indexFailed':
-					markLanded();
-					landed(changedPaths);
-					return PullError.IndexFailed({ error: published.error });
+				case 'fastForward':
+					return fastForward(capturedAt, incoming.head, incoming.fetched);
 			}
 		});
 	}
 
-	/** An explicit pull. Closing refuses it while it still waits for the protection. */
-	function pullNow(): Promise<Result<PullOutcome, PullError | GitError>> {
+	/**
+	 * Merge the fetched head into the clean folder: a fast-forward when the
+	 * branch is behind, otherwise one commit whose parents are the pinned head
+	 * and the pinned fetched commit. A conflict or refusal writes no file,
+	 * index entry, or ref.
+	 */
+	async function merge(): Promise<
+		Result<MergeOutcome, MergeError | PullError | GitError>
+	> {
+		if (backend.mergeUnsupported !== undefined)
+			return MergeError.Unsupported({ reason: backend.mergeUnsupported });
+		const remote = backend.remote;
+		if (remote === undefined) return GitError.NoRemote();
+		return exclusive(
+			async (): Promise<
+				Result<MergeOutcome, MergeError | PullError | GitError>
+			> => {
+				const capturedAt = ++clock;
+				const pinned = await pinIncoming();
+				if (pinned.error) return pinned;
+				const incoming = pinned.data;
+				if (incoming.relation === 'upToDate')
+					return Ok({ status: 'upToDate', head: incoming.head });
+				if (incoming.relation === 'ahead')
+					return Ok({ status: 'ahead', head: incoming.head });
+				if (incoming.relation === 'fastForward')
+					return fastForward(capturedAt, incoming.head, incoming.fetched);
+				const { head, fetched } = incoming;
+				const clean = await cleanFolder(head);
+				if (clean.error) return clean;
+				const refused = await representable(fetched, await headFiles(fetched));
+				if (refused.error) return refused;
+				const bases = await backend.withObjects((access) =>
+					mergeBases(access, head, fetched),
+				);
+				if (bases.length !== 1)
+					return MergeError.UnsupportedHistory({
+						head,
+						fetched,
+						bases: bases.length,
+					});
+				const prepared = await backend.withObjects((access) =>
+					prepareMerge(access, {
+						base: bases[0]!,
+						head,
+						fetched,
+						author,
+						message: `Merge remote-tracking branch 'origin/${remote.branch}'`,
+					}),
+				);
+				if (prepared.kind === 'conflicted')
+					return MergeError.Conflicted({ conflicts: prepared.conflicts });
+				if (prepared.kind === 'unmergeable')
+					return MergeError.Unmergeable({
+						paths: prepared.paths,
+						reason: prepared.reason,
+					});
+				const merged = await representable(prepared.commit, prepared.files);
+				if (merged.error) return merged;
+				const published = await publishIncoming({
+					capturedAt,
+					head,
+					nextHead: prepared.commit,
+					target: prepared.files,
+					clean: clean.data,
+				});
+				if (published.error) return published;
+				return Ok({
+					status: 'merged',
+					from: head,
+					to: prepared.commit,
+					fetched,
+					changedPaths: published.data,
+				});
+			},
+		);
+	}
+
+	/**
+	 * One explicit incoming update, owned until it settles. Closing refuses it
+	 * while it still waits for the protection.
+	 */
+	function incomingNow<T, E extends { name: string }>(
+		kind: 'pull' | 'merge',
+		work: () => Promise<Result<T, E | GitError>>,
+		record: (attempt: Attempt<{ result: Result<T, E | GitError> }>) => void,
+	): Promise<Result<T, E | GitError>> {
 		if (closing.signal.aborted) return Promise.resolve(GitError.Closed());
-		return owned('pull', async () => {
-			let result: Result<PullOutcome, PullError | GitError>;
+		return owned(kind, async () => {
+			let result: Result<T, E | GitError>;
 			try {
-				result = await pull();
+				result = await work();
 			} catch (cause) {
 				if (refusedByClose(cause)) return GitError.Closed();
-				result = GitError.Failed({ operation: 'pull', cause });
+				result = GitError.Failed({ operation: kind, cause });
 			}
 			if (result.error === null || result.error.name !== 'Failed')
 				await refreshSync();
-			lastPull = { result, at: Date.now() };
+			record({ result, at: Date.now() });
 			emit();
 			return result;
 		});
 	}
+
+	const pullNow = () =>
+		incomingNow('pull', pull, (attempt) => {
+			lastPull = attempt;
+		});
+	const mergeNow = () =>
+		incomingNow('merge', merge, (attempt) => {
+			lastMerge = attempt;
+		});
 
 	/**
 	 * Stop this caller waiting when its signal aborts. A caller signal never
@@ -999,6 +1235,8 @@ export function createHistory({
 				GitError.StoppedWaiting({ operation: 'fetch' }),
 			),
 		pullFastForward: pullNow,
+		mergeIncoming: mergeNow,
+		mergeUnsupported: backend.mergeUnsupported,
 		paths: (): Promise<Result<PathStatus[], GitError>> =>
 			guarded('status', () => exclusive(() => backend.pathStatus())),
 		async stage(

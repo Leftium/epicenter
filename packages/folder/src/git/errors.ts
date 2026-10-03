@@ -123,3 +123,87 @@ export const PullError = defineErrors({
 	}),
 });
 export type PullError = InferErrors<typeof PullError>;
+
+/**
+ * One reason a merge could not combine both sides by itself. `ours` is the
+ * local branch and `theirs` the fetched remote head, as in Git.
+ */
+export type MergeConflict =
+	/** Both sides changed the same lines of a text file. */
+	| { readonly reason: 'content'; readonly path: string }
+	/**
+	 * Both sides changed a file whose bytes are not merged as text here: not
+	 * UTF-8, holding a NUL byte, or holding line breaks the line merge would
+	 * not keep (a lone carriage return, U+2028, or U+2029).
+	 */
+	| { readonly reason: 'binary'; readonly path: string }
+	/** One side deleted a file the other side changed. */
+	| {
+			readonly reason: 'deleted';
+			readonly path: string;
+			readonly deletedBy: 'ours' | 'theirs';
+	  }
+	/** One side has a file where the other has a directory. */
+	| { readonly reason: 'shape'; readonly path: string }
+	/** Both sides changed one root key of `kv.json` to different values. Values are raw JSON text, `null` for an absent key. */
+	| {
+			readonly reason: 'kvKey';
+			readonly path: string;
+			readonly key: string;
+			readonly base: string | null;
+			readonly ours: string | null;
+			readonly theirs: string | null;
+	  }
+	/** One side deleted `kv.json` while the other changed its values. */
+	| { readonly reason: 'kvFile'; readonly path: string }
+	/** Both sides changed `kv.json`, and `side`'s text is not a KV object `mergeKv` accepts. */
+	| {
+			readonly reason: 'kvInvalid';
+			readonly path: string;
+			readonly side: 'base' | 'ours' | 'theirs';
+	  };
+
+export const MergeError = defineErrors({
+	Unsupported: ({ reason }: { reason: string }) => ({
+		message: `This folder cannot merge incoming changes: ${reason}`,
+		reason,
+	}),
+	/** The two heads have no common commit, or more than one best one. */
+	UnsupportedHistory: ({
+		head,
+		fetched,
+		bases,
+	}: {
+		head: string;
+		fetched: string;
+		bases: number;
+	}) => ({
+		message:
+			bases === 0
+				? 'Local and remote history share no commit, so they cannot be merged'
+				: `Local and remote history have ${bases} merge bases; only a single merge base is supported`,
+		head,
+		fetched,
+		bases,
+	}),
+	/** A path would need a merge this folder does not perform faithfully. Nothing was written. */
+	Unmergeable: ({
+		paths,
+		reason,
+	}: {
+		paths: readonly string[];
+		reason: string;
+	}) => ({
+		message: `The histories cannot be merged here: ${reason}`,
+		paths,
+		reason,
+	}),
+	/** Competing changes need a person. Nothing was written to files, the index, or the branch. */
+	Conflicted: ({ conflicts }: { conflicts: readonly MergeConflict[] }) => ({
+		message: `${conflicts.length} ${conflicts.length === 1 ? 'conflict blocks' : 'conflicts block'} the merge: ${[
+			...new Set(conflicts.map((conflict) => conflict.path)),
+		].join(', ')}`,
+		conflicts,
+	}),
+});
+export type MergeError = InferErrors<typeof MergeError>;

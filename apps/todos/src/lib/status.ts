@@ -1,7 +1,7 @@
 /**
  * Plain-language status lines for the header, its status details, and the
  * outcome toasts. Saved files, uncommitted changes, local commits, pushes,
- * and pulls are separate facts; each line reports one of them, including
+ * pulls, and merges are separate facts; each line reports one of them, including
  * unknown and out-of-date observations. Times are the absolute times an
  * observation or attempt happened, so they never go stale on screen.
  */
@@ -9,11 +9,14 @@ import type {
 	CommitOutcome,
 	GitError,
 	GitSnapshot,
+	MergeConflict,
+	MergeError,
+	MergeOutcome,
 	PullError,
 	PullOutcome,
 	PushOutcome,
 } from '@epicenter/folder';
-import type { Result } from 'wellcrafted/result';
+import { Ok, type Result } from 'wellcrafted/result';
 
 export type Tone = 'neutral' | 'busy' | 'good' | 'warning' | 'error';
 export type StatusLine = {
@@ -271,6 +274,7 @@ export function pushLine(git: GitSnapshot): StatusLine {
 	if (git.activity.push.active) return { label: 'Pushing…', tone: 'busy' };
 	if (git.activity.fetch.active) return { label: 'Fetching…', tone: 'busy' };
 	if (git.activity.pull.active) return { label: 'Pulling…', tone: 'busy' };
+	if (git.activity.merge.active) return { label: 'Merging…', tone: 'busy' };
 	const sync = git.sync.state === 'observed' ? git.sync.value : undefined;
 	const last = git.lastPush;
 	const parts: string[] = [];
@@ -375,6 +379,88 @@ export function pullLine(git: GitSnapshot): StatusLine | undefined {
 	const last = git.lastPull;
 	return (
 		last && withTime(pullOutcomeLine(last.result), 'Last attempt', last.at)
+	);
+}
+
+/** A JSON value as a person reads it in a conflict; `null` is a missing key. */
+const valueText = (value: string | null) => value ?? 'not set';
+
+/** One reason a merge stopped, naming the file and what each side did. */
+function conflictText(conflict: MergeConflict): string {
+	switch (conflict.reason) {
+		case 'kvKey':
+			return `${conflict.path}: "${conflict.key}" is ${valueText(conflict.ours)} here and ${valueText(conflict.theirs)} on the remote (was ${valueText(conflict.base)})`;
+		case 'kvFile':
+			return `${conflict.path}: deleted on one side and changed on the other`;
+		case 'kvInvalid':
+			return `${conflict.path}: ${conflict.side === 'ours' ? 'this copy' : conflict.side === 'theirs' ? "the remote's copy" : 'the earlier shared copy'} is not valid settings`;
+		case 'content':
+			return `${conflict.path}: both sides changed the same lines`;
+		case 'binary':
+			return `${conflict.path}: both sides changed it, and it cannot be combined line by line`;
+		case 'deleted':
+			return conflict.deletedBy === 'ours'
+				? `${conflict.path}: deleted here and changed on the remote`
+				: `${conflict.path}: changed here and deleted on the remote`;
+		case 'shape':
+			return `${conflict.path}: a file on one side and a folder on the other`;
+	}
+}
+
+/** One merge attempt, as the last-merge line and the Merge toast report it. */
+export function mergeOutcomeLine(
+	result: Result<MergeOutcome, MergeError | PullError | GitError>,
+): StatusLine {
+	if (result.error) {
+		const error = result.error;
+		switch (error.name) {
+			case 'Conflicted': {
+				const lines = error.conflicts.slice(0, 8).map(conflictText);
+				if (error.conflicts.length > lines.length)
+					lines.push(`and ${error.conflicts.length - lines.length} more`);
+				return {
+					label: 'Merge stopped: changes conflict',
+					short: 'Conflicts',
+					detail: `${lines.join('\n')}\nNothing was changed.`,
+					tone: 'error',
+				};
+			}
+			case 'Unsupported':
+				return {
+					label: 'Merging is not available here',
+					detail: 'Nothing was changed.',
+					tone: 'neutral',
+				};
+			case 'Dirty':
+			case 'StagedChanges':
+				return {
+					label: 'Merge stopped',
+					detail: 'Commit your changes first, then merge again.',
+					tone: 'warning',
+				};
+			default:
+				return {
+					label: 'Merge stopped',
+					detail: `${error.message}\nNothing was changed.`,
+					tone: 'error',
+				};
+		}
+	}
+	if (result.data.status === 'merged')
+		return {
+			label: `Merged ${result.data.changedPaths.length} ${result.data.changedPaths.length === 1 ? 'file' : 'files'}`,
+			detail: `${short(result.data.from)} + ${short(result.data.fetched)} → ${short(result.data.to)}\nNot pushed yet.`,
+			tone: 'good',
+		};
+	return pullOutcomeLine(Ok(result.data));
+}
+
+/** The last explicit merge this session, or undefined before the first one. */
+export function mergeLine(git: GitSnapshot): StatusLine | undefined {
+	if (git.activity.merge.active) return { label: 'Merging…', tone: 'busy' };
+	const last = git.lastMerge;
+	return (
+		last && withTime(mergeOutcomeLine(last.result), 'Last attempt', last.at)
 	);
 }
 

@@ -803,6 +803,19 @@ const committed = {
 	indexWarning: null,
 };
 
+test('a merge is unsupported in the desktop app: nothing is sent and the snapshot shows no merge', async () => {
+	const folder = await attached();
+	expect(folder.git.mergeUnsupported).toBeString();
+	expect(expectErr(await folder.git.mergeIncoming())).toMatchObject({
+		name: 'Unsupported',
+		reason: folder.git.mergeUnsupported,
+	});
+	expect(calls).toEqual([]);
+	expect(folder.git.snapshot.activity.merge).toEqual({ active: false });
+	expect(folder.git.snapshot.lastMerge).toBeUndefined();
+	await folder.close();
+});
+
 test('closing waits for a Git call already running, then detaches, and later Git calls invoke nothing', async () => {
 	const folder = await attached();
 	const commit = held<typeof committed>();
@@ -830,6 +843,7 @@ test('closing waits for a Git call already running, then detaches, and later Git
 		await folder.git.status(),
 		await folder.git.fetch(),
 		await folder.git.pullFastForward(),
+		await folder.git.mergeIncoming(),
 		await folder.git.paths(),
 		await folder.git.stage('all'),
 		await folder.git.commitStaged('message'),

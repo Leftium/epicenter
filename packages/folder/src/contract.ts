@@ -69,7 +69,12 @@ export type {
 	FolderLocation,
 } from './folder.js';
 export type { GitRemote, PathStatus, StatusCode } from './git/backend.js';
-export { GitError, PullError } from './git/errors.js';
+export {
+	GitError,
+	type MergeConflict,
+	MergeError,
+	PullError,
+} from './git/errors.js';
 export type {
 	Activity,
 	Attempt,
@@ -78,6 +83,7 @@ export type {
 	FetchOutcome,
 	FilesObservation,
 	GitSnapshot,
+	MergeOutcome,
 	Observation,
 	PullOutcome,
 	PushOutcome,

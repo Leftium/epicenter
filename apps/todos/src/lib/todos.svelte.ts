@@ -2,7 +2,7 @@
  * The Todos product state over one opened folder.
  *
  * Two observations refresh together after saves, terminal commands, pulls,
- * and window focus: the todo rows in `todos/*.md`, and the folder listing the
+ * merges, and window focus: the todo rows in `todos/*.md`, and the folder listing the
  * file browser shows. The selection is a path. A todo row opens its todo
  * editor; any other file opens as raw text, or as details when it is not
  * editable text. A path retains at most one opened item, so a selection change
@@ -26,11 +26,12 @@ import type {
 	FileError,
 	FileListing,
 	GitSnapshot,
+	MergeOutcome,
 	PullError,
 	PullOutcome,
 	TableWriteError,
 } from '@epicenter/folder';
-import { GitError, rowPath, rowStemOf } from '@epicenter/folder';
+import { GitError, MergeError, rowPath, rowStemOf } from '@epicenter/folder';
 import { SvelteMap, SvelteSet } from 'svelte/reactivity';
 import { Err, Ok, type Result } from 'wellcrafted/result';
 import type { TodoFields } from './definition.js';
@@ -750,6 +751,27 @@ export function createTodos(folder: TodosFolder) {
 			const pulled = await folder.git.pullFastForward();
 			await refresh();
 			return pulled;
+		},
+		/**
+		 * Fetch, then merge the remote into the saved, committed folder: a
+		 * fast-forward when possible, otherwise one merge commit. Never runs on
+		 * its own and never pushes. Where the folder cannot merge, nothing is
+		 * fetched.
+		 */
+		async merge(): Promise<
+			Result<MergeOutcome, MergeError | PullError | GitError>
+		> {
+			if (closing !== undefined) return GitError.Closed();
+			const unsupported = folder.git.mergeUnsupported;
+			if (unsupported !== undefined)
+				return MergeError.Unsupported({ reason: unsupported });
+			const fetched = await folder.git.fetch();
+			if (fetched.error) return Err(fetched.error);
+			// A fetch that answers after close began merges nothing.
+			if (closing !== undefined) return GitError.Closed();
+			const merged = await folder.git.mergeIncoming();
+			await refresh();
+			return merged;
 		},
 		/**
 		 * Save what can still be saved, then release the folder. A draft that

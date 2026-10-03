@@ -188,7 +188,7 @@
 		<Button size="xs" disabled={held} onclick={review}>Compare and choose</Button>
 	{:else if external?.kind === 'removed'}
 		<span class="text-destructive" role="alert">
-			This file was deleted on disk. Your draft is kept here and is not saved.
+			This file is no longer at this path. Your draft is kept here and is not saved.
 		</span>
 		<Button size="xs" variant="outline" onclick={copyDraft}>Copy draft</Button>
 		<Button size="xs" disabled={held} onclick={recover}>Save draft as a {noun}</Button>

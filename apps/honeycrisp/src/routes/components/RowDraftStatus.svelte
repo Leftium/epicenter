@@ -196,7 +196,7 @@
 	{:else if external !== undefined}
 		<span class="text-destructive" role="alert">
 			{#if external.kind === 'missing'}
-				This note was deleted on disk.
+				This note is no longer at this path.
 			{:else if external.kind === 'unreadable'}
 				This note can no longer be read as text ({external.error.message}).
 			{:else}

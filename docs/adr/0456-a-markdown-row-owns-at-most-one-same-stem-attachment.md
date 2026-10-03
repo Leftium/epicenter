@@ -1,9 +1,9 @@
 # 0456. A Markdown row owns at most one same-stem attachment
 
-- **Status:** Accepted
+- **Status:** Superseded
 - **Date:** 2026-09-29
+- **Superseded by:** [ADR-0480](0480-file-tables-own-only-their-markdown-row-files.md), which removes inferred attachment ownership: a table owns only its Markdown row files.
 - **Relates:** [ADR-0457](0457-a-row-filename-is-its-exact-id-and-a-title-is-a-field.md) uses exact stems for row paths and separates editable titles from filenames.
-- **Unbuilt:** flat Markdown and attachment pairs as authoritative files in browser and native applications.
 
 ## Context
 

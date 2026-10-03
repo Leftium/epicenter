@@ -1,15 +1,15 @@
 # 0467. File workflows report each operation's outcome
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-09-30
-- **Unbuilt:** removal of generic partial-result APIs and application migration to individual operation outcomes.
 
 ## Context
 
-The file foundation exposed ordered native operations and `Partial` progress.
-Browser transactions gave stronger multi-file publication. Individual public
-operations remove that portable batch contract while preserving interruption
-and lost replies as facts applications must handle.
+The file foundation exposed ordered native operations, a `folder.batch`
+collector and generic `Partial` progress. Browser IndexedDB transactions gave
+stronger multi-file publication. Individual public operations remove that
+portable batch contract while preserving interruption and lost replies as facts
+applications must handle.
 
 ## Decision
 
@@ -22,12 +22,14 @@ which command published them.
 Each operation reports confirmation, refusal, failure or uncertainty about its
 own publication. If a recording's audio succeeds and its row fails, the app
 retains that recording's input and reports its unfinished row. The folder exposes
-no generic `Partial` result, cross-file transaction or journal for ordinary saves.
+no batch collector, generic `Partial` result, cross-file transaction or journal
+for ordinary saves.
 
-A move still involves two paths. A native fallback that creates a destination
-before removing its source can leave both files after interruption. Its error
-must retain that specific evidence; removing the generic batch result does not
-make movement atomic. Applications inspect both paths before an explicit repair.
+A move still involves two paths. A browser move that lands its destination and
+cannot remove its source reports `SourceNotRemoved`; a table rename stopped
+between its two steps reports `Partial` with the destination holding the bytes.
+Removing the generic batch result does not make movement atomic. Applications
+inspect both paths before an explicit repair.
 
 **An unknown reply does not become confirmed through a matching read.**
 A read establishes current content. It cannot establish which command wrote it

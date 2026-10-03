@@ -69,11 +69,12 @@ records the declaration name.
 ## Product ownership
 
 Keep the inert declaration separate from live acquisition. Vocab uses
-`src/lib/data.ts` and `src/lib/resources.ts`. Mounted routes start acquisition.
+`src/lib/data.ts` and `src/lib/folder.ts` for one account-independent browser
+folder through `@epicenter/folder/browser`. Mounted routes start acquisition.
 Importing those modules or preloading a route must not acquire root resources.
 
-Whispering is the exception to the store: it is a standalone desktop app whose
-data is a Git-versioned folder of files (`@epicenter/app/files`). Its declaration
+Whispering is a standalone desktop app whose
+data is a Git-versioned folder of files (`@epicenter/folder`). Its declaration
 is `src/lib/definition.ts`, and its mounted page opens a workspace from
 `src/lib/workspace/`. See its [README](whispering/README.md).
 
@@ -111,9 +112,21 @@ bindings that resource needs.
 5. If the app needs the hosted API in development, add a `dev:<app>` script at
    the repo root.
 
-[Todos](todos/README.md) is a development demo of file-first folders
-(`@epicenter/app/files`) rather than a Yjs store. `bun dev:todos` starts its UI
-with a loopback Git backend and needs no hosted API.
+[Todos](todos/README.md) keeps a file-first folder (`@epicenter/folder`)
+rather than a Yjs store. Inside Epicenter it is a compiled application over an
+ordinary directory, `so.epicenter.todos` under the host's working-copy
+directory. The shared Rust Folder plugin owns that directory,
+and the window reaches it through typed Tauri invoke commands; `#platform/folder`
+selects that at build time. `bun dev:todos` starts the browser demo instead,
+with the folder in the browser's origin private file system (OPFS) and a
+loopback Git backend. Neither needs the hosted API.
+
+A browser folder is one OPFS directory holding its files and `.git`. The first
+open of a folder an earlier build kept in IndexedDB copies it there once and
+leaves the database as a backup
+([ADR-0497](../docs/adr/0497-browser-folders-use-scoped-opfs-directories.md)).
+Capture, Honeycrisp, Todos, Vocab, and Whispering open release Local browser
+folders; none selects a development or account scope yet.
 
 Honeycrisp's [README](honeycrisp/README.md) explains its standalone Tauri shell,
 native Markdown folder, and local editing drafts. It needs neither the Epicenter

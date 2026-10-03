@@ -7,7 +7,7 @@ against the code. The constraints below apply to every edit here.
 ## The files are the data
 
 - The notes directory's current files are the saved data, and `<root>/.git`
-  is ordinary Git. Do not add a second store beside them: no IndexedDB copy
+  is ordinary Git. Do not add a second store beside them: no browser-storage copy
   on the desktop, no mirrored checkout, no import step, no cache that can
   disagree with a file.
 - Do not add Yjs, a CRDT, an account, or sync to this app. Nothing in

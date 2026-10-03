@@ -6,7 +6,7 @@
 
 ## Context
 
-A file-authoritative data folder already stores ordinary files with Git history beside them. The current engine fetches, pushes, and adopts clean fast-forwards against a loopback Git HTTP service in tests ([ADR-0474](0474-incoming-git-adoption-retains-a-recoverable-plan.md)). Epicenter Cloud instead synchronizes opaque Yjs update logs. It has no folder Git hosting or repository listing API.
+A file-authoritative data folder already stores ordinary files with Git history beside them. The current engine fetches, pushes, adopts clean fast-forwards, and in the browser merges diverged histories, against a loopback Git HTTP service in tests ([ADR-0474](0474-incoming-git-adoption-retains-a-recoverable-plan.md)). Epicenter Cloud instead synchronizes opaque Yjs update logs. It has no folder Git hosting or repository listing API.
 
 A folder is a dataset, not an installed application. Several applications can open the same folder, and one application can open several folders. Local ownership locks, scans, and incoming adoption already operate on one directory. Account-wide Git would couple otherwise independent folders.
 
@@ -44,7 +44,7 @@ Cloud content is the committed `main` tree. Saved but uncommitted files, ignored
 
 - Choose and exercise a runtime and storage layout that serve Git clone, fetch, and push. A Cloudflare Worker running the Git executable is not assumed.
 - Verify atomic first and subsequent ref updates under concurrent pushes, unique live folder names, permanently retired endpoints, and deletion fencing. Rejected writes must not leave a published partial tree. Ordinary Git receive validation remains necessary; no bespoke quarantine rule is required to distinguish repository lifetimes.
-- Establish a per-invocation native credential channel for the CLI and each standalone app, including hostile helper configuration and account replacement. Browser account storage also needs account-qualified database and lock names, captured-account Git HTTP credentials, and CORS. None exists for hosted folders today. Origin-wide cookies or an unscoped authentication header do not satisfy the captured-account contract.
+- Establish a per-invocation native credential channel for the CLI and each standalone app, including hostile helper configuration and account replacement. Browser account storage also needs applications to select account-qualified OPFS directories and lock names, captured-account Git HTTP credentials, and CORS. None exists for hosted folders today. Origin-wide cookies or an unscoped authentication header do not satisfy the captured-account contract.
 - Measure stored bytes and clone time with real Whispering audio history. No measurement exists. Shallow clones, partial clones, LFS, encryption, and history purge are not assumed.
 
 ## Consequences
@@ -55,7 +55,7 @@ Cloud content is the committed `main` tree. Saved but uncommitted files, ignored
 - Git computes ahead, behind, and divergence after fetch. Humans or coding agents resolve histories using Git; file meaning and schema validity still need checking after a merge.
 - One folder's divergence does not block another folder. No commit spans folders, so cross-folder links can point into a sibling at an older revision.
 - Full clones include committed audio history. A permanently unique URL removes identity machinery, not Git hosting or history costs.
-- Independent initial edits can create unrelated roots; ordinary later edits can diverge. The current engine refuses both as `Diverged` instead of merging. Browser reconciliation remains unbuilt. Native explicit Git can join histories, including `--allow-unrelated-histories` when needed; an unrelated root need not imply a conflicting file.
+- Independent initial edits can create unrelated roots; ordinary later edits can diverge. Fast-forward refuses both as `Diverged`. A browser folder's `mergeIncoming()` merges diverged histories with exactly one merge base and refuses unrelated roots as `UnsupportedHistory`. Native explicit Git can join histories, including `--allow-unrelated-histories` when needed; an unrelated root need not imply a conflicting file.
 
 ## Considered alternatives
 

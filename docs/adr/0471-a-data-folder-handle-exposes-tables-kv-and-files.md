@@ -1,9 +1,8 @@
 # 0471. A data folder handle exposes tables, KV, files, and Git
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-09-30
-- **Unbuilt:** production canonical table editors, OPFS browser integration and incoming Git recovery.
-- **Relates:** [ADR-0450](0450-current-files-own-portable-document-data.md) defines authoritative current files; [ADR-0480](0480-file-tables-own-only-their-markdown-row-files.md) proposes single-file rows; [ADR-0430](0430-define-store-declares-data-and-products-compose-resources.md) separates stores from product composition.
+- **Relates:** [ADR-0450](0450-current-files-own-portable-document-data.md) defines authoritative current files; [ADR-0480](0480-file-tables-own-only-their-markdown-row-files.md) defines single-file rows; [ADR-0430](0430-define-store-declares-data-and-products-compose-resources.md) separates stores from product composition.
 
 ## Context
 
@@ -33,7 +32,7 @@ const audioResult = await folder.files.open('recordings/interview.opus');
 | `tables.<name>` | Interpret that table's Markdown rows. `get` returns a flat snapshot with usable fields and diagnostics; `list` returns one inventory of per-file Results; `inspect(source)` interprets draft text; `update(stem, change)` patches current source; `replace(snapshot, source)` saves complete text against a capture. `edit(stem, { signal })` opens a retained canonical editor with `get`, `subscribe`, `change`, `save`, `refresh`, `adopt`, and `dispose`. |
 | `kv` | Interpret declared stored values in the fixed `kv.json`; applications own defaults. |
 | `files` | Enumerate literal paths and read bytes, including uninterpreted files and media. `open(path)` supplies stable media bytes without a media version under ADR-0466. Intent-based mutations in ADR-0479 use the same file boundary as table and KV edits. |
-| `git` | Observe history and outgoing synchronization status; explicitly refresh it and request commit-and-push attempts. |
+| `git` | Observe history and outgoing synchronization status; explicitly refresh it, request commit-and-push attempts, fetch, adopt incoming history, and recover an interrupted adoption. |
 | `location`, `onFilesChanged`, `terminal` | Identify the opened location, subscribe to invalidation hints, and open a shell over its files/history. |
 | `signal`, `close()` | Expose the folder owner's lifetime. Closing fences its borrowed views and preserves saved files. |
 
@@ -90,9 +89,11 @@ committing.
 
 `commitAndPush()` awaits the outgoing attempt and reports its separate commit
 and upload/push outcomes under ADR-0468. It does not save editor drafts or adopt
-incoming changes. `git.fetch()` and `git.pullFastForward()` implement the
-explicit clean fast-forward contract in ADR-0474. There is no `sync()` method or
-permission to merge automatically.
+incoming changes. `git.fetch()`, `git.pullFastForward()`, the browser's
+`git.mergeIncoming()`, and `git.recoverIncoming()` implement the explicit
+incoming contract in ADR-0474; `git.snapshot.pendingIncoming` reports an
+interrupted adoption. There is no `sync()` method or permission to merge
+automatically.
 
 **Closing fences new storage calls immediately; file operations own their
 completion.** Closing aborts the owner's signal, stops hints, refuses new work,
@@ -139,8 +140,8 @@ overloaded lookup. A table named `files` lives at `folder.tables.files` and does
 not collide with `folder.files`.
 
 **A table snapshot interprets one Markdown file; media remains ordinary file
-content.** The proposed replacement of attachment ownership in ADR-0480 permits
-files anywhere within the folder, linked through Markdown or application fields.
+content.** ADR-0480 replaces attachment ownership: files can be anywhere within
+the folder, linked through Markdown or application fields.
 
 ```text
 recordings/
@@ -172,7 +173,7 @@ composed product resources. This namespace decision does not replace current
 store-owned SQLite under ADR-0436 or settle its migration. ADR-0494 proposes
 transient in-memory query sessions with persistent caching deferred; ADR-0463
 defers SQLite query export. Neither adds SQL to this handle.
-ADR-0479 proposes the raw
+ADR-0479 records the raw
 file mutation signatures. ADR-0478 records openers; ADR-0482 records individual publication and application workflow recovery; the package README and Git contracts record exact history result
 types. Save and Git completion follow their own decisions, not the spelling of a
 path or the shape of this handle.
@@ -183,7 +184,7 @@ Literal access stays within the opened folder, refusing absolute paths and
 parent or symlink escapes. The raw inventory must account for unrecognized
 files; portability and history inclusion are separate filters.
 
-The target public data API is summarized below; the `Unbuilt` line identifies pending integration. Error aliases retain the
+The public data API is summarized below. Error aliases retain the
 underlying storage failures and add only method-specific preparation refusals.
 Each async data operation in this inventory returns `Promise<Result<Success,
 Error>>`; only pure `inspect` returns a plain reading. The package exports the reading and snapshot types shown below; the former

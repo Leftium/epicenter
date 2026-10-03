@@ -1,9 +1,7 @@
 # 0479. File mutation methods express publication intent
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-10-01
-- **Implementation:** flat SHA-256 captures and explicit operations across the TypeScript and Rust backends.
-- **Unbuilt:** operation-specific interrupted-move outcomes and production canonical editor integration.
 
 ## Context
 
@@ -62,14 +60,16 @@ Creation at an occupied destination reports `Exists`; a failed hash guard
 reports `Conflict`. File size is not part of the captured identity. Native
 checks remain best effort against arbitrary external programs. A move can
 create its destination and fail to retire its source; its operation-specific
-outcome must report that fact. Ordinary writes expose no generic multi-file
-`Partial` result. An unconfirmed response remains unknown, and a caller
+outcome reports that fact, as the browser's `SourceNotRemoved` does. Ordinary
+writes expose no generic multi-file `Partial` result. An unconfirmed response remains unknown, and a caller
 inspects current files before renewing an uncertain operation.
 
-A canonical table editor chooses `overwrite` for every save. Its comparison
-baseline determines dirty state and how observations affect the local draft;
-it does not guard publication. Saving replaces the complete canonical document
-at the fixed path and can recreate a file another writer removed.
+The canonical table editor that `table.edit` opens (ADR-0483) chooses
+`overwrite` for every save. Its comparison baseline determines dirty state and
+how observations affect the local draft; it does not guard publication. Saving
+replaces the complete canonical document at the fixed path and can recreate a
+file another writer removed. `table.update` and `table.replace` keep their own
+conditional contracts.
 
 `open(path)` remains the stable-byte consumption API. It needs no editing
 baseline. A bytes-free observation method for large-file mutations is deferred

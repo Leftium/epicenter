@@ -38,8 +38,8 @@ On Linux, an unset local-data base defaults to `~/.local/share`. Default authore
 roots are exactly `~/Epicenter` for release and `~/Epicenter Dev` for development,
 including capitalization and the space. These names match
 [ADR-0497](0497-browser-folders-use-scoped-opfs-directories.md)'s
-browser logical display and private SQL namespace conventions; browser authored
-folders use the scoped OPFS tree selected there; its migration remains unbuilt.
+browser authored roots and private SQL namespace conventions; browser authored
+folders live in the scoped OPFS tree selected there.
 
 These bases follow [Tauri's local-data resolver](https://docs.rs/tauri/latest/tauri/path/struct.PathResolver.html#method.local_data_dir).
 Use the persistent local-data directory, not the cache directory or the OS

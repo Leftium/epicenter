@@ -1,9 +1,8 @@
 # 0480. File tables own only their Markdown row files
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-10-01
-- **Supersedes:** [ADR-0456](0456-a-markdown-row-owns-at-most-one-same-stem-attachment.md) when this replacement is accepted.
-- **Unbuilt:** removal of inferred attachment ownership from file tables and migration of media-aware application workflows.
+- **Supersedes:** [ADR-0456](0456-a-markdown-row-owns-at-most-one-same-stem-attachment.md).
 
 ## Context
 
@@ -62,8 +61,8 @@ not restore row attachment ownership. LFS is not implemented by this decision.
 ## Consequences
 
 - `Entry.attachment`, attachment issues, `CreateInput.attachment`, sibling
-  candidate discovery, and attachment ownership checks leave the generic table
-  API when implemented.
+  candidate discovery, and attachment ownership checks are gone from the
+  generic table API.
 - Applications supply their media links and compose related saves over the same
   file boundary. Pending recording bytes and publication reconciliation remain
   application workflow state.

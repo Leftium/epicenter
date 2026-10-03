@@ -7,24 +7,6 @@ There is no account, no sync, and no database behind it.
 Part of the [Epicenter](https://github.com/EpicenterHQ/epicenter) monorepo.
 Licensed under AGPL-3.0-or-later.
 
-
-## Storage and editor migration
-
-The selected migration uses one scoped OPFS directory for browser files and
-`.git/`, individual file operations, and the folder's canonical table editor.
-The app owns editor retention and autosave; unsupported source remains available
-for raw repair. Structured saves replace the complete document and rewrite
-frontmatter formatting. An unknown reply stays unknown in save history even
-when a later read finds the desired content. Incoming Git adoption retains its
-own recovery record and refuses mixed checkpoints until explicit recovery.
-
-Integration and UI verification are pending. Sections describing IndexedDB,
-app-owned editor engines or older recovery controls document the implementation
-before this migration. The decisions are recorded in
-[ADR-0497](../../docs/adr/0497-browser-folders-use-scoped-opfs-directories.md),
-[ADR-0482](../../docs/adr/0482-folder-mutations-publish-one-file-at-a-time.md), and
-[ADR-0483](../../docs/adr/0483-honeycrisp-shares-one-canonical-editor-per-open-row.md).
-
 ## Run it
 
 From the repository root:
@@ -33,7 +15,7 @@ From the repository root:
 | --- | --- |
 | `bun dev:honeycrisp` | Builds the desktop page, then starts the desktop app (`tauri dev`). |
 | `bun build:honeycrisp` | Builds the desktop app bundle (`tauri build`). |
-| `bun dev:honeycrisp:ui` | Starts the browser build on port 5175. Notes live in this browser, not in a directory. |
+| `bun dev:honeycrisp:ui` | Starts the browser build on port 5175. Notes live in this browser's origin private file system (OPFS), not in a directory on disk. |
 | `bun build:honeycrisp:ui` | Builds the browser page into `apps/honeycrisp/build`. |
 
 Development and builds need Bun, Rust, Git, and the Tauri prerequisites for your
@@ -75,10 +57,15 @@ first commit. Existing data and history are left intact when opening.
 A note's file stem is its identity. Its frontmatter holds `title`, `folderId`,
 `pinned`, `createdAt`, `updatedAt`, and `deletedAt`; its body is the note.
 Folders are logical: a note belongs to one through `folderId`, so moving a note
-between folders changes one field and never moves or renames its file. Keys
-Honeycrisp does not know remain in a canonical structured save. That save
-rewrites comments, quoting and key order. Raw source repair remains separate;
-opening or listing a file does not rewrite it. This editor integration is pending.
+between folders changes one field and never moves or renames its file.
+
+Saving a note writes its frontmatter in Honeycrisp's standard form: its fields
+first in declared order, then any keys Honeycrisp does not know, every key
+quoted and every value in JSON spelling. Unknown keys and their values are
+kept; comments, quoting, and the earlier key order are not. The body is kept
+exactly. Opening a note that is spelled differently writes nothing. To keep a
+file's exact text, or to change a key Honeycrisp does not show, use **Edit as
+file**.
 
 A note file starts with a `---` line, its fields, and a closing `---` line.
 A file in `notes/` whose text does not read that way, including plain
@@ -127,30 +114,66 @@ dividers, and line breaks. There is no underline and there are no images.
 
 ## When the file changes underneath you
 
-The selected editor migration retains one folder editor per open structured row.
-Rich text, body text and metadata controls share its document. The app keeps that
-editor across selection changes and owns its autosave timer. Arbitrary text
-files and invalid or unsupported row source remain separate raw workflows.
+Every opened file has one editing session, kept by its path, and never two:
 
-The editor records the comparison baseline, local document, submitted save and
-latest file observation separately. A successful reply proves the text that
-save submitted. Typing during the save remains a draft. A later read reports
-what is on disk and does not replace that publication evidence.
+- A note is a draft held by the folder's row editor. Its title, folder, and pin
+  controls, the rich-text view, and the Source view all change that one
+  draft, and a save writes the whole note in the standard form above,
+  whatever the file holds.
+- Any other text file, and a note the row editor cannot open, is a text
+  session over the file's exact text. Its save lands only if the file is
+  still the version it read.
 
-Structured saves publish the complete canonical document through `overwrite`.
-They can replace content changed by another writer; the baseline describes
-dirty state and observations, not a conditional write guard. Raw captured
-replacement, rename and delete retain their captured conditions. Native checks
-for those operations remain best effort against outside programs.
+**Edit as file** hands a note with nothing unsaved to a text session. **Open
+as note** hands it back once its text is saved and reads as a note.
+Renaming a file moves its session with it instead of opening a second one.
+Each mutation reserves its paths before preparation starts, including its
+rename destination or recovery target. Opening a reserved path cannot create
+a competing editor. Close waits for preparation already admitted, and its
+input fence prevents a new publication.
 
-A clean editor can adopt observed content. A dirty editor keeps its document
-until the person explicitly adopts a reviewed version or saves their document.
-Autosave pauses after failed or unknown outcomes. Finding the attempted bytes
-on disk does not turn an unknown reply into a confirmed save. Explicit discard
-can release a draft without erasing the unknown attempt from history.
+For a note:
 
-These controls and the shared editor are pending integration. The app must
-verify the final actions and labels before presenting them as delivered behavior.
+| What happened | What Honeycrisp does |
+| --- | --- |
+| The file changed and you had no unsaved edits | Shows the new file. Nothing is written back. |
+| The file changed and you had unsaved edits | Keeps your draft, stops autosaving, and offers **Compare and choose**. The comparison shows one version of the file, and **Discard my draft and load the file** and **Save my draft over the file** apply to exactly that version. If the file changes again while it is open, both are held back until you look at the new version. |
+| You typed while a save was running | The newer typing stays a draft and saves next. |
+| Fields need fixing | The note is not saved, and the fields are named. Your input stays on screen. |
+| A save failed | Your draft is kept, with **Try again**, and nothing more is saved until you choose. |
+| A save got no reply | It is shown as not confirmed: the file may or may not have it. Nothing more is saved until you choose **Save again** or **Keep the file as it is**. A read that finds your draft in the file says what the file holds, not which save put it there, so the save stays not confirmed. |
+| The file was deleted, can no longer be read, or changed into text the note editor cannot hold | Your draft is kept, with **Copy draft**, **Save draft as a note** or **Save my draft over the file**, and **Discard draft** (or **Discard draft and repair the file**, which opens it as text). |
+| A rename or delete got no reply, or a rename created the new file without removing the old one | The editor stays where it was, keeps what you type, and saves nothing more. **Copy draft** keeps your text, and **Stop tracking this rename** (or **delete**) keeps the draft without concluding where the file is; nothing saves by itself after that until you choose. |
+| You rename or delete a note | It applies to the version the editor holds. If another program changed the file since, nothing is renamed or deleted, and the editor shows that change. A confirmed rename opens the note at its new name with everything you typed. |
+| You open another note | Each note keeps its draft. |
+
+A text session keeps these apart: the saved file it last agreed with, your
+draft, the exact text a save submitted, a rename or delete that was submitted,
+and any other version seen on disk. Its save is refused, writing nothing, when
+the file is no longer the version it read. It offers the same choices as a
+note: **Compare and choose**, **Save again** or **Try again** (a new save of
+what is on screen), and **Keep the file as it is**. A save that got no reply
+stays not confirmed even when a read finds its text. A draft saved back after
+its file was deleted goes to the same path. A note file whose path meanwhile
+holds a different file becomes a new note; a save sent after one that got no
+reply is never moved to another path.
+
+A change to a file that is not open and got no reply (a new note, a pin, a
+rename or delete from Files) is listed under **Not confirmed** in the status
+menu, never as failed. Nothing else is changed at that file from the app, and
+a second new note is not made under another name. A new file or a field change
+clears when the folder shows exactly what was asked for, and can be sent again
+exactly. A rename or delete stays listed for as long as the app runs;
+restarting stops listing it and does not show that it did or did not happen.
+Closing waits for a change that is still being sent, and asks before leaving
+one that was never confirmed.
+
+A note's save is not conditional: a write by another program that lands
+between the editor's last read and the save is replaced. A text session's save
+checks the file just before it replaces it, and on a real directory that check
+is not atomic either: another program can still write in the instant between
+the check and the replacement. A refused save means staleness was detected; it
+is not a guarantee that every stale save is caught.
 
 Drafts exist only in the open window. Closing the window, quitting the app
 (including Cmd+Q), and reloading the page are held back while any draft is
@@ -223,8 +246,11 @@ Page (build-desktop, bundled)    opens the folder by its ID through
 
 The page chooses where its folder lives at build time through
 `#platform/notes-host`. The desktop leaf opens the shell's folder with
-`openFolder` from `@epicenter/folder/tauri`; the browser leaf opens a folder
-in IndexedDB with `openFolder` from `@epicenter/folder/browser`. Shared code
+`openFolder` from `@epicenter/folder/tauri`; the browser leaf opens one OPFS
+directory, `Epicenter/local/so.epicenter.honeycrisp`, holding the notes and
+their `.git`, with `openFolder` from `@epicenter/folder/browser`. A browser
+folder an earlier version kept in IndexedDB is copied there once, and the old
+database stays as a backup. Shared code
 imports the folder contract from the bare `@epicenter/folder`, which
 `vite.config.ts` aliases to the build's one entry. A desktop folder that
 cannot be opened is an error on screen, never a fallback to browser storage.
@@ -232,10 +258,12 @@ cannot be opened is an error on screen, never a fallback to browser storage.
 browser store and no Git implementation, that neither bundle holds a Yjs or
 Node module, and that the browser bundle holds no desktop adapter.
 
-The page changes a file only on a capture: `files.create` for a file that
-must not exist, and `files.replace`, `files.move`, and `files.remove` on the
-capture the editor holds. Tables are read as listings. `folder.onFilesChanged`
-is a hint to read again.
+A note's fields and body are saved by its row editor
+(`folder.tables.notes.edit`), which writes the whole note; a new note or
+folder is `tables.<name>.create`. Every other change names a capture:
+`files.create` for a file that must not exist, and `files.replace`,
+`files.move`, and `files.remove` on the capture the session holds.
+`folder.onFilesChanged` is a hint to read again.
 
 ### What the shell decides
 
@@ -329,10 +357,10 @@ and `src-tauri/src/tests.rs` runs the same two through the folder plugin.
 
 What cannot be produced by hand in the running app is a save held open or
 slowed on purpose, so that typing lands while it runs. Those orders are fixed
-in tests instead: `src/lib/file-session.test.ts` holds a save and types
-during it, loses a reply before or after the write lands, and changes the
-file under a review; `src/lib/notes.folder.test.ts` does the same over a real
-directory.
+in tests instead: `src/lib/row-session.test.ts` (notes) and
+`src/lib/file-session.test.ts` (text files) hold a save and type during it,
+lose a reply before or after the write lands, and change the file under a
+review; `src/lib/notes.folder.test.ts` does the same over a real directory.
 
 ## Layout
 
@@ -342,9 +370,10 @@ directory.
 | `src/lib/editor/schema.ts` | The bounded ProseMirror schema. |
 | `src/lib/editor/markdown.ts` | Markdown to document and back, the equivalence it is held to, and the check that gates opening and editing. |
 | `src/lib/editor/rich-session.ts` | The rich-text view's state, undo history, and tie to the draft. No DOM. |
-| `src/lib/file-session.svelte.ts` | One open file's session: saved capture, buffer, submitted attempt, external version. The only place that asks the folder to write, move, or remove a file. |
-| `src/lib/note-source.ts` | Source-preserving changes to a note's text. |
-| `src/lib/notes.svelte.ts` | Listings, selection, the sessions kept by path, note and folder actions as source patches, and the input fence. |
+| `src/lib/row-session.svelte.ts` | One open note: the app's autosave, holds, and rename and delete around the folder's row editor (`table.edit`), which owns the draft and its saves. |
+| `src/lib/file-session.svelte.ts` | One open text file's session (any other file, or a note being repaired as text): saved capture, buffer, submitted attempt, external version, and the conditional file calls. |
+| `src/lib/note-source.ts` | A note's body for the rich-text and Source views, list previews, and the field repair offered on a note open as text. |
+| `src/lib/notes.svelte.ts` | Listings, selection, the one session kept per path, note and folder actions, and the input fence. |
 | `src/lib/platform/` | The `#platform/notes-host` seam, its two leaves, and `shell.tauri.ts`, the page side of the shell's commands. |
 | `src/routes/components/` | Header, folder list, note list, editors, files, terminal. |
 | `src-tauri/src/lib.rs` | The desktop shell: the folder plugin, the notes scope, the window, close routing. |
@@ -366,6 +395,6 @@ replaced the host and which native checks are still to be run.
 
 - [SvelteKit](https://kit.svelte.dev) with the static adapter, SSR disabled
 - [ProseMirror](https://prosemirror.net) with `prosemirror-history` and `prosemirror-markdown`
-- `@epicenter/folder` for the folder, its note and folder listings, and source-preserving frontmatter, and `@epicenter/definition` for the declaration
+- `@epicenter/folder` for the folder, its note and folder listings, and the row editor notes are saved through, and `@epicenter/definition` for the declaration
 - [Tauri](https://tauri.app) for the desktop shell, with the `tauri-plugin-epicenter-folder` crate owning the directory and its Git history
 - `@epicenter/ui` and [Tailwind CSS](https://tailwindcss.com)

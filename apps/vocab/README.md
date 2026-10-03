@@ -8,29 +8,11 @@ restricting it to a word list or script.
 
 Vocab opens straight to Words with no sign-in. Words, notes, stages, chats, and finished messages are saved in one folder in this browser. Nothing is synced to another device; a remote would have to be configured separately. Signing in is optional and only adds Epicenter's hosted tutor models and dictation.
 
-
-## Storage and editor migration
-
-The selected migration uses one scoped OPFS directory for browser files and
-`.git/`, individual file operations, and the folder's canonical table editor.
-The app owns editor retention and autosave; unsupported source remains available
-for raw repair. Structured saves replace the complete document and rewrite
-frontmatter formatting. An unknown reply stays unknown in save history even
-when a later read finds the desired content. Incoming Git adoption retains its
-own recovery record and refuses mixed checkpoints until explicit recovery.
-
-Integration and UI verification are pending. Sections describing IndexedDB,
-app-owned editor engines or older recovery controls document the implementation
-before this migration. The decisions are recorded in
-[ADR-0497](../../docs/adr/0497-browser-folders-use-scoped-opfs-directories.md),
-[ADR-0482](../../docs/adr/0482-folder-mutations-publish-one-file-at-a-time.md), and
-[ADR-0483](../../docs/adr/0483-honeycrisp-shares-one-canonical-editor-per-open-row.md).
-
 ## Learner flow
 
 Add an expression directly, paste one expression per line, or browse the small built-in starter list. Paste and starter lists use the same review: blanks, repeated exact text, and already-saved text are skipped; eligible expressions are selected by default. Confirmed additions have empty notes and the New stage. Words provides search, stage filtering, note editing, and stage controls. A word appears once its file is saved; an addition the folder refused stays in the field or the review for another try.
 
-A note is saved on leaving its field, and a stage on pressing it. Each edit is made against the word as it was last read, and a note edit also carries the note it was started from. If the word changed in another tab, the edit is refused, the word is read again, and a note being typed is kept beside the saved one until the learner chooses. "Save mine instead" then replaces the note shown.
+A note is saved on leaving its field, and a stage on pressing it with the note as typed, so neither resets the other. Each word opens the folder's row editor on first use, and a save writes the whole word, note and stage together. While the word read from the file differs from the one the note was typed over, nothing is saved on leaving the field and a stage is refused: the note being typed is kept beside the saved one until the learner chooses "Save mine instead" or "Keep the saved note". A save that failed or got no answer stays shown, unknown when unknown, until the learner tries again or keeps the saved word. A file that no longer reads as a word is repaired as exact text, which replaces only the version shown.
 
 Choose one to three saved expressions in Words and start a chat. Vocab saves the chosen focus before requesting a tutor opening. The tutor speaks first, and the learner can follow up. A stopped or failed opening leaves the chat available for explicit retry.
 
@@ -51,13 +33,15 @@ The model picker lists the endpoints saved in this browser and lets the learner 
 ## Data ownership
 
 ```text
-openFolder({ id, definition: vocabFolder }) One folder in this browser (IndexedDB), ID so.epicenter.vocab
+openFolder({ id, definition: vocabFolder }) One folder in this browser (OPFS), ID so.epicenter.vocab
   entries/<SHA-256 of the text>.md          Exact text, note, stage, creation time
   chats/<id>.md                             Creation time, fixed focus snapshot
   messages/<message id>.md                  Chat ID, one finished message
 ```
 
-`src/lib/data.ts` declares how the folder's files read and `src/lib/folder.ts` opens it as `VOCAB_FOLDER_ID` through `@epicenter/folder/browser`. The folder is this browser's storage, not a directory on disk: Vocab has no desktop build, and inside the desktop app the opener refuses instead of opening browser storage. No row has an account in it.
+`src/lib/data.ts` declares how the folder's files read and `src/lib/folder.ts` opens it as `VOCAB_FOLDER_ID` through `@epicenter/folder/browser`. The folder is one directory in this browser's origin private file system, `Epicenter/local/so.epicenter.vocab`, holding the files and their Git history. It is not a directory on disk: Vocab has no desktop build, and inside the desktop app the opener refuses instead of opening browser storage. No row has an account in it.
+
+A folder an earlier version of Vocab kept in IndexedDB is copied into that directory, files and history together, the first time this version opens it. The old database is only read and stays as a backup. A tab of the earlier version that is still open keeps what it showed, and its saves fail.
 
 A new word's file is named by the SHA-256 of its exact UTF-8 text and created exclusively. Adding one text twice, from one tab or two, or again after an answer that never arrived, reaches the same file: one add creates it and the others find it, with its note and stage as they are. A different file at that name is refused and left alone. An imported word keeps its earlier ID as its file name, so the list is also checked for the text.
 
@@ -90,4 +74,4 @@ conflict is resolved.
 
 ## Development
 
-Start from the repository root with `bun dev:vocab`. Run `bun run --cwd apps/vocab typecheck` and `bun test apps/vocab/src/lib` for focused checks. The tests run the real modules over the real browser folder on fake IndexedDB.
+Start from the repository root with `bun dev:vocab`. Run `bun run --cwd apps/vocab typecheck` and `bun test apps/vocab/src/lib` for focused checks. The tests run the real modules over the real browser folder on an in-memory OPFS stand-in.

@@ -51,14 +51,6 @@ with a browser implementation or an explicit `undefined`.
 The two fail apart. If the host stops while the app is open, the folder is
 still open and still saves; what stops is what the host did.
 
-## Migration boundary
-
-OPFS acquisition, canonical table editors and independent recording operations
-are selected but pending integration and UI verification. The target sections
-on recording publication and draft ownership describe the required replacement.
-Other IndexedDB and adapter descriptions document the implementation before
-that migration. Exact result names and debug controls must follow integrated code.
-
 ## The data model
 
 `src/lib/definition.ts` declares the folder with the shared vocabulary
@@ -66,8 +58,8 @@ that migration. Exact result names and debug controls must follow integrated cod
 into Markdown rows at `<table>/<stem>.md` and `kv.json`. A table owns exactly
 one Markdown file per row; any other file is an ordinary file reached through
 `folder.files`. The package's [README](../../packages/folder/README.md) is the
-contract for entries, captures, conditional saves, batches, source-preserving
-patches, partial publication, and history.
+contract for entries, captures, conditional saves, source-preserving patches,
+one-file-per-save publication and its outcomes, and history.
 
 What Whispering adds on top:
 
@@ -127,7 +119,7 @@ implementation when the app layout mounts:
 
 | | Desktop (`desktop.ts`) | Browser (`browser.ts`) |
 | --- | --- | --- |
-| Folder | The real directory, through the shell's owner (`openFolder` from `@epicenter/folder/tauri`) | A folder in IndexedDB (`openFolder` from `@epicenter/folder/browser`) |
+| Folder | The real directory, through the shell's owner (`openFolder` from `@epicenter/folder/tauri`) | One OPFS directory, files and `.git` together (`openFolder` from `@epicenter/folder/browser`); a folder an earlier build kept in IndexedDB is copied there once |
 | Terminal | Your shell in the directory, run by the host | The folder's own in-page shell (`folder.terminal()`) |
 | Transcription | The host reads the connection, then the audio, and makes the request | The page does the same |
 | Transformation | The host reads the text connection and makes the request | The page makes the request, so the endpoint must allow its origin (CORS) |
@@ -249,10 +241,9 @@ The host serves `index.html` for any path that is not a file, so
 
 The bridge is the page's link to the host. It carries Whispering's own
 operations and the close question, and nothing of the folder: there is no
-folder route, no generic method call, no batch sent as data, and no Git
-snapshot pushed over it. Tables, KV, individual file operations and history
-are the shared adapter's calls to the shell's owner. Recording composition
-remains page-owned workflow state; the target contract exposes no public batch.
+folder route, no generic method call, no file change sent as data, and no Git
+snapshot pushed over it. Tables, KV, conditional publication, and history are
+the shared adapter's calls to the shell's owner.
 
 ```text
 POST /bridge/app      { op, payload }   -> { ok: <value> } | { fault: "<message>" }
@@ -399,30 +390,75 @@ the same microphone another ID in a new origin, and the desktop page's origin
 changes with the host's port, so a choice may need choosing again after a
 restart. That is a known limit, not yet checked on hardware.
 
-The recording publisher keeps a capture's fixed ID, bytes and declared fields,
-including `audioPath`, while independent operations finish. The selected
-replacement creates audio through `files.create`, then creates the row through
-`tables.recordings.create`. A confirmed audio operation followed by a failed row
-is workflow progress; no generic batch receipt or `Partial` error is needed.
+`src/lib/recordings/publish.ts` publishes a capture and finishes one that
+stopped partway. A capture is fixed when it ends: its ID, its bytes, and every
+field of its row, including the `audioPath` its audio is saved at. The two
+files are two saves, in order: `files.create` the audio, then
+`tables.recordings.create` the row (ADR-0482). Each save reports its own
+outcome: `audioNotSaved` stops before the row, and `rowNotSaved` keeps the
+audio's place. A lost reply leaves that save's outcome unknown. The capture
+stays in the page through both.
 
-Explicit retry reads the two named paths. Matching audio with an absent row
-allows creation of the missing row. A matching recording and audio establish
-that the intended content is present. Foreign audio, a foreign row or a row
-missing its audio require review. A same-stem sibling proves no ownership.
-Do not rewrite matching audio to imitate a condition spanning two file calls:
-independent operations permit another writer to change it between them.
+The first attempt writes without reading. A create refused as `Exists` reads
+what is there before calling it anything, since an earlier write of this
+capture whose reply was lost can land late: exactly this capture's audio, or
+this recording's row, is found and the attempt goes on; anything else is left
+alone. A retry, which the person asks for, reads both paths first:
 
-Each confirmed result proves its own publication. A following row read is a
-separate observation for display. When confirmed publication is followed by a
-missing, foreign or unreadable row, retain the publication evidence and offer
-inspection; do not create the recording again. A matching read after an unknown
-reply establishes current content without claiming that reply became confirmed.
-Pending input and unknown outcomes remain app-owned workflow state.
+| The folder has | The retry |
+| --- | --- |
+| Neither file | `files.create` the audio, then `tables.recordings.create` the row. |
+| Exactly this capture's audio, and no row | `tables.recordings.create` the row. The audio is not written again. |
+| This capture's row and exactly its audio | Reports it saved and writes nothing. |
+| Another row, other audio (same size or not), or the row without its audio | Refuses and writes nothing. |
 
-Recovery does not repeat a provider request or mint another recording identity.
-Debug injection must obstruct the actual independent operation instead of
-returning a fabricated result. These publication and debug changes are pending
-integration; exact UI outcomes must be verified against that implementation.
+Nothing ties the second save to the audio the attempt read. Another writer can
+change the audio between that read and the row's creation; the attempt reports
+what it observed and never claims the two files were saved together. Both
+creates are exclusive, nothing is ever saved with `overwrite`, and the row's
+source always comes from the table's own `create`.
+
+Only the two paths the capture names are looked at. A file that merely shares
+the stem, such as `recordings/<id>.m4a`, is not the recording's and does not
+block it.
+
+A `published` outcome names how each file is known to be in place: `receipt`
+when this attempt's own create was confirmed, `found` when the attempt read it
+there. A found file says nothing about which write put it there. Neither is a
+reading for the page to show, and no entry or editor baseline is made from
+them. So after a confirmed
+publication the row is read as a new observation, to have a current entry to
+show. Publication and observation are separate facts:
+
+| After a confirmed receipt, the row | Outcome |
+| --- | --- |
+| Reads as this recording | `saved`. The capture leaves the window's list and that entry is shown. |
+| Cannot be read | `published`, problem `unreadable`. |
+| Is gone | `published`, problem `missing`: another writer removed it after publication. |
+| Is there and is not this recording | `published`, problem `foreign`: another writer changed it after publication. |
+
+"This recording" is a valid row with the capture's `recordedAt`, `durationMs`,
+`capture`, and `audioPath`. The title and notes are the person's to change and
+are not compared, so an edited row is still this recording and becomes the
+fresh baseline.
+
+A `published` capture is saved. It keeps its fixed ID and bytes and the two
+placements in `library.pending`, as state `published`, only so the notice can
+be shown and the row looked at again. It is not counted as unsaved: it does not
+hold the app open, and the status line reads "Saved · 1 recording to check".
+**Refresh** reads the row through its kept draft and nothing else.
+From a confirmed publication there is no path to another save, a file write,
+or a request: a missing or foreign row is left as found and the notice says
+what the person can do.
+
+`audioNotSaved`, `rowNotSaved`, `refused`, and `unchecked` (a retry that could
+not read the folder) are not confirmed publications. They stay unresolved, are
+reported as not saved, hold the app open, and **Try again** starts from the
+retry table above.
+
+So a retry keeps the recording's identity, cannot create a second recording,
+and never replaces a file it did not just read and recognize as its own. A
+save is reported on its own; the commit it requests is a separate outcome.
 
 ## Transformations
 
@@ -498,23 +534,30 @@ starts for that recording. A failed run holds nothing; it is dropped with the
 recording. Results on pasted text name no recording, so they are neither
 deleted with one nor in the way of deleting one, readable or not.
 
-## Drafts and observations
+## Drafts and conflicts
 
-The selected migration uses `folder.tables.<name>.edit(stem)` for structured
-recording and transformation rows. The folder owns local document state, schema
-diagnostics, save attempts, observations and disposal. Details and body controls
-share the retained editor. The app owns selection, autosave and close policy.
+Each open path has one draft, of one of two kinds:
 
-A structured save replaces the complete canonical document through `overwrite`.
-The comparison baseline tracks semantic dirty state; it does not guard the write
-against newer file content. Unknown keys remain while YAML comments and spelling
-are rewritten. Invalid or unsupported files stay accessible through separate raw
-source repair. Arbitrary files do not acquire a table schema.
+- A row of `recordings/`, `transcriptions/`, or `transformations/` that opens
+  as a row is a form: `src/lib/row-draft.svelte.ts` over the folder's row
+  editor (`table.edit`). The editor owns the document, its baseline, the
+  latest read, and save outcomes; a save writes the whole canonical document
+  over whatever the file holds, keeping fields the app does not declare and
+  rewriting the frontmatter's formatting. The draft decides when to save:
+  after a short pause, and never on its own while the latest read differs
+  from its baseline, the file is gone or no longer reads as a row, or the
+  document has issues.
+- Any other text file, and a row's whole text when it does not open as a row
+  or the person chooses to edit its source, is a text draft in
+  `src/lib/editor.svelte.ts`: the exact text on screen, saved conditionally
+  against the file it was made on.
 
-An unknown reply remains historical save evidence. A later observation may be
-adopted under the editor's rules and cannot prove which request published it.
-Autosave pauses after failed or unknown outcomes; views do not own competing
-timers or perform hidden retries. Integration remains pending.
+A refresh hands each open draft the file as it is now. A clean draft adopts it.
+A dirty draft keeps its text, stops saving, and holds both versions until the
+person picks one, saves theirs over it, or keeps both by writing theirs to
+`conflicts/`. A text draft's save the folder refuses as stale ends in the same
+state. A failed or unconfirmed save of either kind stops autosave until the
+person saves again or takes the file as it is.
 
 ## Closing
 
@@ -697,18 +740,19 @@ does the host accept `WHISPERING_AUDIO_FIXTURE` and construct
 `native/failure-injection.ts`.
 
 Injected publication failures are counted, so a test can order failure and
-retry exactly. They are real failures of the real batch, and the folder's own
-`batch` is still the only thing that publishes. `publishRecording` takes an
-optional hook that runs its one batch; in a debug shell the workspace supplies
-one that asks the host to `obstruct` first and to `unobstruct` afterward. The
-host puts an empty directory at the path of the step that should fail, the
-owner runs the batch, and the host removes the directory. The owner then
-reports its own `Partial` (row obstructed, audio saved) or its own refusal
-(audio obstructed, nothing saved). Only a recording's row path and the audio
-path its batch creates can be obstructed; both are checked before they are
-joined onto the root, and a path that is occupied or passes through a link is
-left alone. A host that cannot be asked places nothing, and the recording is
-published all the same.
+retry exactly. They are real failures of the real saves, and the folder's own
+saves are still the only thing that publishes. `publishRecording` takes an
+optional `around` hook that runs each of its two writes; in a debug shell the
+workspace supplies `aroundRecordingWrite`, which asks the host to `obstruct`
+before the write and to `unobstruct` afterward. The host puts an empty
+directory at the path of the write that should fail, the owner runs the
+write, and the host removes the directory. The owner then reports the row's
+own failure (`rowNotSaved`, audio saved) or the audio's own failure
+(`audioNotSaved`, nothing saved). Only a recording's row path and the audio path
+it creates can be obstructed; both are checked before they are joined onto
+the root, and a path that is occupied or passes through a link is left alone.
+A host that cannot be asked places nothing, and the recording is published
+all the same.
 
 The injected commit failure is a real lock file on the ref of the branch `HEAD`
 names, created exclusively and tagged with a marker unique to that host. The
@@ -735,7 +779,8 @@ attached and says so (`injection-launch`).
 | `src/lib/capture.ts`, `microphone.ts`, `audio-format.ts`, `transcription.ts`, `transformation.ts` | The capture contract and fixture device, the real microphone, container detection, the transcription and transformation requests. |
 | `src/lib/microphone-input.svelte.ts` | The chosen microphone and the test of it, for one session. |
 | `src/lib/audio-source.ts` | What a player holds, reloaded by content version on each folder refresh. |
-| `src/lib/editor.svelte.ts`, `status.ts`, `files.ts`, `terminal.svelte.ts` | Drafts, status lines, the file tree, the terminal session. |
+| `src/lib/row-draft.svelte.ts`, `editor.svelte.ts` | Row drafts over the folder's row editor, and exact-text drafts of every other file. |
+| `src/lib/status.ts`, `files.ts`, `terminal.svelte.ts` | Status lines, the file tree, the terminal session. |
 | `src/routes/` | The layout that owns the session, and the three pages. |
 | `src/routes/components/` | The shell, navigation, header, unsaved notices, recorder, recording and transformation lists and details, file browser and view, terminal. |
 | `src/lib/assets/` | The microphone mark from the earlier Whispering. |

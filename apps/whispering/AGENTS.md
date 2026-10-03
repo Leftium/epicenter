@@ -69,28 +69,28 @@ behavior and delivery status, and `ARCHITECTURE.md` for structure.
   deleted: a table owns one Markdown file per row.
 - **A save is never reported by its commit.** Keep saved-file state and history
   state separate in code and in copy.
-- **Recording publication uses independent operations.** Fix the capture's ID
-  and bytes before saving. Create audio through `files.create`, then its row
-  through `tables.recordings.create`. A failed row after confirmed audio is
-  app-owned workflow progress, not a generic `Partial` result or batch receipt.
-  Explicit retry reads those same paths, verifies matching audio and recording
-  identity, and finishes a missing step. Refuse foreign occupants; do not
-  rewrite matching audio to imitate a cross-file condition. Independent calls
-  cannot promise the audio remains unchanged between them.
-- **A receipt proves its own operation; a read proves current content.** Keep
-  confirmed audio and row results separate from the observation shown afterward.
-  A missing or foreign row after confirmed publication is a display/review
-  problem, not permission to recreate it. An unknown reply remains unknown in
-  history even when desired content is observed. Recovery may recognize present
-  content without attributing it to a particular request.
-- **The folder owns structured editors.** Retain and share table editors across
-  controls. The app owns selection, autosave and close policy. Canonical saves
-  replace the whole document through `overwrite`; raw file editing and source
-  repair remain separate. Do not preserve another app-owned table editor engine.
+- **Recovery writes only what is missing.** A recording is published as two
+  saves: `files.create` the audio, then the row's `create`. There is no batch
+  and no transaction between them. To finish one whose audio landed without
+  its row, read the audio, confirm it is exactly the pending bytes, and create
+  the row. Do not rewrite matching audio to manufacture a condition. Never use
+  `overwrite`, never replace audio or a row that is not this capture's, never
+  serialize a row by hand, and never describe the two saves as one.
+- **A receipt proves publication; it is not an observation.** A confirmed row
+  creation, with the audio confirmed by its own creation or read as exactly
+  the pending bytes, means the recording was saved. Never report that as
+  unsaved, and never build an entry or baseline from it. The row read that
+  follows is a separate fact about what can be shown now: when it fails, or
+  the row is gone or foreign, the state is "saved, cannot be shown", and the
+  only action from there is to read again. Do not publish again, recreate, or
+  repair after a confirmed receipt. A failed or `Unconfirmed` save and a
+  refusal before publication are not confirmed: they stay unsaved and keep the
+  close guard.
 - **Fixture audio and failure injection are debug-only.** They are enabled by
   the shell's build, never by an environment variable alone, and the UI says so
-  while active. Injection obstructs the real individual operation; it does not
-  answer for the folder or require a public batch collector.
+  while they are active. An injected publication failure obstructs the real
+  save so the folder fails it; it never answers for the folder, and the
+  folder's own saves stay the only thing that publishes.
 - **A transformation never writes its transcript.** A result has its own file
   with a stem fixed before the request is sent. Saving a received result again
   must not call the endpoint or create a second file. A result on pasted text

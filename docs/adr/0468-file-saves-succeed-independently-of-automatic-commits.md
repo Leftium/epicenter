@@ -1,9 +1,7 @@
 # 0468. File saves succeed independently of automatic commits
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-09-30
-- **Implemented:** browser, Bun and shared Rust owner history in commit `3ff6ab86f6`, including nonwaiting automatic admission and native queued-request withdrawal.
-- **Implemented integration:** Whispering opens its folder through the shared native owner; its private host handles provider requests and device preferences. Account-scoped startup and hosted Git transport remain separate work.
 
 ## Context
 
@@ -142,7 +140,7 @@ problem; it cannot reclassify the published commit as failed. Newer edits can
 already make the folder uncommitted again without invalidating that receipt.
 
 The action does not save editor drafts or apply incoming remote changes.
-Remote adoption and merge semantics require their own explicit design. Saved,
+Remote adoption and merge follow ADR-0474's explicit actions. Saved,
 uncommitted, and not synced are separate facts, even when one control attempts
 both commit and push. Report actual file-save failure in the editor, commit
 failure in history status, and upload/push failure in sync status.
@@ -212,7 +210,9 @@ for filesystem reads, not the Epicenter production adapter or LightningFS.
 Initial creation, initial commits, LFS uploads, and remote pushes were excluded.
 The browser's maximum observed gap in a 10 ms timer was 218 ms at 10,000 notes.
 These results justify separating file acknowledgement from history completion
-and measuring the production adapter's automatic-attempt cost.
+and measuring the production adapter's automatic-attempt cost. The production
+browser adapter now stores files in OPFS (ADR-0497), which these runs did not
+measure.
 They do not validate production Git ref
 concurrency, power-loss durability, or transport cancellation.
 

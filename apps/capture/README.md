@@ -11,29 +11,15 @@ There are two builds of the same UI, and the build decides where the folder is:
 | Build | Folder | History |
 | --- | --- | --- |
 | Desktop, inside Epicenter | An ordinary directory, owned by the Epicenter desktop shell. | Real Git in that directory's `.git`, recorded by the shell. No remote. |
-| Browser | A logical folder in this browser's IndexedDB. | Git objects in IndexedDB. No remote. |
+| Browser | One directory in this browser's origin private file system (OPFS), `Epicenter/local/so.epicenter.capture`. | Git in that directory's `.git`, in OPFS beside the files. No remote. |
+
+A browser folder an earlier version kept in IndexedDB is copied into OPFS,
+files and history together, the first time this version opens it. The old
+database is only read and stays as a backup.
 
 Run the browser build with `bun dev:capture` (or `bun dev:capture:ui`) from
 the repository root. It starts the app and nothing else. Start `bun dev:api`
 yourself only to export old captures from a hosted account, described below.
-
-
-## Storage and editor migration
-
-The selected migration uses one scoped OPFS directory for browser files and
-`.git/`, individual file operations, and the folder's canonical table editor.
-The app owns editor retention and autosave; unsupported source remains available
-for raw repair. Structured saves replace the complete document and rewrite
-frontmatter formatting. An unknown reply stays unknown in save history even
-when a later read finds the desired content. Incoming Git adoption retains its
-own recovery record and refuses mixed checkpoints until explicit recovery.
-
-Integration and UI verification are pending. Sections describing IndexedDB,
-app-owned editor engines or older recovery controls document the implementation
-before this migration. The decisions are recorded in
-[ADR-0497](../../docs/adr/0497-browser-folders-use-scoped-opfs-directories.md),
-[ADR-0482](../../docs/adr/0482-folder-mutations-publish-one-file-at-a-time.md), and
-[ADR-0483](../../docs/adr/0483-honeycrisp-shares-one-canonical-editor-per-open-row.md).
 
 ## What you can do
 
@@ -65,8 +51,12 @@ Source. Nothing is rewritten to make it fit.
 Typing saves on its own after a short pause. The header shows the state, and
 shows it in red when saving is stopped or was not confirmed.
 
-- A save writes exactly the text it captured, and only if the file is still
-  the one this window read. Typing during a save stays unsaved and saves next.
+- An open capture is edited through the folder's row editor. A save writes
+  the whole capture over the file: its frontmatter in the standard form
+  (keys quoted, values in JSON spelling, keys Capture does not declare kept)
+  and its text and thoughts exactly. It does not check what the file holds;
+  the window checks that by reading, below. Typing during a save stays
+  unsaved and saves next.
 - Opening, selecting, and listing captures write nothing.
 - **If the file changes outside this window** and you have nothing unsaved,
   the window shows the new file. If you do have unsaved text, your text stays,
@@ -75,17 +65,22 @@ shows it in red when saving is stopped or was not confirmed.
   | The saved file | Choices |
   | --- | --- |
   | Changed | Load saved (discard my draft). Save my draft over this version. Save my draft as a copy. Download my draft. |
-  | Removed | Save my draft back to this file. Save as a copy. Download. Discard my draft. |
+  | Changed into text that is not a valid capture | Repair the saved file in Source (discard my draft). Save my draft over it. Save as a copy. Download. |
   | Cannot be read | Check again. Save as a copy. Download. It cannot be overwritten, because it cannot be reviewed. |
 
-  "Save my draft over this version" is checked against the version you were
-  shown, so a further change asks again.
+  A capture removed outside this window is written back by its next save.
+  "Save my draft over this version" replaces whatever the file holds when the
+  save lands, including a change made after you looked.
 - **If a save cannot be confirmed**, the notice puts the choices first and
   keeps the exact failure under "Show technical details". Your text stays: Try again, Save as a
   copy, Download, or Discard my changes. The window does not claim the file is
   unchanged, because a write can reach the disk and its answer still be lost.
-  Try again is checked against the file as the window last read it, so a
-  write that did land shows up as a change to review.
+  Try again sends the capture again; a later read that finds your text says
+  what the file holds, not that the earlier save landed.
+- **Source** holds the file's exact text. A Source edit that changes only the
+  text and thoughts goes back through the row editor; one that changes the
+  frontmatter, or a file that cannot open as a capture, is saved as exact
+  text and only over the version you were shown.
 - **Save as a copy** saves the capture as it is in Source. It is refused
   while you have typed text that is not in the source yet (a new thought, a
   thought you are editing, capture text that could not be applied), because
@@ -160,17 +155,22 @@ means for Capture:
 - One Epicenter owns the directory at a time, through a lock file beside it,
   `.so.epicenter.capture.epicenter-lock`. A second one is refused with a
   message naming the directory.
-- Other programs are not asked to take the lock. A save names the version of
-  the file this window read, and the owner refuses it if the file is no
-  longer that version. An edit by another program in the instant between the
-  owner's last check and its replacement of the file is overwritten. This is
-  a best-effort check, not an operating-system compare-and-swap.
+- Other programs are not asked to take the lock. An open capture's save
+  replaces the whole file; the window learns of another program's edit only
+  by reading, so an edit that lands between that read and the save is
+  overwritten. A repair in Source, a copy, and an import name the version the
+  window read, and the owner refuses them if the file is no longer that
+  version; an edit in the instant between the owner's last check and its
+  replacement of the file is still overwritten. Neither is an
+  operating-system compare-and-swap.
 - The owner watches the directory and also rechecks it on a timer, so a
   change the operating system did not report is still announced. A change
   announced to the window is a hint to reread. It never carries file contents
   and never replaces text you have typed.
-- The owner records Git history after each save, on its own schedule, whether
-  or not a Capture window is still open. The window schedules no commits.
+- The owner makes one commit attempt after each save, whether or not a
+  Capture window is still open. An attempt that finds Git busy is skipped,
+  and the save stays uncommitted until a later save or an explicit commit.
+  The window schedules no commits.
 - History is local-only. The shell registers the Capture folder to take the
   commit author from the directory's Git config when one is set there
   (otherwise `Capture <capture@localhost>`), to ignore that config's
@@ -208,11 +208,14 @@ other environment. `vite.config.ts` points the bare `@epicenter/folder`
 specifier, which `@epicenter/capture` imports, at the same entry, so a build
 emits one adapter.
 
-Capture uses the folder's captures table, the Git snapshot and commit, and
-three file verbs for `captures/*.md` and `recovery/*`: `read`, `create`
-(refused when anything is at the path), and `replace` (refused unless the
-file is still the exact one that was read). It takes no verb that overwrites.
-That surface is the `CaptureFolder` type in `src/lib/platform/types.ts`. The plugin
+Capture uses the folder's captures table, including `edit`, whose row editor
+overwrites the whole file on each save, and `replace` and `delete`, which act
+only on the version that was read; the Git snapshot and commit; and three
+file verbs for copies and imports under `captures/*.md` and `recovery/*`:
+`read`, `create` (refused when anything is at the path), and `replace`
+(refused unless the file is still the exact one that was read). It takes no
+raw verb that overwrites. That surface is the `CaptureFolder` type in
+`src/lib/platform/types.ts`. The plugin
 grants an authorized Capture window the whole Capture directory and nothing
 outside it; there is no per-call allowlist.
 
@@ -222,7 +225,7 @@ it.
 
 The build Epicenter serves is selected by the `epicenter-host` condition on
 `#platform/folder`. That leaf opens no browser folder, so it cannot fall back
-to IndexedDB. Outside the shell, in a window the folder does not allow, with no
+to browser storage. Outside the shell, in a window the folder does not allow, with no
 folder registered, or with no plugin installed, opening fails and the page
 shows the reason.
 
@@ -234,7 +237,7 @@ shows the reason.
 | The Capture window is closed | The shell hides it. The page, its session, and its drafts stay loaded. |
 | The shell closes the folder | The folder's Git snapshot arrives with `closed`. The window says saving cannot be confirmed, keeps every draft, and holds reloads back. |
 | Epicenter's Bun service stops (`capture-host-stopped`) | A notice. The folder is the shell's, so saving carries on. The service served this page, so a reload may fail until Epicenter restarts. |
-| A reply to a save is lost | The draft is kept and marked not confirmed. Try again is checked against the version the window last read, so a write that did land comes back as a change to review. Nothing is sent twice automatically. |
+| A reply to a save is lost | The draft is kept and marked not confirmed. Try again sends the capture again; a read that finds the text says what the file holds, not that the save landed. Nothing is sent twice automatically. |
 
 ### Quitting
 
@@ -265,8 +268,8 @@ and shows the failure.
 
 | Path | Role |
 | --- | --- |
-| `src/lib/platform/` | The `#platform/folder` seam: `types.ts` is its contract, `folder.browser.ts` opens the IndexedDB folder, `folder.epicenter-host.ts` attaches to the shell's directory, and `shell-lifetime.ts` is the quit protocol. `auth.*.ts` is used only by the old-data export. |
-| `src/lib/draft.svelte.ts` | One capture's draft: buffer, baseline, save queue, conflict choices, and unsent input. |
+| `src/lib/platform/` | The `#platform/folder` seam: `types.ts` is its contract, `folder.browser.ts` opens the OPFS folder, `folder.epicenter-host.ts` attaches to the shell's directory, and `shell-lifetime.ts` is the quit protocol. `auth.*.ts` is used only by the old-data export. |
+| `src/lib/draft.svelte.ts` | One open capture: its row editor or, for a file that cannot open as a row or a frontmatter edit in Source, its exact text; autosave, conflict choices, and unsent input. |
 | `src/lib/captures.svelte.ts` | The listing, the open drafts, and completion of create, import, copy, delete, and draft saves. |
 | `src/lib/recovery/` | Opens the old account store for an export. Loaded only from the recovery screen. |
 | `src/lib/components/` | The timeline, a capture, the conflict choices, and the recovery screen, composed from `@epicenter/ui`. |
@@ -290,7 +293,7 @@ other.
 | Test | What it checks |
 | --- | --- |
 | `src/lib/platform/folder.epicenter-host.test.ts` | The desktop leaf over the real folder adapter, with the shell's `invoke` and events scripted: refusals fail the open, closing detaches once, the collection keeps a draft through a conflict, a lost reply, and an outside change, and an import interrupted by a lost reply is finished by a retry. It does not run the Rust owner. |
-| `src/lib/platform-selection.test.ts` | Which leaf each build bundles: the desktop bundle has the desktop adapter and no browser adapter, IndexedDB store, Git implementation, or Node module; the browser bundle has the browser adapter and no desktop adapter, generated bindings, or quit protocol. |
+| `src/lib/platform-selection.test.ts` | Which leaf each build bundles: the desktop bundle has the desktop adapter and no browser adapter, browser storage, Git implementation, or Node module; the browser bundle has the browser adapter and no desktop adapter, generated bindings, or quit protocol. |
 | `src/lib/captures.test.ts`, `src/lib/draft.test.ts` | The collection and the draft over a real directory and a recorded store. |
 
 The Rust owner, its watcher, its lock, and its history are tested in

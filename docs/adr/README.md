@@ -708,7 +708,7 @@ When you add an ADR, add its row here.
 | [0453](0453-vocab-batch-additions-share-one-review.md) | Vocab batch additions share one review | Accepted (amends 0102 at entry sources) |
 | [0454](0454-vocab-saves-expressions-from-chat-by-selection.md) | Vocab saves expressions from chat by selection | Accepted |
 | [0455](0455-epicenter-ui-tracks-distributed-shadcn-svelte-components-with-explicit-deltas.md) | Epicenter UI tracks distributed shadcn-svelte components with explicit deltas | Proposed |
-| [0456](0456-a-markdown-row-owns-at-most-one-same-stem-attachment.md) | A Markdown row owns at most one same-stem attachment | Accepted (unbuilt; flat Markdown and attachment pairs) |
+| [0456](0456-a-markdown-row-owns-at-most-one-same-stem-attachment.md) | A Markdown row owns at most one same-stem attachment | Superseded by 0480 |
 | [0457](0457-a-row-filename-is-its-exact-id-and-a-title-is-a-field.md) | A table and file stem address a row, and a title is a field | Proposed (exact paths and readable-stem policy; file-authoritative creation unbuilt) |
 | [0458](0458-markdown-links-may-cross-data-folders-by-relative-path.md) | Markdown links may cross data folders by relative path | Proposed (cross-folder link resolution unbuilt) |
 | [0459](0459-sqlite-is-a-local-capability-for-derived-or-transactional-state.md) | SQLite is a local capability for derived or transactional state | Proposed (file-backed application stores and derived indexes unbuilt) |
@@ -719,21 +719,21 @@ When you add an ADR, add its row here.
 | [0464](0464-file-table-updates-conditionally-replace-the-captured-whole-file.md) | File table updates conditionally replace the captured whole file | Proposed |
 | [0465](0465-editors-keep-unsaved-source-separate-from-the-saved-baseline.md) | Editors keep unsaved source separate from the saved baseline | Proposed (file-backed editor lifecycle unbuilt) |
 | [0466](0466-opened-media-provides-stable-input-bytes.md) | Opened media provides stable input bytes | Proposed (stable media reads and transcription migration unbuilt) |
-| [0467](0467-file-workflows-report-each-operations-outcome.md) | File workflows report each operation's outcome | Proposed (individual outcomes and app migration unbuilt) |
-| [0468](0468-file-saves-succeed-independently-of-automatic-commits.md) | File saves succeed independently of automatic commits | Proposed (history implemented; Whispering native adoption unbuilt) |
+| [0467](0467-file-workflows-report-each-operations-outcome.md) | File workflows report each operation's outcome | Accepted |
+| [0468](0468-file-saves-succeed-independently-of-automatic-commits.md) | File saves succeed independently of automatic commits | Accepted |
 | [0469](0469-generated-commit-messages-describe-captured-file-changes.md) | Generated commit messages describe captured file changes | Proposed (tree-derived message generation unbuilt) |
 | [0470](0470-epicenter-helps-people-make-software-that-is-unmistakably-theirs.md) | Epicenter helps people make software that is unmistakably theirs | Proposed (product articulation; public adoption and independent browser folder access unbuilt) |
-| [0471](0471-a-data-folder-handle-exposes-tables-kv-and-files.md) | A data folder handle exposes tables, KV, files, and Git | Proposed |
+| [0471](0471-a-data-folder-handle-exposes-tables-kv-and-files.md) | A data folder handle exposes tables, KV, files, and Git | Accepted |
 | [0472](0472-epicenter-so-is-canonical-and-product-domains-need-a-distinct-identity.md) | Epicenter.so is canonical, and product domains need a distinct identity | Proposed |
 | [0473](0473-personal-app-hosting-keeps-addresses-separate-from-data-identity.md) | Personal app hosting keeps addresses separate from data identity | Proposed (publisher app subdomains and explicit portable-folder reuse or copying unbuilt) |
-| [0474](0474-incoming-git-adoption-retains-a-recoverable-plan.md) | Incoming Git adoption retains a recoverable plan | Proposed (durable incoming records and explicit recovery unbuilt) |
+| [0474](0474-incoming-git-adoption-retains-a-recoverable-plan.md) | Incoming Git adoption retains a recoverable plan | Accepted |
 | [0476](0476-whisperings-desktop-folder-uses-one-rust-library-in-both-tauri-shells.md) | Whispering's desktop folder uses one Rust library in both Tauri shells | Proposed (shared folder implemented; Epicenter integration and remaining sidecar removal unbuilt) |
-| [0477](0477-file-folder-operations-tolerate-repairable-layout-disorder.md) | File-folder operations tolerate repairable layout disorder | Proposed |
+| [0477](0477-file-folder-operations-tolerate-repairable-layout-disorder.md) | File-folder operations tolerate repairable layout disorder | Accepted |
 | [0478](0478-folder-is-an-independent-package-with-automatic-and-explicit-openers.md) | Folder is an independent package with automatic and explicit openers | Proposed (package, identity-free Folder definitions, explicit dataset IDs, and matching openers implemented; production acceptance across all builds remains) |
-| [0479](0479-file-mutation-methods-express-publication-intent.md) | File mutation methods express publication intent | Proposed (public methods and caller migration unbuilt) |
-| [0480](0480-file-tables-own-only-their-markdown-row-files.md) | File tables own only their Markdown row files | Proposed (attachment removal and consumer changes unbuilt) |
-| [0482](0482-folder-mutations-publish-one-file-at-a-time.md) | Folder mutations publish one file at a time | Proposed (batch removal and independent recording publication unbuilt) |
-| [0483](0483-honeycrisp-shares-one-canonical-editor-per-open-row.md) | Honeycrisp shares one canonical editor per open row | Proposed (canonical editor integration unbuilt) |
+| [0479](0479-file-mutation-methods-express-publication-intent.md) | File mutation methods express publication intent | Accepted |
+| [0480](0480-file-tables-own-only-their-markdown-row-files.md) | File tables own only their Markdown row files | Accepted (supersedes 0456) |
+| [0482](0482-folder-mutations-publish-one-file-at-a-time.md) | Folder mutations publish one file at a time | Accepted |
+| [0483](0483-honeycrisp-shares-one-canonical-editor-per-open-row.md) | Honeycrisp shares one canonical editor per open row | Accepted |
 | [0484](0484-conflict-presentation-follows-the-edit-being-resolved.md) | Conflict presentation follows the edit being resolved | Proposed (consistent editor presentation unbuilt) |
 | [0485](0485-applications-choose-editor-observation-and-save-policies.md) | Applications choose editor observation and save policies | Proposed |
 | [0486](0486-folder-domain-methods-share-accounted-storage.md) | Folder domain methods share accounted storage | Proposed |
@@ -747,5 +747,5 @@ When you add an ADR, add its row here.
 | [0494](0494-file-folders-reserve-epicenter-for-rebuildable-caches.md) | File-folder queries use transient captured projections | Proposed (query sessions, capture contract, managed ignore initialization, and file-first resource composition unbuilt; persistence and SQL export deferred) |
 | [0495](0495-the-ark-community-profiles-use-at-handle-paths.md) | The Ark community profiles use at-handle paths | Proposed (community routing and stable profile identity unbuilt; custom domains open) |
 | [0496](0496-native-app-runtime-storage-is-independent-of-the-shell.md) | Native app runtime storage is independent of the shell | Proposed (shared root, cross-process admission, credentials, and migration unbuilt) |
-| [0497](0497-browser-folders-use-scoped-opfs-directories.md) | Browser folders use scoped OPFS directories | Proposed (OPFS backend, verified cutover and app adoption unbuilt) |
+| [0497](0497-browser-folders-use-scoped-opfs-directories.md) | Browser folders use scoped OPFS directories | Accepted (app selection of development and account scopes and private SQL channel ownership unbuilt) |
 | [0501](0501-store-checkout-push-pull-and-its-baseline-are-removed.md) | Store checkout Pull/Push and its baseline are removed | Proposed (checkout removed; generic folder queries unbuilt; no replacement checkout or SQL export planned) |

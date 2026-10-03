@@ -78,9 +78,11 @@ Private database files and their WAL/journal companions do not enter data folder
 [ADR-0496](0496-native-app-runtime-storage-is-independent-of-the-shell.md)
 proposes one native app/account address shared by standalone and hosted shells,
 with cross-process admission. [ADR-0497](0497-browser-folders-use-scoped-opfs-directories.md)
-retains IndexedDB authored folders and separate private OPFS SQL, with captured
-channel and account addresses. Address changes require implementation and
-preserving migration before current storage paths change.
+stores browser authored folders in scoped OPFS directories, copied once from
+their earlier IndexedDB databases, and keeps private OPFS SQL in a separate
+namespace with captured channel and account addresses. Native address changes
+require implementation and preserving migration before current storage paths
+change.
 Provider mirrors and retained transactional databases stay with the app/account
 runtime outside authored folders. Current native databases use AppData; browser
 databases use OPFS. Folder queries use transient in-memory projections under

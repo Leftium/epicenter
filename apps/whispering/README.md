@@ -9,26 +9,11 @@ needs no account, no Epicenter desktop, and no hosted API.
 
 This is a development milestone, not a release. Its voice-note workflow is launch, record,
 stop, save, play, transcribe, transform, inspect files and history, quit, reopen.
-Native verification results and remaining checks are recorded below. Dictating into other apps is not part
+Native verification results and remaining checks are recorded below. The
+current build's desktop window has not been checked by hand: recording
+publication as two separate saves is covered by tests, not yet by a desktop
+run. Dictating into other apps is not part
 of it. [What is not supported](#what-is-not-supported) lists the rest.
-
-
-## Storage and editor migration
-
-The selected migration uses one scoped OPFS directory for browser files and
-`.git/`, individual file operations, and the folder's canonical table editor.
-The app owns editor retention and autosave; unsupported source remains available
-for raw repair. Structured saves replace the complete document and rewrite
-frontmatter formatting. An unknown reply stays unknown in save history even
-when a later read finds the desired content. Incoming Git adoption retains its
-own recovery record and refuses mixed checkpoints until explicit recovery.
-
-Integration and UI verification are pending. Sections describing IndexedDB,
-app-owned editor engines or older recovery controls document the implementation
-before this migration. The decisions are recorded in
-[ADR-0497](../../docs/adr/0497-browser-folders-use-scoped-opfs-directories.md),
-[ADR-0482](../../docs/adr/0482-folder-mutations-publish-one-file-at-a-time.md), and
-[ADR-0483](../../docs/adr/0483-honeycrisp-shares-one-canonical-editor-per-open-row.md).
 
 ## The data folder
 
@@ -94,7 +79,7 @@ WHISPERING_DATA_ROOT=/tmp/whispering-demo bun dev:whispering
 # A release bundle: apps/whispering/src-tauri/target/release/bundle
 bun build:whispering
 
-# The page alone in a browser tab, over a folder kept in IndexedDB
+# The page alone in a browser tab, over a folder kept in the browser's OPFS
 bun dev:whispering:ui
 ```
 
@@ -254,7 +239,8 @@ sent is the text connection in Settings, never the file.
   and `endpoint: null`: it uses the text connection and its model.
 - Edit the title, instructions, and an optional model in Details, or the whole
   file in Source. Edits save like any other file here, with the same conflict
-  handling. Fields the app does not know are kept as written.
+  handling. A save from Details keeps fields the app does not know and writes
+  the frontmatter in the app's standard form; Source keeps the text exactly.
 - A model typed in a transformation is used instead of the text connection's;
   leave it empty to use the connection's. Whispering keeps no list of
   providers or models.
@@ -396,14 +382,16 @@ the notice under the header, on every page, with what happened, a player for
 the audio held in the window, and **Try again**. Trying again keeps the
 recording's ID and cannot create a second recording. It first reads what the
 folder has. If the audio there is exactly the audio held in the window, it
-saves the recording's file beside it, and only if that audio has not changed
-in the meantime. If a different file is at the recording's audio path or its
-own path, even audio of the same length, nothing is overwritten and the
-recording stays pending. A file that only shares the recording's name with
+saves the recording's file beside it and does not write the audio again.
+Another program could still change the audio between that read and the save;
+the audio and the recording's file are two saves, never one. If a different
+file is at the recording's audio path or its own path, even audio of the same
+length, nothing is overwritten and the recording stays pending. A file that only shares the recording's name with
 another extension is not in the way.
 
 Sometimes a recording is saved and then cannot be shown: the folder confirmed
-both files were written, and reading the recording's file straight afterward
+the recording's file and its audio is the audio held in the window, and
+reading the recording's file straight afterward
 failed, or another program removed or replaced that file in between. That is
 not a failed save, and the app does not call it one. The status reads "Saved ·
 1 recording to check" and the notice says the recording was saved, with
@@ -504,7 +492,11 @@ title still plays and transcribes, and one with no `audioPath` still takes
 notes. A transformation runs once its file reads without issues (title,
 model, and endpoint present, `null` allowed for the last two) and it has
 instructions. The messages shown describe the text on screen, saved or not.
-Fields the app does not know are kept as written.
+Fields the app does not know are kept. Saving a recording, transcript, or
+transformation from its form writes the frontmatter in the app's standard
+form: keys quoted, values in JSON spelling, declared fields first. Comments
+and the earlier spelling are not kept; the body is kept exactly. To keep a
+file's exact text, edit it in Source.
 
 Any file name works for a row, including a trailing space or `recordings/.md`.
 Only `.md` in lowercase makes a file a row.
@@ -561,7 +553,7 @@ A debug build has a bug-icon menu in the header:
 | Control | Effect |
 | --- | --- |
 | Pause autosave | Typing stays unsaved until "Save now", so an outside edit can be raced against a draft. |
-| Fail the next recording file write | The next save lands the audio and fails the row: a partial publication. Each press arms one more. |
+| Fail the next recording file write | The next save lands the audio and fails the row, leaving audio with no recording file. Each press arms one more. |
 | Fail the next audio write | The next save of a new recording fails before anything is written. |
 | Lock the branch | Creates a lock on the branch ref, where an interrupted Git process leaves one, so commits fail while saves succeed. Press again to unlock. It never replaces a lock that already exists and only ever removes the lock it created. |
 

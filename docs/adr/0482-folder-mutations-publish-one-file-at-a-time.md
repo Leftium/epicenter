@@ -1,15 +1,14 @@
 # 0482. Folder mutations publish one file at a time
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-10-01
-- **Unbuilt:** removal of public batches and generic partial results, independent recording publication, and migrated application recovery.
 
 ## Context
 
-`folder.batch` collects file writes and table-row creation under one admission.
-The browser applies them transactionally; native publication can stop between
-steps. The collector, ordered receipts and generic `Partial` result make every
-consumer account for a multi-file operation model.
+`folder.batch` collected file writes and table-row creation under one admission.
+The browser applied them in one IndexedDB transaction; native publication could
+stop between steps. The collector, ordered receipts and generic `Partial` result
+made every consumer account for a multi-file operation model.
 
 Whispering needs to save audio and its recording row. That relationship belongs
 to a recording workflow, while each table still owns only one Markdown file.
@@ -19,13 +18,18 @@ to a recording workflow, while each table still owns only one Markdown file.
 **The public folder API exposes individual operations, without a batch collector or generic `Partial` result.**
 File operations publish their named file. Table creation, editing and deletion
 act on the row file. KV saves act on `kv.json`. Each confirmed result proves
-that operation's publication independently of later reads and Git history.
+that operation's publication independently of later reads and Git history. A
+move or rename names its source and destination and reports its own two-path
+outcome under ADR-0467.
 
 **The application owns related-file workflow progress and recovery.**
 Whispering fixes its recording ID before publication, creates audio, then creates
 the row through the table's serializer. It retains the pending bytes if the row
-fails after audio succeeds. Explicit retry reads those same paths, validates
-matching audio and recording identity, and finishes an absent step. It refuses
+fails after audio succeeds. The first attempt writes without reading; an
+`Exists` refusal reads the occupant before naming it, because a lost earlier
+write of this capture may have landed. Explicit retry reads those same paths,
+validates matching audio and recording identity, and finishes an absent step.
+A row whose audio is gone is refused, not completed. It refuses
 foreign occupants and does not rewrite matching audio merely to manufacture a
 cross-file condition. Another writer can change audio between operations; the
 workflow reports what it observes without claiming a transaction.
@@ -49,10 +53,14 @@ contract under ADR-0474; it is not a public general-purpose batch.
 ## Consequences
 
 The collector, synchronous callback restrictions, batch receipt schema and
-portable multi-step error protocol can disappear. Recording recovery remains
-app-owned state because a two-file workflow can stop after one publication.
-Each app must report its own progress without presenting intermediate files as
-an atomic completed action.
+portable multi-step error protocol are gone from the public API. Recording
+recovery remains app-owned state because a two-file workflow can stop after one
+publication. Each app reports its own progress without presenting intermediate
+files as an atomic completed action.
+
+The desktop owner's internal `apply` still takes ordered changes for terminal
+commands and fast-forwards, and reports the steps that landed. That protocol is
+not part of the public folder handle.
 
 ## Considered alternatives
 

@@ -318,6 +318,75 @@ direction:
 Only after seeing that reaction does the agent encode the behavior in the
 skill. A different reaction could change the model instead of selecting B.
 
+## Design exploration: discoveries improve the next attempt
+
+This invented exchange illustrates greenfield exploration, adaptive review,
+and active steering. Its findings are hypothetical, not evidence about current
+export/import code. The assignments and turns are examples, not a fixed panel
+or required sequence.
+
+> **Human:** Rethink export/import. I want people to recover their work from a
+> backup without navigating a complicated import process.
+>
+> **Agent:** I'll explore the restore experience from that outcome and actual
+> callers before choosing a file format or import mechanism. Independent
+> reviewers will develop the strongest design and make its deletion prize and
+> guarantees concrete.
+
+*The initial reviewers receive the outcome, requirements, and source evidence
+before the existing proposal. One proposes restoring into a new workspace. The
+other traces how attachments and workspace identity affect recovery. Both
+develop alternatives rather than merely inspecting the current importer.*
+
+> **Agent:** The strongest proposal restores the backup into a separate
+> workspace. You inspect the recovered work, then choose whether to use it:
+>
+> ```text
+> Open backup -> recover workspace -> inspect -> choose workspace
+> ```
+>
+> That could eliminate merging and rollback against your current workspace.
+> It introduces another workspace and requires recovering attachments as well
+> as records. I'll trace the identity and attachment guarantees before treating
+> that deletion prize as established.
+>
+> **Human:** Separate recovery makes sense. But bringing a few records from
+> someone else's file into my current workspace is also useful.
+>
+> **Agent:** Then recovery and adding outside records are both useful outcomes.
+> A separate restore workspace still looks promising, but it no longer makes
+> all merging unnecessary. I'll explore whether reviewing and copying selected
+> records from the recovered workspace gives people a clearer experience.
+
+*Codex preserves the accepted recovery direction and commissions a fresh
+reviewer to consider the combined experience from raw caller evidence. It shares
+the preserved findings and labels this pass as an informed challenge. The
+reviewer initially suggests making every import create a workspace.*
+
+*Codex steers the next completed turn: "Follow the person adding five records,
+including their attachments, to existing work. Compare the steps and resource
+ownership. Reconsider creating a workspace if it adds more burden than it
+removes; the current recommendation is contestable."*
+
+> **Agent:** The new review supports separate restore and add-records actions.
+> Recovery earns its own workspace because it preserves existing work. Adding
+> five records does not earn another workspace. The deletion prize is narrower:
+> restore can lose merge machinery, while adding records still needs conflict
+> handling. Here are the two interactions together so you can judge whether
+> that distinction matches how people use them.
+>
+> ```text
+> Restore backup: recover workspace -> inspect -> choose workspace
+> Add records:    preview records -> resolve conflicts -> add to current work
+> ```
+
+The person's correction changes the desired whole, not just a validation step.
+The coordinator carries it into independent exploration and brings back a
+coherent proposal. Technical uncertainty stays with the coordinator; a changed
+product bargain stays visible to the person. An authorized implementation would
+work backward from the settled experience rather than silently converge on the
+easiest intermediate design.
+
 ## Blog writing: compare the rendered openings
 
 This illustrative exchange compares three blog openings. The proposed follow-up

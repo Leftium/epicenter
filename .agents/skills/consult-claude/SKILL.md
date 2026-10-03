@@ -30,6 +30,11 @@ Distinguish explicit requirements, observed behavior, and hypotheses. If the
 contract is unresolved, assign its discovery rather than assuming a fix.
 Check the deciding claims against sources; do not redo the whole investigation.
 
+An exploration can advance a decision by discovering a better destination or an
+unknown blind spot; it need not resolve a question already identified. Name the
+opportunity the assignment could explore. Claude may propose worthwhile
+follow-up investigations, but Codex decides which to commission.
+
 ## Make the design legible
 
 Supply the desired outcome, genuine constraints, representative callsites, and
@@ -103,6 +108,17 @@ resuming retains context and does not restore independence.
 The launcher reapplies the access boundary on every turn. If the shell tool
 yields a running process, keep monitoring it and provide progress updates.
 There is no interactive attach step.
+
+Actively steer through those completed-turn follow-ups: supply new facts,
+correct misunderstandings, and redirect duplicated or low-value investigation
+without prescribing its conclusion. Preserve useful findings and state the next
+question when redirecting. The launcher sends one fixed brief per turn and has
+no mid-turn instruction channel. Use natural assignment boundaries when new
+evidence may change substantial work; avoid mandatory checkpoints for simple
+questions. For independent exploration or a materially different frame, brief
+a fresh session from raw evidence. After initial answers are preserved, an
+informed follow-up may challenge another proposal or Codex's synthesis;
+resumption does not make that challenge independent discovery.
 
 `--model` selects a model; the default is `claude-opus-5-5`.
 `--effort` selects the effort for this launch; omitting it leaves effort selection

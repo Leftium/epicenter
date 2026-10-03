@@ -29,6 +29,19 @@ Use this method within the ongoing task; its purpose, artifacts, and
 authorization remain in place as our understanding develops. Standalone
 exploration needs no destination artifact.
 
+Use independent investigations and bounded experiments when they can improve
+the concrete proposal or settle a consequential uncertainty. For design
+exploration, use [rethink](../rethink/SKILL.md) to pursue the strongest greenfield
+destination, not only validate the first proposal.
+[adversarial-review](../adversarial-review/SKILL.md) owns reviewer coordination;
+[delegate-claude](../delegate-claude/SKILL.md) owns Claude execution assignments.
+Bring findings back as one coherent next attempt, preserving accepted choices
+and exposing discoveries that change the bargain. Own technical follow-through
+and establish facts through evidence. Ask the person about consequential
+preferences or requirement changes. A new user-facing turn should offer a
+better-supported proposal, a consequential discovery, or a real choice;
+routine coordination belongs in progress updates.
+
 ## Make the model and its consequences judgeable
 
 Offer your best current understanding and a concrete attempt without requiring

@@ -22,6 +22,12 @@ together and give it concrete expression. Push it far enough that we can
 recognize what makes it worth pursuing. Then work backward from that destination,
 distinguishing constraints we must solve from assumptions we can discard.
 
+Greenfield discovery is the default posture when this skill is invoked. Start
+with what deserves to be built before narrowing to whether an emerging proposal
+works. Make the deletion prize concrete: machinery, obligations, or planned work
+that disappears and the guarantees that replace it. The strongest design may
+also introduce an abstraction that earns its place; judge the whole bargain.
+
 ## Pursue the vision
 
 Start with what the user wants to make possible and follow the idea all the way.
@@ -46,6 +52,15 @@ inherited choices from demonstrated constraints. Investigate uncertain limits;
 do not silently turn them into reasons to lower the ambition. Respect the user’s
 explicit requirements, and surface a conflict when pursuing the vision would
 require changing one.
+
+Use independent explorations when they could reveal a better destination,
+different boundary, or neglected caller need. A known blind spot is not required.
+[adversarial-review](../adversarial-review/SKILL.md) owns reviewer selection,
+independence, active steering, and adjudication. Brief reviewers from the outcome
+and actual callers, with permission to challenge the coordinator's framing.
+Bring discoveries back into a concrete proposal through dialectic; do not make
+the person assemble reviewer reports. A settled direction needs focused evidence
+and execution rather than repeated discovery without a consequential reason.
 
 ## Work backward from the destination
 

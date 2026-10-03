@@ -170,14 +170,17 @@ above illustrates the target; it is not a measured result or an answer key.
 | Reviewer requests a benchmark | Codex receives a specific discriminating check; Claude does not execute it or create a laboratory. |
 | Advice-only request | Codex returns the proposed check without silently authorizing implementation. |
 | Follow-up with new evidence | Same native session recalls the question, revises its judgment, and retains read-only access. |
-| Adversarial design review without a reviewer restriction | Coordinator gets one fresh GPT-6.1 Sol and one read-only Opus review. Each first sees the outcome, requirements, callers, and existing system without the proposal; the coordinator shares the proposal after their independent initial answers. |
+| Adversarial design review without a reviewer restriction | Coordinator starts with one fresh GPT-6.1 Sol and one read-only Opus review. Each independently develops a greenfield design from the outcome, requirements, callers, and existing system before seeing the proposal. Additional reviewers have a worthwhile exploration or challenge assignment. |
 | Ordinary final code check | Uses post-implementation-review locally; does not launch the reviewer pair. |
 | Bounded read-only caller map or documentation draft | Claude returns the finished artifact with source evidence; Codex checks decisive claims without launching a panel. |
 | Explicit implementation or benchmark delegation | Uses delegate-claude in a dedicated clone; Claude runs checks and returns actual artifacts; Codex verifies and integrates. |
 | Standalone request for Claude's opinion | Consults Claude without automatically launching a Codex reviewer. |
 | Explicit Codex-only adversarial review | Honors the restriction and does not enlist Claude. |
 | Reviewers agree without evidence of a shared blind spot | Coordinator verifies and reconciles findings; agreement alone does not trigger a third review. |
-| Reviews share a consequential unsupported premise | Coordinator names the suspected assumption before commissioning another focused reviewer or fresh pair. |
+| Opportunity for a different organizing idea without a known defect | Coordinator can commission a fresh exploration, names what it could improve, and compares concrete use, guarantees, deletion prizes, and introduced complexity. |
+| Reviews share a consequential unsupported premise | Coordinator commissions a focused challenge or fresh exploration and verifies the deciding claims; it can challenge its own synthesis. |
+| Reviewer drifts into local cleanup | Coordinator redirects a completed-turn follow-up toward the ownership, lifetime, representation, or interaction that makes the machinery necessary, without prescribing a verdict. |
+| New evidence changes an execution assignment | Delegate-claude resumes after a completed turn with changed evidence and acceptance criteria, retains useful partial work, and keeps one writer per clone. |
 
 For runtime acceptance, separately verify current uncommitted reads, context on
 resume, denied outside reads, absent write/shell/agent/MCP tools, and unchanged

@@ -26,6 +26,40 @@ await folder.tables.todos.update(created.data!.stem, { fields: { done: true } })
 await folder.close();
 ```
 
+## Dataset names, definitions, and addresses
+
+A folder ID names a dataset relative to its owner. In the managed native layout,
+`so.epicenter.todos` names `local/so.epicenter.todos/` or
+`accounts/<account-key>/so.epicenter.todos/` under the selected Epicenter root.
+Reverse-DNS names provide a shared convention for compatible tools. A name such
+as `so.epicenter.todos.work` denotes another dataset in a literal sibling
+directory; dots do not create nested directories or inherited permissions.
+
+A definition describes how this tool reads and edits the folder's files.
+Its required `id` supplies a convenient default folder ID. It is not a schema
+fingerprint or an exclusive claim by an application. Different tools can use
+different definitions to interpret the same files. Compatible field meanings
+still matter when those tools write to the same dataset.
+
+```ts
+const personal = await openFolder({ definition });
+const work = await openFolder({ definition, id: 'so.epicenter.todos.work' });
+```
+
+Both openings use the same interpretation at different addresses. Supplying
+`id` at opening keeps dataset selection separate from the reusable definition.
+An application can open several datasets, and several compatible applications
+can reach the same dataset. Its app ID and private SQLite namespace are separate
+choices even when they use the same default string.
+
+The complete managed address includes the channel, owner, and folder ID.
+Browser storage also belongs to one origin. Opening captures the address for
+the handle's lifetime; signing in later does not move its data or retarget its
+writes. Browser callers select `browser.scope`; a native shell registers the
+selected directory. The Bun opener instead receives an explicit directory.
+The managed native layout is described in
+[ADR-0461](../../docs/adr/0461-portable-data-folders-live-under-local-and-derived-account-scopes.md).
+
 ## Entries
 
 | Import | Opens | Use it when |

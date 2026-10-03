@@ -15,7 +15,7 @@ Private storage already uses `deviceOwnerPath` to encode each identity component
 
 ## Decision
 
-**The portable root groups data folders by scope.** `~/Epicenter/local/` is the Local scope. `~/Epicenter/accounts/` contains one directory for each account identity. A data folder has a stable folder ID within its scope, normally the application's reverse-DNS definition ID. Its name is not a globally unique repository identity.
+**The portable root groups data folders by scope.** `~/Epicenter/local/` is the Local scope. `~/Epicenter/accounts/` contains one directory for each account identity. A data folder has a stable folder ID relative to its owner, conventionally a reverse-DNS name. Its name is not a globally unique repository identity.
 
 ```text
 ~/Epicenter/
@@ -37,6 +37,22 @@ Private storage already uses `deviceOwnerPath` to encode each identity component
 ```
 
 The account directory in this example derives from `{ authorityId: "epicenter-api", principalId: "user-123" }`. The same definition can have a separate data folder in Local and in each account scope. Copying an account directory copies its contained data folders together.
+
+**A folder ID names a dataset; a definition interprets its files.** The complete
+managed address includes the deployment channel, Local or account owner, and
+folder ID. A browser origin supplies another physical storage boundary.
+Reverse-DNS names give compatible tools a shared addressing convention.
+`so.epicenter.notes.work` names an independent sibling dataset: dots are literal
+characters, with no directory nesting or permission inheritance.
+
+`defineFolder` requires an `id` as its convenient default dataset name.
+`openFolder({ definition, id })` can select another dataset with the same
+interpretation. That default is neither a schema fingerprint nor an application
+ownership claim. Several tools may interpret one dataset, and one application
+may open several datasets. Applications must agree on the meaning of shared
+fields they write. App IDs and private SQL namespaces remain separate choices.
+Opening captures the selected address; changing sign-in does not retarget the
+existing handle or move its files.
 
 **Every application derives the account directory from the exact account identity.** Let `A` be the UTF-8 bytes of `authorityId` and `P` be the UTF-8 bytes of `principalId`. The directory name is:
 

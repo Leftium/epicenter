@@ -44,9 +44,9 @@ export function prepareFolderDefinition<TDefinition extends DataDefinition>(
 }
 
 /**
- * Declare a folder's identity and schema without opening anything. Tables are
- * written with `defineTable` and fields with `field`, the same vocabulary
- * every Epicenter storage declares with.
+ * Declare a folder's file interpretation and default dataset name without
+ * opening anything. Tables use `defineTable` and fields use `field`, the same
+ * vocabulary every Epicenter storage declares with.
  *
  * The definition is checked here, where it is written: a malformed schema or
  * a body conversion throws at the declaration, not at the first open. What

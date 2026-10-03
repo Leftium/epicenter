@@ -98,7 +98,7 @@
 		{:else if recorder.phase === 'stopping'}
 			Saving the audio…
 		{:else}
-			Click the microphone to start recording.
+			Click to record. Click again to save.
 		{/if}
 	</p>
 

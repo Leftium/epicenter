@@ -25,14 +25,16 @@
 
 <form class="flex flex-col gap-3 text-sm" onsubmit={save}>
 	<p class="font-medium">Transcription</p>
+	<p class="text-xs text-muted-foreground">Audio is sent here only when you press Transcribe. Saving settings does not test the connection.</p>
 	<label class="flex flex-col gap-1">
 		<span class="text-xs text-muted-foreground">Model</span>
 		<Input bind:value={settings.model} autocomplete="off" spellcheck={false} data-testid="settings-model" />
-		<span class="text-xs text-muted-foreground">The name your endpoint uses for it.</span>
+		<span class="text-xs text-muted-foreground">Your provider’s transcription model name.</span>
 	</label>
 	<label class="flex flex-col gap-1">
-		<span class="text-xs text-muted-foreground">Endpoint (OpenAI-compatible base URL)</span>
+		<span class="text-xs text-muted-foreground">API endpoint</span>
 		<Input bind:value={settings.baseUrl} autocomplete="off" spellcheck={false} data-testid="settings-base-url" />
+		<span class="text-xs text-muted-foreground">An OpenAI-compatible base URL.</span>
 	</label>
 	<label class="flex flex-col gap-1">
 		<span class="text-xs text-muted-foreground">

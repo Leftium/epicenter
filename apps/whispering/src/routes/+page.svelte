@@ -59,7 +59,7 @@
 	<div class="flex w-full flex-col items-center gap-4">
 		<SectionHeader.Root class="space-y-3 text-center">
 			<SectionHeader.Title level={1} class="text-3xl font-bold tracking-tight sm:text-4xl">Whispering</SectionHeader.Title>
-			<SectionHeader.Description class="text-base">Record now. Turn it into text when you’re ready.</SectionHeader.Description>
+			<SectionHeader.Description class="text-base">Record audio. Transcribe it when you’re ready.</SectionHeader.Description>
 		</SectionHeader.Root>
 
 		<RecorderCard {library} />

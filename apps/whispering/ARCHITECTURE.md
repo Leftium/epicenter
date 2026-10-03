@@ -563,11 +563,20 @@ and the shell would wait forever for an answer to a close.
 
 So the holder of the opening answers instead (`mountSession` in
 `src/lib/session.svelte.ts`, `answerCloseWithNothingOpen` in
-`src/lib/workspace/desktop.ts`). A returned refusal or an
+`src/lib/workspace/closing.ts`). A returned refusal or an
 `OpeningReleasedError` proves that nothing remains open. Only then is each
 close the person asks for answered `proceed` through the host, or with the
 quit address when the host is gone. A failed cleanup or an unexpected
 rejection from the opener proves no such thing and installs no answer.
+
+Whatever the failure, the failure page in Whispering's shell offers a Quit
+button. Pressing it answers `proceed` through the host and, if the host does
+not take it, navigates to the quit address as well; the page says when
+neither was confirmed. It refuses while the opening is under way and after
+the layout is released, and nothing listens for it. `closing.ts` reaches only
+the bridge, so this works when the desktop workspace's own module is what
+failed to load. A browser tab and a desktop app that injected no host token
+offer no Quit.
 
 It is narrow on purpose:
 

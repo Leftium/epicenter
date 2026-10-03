@@ -603,8 +603,11 @@ test('a host that stops answering does not close the folder: the page keeps savi
 		model: 'm',
 	});
 	expect(transcribed.error?.name).toBe('HostUnavailable');
-	// An answer that cannot be delivered leaves the window open; it does not throw.
-	await workspace.closing!.answer('proceed');
+	// An answer that cannot be delivered rejects, so the guard can say so; the
+	// window stays open.
+	await expect(workspace.closing!.answer('proceed')).rejects.toThrow(
+		'Load failed',
+	);
 	await workspace.close();
 	expect(sent('detach')).toHaveLength(1);
 });
@@ -978,6 +981,48 @@ test('after a failed opening with the host gone, the shell’s close attempt is 
 	expect(shell.navigations).toHaveLength(1);
 });
 
+test('after an opening that failed without proof, the real host approves only the person’s own Quit', async () => {
+	const served = await realHost();
+	globalThis.fetch = served.fetch as typeof fetch;
+	const shell = page({ token: CONNECTION.token });
+	// The failure is not one that proves anything was released, as when the
+	// desktop workspace's own module cannot be loaded.
+	const mounted = mountSession(async () => {
+		throw new Error('Failed to fetch dynamically imported module');
+	});
+	cleanups.push(() => mounted.release());
+	await expect(mounted.opening).rejects.toThrow('dynamically imported');
+	served.host.closeRequested();
+	await settle(100);
+
+	// The shell's question is not answered for the person.
+	expect(served.approvals).toBe(0);
+	expect(shell.navigations).toEqual([]);
+
+	expect(await mounted.quit?.()).toBeUndefined();
+	expect(served.approvals).toBe(1);
+	expect(shell.navigations).toEqual([]);
+});
+
+test('a Quit the host cannot take also uses the quit address, and says it was not confirmed', async () => {
+	globalThis.fetch = (async () => {
+		throw new TypeError('Load failed');
+	}) as unknown as typeof fetch;
+	const shell = page({ token: CONNECTION.token });
+	const mounted = mountSession(async () => {
+		throw new Error('Failed to fetch dynamically imported module');
+	});
+	cleanups.push(() => mounted.release());
+	await expect(mounted.opening).rejects.toThrow('dynamically imported');
+
+	const problem = await mounted.quit?.();
+
+	expect(problem).toContain('could not confirm the quit');
+	expect(shell.navigations).toEqual([
+		`${CONNECTION.origin}/__whispering__/quit`,
+	]);
+});
+
 test('a desktop app that is not Whispering’s shell, and a browser tab, are asked no close question and answer none', async () => {
 	const requested: string[] = [];
 	globalThis.fetch = (async (input: string) => {
@@ -989,6 +1034,8 @@ test('a desktop app that is not Whispering’s shell, and a browser tab, are ask
 	const embedded = page(undefined);
 	const inApp = mountSession();
 	expect(expectErr(await inApp.opening).name).toBe('HostMissing');
+	// Nothing to quit through, so no Quit is offered.
+	expect(inApp.quit).toBeUndefined();
 	embedded.closeBlocked();
 	await settle(50);
 	inApp.release();
@@ -998,6 +1045,7 @@ test('a desktop app that is not Whispering’s shell, and a browser tab, are ask
 	const tab = page({ token: 'left-over-token' });
 	const inTab = mountSession();
 	expect(expectErr(await inTab.opening).name).toBe('BrowserFolder');
+	expect(inTab.quit).toBeUndefined();
 	tab.closeBlocked();
 	await settle(50);
 	inTab.release();

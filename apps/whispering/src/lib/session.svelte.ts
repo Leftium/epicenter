@@ -21,6 +21,7 @@ import { createSettingsDraft } from './settings-draft.svelte.js';
 import {
 	answerCloseAfterFailedOpening,
 	openWorkspace,
+	quitAfterFailedOpening,
 	type Workspace,
 	type WorkspaceError,
 } from './workspace/index.js';
@@ -243,27 +244,49 @@ export async function openSession(
  * `release` undoes exactly one of them: it closes the session, or stops
  * answering for the failed opening. Released before the opening settles, the
  * opening closes what it opened by itself and nothing ever answers.
+ *
+ * Whatever the failure, the failed window also offers the person's own quit
+ * (`quit`), so a window whose failure proves nothing can still be left. It
+ * answers only when pressed, refuses until the opening has failed, and
+ * refuses after release. It is undefined where no shell asks a close
+ * question.
  */
 export function mountSession(
 	open: () => Promise<Result<Workspace, WorkspaceError>> = openWorkspace,
 	answerClose: () => () => void = answerCloseAfterFailedOpening,
+	quitWhenAsked:
+		| (() => Promise<string | undefined>)
+		| undefined = quitAfterFailedOpening(),
 ) {
 	const releasing = new AbortController();
 	const opening = openSession(open, releasing.signal);
 	let stopAnswering: (() => void) | undefined;
+	/** Whether the opening ended with no session, however it failed. */
+	let openingFailed = false;
 	const failed = () => {
 		if (!releasing.signal.aborted) stopAnswering = answerClose();
 	};
 	void opening.then(
 		(opened) => {
-			if (opened.error) failed();
+			if (!opened.error) return;
+			openingFailed = true;
+			failed();
 		},
 		(cause: unknown) => {
+			openingFailed = true;
 			if (cause instanceof OpeningReleasedError) failed();
 		},
 	);
 	return {
 		opening,
+		/** The person's own quit after the opening failed. Returns why it did not go through. */
+		quit:
+			quitWhenAsked &&
+			(async (): Promise<string | undefined> => {
+				if (!openingFailed || releasing.signal.aborted)
+					return 'Whispering is not ready to quit from here.';
+				return quitWhenAsked();
+			}),
 		release() {
 			if (releasing.signal.aborted) return;
 			releasing.abort();

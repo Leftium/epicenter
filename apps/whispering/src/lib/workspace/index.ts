@@ -13,6 +13,7 @@
  */
 import { isTauri } from '@tauri-apps/api/core';
 import type { Result } from 'wellcrafted/result';
+import { answerCloseWithNothingOpen, quitWhenAsked } from './closing.js';
 import { type Workspace, WorkspaceError } from './types.js';
 
 export type {
@@ -64,22 +65,30 @@ export async function openWorkspace(): Promise<
  * both this does nothing.
  */
 export function answerCloseAfterFailedOpening(): () => void {
-	if (!isTauri()) return () => {};
+	const connection = shellConnection();
+	if (connection === undefined) return () => {};
+	return answerCloseWithNothingOpen(connection);
+}
+
+/**
+ * The person's own quit for a window whose opening failed, whatever the
+ * failure: one press, one answer, and nothing heard or answered before or
+ * after it. Undefined where no shell asks a close question: a browser tab, or
+ * a desktop app that injected no host token. It needs only the host's bridge,
+ * so it works when the desktop workspace itself failed to load.
+ */
+export function quitAfterFailedOpening():
+	| (() => Promise<string | undefined>)
+	| undefined {
+	const connection = shellConnection();
+	if (connection === undefined) return undefined;
+	return () => quitWhenAsked(connection);
+}
+
+/** How to reach Whispering's host, when the page is inside Whispering's own shell. */
+function shellConnection() {
+	if (!isTauri()) return undefined;
 	const bridge = window.__WHISPERING_BRIDGE__;
-	if (bridge === undefined) return () => {};
-	const connection = { origin: location.origin, token: bridge.token };
-	let stopped = false;
-	let stop: (() => void) | undefined;
-	void import('./desktop.js').then(
-		({ answerCloseWithNothingOpen }) => {
-			if (!stopped) stop = answerCloseWithNothingOpen(connection);
-		},
-		// The desktop module could not load, so nothing can answer. The window
-		// stays open, which loses nothing.
-		() => {},
-	);
-	return () => {
-		stopped = true;
-		stop?.();
-	};
+	if (bridge === undefined) return undefined;
+	return { origin: location.origin, token: bridge.token };
 }

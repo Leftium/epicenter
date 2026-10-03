@@ -266,6 +266,41 @@ test('an opener that throws partway through acquiring is never answered for, eve
 	expect(counts).toEqual({ started: 0, stopped: 0 });
 });
 
+test('an opening that fails without proof answers no close by itself, and quits only when the person presses Quit', async () => {
+	const acquiring = deferred<void>();
+	const { counts, answerClose } = closeAnswerer();
+	let quits = 0;
+	const mounted = mountSession(
+		async () => {
+			await acquiring.promise;
+			throw new Error('the desktop workspace could not be loaded');
+		},
+		answerClose,
+		async () => {
+			quits += 1;
+			return undefined;
+		},
+	);
+	if (mounted.quit === undefined) throw new Error('expected a quit');
+
+	// Still opening: Quit is refused, so nothing can answer for work under way.
+	expect(await mounted.quit()).toBeDefined();
+	expect(quits).toBe(0);
+
+	acquiring.resolve();
+	await expect(mounted.opening).rejects.toThrow('could not be loaded');
+	await Bun.sleep(0);
+	// Nothing proves the folder was released: no close is answered unseen.
+	expect(counts).toEqual({ started: 0, stopped: 0 });
+
+	expect(await mounted.quit()).toBeUndefined();
+	expect(quits).toBe(1);
+
+	mounted.release();
+	expect(await mounted.quit()).toBeDefined();
+	expect(quits).toBe(1);
+});
+
 test('a layout that went away before its opening failed never starts answering', async () => {
 	const settle = deferred<ReturnType<typeof refusal>>();
 	const { counts, answerClose } = closeAnswerer();

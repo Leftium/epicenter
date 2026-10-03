@@ -81,21 +81,31 @@ export type DeclaredTable<TBody extends TableBody = TableBody> =
 	TableDeclaration<TBody> & DeclaredMark;
 
 /**
- * One durable data domain's complete, inert definition.
+ * How stored data reads, naming no dataset: the optional title, the KV fields,
+ * and the tables.
  *
- * A declaration and the prepared definition `prepareData` returns for it have
- * this one shape. The prepared one is an owned, frozen snapshot whose fields
- * `accepts`, `conformance`, and `inputIssues` read; a field of a declaration
- * that was never prepared is refused by them.
+ * A storage that selects its dataset when it opens, such as a file folder,
+ * declares this shape alone. `prepareSchema` prepares it and refuses an `id`.
  */
-export type DataDefinition<TBody extends TableBody = TableBody> = {
-	readonly id: string;
+export type DataSchema<TBody extends TableBody = TableBody> = {
 	readonly title?: string;
 	readonly kv: FieldMap;
 	readonly tables: {
 		readonly [table: string]: DeclaredTable<TBody>;
 	};
 };
+
+/**
+ * One durable data domain's complete, inert definition: a schema and the ID
+ * of the data it describes.
+ *
+ * A declaration and the prepared definition `prepareData` returns for it have
+ * this one shape. The prepared one is an owned, frozen snapshot whose fields
+ * `accepts`, `conformance`, and `inputIssues` read; a field of a declaration
+ * that was never prepared is refused by them.
+ */
+export type DataDefinition<TBody extends TableBody = TableBody> =
+	DataSchema<TBody> & { readonly id: string };
 
 /** A field diagnostic. Messages and diagnostic counts are not machine contracts. */
 export type ConformanceIssue = {
@@ -118,4 +128,4 @@ export type RowOf<T extends TableDeclaration> = { id: string } & FieldsOut<
 /** Values supplied when creating a row. */
 export type CreateRowOf<T extends TableDeclaration> = FieldsOut<T['fields']>;
 
-export type KvOf<TDatabase extends DataDefinition> = FieldsOut<TDatabase['kv']>;
+export type KvOf<TDatabase extends DataSchema> = FieldsOut<TDatabase['kv']>;

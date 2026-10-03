@@ -24,6 +24,7 @@ import { DATA_ADDRESS_CEILINGS, isDataId, isTableName } from './addresses.js';
 import {
 	type ConformanceIssue,
 	type DataDefinition,
+	type DataSchema,
 	type FieldMap,
 	KV_ROOT,
 	RESERVED_TABLE_NAMES,
@@ -61,10 +62,10 @@ export type Conformance = {
 	issues: ConformanceIssue[];
 };
 
-const prepared = new WeakMap<
-	object,
-	Result<DataDefinition, DataDefinitionParseError>
->();
+/** One memo per shape, so a definition and a schema never answer for each other. */
+type Memo = WeakMap<object, Result<DataSchema, DataDefinitionParseError>>;
+const preparedDefinitions: Memo = new WeakMap();
+const preparedSchemas: Memo = new WeakMap();
 
 /**
  * Check one definition and return the copy every read uses (ADR-0266).
@@ -95,17 +96,47 @@ export function prepareData<TDefinition extends DataDefinition>(
 	value: TDefinition,
 ): Result<TDefinition, DataDefinitionParseError> {
 	// The snapshot has the declared shape, so it has the declared type.
-	type Prepared = Result<TDefinition, DataDefinitionParseError>;
+	return memoised(preparedDefinitions, value, prepareDefinition) as Result<
+		TDefinition,
+		DataDefinitionParseError
+	>;
+}
+
+/**
+ * Check one schema, a declaration that names no dataset, and return the copy
+ * every read uses.
+ *
+ * Everything {@link prepareData} says holds, except the identity: the result
+ * is an optional `title`, `kv`, and `tables`, and a declaration with an own
+ * `id` is malformed. A storage that selects its dataset when it opens takes
+ * the ID there, so an ID here would name nothing. The memo is its own: a
+ * prepared definition is not a prepared schema, and the reverse.
+ */
+export function prepareSchema<
+	TSchema extends DataSchema & { readonly id?: never },
+>(
+	value: TSchema,
+): Result<TSchema, DataDefinitionParseError> {
+	return memoised(preparedSchemas, value, prepareIdentityFree) as Result<
+		TSchema,
+		DataDefinitionParseError
+	>;
+}
+
+function memoised(
+	memo: Memo,
+	value: unknown,
+	prepare: (value: unknown) => Result<DataSchema, DataDefinitionParseError>,
+): Result<DataSchema, DataDefinitionParseError> {
 	// A declaration that arrived untyped may not be an object, and only an
 	// object can be a memo key.
-	if (typeof value !== 'object' || value === null)
-		return prepareDefinition(value) as Prepared;
-	const memoised = prepared.get(value);
-	if (memoised !== undefined) return memoised as Prepared;
-	const result = prepareDefinition(value);
-	prepared.set(value, result);
-	if (result.error === null) prepared.set(result.data, result);
-	return result as Prepared;
+	if (typeof value !== 'object' || value === null) return prepare(value);
+	const found = memo.get(value);
+	if (found !== undefined) return found;
+	const result = prepare(value);
+	memo.set(value, result);
+	if (result.error === null) memo.set(result.data, result);
+	return result;
 }
 
 function prepareDefinition(
@@ -115,12 +146,36 @@ function prepareDefinition(
 		return DataDefinitionParseError.Malformed({
 			reason: 'it is not a plain object',
 		});
-	const { id, title, kv, tables } = value as Partial<DataDefinition>;
+	const { id } = value as Partial<DataDefinition>;
 	if (typeof id !== 'string' || !isDataId(id, DATA_ADDRESS_CEILINGS)) {
 		return DataDefinitionParseError.Malformed({
 			reason: 'it declares an invalid id',
 		});
 	}
+	const schema = prepareShape(value);
+	if (schema.error !== null) return schema;
+	return Ok(Object.freeze({ id, ...schema.data }));
+}
+
+function prepareIdentityFree(
+	value: unknown,
+): Result<DataSchema, DataDefinitionParseError> {
+	if (!isPlainObject(value))
+		return DataDefinitionParseError.Malformed({
+			reason: 'it is not a plain object',
+		});
+	if (Object.hasOwn(value, 'id'))
+		return DataDefinitionParseError.Malformed({
+			reason: 'it declares an id, and a schema names no dataset',
+		});
+	return prepareShape(value);
+}
+
+/** The prepared title, kv, and tables of a plain-object declaration. */
+function prepareShape(
+	value: Record<string, unknown>,
+): Result<DataSchema, DataDefinitionParseError> {
+	const { title, kv, tables } = value as Partial<DataSchema>;
 	if (
 		title !== undefined &&
 		(typeof title !== 'string' || title.trim() === '')
@@ -184,11 +239,10 @@ function prepareDefinition(
 	}
 	return Ok(
 		Object.freeze({
-			id,
 			...(title === undefined ? {} : { title }),
 			kv: preparedKv.data,
 			// `defineTable`'s mark is a type and nothing at run time.
-			tables: Object.freeze(preparedTables) as DataDefinition['tables'],
+			tables: Object.freeze(preparedTables) as DataSchema['tables'],
 		}),
 	);
 }
@@ -270,7 +324,7 @@ function validationOf(schema: TSchema & object): Validation {
 	const validation = validations.get(schema);
 	if (validation === undefined)
 		throw new Error(
-			'This schema was not prepared. Read fields from the definition that prepareData, defineStore, or defineFolder returned.',
+			'This schema was not prepared. Read fields from the definition that prepareData, prepareSchema, defineStore, or defineFolder returned.',
 		);
 	return validation;
 }

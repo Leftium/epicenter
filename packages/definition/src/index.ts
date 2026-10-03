@@ -12,6 +12,7 @@ export {
 	type ConformanceIssue,
 	type CreateRowOf,
 	type DataDefinition,
+	type DataSchema,
 	type DeclaredMark,
 	type DeclaredTable,
 	type FieldMap,
@@ -48,4 +49,5 @@ export {
 	DataDefinitionParseError,
 	inputIssues,
 	prepareData,
+	prepareSchema,
 } from './prepare.js';

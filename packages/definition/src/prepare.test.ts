@@ -16,6 +16,8 @@
  *   named by their keys, frozen and without a prototype
  * - Preparation is memoized on the declaration and on the definition it
  *   returned
+ * - `prepareSchema` prepares the same shape without an ID and refuses one;
+ *   its memo never answers for `prepareData`'s
  * - A validator belongs to a prepared snapshot, never to the author's schema:
  *   a schema reused in two definitions is prepared twice, and a schema that
  *   was never prepared is refused with an error
@@ -60,6 +62,7 @@ import {
 	isJsonSafe,
 	jsonValue,
 	prepareData,
+	prepareSchema,
 } from './index.js';
 
 /** Prepare one bucket of fields as a definition's kv. */
@@ -182,6 +185,31 @@ test('preparation is memoized on the declaration and on the definition it return
 	const malformed = { ...definition, kv: { id: field.string() } };
 	expect(prepareData(malformed)).toBe(prepareData(malformed));
 	expectErr(prepareData(malformed));
+});
+
+test('a schema names no dataset, and its preparation answers apart from a definition', () => {
+	const { id: _, ...declared } = definition;
+	const schema = expectOk(prepareSchema(declared));
+	expect(Object.keys(schema)).toEqual(['kv', 'tables']);
+	expect(Object.isFrozen(schema)).toBe(true);
+	expect(prepareSchema(schema)).toBe(prepareSchema(declared));
+	expect(check(schema.kv, 'theme', 'dark')).toBe(true);
+	// An ID names the data, so a schema refuses one, even untyped.
+	// @ts-expect-error A Store definition names a dataset; a schema cannot.
+	const named = prepareSchema(definition);
+	expect(expectErr(named).message).toContain(
+		'declares an id',
+	);
+	expect(
+		expectErr(prepareSchema({ ...declared, id: undefined } as never)).name,
+	).toBe('Malformed');
+	// Neither preparation answers for the other's result.
+	expect(expectErr(prepareData(schema as never)).message).toContain(
+		'invalid id',
+	);
+	expect(
+		expectErr(prepareSchema(expectOk(prepareData(definition)) as never)).name,
+	).toBe('Malformed');
 });
 
 test('a declaration that is not an object is malformed', () => {

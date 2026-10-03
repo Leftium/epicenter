@@ -38,10 +38,11 @@ conformance(definition.tables.todos.fields, stored);   // { conforming, issues }
 
 ## One shape, declared and prepared
 
-A definition is `{ id, title?, kv, tables }`. `kv` is a record of native
-schemas by field name, and each table is `{ fields, body? }`, where `fields`
-is the same kind of record. `prepareData` returns that same shape with the
-same literal type, so `RowOf`, `KvOf`, and every field's `Static<>` read a
+A definition is `{ id, title?, kv, tables }`: a `DataSchema`, which is
+`{ title?, kv, tables }`, and the ID of the data it describes. `kv` is a record
+of native schemas by field name, and each table is `{ fields, body? }`, where
+`fields` is the same kind of record. `prepareData` returns that same shape with
+the same literal type, so `RowOf`, `KvOf`, and every field's `Static<>` read a
 prepared definition exactly as they read the declaration. There is no second,
 compiled representation: no field wrapper, no table object with methods, no
 `Map`, and no name stored anywhere but the record key.
@@ -62,6 +63,12 @@ returns, so preparing a prepared definition returns it. `defineStore` and
 `defineFolder` return the prepared definition, and the stores and folders
 opened from it read through that snapshot.
 
+A storage that selects its dataset when it opens, as a file folder does,
+declares the schema alone. `prepareSchema` prepares it exactly as above, minus
+the ID: it requires none and refuses one. The two preparations keep separate
+memos, so neither returns the other's result, and a store definition is never
+accepted as a schema.
+
 The reads take a prepared field or a prepared field record:
 
 | Read | What it answers |
@@ -79,7 +86,7 @@ compiled lazily, and the answer is never a silent `false`.
 | Package | What it adds |
 | --- | --- |
 | `@epicenter/app` | `defineStore`, and a table body bound to a Yjs node (`BodyCodec`, `plainText()`). It re-exports this vocabulary from its root, `/field`, and `/definition`. |
-| `@epicenter/folder` | `defineFolder`, which refuses a body conversion, because a folder's row body is the file's Markdown text. |
+| `@epicenter/folder` | `defineFolder`, which prepares a `DataSchema` and refuses a body conversion, because a folder's row body is the file's Markdown text. The opener names the folder. |
 
 Both get the same `defineTable` brand, the same `RowOf`, `CreateRowOf`, and
 `KvOf` lenses, and the same reads over the same prepared fields. Neither
@@ -94,9 +101,9 @@ else:
 
 ```text
 src/field/        the field.* helpers, the editor hint, and fieldEditorOf (./field)
-src/declaration   FieldMap, TableDeclaration, DataDefinition, row lenses
+src/declaration   FieldMap, TableDeclaration, DataSchema, DataDefinition, row lenses
 src/define        defineTable and the declared-table brand
-src/prepare       prepareData, accepts, conformance, inputIssues
+src/prepare       prepareData, prepareSchema, accepts, conformance, inputIssues
 src/addresses     data ID, table name, and row ID grammars
 src/json          JsonValue and its guards
 ```

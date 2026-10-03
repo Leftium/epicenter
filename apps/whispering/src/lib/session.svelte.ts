@@ -28,6 +28,62 @@ import {
 /** Why an opening ended with no session although nothing failed. */
 const RELEASED = 'The layout was released before its session finished opening.';
 
+const messageOf = (cause: unknown) =>
+	cause instanceof Error ? cause.message : String(cause);
+
+/**
+ * An opening that failed after everything it had opened was closed. This is
+ * the only rejection that proves nothing is held, so it is the only one after
+ * which a close is answered without looking.
+ *
+ * `startup` is why the opening failed, and the message is its message.
+ */
+export class OpeningReleasedError extends Error {
+	override readonly name = 'OpeningReleasedError';
+	constructor(readonly startup: unknown) {
+		super(messageOf(startup), { cause: startup });
+	}
+}
+
+/**
+ * An opening that failed, and whose closing of what it had opened failed too.
+ * Nothing confirms that the folder was released or that work under way has
+ * ended, so nothing may answer the shell's close for this opening.
+ *
+ * `startup` is why the opening failed; `cleanup` is why closing failed. The
+ * message is shown to the person, so it carries the startup message, which is
+ * shown for any failed opening, and says only that releasing failed.
+ */
+export class OpeningNotReleasedError extends Error {
+	override readonly name = 'OpeningNotReleasedError';
+	constructor(
+		readonly startup: unknown,
+		readonly cleanup: unknown,
+	) {
+		super(
+			`${messageOf(startup)} Whispering could not confirm that the folder was released afterward, so this window does not approve closing by itself.`,
+			{ cause: startup },
+		);
+	}
+}
+
+/**
+ * Close what a failed opening opened, then reject with why it failed: as an
+ * `OpeningReleasedError` once the close has completed, or as an
+ * `OpeningNotReleasedError` with both reasons when it failed.
+ */
+async function failOpening(
+	startup: unknown,
+	close: () => Promise<void>,
+): Promise<never> {
+	try {
+		await close();
+	} catch (cleanup) {
+		throw new OpeningNotReleasedError(startup, cleanup);
+	}
+	throw new OpeningReleasedError(startup);
+}
+
 /**
  * Build the session over an opened workspace: read the folder once, then start
  * answering the shell.
@@ -41,8 +97,11 @@ const RELEASED = 'The layout was released before its session finished opening.';
  *
  * A session that cannot start is not returned. Its library and workspace are
  * closed first, which waits for whatever they had under way, and only then
- * does this reject. The same happens when `released` is aborted before the
- * start settles: nothing listens and nothing is left open.
+ * does this reject, with an `OpeningReleasedError`. The same happens when
+ * `released` is aborted before the start settles: nothing listens and nothing
+ * is left open. When closing them fails, it rejects with an
+ * `OpeningNotReleasedError` instead, since then nothing confirms that they
+ * were closed.
  */
 export async function createSession(
 	workspace: Workspace,
@@ -53,8 +112,7 @@ export async function createSession(
 		await library.start();
 		if (released?.aborted) throw new Error(RELEASED);
 	} catch (cause) {
-		await library.close().catch(() => {});
-		throw cause;
+		return failOpening(cause, () => library.close());
 	}
 	const leave = createLeaveGuard(library, workspace.closing);
 	/** What the shell shows. Held here so no route owns it. */
@@ -146,7 +204,10 @@ export type Session = Awaited<ReturnType<typeof createSession>>;
  * by the app layout when it mounts; importing this module opens nothing. A
  * workspace that cannot be opened is returned as the reason, and no session
  * exists. A session that cannot start, or whose layout was released first,
- * rejects after everything it opened has been closed.
+ * rejects with an `OpeningReleasedError` after everything it opened has been
+ * closed, or with an `OpeningNotReleasedError` when closing it failed. A
+ * rejection from `open` itself passes through as it is: it says nothing about
+ * what that opener acquired before it threw.
  */
 export async function openSession(
 	open: () => Promise<Result<Workspace, WorkspaceError>> = openWorkspace,
@@ -154,10 +215,8 @@ export async function openSession(
 ): Promise<Result<Session, WorkspaceError>> {
 	const opened = await open();
 	if (opened.error) return opened;
-	if (released?.aborted) {
-		await opened.data.close().catch(() => {});
-		throw new Error(RELEASED);
-	}
+	if (released?.aborted)
+		return failOpening(new Error(RELEASED), () => opened.data.close());
 	return Ok(await createSession(opened.data, released));
 }
 
@@ -175,8 +234,11 @@ export async function openSession(
  * the session has finished starting: opening the workspace, the first read of
  * the folder, and credential presence. A request made in
  * that time waits, and is answered by whichever of the two the opening
- * becomes. A failed opening is answered for only once it has rejected, which
- * is after everything it opened was closed.
+ * becomes. A refused opening holds nothing. A rejected one is answered for
+ * only when it proves that everything it opened was closed
+ * (`OpeningReleasedError`). Any other rejection, such as a failed close or an
+ * opener that threw partway through acquiring, is never answered for: nothing
+ * confirms that nothing is held, so a close asked then stays unanswered.
  *
  * `release` undoes exactly one of them: it closes the session, or stops
  * answering for the failed opening. Released before the opening settles, the
@@ -192,9 +254,14 @@ export function mountSession(
 	const failed = () => {
 		if (!releasing.signal.aborted) stopAnswering = answerClose();
 	};
-	void opening.then((opened) => {
-		if (opened.error) failed();
-	}, failed);
+	void opening.then(
+		(opened) => {
+			if (opened.error) failed();
+		},
+		(cause: unknown) => {
+			if (cause instanceof OpeningReleasedError) failed();
+		},
+	);
 	return {
 		opening,
 		release() {

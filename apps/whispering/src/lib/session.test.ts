@@ -11,6 +11,8 @@
  * - A navigation that unloads the document is held back only while something
  *   exists only in the window
  * - The close guard belongs to the session and stops listening when it closes
+ * - A failed opening is answered for only when it was refused, or proves that
+ *   everything it opened was closed; any other rejection leaves closes unanswered
  */
 import './svelte-modules.test-support.js';
 import { afterEach, expect, test } from 'bun:test';
@@ -25,7 +27,12 @@ import {
 	type TestWorkspaceOptions,
 } from './workspace.test-support.js';
 
-const { mountSession, openSession } = await import('./session.svelte.ts');
+const {
+	mountSession,
+	openSession,
+	OpeningNotReleasedError,
+	OpeningReleasedError,
+} = await import('./session.svelte.ts');
 
 const cleanups: (() => Promise<void>)[] = [];
 afterEach(async () => {
@@ -79,21 +86,30 @@ test('a session whose first read fails releases the folder it opened', async () 
 	const test = await openTestWorkspace();
 	cleanups.push(test.remove);
 	const { folder } = test.workspace;
+	const lost = new Error('the folder host went away');
 	const unreadable: Workspace = {
 		...test.workspace,
 		folder: {
 			...folder,
 			kv: {
 				...folder.kv,
-				get: () => Promise.reject(new Error('the folder host went away')),
+				get: () => Promise.reject(lost),
 			},
 		},
 	};
 
-	await expect(openSession(async () => Ok(unreadable))).rejects.toThrow(
-		'the folder host went away',
+	const rejected = await openSession(async () => Ok(unreadable)).then(
+		() => undefined,
+		(cause: unknown) => cause,
 	);
 
+	// The rejection says the close completed, and carries the read's own error.
+	expect(rejected).toBeInstanceOf(OpeningReleasedError);
+	expect((rejected as InstanceType<typeof OpeningReleasedError>).startup).toBe(
+		lost,
+	);
+	expect((rejected as Error).cause).toBe(lost);
+	expect((rejected as Error).message).toBe('the folder host went away');
 	expect(test.closes).toBe(1);
 	expect(test.closeListeners.size).toBe(0);
 });
@@ -213,6 +229,41 @@ test('an opening that fails after its folder opened is also a failed opening: th
 	expect(counts).toEqual({ started: 1, stopped: 0 });
 	mounted.release();
 	expect(counts).toEqual({ started: 1, stopped: 1 });
+});
+
+test('an opener that throws partway through acquiring is never answered for, even with a close pending', async () => {
+	// The real folder is open: the opener acquired it, then threw before
+	// returning a workspace, as when releasing a mismatched folder fails.
+	const test = await openTestWorkspace();
+	cleanups.push(test.remove);
+	cleanups.push(() => test.workspace.close());
+	const thrown = new Error('closing the mismatched folder failed');
+	const acquiring = deferred<void>();
+	const { counts, answerClose } = closeAnswerer();
+	const mounted = mountSession(async () => {
+		await acquiring.promise;
+		throw thrown;
+	}, answerClose);
+	// The person asks to close while the opening is under way.
+	test.requestClose();
+
+	acquiring.resolve();
+	const rejected = await mounted.opening.then(
+		() => undefined,
+		(cause: unknown) => cause,
+	);
+	expect(rejected).toBe(thrown);
+	await Bun.sleep(20);
+
+	// Nothing proves the folder was released, so neither the pending close
+	// nor a later one is answered.
+	expect(test.closes).toBe(0);
+	test.requestClose();
+	await Bun.sleep(20);
+	expect(test.answers).toEqual([]);
+	expect(counts).toEqual({ started: 0, stopped: 0 });
+	mounted.release();
+	expect(counts).toEqual({ started: 0, stopped: 0 });
 });
 
 test('a layout that went away before its opening failed never starts answering', async () => {
@@ -362,6 +413,120 @@ test('a start that fails with a close pending answers nothing until everything i
 	expect(seen).toEqual([{ closes: 1, answers: 0 }]);
 	expect(test.closeListeners.size).toBe(0);
 	mounted.release();
+});
+
+/**
+ * A starting session whose workspace cannot be closed: its close rejects and
+ * the real folder underneath stays open, as when the owner never confirms the
+ * release. The test releases the real folder itself afterward.
+ */
+async function startingUnreleasable() {
+	const started = await starting();
+	const { test } = started;
+	cleanups.push(() => test.workspace.close());
+	return {
+		...started,
+		open: async () =>
+			Ok({
+				...expectOk(await started.open()),
+				async close() {
+					throw new Error('the owner did not confirm the release of sk-secret');
+				},
+			}),
+	};
+}
+
+/** What an opening rejected with, which must be an unreleased failure. */
+async function unreleased(opening: Promise<unknown>) {
+	const rejected = await opening.then(
+		() => undefined,
+		(cause: unknown) => cause,
+	);
+	if (!(rejected instanceof OpeningNotReleasedError))
+		throw new Error(`expected an unreleased opening, got ${String(rejected)}`);
+	return rejected;
+}
+
+test('a start that fails and cannot release what it opened keeps both reasons and never answers a close', async () => {
+	const { test, open, begun, failWith } = await startingUnreleasable();
+	const { counts, answerClose } = closeAnswerer();
+	const mounted = mountSession(open, answerClose);
+	await begun();
+	test.requestClose();
+
+	failWith(new Error('the first read failed'));
+	const rejected = await unreleased(mounted.opening);
+	await Bun.sleep(20);
+
+	// Why it failed and why it could not be released are both kept. What the
+	// person reads names the first and does not repeat the second's details.
+	expect(rejected.startup).toBeInstanceOf(Error);
+	expect((rejected.startup as Error).message).toBe('the first read failed');
+	expect((rejected.cleanup as Error).message).toContain('did not confirm');
+	expect(rejected.message).toContain('the first read failed');
+	expect(rejected.message).toContain(
+		'could not confirm that the folder was released',
+	);
+	expect(rejected.message).not.toContain('sk-secret');
+
+	// The folder is still held. Nothing listens, and nothing answers for it,
+	// not the close asked while starting and not one asked now.
+	expect(test.closes).toBe(0);
+	expect(test.closeListeners.size).toBe(0);
+	test.requestClose();
+	await Bun.sleep(20);
+	expect(test.answers).toEqual([]);
+	expect(counts).toEqual({ started: 0, stopped: 0 });
+
+	mounted.release();
+	await Bun.sleep(0);
+	expect(test.answers).toEqual([]);
+	expect(counts).toEqual({ started: 0, stopped: 0 });
+});
+
+test('a layout released while starting, whose closing then fails, answers nothing', async () => {
+	const { test, open, begun, finish } = await startingUnreleasable();
+	const { counts, answerClose } = closeAnswerer();
+	const mounted = mountSession(open, answerClose);
+	await begun();
+
+	mounted.release();
+	test.requestClose();
+	finish();
+
+	const rejected = await unreleased(mounted.opening);
+	expect((rejected.startup as Error).message).toContain('released');
+	await Bun.sleep(20);
+	expect(test.answers).toEqual([]);
+	expect(counts).toEqual({ started: 0, stopped: 0 });
+});
+
+test('a workspace released before its session starts, whose closing fails, reports that too', async () => {
+	const opened = deferred<void>();
+	let closed = 0;
+	const test = await openTestWorkspace();
+	cleanups.push(test.remove);
+	cleanups.push(() => test.workspace.close());
+	const { counts, answerClose } = closeAnswerer();
+	const mounted = mountSession(async () => {
+		await opened.promise;
+		return Ok({
+			...test.workspace,
+			async close() {
+				closed += 1;
+				throw new Error('the owner did not confirm the release');
+			},
+		});
+	}, answerClose);
+
+	mounted.release();
+	opened.resolve();
+
+	const rejected = await unreleased(mounted.opening);
+	expect((rejected.startup as Error).message).toContain('released');
+	expect(closed).toBe(1);
+	await Bun.sleep(0);
+	expect(counts).toEqual({ started: 0, stopped: 0 });
 });
 
 test('a layout released while its session is starting leaves nothing listening and nothing open, and answers nothing', async () => {

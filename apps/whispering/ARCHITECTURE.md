@@ -543,10 +543,11 @@ as the shell's host-gone event, and hands it to the first listener. When the
 session has started, its guard receives the kept request and decides as it
 would for any other: from a session that has finished starting.
 
-If the start fails, the library and the workspace are closed first, which
-waits for what they had under way, and only then does the opening reject and
-the answer described next take over. A layout released while its session is
-still starting gets the same closing and no answer at all.
+If the start fails, the library and the workspace are closed first. Only a
+completed close permits the answer described next to take over. If cleanup
+also fails, the opening preserves both causes and approves no close. A layout
+released while its session is still starting gets the same cleanup and no
+answer at all.
 
 One request is not carried across: a close attempted with the host already
 gone, during a start that then fails. The shell raises that event once per
@@ -562,10 +563,11 @@ and the shell would wait forever for an answer to a close.
 
 So the holder of the opening answers instead (`mountSession` in
 `src/lib/session.svelte.ts`, `answerCloseWithNothingOpen` in
-`src/lib/workspace/desktop.ts`). Once the opening has settled as failed, and
-not before, each close the person asks for is answered `proceed` through the
-host, and the shell's host-gone event is answered with the quit address.
-Nothing is held in that state: no session, draft, request, or save exists.
+`src/lib/workspace/desktop.ts`). A returned refusal or an
+`OpeningReleasedError` proves that nothing remains open. Only then is each
+close the person asks for answered `proceed` through the host, or with the
+quit address when the host is gone. A failed cleanup or an unexpected
+rejection from the opener proves no such thing and installs no answer.
 
 It is narrow on purpose:
 

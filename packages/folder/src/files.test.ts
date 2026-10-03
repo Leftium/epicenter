@@ -43,7 +43,6 @@ import {
 	type Folder,
 	field,
 } from './contract.js';
-import { compileFolderDefinition } from './definition.js';
 import { openNativeFolder } from './directory.test-support.js';
 import {
 	assembleFolder,
@@ -395,7 +394,7 @@ describe('a save never reads its bytes back', () => {
 			close: async () => {},
 		};
 		const folder = assembleFolder<typeof definition>({
-			compiled: expectOk(compileFolderDefinition(definition)),
+			prepared: definition,
 			storage: boundary,
 			history,
 			location: { kind: 'indexedDb', database: 'epicenter-folder:reread' },

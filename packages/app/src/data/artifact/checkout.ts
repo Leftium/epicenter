@@ -43,16 +43,17 @@
  * boundary `format.ts` exists to state. Everything pure is re-exported below,
  * so nothing outside the package has two imports to keep straight.
  */
+import { accepts, fieldEditorOf } from '@epicenter/definition';
 import * as Y from '@y/y';
 import { defineErrors, type InferErrors } from 'wellcrafted/error';
 import { Err, Ok, type Result, tryAsync, trySync } from 'wellcrafted/result';
 
 import {
+	type BodyCodec,
+	type DataDefinition,
 	isJsonObject,
 	type JsonObject,
 	type JsonValue,
-	type ParsedDataDefinition,
-	type ParsedTable,
 } from '../definition/index.js';
 import { decodeBody, replaceBody } from './body-content.js';
 import { type ParsedRowFile, parseRowFile } from './frontmatter.js';
@@ -98,15 +99,15 @@ export type CheckoutAddress = {
 	readonly baseURL: string;
 	readonly principalId: string;
 	/**
-	 * What this store holds, compiled, which the opener stamped on it.
+	 * What this store holds, prepared, which the opener stamped on it.
 	 *
 	 * It used to arrive beside the data as a declaration, and each of the three
-	 * verbs compiled it again on every call. It is the same fact as `dataId` one
+	 * verbs checked it again on every call. It is the same fact as `dataId` one
 	 * layer down, and taking it from the store is also what makes a malformed
-	 * declaration unreachable here: this one compiled, or there would be no
+	 * declaration unreachable here: this one was prepared, or there would be no
 	 * store to hand over (ADR-0340).
 	 */
-	readonly definition: ParsedDataDefinition;
+	readonly definition: DataDefinition;
 };
 
 /**
@@ -145,7 +146,7 @@ export type CheckoutManifest = {
 	 *
 	 * Verbatim, for the same reason a row's values are: a push resolves per key
 	 * and needs the base VALUE to tell "the person changed this" from "the store
-	 * changed this". The kv root is a declared field map compiled by the same
+	 * changed this". The kv root is a declared field map prepared by the same
 	 * code as a table, and it is last-write-wins per key in the document
 	 * (`packages/app/src/data/store/document.ts`), so it resolves the same way.
 	 *
@@ -462,8 +463,11 @@ function parseManifest(text: string | undefined): CheckoutManifest | undefined {
 /**
  * What this folder is, for whoever opens it (ADR-0337, ADR-0330).
  *
- * Generated from the compiled definition rather than written by hand, so the
- * tables and fields it names are the ones that exist. An agent uses the
+ * Generated from the prepared definition rather than written by hand, so the
+ * tables and fields it names are the ones that exist. Each field's editor is
+ * read from its schema's keywords, and `or null` is what the field's own check
+ * says of `null`: a refinement can refuse a `null` the keywords name, and
+ * `Type.Any()` admits one they do not. An agent uses the
  * surfaces a person uses (ADR-0330), and the surface here is a directory of
  * text files; what it needs told is what happens to each kind of edit, because
  * the folder cannot show it and a wasted edit is silent.
@@ -486,7 +490,7 @@ function parseManifest(text: string | undefined): CheckoutManifest | undefined {
  * the host skips a write whose bytes already match, so this file does not churn
  * a person's folder on every pass.
  */
-function agentsFile(definition: ParsedDataDefinition): string {
+function agentsFile(definition: DataDefinition): string {
 	const lines = [
 		`# ${definition.id}`,
 		'',
@@ -605,15 +609,16 @@ function agentsFile(definition: ParsedDataDefinition): string {
 		'Editors describe how a field is edited. Its schema decides which values conform.',
 		'',
 	];
-	for (const [name, table] of [...definition.tables].sort(([a], [b]) =>
-		a < b ? -1 : 1,
+	for (const [name, table] of Object.entries(definition.tables).sort(
+		([a], [b]) => (a < b ? -1 : 1),
 	)) {
 		lines.push(`### ${name}/`, '', '| field | editor |', '| --- | --- |');
-		for (const [fieldName, { editor }] of [...table.fields].sort(([a], [b]) =>
-			a < b ? -1 : 1,
+		for (const [fieldName, schema] of Object.entries(table.fields).sort(
+			([a], [b]) => (a < b ? -1 : 1),
 		)) {
+			const editor = fieldEditorOf(schema);
 			lines.push(
-				`| \`${fieldName}\` | ${editor.kind}${editor.nullable ? ' or null' : ''}${
+				`| \`${fieldName}\` | ${editor.kind}${accepts(schema, null) ? ' or null' : ''}${
 					editor.kind === 'reference' ? ` -> \`${editor.target}\`` : ''
 				} |`,
 			);
@@ -752,7 +757,7 @@ async function writeFolder({
 	fetch: httpFetch,
 }: {
 	data: RenderableData & CheckoutAddress;
-	definition: ParsedDataDefinition;
+	definition: DataDefinition;
 	sources: readonly FileSource[];
 	/**
 	 * The `kv.json` to write, and the settings base to record.
@@ -1483,7 +1488,7 @@ function sameReading(
  */
 async function planPush(
 	data: RenderableData,
-	definition: ParsedDataDefinition,
+	definition: DataDefinition,
 	held: FolderContents,
 ): Promise<Reading> {
 	const items: PlanItem[] = [];
@@ -1549,7 +1554,10 @@ async function planPush(
 			// The base is what makes this a deletion rather than a guess: `pull`
 			// wrote down that it handed this file over, so its absence is
 			// somebody removing it (ADR-0338).
-			const declared = definition.tables.get(address.table);
+			// The address comes from a file path. The prepared `tables` record has
+			// no prototype, so an undeclared directory such as `constructor`
+			// finds no entry.
+			const declared = definition.tables[address.table];
 			if (declared === undefined) {
 				// No handle to delete through, and its rows still render
 				// (ADR-0240), so the next pull puts this file back. That is what a
@@ -1588,7 +1596,7 @@ async function planPush(
 		// is the common case, and it now costs one hash per file rather than a
 		// render and a codec `encode` per row.
 		if (await untouched(file, handed)) continue;
-		const table = definition.tables.get(address.table);
+		const table = definition.tables[address.table];
 		if (table === undefined) {
 			keep('table-undeclared');
 			continue;
@@ -1626,7 +1634,7 @@ async function planPush(
 		if (inFile !== handed.bodyHash) {
 			const inStore = await contentHash(stored.body);
 			if (inStore !== inFile) {
-				if (!readsBack(table, file.body)) {
+				if (!readsBack(table.body, file.body)) {
 					keep('body-unreadable');
 				} else {
 					items.push({
@@ -1764,7 +1772,7 @@ async function untouched(
 }
 
 /**
- * Whether this table's codec can read this text, with a throw counted as no.
+ * Whether a table's codec can read this text, with a throw counted as no.
  *
  * A codec is application code run over a file a person hand-edited, and
  * `readArtifact` already treats a throw from one as data rather than as a
@@ -1777,8 +1785,7 @@ async function untouched(
  * A table without a codec cannot read body text back. Its field edits remain
  * independent of this body check.
  */
-function readsBack(table: ParsedTable, text: string): boolean {
-	const codec = table.body;
+function readsBack(codec: BodyCodec | undefined, text: string): boolean {
 	if (codec === undefined) return false;
 	try {
 		decodeBody(codec, text);
@@ -1799,12 +1806,12 @@ function readsBack(table: ParsedTable, text: string): boolean {
  * the note list shows it.
  */
 async function admission(
-	definition: ParsedDataDefinition,
+	definition: DataDefinition,
 	tableName: string,
 	path: string,
 	contents: string,
 ): Promise<PlannedAdmission | PlannedKeep> {
-	const table = definition.tables.get(tableName);
+	const table = definition.tables[tableName];
 	if (table === undefined) {
 		return { kind: 'kept', path, reason: 'table-undeclared' };
 	}
@@ -1816,7 +1823,7 @@ async function admission(
 	// text too, so preview and commit make the same admission decision.
 	if (
 		(table.body === undefined && file.body !== '') ||
-		(table.body !== undefined && !readsBack(table, file.body))
+		(table.body !== undefined && !readsBack(table.body, file.body))
 	) {
 		return { kind: 'kept', path, reason: 'body-unreadable' };
 	}
@@ -1869,7 +1876,7 @@ function same(
  */
 async function renderedRow(
 	data: RenderableData,
-	definition: ParsedDataDefinition,
+	definition: DataDefinition,
 	address: { table: string; rowId: string },
 ): Promise<{ fields: JsonObject; body: string } | undefined> {
 	const rendered = await renderRow(
@@ -1894,7 +1901,7 @@ async function renderedRow(
  */
 async function readFolder(
 	data: RenderableData & CheckoutAddress,
-	definition: ParsedDataDefinition,
+	definition: DataDefinition,
 	httpFetch: typeof globalThis.fetch,
 ): Promise<Result<{ held: FolderContents; read: Reading }, CheckoutError>> {
 	const held = await readWorkingCopy(data, httpFetch);
@@ -1992,7 +1999,7 @@ async function applyPush({
 			broke(`'${item.path}' could not be read into a row`);
 			continue;
 		}
-		const codec = data.definition.tables.get(item.table)?.body;
+		const codec = data.definition.tables[item.table]?.body;
 		// No codec and an empty body is a row whose file IS its frontmatter,
 		// and `create` mints the empty node for it. A body with no codec was
 		// already kept at plan time.
@@ -2017,7 +2024,7 @@ async function applyPush({
 	const rewrites = new Map<string, ReturnType<typeof decodeBody>>();
 	for (const item of plan) {
 		if (item.kind !== 'body') continue;
-		const codec = data.definition.tables.get(item.table)?.body;
+		const codec = data.definition.tables[item.table]?.body;
 		if (codec === undefined) {
 			broke(`'${item.path}' has no body codec`);
 			continue;

@@ -5,7 +5,7 @@
 import { Database } from 'bun:sqlite';
 import { expect, test } from 'bun:test';
 import { defineStore, field } from '@epicenter/app';
-import { compileData } from '@epicenter/app/definition';
+import { prepareData } from '@epicenter/app/definition';
 import { createBunSqliteAdapter } from '@epicenter/sqlite/bun';
 import { Ok } from 'wellcrafted/result';
 import { expectOk } from 'wellcrafted/testing';
@@ -29,7 +29,7 @@ async function setup() {
 	const pending: (() => void)[] = [];
 	const batches: DurableOp[][] = [];
 	const parts = createStoreOverPort({
-		definition: expectOk(compileData(definition)),
+		definition: expectOk(prepareData(definition)),
 		async acquire() {
 			return Ok({
 				loaded: port.load(),
@@ -126,7 +126,7 @@ test('an acknowledgement pending on disk suppresses live resend but recovers as 
 		sent!.id,
 	]);
 	const restarted = createStoreOverPort({
-		definition: expectOk(compileData(definition)),
+		definition: expectOk(prepareData(definition)),
 		async acquire() {
 			return Ok({ loaded: replica.port.load(), durable: replica.port });
 		},
@@ -148,7 +148,7 @@ test('a burst during an owed fold produces one replacement and preserves reopen 
 		replica.batches.flat().filter((op) => op.kind === 'mergeOwed'),
 	).toHaveLength(1);
 	const restarted = createStoreOverPort({
-		definition: expectOk(compileData(definition)),
+		definition: expectOk(prepareData(definition)),
 		async acquire() {
 			return Ok({ loaded: replica.port.load(), durable: replica.port });
 		},
@@ -163,7 +163,7 @@ test('an edit in the completion microtask starts its own durable drain', async (
 	const port = createSqliteDurablePort({ sqlite: createBunSqliteAdapter(raw) });
 	const batches: number[] = [];
 	const parts = createStoreOverPort({
-		definition: expectOk(compileData(definition)),
+		definition: expectOk(prepareData(definition)),
 		async acquire() {
 			return Ok({
 				loaded: port.load(),

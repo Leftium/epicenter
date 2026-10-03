@@ -22,23 +22,19 @@ import * as Y from '@y/y';
 import { defineErrors, type InferErrors } from 'wellcrafted/error';
 import { Ok, type Result } from 'wellcrafted/result';
 
-import {
-	compileData,
-	type DataDefinition,
-	type ParsedDataDefinition,
-} from '../definition/index.js';
+import { type DataDefinition, prepareData } from '../definition/index.js';
 import type { StoredData, StoredRow } from '../store/store.js';
 import { rowFile } from './frontmatter.js';
 import { rowPath } from './layout.js';
 
 export const RenderError = defineErrors({
 	/**
-	 * The definition handed here could not be compiled, so there are no codecs
+	 * The definition handed here could not be prepared, so there are no codecs
 	 * to serialize through. A programmer error surfaced as a value, because the
 	 * caller is a person pressing a button.
 	 */
 	MalformedDefinition: ({ reason }: { reason: string }) => ({
-		message: `The data definition could not be compiled: ${reason}`,
+		message: `The data definition could not be prepared: ${reason}`,
 		reason,
 	}),
 	/**
@@ -135,10 +131,13 @@ export type RenderedRow = {
  * the value is simply gone from the file. That is the one thing an artifact
  * may not do. The artifact writes the stored payload as frontmatter and hands
  * only the body node to its codec.
+ *
+ * `definition` is the prepared one. Its `tables` record has no prototype, so
+ * a stored table it does not declare, whatever its name, has no codec.
  */
 export async function renderRow(
 	data: RenderableData,
-	definition: ParsedDataDefinition,
+	definition: DataDefinition,
 	table: string,
 	rowId: string,
 ): Promise<Result<RenderedRow, RenderError>> {
@@ -152,7 +151,7 @@ export async function renderRow(
 		return RenderError.MalformedRow({ table, rowId });
 	}
 	const node = body;
-	const codec = definition.tables.get(table)?.body;
+	const codec = definition.tables[table]?.body;
 	if (codec === undefined) {
 		// A table may declare no codec, and a row whose
 		// node is empty has nothing that needed one: its file is its frontmatter,
@@ -213,9 +212,9 @@ export async function* renderArtifact(
 	data: RenderableData,
 	definition: DataDefinition,
 ): AsyncGenerator<Result<RenderedRow, RenderError>> {
-	const parsed = compileData(definition);
-	if (parsed.error !== null) {
-		yield RenderError.MalformedDefinition({ reason: parsed.error.message });
+	const prepared = prepareData(definition);
+	if (prepared.error !== null) {
+		yield RenderError.MalformedDefinition({ reason: prepared.error.message });
 		return;
 	}
 	// One faithful read for the whole pass, so every file describes one instant.
@@ -227,7 +226,7 @@ export async function* renderArtifact(
 	});
 	for (const [table, rows] of state.tables) {
 		for (const rowId of rows.keys()) {
-			yield await renderRow(data, parsed.data, table, rowId);
+			yield await renderRow(data, prepared.data, table, rowId);
 		}
 	}
 }

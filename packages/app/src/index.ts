@@ -1,9 +1,16 @@
 import { isAppId } from '@epicenter/constants/app-id';
 import type { DeclaredTable } from './data/definition/declaration.js';
 import type { ValidateFields } from './data/definition/define.js';
-import { compileData, type DataDefinition } from './data/definition/index.js';
+import { type DataDefinition, prepareData } from './data/definition/index.js';
 
-/** Declare a store's identity and schema without acquiring resources. Open it through @epicenter/app/open. */
+/**
+ * Declare a store's identity and schema without acquiring resources. Open it
+ * through @epicenter/app/open.
+ *
+ * The definition returned has the declared shape and type, and is the prepared
+ * one: an owned, frozen snapshot of each schema, which every store opened from
+ * it reads through. A malformed schema throws here, where it is written.
+ */
 export function defineStore<const TDefinition extends DataDefinition>(
 	schema: TDefinition & {
 		kv: ValidateFields<TDefinition['kv']>;
@@ -21,16 +28,16 @@ export function defineStore<const TDefinition extends DataDefinition>(
 	const { id, title, kv, tables } = schema;
 	if (!isAppId(id))
 		throw new Error(`The store definition ID '${id}' is not valid.`);
-	const declaration: Definition = Object.freeze({
+	const declaration: Definition = {
 		id,
 		...(title === undefined ? {} : { title }),
 		kv,
 		tables,
-	});
-	const compiled = compileData(declaration);
-	if (compiled.error !== null)
-		throw new Error(compiled.error.message, { cause: compiled.error });
-	return declaration;
+	};
+	const prepared = prepareData(declaration);
+	if (prepared.error !== null)
+		throw new Error(prepared.error.message, { cause: prepared.error });
+	return prepared.data;
 }
 
 export { plainText } from './data/definition/body.js';

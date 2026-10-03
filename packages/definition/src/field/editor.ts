@@ -8,10 +8,13 @@
  * table it names.
  *
  * Everything else an editor needs is read off the schema. Select options are
- * the schema's declared `enum`, and nullability is whether the field admits
- * `null`. A hint that is absent, unknown, malformed, or that names a widget
- * the schema's shape or `format` does not fit resolves to the JSON editor. It
- * never changes validation.
+ * the schema's declared `enum`. A hint that is absent, unknown, malformed, or
+ * that names a widget the schema's shape or `format` does not fit resolves to
+ * the JSON editor. It never changes validation.
+ *
+ * Whether a field admits `null` is not here. Only a validator can say, so a
+ * reader asks `accepts(schema, null)` of the prepared field where it needs to
+ * know.
  */
 
 import type { TSchema } from 'typebox';
@@ -48,21 +51,21 @@ export type FieldHint =
 /**
  * The editor one field gets, resolved from its schema and hint.
  *
- * `nullable` is a flag, not a kind: a nullable select is still a select.
+ * Null is not a kind: a nullable select is still a select, and whether the
+ * field admits `null` is asked of its validator, not recorded here.
  *
  * `options` is the schema's declared `enum`. The check never admits a value
  * outside it, but it may admit fewer: another keyword or a native refinement
  * on the same schema can refuse an option, and nothing filters the list by
  * running them.
  */
-export type FieldEditor = { readonly nullable: boolean } & (
+export type FieldEditor =
 	| { readonly kind: Exclude<Kind, 'select' | 'multiSelect' | 'reference'> }
 	| {
 			readonly kind: 'select' | 'multiSelect';
 			readonly options: readonly string[];
 	  }
-	| { readonly kind: 'reference'; readonly target: string }
-);
+	| { readonly kind: 'reference'; readonly target: string };
 
 /**
  * A native schema `S` whose `x-field` is typed as the hint `H`.
@@ -223,46 +226,42 @@ function formatAllows(schema: Keywords, expected: string): boolean {
  * decide what the schema admits: other keywords and native refinements on the
  * same node can narrow it further.
  */
-function hinted(
-	hint: unknown,
-	subject: Keywords,
-	nullable: boolean,
-): FieldEditor | undefined {
+function hinted(hint: unknown, subject: Keywords): FieldEditor | undefined {
 	if (!isKeywords(hint)) return undefined;
 	const kind = own(hint, 'kind');
-	if (kind === 'json') return { kind, nullable };
+	if (kind === 'json') return { kind };
 	if (isComposed(subject)) return undefined;
 	const type = own(subject, 'type');
 	switch (kind) {
 		case 'string':
-			return type === 'string' ? { kind, nullable } : undefined;
+			return type === 'string' ? { kind } : undefined;
 		case 'url':
 		case 'date':
 		case 'instant':
 		case 'datetime':
 			return type === 'string' && formatAllows(subject, FORMATS[kind])
-				? { kind, nullable }
+				? { kind }
 				: undefined;
 		case 'reference': {
 			const target = own(hint, 'target');
 			return type === 'string' &&
 				typeof target === 'string' &&
 				isTableName(target, DATA_ADDRESS_CEILINGS)
-				? { kind, nullable, target }
+				? { kind, target }
 				: undefined;
 		}
 		case 'number':
 		case 'integer':
 		case 'boolean':
-			return type === kind ? { kind, nullable } : undefined;
+			return type === kind ? { kind } : undefined;
 		case 'select': {
 			const options = stringOptions(subject);
-			return options === undefined ? undefined : { kind, nullable, options };
+			return options === undefined ? undefined : { kind, options };
 		}
 		case 'multiSelect': {
 			const options = stringOptions(own(subject, 'items'));
 			return type === 'array' && options !== undefined
-				? { kind, nullable, options }
+				? { kind, options }
 				: undefined;
 		}
 		case 'tags': {
@@ -271,7 +270,7 @@ function hinted(
 				isKeywords(items) &&
 				!isComposed(items) &&
 				own(items, 'type') === 'string'
-				? { kind, nullable }
+				? { kind }
 				: undefined;
 		}
 		default:
@@ -290,25 +289,25 @@ function hinted(
  * other composition is looked into, and a schema without a hint is never
  * guessed at.
  *
- * `nullable` is whether the field admits `null`, which only a validator can
- * say. The caller passes it: `compileData` asks its compiled field.
+ * This reads keywords and nothing else: it keeps no state, runs no validator,
+ * and calls no callback. So it does not say whether the field admits `null`.
+ * Reading through the union finds the hint; it is not evidence about `null`,
+ * which a refinement beside the union may still refuse. A reader that needs
+ * to know asks `accepts(schema, null)` of the prepared field.
  *
- * Exported for `compileData` and this package's tests. Neither entry point
- * exports it: a compiled field's `editor` is the resolved one.
+ * Any schema can be read, prepared or not. A prepared field is a frozen
+ * snapshot, so the editor read from one agrees with what its validator
+ * checks.
  */
-export function fieldEditorOf(
-	schema: TSchema & object,
-	nullable: boolean,
-): FieldEditor {
+export function fieldEditorOf(schema: TSchema & object): FieldEditor {
 	const member = nullableMember(schema);
 	const hintOwner =
 		member === undefined || Object.hasOwn(schema, FIELD_KEYWORD)
 			? schema
 			: member;
 	return Object.freeze(
-		hinted(own(hintOwner, FIELD_KEYWORD), member ?? schema, nullable) ?? {
+		hinted(own(hintOwner, FIELD_KEYWORD), member ?? schema) ?? {
 			kind: 'json',
-			nullable,
 		},
 	);
 }

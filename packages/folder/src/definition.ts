@@ -11,10 +11,9 @@
  * dangle.
  */
 import {
-	compileData,
 	type DataDefinition,
 	type DeclaredTable,
-	type ParsedDataDefinition,
+	prepareData,
 	type ValidateFields,
 } from '@epicenter/definition';
 import { Err, Ok, type Result } from 'wellcrafted/result';
@@ -23,22 +22,25 @@ import { Err, Ok, type Result } from 'wellcrafted/result';
 export type FolderTable = DeclaredTable & { readonly body?: undefined };
 
 /**
- * Compile a definition for file storage, or say why a folder cannot keep it.
- * Compilation is memoized on the definition object, so an opener that
- * compiles a definition `defineFolder` already checked does no work twice.
+ * Prepare a definition for file storage, or say why a folder cannot keep it.
+ *
+ * The result is the prepared definition: the declared shape, holding the
+ * frozen schema snapshots a folder reads values through. Preparation is
+ * memoized on the declaration and on its result, so an opener handed what
+ * `defineFolder` returned gets it back and does no work twice.
  */
-export function compileFolderDefinition(
-	definition: DataDefinition,
-): Result<ParsedDataDefinition, { readonly reason: string }> {
-	const compiled = compileData(definition);
-	if (compiled.error !== null) return Err({ reason: compiled.error.message });
-	for (const [name, table] of compiled.data.tables) {
+export function prepareFolderDefinition<TDefinition extends DataDefinition>(
+	definition: TDefinition,
+): Result<TDefinition, { readonly reason: string }> {
+	const prepared = prepareData(definition);
+	if (prepared.error !== null) return Err({ reason: prepared.error.message });
+	for (const [name, table] of Object.entries(prepared.data.tables)) {
 		if (table.body !== undefined)
 			return Err({
 				reason: `Table '${name}' declares a body codec. A file folder stores the body as Markdown text; remove the codec from this definition.`,
 			});
 	}
-	return Ok(compiled.data);
+	return Ok(prepared.data);
 }
 
 /**
@@ -47,7 +49,9 @@ export function compileFolderDefinition(
  * every Epicenter storage declares with.
  *
  * The definition is checked here, where it is written: a malformed schema or
- * a body conversion throws at the declaration, not at the first open.
+ * a body conversion throws at the declaration, not at the first open. What
+ * comes back has the declared shape and type, and is the prepared definition:
+ * an owned, frozen snapshot of each schema.
  */
 export function defineFolder<const TDefinition extends DataDefinition>(
 	schema: TDefinition & {
@@ -64,13 +68,13 @@ export function defineFolder<const TDefinition extends DataDefinition>(
 		'id' | 'title' | 'kv' | 'tables'
 	>;
 	const { id, title, kv, tables } = schema;
-	const declaration: Definition = Object.freeze({
+	const declaration: Definition = {
 		id,
 		...(title === undefined ? {} : { title }),
 		kv,
 		tables,
-	});
-	const compiled = compileFolderDefinition(declaration);
-	if (compiled.error !== null) throw new Error(compiled.error.reason);
-	return declaration;
+	};
+	const prepared = prepareFolderDefinition(declaration);
+	if (prepared.error !== null) throw new Error(prepared.error.reason);
+	return prepared.data;
 }

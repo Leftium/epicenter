@@ -16,7 +16,6 @@ import type {
 	DataDefinition,
 	JsonObject,
 	KvOf,
-	ParsedDataDefinition,
 	RowOf,
 	TableDeclaration,
 } from '@epicenter/app/definition';
@@ -519,18 +518,23 @@ export type DataDocument = {
 	 */
 	readonly sync: SyncCapability;
 	/**
-	 * The declaration this store was opened from, compiled.
+	 * The definition this store was opened from, prepared.
 	 *
-	 * An opener compiles the definition to build the view and used to throw the
-	 * compiled copy away, so everything downstream that needed it was handed the
-	 * declaration again and compiled it again: the folder verbs did it three
-	 * times, on every call. It is the same fact as `dataId`, which is literally
+	 * It has the shape it was declared in: `kv` and each table's `fields` are
+	 * records of native schemas, `x-field` hints included, and a table carries
+	 * its body codec. Each schema is the frozen snapshot the store reads values
+	 * through, not the object the author declared.
+	 *
+	 * An opener prepares the definition to build the view, and everything
+	 * downstream that needs it reads this one: the folder verbs used to be
+	 * handed the declaration again and check it again, three times on every
+	 * call. It is the same fact as `dataId`, which is literally
 	 * `definition.id`, one layer down (ADR-0340).
 	 *
 	 * A store carrying it also means a definition reaching those verbs cannot be
-	 * malformed: this one compiled, or there would be no store.
+	 * malformed: this one was prepared, or there would be no store.
 	 */
-	readonly definition: ParsedDataDefinition;
+	readonly definition: DataDefinition;
 };
 
 /**

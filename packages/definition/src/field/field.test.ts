@@ -3,15 +3,15 @@
  *
  * A `field.*` helper returns one native TypeBox schema annotated with the
  * editor it is meant to get. These tests check the schema with TypeBox's own
- * `Compile`, never through this package's compiler, so they hold the helpers
- * to being native on their own.
+ * `Compile`, never through `prepareData`, so they hold the helpers to being
+ * native on their own.
  *
  * Key behaviors:
  * - Every helper annotates its schema with a JSON hint holding its kind, and a
  *   reference's target; nothing else is in the hint
  * - A helper's validation and hint survive `JSON.stringify` and `JSON.parse`
- * - The editor is resolved from the schema: options from `enum`, nullability
- *   from whether `null` is admitted
+ * - The editor is read from the schema alone: options from `enum`, and nothing
+ *   about `null`, which is what the check admits
  * - A hint that is absent, unknown, malformed, or wrong for the schema's shape
  *   or `format` resolves to the JSON editor
  * - `field.nullable` and `field.json` take any native schema and keep its
@@ -20,7 +20,7 @@
  *
  * See also:
  * - `field.test-d.ts` for `Static<>` and the hint's literal types
- * - `../compile.test.ts` for the compiler that prepares these schemas
+ * - `../prepare.test.ts` for the preparation that owns these schemas
  */
 
 import { describe, expect, test } from 'bun:test';
@@ -32,9 +32,15 @@ import { FIELD_KEYWORD, fieldEditorOf, type Kind } from './editor.js';
 
 const check = (schema: TSchema, value: unknown) => Compile(schema).Check(value);
 
-/** The editor for a schema, with nullability from TypeBox's compiled check. */
-const editorOf = (schema: TSchema & object) =>
-	fieldEditorOf(schema, check(schema, null));
+/**
+ * What a reader shows for a schema: the editor read from its keywords, beside
+ * whether TypeBox's compiled check admits `null`. The resolver says nothing
+ * about `null`, so the two are asked separately and reported together.
+ */
+const editorOf = (schema: TSchema & object) => ({
+	...fieldEditorOf(schema),
+	nullable: check(schema, null),
+});
 
 /** What a schema is after being written out as JSON and read back. */
 const roundTrip = (schema: TSchema): TSchema =>
@@ -442,11 +448,24 @@ describe('the editor is resolved from the schema, and falls back to JSON', () =>
 		expect(editorOf(field.nullable(field.string())).nullable).toBe(true);
 		expect(editorOf(field.json(jsonValue))).toEqual(json(true));
 		expect(editorOf(field.json(Type.Object({})))).toEqual(json(false));
-		// The resolver takes the caller's answer and asks no validator itself.
-		expect(fieldEditorOf(field.string(), true)).toEqual({
-			kind: 'string',
-			nullable: true,
+	});
+
+	test('the resolver reads keywords and says nothing about null', () => {
+		// The same editor with and without the union, and no flag on either.
+		for (const schema of [field.string(), field.nullable(field.string())]) {
+			const editor = fieldEditorOf(schema);
+			expect(editor).toEqual({ kind: 'string' });
+			expect(Object.keys(editor)).toEqual(['kind']);
+			expect(Object.isFrozen(editor)).toBe(true);
+		}
+		// It asks no validator: a callback that would throw on anything is not run.
+		let calls = 0;
+		const refusing = Type.Refine(field.nullable(field.select(['a'])), () => {
+			calls += 1;
+			throw new TypeError('never called by the resolver');
 		});
+		expect(fieldEditorOf(refusing)).toEqual({ kind: 'select', options: ['a'] });
+		expect(calls).toBe(0);
 	});
 
 	test('a root hint that is present but unusable is not replaced by a member hint', () => {

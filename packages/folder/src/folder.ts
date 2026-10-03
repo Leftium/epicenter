@@ -11,12 +11,7 @@
  * outcome. History work drains before storage is released. Closing makes no
  * last commit.
  */
-import type {
-	CreateRowOf,
-	DataDefinition,
-	KvOf,
-	ParsedDataDefinition,
-} from '@epicenter/definition';
+import type { CreateRowOf, DataDefinition, KvOf } from '@epicenter/definition';
 import { Ok, type Result } from 'wellcrafted/result';
 import {
 	type BatchChange,
@@ -284,19 +279,21 @@ function createLocalTerminal(
 }
 
 /**
- * Assemble the handle over acquired storage. `compiled` is the opener's
- * `compileFolderDefinition` result, taken before it acquired anything. No
- * argument carries `TDefinition`, so the opener names it.
+ * Assemble the handle over acquired storage. `prepared` is the opener's
+ * `prepareFolderDefinition` result, taken before it acquired anything: the
+ * snapshot every table and the KV read through, never the declaration the
+ * opener was handed. No argument carries `TDefinition`, so the opener names
+ * it.
  */
 export function assembleFolder<TDefinition extends DataDefinition>({
-	compiled,
+	prepared,
 	storage: suppliedStorage,
 	history,
 	location,
 	hints,
 	release,
 }: {
-	compiled: ParsedDataDefinition;
+	prepared: DataDefinition;
 	storage: FolderStorage;
 	history: FolderHistory;
 	location: FolderLocation;
@@ -309,19 +306,20 @@ export function assembleFolder<TDefinition extends DataDefinition>({
 
 	const storage = fenceStorage(suppliedStorage, controller.signal);
 	const tables: Record<string, FileTable<unknown>> = {};
-	for (const definition of compiled.tables.values())
-		tables[definition.name] = createTable<unknown>({ storage }, definition);
+	// A table's key is its name and its directory.
+	for (const [name, table] of Object.entries(prepared.tables))
+		tables[name] = createTable<unknown>({ storage }, name, table.fields);
 	const files = createFiles({ storage });
 	const git = createFolderGit(history);
 
 	return Object.freeze({
 		tables: Object.freeze(tables) as Folder<TDefinition>['tables'],
-		kv: createKv({ storage }, compiled.kv) as Folder<TDefinition>['kv'],
+		kv: createKv({ storage }, prepared.kv) as Folder<TDefinition>['kv'],
 		files,
 		git,
 		async batch(collect) {
 			if (controller.signal.aborted) return FileError.Closed();
-			const collected = collectBatch<TDefinition>(compiled, collect);
+			const collected = collectBatch<TDefinition>(prepared, collect);
 			if (collected.error) return collected;
 			if (collected.data.length === 0) return Ok(receiptOf([]));
 			// Typed rows are checked against their directories before

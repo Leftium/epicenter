@@ -12,9 +12,10 @@
 import { Database } from 'bun:sqlite';
 import { expect, test } from 'bun:test';
 import { defineStore, defineTable, field, plainText } from '@epicenter/app';
-import { compileData } from '@epicenter/app/definition';
+import { prepareData } from '@epicenter/app/definition';
 import { createBunSqliteAdapter } from '@epicenter/sqlite/bun';
 import * as Y from '@y/y';
+import { Type } from 'typebox';
 import { Ok, type Result } from 'wellcrafted/result';
 import { expectErr, expectOk } from 'wellcrafted/testing';
 import { createSqliteDurablePort } from './log.js';
@@ -28,7 +29,7 @@ import {
 } from './store.js';
 
 const definition = expectOk(
-	compileData(
+	prepareData(
 		defineStore({
 			id: 'so.epicenter.store-opening-test',
 			kv: { theme: field.string() },
@@ -41,6 +42,49 @@ const definition = expectOk(
 		}),
 	),
 );
+
+test('the port constructor owns a native declaration before acquiring storage', async () => {
+	const declared = {
+		id: 'so.epicenter.raw-port',
+		kv: { theme: Object.assign(Type.String(), { minLength: 0 }) },
+		tables: {},
+	};
+	const raw = new Database(':memory:');
+	const port = createSqliteDurablePort({ sqlite: createBunSqliteAdapter(raw) });
+	const parts = createStoreOverPort({
+		definition: declared,
+		acquire: async () =>
+			Ok({ durable: port, loaded: port.load(), dispose: () => raw.close() }),
+	});
+	declared.kv.theme.minLength = 99;
+	try {
+		expectOk(await parts.ready);
+		expect(parts.definition).not.toBe(declared);
+		expect(Object.isFrozen(parts.definition.kv)).toBe(true);
+		parts.view.kv.update({ theme: 'dark' });
+		expect(parts.view.kv.get('theme')).toBe('dark');
+	} finally {
+		await parts.close();
+	}
+});
+
+test('the port constructor rejects a malformed native schema before acquisition', () => {
+	let acquired = false;
+	expect(() =>
+		createStoreOverPort({
+			definition: {
+				id: 'so.epicenter.malformed-port',
+				kv: { theme: Type.String({ pattern: '[' }) },
+				tables: {},
+			},
+			async acquire() {
+				acquired = true;
+				throw new Error('A malformed definition must fail before acquisition');
+			},
+		}),
+	).toThrow();
+	expect(acquired).toBe(false);
+});
 
 async function setup() {
 	const raw = new Database(':memory:');

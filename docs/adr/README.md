@@ -735,7 +735,7 @@ When you add an ADR, add its row here.
 | [0488](0488-cloud-folders-use-independent-git-histories.md) | Cloud folders use independent Git histories | Proposed (unbuilt; permanently unique repository URLs, lifecycle listing, hosting and credential gates) |
 | [0489](0489-cloud-folder-transfers-are-explicit-and-bootstrap-before-opening.md) | Account identity selects local folders and cloud transfers are explicit | Proposed (local history and Local CLI locks implemented; account startup, in-place connection, and transfers unbuilt) |
 | [0490](0490-the-cli-discovers-folders-and-delegates-history-to-git.md) | The CLI discovers folders and delegates history to Git | Proposed (Local CLI and source account commands implemented; cloud folders and transfers unbuilt) |
-| [0491](0491-field-helpers-build-native-typebox-schemas-with-ui-metadata.md) | Field helpers build native TypeBox schemas with UI metadata | Proposed |
+| [0491](0491-field-helpers-build-native-typebox-schemas-with-ui-metadata.md) | Field helpers build native TypeBox schemas with UI metadata | Accepted |
 | [0492](0492-the-source-cli-keeps-sessions-in-one-operating-system-credential.md) | The source CLI keeps sessions in one operating system credential | Proposed (source commands implemented; OS acceptance and hosted callback deployment pending) |
 | [0493](0493-whispering-runs-as-one-application-in-three-deployment-forms.md) | Whispering runs as one application in three deployment forms | Proposed (Epicenter integration, remaining shared native services, and release distribution unbuilt) |
 | [0495](0495-the-ark-community-profiles-use-at-handle-paths.md) | The Ark community profiles use at-handle paths | Proposed (community routing and stable profile identity unbuilt; custom domains open) |

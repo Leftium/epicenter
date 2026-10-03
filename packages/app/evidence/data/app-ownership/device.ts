@@ -3,19 +3,15 @@ import { defineStore } from '@epicenter/app';
 import 'fake-indexeddb/auto';
 import { asPrincipalId } from '@epicenter/principal';
 import { expectOk } from 'wellcrafted/testing';
-import { compileData } from '../../../src/data/definition/index.js';
 import { acquireStoreData } from '../../../src/data/store/browser.js';
 
 const baseURL = process.argv[2]!;
-const definition = expectOk(
-	compileData(
-		defineStore({
-			id: 'so.epicenter.firstopen',
-			tables: {},
-			kv: {},
-		}),
-	),
-);
+// `defineStore` returns the prepared definition the store reads through.
+const definition = defineStore({
+	id: 'so.epicenter.firstopen',
+	tables: {},
+	kv: {},
+});
 let offline = false;
 const account = {
 	baseURL,

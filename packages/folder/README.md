@@ -209,7 +209,8 @@ an alias that cannot be resolved, is circular, or expands past a fixed bound.
 Markdown without fences is not read as a body, and nothing inserts fences
 into it.
 
-After parsing, the definition compiler checks each declared field by itself.
+After parsing, each declared field is checked by itself against its prepared
+schema.
 A key the table does not declare stays in the source and is not an issue.
 Nothing is coerced, defaulted, or repaired. An issue has `field`, `message`,
 and, when the validator names a location inside the field's value, a JSON
@@ -357,7 +358,7 @@ issue. An undeclared key stays in the source and is not reported. Values live
 under `values` so a declared key named `source` or `issues` cannot collide
 with the capture. Values and diagnostics are frozen at every depth.
 
-The folder has no defaults. `get`, `inspect`, compiling the definition, and
+The folder has no defaults. `get`, `inspect`, preparing the definition, and
 opening the folder insert nothing and save nothing. An application applies
 its own defaults where it derives its state, as above: a missing file, a
 missing key, and a stored value that was left out all fall back, and a stored
@@ -663,6 +664,13 @@ helpers build common ones. A folder refuses a table that declares a body
 conversion, because a row's body is the file's Markdown text. An opener given
 such a definition returns `InvalidDefinition` before it acquires anything.
 
+`defineFolder` returns the prepared definition. It has the shape and type of
+what was declared: `kv` and each table's `fields` are records of native
+schemas, and a table's key is its name. Each schema is an owned, frozen
+snapshot, so editing a schema after `defineFolder` changes nothing an opened
+folder accepts. An opener handed any other declaration prepares it first and
+reads the snapshot.
+
 A field's editor hint decides nothing about what a folder stores.
 `field.reference('lists')` is a nonempty string whose hint names a table. The
 folder does not check that the table or the row exists, and renaming or
@@ -710,8 +718,8 @@ write that skips history or change hints.
 
 ```ts
 createFiles({ storage })
-createTable({ storage }, definition)
-createKv({ storage }, definition)
+createTable({ storage }, name, definition.tables[name].fields)
+createKv({ storage }, definition.kv)
 createTerminal({ storage, git }, options)
 ```
 

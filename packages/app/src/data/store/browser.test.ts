@@ -7,7 +7,7 @@
 import 'fake-indexeddb/auto';
 import { afterAll, expect, spyOn, test } from 'bun:test';
 import { defineStore, defineTable, field, plainText } from '@epicenter/app';
-import { compileData } from '@epicenter/app/definition';
+import { prepareData } from '@epicenter/app/definition';
 import { openLocal, openPersonal } from '@epicenter/app/open';
 import type { Account } from '@epicenter/auth';
 import { claimApp } from '@epicenter/device/app-claim';
@@ -171,7 +171,7 @@ test('a failed current bootstrap releases ownership and a later attempt hydrates
 
 test('invalid account segments never create a current cache', async () => {
 	const definition = definitionFor();
-	const parsed = expectOk(compileData(definition));
+	const parsed = expectOk(prepareData(definition));
 	const before = await indexedDB.databases();
 	for (const person of ['', 'alice/../bob', '.', '..']) {
 		expect(

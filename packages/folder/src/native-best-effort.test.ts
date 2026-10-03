@@ -7,7 +7,6 @@ import { mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { expectOk } from 'wellcrafted/testing';
 import { defineFolder, defineTable, field } from './contract.js';
-import { compileFolderDefinition } from './definition.js';
 import { scratch } from './git-http.test-support.js';
 import { createNativeFileBoundary } from './native-store.js';
 import { createTable } from './table.js';
@@ -36,11 +35,11 @@ test('overlapping creates of one stem land one row and refuse the other, beside 
 				return result;
 			},
 		};
-		const parsed = expectOk(compileFolderDefinition(definition)).tables.get(
+		const table = createTable<{ title: string }>(
+			{ storage: boundary },
 			'todos',
+			definition.tables.todos.fields,
 		);
-		if (parsed === undefined) throw new Error('Missing test declaration');
-		const table = createTable<{ title: string }>({ storage: boundary }, parsed);
 		const results = await Promise.all([
 			table.create({ stem: 'take', fields: { title: 'First' } }),
 			table.create({ stem: 'take', fields: { title: 'Second' } }),

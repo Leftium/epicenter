@@ -11,7 +11,7 @@ The main entrypoints are:
 | `@epicenter/app/store` | Store handle and error types |
 | `@epicenter/app/data` | `openData(definition, sqlite)` and `syncEngineOf`; the caller owns SQLite |
 | `@epicenter/app` | `defineStore`, `defineTable`, and `field`: the store declaration |
-| `@epicenter/app/definition` | Reusable table vocabulary and schema compilation |
+| `@epicenter/app/definition` | Reusable table vocabulary and `prepareData`, which checks a definition and returns it in the same shape |
 | `@epicenter/app/sync` | `createSyncConnection`, and the authority half a server runs |
 | `@epicenter/app/artifact` | `renderArtifact` renders Markdown; `readArtifact` reads Markdown into a fresh document. Ordinary edits use checkout instead. |
 | `@epicenter/app/artifact/checkout` | `createWorkingCopy` with previewed `pull` and `push`, using the checkout manifest as the three-way baseline |
@@ -398,8 +398,8 @@ Three rules bite immediately:
    `field.nullable(inner)`
    accepts stored JSON `null`, but a missing field remains nonconforming.
 2. **Definitions do not own defaults.** Initialization and recovery values live
-   in application code. `compileData` rejects a field whose schema declares a
-   `default`.
+   in application code. A native `default` annotation in a schema is admitted
+   and inert: nothing applies it, and a missing field is still nonconforming.
 3. **No transforming fields.** Date, instant, and datetime fields preserve
    their string representation, so values round-trip through storage and SQL.
 

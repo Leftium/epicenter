@@ -11,11 +11,7 @@
  * the receipt's captures describe are the bytes the caller passed at that
  * moment.
  */
-import type {
-	CreateRowOf,
-	DataDefinition,
-	ParsedDataDefinition,
-} from '@epicenter/definition';
+import type { CreateRowOf, DataDefinition } from '@epicenter/definition';
 import { Err, Ok, type Result } from 'wellcrafted/result';
 import type { FileWriteIntent, FolderStorage } from './boundary.js';
 import {
@@ -195,10 +191,10 @@ type Refusal = Result<never, BatchRefusal>;
 /**
  * Run the callback once and return what it collected, or the reason nothing
  * will be published. The collector is sealed before this returns, whatever
- * the callback did.
+ * the callback did. `prepared` is the folder's prepared definition.
  */
 export function collectBatch<TDefinition extends DataDefinition>(
-	compiled: ParsedDataDefinition,
+	prepared: DataDefinition,
 	collect: (batch: FolderBatch<TDefinition>) => undefined,
 ): Result<readonly BatchIntent[], BatchError | BatchRefusal> {
 	const intents: BatchIntent[] = [];
@@ -278,30 +274,31 @@ export function collectBatch<TDefinition extends DataDefinition>(
 	};
 
 	const tables: Record<string, BatchTable<unknown>> = {};
-	for (const parsed of compiled.tables.values())
-		tables[parsed.name] = {
+	// A table's key is its name: nothing else in the definition repeats it.
+	for (const [name, table] of Object.entries(prepared.tables))
+		tables[name] = {
 			create(input) {
 				open();
 				if (typeof input?.stem !== 'string') {
 					refuse(
 						FileError.InvalidPath({
-							path: `${parsed.name}/`,
+							path: `${name}/`,
 							reason: 'a batched row is created at a stem the caller supplies',
 						}),
 					);
 					return;
 				}
-				const prepared = prepareRow(parsed, input);
-				if (prepared.error) {
-					refuse(Err(prepared.error));
+				const row = prepareRow(name, table.fields, input);
+				if (row.error) {
+					refuse(Err(row.error));
 					return;
 				}
 				// `prepareRow` encoded these bytes itself; no caller holds them.
 				intents.push({
 					kind: 'create',
-					path: prepared.data.path,
-					bytes: prepared.data.bytes,
-					row: parsed.name,
+					path: row.data.path,
+					bytes: row.data.bytes,
+					row: name,
 				});
 			},
 		};

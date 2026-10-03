@@ -1,12 +1,11 @@
 import {
 	type ConformanceIssue,
-	compileData,
 	type DataDefinition,
 	type JsonObject,
 	type JsonValue,
-	type ParsedDataDefinition,
-	type ParsedTable,
+	prepareData,
 } from '@epicenter/app/definition';
+import { accepts, conformance, type FieldMap } from '@epicenter/definition';
 import type { SqliteDatabase } from '@epicenter/sqlite';
 import * as Y from '@y/y';
 import { customAlphabet } from 'nanoid';
@@ -295,12 +294,12 @@ type StoreEngineOptions<
 	/** An enclosing App can gate its stores on their shared resource lifetime. */
 	assertUsable?: () => void;
 	/**
-	 * The one data definition this runtime holds, already parsed
+	 * The one data definition this runtime holds, already prepared
 	 * (ADR-0240). Every table handle and the KV handle close over it for the
 	 * store's whole life; a newer definition reads the same durable data by
 	 * disposing this store and constructing the next one.
 	 */
-	definition: ParsedDataDefinition;
+	definition: DataDefinition;
 	/**
 	 * Where a subscriber's own failure and a failed durable flush go.
 	 *
@@ -324,18 +323,16 @@ export type CreateStoreOptions<TDatabase extends DataDefinition> = {
 };
 
 /**
- * Parse a declaration handed to a constructor as a literal.
+ * The prepared definition for a declaration handed to a constructor.
  *
  * Throwing, not Result-returning, and that is a boundary rather than an
- * accident: at this level the declaration is a `defineStore` literal the
- * compiler already validated, so a parse refusal is a programmer error. The
- * openers, which may be handed a declaration that arrived as data, parse
- * first and return the refusal as a boot outcome instead.
+ * accident: at this level the declaration is a `defineStore` result, which is
+ * already prepared and comes back as itself, so a refusal is a programmer
+ * error. The openers, which may be handed a declaration that arrived as data,
+ * prepare first and return the refusal as a boot outcome instead.
  */
-function parsedDatabaseOrThrow(
-	definition: DataDefinition,
-): ParsedDataDefinition {
-	const { data, error } = compileData(definition);
+function preparedDatabaseOrThrow(definition: DataDefinition): DataDefinition {
+	const { data, error } = prepareData(definition);
 	if (error !== null) throw new Error(error.message, { cause: error });
 	return data;
 }
@@ -348,7 +345,7 @@ function overSqlite<TDatabase extends DataDefinition>({
 	...rest
 }: CreateStoreOptions<TDatabase>): StoreEngineOptions {
 	return {
-		definition: parsedDatabaseOrThrow(definition),
+		definition: preparedDatabaseOrThrow(definition),
 		...rest,
 		async acquire() {
 			try {
@@ -409,11 +406,8 @@ export async function openAccountStore<const TDatabase extends DataDefinition>(
 export function createStoreOverPort<
 	TError extends { name: string; message: string } = never,
 >(options: StoreEngineOptions<TError>) {
-	const {
-		definition,
-		local = false,
-		log = createLogger('data/store'),
-	} = options;
+	const { local = false, log = createLogger('data/store') } = options;
+	const definition = preparedDatabaseOrThrow(options.definition);
 	const database = createDatabaseDocument();
 	const lifetime = new AbortController();
 	let disposed = false;
@@ -922,7 +916,7 @@ export function createStoreOverPort<
 			// Only declared tables: a document may carry a table this definition
 			// does not declare, and guessing at it would report a number
 			// nobody could act on.
-			for (const tableName of definition.tables.keys()) {
+			for (const tableName of Object.keys(definition.tables)) {
 				liveRows += listRowIds(tableRoot(database, tableName)).length;
 			}
 			const items = structCount(database);
@@ -1058,8 +1052,8 @@ export function createStoreOverPort<
 		return Err(error);
 	}
 	return {
-		// The compiled declaration rides on the store, so nothing downstream
-		// compiles it a second time (ADR-0340).
+		// The prepared definition rides on the store, so nothing downstream
+		// prepares it a second time (ADR-0340).
 		store,
 		lifetime: { assertUsable, signal: lifetime.signal },
 		get canRetryClose() {
@@ -1080,8 +1074,8 @@ export function createStoreOverPort<
 		const kv = createKvHandle();
 
 		const tables: Record<string, UntypedDeclaredData['tables'][string]> = {};
-		for (const [tableName, table] of definition.tables) {
-			tables[tableName] = createTableHandle(tableName, table);
+		for (const [tableName, table] of Object.entries(definition.tables)) {
+			tables[tableName] = createTableHandle(tableName, table.fields);
 		}
 
 		// Typed where it is WRITTEN, not where it is returned. `Object.freeze(literal)`
@@ -1112,7 +1106,7 @@ export function createStoreOverPort<
 	 * rather than refusing keys that the declaration does not know about.
 	 */
 	function createKvHandle(): KvHandle {
-		const table = definition.kv;
+		const declared: FieldMap = definition.kv;
 		const root = kvRoot(database);
 
 		/**
@@ -1126,7 +1120,7 @@ export function createStoreOverPort<
 			conforming: JsonObject;
 			issues: ConformanceIssue[];
 		} {
-			return table.conformance(storedKv());
+			return conformance(declared, storedKv());
 		}
 
 		// Typed where it is WRITTEN, not where it is returned. `Object.freeze(literal)`
@@ -1149,12 +1143,14 @@ export function createStoreOverPort<
 				//
 				// `nonconforming` still conforms the whole object, because that is
 				// what it reports: every declared key this release cannot read.
-				const field = table.fields.get(key);
+				// The prepared record has no prototype, so a key it does not
+				// declare reads as `undefined`, which accepts nothing.
+				const field = declared[key];
 				if (field === undefined) return undefined;
 				const value = kvRoot(database).getAttr(key as never) as
 					| JsonValue
 					| undefined;
-				if (value === undefined || !field.check(value)) return undefined;
+				if (value === undefined || !accepts(field, value)) return undefined;
 				return value;
 			},
 			get nonconforming(): ConformanceIssue[] {
@@ -1207,7 +1203,7 @@ export function createStoreOverPort<
 
 	function createTableHandle(
 		tableName: string,
-		table: ParsedTable,
+		declared: FieldMap,
 	): UntypedDeclaredData['tables'][string] {
 		const root = tableRoot(database, tableName);
 
@@ -1216,7 +1212,10 @@ export function createStoreOverPort<
 			rowId: string,
 			payload: JsonObject,
 		): Result<Row, NonconformingRow> {
-			const { conforming, issues: fieldIssues } = table.conformance(payload);
+			const { conforming, issues: fieldIssues } = conformance(
+				declared,
+				payload,
+			);
 			const issues = [...fieldIssues];
 			if (readRowBody(root, rowId) === undefined) {
 				issues.push({

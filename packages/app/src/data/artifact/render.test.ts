@@ -4,8 +4,14 @@
  * and whole-store rendering preserves undeclared values while isolating failures.
  */
 import { describe, expect, test } from 'bun:test';
-import { defineStore, defineTable, field, plainText } from '@epicenter/app';
-import { compileData } from '@epicenter/app/definition';
+import {
+	type DataDefinition,
+	defineStore,
+	defineTable,
+	field,
+	plainText,
+} from '@epicenter/app';
+import { prepareData } from '@epicenter/app/definition';
 import * as Y from '@y/y';
 import * as delta from 'lib0/delta';
 import { expectErr, expectOk } from 'wellcrafted/testing';
@@ -52,9 +58,9 @@ async function collect(
 	return files;
 }
 
-/** The parsed definition `renderRow` reads codecs from. */
-function parsed(definition: Parameters<typeof compileData>[0]) {
-	return expectOk(compileData(definition));
+/** The prepared definition `renderRow` reads codecs from. */
+function parsed(definition: DataDefinition) {
+	return expectOk(prepareData(definition));
 }
 
 describe('renderRow is the unit (ADR-0271)', () => {

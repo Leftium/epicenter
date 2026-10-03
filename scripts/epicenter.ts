@@ -7,13 +7,16 @@ import { pathToFileURL } from 'node:url';
 import { parseArgs } from 'node:util';
 import { parseRowFile } from '../packages/app/src/data/artifact/frontmatter.js';
 import {
-	compileData,
-	type ParsedTable,
-} from '../packages/app/src/data/definition/compile.js';
-import {
 	isJsonObject,
 	type JsonObject,
 } from '../packages/app/src/data/definition/json.js';
+
+import {
+	conformance,
+	type DataDefinition,
+	type FieldMap,
+	prepareData,
+} from '../packages/definition/src/index.js';
 
 const usage = 'Usage: epicenter validate <folder> [--json]';
 
@@ -43,26 +46,28 @@ async function validateFolder(path: string) {
 	}
 	function check(
 		path: string,
-		table: ParsedTable,
+		fields: FieldMap,
 		values: JsonObject,
 		row: boolean,
 	) {
 		// Row omission spells null. The actual field check decides whether null conforms.
 		const input = { ...values };
 		if (row)
-			for (const field of table.fields.values()) {
-				if (!Object.hasOwn(input, field.name)) input[field.name] = null;
+			for (const name of Object.keys(fields)) {
+				if (!Object.hasOwn(input, name)) input[name] = null;
 			}
-		for (const issue of table.conformance(input).issues)
-			issues.push({ path, ...issue });
+		// An issue's own `path` points inside the field's value, and its message
+		// already says so. `path` in this report is the file.
+		for (const { field, message } of conformance(fields, input).issues)
+			issues.push({ path, field, message });
 		checkedFiles++;
 	}
 	// Read first to reject invalid UTF-8 even if the runtime replaces bad bytes.
 	await read(configPath);
 	const module = await import(pathToFileURL(configPath).href);
-	const compiled = compileData(module.default);
-	if (compiled.error) throw new Error(compiled.error.message);
-	const definition = compiled.data;
+	const prepared = prepareData<DataDefinition>(module.default);
+	if (prepared.error) throw new Error(prepared.error.message);
+	const definition = prepared.data;
 	const kvPath = join(root, 'kv.json');
 	try {
 		const values: unknown = JSON.parse(await read(kvPath));
@@ -72,7 +77,7 @@ async function validateFolder(path: string) {
 	} catch (error) {
 		failure('kv.json', error);
 	}
-	for (const [name, table] of definition.tables) {
+	for (const [name, table] of Object.entries(definition.tables)) {
 		let files: string[];
 		try {
 			files = (await readdir(join(root, name)))
@@ -90,7 +95,7 @@ async function validateFolder(path: string) {
 					throw new Error(
 						'Expected fenced Markdown frontmatter with JSON-compatible values.',
 					);
-				check(path, table, parsed.fields, true);
+				check(path, table.fields, parsed.fields, true);
 			} catch (error) {
 				failure(path, error);
 			}

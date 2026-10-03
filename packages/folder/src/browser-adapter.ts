@@ -23,7 +23,7 @@ import {
 } from './browser-store.js';
 import { ensureBufferGlobal } from './buffer-global.js';
 import type { OpenFolder } from './contract.js';
-import { compileFolderDefinition } from './definition.js';
+import { prepareFolderDefinition } from './definition.js';
 import { OpenFolderError } from './errors.js';
 import { assembleFolder, createFileHints } from './folder.js';
 import { createBrowserGitBackend } from './git/browser-backend.js';
@@ -56,8 +56,8 @@ export const openFolder: OpenFolder = async ({
 	id = definition.id,
 	browser = {},
 }) => {
-	const compiled = compileFolderDefinition(definition);
-	if (compiled.error) return OpenFolderError.InvalidDefinition(compiled.error);
+	const prepared = prepareFolderDefinition(definition);
+	if (prepared.error) return OpenFolderError.InvalidDefinition(prepared.error);
 	if (isTauri()) return OpenFolderError.InsideTauri();
 	if (typeof id !== 'string' || id.trim() === '')
 		return OpenFolderError.InvalidId({ id: String(id) });
@@ -130,7 +130,7 @@ export const openFolder: OpenFolder = async ({
 		}
 		return Ok(
 			assembleFolder<typeof definition>({
-				compiled: compiled.data,
+				prepared: prepared.data,
 				storage: withPublication({
 					storage: boundary,
 					history,

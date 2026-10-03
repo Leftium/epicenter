@@ -13,8 +13,10 @@ test('the declaration exposes one identity and the schema without implementation
 	const titledDefinition = defineStore(input);
 	expect(titledDefinition.id).toBe(definition.id);
 	expect(titledDefinition.title).toBe('Notes');
-	expect(titledDefinition.tables).toBe(definition.tables);
-	expect(titledDefinition.kv).toBe(definition.kv);
+	// Each definition is its own prepared snapshot of the same declaration.
+	expect(titledDefinition.tables).toEqual(definition.tables);
+	expect(titledDefinition.kv).toEqual(definition.kv);
+	expect(titledDefinition.tables).not.toBe(definition.tables);
 	expect(Object.keys(titledDefinition).sort()).toEqual([
 		'id',
 		'kv',

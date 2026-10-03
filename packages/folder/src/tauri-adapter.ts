@@ -35,7 +35,7 @@ import { isTauri } from '@tauri-apps/api/core';
 import { Err, Ok, type Result } from 'wellcrafted/result';
 import type { FileChange, FileRead, FolderStorage } from './boundary.js';
 import type { OpenFolder } from './contract.js';
-import { compileFolderDefinition } from './definition.js';
+import { prepareFolderDefinition } from './definition.js';
 import {
 	ApplyError,
 	describe,
@@ -859,8 +859,8 @@ export const openFolder: OpenFolder = async ({
 	definition,
 	id = definition.id,
 }) => {
-	const compiled = compileFolderDefinition(definition);
-	if (compiled.error) return OpenFolderError.InvalidDefinition(compiled.error);
+	const prepared = prepareFolderDefinition(definition);
+	if (prepared.error) return OpenFolderError.InvalidDefinition(prepared.error);
 	if (!isTauri()) return OpenFolderError.NotTauri();
 	if (typeof id !== 'string' || id.trim() === '')
 		return OpenFolderError.InvalidId({ id: String(id) });
@@ -942,7 +942,7 @@ export const openFolder: OpenFolder = async ({
 
 	return Ok(
 		assembleFolder<typeof definition>({
-			compiled: compiled.data,
+			prepared: prepared.data,
 			storage: createBoundary(session),
 			// Closing the folder fences `client` through this history: Git calls
 			// are refused, and running local ones are waited for, before

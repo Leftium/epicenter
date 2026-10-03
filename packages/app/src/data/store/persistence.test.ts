@@ -10,7 +10,7 @@
 import { Database } from 'bun:sqlite';
 import { describe, expect, test } from 'bun:test';
 import { defineStore, defineTable, field, plainText } from '@epicenter/app';
-import { compileData } from '@epicenter/app/definition';
+import { prepareData } from '@epicenter/app/definition';
 
 import { createBunSqliteAdapter } from '@epicenter/sqlite/bun';
 import type { Logger } from 'wellcrafted/logger';
@@ -40,9 +40,9 @@ const database = defineStore({
 	},
 });
 
-/** The parsed form the over-port constructors take (ADR-0240). */
+/** The prepared definition the over-port constructors take (ADR-0240). */
 function parsed() {
-	return expectOk(compileData(database));
+	return expectOk(prepareData(database));
 }
 
 /** Failed flushes are the subject here, not noise worth printing. */

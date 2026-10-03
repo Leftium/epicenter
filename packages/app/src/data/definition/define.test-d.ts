@@ -1,6 +1,6 @@
 /**
  * Compile-time checks for reserved names, complete body codecs, value-only
- * rows, and inferred creation inputs. Runtime checks live in compile.test.ts
+ * rows, and inferred creation inputs. Runtime checks live in prepare.test.ts
  * and body-boundary.test.ts.
  */
 import { defineStore } from '@epicenter/app';

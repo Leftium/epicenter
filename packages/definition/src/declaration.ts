@@ -8,12 +8,11 @@
  * Every type here is a LOOKUP. None asks whether its argument is a
  * declaration, because the parameter says so, and none can answer `never` for
  * "I could not tell". A definition that arrived as JSON never comes through
- * here: it reaches `compileData` from a trusted TypeScript module and is
- * checked in `compile.ts`.
+ * here: it reaches `prepareData` from a trusted TypeScript module and is
+ * checked in `prepare.ts`.
  */
 
 import type { Static, TSchema } from 'typebox';
-import type { FieldEditor } from './field/index.js';
 
 export { field } from './field/index.js';
 
@@ -38,7 +37,7 @@ export type FieldMap = {
  * The widest body conversion a table may declare: two verbs between a live
  * body and file text.
  *
- * This package compiles declarations for more than one storage. What a live
+ * This package prepares declarations for more than one storage. What a live
  * body is belongs to the storage that keeps one, so the node and the decoded
  * content are opaque here. A storage narrows them through the `TBody`
  * parameter below; one that keeps no live body refuses a declared conversion.
@@ -81,7 +80,14 @@ export type DeclaredMark = { readonly [DECLARED]: true };
 export type DeclaredTable<TBody extends TableBody = TableBody> =
 	TableDeclaration<TBody> & DeclaredMark;
 
-/** One durable data domain's complete, inert definition. */
+/**
+ * One durable data domain's complete, inert definition.
+ *
+ * A declaration and the prepared definition `prepareData` returns for it have
+ * this one shape. The prepared one is an owned, frozen snapshot whose fields
+ * `accepts`, `conformance`, and `inputIssues` read; a field of a declaration
+ * that was never prepared is refused by them.
+ */
 export type DataDefinition<TBody extends TableBody = TableBody> = {
 	readonly id: string;
 	readonly title?: string;
@@ -97,47 +103,6 @@ export type ConformanceIssue = {
 	/** JSON pointer within the field value, when the validator identifies it. */
 	path?: string;
 	message: string;
-};
-
-/**
- * One declared field, prepared: the lens a storage reads a cell through.
- *
- * The field's name is its key in `ParsedTable.fields`; the field does not
- * repeat it.
- *
- * `schema` is the native schema `check` and `issues` were compiled from, a
- * frozen copy of the declared one. A node with a `~guard` is the exception:
- * TypeBox keeps that whole node by reference, so it is the author's object
- * and is not frozen. `editor` is resolved from `schema` and decides nothing
- * about a value: it says which widget edits the field, whether `null` is a
- * value, and a select's options or a reference's target.
- *
- * Neither read changes the value it is given. A schema that holds a native
- * callback (`Type.Refine`, a `~guard`) is run against a private frozen copy,
- * so a callback that writes to its argument cannot reach the caller's value.
- * The copy holds array elements and own enumerable string-keyed properties,
- * which is what stored JSON is.
- *
- * A callback is a deterministic predicate over that content. Compilation
- * probes `null` to learn nullability, which can invoke callbacks. A read may
- * invoke them more than once; timing and call count are not guaranteed.
- */
-export type DataField = {
-	readonly editor: FieldEditor;
-	readonly schema: TSchema & object;
-	/**
-	 * Whether a value is JSON and TypeBox's compiled check admits it. This is
-	 * the only decision about a value. A throwing validation fails that value.
-	 */
-	readonly check: (value: unknown) => boolean;
-	/**
-	 * Why a value fails `check`: that it is not JSON, TypeBox's own errors with
-	 * the paths that can be walked in the value, or that schema validation
-	 * threw. Empty when `check` passes; a value TypeBox refuses without an
-	 * error still gets one issue. A table's `conformance` and `inputIssues`
-	 * report these same issues.
-	 */
-	readonly issues: (value: unknown) => readonly ConformanceIssue[];
 };
 
 /** What one bucket's fields read as, once the schemas are resolved. */

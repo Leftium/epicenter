@@ -27,10 +27,10 @@ import { defineErrors, type InferErrors } from 'wellcrafted/error';
 import { Ok, type Result } from 'wellcrafted/result';
 
 import {
-	compileData,
+	type BodyCodec,
 	type DataDefinition,
 	type JsonObject,
-	type ParsedTable,
+	prepareData,
 } from '../definition/index.js';
 import {
 	createDatabaseDocument,
@@ -44,11 +44,11 @@ import { parseRowPath } from './layout.js';
 
 export const ImportError = defineErrors({
 	/**
-	 * The definition handed to the import could not be compiled, so there are
+	 * The definition handed to the import could not be prepared, so there are
 	 * no codecs to decode through. The export refuses the same way.
 	 */
 	MalformedDefinition: ({ reason }: { reason: string }) => ({
-		message: `The data definition could not be compiled: ${reason}`,
+		message: `The data definition could not be prepared: ${reason}`,
 		reason,
 	}),
 	/**
@@ -113,9 +113,9 @@ export function readArtifact(
 	files: ReadonlyMap<string, string>,
 	definition: DataDefinition,
 ): Result<Uint8Array, ImportError> {
-	const parsed = compileData(definition);
-	if (parsed.error !== null) {
-		return ImportError.MalformedDefinition({ reason: parsed.error.message });
+	const prepared = prepareData(definition);
+	if (prepared.error !== null) {
+		return ImportError.MalformedDefinition({ reason: prepared.error.message });
 	}
 
 	const database = createDatabaseDocument();
@@ -147,10 +147,11 @@ export function readArtifact(
 					reason: 'it does not open with a frontmatter block',
 				});
 			}
-			const table = parsed.data.tables.get(at.table);
 			const { error } = admitRow({
 				database,
-				table,
+				// The prepared record has no prototype: a path naming a table this
+				// definition does not declare finds no codec, whatever the name.
+				codec: prepared.data.tables[at.table]?.body,
 				tableName: at.table,
 				rowId: at.rowId,
 				path,
@@ -183,7 +184,7 @@ export function readArtifact(
  */
 function admitRow({
 	database,
-	table,
+	codec,
 	tableName,
 	rowId,
 	path,
@@ -191,7 +192,7 @@ function admitRow({
 	body,
 }: {
 	database: Y.Doc;
-	table: ParsedTable | undefined;
+	codec: BodyCodec | undefined;
 	tableName: string;
 	rowId: string;
 	path: string;
@@ -199,7 +200,6 @@ function admitRow({
 	body: string;
 }): Result<void, ImportError> {
 	const root = tableRoot(database, tableName);
-	const codec = table?.body;
 
 	// The frontmatter IS the row, verbatim, including a key this declaration
 	// does not name: the artifact is the truth here, and a release that stopped

@@ -21,7 +21,7 @@
  * row leaves it where it is.
  */
 
-import { isJsonSafe, type ParsedTable } from '@epicenter/definition';
+import { conformance, type FieldMap, isJsonSafe } from '@epicenter/definition';
 import { customAlphabet } from 'nanoid';
 import { Err, Ok, type Result } from 'wellcrafted/result';
 import type { FolderStorage } from './boundary.js';
@@ -193,23 +193,23 @@ function submitted(source: string): { bytes: Uint8Array; source: string } {
 }
 
 /**
- * Interpret row source against a compiled table. Parsing comes first and
- * fails as a whole. The definition compiler then checks each declared field
- * by itself; nothing is coerced, defaulted, or repaired.
+ * Interpret row source against a table's prepared fields. Parsing comes first
+ * and fails as a whole. The shared conformance read then checks each declared
+ * field by itself; nothing is coerced, defaulted, or repaired.
  *
  * The values are this parse's own, so freezing them at every depth touches
  * nothing a caller holds. Each declared value that is JSON is frozen before
- * the compiler sees it, so a field's callback cannot make a reading say what
+ * its field checks it, so a field's callback cannot make a reading say what
  * its source does not.
  *
  * YAML can also hold what JSON cannot: a `!!binary` byte array, a date, a
  * set, a map, a number that is not finite. A declared value like that is
- * handed over as it is, since a byte array cannot be frozen: the compiler
- * refuses it as an issue before any callback runs. A key the table does not
- * declare is never checked, so nothing here touches its value.
+ * handed over as it is, since a byte array cannot be frozen: the conformance
+ * read refuses it as an issue before any callback runs. A key the table does
+ * not declare is never checked, so nothing here touches its value.
  */
 export function inspectSource<TFields>(
-	parsed: ParsedTable,
+	schemas: FieldMap,
 	source: string,
 ): TableReading<TFields> {
 	const read = parseSource(source);
@@ -221,12 +221,12 @@ export function inspectSource<TFields>(
 			issues: freezeIssues([]),
 		});
 	const declared: Record<string, unknown> = {};
-	for (const key of parsed.fields.keys()) {
+	for (const key of Object.keys(schemas)) {
 		if (!Object.hasOwn(read.data.values, key)) continue;
 		const value = read.data.values[key];
 		declared[key] = isJsonSafe(value) ? freezeDeep(value) : value;
 	}
-	const { conforming, issues } = parsed.conformance(declared);
+	const { conforming, issues } = conformance(schemas, declared);
 	return Object.freeze({
 		// Every value is frozen already; only the map that holds them is new.
 		fields: Object.freeze(conforming) as DeepReadonly<Partial<TFields>>,
@@ -252,11 +252,11 @@ function rowAddress(
 
 /**
  * Supplied values as the table will save them: the table's own frozen
- * copies, checked by the definition compiler and known to be writable as
+ * copies, checked against its prepared fields and known to be writable as
  * YAML. Synchronous, so it finishes before anything is read.
  */
 function ownValues(
-	parsed: ParsedTable,
+	schemas: FieldMap,
 	supplied: unknown,
 	complete: boolean,
 ): Result<
@@ -264,7 +264,7 @@ function ownValues(
 	Extract<TableError, { name: 'InvalidValues' }>
 > {
 	const { values, issues } = ownSupplied(
-		parsed,
+		schemas,
 		(supplied ?? {}) as Record<string, unknown>,
 		{ complete },
 	);
@@ -292,9 +292,13 @@ type PreparedRow = {
  * Validate and serialize a new row. A standalone `create` and a batched one
  * both write exactly what this returns, so a row has one source format
  * whichever way it is published. Synchronous: it reads nothing.
+ *
+ * `name` is the table's key in the prepared definition, which is the only
+ * place a table is named, and `schemas` are that table's prepared fields.
  */
 export function prepareRow(
-	parsed: ParsedTable,
+	name: string,
+	schemas: FieldMap,
 	input: {
 		readonly stem: string;
 		readonly fields: unknown;
@@ -304,12 +308,12 @@ export function prepareRow(
 	PreparedRow,
 	Extract<TableCreateError, { name: 'InvalidPath' | 'InvalidValues' }>
 > {
-	const address = rowAddress(parsed.name, input.stem);
+	const address = rowAddress(name, input.stem);
 	if (address.error) return address;
-	const values = ownValues(parsed, input.fields, true);
+	const values = ownValues(schemas, input.fields, true);
 	if (values.error) return values;
 	const ordered: Record<string, unknown> = {};
-	for (const key of parsed.fields.keys()) ordered[key] = values.data[key];
+	for (const key of Object.keys(schemas)) ordered[key] = values.data[key];
 	const composed = composeSource(ordered, input.body ?? '');
 	if (composed.error)
 		return TableError.InvalidValues({
@@ -336,13 +340,16 @@ export async function tableFilenames(
 	return Ok(children.data.files);
 }
 
+/**
+ * The file table for one declared table. `name` is its key in the prepared
+ * definition and its directory; `schemas` are its prepared fields.
+ */
 export function createTable<TFields>(
 	{ storage }: { storage: FolderStorage },
-	parsed: ParsedTable,
+	name: string,
+	schemas: FieldMap,
 ): FileTable<TFields> {
-	const { name } = parsed;
-
-	const inspect = (source: string) => inspectSource<TFields>(parsed, source);
+	const inspect = (source: string) => inspectSource<TFields>(schemas, source);
 
 	/** The snapshot of captured bytes: what was read, or exactly what was submitted. */
 	function snapshotOf(
@@ -458,7 +465,7 @@ export function createTable<TFields>(
 			return readSnapshot(address.data, read.data);
 		},
 		async create(input) {
-			const prepared = prepareRow(parsed, {
+			const prepared = prepareRow(name, schemas, {
 				stem: input.stem ?? generateStem(),
 				fields: input.fields,
 				body: input.body,
@@ -481,7 +488,7 @@ export function createTable<TFields>(
 			if (address.error) return address;
 			const path = address.data;
 			// Own the supplied values and body before the first asynchronous read.
-			const values = ownValues(parsed, change.fields, false);
+			const values = ownValues(schemas, change.fields, false);
 			if (values.error) return values;
 			const body = change.body;
 			const read = await storage.read(path);

@@ -71,14 +71,23 @@ behind it, and it does not depend on `@epicenter/app`. See its
 [README](../folder/README.md).
 
 Both packages declare tables with the same vocabulary. `field`, `defineTable`,
-the row lenses, and the compiler live in `@epicenter/definition`; this package
-re-exports them from its root, `/field`, and `/definition`, and adds what only
-a Yjs store has: `defineStore`, the `BodyCodec` type, and `plainText()`.
+the row lenses, and `prepareData` live in `@epicenter/definition`; this
+package re-exports them from its root, `/field`, and `/definition`, and adds
+what only a Yjs store has: `defineStore`, the `BodyCodec` type, and
+`plainText()`.
 
 A declared field is any native TypeBox schema. The `field.*` helpers build
 common ones and annotate them with an editor hint; a schema without a hint
 gets the JSON editor. The schema decides what a store accepts, and a hint
 never does. See the [definition README](../definition/README.md).
+
+`defineStore` returns the prepared definition. It has the shape and type that
+was declared (`kv` and each table's `fields` are records of native schemas,
+and a table carries its `body` codec), and each schema in it is an owned,
+frozen snapshot. An opened store's `definition` is that same object, so a
+generic editor reads a field's schema, hint included, straight from
+`store.definition.tables.notes.fields.title`. Editing a schema after
+`defineStore` changes nothing a store opened from it reads.
 
 ## Resource constructors
 

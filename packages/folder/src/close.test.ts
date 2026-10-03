@@ -19,7 +19,6 @@ import {
 	openFolderDatabase,
 } from './browser-store.js';
 import { defineFolder, defineTable, field } from './contract.js';
-import { compileFolderDefinition } from './definition.js';
 import { openNativeFolder } from './directory.test-support.js';
 import { assembleFolder, createFileHints } from './folder.js';
 import type { GitBackend } from './git/backend.js';
@@ -165,7 +164,7 @@ async function held() {
 	});
 	const hints = createFileHints();
 	const folder = assembleFolder<typeof definition>({
-		compiled: expectOk(compileFolderDefinition(definition)),
+		prepared: definition,
 		storage: withPublication({
 			storage: boundary,
 			history,

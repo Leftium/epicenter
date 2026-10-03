@@ -19,9 +19,11 @@
  */
 
 import {
+	accepts,
+	type FieldMap,
+	inputIssues,
 	isJsonValue,
 	JSON_BUDGET,
-	type ParsedTable,
 } from '@epicenter/definition';
 import {
 	type ParseError as JsonSyntaxError,
@@ -134,17 +136,17 @@ function parseObject(
 }
 
 /**
- * Interpret `kv.json` source against the compiled declaration. Parsing comes
- * first and fails as a whole. The definition compiler then checks each
- * stored declared value by itself; nothing is coerced, defaulted, or
- * repaired.
+ * Interpret `kv.json` source against the definition's prepared `kv` fields.
+ * Parsing comes first and fails as a whole. The shared input check then
+ * checks each stored declared value by itself; nothing is coerced,
+ * defaulted, or repaired.
  *
  * The values are this parse's own, so freezing them at every depth touches
- * nothing a caller holds. They are frozen before the compiler sees them, so
- * a field's callback cannot make a reading say what its source does not.
+ * nothing a caller holds. They are frozen before a field checks them, so a
+ * field's callback cannot make a reading say what its source does not.
  */
 function inspectSource<TValues>(
-	parsed: ParsedTable,
+	schemas: FieldMap,
 	source: string,
 ): KvReading<TValues> {
 	const object = parseObject(
@@ -157,11 +159,11 @@ function inspectSource<TValues>(
 			issues: freezeIssues([]),
 		});
 	const stored: Record<string, unknown> = {};
-	for (const key of parsed.fields.keys())
+	for (const key of Object.keys(schemas))
 		if (Object.hasOwn(object.data, key))
 			stored[key] = freezeDeep(object.data[key]);
 	// Only stored declared keys are checked, so an absent key is never an issue.
-	const issues = parsed.inputIssues(stored, { complete: false });
+	const issues = inputIssues(schemas, stored, { complete: false });
 	for (const { field } of issues) delete stored[field];
 	return Object.freeze({
 		// Every value is frozen already; only the map that holds them is new.
@@ -196,12 +198,12 @@ function serialize(value: unknown): string | undefined {
  * module's frozen copy.
  */
 function ownValues(
-	parsed: ParsedTable,
+	schemas: FieldMap,
 	supplied: Readonly<Record<string, unknown>>,
 ): Result<Map<string, string>, Extract<TableError, { name: 'InvalidValues' }>> {
 	const owned = new Map<string, string>();
-	// The compiler says which keys are undeclared or do not conform, and where.
-	const { values, issues } = ownSupplied(parsed, supplied, {
+	// The input check says which keys are undeclared or do not conform, and where.
+	const { values, issues } = ownSupplied(schemas, supplied, {
 		complete: false,
 	});
 	const refused = new Set(issues.map((issue) => issue.field));
@@ -218,9 +220,10 @@ function ownValues(
 		}
 		const json = serialize(value);
 		// The saved text is what a reader gets back, so it has to conform too.
+		// The key passed the input check above, so it is a declared field.
 		if (
 			json !== undefined &&
-			parsed.fields.get(key)?.check(freezeDeep(JSON.parse(json)))
+			accepts(schemas[key], freezeDeep(JSON.parse(json)))
 		)
 			owned.set(key, json);
 		else
@@ -347,11 +350,12 @@ function assignKeys(
 	return Ok(prefix + patched);
 }
 
+/** The `kv.json` handle. `schemas` are the prepared definition's `kv` fields. */
 export function createKv<TValues>(
 	{ storage }: { storage: FolderStorage },
-	parsed: ParsedTable,
+	schemas: FieldMap,
 ): FileKv<TValues> {
-	const inspect = (source: string) => inspectSource<TValues>(parsed, source);
+	const inspect = (source: string) => inspectSource<TValues>(schemas, source);
 
 	/** The snapshot of captured bytes: what was read, or exactly what was submitted. */
 	function snapshotOf(source: string, sha256: string): KvSnapshot<TValues> {
@@ -395,7 +399,7 @@ export function createKv<TValues>(
 			return Ok(snapshotOf(source, read.data.sha256));
 		},
 		async create(values) {
-			const owned = ownValues(parsed, values as Record<string, unknown>);
+			const owned = ownValues(schemas, values as Record<string, unknown>);
 			if (owned.error) return owned;
 			const object = Object.fromEntries(
 				[...owned.data].map(([key, json]) => [key, JSON.parse(json)]),
@@ -405,7 +409,7 @@ export function createKv<TValues>(
 			});
 		},
 		async update(values) {
-			const owned = ownValues(parsed, values as Record<string, unknown>);
+			const owned = ownValues(schemas, values as Record<string, unknown>);
 			if (owned.error) return owned;
 			const read = await storage.read(KV_PATH);
 			if (read.error) return read;

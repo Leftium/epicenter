@@ -17,7 +17,7 @@
  * says about its source, and cannot reach an object a caller holds.
  */
 
-import { isJsonSafe, type ParsedTable } from '@epicenter/definition';
+import { type FieldMap, inputIssues, isJsonSafe } from '@epicenter/definition';
 
 /**
  * Why source did not parse. `message` names the failure and `diagnostics`
@@ -125,22 +125,22 @@ export function freezeDeep<T>(value: T): DeepReadonly<T> {
 }
 
 /**
- * Supplied values as the folder's own, and what the definition compiler says
- * of them. Synchronous, so it finishes before anything is read and a caller
+ * Supplied values as the folder's own, and what the prepared fields say of
+ * them. Synchronous, so it finishes before anything is read and a caller
  * that changes its object afterward changes nothing that is saved.
  *
- * Each JSON value is copied and the copy frozen before the compiler checks
- * it, so a field's callback is shown the copy and never the caller's object.
- * A value that is not JSON is not copied: copying would flatten a class
- * instance into a plain object the field might accept. The compiler refuses
- * it as it is, before any callback runs.
+ * Each JSON value is copied and the copy frozen before its field checks it,
+ * so a field's callback is shown the copy and never the caller's object. A
+ * value that is not JSON is not copied: copying would flatten a class
+ * instance into a plain object the field might accept. The input check
+ * refuses it as it is, before any callback runs.
  *
  * The copies are held on an object with no prototype, so every supplied key
  * is kept as a key. On an ordinary object, assigning `__proto__` sets the
- * prototype instead, and that key would go unseen by the compiler.
+ * prototype instead, and that key would go unseen by the input check.
  */
 export function ownSupplied(
-	parsed: ParsedTable,
+	schemas: FieldMap,
 	supplied: Readonly<Record<string, unknown>>,
 	options: { complete: boolean },
 ): { values: Record<string, unknown>; issues: FieldIssue[] } {
@@ -158,5 +158,5 @@ export function ownSupplied(
 		}
 	}
 	if (uncopied.length > 0) return { values, issues: uncopied };
-	return { values, issues: parsed.inputIssues(values, options) };
+	return { values, issues: inputIssues(schemas, values, options) };
 }

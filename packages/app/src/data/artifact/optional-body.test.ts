@@ -5,7 +5,6 @@
 import { expect, test } from 'bun:test';
 import { defineStore } from '@epicenter/app';
 import { expectErr, expectOk } from 'wellcrafted/testing';
-import { compileData } from '../definition/compile.js';
 import { defineTable, field } from '../definition/index.js';
 import { openMemory } from '../store/memory.js';
 import { syncEngineOf } from '../store/store.js';
@@ -60,12 +59,8 @@ test('a codec-less populated sequence or attribute refuses export', async () => 
 	for (const row of [sequence, attributes]) {
 		expect(
 			expectErr(
-				await renderRow(
-					data,
-					expectOk(compileData(definition)),
-					'queries',
-					row.id,
-				),
+				// `defineStore` returned the prepared definition `renderRow` reads.
+				await renderRow(data, definition, 'queries', row.id),
 			).name,
 		).toBe('UncodedRow');
 	}

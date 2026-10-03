@@ -29,7 +29,7 @@
  * - `browser.test.ts` and `close.test.ts` for history and close around a KV save
  */
 import { expect, test } from 'bun:test';
-import { jsonValue } from '@epicenter/definition';
+import { accepts, jsonValue } from '@epicenter/definition';
 import { IDBFactory, IDBKeyRange } from 'fake-indexeddb';
 import { expectErr, expectOk } from 'wellcrafted/testing';
 import type { FolderStorage } from './boundary.js';
@@ -39,7 +39,6 @@ import {
 } from './browser-store.js';
 import { hashBytes } from './capture.js';
 import { defineFolder, field, type KvOf } from './contract.js';
-import { compileFolderDefinition } from './definition.js';
 import { createFiles } from './files.js';
 import { createKv, type KvSnapshot } from './kv.js';
 
@@ -102,10 +101,7 @@ async function setup(initial?: string | Uint8Array) {
 	if (initial !== undefined) expectOk(await files.create('kv.json', initial));
 	return {
 		storage,
-		kv: createKv<Values>(
-			{ storage },
-			expectOk(compileFolderDefinition(definition)).kv,
-		),
+		kv: createKv<Values>({ storage }, definition.kv),
 		files,
 		calls,
 		source: async () =>
@@ -139,7 +135,7 @@ test('get returns undefined for a missing file and a failed read as its error', 
 				}),
 			} as unknown as FolderStorage,
 		},
-		expectOk(compileFolderDefinition(definition)).kv,
+		definition.kv,
 	);
 	expect(expectErr(await unreadable.get()).name).toBe('Io');
 });
@@ -214,7 +210,7 @@ test('a stored value is reported where it fails, and a repeated root key reads a
 	});
 	const typed = createKv<KvOf<typeof nested>>(
 		{ storage: undefined as never },
-		expectOk(compileFolderDefinition(nested)).kv,
+		nested.kv,
 	);
 	const reading = typed.inspect('{"window": {"width": 1.5}, "theme": null}');
 	// A stored null is a value; the pointer names the part that does not conform.
@@ -264,7 +260,7 @@ const refining = defineFolder({
 			if (value !== null) (value as { answer: number }).answer = 99;
 			return true;
 		}),
-		// Throws on one value, never on the `null` a compile probes.
+		// Throws on one value and admits every other.
 		guard: refined({ type: 'string' }, (value) => {
 			if (value === 'boom') throw new Error('the refinement threw');
 			return true;
@@ -276,7 +272,10 @@ const refining = defineFolder({
 test('a supplied key named __proto__ is an undeclared key like any other: refused by name, and nothing is saved', async () => {
 	// As parsed JSON carries it: an own key, not the object's prototype.
 	const values = JSON.parse('{"theme": "dark", "__proto__": {"extra": 1}}');
-	const refusedBy = { field: '__proto__', message: '__proto__ is not declared' };
+	const refusedBy = {
+		field: '__proto__',
+		message: '__proto__ is not declared',
+	};
 
 	const empty = await setup();
 	const created = expectErr(await empty.kv.create(values));
@@ -301,7 +300,7 @@ test('a refinement is shown a frozen copy: the supplied objects stay unfrozen, a
 		theme: string;
 		layout: { panes: number[] };
 		mutated: { answer: number };
-	}>({ storage }, expectOk(compileFolderDefinition(refining)).kv);
+	}>({ storage }, refining.kv);
 	const supplied = { layout: { panes: [1] } };
 	const created = expectOk(await kv.create(supplied));
 	for (const node of nodesOf(supplied))
@@ -313,9 +312,9 @@ test('a refinement is shown a frozen copy: the supplied objects stay unfrozen, a
 	class Box {
 		panes = [1];
 	}
-	expect(
-		expectErr(await kv.update({ layout: new Box() as never })).name,
-	).toBe('InvalidValues');
+	expect(expectErr(await kv.update({ layout: new Box() as never })).name).toBe(
+		'InvalidValues',
+	);
 
 	const change = { theme: 'dark', mutated: { answer: 1 } };
 	const refused = expectErr(await kv.update(change));
@@ -343,7 +342,7 @@ test('a value its refinement froze still has every child frozen', async () => {
 	const { storage } = await setup();
 	const kv = createKv<{ layout: { panes: unknown[] } }>(
 		{ storage },
-		expectOk(compileFolderDefinition(refining)).kv,
+		refining.kv,
 	);
 	const reading = kv.inspect('{"layout": {"panes": [1, {"deep": [2]}]}}');
 	expect(reading.issues).toEqual([]);
@@ -359,7 +358,7 @@ test('a stored value whose refinement throws is an issue, and another key still 
 	const { storage, source } = await setup(before);
 	const kv = createKv<{ theme: string; guard: string }>(
 		{ storage },
-		expectOk(compileFolderDefinition(refining)).kv,
+		refining.kv,
 	);
 	const read = expectOk(await kv.get())!;
 	expect(read.values).toEqual({ theme: 'light' });
@@ -379,19 +378,16 @@ test('a stored value whose refinement throws is an issue, and another key still 
 test('a receipt is prepared before publication: an interpreter that fails leaves kv.json as it was', async () => {
 	const before = '{"size": 1, "theme": "light"}';
 	const { storage, calls, source } = await setup(before);
-	const compiled = expectOk(compileFolderDefinition(definition)).kv;
 	// No declared field does this; it stands for a failure nobody planned for.
 	// Supplied values are checked first, so only reading the stored `size` fails.
 	const kv = createKv<Values>(
 		{ storage },
-		{
-			...compiled,
-			inputIssues(values, options) {
-				if (Object.hasOwn(values, 'size'))
-					throw new Error('the interpreter failed');
-				return compiled.inputIssues(values, options);
+		new Proxy(definition.kv, {
+			get(fields, key, receiver) {
+				if (key === 'size') throw new Error('the interpreter failed');
+				return Reflect.get(fields, key, receiver);
 			},
-		},
+		}),
 	);
 	await expect(kv.update({ theme: 'dark' })).rejects.toThrow(
 		'the interpreter failed',
@@ -407,10 +403,7 @@ test('declared keys that every object inherits are read only when the file has t
 		tables: {},
 	});
 	const { storage } = await setup('{"theme": "dark"}');
-	const kv = createKv<Record<string, string>>(
-		{ storage },
-		expectOk(compileFolderDefinition(inherited)).kv,
-	);
+	const kv = createKv<Record<string, string>>({ storage }, inherited.kv);
 	const snapshot = expectOk(await kv.get());
 	expect(Object.keys(snapshot?.values ?? {})).toEqual([]);
 	expect(snapshot?.issues).toEqual([]);
@@ -498,7 +491,7 @@ test('a reference and an unannotated schema are kv fields, and an identifier may
 	const db = await openFolderDatabase('epicenter-folder:kv-refs', environment);
 	const kv = createKv<KvOf<typeof references>>(
 		{ storage: createBrowserFileBoundary(db, environment) },
-		expectOk(compileFolderDefinition(references)).kv,
+		references.kv,
 	);
 
 	// No `pages` table exists, and nothing looks for the row.
@@ -615,8 +608,7 @@ test.each([
 ])('create and update refuse %s by naming the budget, not conformance', async (_name, layout) => {
 	const { kv, calls, source } = await setup('{"theme": "light"}');
 	// The field itself takes the value: it is JSON, and JSON has no size.
-	const parsed = expectOk(compileFolderDefinition(definition)).kv;
-	expect(parsed.fields.get('layout')?.check(layout)).toBe(true);
+	expect(accepts(definition.kv.layout, layout)).toBe(true);
 
 	const supplied = { layout } as Partial<Values>;
 	for (const refused of [await kv.update(supplied), await kv.create(supplied)])

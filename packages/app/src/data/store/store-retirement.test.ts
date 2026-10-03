@@ -7,7 +7,7 @@
 import { Database } from 'bun:sqlite';
 import { expect, test } from 'bun:test';
 import { defineStore, defineTable, field, plainText } from '@epicenter/app';
-import { compileData } from '@epicenter/app/definition';
+import { prepareData } from '@epicenter/app/definition';
 import { createBunSqliteAdapter } from '@epicenter/sqlite/bun';
 import { Ok } from 'wellcrafted/result';
 import { expectOk } from 'wellcrafted/testing';
@@ -16,7 +16,7 @@ import { createSqliteDurablePort } from './log.js';
 import { createStoreOverPort, StoreUnusableError } from './store.js';
 
 const definition = expectOk(
-	compileData(
+	prepareData(
 		defineStore({
 			id: 'so.epicenter.retirement-test',
 			kv: { theme: field.string() },

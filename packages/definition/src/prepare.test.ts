@@ -1,40 +1,46 @@
 /**
- * Declaration Compiler Tests
+ * Definition Preparation Tests
  *
- * The compiler turns a declaration into field checks without knowing which
- * storage will use it. A storage with live bodies declares a body conversion;
- * the compiler carries it through unread, and a storage without one sees that
- * it is there and decides what to do.
+ * `prepareData` checks a declaration and returns an owned definition of the
+ * same shape, without knowing which storage will use it. `accepts`,
+ * `conformance`, and `inputIssues` read values through its fields. A storage
+ * with live bodies declares a body conversion; preparation carries it through
+ * unread, and a storage without one sees that it is there and decides what to
+ * do.
  *
  * Key behaviors:
  * - A table goes through `defineTable`, which leaves its fields exact
  * - A declared body conversion needs both verbs and is carried through as
- *   declared; a table without one compiles with none
- * - Compilation is memoized on the definition object
+ *   declared; a table without one is prepared with none
+ * - A prepared definition has the declared shape: records of native schemas,
+ *   named by their keys, frozen and without a prototype
+ * - Preparation is memoized on the declaration and on the definition it
+ *   returned
+ * - A validator belongs to a prepared snapshot, never to the author's schema:
+ *   a schema reused in two definitions is prepared twice, and a schema that
+ *   was never prepared is refused with an error
  * - A field is any native TypeBox schema: raw, helper-built, or read back from
  *   JSON
  * - The schema alone decides conformance; a hint that is absent, wrong, or
  *   unknown changes the editor and nothing else
- * - Every field holds a value to JSON before its schema runs, in `check`,
- *   `issues`, `conformance`, and `inputIssues`
- * - A field owns its diagnostics: `conformance` and `inputIssues` report what
- *   `issues` returns, and a value the check refuses is an issue even when
- *   TypeBox's error report is capped to nothing
- * - Nullability is editor information: a validator that throws on `null`
- *   compiles and is not nullable
+ * - Every field holds a value to JSON before its schema runs, in `accepts`,
+ *   `conformance`, and `inputIssues`
+ * - `conformance` and `inputIssues` report one field's diagnostics the same
+ *   way, and a value the check refuses is an issue even when TypeBox's error
+ *   report is capped to nothing
+ * - Whether a field admits `null` is asked of its check when a reader needs
+ *   it; preparation runs no callback
  * - A native callback reads a frozen copy, so it cannot change the value it
  *   is given
- * - Each prepared field is TypeBox's own compile of a read-only schema, and its
- *   editor is resolved from that same schema
  * - Conformance checks every declared field on its own
  * - A native `default` annotation is admitted and inert: it fills nothing, and
  *   a missing declared field is still an issue
- * - A frozen declared schema compiles with every check it had
+ * - A frozen declared schema is prepared with every check it had
  *
  * See also:
  * - `field/field.test.ts` for the helpers and the editor resolver on their own
- * - `packages/app/src/data/definition/compile.test.ts` for the same compiler
- *   bound to a Yjs body codec
+ * - `packages/app/src/data/definition/prepare.test.ts` for the same
+ *   preparation bound to a Yjs body codec
  */
 import { expect, test } from 'bun:test';
 import { type TSchema, Type } from 'typebox';
@@ -42,19 +48,60 @@ import { Compile } from 'typebox/compile';
 import { Settings } from 'typebox/system';
 import { expectErr, expectOk } from 'wellcrafted/testing';
 import {
-	compileData,
+	accepts,
+	conformance,
 	type DataDefinition,
 	defineTable,
 	FIELD_KEYWORD,
 	type FieldMap,
 	field,
+	fieldEditorOf,
+	inputIssues,
 	isJsonSafe,
 	jsonValue,
+	prepareData,
 } from './index.js';
 
-/** Compile one bucket of fields as a definition's kv. */
-const compileKv = (kv: FieldMap) =>
-	compileData({ id: 'so.epicenter.fields', kv, tables: {} });
+/** Prepare one bucket of fields as a definition's kv. */
+const prepareKv = (kv: FieldMap) =>
+	prepareData({ id: 'so.epicenter.fields', kv, tables: {} });
+
+/**
+ * A declared field of a prepared bucket. It throws for a name the bucket does
+ * not hold, so no assertion below passes on a misspelled name.
+ */
+function fieldOf(fields: FieldMap, name: string) {
+	if (!Object.hasOwn(fields, name)) throw new Error(`no field '${name}'`);
+	return fields[name] as TSchema & object;
+}
+
+/** Whether one prepared field accepts a value. */
+const check = (fields: FieldMap, name: string, value: unknown) =>
+	accepts(fieldOf(fields, name), value);
+
+/** One prepared field's own diagnostics, as a write of that field reports them. */
+const issuesOf = (fields: FieldMap, name: string, value: unknown) =>
+	inputIssues(
+		{ [name]: fieldOf(fields, name) },
+		{ [name]: value },
+		{
+			complete: false,
+		},
+	);
+
+/**
+ * What a reader shows for a prepared field: the editor read from its
+ * keywords, beside whether its check admits `null`.
+ */
+const editorOf = (fields: FieldMap, name: string) => ({
+	...fieldEditorOf(fieldOf(fields, name)),
+	nullable: check(fields, name, null),
+});
+
+const editorsOf = (fields: FieldMap) =>
+	Object.fromEntries(
+		Object.keys(fields).map((name) => [name, editorOf(fields, name)]),
+	);
 
 const body = { encode: () => 'text', decode: (text: string) => text };
 
@@ -84,28 +131,67 @@ const Node = Type.Cyclic(
 // ============================================================================
 
 test('a declared body conversion is carried through unread, and a table without one has none', () => {
-	const compiled = expectOk(compileData(definition));
-	expect(compiled.tables.get('notes')?.body).toBe(body);
-	expect(compiled.tables.get('queries')?.body).toBeUndefined();
-	expect(compiled.kv.body).toBeUndefined();
-	expect([...(compiled.tables.get('queries')?.fields.keys() ?? [])]).toEqual([
-		'name',
-		'limit',
-	]);
-	const limit = compiled.tables.get('queries')?.fields.get('limit');
-	expect(limit?.editor).toEqual({ kind: 'integer', nullable: true });
-	expect(limit?.check(null)).toBe(true);
-	expect(limit?.check('3')).toBe(false);
+	const prepared = expectOk(prepareData(definition));
+	expect(prepared.tables.notes?.body).toBe(body);
+	expect(Object.isFrozen(body)).toBe(false);
+	expect(Object.hasOwn(prepared.tables.queries ?? {}, 'body')).toBe(false);
+	const queries = prepared.tables.queries?.fields ?? {};
+	expect(Object.keys(queries)).toEqual(['name', 'limit']);
+	expect(editorOf(queries, 'limit')).toEqual({
+		kind: 'integer',
+		nullable: true,
+	});
+	expect(check(queries, 'limit', null)).toBe(true);
+	expect(check(queries, 'limit', '3')).toBe(false);
 });
 
-test('compilation is memoized on the definition object', () => {
-	expect(compileData(definition)).toBe(compileData(definition));
-	expect(compileData({ ...definition })).not.toBe(compileData(definition));
+test('a prepared definition has the declared shape and nothing else', () => {
+	const prepared = expectOk(
+		prepareData({ ...definition, title: 'Shared', extra: true } as never),
+	) as DataDefinition;
+	expect(Object.keys(prepared)).toEqual(['id', 'title', 'kv', 'tables']);
+	expect(prepared.id).toBe('so.epicenter.shared');
+	expect(prepared.title).toBe('Shared');
+	expect(Object.keys(prepared.kv)).toEqual(['theme']);
+	expect(Object.keys(prepared.tables)).toEqual(['notes', 'queries']);
+	// A table is its fields and its optional body. Its key is its only name.
+	expect(Object.keys(prepared.tables.notes ?? {})).toEqual(['fields', 'body']);
+	expect(Object.keys(prepared.tables.queries ?? {})).toEqual(['fields']);
+	// A field is the native schema, hint and all, not a wrapper around one.
+	expect(prepared.kv.theme).toEqual(field.string());
+	expect(prepared.tables.queries?.fields.limit).toEqual(
+		field.nullable(field.integer()),
+	);
+	expect(Object.keys(expectOk(prepareData(definition)))).toEqual([
+		'id',
+		'kv',
+		'tables',
+	]);
+});
+
+test('preparation is memoized on the declaration and on the definition it returned', () => {
+	const first = prepareData(definition);
+	expect(prepareData(definition)).toBe(first);
+	expect(prepareData({ ...definition })).not.toBe(first);
+	// Preparing a prepared definition returns it, and prepares nothing again.
+	const prepared = expectOk(first);
+	expect(prepared).not.toBe(definition);
+	expect(prepareData(prepared)).toBe(first);
+	expect(expectOk(prepareData(prepared))).toBe(prepared);
+	// A refusal is memoized the same way.
+	const malformed = { ...definition, kv: { id: field.string() } };
+	expect(prepareData(malformed)).toBe(prepareData(malformed));
+	expectErr(prepareData(malformed));
+});
+
+test('a declaration that is not an object is malformed', () => {
+	for (const value of [undefined, null, 7, 'definition', []])
+		expect(expectErr(prepareData(value as never)).name).toBe('Malformed');
 });
 
 test('a body conversion missing a verb, and an unknown table option, are malformed', () => {
 	const half = expectErr(
-		compileData({
+		prepareData({
 			...definition,
 			tables: {
 				notes: defineTable({
@@ -118,7 +204,7 @@ test('a body conversion missing a verb, and an unknown table option, are malform
 	);
 	expect(half.message).toContain('invalid body codec');
 	const extra = expectErr(
-		compileData({
+		prepareData({
 			...definition,
 			tables: {
 				// @ts-expect-error A table declares fields and a body only.
@@ -131,12 +217,12 @@ test('a body conversion missing a verb, and an unknown table option, are malform
 
 test('field and table names keep their grammar for raw schemas', () => {
 	for (const name of ['id', 'ID', '1st', 'a-b', ''])
-		expect(expectErr(compileKv({ [name]: Type.String() })).name).toBe(
+		expect(expectErr(prepareKv({ [name]: Type.String() })).name).toBe(
 			'Malformed',
 		);
 	expect(
 		expectErr(
-			compileData({
+			prepareData({
 				id: 'so.epicenter.names',
 				kv: {},
 				tables: { kv: defineTable({ fields: { a: Type.String() } }) },
@@ -145,13 +231,102 @@ test('field and table names keep their grammar for raw schemas', () => {
 	).toBe('Malformed');
 });
 
+test('a name that is also an Object.prototype member is an ordinary name, and __proto__ is refused', () => {
+	const row = defineTable({
+		fields: { constructor: field.string(), toString: field.integer() },
+	});
+	const prepared = expectOk(
+		prepareData({
+			id: 'so.epicenter.prototype',
+			kv: { constructor: field.boolean(), valueOf: field.string() },
+			tables: { constructor: row, toString: row },
+		}),
+	);
+	// The records have no prototype, so a name reads as its own entry or not at all.
+	for (const record of [
+		prepared.kv,
+		prepared.tables,
+		prepared.tables.constructor.fields,
+	])
+		expect(Object.getPrototypeOf(record)).toBeNull();
+	expect(Object.keys(prepared.tables)).toEqual(['constructor', 'toString']);
+	expect((prepared.kv as FieldMap).hasOwnProperty).toBeUndefined();
+	expect(
+		(prepared.tables as Record<string, unknown>).hasOwnProperty,
+	).toBeUndefined();
+	expect(
+		(prepared.tables as Record<string, unknown>).__proto__,
+	).toBeUndefined();
+
+	const { fields } = prepared.tables.constructor;
+	expect(check(prepared.kv, 'constructor', true)).toBe(true);
+	expect(check(prepared.kv, 'constructor', 'true')).toBe(false);
+	expect(
+		conformance(fields, { constructor: 'made', toString: 2, valueOf: 1 }),
+	).toEqual({ conforming: { constructor: 'made', toString: 2 }, issues: [] });
+	// A payload's inherited members are not stored values.
+	expect(conformance(fields, {}).issues).toEqual([
+		{ field: 'constructor', message: 'constructor is missing' },
+		{ field: 'toString', message: 'toString is missing' },
+	]);
+	expect(
+		inputIssues(fields, { constructor: 1, valueOf: 1 }, { complete: true }),
+	).toEqual([
+		{
+			field: 'constructor',
+			message: 'constructor does not conform: must be string',
+		},
+		{ field: 'valueOf', message: 'valueOf is not declared' },
+		{ field: 'toString', message: 'toString is missing' },
+	]);
+
+	// An own `__proto__` key, as JSON reads one, fails the name grammar.
+	for (const section of ['kv', 'tables'] as const)
+		expect(
+			expectErr(
+				prepareData({
+					id: 'so.epicenter.prototype',
+					kv: {},
+					tables: {},
+					[section]: JSON.parse('{"__proto__": {"type": "string"}}'),
+				}),
+			).name,
+		).toBe('Malformed');
+});
+
+test('one declared table under two names is prepared once per name', () => {
+	const shared = defineTable({
+		fields: { title: field.string(), status: field.select(['open', 'done']) },
+	});
+	const prepared = expectOk(
+		prepareData({
+			id: 'so.epicenter.reused',
+			kv: {},
+			tables: { tasks: shared, archive: shared },
+		}),
+	);
+	const { tasks, archive } = prepared.tables;
+	expect(Object.keys(prepared.tables)).toEqual(['tasks', 'archive']);
+	expect(tasks).not.toBe(archive);
+	expect(tasks.fields).not.toBe(archive.fields);
+	expect(tasks.fields.status).not.toBe(archive.fields.status);
+	expect(tasks.fields.status).not.toBe(shared.fields.status);
+	for (const { fields } of [tasks, archive]) {
+		expect(Object.keys(fields)).toEqual(['title', 'status']);
+		expect(conformance(fields, { title: 't', status: 'archived' })).toEqual({
+			conforming: { title: 't' },
+			issues: [expect.objectContaining({ field: 'status' })],
+		});
+	}
+});
+
 // ============================================================================
 // A field is a native schema
 // ============================================================================
 
-test('raw native schemas compile, validate, and get the JSON editor', () => {
+test('raw native schemas are prepared, validate, and get the JSON editor', () => {
 	const kv = expectOk(
-		compileKv({
+		prepareKv({
 			meta: Type.Object(
 				{ author: Type.String(), words: Type.Optional(Type.Integer()) },
 				{ additionalProperties: false },
@@ -165,7 +340,7 @@ test('raw native schemas compile, validate, and get the JSON editor', () => {
 		}),
 	).kv;
 	const verdicts = (name: string, values: unknown[]) =>
-		values.map((value) => kv.fields.get(name)?.check(value));
+		values.map((value) => check(kv, name, value));
 
 	expect(
 		verdicts('meta', [
@@ -198,8 +373,8 @@ test('raw native schemas compile, validate, and get the JSON editor', () => {
 
 	// No hint, so no editor is guessed: not a select for the enum, not a
 	// string editor for the string.
-	for (const [name, each] of kv.fields)
-		expect(each.editor).toEqual({
+	for (const name of Object.keys(kv))
+		expect(editorOf(kv, name)).toEqual({
 			kind: 'json',
 			nullable: ['anything', 'maybe'].includes(name),
 		});
@@ -208,7 +383,7 @@ test('raw native schemas compile, validate, and get the JSON editor', () => {
 test('a field that is not a schema object is refused', () => {
 	for (const bare of ['string', 7, true, null, undefined, [], new Map()]) {
 		// The type refuses these too; see `declaration.test-d.ts`.
-		const error = expectErr(compileKv({ title: bare as never }));
+		const error = expectErr(prepareKv({ title: bare as never }));
 		expect(error).toMatchObject({
 			name: 'UnrecognizedField',
 			table: 'kv',
@@ -217,7 +392,7 @@ test('a field that is not a schema object is refused', () => {
 	}
 });
 
-test('a helper schema read back from JSON compiles to the same field', () => {
+test('a helper schema read back from JSON is prepared as the same field', () => {
 	const declared = {
 		title: field.string({ minLength: 2 }),
 		page: field.nullable(field.reference('pages')),
@@ -231,9 +406,9 @@ test('a helper schema read back from JSON compiles to the same field', () => {
 		tags: field.tags(),
 		extra: field.json(Type.Object({ by: Type.String() })),
 	};
-	const original = expectOk(compileKv(declared)).kv;
+	const original = expectOk(prepareKv(declared)).kv;
 	const restored = expectOk(
-		compileKv(JSON.parse(JSON.stringify(declared)) as FieldMap),
+		prepareKv(JSON.parse(JSON.stringify(declared)) as FieldMap),
 	).kv;
 	const samples = [
 		null,
@@ -254,43 +429,46 @@ test('a helper schema read back from JSON compiles to the same field', () => {
 		{ by: 1 },
 		new Date(),
 	];
-	for (const [name, each] of original.fields) {
-		const again = restored.fields.get(name);
-		expect(again?.editor).toEqual(each.editor);
+	expect(Object.keys(restored)).toEqual(Object.keys(original));
+	for (const name of Object.keys(original)) {
+		expect(restored[name]).toEqual(original[name] as TSchema & object);
+		expect(editorOf(restored, name)).toEqual(editorOf(original, name));
 		for (const value of samples) {
-			expect(again?.check(value)).toBe(each.check(value));
-			expect(again?.issues(value)).toEqual(each.issues(value));
+			expect(check(restored, name, value)).toBe(check(original, name, value));
+			expect(issuesOf(restored, name, value)).toEqual(
+				issuesOf(original, name, value),
+			);
 		}
 	}
 	const stored = { title: 'a', status: 'archived', labels: ['a'], done: true };
-	expect(restored.conformance(stored)).toEqual(original.conformance(stored));
+	expect(conformance(restored, stored)).toEqual(conformance(original, stored));
 });
 
 test('a spread or rebuilt helper schema is admitted with the keywords it has', () => {
 	const title = field.string({ minLength: 2 });
 	const kv = expectOk(
-		compileKv({
+		prepareKv({
 			spread: { ...title },
 			unsafe: Type.Unsafe(title),
 			optioned: Type.Options(title, {}),
 			handwritten: { type: 'string', [FIELD_KEYWORD]: { kind: 'string' } },
 		}),
 	).kv;
-	for (const each of kv.fields.values()) {
-		expect(each.editor).toEqual({ kind: 'string', nullable: false });
-		expect(each.check('ab')).toBe(true);
-		expect(each.check(2)).toBe(false);
+	for (const name of Object.keys(kv)) {
+		expect(editorOf(kv, name)).toEqual({ kind: 'string', nullable: false });
+		expect(check(kv, name, 'ab')).toBe(true);
+		expect(check(kv, name, 2)).toBe(false);
 	}
-	expect(kv.fields.get('spread')?.check('a')).toBe(false);
+	expect(check(kv, 'spread', 'a')).toBe(false);
 });
 
 // ============================================================================
 // The editor
 // ============================================================================
 
-test('a prepared field carries the editor resolved from its schema', () => {
+test('a prepared field resolves the editor its schema carries', () => {
 	const kv = expectOk(
-		compileKv({
+		prepareKv({
 			status: field.nullable(field.select(['draft', 'published'])),
 			page: field.nullable(field.reference('pages')),
 			rating: field.integer({ minimum: 1, maximum: 5 }),
@@ -298,30 +476,36 @@ test('a prepared field carries the editor resolved from its schema', () => {
 			labels: field.multiSelect(['a', 'b']),
 		}),
 	).kv;
-	const status = kv.fields.get('status');
-	expect(status?.editor).toEqual({
+	expect(editorOf(kv, 'status')).toEqual({
 		kind: 'select',
 		nullable: true,
 		options: ['draft', 'published'],
 	});
-	expect(status?.check(null)).toBe(true);
-	expect(status?.check('archived')).toBe(false);
-	expect(kv.fields.get('page')?.editor).toEqual({
+	expect(check(kv, 'status', null)).toBe(true);
+	expect(check(kv, 'status', 'archived')).toBe(false);
+	expect(editorOf(kv, 'page')).toEqual({
 		kind: 'reference',
 		nullable: true,
 		target: 'pages',
 	});
-	expect(kv.fields.get('page')?.check('')).toBe(false);
-	expect(kv.fields.get('labels')?.editor).toEqual({
+	expect(check(kv, 'page', '')).toBe(false);
+	expect(editorOf(kv, 'labels')).toEqual({
 		kind: 'multiSelect',
 		nullable: false,
 		options: ['a', 'b'],
 	});
-	expect(kv.fields.get('rating')?.editor.kind).toBe('integer');
-	expect(kv.fields.get('score')?.editor.kind).toBe('number');
-	expect(kv.fields.get('rating')?.check(2.5)).toBe(false);
-	expect(kv.fields.get('score')?.check(2.5)).toBe(true);
-	expect(kv.fields.get('score')?.check(Number.NaN)).toBe(false);
+	expect(editorOf(kv, 'rating').kind).toBe('integer');
+	expect(editorOf(kv, 'score').kind).toBe('number');
+	expect(check(kv, 'rating', 2.5)).toBe(false);
+	expect(check(kv, 'score', 2.5)).toBe(true);
+	expect(check(kv, 'score', Number.NaN)).toBe(false);
+	// The hint is on the prepared schema itself, where it was declared.
+	expect(fieldOf(kv, 'labels')).toMatchObject({
+		[FIELD_KEYWORD]: { kind: 'multiSelect' },
+	});
+	expect(fieldOf(kv, 'status')).toMatchObject({
+		anyOf: [{ [FIELD_KEYWORD]: { kind: 'select' } }, { type: 'null' }],
+	});
 });
 
 test('a hint never changes checks, issues, or conformance', () => {
@@ -357,25 +541,27 @@ test('a hint never changes checks, issues, or conformance', () => {
 		7,
 	];
 	for (const base of bases) {
-		const plain = expectOk(compileKv({ value: base() })).kv;
-		const expected = plain.fields.get('value');
-		expect(expected?.editor.kind).toBe('json');
+		const plain = expectOk(prepareKv({ value: base() })).kv;
+		expect(editorOf(plain, 'value').kind).toBe('json');
 		for (const hint of hints) {
 			const hinted = expectOk(
-				compileKv({ value: { ...base(), [FIELD_KEYWORD]: hint } }),
+				prepareKv({ value: { ...base(), [FIELD_KEYWORD]: hint } }),
 			).kv;
-			const actual = hinted.fields.get('value');
 			for (const value of samples) {
-				expect(actual?.check(value)).toBe(expected?.check(value) as boolean);
-				expect(actual?.issues(value)).toEqual(expected?.issues(value));
+				expect(check(hinted, 'value', value)).toBe(
+					check(plain, 'value', value),
+				);
+				expect(issuesOf(hinted, 'value', value)).toEqual(
+					issuesOf(plain, 'value', value),
+				);
 			}
-			expect(actual?.editor.nullable).toBe(
-				expected?.editor.nullable as boolean,
+			expect(editorOf(hinted, 'value').nullable).toBe(
+				editorOf(plain, 'value').nullable,
 			);
-			expect(hinted.conformance(stored)).toEqual(plain.conformance(stored));
-			expect(hinted.conformance({})).toEqual(plain.conformance({}));
-			expect(hinted.inputIssues(stored, { complete: true })).toEqual(
-				plain.inputIssues(stored, { complete: true }),
+			expect(conformance(hinted, stored)).toEqual(conformance(plain, stored));
+			expect(conformance(hinted, {})).toEqual(conformance(plain, {}));
+			expect(inputIssues(hinted, stored, { complete: true })).toEqual(
+				inputIssues(plain, stored, { complete: true }),
 			);
 		}
 	}
@@ -383,7 +569,7 @@ test('a hint never changes checks, issues, or conformance', () => {
 
 test('a hint the schema has no shape for falls back to the JSON editor and keeps the check', () => {
 	const kv = expectOk(
-		compileKv({
+		prepareKv({
 			count: Type.Integer({ [FIELD_KEYWORD]: { kind: 'select' } }),
 			text: Type.String({ [FIELD_KEYWORD]: { kind: 'tags' } }),
 			either: Type.Union([field.string(), field.integer()]),
@@ -394,19 +580,19 @@ test('a hint the schema has no shape for falls back to the JSON editor and keeps
 			}),
 		}),
 	).kv;
-	for (const each of kv.fields.values())
-		expect(each.editor).toEqual({ kind: 'json', nullable: false });
-	expect(kv.fields.get('count')?.check(1)).toBe(true);
-	expect(kv.fields.get('count')?.check('1')).toBe(false);
-	expect(kv.fields.get('text')?.check('x')).toBe(true);
-	expect(kv.fields.get('text')?.check(['x'])).toBe(false);
-	expect(kv.fields.get('either')?.check(1.5)).toBe(false);
+	for (const name of Object.keys(kv))
+		expect(editorOf(kv, name)).toEqual({ kind: 'json', nullable: false });
+	expect(check(kv, 'count', 1)).toBe(true);
+	expect(check(kv, 'count', '1')).toBe(false);
+	expect(check(kv, 'text', 'x')).toBe(true);
+	expect(check(kv, 'text', ['x'])).toBe(false);
+	expect(check(kv, 'either', 1.5)).toBe(false);
 });
 
-test('a conflicting, composed, or unusable hint compiles to the JSON editor and validates as the schema says', () => {
+test('a conflicting, composed, or unusable hint resolves to the JSON editor and validates as the schema says', () => {
 	const select = { [FIELD_KEYWORD]: { kind: 'select' } };
 	const kv = expectOk(
-		compileKv({
+		prepareKv({
 			// A malformed root hint is not replaced by the member's select.
 			rootNull: Type.Union([field.select(['a']), Type.Null()], {
 				[FIELD_KEYWORD]: null,
@@ -434,10 +620,7 @@ test('a conflicting, composed, or unusable hint compiles to the JSON editor and 
 			}),
 		}),
 	).kv;
-	const editors = Object.fromEntries(
-		[...kv.fields].map(([name, each]) => [name, each.editor]),
-	);
-	expect(editors).toEqual({
+	expect(editorsOf(kv)).toEqual({
 		rootNull: { kind: 'json', nullable: true },
 		numericEnum: { kind: 'json', nullable: false },
 		numericItems: { kind: 'json', nullable: false },
@@ -446,73 +629,81 @@ test('a conflicting, composed, or unusable hint compiles to the JSON editor and 
 		badTarget: { kind: 'json', nullable: false },
 		emailDate: { kind: 'json', nullable: false },
 	});
-	expect(kv.fields.get('emailDate')?.check('a@epicenter.so')).toBe(true);
-	expect(kv.fields.get('emailDate')?.check('2026-06-09')).toBe(false);
-	expect(kv.fields.get('rootNull')?.check('a')).toBe(true);
-	expect(kv.fields.get('rootNull')?.check('b')).toBe(false);
+	expect(check(kv, 'emailDate', 'a@epicenter.so')).toBe(true);
+	expect(check(kv, 'emailDate', '2026-06-09')).toBe(false);
+	expect(check(kv, 'rootNull', 'a')).toBe(true);
+	expect(check(kv, 'rootNull', 'b')).toBe(false);
 	for (const value of ['draft', 1])
-		expect(kv.fields.get('numericEnum')?.check(value)).toBe(false);
-	expect(kv.fields.get('numericItems')?.check(['draft'])).toBe(false);
-	expect(kv.fields.get('numericItems')?.check([])).toBe(true);
+		expect(check(kv, 'numericEnum', value)).toBe(false);
+	expect(check(kv, 'numericItems', ['draft'])).toBe(false);
+	expect(check(kv, 'numericItems', [])).toBe(true);
 	for (const name of ['sibling', 'inherited'])
 		for (const value of ['x', 1, null])
-			expect(kv.fields.get(name)?.check(value)).toBe(false);
-	expect(kv.fields.get('badTarget')?.check('row')).toBe(true);
+			expect(check(kv, name, value)).toBe(false);
+	expect(check(kv, 'badTarget', 'row')).toBe(true);
 });
 
-test('an enum edited before compilation is what the check and the options follow', () => {
+test('an enum edited before preparation is what the check and the options follow', () => {
 	const status = field.select(['draft', 'published']);
 	(status.enum as string[]).splice(0, 1, 'archived');
 	const labels = field.nullable(field.multiSelect(['a', 'b']));
 	(labels.anyOf[0].items.enum as string[]).push('c');
-	const kv = expectOk(compileKv({ status, labels })).kv;
+	const kv = expectOk(prepareKv({ status, labels })).kv;
 
-	expect(kv.fields.get('status')?.editor).toEqual({
+	expect(editorOf(kv, 'status')).toEqual({
 		kind: 'select',
 		nullable: false,
 		options: ['archived', 'published'],
 	});
-	expect(kv.fields.get('status')?.check('archived')).toBe(true);
-	expect(kv.fields.get('status')?.check('draft')).toBe(false);
-	expect(kv.fields.get('labels')?.editor).toEqual({
+	expect(check(kv, 'status', 'archived')).toBe(true);
+	expect(check(kv, 'status', 'draft')).toBe(false);
+	expect(editorOf(kv, 'labels')).toEqual({
 		kind: 'multiSelect',
 		nullable: true,
 		options: ['a', 'b', 'c'],
 	});
-	expect(kv.fields.get('labels')?.check(['c'])).toBe(true);
+	expect(check(kv, 'labels', ['c'])).toBe(true);
 });
 
-test('nullability is whether the compiled field admits null', () => {
+test('whether a field admits null is what its check says, not what its keywords or hint say', () => {
 	const kv = expectOk(
-		compileKv({
+		prepareKv({
 			helper: field.nullable(field.string()),
 			plain: field.nullable(Type.Object({ a: Type.Number() })),
 			native: Type.Union([Type.Null(), field.url()]),
 			typed: { type: ['string', 'null'] },
 			any: jsonValue,
+			// No keyword names null, and the check admits it.
+			anything: Type.Any(),
 			required: field.string(),
 			// A hint cannot make a field nullable.
 			claimed: Type.String({
 				[FIELD_KEYWORD]: { kind: 'string', nullable: true },
 			}),
+			// The union names null, and a refinement over it refuses null.
+			refused: Type.Refine(
+				field.nullable(field.string()),
+				(value) => value !== null,
+			),
 		}),
 	).kv;
-	const editors = Object.fromEntries(
-		[...kv.fields].map(([name, each]) => [name, each.editor]),
-	);
-	expect(editors).toEqual({
+	expect(editorsOf(kv)).toEqual({
 		helper: { kind: 'string', nullable: true },
 		plain: { kind: 'json', nullable: true },
 		native: { kind: 'url', nullable: true },
 		typed: { kind: 'json', nullable: true },
 		any: { kind: 'json', nullable: true },
+		anything: { kind: 'json', nullable: true },
 		required: { kind: 'string', nullable: false },
 		claimed: { kind: 'string', nullable: false },
+		refused: { kind: 'string', nullable: false },
 	});
-	for (const each of kv.fields.values())
-		expect(each.check(null)).toBe(each.editor.nullable);
-	expect(kv.fields.get('plain')?.check({ a: 1 })).toBe(true);
-	expect(kv.fields.get('plain')?.check({ a: '1' })).toBe(false);
+	// The resolver itself carries no flag, for a nullable field or any other.
+	for (const name of Object.keys(kv))
+		expect(fieldEditorOf(fieldOf(kv, name))).not.toHaveProperty('nullable');
+	expect(check(kv, 'plain', { a: 1 })).toBe(true);
+	expect(check(kv, 'plain', { a: '1' })).toBe(false);
+	expect(check(kv, 'refused', 'text')).toBe(true);
 });
 
 test('hidden validation keywords prevent nullable editor read-through', () => {
@@ -521,14 +712,13 @@ test('hidden validation keywords prevent nullable editor read-through', () => {
 	const member = Type.Null();
 	Object.defineProperty(member, 'enum', { value: [1] });
 	const union = Type.Union([field.select(['a']), member]);
-	const kv = expectOk(compileKv({ root, union })).kv;
+	const kv = expectOk(prepareKv({ root, union })).kv;
 
 	for (const [name, schema] of Object.entries({ root, union })) {
-		const compiled = kv.fields.get(name);
 		const native = Compile(schema);
-		expect(compiled?.editor).toEqual({ kind: 'json', nullable: false });
+		expect(editorOf(kv, name)).toEqual({ kind: 'json', nullable: false });
 		for (const value of ['a', null, 1])
-			expect(compiled?.check(value)).toBe(native.Check(value));
+			expect(check(kv, name, value)).toBe(native.Check(value));
 	}
 });
 
@@ -539,7 +729,7 @@ test('hidden validation keywords prevent nullable editor read-through', () => {
 test('a native refinement is preserved, alone, over a helper, and nested', () => {
 	const refused = Type.Refine(Type.Object({ a: Type.String() }), () => false);
 	const kv = expectOk(
-		compileKv({
+		prepareKv({
 			short: Type.Refine(
 				field.string({ minLength: 1 }),
 				(value) => value.length < 3,
@@ -552,34 +742,32 @@ test('a native refinement is preserved, alone, over a helper, and nested', () =>
 			list: field.nullable(Type.Array(refused)),
 		}),
 	).kv;
-	const short = kv.fields.get('short');
-	expect(short?.editor).toEqual({ kind: 'string', nullable: false });
-	expect(short?.check('ab')).toBe(true);
-	expect(short?.check('abc')).toBe(false);
+	expect(editorOf(kv, 'short')).toEqual({ kind: 'string', nullable: false });
+	expect(check(kv, 'short', 'ab')).toBe(true);
+	expect(check(kv, 'short', 'abc')).toBe(false);
 	// What the helper built is still there under the refinement.
-	expect(short?.check('')).toBe(false);
-	expect(short?.issues('abc')).toEqual([
+	expect(check(kv, 'short', '')).toBe(false);
+	expect(issuesOf(kv, 'short', 'abc')).toEqual([
 		{
 			field: 'short',
 			message: 'short does not conform: must be shorter than 3',
 		},
 	]);
-	expect(short?.issues('ab')).toEqual([]);
+	expect(issuesOf(kv, 'short', 'ab')).toEqual([]);
 
-	const optional = kv.fields.get('optional');
-	expect(optional?.editor).toEqual({
+	expect(editorOf(kv, 'optional')).toEqual({
 		kind: 'reference',
 		nullable: true,
 		target: 'pages',
 	});
-	expect(optional?.check('about')).toBe(true);
-	expect(optional?.check('home')).toBe(false);
-	expect(optional?.check(null)).toBe(true);
+	expect(check(kv, 'optional', 'about')).toBe(true);
+	expect(check(kv, 'optional', 'home')).toBe(false);
+	expect(check(kv, 'optional', null)).toBe(true);
 
-	expect(kv.fields.get('payload')?.check({ a: 'x' })).toBe(false);
-	expect(kv.fields.get('list')?.check([{ a: 'x' }])).toBe(false);
-	expect(kv.fields.get('list')?.check([])).toBe(true);
-	expect(kv.fields.get('list')?.check(null)).toBe(true);
+	expect(check(kv, 'payload', { a: 'x' })).toBe(false);
+	expect(check(kv, 'list', [{ a: 'x' }])).toBe(false);
+	expect(check(kv, 'list', [])).toBe(true);
+	expect(check(kv, 'list', null)).toBe(true);
 });
 
 test('nested errors keep their own messages and paths', () => {
@@ -589,7 +777,7 @@ test('nested errors keep their own messages and paths', () => {
 		tags: Type.Array(Type.String()),
 	});
 	const kv = expectOk(
-		compileKv({
+		prepareKv({
 			raw: shape,
 			wrapped: field.json(shape),
 			other: field.string(),
@@ -613,17 +801,17 @@ test('nested errors keep their own messages and paths', () => {
 				message: `${name} does not conform at /tags/1: ${native[1]}`,
 			},
 		];
-		// The field's own diagnostics are what the table reports.
-		expect(kv.fields.get(name)?.issues(value)).toEqual(expected);
-		const issues = kv.conformance({ [name]: value, other: 'kept' });
+		// A read and a write report the field's diagnostics the same way.
+		expect(issuesOf(kv, name, value)).toEqual(expected);
+		const issues = conformance(kv, { [name]: value, other: 'kept' });
 		expect(issues.conforming).toEqual({ other: 'kept' });
 		expect(issues.issues.filter((issue) => issue.field === name)).toEqual(
 			expected,
 		);
 		expect(
-			kv
-				.inputIssues({ [name]: value }, { complete: false })
-				.map((issue) => issue.path),
+			inputIssues(kv, { [name]: value }, { complete: false }).map(
+				(issue) => issue.path,
+			),
 		).toEqual(['/by/name', '/tags/1']);
 	}
 });
@@ -633,7 +821,7 @@ test('a schema TypeBox cannot compile names its table and field', () => {
 		field.json({ type: 'string', pattern: '[' }),
 		{ type: 'string', pattern: '[' },
 	]) {
-		const error = expectErr(compileKv({ title: broken }));
+		const error = expectErr(prepareKv({ title: broken }));
 		expect(error).toMatchObject({
 			name: 'UnrecognizedField',
 			table: 'kv',
@@ -646,7 +834,7 @@ test('a schema TypeBox cannot compile names its table and field', () => {
 test('a throwing native refinement leaves valid sibling fields readable', () => {
 	const payload = { title: 'Keep this', meta: {} };
 	const kv = expectOk(
-		compileKv({
+		prepareKv({
 			title: field.string(),
 			meta: Type.Refine(Type.Object({}), () => {
 				throw new TypeError('broken refinement');
@@ -654,14 +842,14 @@ test('a throwing native refinement leaves valid sibling fields readable', () => 
 		}),
 	).kv;
 
-	expect(kv.fields.get('meta')?.check(payload.meta)).toBe(false);
-	expect(kv.fields.get('meta')?.issues(payload.meta)).toEqual([
+	expect(check(kv, 'meta', payload.meta)).toBe(false);
+	expect(issuesOf(kv, 'meta', payload.meta)).toEqual([
 		{
 			field: 'meta',
 			message: 'meta does not conform: schema validation threw',
 		},
 	]);
-	expect(kv.conformance(payload)).toEqual({
+	expect(conformance(kv, payload)).toEqual({
 		conforming: { title: 'Keep this' },
 		issues: [
 			{
@@ -670,7 +858,7 @@ test('a throwing native refinement leaves valid sibling fields readable', () => 
 			},
 		],
 	});
-	expect(kv.inputIssues(payload, { complete: true })).toEqual([
+	expect(inputIssues(kv, payload, { complete: true })).toEqual([
 		{
 			field: 'meta',
 			message: 'meta does not conform: schema validation threw',
@@ -679,21 +867,40 @@ test('a throwing native refinement leaves valid sibling fields readable', () => 
 	expect(payload).toEqual({ title: 'Keep this', meta: {} });
 });
 
-test('a refinement that throws on null compiles, and the field is not nullable', () => {
+test('preparation runs no callback, and a refinement that throws on null refuses null where it is asked', () => {
+	const seen: unknown[] = [];
 	const kv = expectOk(
-		compileKv({
-			title: Type.Refine(Type.Any(), (value) => value.length < 3),
+		prepareKv({
+			title: Type.Refine(Type.Any(), (value) => {
+				seen.push(value);
+				return value.length < 3;
+			}),
+			guarded: {
+				'~guard': {
+					check: (value: unknown) => {
+						seen.push(value);
+						return true;
+					},
+					errors: () => [],
+				},
+			},
 			other: field.string(),
 		}),
 	).kv;
-	const title = kv.fields.get('title');
-	expect(title?.editor).toEqual({ kind: 'json', nullable: false });
-	expect(title?.check('ab')).toBe(true);
-	expect(title?.check('abc')).toBe(false);
+	// No value was validated to prepare the definition: nothing probes null.
+	expect(seen).toEqual([]);
+	expect(fieldEditorOf(fieldOf(kv, 'title'))).toEqual({ kind: 'json' });
+	expect(seen).toEqual([]);
+
+	expect(check(kv, 'title', 'ab')).toBe(true);
+	expect(check(kv, 'title', 'abc')).toBe(false);
 	// The throw fails this value and this field, where it is read.
-	expect(title?.check(null)).toBe(false);
-	expect(kv.conformance({ title: null, other: 'kept' })).toEqual({
-		conforming: { other: 'kept' },
+	expect(check(kv, 'title', null)).toBe(false);
+	expect(seen).toEqual(['ab', 'abc', null]);
+	// The control: `Type.Any()` alone admits null, so no keyword could say this.
+	expect(Compile(Type.Any()).Check(null)).toBe(true);
+	expect(conformance(kv, { title: null, guarded: 1, other: 'kept' })).toEqual({
+		conforming: { guarded: 1, other: 'kept' },
 		issues: [
 			{
 				field: 'title',
@@ -720,7 +927,7 @@ const writing = (write: (value: Record<string, unknown>) => void) =>
 
 test('a callback that writes to its argument changes neither the source nor the verdict', () => {
 	const kv = expectOk(
-		compileKv({
+		prepareKv({
 			title: field.string(),
 			// The write that would make a conforming value not JSON.
 			hole: writing((value) => {
@@ -759,14 +966,14 @@ test('a callback that writes to its argument changes neither the source nor the 
 	};
 	const before = JSON.stringify(payload);
 
-	for (const [name, each] of kv.fields) {
+	for (const name of Object.keys(kv)) {
 		const value = payload[name as keyof typeof payload];
-		expect(each.check(value)).toBe(true);
-		expect(each.issues(value)).toEqual([]);
+		expect(check(kv, name, value)).toBe(true);
+		expect(issuesOf(kv, name, value)).toEqual([]);
 	}
-	const { conforming, issues } = kv.conformance(payload);
+	const { conforming, issues } = conformance(kv, payload);
 	expect(issues).toEqual([]);
-	expect(kv.inputIssues(payload, { complete: true })).toEqual([]);
+	expect(inputIssues(kv, payload, { complete: true })).toEqual([]);
 
 	// Nothing was written, so the source is still JSON and still unfrozen.
 	expect(JSON.stringify(payload)).toBe(before);
@@ -783,7 +990,7 @@ test('a callback that writes to its argument changes neither the source nor the 
 
 test('a callback whose write throws fails its own field and keeps valid siblings', () => {
 	const kv = expectOk(
-		compileKv({
+		prepareKv({
 			title: field.string(),
 			// The proven case: module code is strict, so the refused write throws.
 			meta: Type.Refine(Type.Object({}), (value) => {
@@ -798,8 +1005,8 @@ test('a callback whose write throws fails its own field and keeps valid siblings
 	).kv;
 	const payload = { title: 'Keep this', meta: {}, list: ['one'] };
 
-	expect(kv.fields.get('meta')?.check(payload.meta)).toBe(false);
-	expect(kv.conformance(payload)).toEqual({
+	expect(check(kv, 'meta', payload.meta)).toBe(false);
+	expect(conformance(kv, payload)).toEqual({
 		conforming: { title: 'Keep this' },
 		issues: ['meta', 'list'].map((name) => ({
 			field: name,
@@ -817,13 +1024,13 @@ test('a callback is given a frozen copy with the shape of the value', () => {
 		return true;
 	});
 	const kv = expectOk(
-		compileKv({
+		prepareKv({
 			watched,
 			nested: Type.Object({ inner: watched }),
 			optional: field.nullable(watched),
 		}),
 	).kv;
-	seen.length = 0;
+	expect(seen).toEqual([]);
 
 	const shared = { value: 2 };
 	const bare = Object.assign(Object.create(null), { a: 1 });
@@ -837,7 +1044,7 @@ test('a callback is given a frozen copy with the shape of the value', () => {
 		proto,
 	};
 
-	expect(kv.fields.get('watched')?.check(source)).toBe(true);
+	expect(check(kv, 'watched', source)).toBe(true);
 	const copy = seen[0] as typeof source;
 	expect(copy).not.toBe(source);
 	expect(copy).toEqual(source);
@@ -858,26 +1065,25 @@ test('a callback is given a frozen copy with the shape of the value', () => {
 	// A nested callback gets a node of the copy, and a primitive needs none.
 	seen.length = 0;
 	const inner = { a: 1 };
-	expect(kv.fields.get('nested')?.check({ inner })).toBe(true);
+	expect(check(kv, 'nested', { inner })).toBe(true);
 	expect(seen[0]).toEqual(inner);
 	expect(seen[0]).not.toBe(inner);
 	expect(Object.isFrozen(seen[0])).toBe(true);
-	expect(kv.fields.get('optional')?.check('text')).toBe(true);
+	expect(check(kv, 'optional', 'text')).toBe(true);
 	expect(seen.at(-1)).toBe('text');
 });
 
 test('a callback never sees a cycle or a class instance, and a deep value reaches it whole', () => {
 	let calls = 0;
 	const kv = expectOk(
-		compileKv({
+		prepareKv({
 			counted: Type.Refine(Type.Any(), () => {
 				calls += 1;
 				return true;
 			}),
 		}),
 	).kv;
-	const counted = kv.fields.get('counted');
-	calls = 0;
+	expect(calls).toBe(0);
 
 	// Neither is copied into something a validator could admit.
 	for (const value of [
@@ -889,8 +1095,8 @@ test('a callback never sees a cycle or a class instance, and a deep value reache
 		{ at: new Date() },
 		{ nested: undefined },
 	]) {
-		expect(counted?.check(value)).toBe(false);
-		expect(counted?.issues(value)).toEqual([
+		expect(check(kv, 'counted', value)).toBe(false);
+		expect(issuesOf(kv, 'counted', value)).toEqual([
 			{
 				field: 'counted',
 				message: 'counted does not conform: must be a JSON value',
@@ -901,8 +1107,8 @@ test('a callback never sees a cycle or a class instance, and a deep value reache
 
 	let deep: unknown = 'bottom';
 	for (let level = 0; level < 100_000; level++) deep = [deep];
-	expect(counted?.check(deep)).toBe(true);
-	expect(counted?.issues(deep)).toEqual([]);
+	expect(check(kv, 'counted', deep)).toBe(true);
+	expect(issuesOf(kv, 'counted', deep)).toEqual([]);
 	expect(calls).toBeGreaterThan(0);
 	expect(Object.isFrozen(deep)).toBe(false);
 });
@@ -924,7 +1130,7 @@ test('every field holds a value to JSON, whatever its schema admits', () => {
 	expect(Compile(Type.Object({})).Check(new Point())).toBe(true);
 
 	const kv = expectOk(
-		compileKv({
+		prepareKv({
 			any: Type.Any(),
 			unknown: Type.Unknown(),
 			open: jsonValue,
@@ -951,19 +1157,19 @@ test('every field holds a value to JSON, whatever its schema admits', () => {
 		[undefined],
 		[new Date()],
 	];
-	for (const [name, each] of kv.fields) {
+	for (const name of Object.keys(kv)) {
 		for (const value of unsafe) {
-			expect(each.check(value)).toBe(false);
-			expect(each.issues(value)).toEqual([
+			expect(check(kv, name, value)).toBe(false);
+			expect(issuesOf(kv, name, value)).toEqual([
 				{
 					field: name,
 					message: `${name} does not conform: must be a JSON value`,
 				},
 			]);
-			expect(kv.conformance({ [name]: value } as never)).toMatchObject({
+			expect(conformance(kv, { [name]: value } as never)).toMatchObject({
 				conforming: {},
 			});
-			expect(kv.inputIssues({ [name]: value }, { complete: false })).toEqual([
+			expect(inputIssues(kv, { [name]: value }, { complete: false })).toEqual([
 				{
 					field: name,
 					message: `${name} does not conform: must be a JSON value`,
@@ -973,13 +1179,13 @@ test('every field holds a value to JSON, whatever its schema admits', () => {
 	}
 	for (const name of ['any', 'unknown', 'open', 'wrapped', 'optional'])
 		for (const value of [1, 'x', true, null, { a: [1, null] }, [1, 2]]) {
-			expect(kv.fields.get(name)?.check(value)).toBe(true);
-			expect(kv.fields.get(name)?.issues(value)).toEqual([]);
+			expect(check(kv, name, value)).toBe(true);
+			expect(issuesOf(kv, name, value)).toEqual([]);
 		}
 
 	// A storage hands conformance whatever it read; the cast stands in for that.
 	const stored = { open: new Date(), any: 1, optional: null } as never;
-	const result = kv.conformance(stored);
+	const result = conformance(kv, stored);
 	expect(result.conforming).toEqual({ any: 1, optional: null });
 	expect(result.issues).toContainEqual({
 		field: 'open',
@@ -1002,7 +1208,7 @@ test('a cyclic value stops at the JSON check and never reaches a recursive schem
 		return true;
 	});
 	const kv = expectOk(
-		compileKv({
+		prepareKv({
 			raw: Node,
 			wrapped: field.json(Node),
 			optional: field.nullable(Node),
@@ -1010,14 +1216,13 @@ test('a cyclic value stops at the JSON check and never reaches a recursive schem
 			counted,
 		}),
 	).kv;
-	calls = 0;
 
-	for (const [name, each] of kv.fields) {
-		expect(each.check(loop)).toBe(false);
+	for (const name of Object.keys(kv)) {
+		expect(check(kv, name, loop)).toBe(false);
 		const stored = { [name]: loop } as never;
-		expect(kv.conformance(stored).conforming).toEqual({});
+		expect(conformance(kv, stored).conforming).toEqual({});
 		expect(
-			kv.conformance(stored).issues.filter((issue) => issue.field === name),
+			conformance(kv, stored).issues.filter((issue) => issue.field === name),
 		).toEqual([
 			{
 				field: name,
@@ -1026,9 +1231,9 @@ test('a cyclic value stops at the JSON check and never reaches a recursive schem
 		]);
 		for (const complete of [false, true])
 			expect(
-				kv
-					.inputIssues({ [name]: loop }, { complete })
-					.filter((issue) => issue.field === name),
+				inputIssues(kv, { [name]: loop }, { complete }).filter(
+					(issue) => issue.field === name,
+				),
 			).toEqual([
 				{
 					field: name,
@@ -1041,10 +1246,10 @@ test('a cyclic value stops at the JSON check and never reaches a recursive schem
 	const chain = { value: 1, next: { value: 2, next: null } };
 	const wrong = { value: 1, next: { value: 'two', next: null } };
 	for (const name of ['raw', 'wrapped', 'optional', 'refined']) {
-		expect(kv.fields.get(name)?.check(chain)).toBe(true);
-		expect(kv.fields.get(name)?.issues(chain)).toEqual([]);
-		expect(kv.fields.get(name)?.check(wrong)).toBe(false);
-		expect(kv.fields.get(name)?.issues(wrong)).not.toEqual([]);
+		expect(check(kv, name, chain)).toBe(true);
+		expect(issuesOf(kv, name, chain)).toEqual([]);
+		expect(check(kv, name, wrong)).toBe(false);
+		expect(issuesOf(kv, name, wrong)).not.toEqual([]);
 	}
 });
 
@@ -1058,20 +1263,20 @@ test('a shared acyclic value passes; being JSON has no depth or width', () => {
 	for (let level = 0; level < 100_000; level++) deep = [deep];
 
 	const kv = expectOk(
-		compileKv({
+		prepareKv({
 			open: jsonValue,
 			pair: Type.Object({ left: Node, right: Node, both: Type.Array(Node) }),
 			chain: Node,
 		}),
 	).kv;
 	for (const value of [dag, wide, deep]) {
-		expect(kv.fields.get('open')?.check(value)).toBe(true);
-		expect(kv.fields.get('open')?.issues(value)).toEqual([]);
+		expect(check(kv, 'open', value)).toBe(true);
+		expect(issuesOf(kv, 'open', value)).toEqual([]);
 	}
-	expect(kv.fields.get('pair')?.check(dag)).toBe(true);
+	expect(check(kv, 'pair', dag)).toBe(true);
 	// The same node at two depths of one chain is shared, not a cycle.
-	expect(kv.fields.get('chain')?.check({ value: 1, next: shared })).toBe(true);
-	expect(kv.conformance({ open: dag, pair: dag } as never)).toMatchObject({
+	expect(check(kv, 'chain', { value: 1, next: shared })).toBe(true);
+	expect(conformance(kv, { open: dag, pair: dag } as never)).toMatchObject({
 		conforming: { open: dag, pair: dag },
 	});
 });
@@ -1083,7 +1288,7 @@ test('a shared acyclic value passes; being JSON has no depth or width', () => {
 test('conformance checks every field on its own, however many fail', () => {
 	const names = Array.from({ length: 12 }, (_, index) => `field${index}`);
 	const kv = expectOk(
-		compileKv({
+		prepareKv({
 			...Object.fromEntries(names.map((name) => [name, field.integer()])),
 			kept: field.string(),
 			payload: Type.Object({ a: Type.String() }),
@@ -1096,7 +1301,7 @@ test('conformance checks every field on its own, however many fail', () => {
 		payload: { a: 'x' },
 		undeclared: true,
 	};
-	const { conforming, issues } = kv.conformance(payload);
+	const { conforming, issues } = conformance(kv, payload);
 	expect(conforming).toEqual({ kept: 'still here', payload: { a: 'x' } });
 	expect(issues.map((issue) => issue.field)).toEqual([...names, 'absent']);
 	expect(issues[0]).toEqual({
@@ -1121,19 +1326,19 @@ test('a value the check refuses is an issue and not conforming when TypeBox repo
 		expect(native.Errors('x')).toEqual([]);
 
 		const kv = expectOk(
-			compileKv({ count: field.integer(), kept: field.string() }),
+			prepareKv({ count: field.integer(), kept: field.string() }),
 		).kv;
 		const undiagnosed = [{ field: 'count', message: 'count does not conform' }];
-		expect(kv.fields.get('count')?.check('x')).toBe(false);
-		expect(kv.fields.get('count')?.issues('x')).toEqual(undiagnosed);
-		expect(kv.conformance({ count: 'x', kept: 'still here' })).toEqual({
+		expect(check(kv, 'count', 'x')).toBe(false);
+		expect(issuesOf(kv, 'count', 'x')).toEqual(undiagnosed);
+		expect(conformance(kv, { count: 'x', kept: 'still here' })).toEqual({
 			conforming: { kept: 'still here' },
 			issues: undiagnosed,
 		});
-		expect(kv.inputIssues({ count: 'x' }, { complete: false })).toEqual(
+		expect(inputIssues(kv, { count: 'x' }, { complete: false })).toEqual(
 			undiagnosed,
 		);
-		expect(kv.conformance({ count: 1, kept: 'k' }).issues).toEqual([]);
+		expect(conformance(kv, { count: 1, kept: 'k' }).issues).toEqual([]);
 	} finally {
 		Settings.Set({ maxErrors });
 	}
@@ -1157,9 +1362,9 @@ test('a native default annotation is admitted and validates like the schema with
 			$ref: '#/$defs/text',
 		},
 	};
-	const kv = expectOk(compileKv(declared)).kv;
+	const kv = expectOk(prepareKv(declared)).kv;
 	const verdicts = (name: string, values: unknown[]) =>
-		values.map((value) => kv.fields.get(name)?.check(value));
+		values.map((value) => check(kv, name, value));
 
 	expect(verdicts('root', ['ab', 'a', 3])).toEqual([true, false, false]);
 	expect(verdicts('spread', ['ab', 'a'])).toEqual([true, false]);
@@ -1177,17 +1382,14 @@ test('a native default annotation is admitted and validates like the schema with
 	expect(verdicts('optional', [null, 1, 'x'])).toEqual([true, true, false]);
 	expect(verdicts('referenced', ['', 1])).toEqual([true, false]);
 
-	// The annotation is kept on the compiled schema and changes no editor.
-	expect(kv.fields.get('root')?.schema).toMatchObject({ default: 'untitled' });
-	expect(kv.fields.get('spread')?.editor).toEqual({
-		kind: 'string',
-		nullable: false,
-	});
+	// The annotation is kept on the prepared schema and changes no editor.
+	expect(fieldOf(kv, 'root')).toMatchObject({ default: 'untitled' });
+	expect(editorOf(kv, 'spread')).toEqual({ kind: 'string', nullable: false });
 });
 
 test('a default initializes and recovers nothing: missing values stay missing and no payload is changed', () => {
 	const kv = expectOk(
-		compileKv({
+		prepareKv({
 			title: Type.String({ default: 'untitled' }),
 			settings: Type.Object({
 				theme: Type.String({ default: 'light' }),
@@ -1198,7 +1400,7 @@ test('a default initializes and recovers nothing: missing values stay missing an
 	).kv;
 
 	// An absent field is missing, default or not.
-	expect(kv.conformance({})).toEqual({
+	expect(conformance(kv, {})).toEqual({
 		conforming: {},
 		issues: ['title', 'settings', 'count'].map((name) => ({
 			field: name,
@@ -1206,9 +1408,9 @@ test('a default initializes and recovers nothing: missing values stay missing an
 		})),
 	});
 	expect(
-		kv
-			.inputIssues({ title: 'T' }, { complete: true })
-			.map(({ field }) => field),
+		inputIssues(kv, { title: 'T' }, { complete: true }).map(
+			({ field }) => field,
+		),
 	).toEqual(['settings', 'count']);
 
 	// A value that fails is reported, not replaced by the default.
@@ -1218,19 +1420,19 @@ test('a default initializes and recovers nothing: missing values stay missing an
 		count: null,
 	});
 	const before = JSON.stringify(stored);
-	const result = kv.conformance(stored);
+	const result = conformance(kv, stored);
 	expect(result.conforming).toEqual({ count: null });
 	expect([...new Set(result.issues.map(({ field }) => field))]).toEqual([
 		'title',
 		'settings',
 	]);
-	expect(kv.fields.get('title')?.check(undefined)).toBe(false);
-	expect(kv.fields.get('settings')?.issues({})).not.toEqual([]);
-	kv.inputIssues(stored, { complete: true });
+	expect(check(kv, 'title', undefined)).toBe(false);
+	expect(issuesOf(kv, 'settings', {})).not.toEqual([]);
+	inputIssues(kv, stored, { complete: true });
 
 	// A value that passes comes back as the same object, with nothing filled in.
 	const partial = Object.freeze({ theme: 'dark' });
-	const kept = kv.conformance({ title: 'T', settings: partial, count: 1 });
+	const kept = conformance(kv, { title: 'T', settings: partial, count: 1 });
 	expect(kept.issues).toEqual([]);
 	expect(kept.conforming.settings).toBe(partial);
 	expect(partial).toEqual({ theme: 'dark' });
@@ -1239,7 +1441,7 @@ test('a default initializes and recovers nothing: missing values stay missing an
 
 test('a property, a literal, and an option named default are ordinary names', () => {
 	const kv = expectOk(
-		compileKv({
+		prepareKv({
 			settings: Type.Object({
 				default: Type.String(),
 				nested: Type.Object({ default: Type.Boolean() }),
@@ -1249,19 +1451,17 @@ test('a property, a literal, and an option named default are ordinary names', ()
 		}),
 	).kv;
 	expect(
-		kv.fields
-			.get('settings')
-			?.check({ default: 'light', nested: { default: true } }),
+		check(kv, 'settings', { default: 'light', nested: { default: true } }),
 	).toBe(true);
-	expect(kv.fields.get('settings')?.check({ default: 1 })).toBe(false);
-	expect(kv.fields.get('named')?.check('default')).toBe(true);
+	expect(check(kv, 'settings', { default: 1 })).toBe(false);
+	expect(check(kv, 'named', 'default')).toBe(true);
 });
 
 // ============================================================================
 // The frozen snapshot
 // ============================================================================
 
-test('a frozen declared schema compiles with every check it had', () => {
+test('a frozen declared schema is prepared with every check it had', () => {
 	const refined = Object.freeze(
 		Type.Refine(field.select(['draft', 'done']), (value) => value !== 'done'),
 	);
@@ -1272,36 +1472,30 @@ test('a frozen declared schema compiles with every check it had', () => {
 		wrapped: Object.freeze(field.json(refined)),
 		optional: Object.freeze(field.nullable(refined)),
 	};
-	const kv = expectOk(compileKv(declared)).kv;
+	const kv = expectOk(prepareKv(declared)).kv;
 	const verdicts = (name: string) =>
-		['draft', 'done', 'archived', null].map((value) =>
-			kv.fields.get(name)?.check(value),
-		);
+		['draft', 'done', 'archived', null].map((value) => check(kv, name, value));
 
 	expect(verdicts('helper')).toEqual([true, true, false, false]);
 	expect(verdicts('refined')).toEqual([true, false, false, false]);
 	expect(verdicts('wrapped')).toEqual([true, false, false, false]);
 	expect(verdicts('optional')).toEqual([true, false, false, true]);
-	expect(
-		Object.fromEntries(
-			[...kv.fields].map(([name, each]) => [name, each.editor]),
-		),
-	).toEqual({
+	expect(editorsOf(kv)).toEqual({
 		helper: { kind: 'select', nullable: false, options: ['draft', 'done'] },
 		refined: { kind: 'select', nullable: false, options: ['draft', 'done'] },
 		wrapped: { kind: 'json', nullable: false },
 		optional: { kind: 'select', nullable: true, options: ['draft', 'done'] },
 	});
-	// The declared schemas are as they were, and the compiled ones are copies.
+	// The declared schemas are as they were, and the prepared ones are copies.
 	expect(declared.helper['x-field']).toEqual({ kind: 'select' });
 	expect(refined['x-field']).toEqual({ kind: 'select' });
-	for (const [name, each] of kv.fields) {
-		expect(each.schema).not.toBe(declared[name as keyof typeof declared]);
-		expect(Object.isFrozen(each.schema)).toBe(true);
+	for (const [name, schema] of Object.entries(kv)) {
+		expect(schema).not.toBe(declared[name as keyof typeof declared]);
+		expect(Object.isFrozen(schema)).toBe(true);
 	}
 });
 
-test('a field is compiled from a frozen snapshot, so later edits change nothing', () => {
+test('a prepared field is a frozen snapshot, so later edits change nothing', () => {
 	const options = ['draft', 'published'];
 	const payload = Type.Object({ a: Type.String() });
 	const declared = {
@@ -1311,7 +1505,7 @@ test('a field is compiled from a frozen snapshot, so later edits change nothing'
 		refined: Type.Refine(field.string(), (value) => value.length < 3),
 		optional: field.nullable(field.reference('pages')),
 	};
-	const kv = expectOk(compileKv(declared)).kv;
+	const kv = expectOk(prepareKv(declared)).kv;
 
 	// Everything the author still holds is an ordinary mutable schema.
 	options.push('archived');
@@ -1326,65 +1520,180 @@ test('a field is compiled from a frozen snapshot, so later edits change nothing'
 	// The hidden refinement list too: empty it on the declared schema.
 	Object.defineProperty(declared.refined, '~refine', { value: [] });
 
-	const status = kv.fields.get('status');
-	expect(status?.check('archived')).toBe(false);
-	expect(status?.editor).toEqual({
+	expect(check(kv, 'status', 'archived')).toBe(false);
+	expect(editorOf(kv, 'status')).toEqual({
 		kind: 'select',
 		nullable: false,
 		options: ['draft', 'published'],
 	});
-	expect(kv.fields.get('optional')?.editor).toEqual({
+	expect(editorOf(kv, 'optional')).toEqual({
 		kind: 'reference',
 		nullable: true,
 		target: 'pages',
 	});
-	expect(kv.fields.get('optional')?.check(null)).toBe(true);
+	expect(check(kv, 'optional', null)).toBe(true);
 	for (const name of ['payload', 'wrapped']) {
-		expect(kv.fields.get(name)?.check({ a: 'x' })).toBe(true);
-		expect(kv.fields.get(name)?.check({ a: 1 })).toBe(false);
+		expect(check(kv, name, { a: 'x' })).toBe(true);
+		expect(check(kv, name, { a: 1 })).toBe(false);
 	}
 
 	// The check and its issues read the same snapshot, so they agree.
-	const refined = kv.fields.get('refined');
-	expect(refined?.check('ab')).toBe(true);
-	expect(refined?.issues('ab')).toEqual([]);
-	expect(refined?.check('abc')).toBe(false);
-	expect(refined?.issues('abc')).not.toEqual([]);
+	expect(check(kv, 'refined', 'ab')).toBe(true);
+	expect(issuesOf(kv, 'refined', 'ab')).toEqual([]);
+	expect(check(kv, 'refined', 'abc')).toBe(false);
+	expect(issuesOf(kv, 'refined', 'abc')).not.toEqual([]);
 
-	for (const [name, each] of kv.fields) {
-		expect(each.schema).not.toBe(declared[name as keyof typeof declared]);
-		expect(Object.isFrozen(each)).toBe(true);
-		expect(Object.isFrozen(each.schema)).toBe(true);
-		expect(Object.isFrozen(each.editor)).toBe(true);
+	for (const [name, schema] of Object.entries(kv)) {
+		expect(schema).not.toBe(declared[name as keyof typeof declared]);
+		expect(Object.isFrozen(schema)).toBe(true);
+		expect(Object.isFrozen(fieldEditorOf(schema))).toBe(true);
 		expect(() => {
-			(each.schema as { maxLength?: number }).maxLength = 0;
+			(schema as { maxLength?: number }).maxLength = 0;
 		}).toThrow();
 	}
-	expect(() => {
-		(status?.editor as { kind: string }).kind = 'string';
-	}).toThrow();
+	const status = fieldOf(kv, 'status');
 	expect(() =>
-		(status?.editor as unknown as { options: string[] }).options.push('x'),
+		(fieldEditorOf(status) as unknown as { options: string[] }).options.push(
+			'x',
+		),
 	).toThrow();
 	const refinements = (
-		refined?.schema as unknown as { '~refine': { refine: unknown }[] }
+		fieldOf(kv, 'refined') as unknown as { '~refine': { refine: unknown }[] }
 	)['~refine'];
 	expect(Object.isFrozen(refinements)).toBe(true);
 	expect(Object.isFrozen(refinements[0])).toBe(true);
 	// A function is copied by reference and left alone.
 	expect(Object.isFrozen(refinements[0]?.refine)).toBe(false);
-	expect(
-		Object.isFrozen((status?.schema as unknown as { enum: string[] }).enum),
-	).toBe(true);
+	expect(Object.isFrozen((status as unknown as { enum: string[] }).enum)).toBe(
+		true,
+	);
 });
 
-test('undefined annotations do not stop freezing a compiled snapshot', () => {
+test('a prepared definition and its records cannot be changed', () => {
+	const prepared = expectOk(prepareData(definition));
+	const notes = prepared.tables.notes;
+	for (const owned of [
+		prepared,
+		prepared.kv,
+		prepared.tables,
+		notes,
+		notes?.fields,
+		notes?.fields.title,
+	])
+		expect(Object.isFrozen(owned)).toBe(true);
+	const writes: (() => void)[] = [
+		() => Object.assign(prepared, { id: 'so.epicenter.other' }),
+		() => Object.assign(prepared.kv, { added: field.string() }),
+		() => Object.assign(prepared.kv, { theme: field.integer() }),
+		() => Object.assign(prepared.tables, { added: notes }),
+		() => Object.assign(notes ?? {}, { body: undefined }),
+		() => Object.assign(notes?.fields ?? {}, { title: field.integer() }),
+		() => Object.assign(notes?.fields.title ?? {}, { minLength: 9 }),
+		() => {
+			delete (prepared.kv as Record<string, unknown>).theme;
+		},
+	];
+	for (const write of writes) expect(write).toThrow(TypeError);
+	expect(Object.keys(prepared.kv)).toEqual(['theme']);
+	expect(check(prepared.kv, 'theme', 'dark')).toBe(true);
+	expect(check(notes?.fields ?? {}, 'title', 'short')).toBe(true);
+	// The declaration the author holds is theirs, and is not frozen.
+	expect(Object.isFrozen(definition.kv)).toBe(false);
+	expect(Object.isFrozen(definition.kv.theme)).toBe(false);
+});
+
+test('a schema reused in a second definition after an edit is prepared again, apart from the first', () => {
+	const status = field.select(['draft', 'published']);
+	const limit = Type.Refine(field.integer(), (value) => value < 10);
+	const first = expectOk(prepareKv({ status, limit })).kv;
+
+	// The author edits the schemas they still hold, then declares them again.
+	(status.enum as string[]).push('archived');
+	Object.assign(limit, { minimum: 5 });
+	const second = expectOk(prepareKv({ status, limit })).kv;
+
+	for (const name of ['status', 'limit']) {
+		expect(fieldOf(second, name)).not.toBe(fieldOf(first, name));
+		expect(fieldOf(first, name)).not.toBe({ status, limit }[name]);
+	}
+	// Two validators: each definition reads through its own snapshot.
+	expect(check(first, 'status', 'archived')).toBe(false);
+	expect(check(second, 'status', 'archived')).toBe(true);
+	expect(check(first, 'limit', 3)).toBe(true);
+	expect(check(second, 'limit', 3)).toBe(false);
+	expect(check(second, 'limit', 12)).toBe(false);
+	expect(editorOf(first, 'status')).toMatchObject({
+		options: ['draft', 'published'],
+	});
+	expect(editorOf(second, 'status')).toMatchObject({
+		options: ['draft', 'published', 'archived'],
+	});
+	expect(
+		conformance(first, { status: 'archived', limit: 3 }).conforming,
+	).toEqual({ limit: 3 });
+	expect(
+		conformance(second, { status: 'archived', limit: 7 }).conforming,
+	).toEqual({ status: 'archived', limit: 7 });
+
+	// One schema under two names of one definition is two snapshots too.
+	const twice = expectOk(prepareKv({ a: status, b: status })).kv;
+	expect(fieldOf(twice, 'a')).not.toBe(fieldOf(twice, 'b'));
+});
+
+test('a schema that was never prepared is refused with an error, not validated and not answered false', () => {
+	const raw = field.string();
+	const refusal = 'This schema was not prepared';
+	expect(() => accepts(raw, 'text')).toThrow(refusal);
+	expect(() => conformance({ title: raw }, { title: 'text' })).toThrow(refusal);
+	expect(() =>
+		inputIssues({ title: raw }, { title: 'text' }, { complete: false }),
+	).toThrow(refusal);
+	// Preparing it elsewhere prepares a copy: the author's object is still raw.
+	const prepared = expectOk(prepareKv({ title: raw })).kv;
+	expect(check(prepared, 'title', 'text')).toBe(true);
+	expect(() => accepts(raw, 'text')).toThrow(refusal);
+	// A structurally equal copy of a prepared schema is not that schema.
+	expect(() => accepts({ ...fieldOf(prepared, 'title') }, 'text')).toThrow(
+		refusal,
+	);
+
+	// A name the definition does not declare has no schema, and accepts nothing.
+	expect(accepts(prepared.absent, 'text')).toBe(false);
+	expect(accepts(undefined, null)).toBe(false);
+	// Nothing is read from a field map that declares nothing.
+	expect(conformance({}, { title: 'text' })).toEqual({
+		conforming: {},
+		issues: [],
+	});
+});
+
+test('a node with a guard stays the author object, at the root and nested', () => {
+	const guard = { check: () => true, errors: () => [] };
+	const root = { '~guard': guard, title: 'guarded' };
+	const nested = Type.Object({ inner: { '~guard': guard } as TSchema });
+	const kv = expectOk(prepareKv({ root, nested })).kv;
+
+	// TypeBox's clone hands a guard-bearing node back itself, unfrozen.
+	expect(fieldOf(kv, 'root')).toBe(root);
+	expect(Object.isFrozen(root)).toBe(false);
+	const inner = (nested.properties as { inner: object }).inner;
+	expect(
+		(fieldOf(kv, 'nested') as unknown as { properties: { inner: object } })
+			.properties.inner,
+	).toBe(inner);
+	expect(Object.isFrozen(fieldOf(kv, 'nested'))).toBe(true);
+	expect(Object.isFrozen(inner)).toBe(false);
+	expect(check(kv, 'root', 1)).toBe(true);
+	expect(check(kv, 'nested', { inner: 1 })).toBe(true);
+});
+
+test('undefined annotations do not stop freezing a prepared snapshot', () => {
 	const declared = Type.Object(
 		{ a: Type.String() },
 		{ description: undefined },
 	);
-	const value = expectOk(compileKv({ value: declared })).kv.fields.get('value');
-	const schema = value?.schema as unknown as {
+	const kv = expectOk(prepareKv({ value: declared })).kv;
+	const schema = fieldOf(kv, 'value') as unknown as {
 		properties: { a: { minLength?: number } };
 	};
 	expect(Object.isFrozen(schema.properties)).toBe(true);
@@ -1392,16 +1701,16 @@ test('undefined annotations do not stop freezing a compiled snapshot', () => {
 	expect(() => {
 		schema.properties.a.minLength = 10;
 	}).toThrow();
-	expect(value?.check({ a: 'x' })).toBe(true);
-	expect(value?.issues({ a: 'x' })).toEqual([]);
+	expect(check(kv, 'value', { a: 'x' })).toBe(true);
+	expect(issuesOf(kv, 'value', { a: 'x' })).toEqual([]);
 });
 
 // ============================================================================
 // Conformance and input issues on one table
 // ============================================================================
 
-const checked = expectOk(
-	compileData({
+const checked: FieldMap = expectOk(
+	prepareData({
 		id: 'so.epicenter.checked',
 		kv: {},
 		tables: {
@@ -1416,7 +1725,7 @@ const checked = expectOk(
 			}),
 		},
 	}),
-).tables.get('rows')!;
+).tables.rows.fields;
 const conforming = {
 	title: 'Milk',
 	due: null,
@@ -1426,11 +1735,15 @@ const conforming = {
 };
 
 test('each declared field is checked by itself, and an undeclared key is not an issue', () => {
-	expect(checked.conformance({ ...conforming, unknown: 1 })).toEqual({
+	expect(conformance(checked, { ...conforming, unknown: 1 })).toEqual({
 		conforming,
 		issues: [],
 	});
-	const partial = checked.conformance({ ...conforming, title: 3, due: 'soon' });
+	const partial = conformance(checked, {
+		...conforming,
+		title: 3,
+		due: 'soon',
+	});
 	// A field that fails does not take a field that validated with it.
 	expect(partial.conforming).toEqual({
 		parent: 'row',
@@ -1441,68 +1754,88 @@ test('each declared field is checked by itself, and an undeclared key is not an 
 		'title',
 		'due',
 	]);
-	expect(checked.conformance({}).issues.map((issue) => issue.field)).toEqual(
+	expect(conformance(checked, {}).issues.map((issue) => issue.field)).toEqual(
 		Object.keys(conforming),
 	);
 });
 
 test('issues agree with the value check for null, an empty reference, and a length limit', () => {
 	const issuesFor = (values: Record<string, unknown>) =>
-		checked.conformance({ ...conforming, ...values }).issues;
-	expect(checked.fields.get('title')?.check('Milky')).toBe(false);
+		conformance(checked, { ...conforming, ...values }).issues;
+	expect(check(checked, 'title', 'Milky')).toBe(false);
 	expect(issuesFor({ title: 'Milky' })).toEqual([
 		expect.objectContaining({ field: 'title' }),
 	]);
 	expect(issuesFor({ title: 'Milk' })).toEqual([]);
-	expect(checked.fields.get('parent')?.check('')).toBe(false);
+	expect(check(checked, 'parent', '')).toBe(false);
 	expect(issuesFor({ parent: '' })).toHaveLength(1);
 	expect(issuesFor({ due: null })).toEqual([]);
 	// Only a nullable field accepts null.
 	expect(issuesFor({ title: null }).map((issue) => issue.field)).toEqual([
 		'title',
 	]);
-	for (const [name, declared] of checked.fields)
+	for (const name of Object.keys(checked))
 		for (const value of [null, '', 'Milky', 3, [], ['a', 3], {}, new Date()])
 			expect(
 				issuesFor({ [name]: value }).filter((issue) => issue.field === name)
 					.length === 0,
-			).toBe(declared.check(value));
+			).toBe(check(checked, name, value));
 });
 
 test('a nested pointer is reported only where it names a location in the value', () => {
-	const tags = checked.conformance({ ...conforming, tags: ['a', 3, 'c', 4] });
+	const tags = conformance(checked, { ...conforming, tags: ['a', 3, 'c', 4] });
 	expect(tags.issues.map(({ field, path }) => ({ field, path }))).toEqual([
 		{ field: 'tags', path: '/1' },
 		{ field: 'tags', path: '/3' },
 	]);
 	expect(tags.conforming).not.toHaveProperty('tags');
 	// The validator joins keys unescaped, so `/a/b/1` names nothing here.
-	const extra = checked.conformance({
+	const extra = conformance(checked, {
 		...conforming,
 		extra: { 'a/b': [1, 'x'] },
 	});
 	expect(extra.issues).toHaveLength(1);
 	expect(extra.issues[0]).not.toHaveProperty('path');
 	// A whole-value failure carries no pointer.
-	expect(checked.conformance({ ...conforming, tags: 'a' }).issues[0]).toEqual({
+	expect(conformance(checked, { ...conforming, tags: 'a' }).issues[0]).toEqual({
 		field: 'tags',
 		message: expect.stringContaining('tags'),
 	});
 });
 
 test('supplied values are refused when undeclared or nonconforming, and a complete row when a field is absent', () => {
-	expect(checked.inputIssues({ title: 'Milk' }, { complete: false })).toEqual(
+	expect(inputIssues(checked, { title: 'Milk' }, { complete: false })).toEqual(
 		[],
 	);
 	expect(
-		checked
-			.inputIssues({ title: 3, other: 1 }, { complete: false })
-			.map((issue) => issue.field),
+		inputIssues(checked, { title: 3, other: 1 }, { complete: false }).map(
+			(issue) => issue.field,
+		),
 	).toEqual(['title', 'other']);
 	expect(
-		checked
-			.inputIssues({ title: 'Milk', due: null }, { complete: true })
-			.map((issue) => issue.field),
+		inputIssues(checked, { title: 'Milk', due: null }, { complete: true }).map(
+			(issue) => issue.field,
+		),
 	).toEqual(['parent', 'tags', 'extra']);
-	expect(checked.inputIssues(conforming, { complete: true })).toEqual([]);
+	expect(inputIssues(checked, conforming, { complete: true })).toEqual([]);
+	// An explicit `undefined` is a supplied value that is not JSON, and an
+	// absent key of a complete row is missing: two different issues.
+	expect(
+		inputIssues(
+			checked,
+			{ ...conforming, title: undefined },
+			{ complete: true },
+		),
+	).toEqual([
+		{ field: 'title', message: 'title does not conform: must be a JSON value' },
+	]);
+	const { title: _title, ...withoutTitle } = conforming;
+	expect(inputIssues(checked, withoutTitle, { complete: true })).toEqual([
+		{ field: 'title', message: 'title is missing' },
+	]);
+	expect(
+		conformance(checked, { ...conforming, title: undefined }).issues,
+	).toEqual([
+		{ field: 'title', message: 'title does not conform: must be a JSON value' },
+	]);
 });

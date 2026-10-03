@@ -5,7 +5,7 @@ import { appClaimAddress } from '@epicenter/device/app-claim';
 import type { SqliteLifetime } from '@epicenter/device/owner';
 import { createLogger } from 'wellcrafted/logger';
 import type { Result } from 'wellcrafted/result';
-import { compileData, type DataDefinition } from './data/definition/index.js';
+import { type DataDefinition, prepareData } from './data/definition/index.js';
 import {
 	createStoreOverPort,
 	type DeclaredData,
@@ -75,9 +75,11 @@ async function openStore<
 ) {
 	if (!isAppId(definition.id))
 		throw new Error(`The store definition ID '${definition.id}' is not valid.`);
-	const parsed = compileData(definition);
-	if (parsed.error)
-		throw new Error(parsed.error.message, { cause: parsed.error });
+	// A `defineStore` result is already prepared and comes back as itself. Any
+	// other declaration is prepared here, and the store reads the snapshot.
+	const prepared = prepareData<DataDefinition>(definition);
+	if (prepared.error)
+		throw new Error(prepared.error.message, { cause: prepared.error });
 	const ownership = await runtime.claim(
 		appClaimAddress(
 			definition.id,
@@ -88,11 +90,11 @@ async function openStore<
 	const claim = ownership.data;
 	const acquisitionFailures: unknown[] = [];
 	const document = createStoreOverPort({
-		definition: parsed.data,
+		definition: prepared.data,
 		local: owner.kind === 'local',
 		async acquire() {
 			try {
-				return await runtime.data(parsed.data, owner);
+				return await runtime.data(prepared.data, owner);
 			} catch (cause) {
 				acquisitionFailures.push(cause);
 				throw cause;

@@ -1,5 +1,6 @@
 /**
- * `@epicenter/definition`: inert data-definition vocabulary and its compiler.
+ * `@epicenter/definition`: inert data-definition vocabulary, its preparation,
+ * and the reads over a prepared definition.
  *
  * A storage imports this to read a declaration; it acquires nothing and knows
  * no storage. `@epicenter/app` binds the body conversion to its Yjs stores,
@@ -8,17 +9,9 @@
 
 export * from './addresses.js';
 export {
-	type Conformance,
-	compileData,
-	DataDefinitionParseError,
-	type ParsedDataDefinition,
-	type ParsedTable,
-} from './compile.js';
-export {
 	type ConformanceIssue,
 	type CreateRowOf,
 	type DataDefinition,
-	type DataField,
 	type DeclaredMark,
 	type DeclaredTable,
 	type FieldMap,
@@ -42,8 +35,17 @@ export {
 	FIELD_KEYWORD,
 	type FieldEditor,
 	type FieldHint,
+	fieldEditorOf,
 	InstantString,
 	jsonValue,
 	type Kind,
 } from './field/index.js';
 export * from './json.js';
+export {
+	accepts,
+	type Conformance,
+	conformance,
+	DataDefinitionParseError,
+	inputIssues,
+	prepareData,
+} from './prepare.js';

@@ -142,7 +142,7 @@ editing a hidden file.
 one.
 
 **An agent edits; a person pushes.** `pull` writes an `AGENTS.md` at the folder
-root from `compileData`'s output (`packages/app/src/data/definition/compile.ts`):
+root from the prepared definition (`packages/definition/src/prepare.ts`):
 the tables, their fields and types, and the rules an agent needs. Values in the
 frontmatter are what comes back; a body, a new file, and a deleted file do not,
 and the table above is why. An agent never pushes. ADR-0330 makes the diff the thing that

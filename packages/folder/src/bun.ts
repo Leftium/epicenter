@@ -17,7 +17,7 @@
 
 import type { DataDefinition } from '@epicenter/definition';
 import { Ok, type Result } from 'wellcrafted/result';
-import { compileFolderDefinition } from './definition.js';
+import { prepareFolderDefinition } from './definition.js';
 import { OpenFolderError } from './errors.js';
 import {
 	assembleFolder,
@@ -61,8 +61,8 @@ export async function openFolder<const TDefinition extends DataDefinition>({
 }: DirectoryFolderOptions<TDefinition>): Promise<
 	Result<Folder<TDefinition>, OpenFolderError>
 > {
-	const compiled = compileFolderDefinition(definition);
-	if (compiled.error) return OpenFolderError.InvalidDefinition(compiled.error);
+	const prepared = prepareFolderDefinition(definition);
+	if (prepared.error) return OpenFolderError.InvalidDefinition(prepared.error);
 	let resolved: string;
 	try {
 		resolved = await resolveNativeRoot(root);
@@ -88,7 +88,7 @@ export async function openFolder<const TDefinition extends DataDefinition>({
 		});
 		return Ok(
 			assembleFolder<TDefinition>({
-				compiled: compiled.data,
+				prepared: prepared.data,
 				storage: withPublication({
 					storage: boundary,
 					history,

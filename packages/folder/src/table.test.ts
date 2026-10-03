@@ -36,7 +36,7 @@
  * - `native.test.ts` for the same table over a real directory
  */
 import { afterEach, expect, test } from 'bun:test';
-import { jsonValue } from '@epicenter/definition';
+import { type DataDefinition, jsonValue } from '@epicenter/definition';
 import { IDBFactory, IDBKeyRange } from 'fake-indexeddb';
 import type { Result } from 'wellcrafted/result';
 import { Ok } from 'wellcrafted/result';
@@ -47,7 +47,6 @@ import {
 } from './browser-store.js';
 import { hashBytes } from './capture.js';
 import { defineFolder, defineTable, field } from './contract.js';
-import { compileFolderDefinition } from './definition.js';
 import { FileError, type TableWriteError } from './errors.js';
 import { rowPath, rowStemOf } from './paths.js';
 import { createTable, type TableSnapshot } from './table.js';
@@ -76,6 +75,20 @@ const definition = defineFolder({
 });
 type Todo = { title: string; done: boolean; tags: string[] };
 type TodoSnapshot = TableSnapshot<Todo>;
+
+/**
+ * The file table for one table of a prepared definition, the way a folder
+ * builds one: named by its key and given that table's prepared fields.
+ */
+function tableOf<TFields>(
+	storage: Parameters<typeof createTable>[0]['storage'],
+	prepared: DataDefinition,
+	name: string,
+) {
+	const declared = prepared.tables[name];
+	if (declared === undefined) throw new Error(`no table '${name}'`);
+	return createTable<TFields>({ storage }, name, declared.fields);
+}
 
 /** The interpretation a snapshot carries, without its capture. */
 const readingOf = ({ fields, body, parseError, issues }: TodoSnapshot) => ({
@@ -131,11 +144,7 @@ async function setup() {
 			return result;
 		},
 	};
-	const compiled = expectOk(compileFolderDefinition(definition));
-	const table = createTable<Todo>(
-		{ storage: boundary },
-		compiled.tables.get('todos')!,
-	);
+	const table = tableOf<Todo>(boundary, definition, 'todos');
 	const entry = expectOk(
 		await table.create({
 			stem: 'a',
@@ -157,7 +166,6 @@ async function setup() {
 	}
 	return {
 		table,
-		compiled,
 		entry,
 		base,
 		storage: boundary,
@@ -234,10 +242,7 @@ test('malformed saved text is still a selectable capture, and only absence is un
 });
 
 test('each declared field validates by itself, and unknown keys are not issues', () => {
-	const table = createTable<Todo>(
-		{ storage: undefined as never },
-		expectOk(compileFolderDefinition(definition)).tables.get('todos')!,
-	);
+	const table = tableOf<Todo>(undefined as never, definition, 'todos');
 	const unknown = table.inspect(
 		'---\ntitle: A\ndone: false\ntags: []\nextra: {a: 1}\n---\n',
 	);
@@ -289,9 +294,10 @@ test('each declared field validates by itself, and unknown keys are not issues',
 });
 
 test('an absent declared field is an issue, a nullable one included, and no default is supplied', () => {
-	const dated = createTable<{ due: string | null; label: string }>(
-		{ storage: undefined as never },
-		expectOk(compileFolderDefinition(definition)).tables.get('dated')!,
+	const dated = tableOf<{ due: string | null; label: string }>(
+		undefined as never,
+		definition,
+		'dated',
 	);
 	const absent = dated.inspect('---\n---\n');
 	expect(absent.fields).toEqual({});
@@ -326,14 +332,10 @@ test('YAML values that are not JSON never break a reading: a declared one is an 
 		'done',
 		'tags',
 	]);
-	for (const node of nodesOf(reading))
-		expect(Object.isFrozen(node)).toBe(true);
+	for (const node of nodesOf(reading)) expect(Object.isFrozen(node)).toBe(true);
 
 	// A declared field that accepts any JSON still refuses bytes inside it.
-	const loose = createTable<{ data: unknown }>(
-		{ storage: s.storage },
-		s.compiled.tables.get('loose')!,
-	);
+	const loose = tableOf<{ data: unknown }>(s.storage, definition, 'loose');
 	const nested = loose.inspect('---\ndata: {bytes: !!binary SGVsbG8=}\n---\n');
 	expect(nested.fields).toEqual({});
 	expect(nested.issues.map((issue) => issue.field)).toEqual(['data']);
@@ -359,10 +361,10 @@ test('YAML values that are not JSON never break a reading: a declared one is an 
 });
 
 test('a reading is frozen at every depth, parse errors and issues included', () => {
-	const compiled = expectOk(compileFolderDefinition(definition));
-	const loose = createTable<{ data: unknown }>(
-		{ storage: undefined as never },
-		compiled.tables.get('loose')!,
+	const loose = tableOf<{ data: unknown }>(
+		undefined as never,
+		definition,
+		'loose',
 	);
 	// The alias makes one parsed node reachable from two places.
 	const nested = loose.inspect(
@@ -371,10 +373,7 @@ test('a reading is frozen at every depth, parse errors and issues included', () 
 	expect(nested.fields).toEqual({
 		data: { list: [1, { deep: [2] }], again: [1, { deep: [2] }] },
 	});
-	const todos = createTable<Todo>(
-		{ storage: undefined as never },
-		compiled.tables.get('todos')!,
-	);
+	const todos = tableOf<Todo>(undefined as never, definition, 'todos');
 	for (const reading of [
 		nested,
 		todos.inspect('---\ntitle: A\ntags: [a, 3]\n---\n'),
@@ -521,10 +520,7 @@ test('a listing that cannot be acquired as a whole is an outer error, and a miss
 	s.storage.readMany = async () => FileError.Closed();
 	expect(expectErr(await s.table.list()).name).toBe('Closed');
 
-	const bare = createTable<Record<string, never>>(
-		{ storage: s.base },
-		s.compiled.tables.get('bare')!,
-	);
+	const bare = tableOf<Record<string, never>>(s.base, definition, 'bare');
 	expect(expectOk(await bare.list())).toEqual([]);
 });
 
@@ -617,10 +613,7 @@ test('an occupied destination is the file Exists error, and a differently spelle
 
 test('a new row always has both fences, even with no fields and no body', async () => {
 	const s = await setup();
-	const bare = createTable<Record<string, never>>(
-		{ storage: s.base },
-		s.compiled.tables.get('bare')!,
-	);
+	const bare = tableOf<Record<string, never>>(s.base, definition, 'bare');
 	const created = expectOk(await bare.create({ stem: 'empty', fields: {} }));
 	expect(created.source).toBe('---\n---\n');
 	expect(created).toMatchObject({
@@ -639,10 +632,7 @@ test('a new row always has both fences, even with no fields and no body', async 
 
 test('supplied values are refused before anything is read or written', async () => {
 	const s = await setup();
-	const loose = createTable<{ data: unknown }>(
-		{ storage: s.storage },
-		s.compiled.tables.get('loose')!,
-	);
+	const loose = tableOf<{ data: unknown }>(s.storage, definition, 'loose');
 	const refusals: Result<unknown, TableWriteError>[] = [
 		await s.table.create({
 			stem: 'b',
@@ -953,9 +943,10 @@ test('a rename refuses a capture whose source is not the text of its hash, befor
 		});
 		// Untyped callers can leave the source out altogether.
 		const { source: _source, ...bare } = s.entry;
-		expect(expectErr(await s.table.rename(bare as never, stem))).toMatchObject(
-			{ name: 'InvalidPath', reason: 'the capture has no source' },
-		);
+		expect(expectErr(await s.table.rename(bare as never, stem))).toMatchObject({
+			name: 'InvalidPath',
+			reason: 'the capture has no source',
+		});
 	}
 	expect(s.counts()).toEqual({ reads: 0, applications: 0 });
 	expect(expectOk(await s.table.get('named'))).toBeUndefined();
@@ -1011,7 +1002,7 @@ const refining = defineFolder({
 				}),
 			},
 		}),
-		// A refinement that throws on one value, never on the `null` a compile probes.
+		// A refinement that throws on one value and admits every other.
 		guarded: defineTable({
 			fields: {
 				title: { type: 'string' },
@@ -1025,9 +1016,10 @@ const refining = defineFolder({
 });
 
 test('a parent its refinement froze still has every child frozen, aliases included', () => {
-	const frozen = createTable<{ data: Record<string, unknown> }>(
-		{ storage: undefined as never },
-		expectOk(compileFolderDefinition(refining)).tables.get('frozen')!,
+	const frozen = tableOf<{ data: Record<string, unknown> }>(
+		undefined as never,
+		refining,
+		'frozen',
 	);
 	const reading = frozen.inspect(
 		'---\ndata:\n  list: &shared [1, {deep: [2]}]\n  again: *shared\n---\n',
@@ -1043,9 +1035,10 @@ test('a parent its refinement froze still has every child frozen, aliases includ
 
 test('a refinement is shown the table’s frozen copy: the supplied objects stay unfrozen, and a class instance is still refused', async () => {
 	const s = await setup();
-	const frozen = createTable<{ data: { list: number[] } }>(
-		{ storage: s.storage },
-		expectOk(compileFolderDefinition(refining)).tables.get('frozen')!,
+	const frozen = tableOf<{ data: { list: number[] } }>(
+		s.storage,
+		refining,
+		'frozen',
 	);
 	const supplied = { data: { list: [1] } };
 	const created = expectOk(
@@ -1073,9 +1066,10 @@ test('a refinement is shown the table’s frozen copy: the supplied objects stay
 
 test('a refinement that changes its value is a field issue: the supplied object, the source, and the other fields stay as they were', async () => {
 	const s = await setup();
-	const mutating = createTable<{ title: string; data: { answer: number } }>(
-		{ storage: s.storage },
-		expectOk(compileFolderDefinition(refining)).tables.get('mutating')!,
+	const mutating = tableOf<{ title: string; data: { answer: number } }>(
+		s.storage,
+		refining,
+		'mutating',
 	);
 	const supplied = { title: 'A', data: { answer: 1 } };
 	for (const refused of [
@@ -1122,9 +1116,10 @@ test('a refinement that changes its value is a field issue: the supplied object,
 
 test('a field whose refinement throws is a field issue: the source is saved, and the other fields and the body still read', async () => {
 	const s = await setup();
-	const guarded = createTable<{ title: string; guard: string }>(
-		{ storage: s.storage },
-		expectOk(compileFolderDefinition(refining)).tables.get('guarded')!,
+	const guarded = tableOf<{ title: string; guard: string }>(
+		s.storage,
+		refining,
+		'guarded',
 	);
 	const row = expectOk(
 		await guarded.create({
@@ -1166,25 +1161,34 @@ test('a field whose refinement throws is a field issue: the source is saved, and
 
 test('a receipt is prepared before publication: an interpreter that fails leaves every file as it was', async () => {
 	const s = await setup();
-	const compiled = expectOk(compileFolderDefinition(definition)).tables.get(
-		'todos',
-	)!;
 	// No declared field does this; it stands for a failure nobody planned for.
+	// Interpreting source lists the table's fields, and that listing throws.
 	let failing = false;
 	const table = createTable<Todo>(
 		{ storage: s.storage },
-		{
-			...compiled,
-			conformance(payload) {
+		'todos',
+		new Proxy(definition.tables.todos.fields, {
+			ownKeys(fields) {
 				if (failing) throw new Error('the interpreter failed');
-				return compiled.conformance(payload);
+				return Reflect.ownKeys(fields);
 			},
-		},
+		}),
 	);
-	failing = true;
+	// A new row's values are checked before anything is read, so its
+	// interpreter starts failing at the directory read: after the values
+	// passed, before the receipt.
+	const { children } = s.storage;
+	s.storage.children = (...args) => {
+		failing = true;
+		return children(...args);
+	};
 	const fields = { title: 'New', done: false, tags: [] };
+	await expect(table.create({ stem: 'b', fields })).rejects.toThrow(
+		'the interpreter failed',
+	);
+	s.storage.children = children;
+	expect(failing).toBe(true);
 	for (const save of [
-		() => table.create({ stem: 'b', fields }),
 		() => table.update('a', { fields: { done: true } }),
 		() => table.replace(s.entry, VALID),
 		() => table.rename(s.entry, 'moved'),

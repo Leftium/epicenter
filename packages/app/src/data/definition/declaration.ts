@@ -18,7 +18,6 @@ import type { DeltaAny } from 'lib0/delta';
 
 export {
 	type CreateRowOf,
-	type DataField,
 	type DeclaredMark,
 	type FieldMap,
 	field,

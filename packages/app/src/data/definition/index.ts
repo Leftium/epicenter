@@ -3,7 +3,10 @@
 export {
 	type AddressByteCeilings,
 	CalendarDateString,
+	type Conformance,
+	type ConformanceIssue,
 	DATA_ADDRESS_CEILINGS,
+	DataDefinitionParseError,
 	DateTimeString,
 	FIELD_KEYWORD,
 	type FieldEditor,
@@ -14,17 +17,10 @@ export {
 	isTableName,
 	jsonValue,
 	type Kind,
+	prepareData,
 	SQLITE_UNUSABLE_AS_RELATION_NAME,
 } from '@epicenter/definition';
 export { plainText } from './body.js';
-export {
-	type Conformance,
-	type ConformanceIssue,
-	compileData,
-	DataDefinitionParseError,
-	type ParsedDataDefinition,
-	type ParsedTable,
-} from './compile.js';
 export {
 	type BodyCodec,
 	type CreateRowOf,

@@ -6,6 +6,7 @@
  * not, and the row and KV lenses read each one's exact `Static<>`. Helpers and
  * raw schemas sit side by side. The reserved-name rule holds for both, a
  * primitive is not a schema, and a native `default` annotation is admitted.
+ * `prepareData` returns the type it was given.
  *
  * See `./field/field.test-d.ts` for the helpers' own types.
  */
@@ -15,7 +16,6 @@ import type { Brand } from 'wellcrafted/brand';
 import {
 	type CreateRowOf,
 	type DataDefinition,
-	type DataField,
 	defineTable,
 	type FieldMap,
 	field,
@@ -23,6 +23,7 @@ import {
 	type JsonValue,
 	jsonValue,
 	type KvOf,
+	prepareData,
 	type RowOf,
 } from './index.js';
 
@@ -191,6 +192,29 @@ export const _stillRequired: Pick<
 	'withDefault'
 > = {};
 
-// A compiled native snapshot can be composed again without a cast.
-export const _rewrapCompiledSchema = (compiled: DataField) =>
-	field.json(compiled.schema);
+// A prepared definition has the declared type: the same literal keys and the
+// same native schemas, so the lenses read it like the declaration.
+const prepared = prepareData(definition).data;
+if (prepared !== null) {
+	prepared satisfies typeof definition;
+	// A prepared native snapshot can be composed again without a cast.
+	field.json(prepared.kv.theme);
+	field.nullable(prepared.tables.mixed.fields.title);
+	// @ts-expect-error the prepared definition declares no such table
+	prepared.tables.absent;
+	// @ts-expect-error a prepared table has fields and a body, and no name
+	prepared.tables.mixed.name;
+}
+export type _PreparedKv = Expect<
+	Equal<
+		KvOf<NonNullable<typeof prepared>>,
+		{
+			theme: 'light' | 'dark';
+			window: { width: number; height: number };
+			name: string;
+		}
+	>
+>;
+export type _PreparedRow = Expect<
+	Equal<RowOf<NonNullable<typeof prepared>['tables']['mixed']>, Row>
+>;

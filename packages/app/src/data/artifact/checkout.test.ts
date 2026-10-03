@@ -9,6 +9,7 @@
 import { describe, expect, test } from 'bun:test';
 import { defineStore, defineTable, field, plainText } from '@epicenter/app';
 import type * as Y from '@y/y';
+import { Type } from 'typebox';
 import { expectErr, expectOk } from 'wellcrafted/testing';
 import { openMemory } from '../store/memory.js';
 import {
@@ -1653,6 +1654,50 @@ describe('the folder explains itself (ADR-0337, ADR-0330)', () => {
 		// A nullable reference says both facts, because an agent writing one has
 		// to know it may be null and what it points at.
 		expect(agents).toContain('| `folderId` | reference or null -> `folders` |');
+		await data[Symbol.asyncDispose]();
+	});
+
+	test('"or null" is what each field check says of null, not what its keywords say', async () => {
+		const calls: unknown[] = [];
+		const nulls = defineStore({
+			id: 'so.epicenter.nulls',
+			kv: {},
+			tables: {
+				rows: defineTable({
+					fields: {
+						// No keyword names null, and the check admits it.
+						anything: Type.Any(),
+						plain: field.string(),
+						status: field.nullable(field.select(['open', 'done'])),
+						// The union names null, and the refinement refuses it.
+						refused: Type.Refine(
+							field.nullable(field.string()),
+							(value) => value !== null,
+						),
+						// A refinement that throws on null does not admit it.
+						throwing: Type.Refine(Type.Any(), (value) => {
+							calls.push(value);
+							return value.length < 3;
+						}),
+					},
+				}),
+			},
+		});
+		// Defining the store validated nothing, so no callback has run.
+		expect(calls).toEqual([]);
+
+		const data = addressed(await openMemory(nulls), { dataId: nulls.id });
+		const { agents } = await agentsFor(
+			data as unknown as PushableData & CheckoutAddress,
+		);
+		expect(agents).toContain('| `anything` | json or null |');
+		expect(agents).toContain('| `plain` | string |');
+		expect(agents).toContain('| `status` | select or null |');
+		expect(agents).toContain('| `refused` | string |');
+		expect(agents).toContain('| `throwing` | json |');
+		// The guide asked the check, where it is used, and that is all it asked.
+		expect(calls.length).toBeGreaterThan(0);
+		expect(calls.every((value) => value === null)).toBe(true);
 		await data[Symbol.asyncDispose]();
 	});
 

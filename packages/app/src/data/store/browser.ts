@@ -3,7 +3,7 @@
  * The page owns its live Yjs document; IndexedDB keeps its durable update log.
  * Opening never discovers, migrates, or deletes historical numbered caches.
  */
-import type { ParsedDataDefinition } from '@epicenter/app/definition';
+import type { DataDefinition } from '@epicenter/app/definition';
 import { isAppId } from '@epicenter/constants/app-id';
 import { deviceOwnerPath, type PrincipalId } from '@epicenter/principal';
 import { readCurrentDownload } from '@epicenter/sync/current-download';
@@ -117,7 +117,7 @@ function accountCachePrefix(
 
 /** The device scope retains its original address, including its fixed final segment. */
 async function acquireLocalData(
-	definition: ParsedDataDefinition,
+	definition: DataDefinition,
 	appId: string,
 	idb: IdbRealm,
 ): Promise<Result<StoreBacking, StoreError>> {
@@ -151,7 +151,7 @@ async function acquireLocalData(
 
 /** Acquire storage under the caller's exclusive store admission. */
 export async function acquireStoreData(
-	definition: ParsedDataDefinition,
+	definition: DataDefinition,
 	owner: StoreOwner,
 	idb: IdbRealm,
 ): Promise<Result<StoreBacking, StoreError>> {

@@ -34,9 +34,10 @@ import { expectErr, expectOk } from 'wellcrafted/testing';
 import type { FileBoundary } from './boundary.js';
 import { openFolder as openBrowserFolder } from './browser.js';
 import {
-	createBrowserFileBoundary,
-	openFolderDatabase,
-} from './browser-store.js';
+	browserStorage,
+	locationOf,
+	rawBrowserFolder,
+} from './browser-storage.test-support.js';
 import { hashBytes } from './capture.js';
 import {
 	defineFolder,
@@ -93,7 +94,7 @@ const openers: Record<string, () => Promise<Opened>> = {
 				browser: {
 					author,
 					commitOnEdit: false,
-					indexedDb: { indexedDB: new IDBFactory(), IDBKeyRange },
+					...browserStorage({ indexedDB: new IDBFactory(), IDBKeyRange }),
 				},
 			}),
 		),
@@ -341,13 +342,9 @@ describe.each(Object.keys(openers))('%s folder file verbs', (kind) => {
 
 	test('the handle says where it is, and hints name the paths its saves reached', async () => {
 		const folder = await open();
-		expect(folder.location.kind).toBe(
-			kind === 'browser' ? 'indexedDb' : 'directory',
-		);
-		if (folder.location.kind === 'indexedDb')
-			expect(folder.location.database).toBe(
-				'epicenter-folder:so.epicenter.filestest',
-			);
+		if (kind === 'browser')
+			expect(folder.location).toEqual(locationOf('so.epicenter.filestest'));
+		else expect(folder.location.kind).toBe('directory');
 
 		// Subscribed before the first read, so nothing falls between them.
 		const heard: string[] = [];
@@ -380,9 +377,8 @@ describe.each(Object.keys(openers))('%s folder file verbs', (kind) => {
 describe('a save never reads its bytes back', () => {
 	/** A browser folder over a boundary the test can watch and interfere with. */
 	async function instrumented() {
-		const environment = { indexedDB: new IDBFactory(), IDBKeyRange };
-		const db = await openFolderDatabase('epicenter-folder:reread', environment);
-		const base = createBrowserFileBoundary(db, environment);
+		const raw = await rawBrowserFolder({ id: 'reread' });
+		const base = raw.boundary;
 		const reads: string[] = [];
 		let afterApply: (() => Promise<void>) | undefined;
 		const boundary: FileBoundary = {
@@ -416,6 +412,7 @@ describe('a save never reads its bytes back', () => {
 			fetch: unused,
 			pullFastForward: unused,
 			mergeIncoming: unused,
+			recoverIncoming: unused,
 			mergeUnsupported: undefined,
 			paths: unused,
 			stage: unused,
@@ -428,9 +425,9 @@ describe('a save never reads its bytes back', () => {
 			prepared: definition,
 			storage: boundary,
 			history,
-			location: { kind: 'indexedDb', database: 'epicenter-folder:reread' },
+			location: locationOf('reread'),
 			hints: createFileHints(),
-			release: async () => db.close(),
+			release: async () => {},
 		});
 		opened.push(folder);
 		return {

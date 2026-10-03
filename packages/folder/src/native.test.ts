@@ -10,9 +10,9 @@ import { IDBFactory, IDBKeyRange } from 'fake-indexeddb';
 import { expectErr, expectOk } from 'wellcrafted/testing';
 import { openFolder as openBrowserFolder } from './browser.js';
 import {
-	createBrowserFileBoundary,
-	openFolderDatabase,
-} from './browser-store.js';
+	browserStorage,
+	rawBrowserFolder,
+} from './browser-storage.test-support.js';
 import {
 	type DirectoryFolderOptions,
 	defineFolder,
@@ -449,7 +449,11 @@ describe('browser and native exchange through a real bare repository', () => {
 			await openBrowserFolder({
 				id: 'attach-backup',
 				definition,
-				browser: { author, indexedDb: environment, commitOnEdit: false },
+				browser: {
+					author,
+					...browserStorage(environment),
+					commitOnEdit: false,
+				},
 			}),
 		);
 		expectOk(await local.files.create('local.txt', 'local'));
@@ -463,7 +467,7 @@ describe('browser and native exchange through a real bare repository', () => {
 				definition,
 				browser: {
 					author,
-					indexedDb: environment,
+					...browserStorage(environment),
 					commitOnEdit: false,
 					remote: { url: 'http://git.test/remote.git', branch: 'backup' },
 				},
@@ -566,7 +570,7 @@ describe('browser and native exchange through a real bare repository', () => {
 				browser: {
 					author: { name: 'Browser', email: 'browser@example.test' },
 					remote: browserRemote,
-					indexedDb: environment,
+					...browserStorage(environment),
 				},
 			}),
 		);
@@ -625,13 +629,13 @@ describe('browser and native exchange through a real bare repository', () => {
 		await settled(native);
 		expect((await native.git.push()).status).toBe('pushed');
 		// Another writer publishes without a save request on this handle.
-		const externalDb = await openFolderDatabase(
-			'epicenter-folder:exchange',
-			environment,
-		);
+		const external = await rawBrowserFolder({
+			id: 'exchange',
+			storage: environment,
+		});
 		const bytes = new TextEncoder().encode('local');
 		expectOk(
-			await createBrowserFileBoundary(externalDb, environment).apply([
+			await external.boundary.apply([
 				{
 					kind: 'create',
 					path: 'scratch.txt',
@@ -640,7 +644,6 @@ describe('browser and native exchange through a real bare repository', () => {
 				},
 			]),
 		);
-		externalDb.close();
 		await browser.git.fetch();
 		const dirty = await browser.git.pullFastForward();
 		expect(dirty.error?.name).toBe('Dirty');
@@ -675,7 +678,7 @@ describe('browser and native exchange through a real bare repository', () => {
 				browser: {
 					author,
 					remote: { url: 'http://127.0.0.1:9/offline.git', branch: 'main' },
-					indexedDb: { indexedDB: new IDBFactory(), IDBKeyRange },
+					...browserStorage({ indexedDB: new IDBFactory(), IDBKeyRange }),
 				},
 			}),
 		);

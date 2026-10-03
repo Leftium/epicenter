@@ -1,25 +1,22 @@
 /**
- * Browser Git storage: isomorphic-git over the folder's IndexedDB database.
+ * Browser Git: isomorphic-git over a folder's private Git state.
  *
- * Refs are loose files in the `git` store. The branch moves only through a
- * conditional transaction that compares the stored ref with the pinned
- * value. Index and branch work holds a Web Lock (plus an in-process queue) so
- * tabs of the same origin do not interleave index writes. Network transfers
- * run outside the lock.
+ * `createStoredGitBackend` is everything that is Git: status, staging,
+ * commits, diffs, and transfers, through a filesystem view whose `/files` is
+ * the folder's files, read-only, and whose `/git` is private Git state. A
+ * `BrowserGitStore` decides where that private state lives and how the
+ * branch, the index, and an incoming update publish; the browser folder's is
+ * `.git` of its origin private file system directory (`opfs-git.ts`).
+ *
+ * The branch moves only by comparing the stored ref with the pinned value.
+ * Index and branch work holds a Web Lock (plus an in-process queue) so tabs
+ * of the same origin do not interleave index writes. Network transfers run
+ * outside the lock.
  */
 
+import type { PromiseFsClient } from 'isomorphic-git';
 import * as git from 'isomorphic-git';
-import {
-	applyInTransaction,
-	type IndexedDbEnvironment,
-	type InventoryRecord,
-	Refusal,
-	request,
-	STORES,
-	writeTransaction,
-} from '../browser-store.js';
-import { FileError } from '../errors.js';
-import { isPortablePath } from '../paths.js';
+import type { OpfsLocks } from '../opfs-store.js';
 import { isAttributesPath, normalizingAttribute } from './attributes.js';
 import type {
 	Admitted,
@@ -28,12 +25,14 @@ import type {
 	GitRemote,
 	IncomingPlan,
 	PathStatus,
+	PendingIncoming,
+	PublishResult,
+	RecoverIncomingResult,
 	StatusCode,
 } from './backend.js';
-import { createGitSession, GITDIR, WORKDIR } from './browser-fs.js';
+import { capturedIndexMatchesHead } from './captured-index.js';
 import { abortableHttp } from './http.js';
 import { createMutex } from './mutex.js';
-import { capturedIndexMatchesHead } from './captured-index.js';
 import {
 	commitTree,
 	logCommits,
@@ -43,16 +42,49 @@ import {
 import { gitignoreMatcher } from './scope.js';
 
 const decoder = new TextDecoder();
-const encoder = new TextEncoder();
 const REMOTE_NAME = 'origin';
 
-class BranchMoved {
-	constructor(readonly actual: string | undefined) {}
-}
+/** One piece of Git work's filesystem view; `flush` persists its private writes. */
+export type GitFsSession = {
+	readonly fs: PromiseFsClient;
+	flush(): Promise<void>;
+};
 
-class IndexChanged {}
+/** Where a browser folder's private Git state lives, and how it publishes. */
+export type BrowserGitStore<TSession extends GitFsSession> = {
+	session(): TSession;
+	/** A private Git file's bytes by its `/git/...` path, or `undefined`. */
+	readPrivate(path: string): Promise<Uint8Array | undefined>;
+	/** Move a ref only if it still names `expected`. */
+	casRef(
+		path: string,
+		expected: string | undefined,
+		next: string,
+	): Promise<CasResult>;
+	/**
+	 * Publish files, index, and branch for an incoming update. `prepared` holds
+	 * the index entries already reset to `plan.nextHead`, unflushed.
+	 */
+	publishIncoming(
+		plan: IncomingPlan,
+		prepared: TSession,
+	): Promise<PublishResult>;
+	/**
+	 * The incoming update whose publication began and has not been recovered.
+	 * While there is one, staging, commits, and new incoming updates wait.
+	 * Throws when a record exists but cannot be read.
+	 */
+	pending(): Promise<PendingIncoming | undefined>;
+	/** Finish or clear the pending update. Called inside the Git lock, only when asked. */
+	recover(): Promise<RecoverIncomingResult>;
+};
 
-const sameBytes = (
+/** isomorphic-git's view of private Git state. */
+export const GITDIR = '/git';
+/** isomorphic-git's read-only view of the folder's files. */
+export const WORKDIR = '/files';
+
+export const sameBytes = (
 	left: Uint8Array | undefined,
 	right: Uint8Array | undefined,
 ) =>
@@ -61,61 +93,68 @@ const sameBytes = (
 		: left.byteLength === right.byteLength &&
 			left.every((byte, index) => byte === right[index]);
 
-/**
- * Inside an open transaction: require every portable file and the index to be
- * what the plan observed. A changed or removed file is a `Conflict`, a new one
- * is `Exists`, and a changed index is `IndexChanged`. Each aborts the
- * transaction before anything is written.
- */
-async function requireBaseline(
-	tx: IDBTransaction,
-	indexKey: string,
-	baseline: IncomingPlan['baseline'],
-) {
-	const inventory = tx.objectStore(STORES.inventory);
-	const keys = (await request(inventory.getAllKeys())) as string[];
-	const records = (await request(inventory.getAll())) as InventoryRecord[];
-	const present = new Set<string>();
-	for (const [index, path] of keys.entries()) {
-		if (!isPortablePath(path)) continue;
-		present.add(path);
-		const expected = baseline.files.get(path);
-		if (expected === undefined)
-			throw new Refusal(FileError.Exists({ path }).error);
-		const actual = records[index]!.sha256;
-		if (actual !== expected)
-			throw new Refusal(
-				FileError.Conflict({
-					path,
-					expectedSha256: expected,
-					actualSha256: actual,
-				}).error,
-			);
-	}
-	for (const [path, expected] of baseline.files)
-		if (!present.has(path))
-			throw new Refusal(
-				FileError.Conflict({
-					path,
-					expectedSha256: expected,
-					actualSha256: undefined,
-				}).error,
-			);
-	const index = (await request(tx.objectStore(STORES.git).get(indexKey))) as
-		| Uint8Array
-		| undefined;
-	if (!sameBytes(index, baseline.index)) throw new IndexChanged();
+/** The commit a stored ref names, or `undefined` for anything else. */
+export function refValue(value: Uint8Array | undefined): string | undefined {
+	if (value === undefined) return undefined;
+	const text = decoder.decode(value).trim();
+	return /^[0-9a-f]{40}$/.test(text) ? text : undefined;
 }
 
-export async function createBrowserGitBackend({
-	db,
-	environment,
+/**
+ * Set the index entries of `paths` to `commit`'s tree, in `fs` (unflushed):
+ * entries of `removed` paths go, the others take the commit's blob.
+ * `resetIndex` alone would keep a removed file's entry where the commit has
+ * a directory of the same name.
+ */
+export async function indexTo(
+	fs: PromiseFsClient,
+	commit: string,
+	paths: readonly string[],
+	removed: ReadonlySet<string>,
+) {
+	for (const filepath of paths)
+		if (removed.has(filepath))
+			await git.remove({
+				fs,
+				dir: WORKDIR,
+				gitdir: GITDIR,
+				filepath,
+				cache: {},
+			});
+	for (const filepath of paths)
+		if (!removed.has(filepath))
+			await git.resetIndex({
+				fs,
+				dir: WORKDIR,
+				gitdir: GITDIR,
+				filepath,
+				ref: commit,
+				cache: {},
+			});
+}
+
+/** Why index and branch work waits for `pending`. */
+export function pendingReason(pending: PendingIncoming): string {
+	switch (pending.state) {
+		case 'recorded':
+			return `Incoming update ${pending.operationId} from ${pending.expectedHead ?? 'an empty history'} to ${pending.nextHead} has not finished; recover it with recoverIncoming()`;
+		case 'unadmitted':
+			return 'An incoming update was never admitted: its record is empty; recoverIncoming() clears it';
+		case 'unreadable':
+			return `The incoming update record cannot be read (${pending.reason}); it needs review before Git work continues`;
+	}
+}
+
+export async function createStoredGitBackend<TSession extends GitFsSession>({
+	store,
+	locks,
 	lockName,
 	branch,
 	remote,
 }: {
-	db: IDBDatabase;
-	environment: IndexedDbEnvironment;
+	store: BrowserGitStore<TSession>;
+	/** The Web Locks this folder's tabs share. */
+	locks: OpfsLocks;
 	lockName: string;
 	branch: string;
 	remote: GitRemote | undefined;
@@ -128,29 +167,38 @@ export async function createBrowserGitBackend({
 	async function withObjects<T>(
 		work: (access: ObjectAccess) => Promise<T>,
 	): Promise<T> {
-		const session = createGitSession(db, environment);
+		const session = store.session();
 		const value = await work({ fs: session.fs, gitdir: GITDIR, cache: {} });
 		await session.flush();
 		return value;
 	}
 
-	async function readRef(key: string): Promise<string | undefined> {
-		const value = (await request(
-			db.transaction(STORES.git).objectStore(STORES.git).get(key),
-		)) as Uint8Array | undefined;
-		if (value === undefined) return undefined;
-		const text = decoder.decode(value).trim();
-		return /^[0-9a-f]{40}$/.test(text) ? text : undefined;
+	const readRef = async (key: string) => refValue(await store.readPrivate(key));
+
+	/** Refuse index and branch work while an incoming update is pending. */
+	async function settled() {
+		const pending = await store.pending();
+		if (pending !== undefined) throw new Error(pendingReason(pending));
 	}
 
-	// Create the private repository once. Its configuration names the remote so
-	// isomorphic-git records fetched and pushed heads as tracking refs.
-	const initialized = await request(
-		db.transaction(STORES.git).objectStore(STORES.git).get(`${GITDIR}/HEAD`),
-	);
-	if (initialized === undefined) {
+	// Create the private repository once. Only creation writes `HEAD`, so a
+	// missing or empty `HEAD` means creation did not finish: `init` stops at
+	// a `config` it already wrote, so `HEAD` is written here. Its configuration
+	// names the remote so isomorphic-git records fetched and pushed heads as
+	// tracking refs.
+	const head = await store.readPrivate(`${GITDIR}/HEAD`);
+	if (head === undefined || head.byteLength === 0) {
 		await withObjects(async ({ fs, gitdir }) => {
 			await git.init({ fs, dir: WORKDIR, gitdir, defaultBranch: branch });
+			const written = await fs.promises
+				.readFile(`${gitdir}/HEAD`)
+				.then((bytes: Uint8Array) => bytes.byteLength > 0)
+				.catch(() => false);
+			if (!written)
+				await fs.promises.writeFile(
+					`${gitdir}/HEAD`,
+					`ref: refs/heads/${branch}\n`,
+				);
 			await git.setConfig({
 				fs,
 				gitdir,
@@ -175,8 +223,6 @@ export async function createBrowserGitBackend({
 			});
 		});
 
-	const webLocks = () => (globalThis.navigator as Navigator | undefined)?.locks;
-
 	async function exclusive<T>(
 		work: () => Promise<T>,
 		signal?: AbortSignal,
@@ -184,11 +230,6 @@ export async function createBrowserGitBackend({
 		// The signal reaches both waits: this tab's queue, then the Web Lock.
 		// Either one rejects a waiter that is aborted and never runs its work.
 		return queue.run(async () => {
-			const locks = webLocks();
-			// Without Web Locks a command someone asked for still runs, ordered in
-			// this tab only. Across tabs the branch compare-and-swap is what
-			// refuses a losing commit.
-			if (locks === undefined) return work();
 			let entered = false;
 			try {
 				return await locks.request(lockName, { signal }, () => {
@@ -204,11 +245,6 @@ export async function createBrowserGitBackend({
 	}
 
 	async function tryExclusive<T>(work: () => Promise<T>): Promise<Admitted<T>> {
-		// Without Web Locks nothing can say whether another tab holds the
-		// folder, so unattended work is refused. It is not let through on this
-		// tab's queue alone as if that were the shared lock.
-		const locks = webLocks();
-		if (locks === undefined) return { ran: false };
 		// Both layers are asked without waiting: this tab's queue first, then
 		// the Web Lock another tab may hold.
 		const attempt = queue.tryRun(
@@ -227,23 +263,8 @@ export async function createBrowserGitBackend({
 		expected: string | undefined,
 		next: string,
 	): Promise<CasResult> {
-		const result = await writeTransaction(db, [STORES.git], async (tx) => {
-			const store = tx.objectStore(STORES.git);
-			const value = (await request(store.get(branchKey))) as
-				| Uint8Array
-				| undefined;
-			const actual =
-				value === undefined ? undefined : decoder.decode(value).trim();
-			if (actual !== expected) throw new BranchMoved(actual);
-			store.put(encoder.encode(`${next}\n`), branchKey);
-		});
-		if (result.error) {
-			const cause = result.error.name === 'Io' ? result.error.cause : undefined;
-			if (cause instanceof BranchMoved)
-				return { ok: false, actual: cause.actual };
-			throw new Error(result.error.message);
-		}
-		return { ok: true };
+		await settled();
+		return store.casRef(branchKey, expected, next);
 	}
 
 	function matrixCodes(
@@ -337,13 +358,17 @@ export async function createBrowserGitBackend({
 		readBranch: () => readRef(branchKey),
 		readRemoteTracking: () => readRef(trackingKey),
 		casBranch,
+		replacesDirectories: true,
+		pendingIncoming: () => store.pending(),
+		recoverIncoming: () => store.recover(),
 		async blocked() {
-			const head = (await request(
-				db
-					.transaction(STORES.git)
-					.objectStore(STORES.git)
-					.get(`${GITDIR}/HEAD`),
-			)) as Uint8Array | undefined;
+			try {
+				const pending = await store.pending();
+				if (pending !== undefined) return pendingReason(pending);
+			} catch (cause) {
+				return `The incoming update record cannot be read: ${cause instanceof Error ? cause.message : String(cause)}`;
+			}
+			const head = await store.readPrivate(`${GITDIR}/HEAD`);
 			if (head === undefined || !decoder.decode(head).startsWith('ref: '))
 				return 'HEAD is detached';
 			if (decoder.decode(head).trim() !== `ref: refs/heads/${branch}`)
@@ -366,6 +391,7 @@ export async function createBrowserGitBackend({
 			return normalizingAttribute(attributeFiles, files.keys());
 		},
 		async reconcileIndex(commit) {
+			await settled();
 			return withObjects(async (access) => {
 				const mismatched: string[] = [];
 				await git.walk({
@@ -401,17 +427,15 @@ export async function createBrowserGitBackend({
 		},
 		async indexMatchesHead(captured) {
 			if (captured !== undefined)
-				return withObjects((access) => capturedIndexMatchesHead(access, captured));
+				return withObjects((access) =>
+					capturedIndexMatchesHead(access, captured),
+				);
 			const rows = await withObjects((access) => matrix(access));
 			return rows.every(([, head, , stage]) =>
 				head === 0 ? stage === 0 : stage === 1,
 			);
 		},
-		async readIndex() {
-			return (await request(
-				db.transaction(STORES.git).objectStore(STORES.git).get(indexKey),
-			)) as Uint8Array | undefined;
-		},
+		readIndex: () => store.readPrivate(indexKey),
 		mergeUnsupported: undefined,
 		async pathStatus() {
 			const rows = await withObjects((access) => matrix(access));
@@ -427,6 +451,7 @@ export async function createBrowserGitBackend({
 			return result;
 		},
 		async stage(paths) {
+			await settled();
 			await withObjects(async (access) => {
 				const rows = await matrix(
 					access,
@@ -454,7 +479,8 @@ export async function createBrowserGitBackend({
 			});
 		},
 		async commitIndex(message, author) {
-			const session = createGitSession(db, environment);
+			await settled();
+			const session = store.session();
 			const access: ObjectAccess = {
 				fs: session.fs,
 				gitdir: GITDIR,
@@ -487,7 +513,7 @@ export async function createBrowserGitBackend({
 			)
 				return { status: 'nothing' };
 			await session.flush();
-			const moved = await casBranch(parent, oid);
+			const moved = await store.casRef(branchKey, parent, oid);
 			if (!moved.ok) return { status: 'branchMoved', actual: moved.actual };
 			return { status: 'committed', oid, parent };
 		},
@@ -642,46 +668,23 @@ export async function createBrowserGitBackend({
 			});
 		},
 		async publishIncoming(plan: IncomingPlan) {
-			// Compute index entries for the new head, then publish files, index,
-			// and the branch in one transaction. Nothing is written unless every
-			// file, the index, and the branch are still what the plan observed.
-			const session = createGitSession(db, environment);
-			for (const filepath of plan.paths)
-				await git.resetIndex({
-					fs: session.fs,
-					dir: WORKDIR,
-					gitdir: GITDIR,
-					filepath,
-					ref: plan.nextHead,
-					cache: {},
-				});
-			const result = await writeTransaction(
-				db,
-				[STORES.inventory, STORES.contents, STORES.directories, STORES.git],
-				async (tx) => {
-					await requireBaseline(tx, indexKey, plan.baseline);
-					await applyInTransaction(tx, environment, plan.changes);
-					const store = tx.objectStore(STORES.git);
-					const value = (await request(store.get(branchKey))) as
-						| Uint8Array
-						| undefined;
-					const actual =
-						value === undefined ? undefined : decoder.decode(value).trim();
-					if (actual !== plan.expectedHead) throw new BranchMoved(actual);
-					session.flushInto(tx);
-					store.put(encoder.encode(`${plan.nextHead}\n`), branchKey);
-				},
+			await settled();
+			// Compute index entries for the new head without writing them; the
+			// store publishes them with the files and the branch.
+			const session = store.session();
+			await indexTo(
+				session.fs,
+				plan.nextHead,
+				plan.changes.flatMap((change) =>
+					change.kind === 'move' ? [] : [change.path],
+				),
+				new Set(
+					plan.changes
+						.filter((change) => change.kind === 'remove')
+						.map((change) => (change as { path: string }).path),
+				),
 			);
-			if (result.error === null) return { status: 'published' };
-			const cause = result.error.name === 'Io' ? result.error.cause : undefined;
-			if (cause instanceof BranchMoved)
-				return {
-					status: 'branchMoved',
-					actual: cause.actual,
-					filesApplied: false,
-				};
-			if (cause instanceof IndexChanged) return { status: 'indexChanged' };
-			return { status: 'refused', error: result.error };
+			return store.publishIncoming(plan, session);
 		},
 	};
 	return backend;

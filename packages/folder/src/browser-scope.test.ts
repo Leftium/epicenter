@@ -1,3 +1,16 @@
+/**
+ * Browser folder scopes: one captured address per channel, owner, and folder
+ * ID, each its own OPFS directory, Web Locks, and hint channel.
+ *
+ * Key behaviors:
+ * - Omitted scope and explicit release Local are one folder
+ * - Channels and authority/principal pairs keep separate bytes, locks, and hints
+ * - A scoped folder with nothing of its own starts only once the Local
+ *   database of its ID is frozen and holds nothing, or this version's Local
+ *   folder is ready: an earlier build's Local folder is never given to it
+ * - The account is captured before hashing, and invalid identities refuse
+ *   before anything is created
+ */
 import { afterEach, expect, test } from 'bun:test';
 import { asPrincipalId } from '@epicenter/principal';
 import { IDBFactory, IDBKeyRange } from 'fake-indexeddb';
@@ -8,6 +21,14 @@ import {
 	type Folder,
 	openFolder,
 } from './browser.js';
+import { browserStorage, opfsOf } from './browser-storage.test-support.js';
+import { STORES } from './browser-store.js';
+import { hashBytes } from './capture.js';
+import {
+	legacyContents,
+	openLegacyDatabase,
+	seedLegacyFolder,
+} from './legacy.test-support.js';
 import { useWebLocks } from './web-locks.test-support.js';
 
 useWebLocks();
@@ -38,38 +59,42 @@ function environment() {
 }
 
 async function open(
-	indexedDb: ReturnType<typeof environment>,
+	storage: ReturnType<typeof environment>,
 	scope?: BrowserFolderOptions['scope'],
 ) {
 	const folder = expectOk(
 		await openFolder({
 			id,
 			definition,
-			browser: { indexedDb, scope, commitOnEdit: false },
+			browser: { ...browserStorage(storage), scope, commitOnEdit: false },
 		}),
 	);
 	folders.push(folder);
 	return folder;
 }
 
-test('explicit release Local reopens legacy bytes and history at the established names', async () => {
+test('omitted scope and explicit release Local are one folder, with one hint channel', async () => {
 	const storage = environment();
-	const legacy = await open(storage);
-	expectOk(await legacy.files.create('saved.txt', 'legacy'));
-	expect((await legacy.git.commit()).status).toBe('committed');
-	await legacy.close();
+	const first = await open(storage);
+	expectOk(await first.files.create('saved.txt', 'local'));
+	expect((await first.git.commit()).status).toBe('committed');
+	await first.close();
 	const reopened = await open(storage, { channel: 'release' });
-	expect(reopened.location).toEqual(legacy.location);
+	expect(reopened.location).toEqual(first.location);
+	expect(reopened.location).toEqual({
+		kind: 'opfs',
+		directory: `Epicenter/local/${id}`,
+	});
 	expect(
 		new TextDecoder().decode(
 			expectOk(await reopened.files.read('saved.txt')).bytes,
 		),
-	).toBe('legacy');
+	).toBe('local');
 	expect((await reopened.git.log(10)).data).toHaveLength(1);
 	expect(new Set(storage.names).size).toBe(1);
 });
 
-test('channels and authority/principal pairs retain separate bytes and hints', async () => {
+test('channels and authority/principal pairs retain separate bytes, locks, and hints', async () => {
 	const storage = environment();
 	const lockNames = new Set<string>();
 	const request = navigator.locks.request;
@@ -112,8 +137,12 @@ test('channels and authority/principal pairs retain separate bytes and hints', a
 	} finally {
 		navigator.locks.request = request;
 	}
-	expect(lockNames.size).toBe(scopes.length);
+	// Each scope has its own open, files, and Git locks.
+	expect(lockNames.size).toBe(scopes.length * 3);
 	expect(new Set(storage.names).size).toBe(scopes.length);
+	expect(
+		new Set(folders.map((folder) => JSON.stringify(folder.location))).size,
+	).toBe(scopes.length);
 	for (const [index, scope] of scopes.entries()) {
 		const folder = await open(storage, scope);
 		expect(
@@ -136,27 +165,41 @@ test('channels and authority/principal pairs retain separate bytes and hints', a
 	expect(crossed).toBe(false);
 });
 
-test('an unassigned legacy folder refuses a new scope without creating an empty replacement', async () => {
-	const storage = environment();
-	const legacy = await open(storage);
-	expectOk(await legacy.files.create('saved.txt', 'retain me'));
-	expect((await legacy.git.commit()).status).toBe('committed');
-	const before = await storage.indexedDB.databases();
-	const error = expectErr(
+test("a scoped folder refuses to start beside an earlier version's unclaimed Local folder, freezing it and creating no folder", async () => {
+	// An earlier version's Local folder, never opened by this version.
+	const scratch = { indexedDB: new IDBFactory(), IDBKeyRange };
+	const made = expectOk(
 		await openFolder({
 			id,
 			definition,
-			browser: { indexedDb: storage, scope: { channel: 'development' } },
+			browser: { ...browserStorage(scratch), commitOnEdit: false },
 		}),
 	);
-	expect(error.name).toBe('LegacyScopeUnassigned');
-	expect(await storage.indexedDB.databases()).toEqual(before);
+	expectOk(await made.files.create('saved.txt', 'retain me'));
+	expect((await made.git.commit()).status).toBe('committed');
+	await made.close();
+	const storage = environment();
+	await seedLegacyFolder(
+		storage,
+		`epicenter-folder:${id}`,
+		legacyContents(opfsOf(scratch), `Epicenter/local/${id}`),
+	);
+	expect(await openScoped(storage)).toMatchObject({
+		name: 'LegacyScopeUnassigned',
+		database: LOCAL,
+	});
+	// Frozen: the earlier build can no longer write it; nothing else changed.
+	expect(await earlierBuildOpens(storage)).toBe('VersionError');
+	expect(opfsOf(storage).directories()).toEqual([]);
+	// Release Local claims it; then the scope starts on its own.
+	const local = await open(storage);
 	expect(
 		new TextDecoder().decode(
-			expectOk(await legacy.files.read('saved.txt')).bytes,
+			expectOk(await local.files.read('saved.txt')).bytes,
 		),
 	).toBe('retain me');
-	expect((await legacy.git.log(10)).data).toHaveLength(1);
+	const development = await open(storage, { channel: 'development' });
+	expect(expectOk(await development.files.list()).files).toEqual([]);
 });
 
 test('account identity is captured before async hashing and remains fixed', async () => {
@@ -191,7 +234,7 @@ test('invalid account identity refuses before creating storage', async () => {
 			id,
 			definition,
 			browser: {
-				indexedDb: storage,
+				...browserStorage(storage),
 				scope: {
 					channel: 'release',
 					account: { authorityId: '', principalId: asPrincipalId('alice') },
@@ -201,21 +244,194 @@ test('invalid account identity refuses before creating storage', async () => {
 	);
 	expect(error.name).toBe('InvalidBrowserScope');
 	expect(await storage.indexedDB.databases()).toEqual([]);
+	expect(opfsOf(storage).directories()).toEqual([]);
 });
 
-test('failed database enumeration refuses without creating storage', async () => {
+const LOCAL = `epicenter-folder:${id}`;
+const encoder = new TextEncoder();
+
+/** Open the development scope of `id`: its result's error, or `undefined`. */
+async function openScoped(storage: ReturnType<typeof environment>) {
+	const opened = await openFolder({
+		id,
+		definition,
+		browser: {
+			...browserStorage(storage),
+			scope: { channel: 'development' },
+			commitOnEdit: false,
+		},
+	});
+	if (opened.data) folders.push(opened.data);
+	return opened.error ?? undefined;
+}
+
+/** How an earlier build's open of the Local database ends: 'opened' or the error's name. */
+async function earlierBuildOpens(storage: ReturnType<typeof environment>) {
+	try {
+		const db = await openLegacyDatabase(storage, LOCAL);
+		db.close();
+		return 'opened';
+	} catch (cause) {
+		return (cause as Error).name;
+	}
+}
+
+/** One file as an earlier build saved it, for `seedLegacyFolder`. */
+const oneFile = (text: string) => ({
+	files: new Map([['saved.txt', encoder.encode(text)]]),
+	directories: [],
+	git: new Map<string, Uint8Array>(),
+});
+
+test('with no Local database, a scoped folder starts and freezes an empty one, so an earlier build cannot start Local beside it', async () => {
 	const storage = environment();
-	const databases = storage.indexedDB.databases.bind(storage.indexedDB);
-	storage.indexedDB.databases = async () => {
-		throw new Error('Enumeration unavailable');
+	expect(await openScoped(storage)).toBeUndefined();
+	expect(await earlierBuildOpens(storage)).toBe('VersionError');
+	// This version's Local open copies the empty frozen database.
+	const local = await open(storage);
+	expect(expectOk(await local.files.list()).files).toEqual([]);
+});
+
+test('an empty Local database an earlier build opened does not hold a scoped folder back', async () => {
+	const storage = environment();
+	(await openLegacyDatabase(storage, LOCAL)).close();
+	expect(await openScoped(storage)).toBeUndefined();
+	expect(await earlierBuildOpens(storage)).toBe('VersionError');
+});
+
+test("an earlier build's save that lands as the scoped folder fences Local is what decides: the scope is refused and the save is kept", async () => {
+	const storage = environment();
+	const bytes = encoder.encode('saved by an earlier tab');
+	const sha256 = await hashBytes(bytes);
+	const openDatabase = storage.indexedDB.open.bind(storage.indexedDB);
+	let raced = false;
+	storage.indexedDB.open = (name: string, version?: number) => {
+		if (name === LOCAL && version === 2 && !raced) {
+			// The earlier tab opens and saves just before the fence's freeze;
+			// like earlier builds, it lets go on versionchange.
+			raced = true;
+			const earlier = openDatabase(name, 1);
+			earlier.onupgradeneeded = () => {
+				for (const store of Object.values(STORES))
+					earlier.result.createObjectStore(store);
+			};
+			earlier.onsuccess = () => {
+				const db = earlier.result;
+				db.onversionchange = () => db.close();
+				const tx = db.transaction(
+					[STORES.inventory, STORES.contents],
+					'readwrite',
+				);
+				tx.objectStore(STORES.inventory).put(
+					{ sha256, size: bytes.byteLength, mtimeMs: 1, ino: 1 },
+					'saved.txt',
+				);
+				tx.objectStore(STORES.contents).put(bytes, 'saved.txt');
+			};
+		}
+		return openDatabase(name, version);
 	};
-	const error = expectErr(
+	expect(await openScoped(storage)).toMatchObject({
+		name: 'LegacyScopeUnassigned',
+	});
+	expect(raced).toBe(true);
+	expect(await earlierBuildOpens(storage)).toBe('VersionError');
+	const local = await open(storage);
+	expect(
+		new TextDecoder().decode(
+			expectOk(await local.files.read('saved.txt')).bytes,
+		),
+	).toBe('saved by an earlier tab');
+});
+
+test('a Local database frozen by an open whose copy did not finish is still unclaimed', async () => {
+	const storage = environment();
+	await seedLegacyFolder(storage, LOCAL, oneFile('retain me'));
+	const tree = opfsOf(storage);
+	tree.faults.write = (path) =>
+		path.endsWith('/saved.txt') ? 'fail' : undefined;
+	const failed = await openFolder({
+		id,
+		definition,
+		browser: { ...browserStorage(storage), commitOnEdit: false },
+	});
+	expect(failed.error?.name).toBe('LegacyMigration');
+	tree.faults.write = undefined;
+	// Frozen, but with no ready Local folder: not proof of a claim.
+	expect(await earlierBuildOpens(storage)).toBe('VersionError');
+	expect(await openScoped(storage)).toMatchObject({
+		name: 'LegacyScopeUnassigned',
+	});
+	const local = await open(storage);
+	expect(
+		new TextDecoder().decode(
+			expectOk(await local.files.read('saved.txt')).bytes,
+		),
+	).toBe('retain me');
+	expect(await openScoped(storage)).toBeUndefined();
+});
+
+test('an earlier Local tab that does not let go refuses the scope as in use, and no folder is made', async () => {
+	const storage = environment();
+	const held = await openLegacyDatabase(storage, LOCAL);
+	try {
+		expect(await openScoped(storage)).toMatchObject({
+			name: 'LegacyInUse',
+			database: LOCAL,
+		});
+		expect(opfsOf(storage).directories()).toEqual([]);
+	} finally {
+		held.close();
+	}
+});
+
+test('a scoped folder an earlier version saved is copied whatever Local holds, and Local is left as it was', async () => {
+	const storage = environment();
+	await seedLegacyFolder(storage, LOCAL, oneFile('local'));
+	await seedLegacyFolder(
+		storage,
+		`epicenter-folder-scoped:${JSON.stringify(['development', 'local', null, id])}`,
+		oneFile('scoped'),
+	);
+	expect(await openScoped(storage)).toBeUndefined();
+	const scoped = folders.at(-1)!;
+	expect(
+		new TextDecoder().decode(
+			expectOk(await scoped.files.read('saved.txt')).bytes,
+		),
+	).toBe('scoped');
+	// Local was not touched: an earlier build still opens it.
+	expect(await earlierBuildOpens(storage)).toBe('opened');
+});
+
+test('a Local fence that cannot open its database reports migration failure without claiming Local data exists', async () => {
+	const storage = environment();
+	const originalOpen = storage.indexedDB.open.bind(storage.indexedDB);
+	const cause = new DOMException(
+		'The database could not be created.',
+		'QuotaExceededError',
+	);
+	storage.indexedDB.open = (name, version) => {
+		if (name === `epicenter-folder:${id}`) throw cause;
+		return originalOpen(name, version);
+	};
+	const refused = expectErr(
 		await openFolder({
 			id,
 			definition,
-			browser: { indexedDb: storage, scope: { channel: 'development' } },
+			browser: {
+				...browserStorage(storage),
+				scope: { channel: 'development' },
+				commitOnEdit: false,
+			},
 		}),
 	);
-	expect(error.name).toBe('Unavailable');
-	expect(await databases()).toEqual([]);
+	expect(refused.name).toBe('LegacyMigration');
+	if (refused.name === 'LegacyMigration') {
+		expect(refused.database).toBe(`epicenter-folder:${id}`);
+		expect(refused.cause).toBe(cause);
+	}
+	expect(opfsOf(storage).directories()).not.toContain(
+		`Epicenter Dev/local/${id}`,
+	);
 });

@@ -1,8 +1,8 @@
 /**
  * What the shared history coordinator needs from a folder's Git storage.
  *
- * The browser backend keeps objects, refs, and the index in IndexedDB and
- * uses isomorphic-git. The native backend writes objects with
+ * The browser backend keeps objects, refs, and the index in the folder's
+ * private `.git` in the origin private file system and uses isomorphic-git. The native backend writes objects with
  * isomorphic-git but leaves index and ref mutation to the real `git` CLI,
  * whose lock files other native Git processes respect.
  *
@@ -51,8 +51,8 @@ export type IncomingPlan = {
 	/**
 	 * What the folder held when the update was planned: the SHA-256 of every
 	 * portable file, and the exact index bytes checked for cleanliness. The browser
-	 * requires both unchanged inside its publication transaction. A folder on
-	 * disk checks only each changed file's own condition, best effort.
+	 * requires both unchanged under its publication locks before it writes. A
+	 * folder on disk checks only each changed file's own condition, best effort.
 	 */
 	readonly baseline: {
 		readonly files: ReadonlyMap<string, string>;
@@ -66,20 +66,100 @@ export type PublishResult =
 	| { readonly status: 'refused'; readonly error: FileError }
 	/** Browser only: the index changed after it was observed. Nothing was written. */
 	| { readonly status: 'indexChanged' }
-	/** Nothing was written (browser); or files and index were applied first (native). */
+	/** Nothing was written, or files and index were applied first: `filesApplied` says which. */
 	| {
 			readonly status: 'branchMoved';
 			readonly actual: string | undefined;
 			readonly filesApplied: boolean;
 	  }
-	/** Native only: some file steps reached the folder; the branch did not move. */
+	/**
+	 * Some file steps reached the folder, and the step that failed certainly
+	 * wrote nothing; the branch did not move. A browser keeps its incoming
+	 * record until `recoverIncoming` is asked for.
+	 */
 	| {
 			readonly status: 'partial';
 			readonly applied: readonly FileStep[];
 			readonly error: FileError;
 	  }
-	/** Native only: files were applied; updating the index failed; the branch did not move. */
-	| { readonly status: 'indexFailed'; readonly error: string };
+	/** Files were applied; the index was not written; the branch did not move. */
+	| { readonly status: 'indexFailed'; readonly error: string }
+	/**
+	 * A step's outcome is unknown: `uncertain` names the file, the index, or
+	 * the branch that may or may not have been written. The browser's record
+	 * remains, and only an explicit recovery decides what happened.
+	 */
+	| {
+			readonly status: 'unconfirmed';
+			readonly applied: readonly FileStep[];
+			readonly uncertain: readonly string[];
+			readonly error: string;
+	  };
+
+/**
+ * An incoming update whose authored changes may have begun. Everything else
+ * (changed paths, target bytes, target index) is derived from the trees of
+ * `expectedHead` and `nextHead`.
+ */
+export type RecordedIncoming = {
+	readonly state: 'recorded';
+	readonly operationId: string;
+	readonly branch: string;
+	/** The branch head the update was admitted over; `undefined` for an empty history. */
+	readonly expectedHead: string | undefined;
+	/** The fetched commit, or the prepared merge commit. */
+	readonly nextHead: string;
+};
+
+/**
+ * What a browser folder's incoming record says. While there is one, staging,
+ * commits, and new incoming updates wait for an explicit recovery.
+ */
+export type PendingIncoming =
+	| RecordedIncoming
+	/**
+	 * The record file exists and is empty: its write never finished, so the
+	 * update was never admitted and changed no authored file.
+	 */
+	| { readonly state: 'unadmitted' }
+	/** The record holds bytes that are not a record. Nothing reads past it or removes it. */
+	| { readonly state: 'unreadable'; readonly reason: string };
+
+/** What an explicit recovery of a pending incoming update did. */
+export type RecoverIncomingResult =
+	| { readonly status: 'none' }
+	/** An `unadmitted` record was removed; no authored file was written. */
+	| { readonly status: 'admissionCleared' }
+	/** The branch already named `nextHead`: the record was cleared and no file was written. */
+	| { readonly status: 'cleared'; readonly pending: RecordedIncoming }
+	/** Paths at their before state were written; the index and branch followed. */
+	| {
+			readonly status: 'completed';
+			readonly pending: RecordedIncoming;
+			readonly changedPaths: readonly string[];
+	  }
+	/** A path, the index, the branch, or the record is in neither state. Nothing was written. */
+	| {
+			readonly status: 'refused';
+			readonly pending: PendingIncoming;
+			readonly paths: readonly string[];
+			readonly reason: string;
+	  }
+	/** Recovery stopped partway; the record remains. */
+	| {
+			readonly status: 'partial';
+			readonly pending: RecordedIncoming;
+			readonly applied: readonly FileStep[];
+			readonly error: FileError;
+	  }
+	/** A step's outcome is unknown; the record remains. */
+	| {
+			readonly status: 'unconfirmed';
+			readonly pending: RecordedIncoming;
+			readonly applied: readonly FileStep[];
+			readonly uncertain: readonly string[];
+			readonly error: string;
+	  };
 
 /** Whether `tryExclusive` ran its work, and what the work returned. */
 export type Admitted<T> =
@@ -101,8 +181,7 @@ export type GitBackend = {
 	/**
 	 * `exclusive` without the wait: run `work` only if nothing holds or waits
 	 * for that same protection right now, in this process or, in a browser,
-	 * in another tab. Otherwise `work` never runs, now or later. A browser
-	 * without Web Locks cannot ask other tabs and always refuses.
+	 * in another tab. Otherwise `work` never runs, now or later.
 	 */
 	tryExclusive<T>(work: () => Promise<T>): Promise<Admitted<T>>;
 	readBranch(): Promise<string | undefined>;
@@ -146,7 +225,7 @@ export type GitBackend = {
 	readIndex(): Promise<Uint8Array | undefined>;
 	/**
 	 * Why this folder does not merge diverged histories, or `undefined` when it
-	 * does. Only the browser merges; it publishes the result in one transaction.
+	 * does. Only the browser merges; it publishes the result like any incoming update.
 	 */
 	readonly mergeUnsupported: string | undefined;
 	pathStatus(): Promise<PathStatus[]>;
@@ -173,4 +252,21 @@ export type GitBackend = {
 	fetch(signal: AbortSignal): Promise<string | undefined>;
 	/** Publish files, index, and branch for an incoming fast-forward or merge. */
 	publishIncoming(plan: IncomingPlan): Promise<PublishResult>;
+	/**
+	 * Whether incoming publication removes the directories its removals
+	 * emptied, so a file may take the place of a directory whose files the
+	 * same update removes, and the reverse. A backend that omits this refuses
+	 * such an update as a collision.
+	 */
+	readonly replacesDirectories?: boolean;
+	/**
+	 * The recorded incoming update that has not finished. Only a backend that
+	 * publishes incoming updates in steps keeps one; the others omit this.
+	 */
+	pendingIncoming?(): Promise<PendingIncoming | undefined>;
+	/**
+	 * Finish or clear the pending incoming update. Runs only when asked, inside
+	 * `exclusive`; nothing resumes an update implicitly.
+	 */
+	recoverIncoming?(): Promise<RecoverIncomingResult>;
 };

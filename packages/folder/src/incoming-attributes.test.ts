@@ -36,7 +36,7 @@ import { join } from 'node:path';
 import { IDBFactory, IDBKeyRange } from 'fake-indexeddb';
 import { expectErr, expectOk } from 'wellcrafted/testing';
 import { openFolder as openBrowserFolder } from './browser.js';
-import { type IndexedDbEnvironment, STORES } from './browser-store.js';
+import { browserStorage, dumpStorage } from './browser-storage.test-support.js';
 import { defineFolder, type Folder } from './contract.js';
 import { openNativeFolder } from './directory.test-support.js';
 import {
@@ -79,45 +79,6 @@ afterEach(async () => {
 	for (const folder of opened.splice(0)) await folder.close();
 	globalThis.fetch = originalFetch;
 });
-
-/** Every key and value of the named IndexedDB stores, as comparable text. */
-async function dumpStores(environment: IndexedDbEnvironment, database: string) {
-	const db = await new Promise<IDBDatabase>((resolve, reject) => {
-		const opening = environment.indexedDB.open(database);
-		opening.onsuccess = () => resolve(opening.result);
-		opening.onerror = () => reject(opening.error);
-	});
-	const dump: Record<string, string> = {};
-	for (const store of Object.values(STORES)) {
-		const tx = db.transaction(store, 'readonly');
-		const [keys, values] = await Promise.all(
-			[tx.objectStore(store).getAllKeys(), tx.objectStore(store).getAll()].map(
-				(request) =>
-					new Promise<unknown[]>((resolve, reject) => {
-						request.onsuccess = () => resolve(request.result as unknown[]);
-						request.onerror = () => reject(request.error);
-					}),
-			),
-		);
-		(keys as string[]).forEach((key, index) => {
-			// The fetch itself records the remote head and its objects; a refused
-			// pull must change nothing else.
-			if (
-				key.startsWith('/git/objects/') ||
-				key.startsWith('/git/refs/remotes/') ||
-				key === '/git/FETCH_HEAD'
-			)
-				return;
-			const value = (values as unknown[])[index];
-			dump[`${store}:${key}`] =
-				value instanceof Uint8Array
-					? createHash('sha256').update(value).digest('hex')
-					: JSON.stringify(value);
-		});
-	}
-	db.close();
-	return dump;
-}
 
 /** Every file below `root` outside fetched objects and remote refs, hashed. */
 async function dumpDirectory(root: string) {
@@ -176,12 +137,21 @@ async function incoming(kind: 'browser' | 'directory') {
 					author,
 					commitOnEdit: false,
 					remote: { url: 'http://git.test/remote.git', branch: 'main' },
-					indexedDb: environment,
+					...browserStorage(environment),
 				},
 			}),
 		);
+		// The fetch itself records the remote head and its objects; a refused
+		// pull must change nothing else.
 		untouched = () =>
-			dumpStores(environment, 'epicenter-folder:so.epicenter.incomingtest');
+			dumpStorage(
+				environment,
+				'so.epicenter.incomingtest',
+				(key) =>
+					key.startsWith('/git/objects/') ||
+					key.startsWith('/git/refs/remotes/') ||
+					key === '/git/FETCH_HEAD',
+			);
 	} else {
 		const local = join(root, 'local');
 		await mkdir(local);

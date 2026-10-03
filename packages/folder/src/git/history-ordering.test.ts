@@ -22,17 +22,12 @@
  * - `history-attempt.test.ts` for automatic attempts and lock failures
  */
 import { expect, test } from 'bun:test';
-import { IDBFactory, IDBKeyRange } from 'fake-indexeddb';
 import { expectOk } from 'wellcrafted/testing';
 import type { FileBoundary } from '../boundary.js';
-import {
-	createBrowserFileBoundary,
-	openFolderDatabase,
-} from '../browser-store.js';
-import { FileError } from '../errors.js';
+import { rawBrowserFolder } from '../browser-storage.test-support.js';
 import { hashBytes } from '../capture.js';
+import { FileError } from '../errors.js';
 import type { GitBackend, PublishResult } from './backend.js';
-import { createBrowserGitBackend } from './browser-backend.js';
 import { createHistory } from './history.js';
 import { writeCommitObject, writeFilesTree } from './objects.js';
 
@@ -54,16 +49,9 @@ async function setup(
 		boundary?: (base: FileBoundary) => FileBoundary;
 	} = {},
 ) {
-	const environment = { indexedDB: new IDBFactory(), IDBKeyRange };
-	const db = await openFolderDatabase('epicenter-folder:ordering', environment);
-	const base = createBrowserFileBoundary(db, environment);
-	const real = await createBrowserGitBackend({
-		db,
-		environment,
-		lockName: 'ordering',
-		branch: 'main',
-		remote: undefined,
-	});
+	const raw = await rawBrowserFolder({ id: 'ordering' });
+	const base = raw.boundary;
+	const real = await raw.backend();
 	let pushStarts = 0;
 	const backend: GitBackend = {
 		...real,
@@ -107,7 +95,6 @@ async function setup(
 		);
 	}
 	return {
-		db,
 		real,
 		base,
 		history,
@@ -118,7 +105,7 @@ async function setup(
 }
 
 test('a checkpoint waiting for the Git lock cannot revert files and a head that landed meanwhile', async () => {
-	const { db, real, history, write, commitOf } = await setup();
+	const { real, history, write, commitOf } = await setup();
 	await write('a.txt', 'one');
 	expect((await history.commit()).status).toBe('committed');
 
@@ -141,13 +128,12 @@ test('a checkpoint waiting for the Git lock cannot revert files and a head that 
 	expect(outcome.status).toBe('unchanged');
 	expect(await real.readBranch()).toBe(incoming);
 	await history.close();
-	db.close();
 });
 
 test('an external branch move after the parent is pinned is refused, not overwritten', async () => {
 	let arm = false;
 	let competitor: string | undefined;
-	const { db, real, history, write, commitOf } = await setup(() => ({}), {
+	const { real, history, write, commitOf } = await setup(() => ({}), {
 		boundary: (base) => ({
 			...base,
 			async capture() {
@@ -170,13 +156,12 @@ test('an external branch move after the parent is pinned is refused, not overwri
 	expect(outcome.status).toBe('branchMoved');
 	expect(await real.readBranch()).toBe(competitor);
 	await history.close();
-	db.close();
 });
 
 test('close waits for a held stage and a held staged commit, including its refresh', async () => {
 	const stageGate = gate();
 	const commitGate = gate();
-	const { db, history, write, pushes } = await setup(
+	const { history, write, pushes } = await setup(
 		(real) => ({
 			async stage(paths) {
 				await stageGate.opened;
@@ -191,6 +176,8 @@ test('close waits for a held stage and a held staged commit, including its refre
 	);
 	await write('a.txt', 'one');
 	const staging = history.stage(['a.txt']);
+	// Let it enter the Git protection: close refuses a request still outside it.
+	await Bun.sleep(5);
 	let closed = false;
 	let closing = history.close().then(() => {
 		closed = true;
@@ -202,7 +189,6 @@ test('close waits for a held stage and a held staged commit, including its refre
 	expect((await staging).error).toBeNull();
 	await closing;
 	expect(closed).toBe(true);
-	db.close();
 
 	// A fresh history: a held staged commit keeps close open through its refresh.
 	const second = await setup(
@@ -233,7 +219,6 @@ test('close waits for a held stage and a held staged commit, including its refre
 		message: 'Stage one file',
 	});
 	expect(pushes() + second.pushes()).toBe(0);
-	second.db.close();
 });
 
 for (const status of ['partial', 'indexFailed', 'branchMoved'] as const) {
@@ -241,7 +226,6 @@ for (const status of ['partial', 'indexFailed', 'branchMoved'] as const) {
 		let incoming: string | undefined;
 		let landing!: FileBoundary;
 		const {
-			db,
 			real,
 			base: boundary,
 			history,
@@ -304,14 +288,13 @@ for (const status of ['partial', 'indexFailed', 'branchMoved'] as const) {
 		expect(after.data?.changes).toEqual([{ path: 'a.txt', kind: 'modify' }]);
 		expect(history.snapshot.lastCommit?.status).toBe('committed');
 		await history.close();
-		db.close();
 	});
 }
 
 test('explicit commit stays local; a commit requested during a held pass waits and takes its own; commitAndPush pushes once', async () => {
 	const held = gate();
 	let holdNext = false;
-	const { db, history, write, pushes } = await setup((real) => ({
+	const { history, write, pushes } = await setup((real) => ({
 		// Hold a pass after it captured files, just before it publishes.
 		async casBranch(expected, next) {
 			if (holdNext) {
@@ -349,11 +332,10 @@ test('explicit commit stays local; a commit requested during a held pass waits a
 	expect(both.push.status).toBe('pushed');
 	expect(pushes()).toBe(1);
 	await history.close();
-	db.close();
 });
 
 test('with commitOnEdit false, nothing commits on its own and commitAndPush still does both', async () => {
-	const { db, history, write, pushes } = await setup(() => ({}), {
+	const { history, write, pushes } = await setup(() => ({}), {
 		commitOnEdit: false,
 	});
 	await write('a.txt', 'one');
@@ -364,13 +346,12 @@ test('with commitOnEdit false, nothing commits on its own and commitAndPush stil
 	expect(both.push.status).toBe('pushed');
 	expect(pushes()).toBe(1);
 	await history.close();
-	db.close();
 });
 
 test('a published checkpoint keeps its receipt when the following observation fails', async () => {
 	let failRead = false;
 	let publications = 0;
-	const { db, real, history, write } = await setup(
+	const { real, history, write } = await setup(
 		(base) => ({
 			async casBranch(expected, next) {
 				const result = await base.casBranch(expected, next);
@@ -420,14 +401,13 @@ test('a published checkpoint keeps its receipt when the following observation fa
 		expect(publications).toBe(1);
 	} finally {
 		await history.close();
-		db.close();
 	}
 });
 
 test('a published fast-forward stays successful when its observation cannot be refreshed', async () => {
 	let incoming: string | undefined;
 	let failRead = false;
-	const { db, real, base, history, write, commitOf } = await setup(
+	const { real, base, history, write, commitOf } = await setup(
 		(backend) => ({
 			readRemoteTracking: async () => incoming,
 			async publishIncoming(plan) {
@@ -470,14 +450,13 @@ test('a published fast-forward stays successful when its observation cannot be r
 		});
 	} finally {
 		await history.close();
-		db.close();
 	}
 });
 
 test('a branch read failure before publication remains a failed checkpoint', async () => {
 	let failRead = false;
 	let publications = 0;
-	const { db, real, history, write } = await setup(
+	const { real, history, write } = await setup(
 		(base) => ({
 			async readBranch() {
 				if (failRead) throw new Error('pre-publication branch unavailable');
@@ -501,6 +480,5 @@ test('a branch read failure before publication remains a failed checkpoint', asy
 		expect(publications).toBe(0);
 	} finally {
 		await history.close();
-		db.close();
 	}
 });

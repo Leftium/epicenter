@@ -1,5 +1,6 @@
 /**
- * Browser folders over fake IndexedDB with real isomorphic-git objects.
+ * Browser folders with real isomorphic-git objects, on the in-memory OPFS
+ * stand-in (`browser-storage.test-support.ts`).
  *
  * Complete table, KV, and file publications request automatic history without
  * waiting for it. Conflicts and directory operations request no history;
@@ -20,13 +21,12 @@ import {
 	openFolder,
 } from './browser.js';
 import {
-	createBrowserFileBoundary,
-	type IndexedDbEnvironment,
-	openFolderDatabase,
-} from './browser-store.js';
+	browserStorage,
+	opfsOf,
+	rawBrowserFolder,
+	type TestStorage,
+} from './browser-storage.test-support.js';
 import { hashBytes } from './capture.js';
-import { createBrowserGitBackend } from './git/browser-backend.js';
-import { createGitSession, GITDIR } from './git/browser-fs.js';
 import { createHistory } from './git/history.js';
 import { useWebLocks } from './web-locks.test-support.js';
 
@@ -41,7 +41,7 @@ const definition = defineFolder({
 
 const author = { name: 'Browser', email: 'browser@example.test' };
 
-let environment: IndexedDbEnvironment;
+let environment: TestStorage;
 const opened: Folder<typeof definition>[] = [];
 
 async function open(options: { commitOnEdit?: boolean; id?: string } = {}) {
@@ -53,7 +53,7 @@ async function open(options: { commitOnEdit?: boolean; id?: string } = {}) {
 			browser: {
 				author,
 				commitOnEdit: options.commitOnEdit,
-				indexedDb: environment,
+				...browserStorage(environment),
 			},
 		}),
 	);
@@ -80,18 +80,12 @@ async function settled(folder: Folder<typeof definition>) {
 describe('browser folder tables', () => {
 	test('a repository previously opened on another branch refuses a new main history', async () => {
 		environment = { indexedDB: new IDBFactory(), IDBKeyRange };
-		const db = await openFolderDatabase(
-			'epicenter-folder:legacy-branch',
-			environment,
-		);
-		const backend = await createBrowserGitBackend({
-			db,
-			environment,
-			lockName: 'legacy-branch',
-			branch: 'backup',
-			remote: undefined,
+		const raw = await rawBrowserFolder({
+			id: 'legacy-branch',
+			storage: environment,
 		});
-		const boundary = createBrowserFileBoundary(db, environment);
+		const backend = await raw.backend({ branch: 'backup' });
+		const boundary = raw.boundary;
 		const history = createHistory({
 			backend,
 			boundary,
@@ -123,15 +117,11 @@ describe('browser folder tables', () => {
 		);
 		expect(expectOk(await folder.git.log(10))).toEqual([]);
 		expect(await backend.readBranch()).toBe(previous);
-		const session = createGitSession(db, environment);
 		await expect(
-			isogit.resolveRef({
-				fs: session.fs,
-				gitdir: GITDIR,
-				ref: 'refs/heads/main',
-			}),
+			backend.withObjects((access) =>
+				isogit.resolveRef({ ...access, ref: 'refs/heads/main' }),
+			),
 		).rejects.toThrow();
-		db.close();
 	});
 
 	test('creates, lists, updates, completes, renames, and deletes plain Markdown rows', async () => {
@@ -351,17 +341,19 @@ describe('browser folder tables', () => {
 			},
 		};
 		const indexedDB = new IDBFactory();
+		const storage = { indexedDB, IDBKeyRange };
 		const refused = expectErr(
 			await openFolder({
 				id: 'codec',
 				definition: withCodec,
-				browser: { author, indexedDb: { indexedDB, IDBKeyRange } },
+				browser: { author, ...browserStorage(storage) },
 			}),
 		);
 		expect(refused.name).toBe('InvalidDefinition');
 		expect(refused.message).toContain('body codec');
 		// Refused before any storage was acquired.
 		expect(await indexedDB.databases()).toEqual([]);
+		expect(opfsOf(storage).directories()).toEqual([]);
 		// The same definition is refused where it would be declared.
 		expect(() => defineFolder(withCodec as never)).toThrow('body codec');
 	});
@@ -383,7 +375,7 @@ describe('browser folder tables', () => {
 				browser: {
 					author,
 					commitOnEdit: false,
-					indexedDb: { indexedDB: new IDBFactory(), IDBKeyRange },
+					...browserStorage({ indexedDB: new IDBFactory(), IDBKeyRange }),
 				},
 			}),
 		);
@@ -624,7 +616,7 @@ describe('browser folder persistence and history', () => {
 					browser: {
 						author,
 						remote: { url: 'http://stall.test/remote.git', branch: 'main' },
-						indexedDb: environment,
+						...browserStorage(environment),
 					},
 				}),
 			);
@@ -667,16 +659,9 @@ describe('browser folder persistence and history', () => {
 	});
 
 	test('a competing branch update refuses the checkpoint without a forced update', async () => {
-		environment = { indexedDB: new IDBFactory(), IDBKeyRange };
-		const db = await openFolderDatabase('epicenter-folder:cas', environment);
-		const boundary = createBrowserFileBoundary(db, environment);
-		const backend = await createBrowserGitBackend({
-			db,
-			environment,
-			lockName: 'cas',
-			branch: 'main',
-			remote: undefined,
-		});
+		const raw = await rawBrowserFolder({ id: 'cas' });
+		const boundary = raw.boundary;
+		const backend = await raw.backend();
 		let competitor: string | undefined;
 		const history = createHistory({
 			backend: {
@@ -695,7 +680,9 @@ describe('browser folder persistence and history', () => {
 							},
 						}),
 					);
-					await isogit.writeTree({ ...(await sessionAccess()), tree: [] });
+					await backend.withObjects((access) =>
+						isogit.writeTree({ ...access, tree: [] }),
+					);
 					expect((await backend.casBranch(expected, competitor)).ok).toBe(true);
 					return backend.casBranch(expected, next);
 				},
@@ -704,10 +691,6 @@ describe('browser folder persistence and history', () => {
 			author,
 			commitOnEdit: false,
 		});
-		async function sessionAccess() {
-			const session = createGitSession(db, environment);
-			return { fs: session.fs, gitdir: GITDIR };
-		}
 		await boundary.apply([
 			{
 				kind: 'create',
@@ -725,7 +708,6 @@ describe('browser folder persistence and history', () => {
 		}
 		expect(await backend.readBranch()).toBe(competitor);
 		await history.close();
-		db.close();
 	});
 });
 

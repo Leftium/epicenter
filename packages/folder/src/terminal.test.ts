@@ -10,6 +10,7 @@ import { rm } from 'node:fs/promises';
 import { IDBFactory, IDBKeyRange } from 'fake-indexeddb';
 import { expectOk } from 'wellcrafted/testing';
 import { openFolder as openBrowserFolder } from './browser.js';
+import { browserStorage } from './browser-storage.test-support.js';
 import { openFolder as openDirectoryFolder } from './bun.js';
 import { defineFolder, type Folder } from './contract.js';
 import { scratch } from './git-http.test-support.js';
@@ -33,7 +34,7 @@ async function open(backend: 'browser' | 'directory') {
 				browser: {
 					author,
 					commitOnEdit: false,
-					indexedDb: { indexedDB: new IDBFactory(), IDBKeyRange },
+					...browserStorage({ indexedDB: new IDBFactory(), IDBKeyRange }),
 				},
 			}),
 		);

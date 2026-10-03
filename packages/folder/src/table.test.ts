@@ -35,16 +35,12 @@
  * - `markdown.test.ts` for framing, YAML, and patch refusals
  * - `native.test.ts` for the same table over a real directory
  */
-import { afterEach, expect, test } from 'bun:test';
+import { expect, test } from 'bun:test';
 import { type DataSchema, jsonValue } from '@epicenter/definition';
-import { IDBFactory, IDBKeyRange } from 'fake-indexeddb';
 import type { Result } from 'wellcrafted/result';
 import { Ok } from 'wellcrafted/result';
 import { expectErr, expectOk } from 'wellcrafted/testing';
-import {
-	createBrowserFileBoundary,
-	openFolderDatabase,
-} from './browser-store.js';
+import { rawBrowserFolder } from './browser-storage.test-support.js';
 import { hashBytes } from './capture.js';
 import { defineFolder, defineTable, field } from './contract.js';
 import { FileError, type TableWriteError } from './errors.js';
@@ -112,16 +108,9 @@ function nodesOf(value: unknown, found: object[] = []): object[] {
 const encoder = new TextEncoder();
 // A byte-order mark is part of the stored text, so it is not stripped here.
 const decoder = new TextDecoder('utf-8', { ignoreBOM: true });
-const closers: (() => void)[] = [];
-afterEach(() => {
-	for (const close of closers.splice(0)) close();
-});
 
 async function setup() {
-	const environment = { indexedDB: new IDBFactory(), IDBKeyRange };
-	const db = await openFolderDatabase('table.commands', environment);
-	closers.push(() => db.close());
-	const base = createBrowserFileBoundary(db, environment);
+	const base = (await rawBrowserFolder({ id: 'table.commands' })).boundary;
 	let beforeRead: (() => void) | undefined;
 	let beforeReadMany: (() => Promise<void>) | undefined;
 	let beforeApply: (() => Promise<void>) | undefined;

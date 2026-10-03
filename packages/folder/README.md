@@ -67,7 +67,7 @@ The managed native layout is described in
 | Import | Opens | Use it when |
 | --- | --- | --- |
 | `@epicenter/folder` | The desktop app's folder when the page runs in Tauri, this browser's storage otherwise. Decided when `openFolder` is called, and only the chosen adapter is loaded. | Ordinary application code. |
-| `@epicenter/folder/browser` | IndexedDB only. Refuses inside the desktop app. | A web-only build, or a test that injects IndexedDB. |
+| `@epicenter/folder/browser` | This browser's origin private file system (OPFS) only. Refuses inside the desktop app. | A web-only build, or a test that injects an OPFS stand-in with `browser.opfs`. |
 | `@epicenter/folder/tauri` | The desktop shell's folder only. Refuses outside it. | A desktop-only build. |
 | `@epicenter/folder/bun` | An existing directory, in Bun. | Command-line tools, recovery scripts, and tests that are given a directory. |
 
@@ -79,7 +79,7 @@ nothing. On a server, opening returns a refusal.
 openFolder({
   id,        // required: which folder, such as 'so.epicenter.todos'. Never a path.
   definition,
-  browser,   // optional: { scope, author, remote, commitOnEdit, indexedDb }
+  browser,   // optional: { scope, author, remote, commitOnEdit, opfs }
 }): Promise<Result<Folder, OpenFolderError>>
 ```
 
@@ -101,23 +101,96 @@ openFolder({
 // account is the captured { authorityId, principalId }, without credentials.
 ```
 
-The browser derives database, Web Lock, and notification names from the same
-captured channel, scope, account key, and folder ID. Later login changes do not
-retarget an open handle. Omitted scope and explicit release Local keep the
-established names and reopen existing bytes and history. Development and
-account scopes use a separate namespace; they do not change private app SQL.
+The browser derives the folder's directory, its Web Lock names, and its hint
+channel from the same captured channel, scope, account key, and folder ID.
+Later login changes do not retarget an open handle. Omitted scope and explicit
+release Local open `Epicenter/local/<id>`; development uses `Epicenter Dev/`,
+and an account `accounts/<account-key>/` in place of `local/`. A folder ID or
+account key is one directory name: `/`, `\`, `%`, and control characters are
+escaped, so distinct IDs stay distinct directories. Development and account
+scopes do not change private app SQL.
 
-If the scoped database is absent but an old unscoped folder exists, opening
-returns `LegacyScopeUnassigned` before creating a replacement. Existing scoped
-databases can reopen. The package does not infer which account owns legacy
-data, move it, or provide a migration UI. Opening a new scope requires
-IndexedDB database enumeration; unavailable enumeration returns `Unavailable`.
-Apps must choose their scope explicitly; existing callers are not automatically
-switched to development or account storage.
+A scoped folder that has nothing of its own yet (no earlier version saved
+it) starts only past a fence on the release Local folder of the same ID.
+Either this version's Local folder is ready, so Local data has been claimed,
+or the earlier builds' Local database is frozen the way a Local open freezes
+it and holds nothing then. Freezing it, absent or empty, means no earlier
+build can start a Local folder beside the scope afterward. If it holds
+anything, opening the scope returns `LegacyScopeUnassigned`, and
+`LegacyInUse` if an earlier build's tab will not let go of it; no folder is
+created either way. A frozen Local database whose copy never finished is not
+a claim. The package does not infer which account owns Local data, move it,
+or provide an assignment UI. Apps must choose their scope explicitly;
+existing callers are not automatically switched to development or account
+storage.
 
 A desktop page whose folder cannot be opened (no plugin, no permission, an
 unregistered ID, another protocol version, a folder another process holds)
 gets that refusal. It is never given browser storage instead.
+
+### Browser storage
+
+A browser folder is one OPFS directory. Each literal path is one stored file,
+each directory, empty ones included, is one stored directory, and `.git` in it
+is the folder's private Git state: no path can name it and no listing shows
+it. There is no inventory beside the files: a file's identity is the SHA-256
+of the bytes read from it, so a same-size rewrite in the same millisecond is
+still a change. `open(path)` returns a Blob of the bytes read, which keeps
+them after the path is replaced.
+
+Opening requires `navigator.storage.getDirectory`, writable file streams, and
+Web Locks; without one it returns `NoFileSystem` and never falls back. It also
+requires IndexedDB, to find a folder an earlier version saved there
+(`NoIndexedDb`). Folders are never kept in IndexedDB.
+
+Every file mutation holds the folder's files Web Lock, so the conditions of
+`create`, `replace`, `remove`, and `move` are checked and published without
+interleaving across tabs. Reads take no lock. New bytes publish when a file's
+stream closes, so a reader sees the old bytes or the new ones; a new file is
+visible, empty, from its creation until its stream closes.
+
+| What happened | Outcome |
+| --- | --- |
+| A step failed before its stream closed | `Io`. A file the step created is removed again; when its absence cannot be established, `Unconfirmed`. |
+| A stream's close threw | `Unconfirmed`, whatever the path holds afterward: matching bytes do not prove which write put them there. The path is hinted, the history observation turns stale, and no automatic commit is requested. |
+| A move landed its destination and could not remove its source | `SourceNotRemoved`. The destination is hinted. |
+
+A page's saves to one folder land in the order the page asked for them,
+across every handle and reopening in that page. A save takes its place when
+its method is called (a row editor's when `save()` is called), before it
+hashes or waits for the lock. A save that reaches a path after a later save of
+the page already landed there, or whose outcome there was unknown, writes
+nothing and returns `Unconfirmed`; the later save's bytes stay. Other pages
+are ordered by the lock alone: whichever lands last stays. Git's own writes
+under `.git` take no place in that order.
+
+### Folders an earlier version saved in IndexedDB
+
+Earlier versions kept a browser folder in one IndexedDB database per address.
+The first open of an address copies that database into the folder's
+directory, once, under an open Web Lock:
+
+1. Freeze. The database is opened at a version earlier builds cannot open.
+   Their connections close on `versionchange`, so none writes once the copy
+   begins. A connection that does not let go is `LegacyInUse`, and nothing is
+   copied. A new folder freezes the empty database it creates, so no earlier
+   build can start one beside it.
+2. Read the frozen database, not what was seen before freezing.
+3. Copy files, explicit directories, and `.git` files byte for byte. Nothing
+   is overwritten: equal bytes are kept, missing entries are written, and an
+   entry with other bytes, empty included, refuses the copy. Before a file is
+   created, a cursor naming it is committed to the frozen database's
+   `migration` store, and it is cleared once the file reads back. A later
+   attempt rewrites only an empty file its cursor names, the one a crash left
+   before its stream closed.
+4. Verify that the directory is exactly the database, then write the ready
+   marker `.git/epicenter-folder.json` naming the address, the same way.
+
+A copy that stops or does not verify is `LegacyMigration`; opening again
+resumes it. The four data stores are never written and stay as the backup. A
+directory without a ready marker for its address is never opened as a folder.
+A tab of an earlier build that stays open keeps showing what it had read, and
+its later writes fail.
 
 ### Building for one environment
 
@@ -162,9 +235,8 @@ is not the desktop adapter, and it does not watch the directory.
 | `tables.<name>` | Rows at `<name>/<stem>.md`. A snapshot is the captured file: its path, literal `stem`, exact `source`, and `sha256`, beside how that text reads: `fields`, `body`, `parseError`, and `issues`. `get(stem)` returns `undefined` only for absence. `list()` returns one `{ path, result }` for every row file. `inspect(source)` interprets text without reading anything. `create` is exclusive. `update(stem, change)` reads current source once and conditionally publishes without retry. `replace` and `delete` take a file capture; `rename` takes a text capture. They refuse if the file changed. Each changes exactly one Markdown file. `edit(stem, { signal })` opens a retained canonical editor whose `save()` overwrites the complete row. See [Reading a row](#reading-a-row) and [Editing a row](#editing-a-row). |
 | `kv` | Root `kv.json`, a sparse map of declared values. A snapshot is a text capture: `path`, exact `source`, and `sha256`, beside the stored `values` that validated, `parseError`, and `issues`. `get()` returns `undefined` only for absence; readable text that is not a JSON object is a snapshot with a `parseError`. `inspect(source)` interprets text without reading anything. `create(values)` saves a new file from the supplied values and refuses with `Exists` when one is there. `update(values)` reads current source once, assigns the supplied keys, and conditionally publishes without retry; a missing file is `NotFound`. An update changes only the values it assigns: unknown keys, number spellings, and formatting stay exact. See [Reading and saving kv.json](#reading-and-saving-kvjson). |
 | `files` | Ordinary files at literal paths. See below. |
-| `batch(collect)` | Several mutations in one application with one history request. See below. |
-| `git` | A status snapshot, `status()`, `commit()`, `commitAndPush()`, `push()`, `fetch()`, `pullFastForward()`, `mergeIncoming()` and `mergeUnsupported`, and `paths()`, `stage()`, `commitStaged(message)`, `diff()`, `log()`. |
-| `location` | `{ kind: 'indexedDb', database }` or `{ kind: 'directory', root }`. For showing to a person. File paths are never joined onto it. |
+| `git` | A status snapshot, `status()`, `commit()`, `commitAndPush()`, `push()`, `fetch()`, `pullFastForward()`, `mergeIncoming()` and `mergeUnsupported`, `recoverIncoming()`, and `paths()`, `stage()`, `commitStaged(message)`, `diff()`, `log()`. |
+| `location` | `{ kind: 'opfs', directory }` or `{ kind: 'directory', root }`. For showing to a person. File paths are never joined onto it. |
 | `onFilesChanged(listener)` | A hint that paths changed, so read again. Returns the function that stops listening. |
 | `terminal({ cwd })` | A shell over the folder's files and history. |
 | `signal`, `close()` | Closing fences the next storage call and stops network work. Git work drains before storage is released; file operations own their completion promises. It makes no final automatic commit. |
@@ -379,8 +451,8 @@ an undeclared key it stays in the source unreported.
 | `update` read source that parses but cannot be patched without changing source it was not asked to change: an anchor, alias, or tag on the value, or a flow mapping | `UnsupportedSource` | No |
 | The file changed, or went away, before publication | `Conflict` | No |
 | Storage failed | `Io` | No |
-| A rename on disk stopped between its two steps | `Partial` | Yes: the destination holds the bytes |
-| The desktop owner's reply was lost | `Unconfirmed` | Unknown |
+| A rename stopped between its two steps | `Partial` | Yes: the destination holds the bytes |
+| The outcome is unknown: the desktop owner's reply was lost, a browser file's stream failed to close, or a later save of the page already landed | `Unconfirmed` | Unknown |
 
 Each method's error type adds its own preparation failures to the shared storage family: `TableGetError`,
 `TableEnumerationError`, `TableReadError` for one listed file,
@@ -586,47 +658,12 @@ The function does not apply field schemas, write files, or choose a winner for
 competing edits. A browser folder's `git.mergeIncoming()` uses it for root
 `kv.json`; see [Merging incoming changes](#merging-incoming-changes).
 
-### Batches
+### One file per save
 
-```ts
-const receipt = await folder.batch((batch) => {
-  batch.files.create('audio/take.webm', audio);
-  batch.tables.recordings.create({ stem: 'take', fields: { title: 'Take', audioPath: 'audio/take.webm' } });
-});
-```
-
-The callback runs once, synchronously, and returns `undefined`. It only
-collects mutations: the file verbs of `files`, and a typed row `create` at a
-stem the caller supplies. There is nothing to read and nothing to await inside
-it. The collector is sealed when the callback returns; using it later throws.
-A callback that throws, or returns a promise or any other value, publishes
-nothing. Bytes are copied when each mutation is collected.
-
-The batch is published through one application of the file boundary and
-requests history once. On success the receipt lists the landed steps in order,
-each with the capture it left (`remove` leaves none). Those captures come from
-the collected bytes and from a moved file's captured hash, never from a
-read. Reading afterward is a separate observation and may see another writer's
-bytes.
-
-- A browser folder applies the whole batch or none of it.
-- A folder on disk applies ordered steps. When a later step fails, the result
-  is `Partial` with the steps that landed; nothing is rolled back and no
-  commit is requested. An `Unconfirmed` result means the reply was lost: look
-  at the folder before publishing again.
-- A batched row's destination is looked for before anything is published: a
-  file already at that exact path is `Exists`, and the whole batch is
-  refused. The table directory's names are listed once, then the plan is
-  walked in order, so a row may take a name that an earlier step of the same
-  batch removed or moved away, and two collected rows at one path are
-  refused. Names are compared exactly. The check is best effort against other
-  programs writing the directory, and each creation still publishes only into
-  an empty destination.
-
-To finish a recording whose audio landed but whose row did not, read the
-audio, verify it is the pending recording's, then publish
-`batch.files.replace(observed, pendingBytes)` and the row in one more batch.
-The replace lands only if the audio is still exactly what was observed.
+Every save changes one file, or for a move one source and one destination.
+There is no multi-file transaction: an application that keeps a row beside a
+media file saves the media first and the row after, and on a failure between
+them reads what landed before deciding what to save next.
 
 ### Editor policy
 
@@ -738,18 +775,16 @@ subject derived from the tree difference, and moves the branch only with a
 compare-and-swap. A moved branch is reported and not retried. Commit and push
 failures never undo a save.
 
-With `commitOnEdit` (default `true`), each complete table, KV, file, or batch
-save this handle published makes one commit attempt in the background. The
+With `commitOnEdit` (default `true`), each complete table, KV, or file save
+this handle published makes one commit attempt in the background. The
 attempt runs only if the folder's Git work is free at that moment. If another
 tab, a pull, a staged command, or an earlier commit holds it, the attempt
 does not happen and is not made up later: the save stays uncommitted until
 the next save or an explicit `commit()`. An attempt that fails is reported in
 `git.snapshot.lastCommit` and is not retried. There is no timer and no commit
 when the folder closes, so the last save can stay uncommitted indefinitely.
-Browser attempts require Web Locks. Without that API, automatic attempts
-are skipped; explicit commits still run and use branch compare-and-swap.
-Edits made by another program or tab, and saves that stopped partway, make no
-attempt. `git.snapshot.files` turns `stale` when a save lands after the last
+Edits made by another program or tab, and saves that stopped partway or whose
+outcome is unknown, make no attempt. `git.snapshot.files` turns `stale` when a save lands after the last
 capture, and `git.status()` lists what is uncommitted.
 
 The browser and Bun openers use local `main`. A remote branch selects the
@@ -786,9 +821,9 @@ await folder.close();
 
 A helper still reading or hashing can be refused at its next storage call. An
 already-started application returns its actual Result, including `Partial` or
-`Unconfirmed`. Closing never relabels that outcome. A browser transaction can
-finish after close returns, although its cross-tab hint can be lost once the
-notification channel closes.
+`Unconfirmed`. Closing never relabels that outcome. A browser write that
+already holds the files lock can finish after close returns, although its
+cross-tab hint can be lost once the notification channel closes.
 
 A Git request still waiting for admission is refused; work that already
 entered its protection
@@ -825,13 +860,56 @@ directory entry ask `git check-attr --source`; the browser evaluates the
 commit's attribute files the same way, matching patterns as a case-insensitive
 checkout does.
 
-A browser publishes files, index, and branch in one transaction. Inside it,
-every portable file must still have the hash the update captured, no new file
-may have appeared, and the index must be the bytes its clean check left;
-otherwise nothing is written and the update is `Refused` or `StagedChanges`.
-A folder on disk applies ordered file steps, updates the index, and moves the
-branch last; a failure reports the steps that completed, marks the saved-files
-observation stale, and requests no commit.
+A browser folder publishes an incoming update in steps, under its Git Web Lock
+and then its files lock. Ordinary saves take only the files lock, so they wait
+for at most one step and never for the Git work.
+
+1. Admission. Every portable file must still have the hash the update
+   captured, no new file may have appeared, and the index must be the bytes
+   its clean check left; otherwise nothing is written and the update is
+   `Refused` or `StagedChanges`. A path the update writes a file at that holds
+   a directory the update does not empty is refused here as `NotAFile`, as is
+   one holding a file no portable path names, such as `.DS_Store`. A folder
+   with no index first gets a valid empty one. Both commits are pinned under `refs/epicenter/incoming/`, and
+   the record `.git/epicenter-incoming.json` is written: an operation ID, the
+   branch, the head it was admitted over, and the commit it publishes.
+2. Only after the record's stream closed: removals (pruning only the
+   directories they emptied; empty directories a person made stay), then the
+   directories the update emptied where it writes files, then writes, then
+   the index, then the branch, compared with the pinned head.
+   So `a/b` can become a file `a`, and a file `a` a directory `a/b`.
+3. Once everything reads back as the published commit, the record and pins
+   are removed.
+
+A step that fails reports the steps that landed (`Partial`), or `Unconfirmed`
+when its outcome is unknown; either way the record stays. A folder on disk
+applies ordered file steps, updates the index, and moves the branch last; a
+failure reports the steps that completed, marks the saved-files observation
+stale, and requests no commit.
+
+### Interrupted incoming updates
+
+A browser record that remains, because a step failed or the tab closed, is
+pending. `git.snapshot.pendingIncoming` shows it, and nothing resumes it on
+its own. File saves continue; `stage()` is `IncomingPending`, a commit is
+`blocked`, and pulls and merges are `IncomingPending` until it is resolved.
+
+| `pendingIncoming.state` | Meaning |
+| --- | --- |
+| `recorded` | `{ operationId, branch, expectedHead, nextHead }`: the update was admitted and may have changed files. |
+| `unadmitted` | The record is empty: its admission never finished, so no authored file was changed by it. |
+| `unreadable` | The record holds bytes that are not a record. It is never deleted automatically. |
+
+`git.recoverIncoming()` resolves it explicitly:
+
+| Result | When |
+| --- | --- |
+| `none` | Nothing was pending. |
+| `admissionCleared` | The empty record was removed. Status is observed again. |
+| `cleared` | The branch already names the published commit. The record is removed without writing files; status is observed again, not assumed clean. |
+| `completed`, with `changedPaths` | The branch is at the admitted head. Each changed path is at its before or after state; those at their before state are written, then the index and the branch, and the record is removed. |
+| `RecoveryRefused`, with `paths` | A path holds a third value (another file, an empty file where there was none, a file where a directory belongs, or a directory where the update writes a file that the update did not empty), or the index, the branch, or the record is not what the update left. A directory counts as emptied by the update only when it, and each directory in it, held a file the update removes. The paths are named, nothing is written, and the record stays. Restore them and recover again. |
+| `Partial` or `Unconfirmed` | A recovery step failed or its outcome is unknown. The record stays. |
 
 ### Merging incoming changes
 
@@ -844,7 +922,7 @@ never pushes, and `pullFastForward()` still refuses divergence.
 Diverged histories need exactly one merge base; none or several is
 `UnsupportedHistory`. The merge writes one commit whose parents are the pinned
 head and the pinned fetched commit, and publishes its files, a clean index,
-and the branch in one transaction.
+and the branch the way a fast-forward does, with the same record.
 
 - Root `kv.json` changed on both sides merges by key with `mergeKv`, and is
   saved with sorted keys. A nested `kv.json` is an ordinary file.
@@ -908,36 +986,51 @@ dangle.
 | `src/contract.ts` | Everything an application names besides the opener. Every entry exports it unchanged. Loads no storage, Git implementation, or runtime module. |
 | `src/index.ts`, `browser.ts`, `tauri.ts`, `bun.ts` | The entries. |
 | `src/browser-adapter.ts`, `tauri-adapter.ts` | The adapters the automatic entry loads lazily. |
-| `src/folder.ts`, `table.ts`, `kv.ts`, `batch.ts`, `markdown.ts` | The handle and its interpretation of files, shared by every adapter. |
+| `src/folder.ts`, `table.ts`, `kv.ts`, `markdown.ts` | The handle and its interpretation of files, shared by every adapter. |
 | `src/editor.ts`, `canonical.ts` | The row editor `table.edit` opens, and the canonical document codec it holds and saves. |
 | `src/reading.ts` | The diagnostics a table and KV reading share: `ParseError`, `FieldIssue`, `DeepReadonly`, and the ownership every checked value has: parsed values frozen and supplied values copied before a field sees them. |
-| `src/browser-store.ts`, `git/browser-*.ts` | IndexedDB storage and isomorphic-git. |
+| `src/opfs-store.ts`, `git/opfs-git.ts`, `git/browser-backend.ts` | OPFS storage, private `.git`, and isomorphic-git. |
+| `src/browser-migration.ts`, `browser-store.ts` | The one copy of a folder an earlier version saved in IndexedDB, and that database's format, read only. |
 | `src/native-store.ts`, `git/native-*.ts` | The directory entry's files and `git` program. "Native" here means an ordinary directory in Bun, not the desktop shell. |
 | `src/native/bindings.gen.ts` | Commands and events generated from the `tauri-plugin-epicenter-folder` crate. Internal. Do not edit. |
-| `evidence/` | Tests that build real bundles and read real import closures. |
+| `evidence/` | Tests that build real bundles and read real import closures, and `evidence/opfs`, a page that runs the browser checks in a real browser. |
 
 ## Commands
 
 ```sh
-bun test --isolate        # everything except the real desktop owner
+bun test --isolate        # everything except the real desktop owner and a real browser
 bun run typecheck
 EPICENTER_FOLDER_BRIDGE=1 bun test --isolate src/tauri-native.test.ts   # against the Rust owner
 bun evidence/bundles/inspect.ts main tauri   # print the chunks a build emits
+bun evidence/opfs/serve.ts   # the OPFS page on 127.0.0.1:5181; --build only compiles it
 ```
+
+The browser suites run on an in-memory OPFS stand-in
+(`src/opfs.test-support.ts`) with fake IndexedDB for earlier versions'
+databases. They show the folder's protocol, not that a browser's OPFS
+behaves like the stand-in; the evidence page checks that. Application tests
+get fresh browser storage from `testBrowserStorage()` in
+`src/browser-storage.test-support.ts`, imported by path.
 
 ## Limits
 
 A reference field has no integrity: nothing checks its target, and rename
 repairs no references. `kv.update`
 writes each value it assigns as compact JSON. Browser bytes are stored whole, and every commit
-or status check reads the whole folder. Version checks on disk are best effort
+or status check reads and hashes the whole folder. Version checks on disk are best effort
 against other programs. File bytes cross the desktop bridge as JSON number
 arrays, which is slow for large audio.
+
+In a browser, OPFS quota exhaustion and eviction surface as the failing
+step's `Io` or `Unconfirmed`; nothing reserves space. Nothing abandons a
+pending incoming update: a record recovery refuses stays until the named
+paths are restored. Pages of other origins or browser profiles are outside
+what the Web Locks and the migration can see.
 
 
 ## Internal composition
 
-Files, tables, KV, batches, and the terminal use one storage API. Its `apply`
+Files, tables, KV, and the terminal use one storage API. Its `apply`
 accounts for content changes, so a domain method cannot accidentally choose a
 write that skips history or change hints.
 
@@ -955,5 +1048,6 @@ collection.
 
 Git keeps raw storage because incoming fast-forwards update files and history
 under their own policy. They must not trigger an automatic commit as a new
-local save. A batch uses one `apply`. Terminal writes apply separately; a
+local save. Every public save reserves its place in the page's order when it
+is called and passes it to `apply`. Terminal writes apply separately; a
 recursive removal or directory move applies its captured file steps together.

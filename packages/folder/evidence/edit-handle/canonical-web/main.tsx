@@ -51,8 +51,8 @@ const session = slot('session');
 /** Where the opener put the folder, as it reports it. */
 function describeLocation(location: FolderLocation): string {
 	switch (location.kind) {
-		case 'indexedDb':
-			return `IndexedDB database "${location.database}" of ${window.location.origin}`;
+		case 'opfs':
+			return `OPFS directory "${location.directory}" of ${window.location.origin}`;
 		case 'directory':
 			return `the directory ${location.root}`;
 		default:

@@ -11,12 +11,12 @@
  */
 import type { AccountIdentity } from '@epicenter/principal';
 import type { Result } from 'wellcrafted/result';
-import type { IndexedDbEnvironment } from './browser-store.js';
 import type { FolderDefinition } from './definition.js';
 import type { OpenFolderError } from './errors.js';
 import type { Folder } from './folder.js';
 import type { GitRemote } from './git/backend.js';
 import type { Author } from './git/objects.js';
+import type { OpfsEnvironment } from './opfs-store.js';
 
 export {
 	type CreateRowOf,
@@ -82,7 +82,13 @@ export type {
 	FolderGitOptions,
 	FolderLocation,
 } from './folder.js';
-export type { GitRemote, PathStatus, StatusCode } from './git/backend.js';
+export type {
+	GitRemote,
+	PathStatus,
+	PendingIncoming,
+	RecordedIncoming,
+	StatusCode,
+} from './git/backend.js';
 export {
 	GitError,
 	type MergeConflict,
@@ -101,6 +107,7 @@ export type {
 	Observation,
 	PullOutcome,
 	PushOutcome,
+	RecoverOutcome,
 	SyncObservation,
 } from './git/history.js';
 export { commitSubject, escapePath, type PathChange } from './git/messages.js';
@@ -114,6 +121,12 @@ export {
 	type SourceChange,
 	type SourceFrame,
 } from './markdown.js';
+export type {
+	OpfsDirectoryHandle,
+	OpfsEnvironment,
+	OpfsFileHandle,
+	OpfsLocks,
+} from './opfs-store.js';
 export { pathProblem, rowPath, rowStemOf } from './paths.js';
 export type { DeepReadonly, FieldIssue, ParseError } from './reading.js';
 export type {
@@ -133,10 +146,12 @@ export type { FolderTerminal, TerminalResult } from './terminal.js';
 export type BrowserFolderOptions = {
 	/**
 	 * Captured storage ownership, independent of login changes after opening.
-	 * Omitted: retain the established Local database, lock, and hint names.
-	 * Release Local also retains those names. Other scopes use separate names
-	 * and refuse an empty replacement when an unassigned legacy folder exists.
-	 * This option does not migrate data or change private application SQL.
+	 * Omitted: release Local. Each channel, owner, and folder ID is its own
+	 * origin private file system directory, Web Locks, and hint channel. The
+	 * first open copies the folder an earlier version saved in IndexedDB for
+	 * the same scope; a scoped folder refuses to start empty beside an
+	 * earlier version's Local folder that no Local open has claimed. This
+	 * option does not change private application SQL.
 	 */
 	readonly scope?: {
 		channel: 'release' | 'development';
@@ -155,8 +170,12 @@ export type BrowserFolderOptions = {
 	 * Transfers remain explicit. Default `true`.
 	 */
 	readonly commitOnEdit?: boolean;
-	/** Injected IndexedDB for tests; defaults to the browser globals. */
-	readonly indexedDb?: IndexedDbEnvironment;
+	/**
+	 * Injected origin private file system, Web Locks, and the IndexedDB that
+	 * earlier versions saved folders in; for tests. Defaults to the browser
+	 * globals.
+	 */
+	readonly opfs?: OpfsEnvironment;
 };
 
 export type OpenFolderOptions<TDefinition extends FolderDefinition> = {

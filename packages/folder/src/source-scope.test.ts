@@ -20,6 +20,7 @@ import { join } from 'node:path';
 import { IDBFactory, IDBKeyRange } from 'fake-indexeddb';
 import { expectOk } from 'wellcrafted/testing';
 import { type Folder, openFolder as openBrowserFolder } from './browser.js';
+import { browserStorage } from './browser-storage.test-support.js';
 import { defineFolder, defineTable, field } from './contract.js';
 import { openNativeFolder } from './directory.test-support.js';
 import { gitignoreMatcher } from './git/scope.js';
@@ -94,7 +95,7 @@ describe('browser folder scope', () => {
 				browser: {
 					author,
 					commitOnEdit: false,
-					indexedDb: { indexedDB: new IDBFactory(), IDBKeyRange },
+					...browserStorage({ indexedDB: new IDBFactory(), IDBKeyRange }),
 				},
 			}),
 		);

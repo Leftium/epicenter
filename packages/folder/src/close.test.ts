@@ -6,7 +6,7 @@
  * Key behaviors:
  * - Preparation before publication can be refused by close without writing
  * - Close resolves while a begun file application's reply remains pending
- * - Started browser transactions finish after their database is closed
+ * - Started browser applications finish after storage is released
  * - Git work and reentrant close retain their resource lifetime guarantees
  */
 import { afterAll, beforeAll, expect, test } from 'bun:test';
@@ -15,14 +15,14 @@ import { expectErr, expectOk } from 'wellcrafted/testing';
 import type { FileBoundary } from './boundary.js';
 import { openFolder as openBrowserFolder } from './browser.js';
 import {
-	createBrowserFileBoundary,
-	openFolderDatabase,
-} from './browser-store.js';
+	browserStorage,
+	locationOf,
+	rawBrowserFolder,
+} from './browser-storage.test-support.js';
 import { defineFolder, defineTable, field } from './contract.js';
 import { openNativeFolder } from './directory.test-support.js';
 import { assembleFolder, createFileHints } from './folder.js';
 import type { GitBackend } from './git/backend.js';
-import { createBrowserGitBackend } from './git/browser-backend.js';
 import { createHistory } from './git/history.js';
 import { GIT_ENV, git, scratch } from './git-http.test-support.js';
 import { withPublication } from './storage.js';
@@ -54,7 +54,7 @@ test('browser helpers still preparing when close starts are refused without writ
 			await openBrowserFolder({
 				id: 'so.epicenter.closetest',
 				definition,
-				browser: { author, indexedDb: environment },
+				browser: { author, ...browserStorage(environment) },
 			}),
 		);
 	const folder = await open();
@@ -95,9 +95,8 @@ test('a directory helper still hashing at close is refused; the caller must awai
 
 /** A real browser history over a boundary whose next publication the test holds. */
 async function held() {
-	const environment = { indexedDB: new IDBFactory(), IDBKeyRange };
-	const db = await openFolderDatabase('epicenter-folder:close', environment);
-	const base = createBrowserFileBoundary(db, environment);
+	const raw = await rawBrowserFolder({ id: 'close' });
+	const base = raw.boundary;
 	const order: string[] = [];
 	const { promise: released, resolve: release } = Promise.withResolvers<void>();
 	const { promise: reached, resolve: reach } = Promise.withResolvers<void>();
@@ -128,13 +127,7 @@ async function held() {
 			return result;
 		},
 	};
-	const real = await createBrowserGitBackend({
-		db,
-		environment,
-		lockName: 'close',
-		branch: 'main',
-		remote: undefined,
-	});
+	const real = await raw.backend();
 	let pushes = 0;
 	const commits = {
 		/** Set to hold the next commit just before it moves the branch. */
@@ -168,11 +161,10 @@ async function held() {
 			landed: (paths) => hints.emit(paths),
 		}),
 		history,
-		location: { kind: 'indexedDb', database: 'epicenter-folder:close' },
+		location: locationOf('close'),
 		hints,
 		release: async () => {
 			order.push('released');
-			db.close();
 		},
 	});
 	return {

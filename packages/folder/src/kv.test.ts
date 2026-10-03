@@ -30,13 +30,9 @@
  */
 import { expect, test } from 'bun:test';
 import { accepts, jsonValue } from '@epicenter/definition';
-import { IDBFactory, IDBKeyRange } from 'fake-indexeddb';
 import { expectErr, expectOk } from 'wellcrafted/testing';
 import type { FolderStorage } from './boundary.js';
-import {
-	createBrowserFileBoundary,
-	openFolderDatabase,
-} from './browser-store.js';
+import { rawBrowserFolder } from './browser-storage.test-support.js';
 import { hashBytes } from './capture.js';
 import { defineFolder, field, type KvOf } from './contract.js';
 import { createFiles } from './files.js';
@@ -75,9 +71,7 @@ function nodesOf(value: unknown, found: object[] = []): object[] {
 
 /** KV and file methods over one storage whose reads and publications are counted. */
 async function setup(initial?: string | Uint8Array) {
-	const environment = { indexedDB: new IDBFactory(), IDBKeyRange };
-	const db = await openFolderDatabase('epicenter-folder:kv', environment);
-	const base = createBrowserFileBoundary(db, environment);
+	const base = (await rawBrowserFolder({ id: 'kv' })).boundary;
 	const calls = { reads: 0, applies: 0 };
 	/** Set to run once after the next read has its bytes, before the caller sees them. */
 	let afterRead: (() => Promise<void>) | undefined;
@@ -482,10 +476,8 @@ test('a reference and an unannotated schema are kv fields, and an identifier may
 		},
 		tables: {},
 	});
-	const environment = { indexedDB: new IDBFactory(), IDBKeyRange };
-	const db = await openFolderDatabase('epicenter-folder:kv-refs', environment);
 	const kv = createKv<KvOf<typeof references>>(
-		{ storage: createBrowserFileBoundary(db, environment) },
+		{ storage: (await rawBrowserFolder({ id: 'kv-refs' })).boundary },
 		references.kv,
 	);
 

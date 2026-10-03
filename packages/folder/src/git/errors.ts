@@ -7,6 +7,7 @@
  */
 import { defineErrors, type InferErrors } from 'wellcrafted/error';
 import { describe, type FileError, type FileStep } from '../errors.js';
+import type { PendingIncoming } from './backend.js';
 
 export const GitError = defineErrors({
 	Unconfirmed: ({
@@ -50,8 +51,25 @@ export const GitError = defineErrors({
 		expected,
 		actual,
 	}),
+	/** An incoming update has not finished; staging waits for `recoverIncoming()`. */
+	IncomingPending: ({ pending }: { pending: PendingIncoming }) => ({
+		message: `${incomingName(pending)} has not finished; recover it before staging or committing`,
+		pending,
+	}),
 });
 export type GitError = InferErrors<typeof GitError>;
+
+/** How an error names the incoming update its record describes. */
+function incomingName(pending: PendingIncoming): string {
+	switch (pending.state) {
+		case 'recorded':
+			return `Incoming update ${pending.operationId}`;
+		case 'unadmitted':
+			return 'An incoming update whose admission never finished';
+		case 'unreadable':
+			return 'An incoming update whose record cannot be read';
+	}
+}
 
 export const PullError = defineErrors({
 	NoFetchedHead: () => ({
@@ -120,6 +138,51 @@ export const PullError = defineErrors({
 	IndexFailed: ({ error }: { error: string }) => ({
 		message: `Files were updated, but the Git index could not be updated; the branch did not move: ${error}`,
 		error,
+	}),
+	/**
+	 * A step of the incoming update may or may not have been written: a file,
+	 * the index, the branch, or the record itself, named in `uncertain`. Its
+	 * record remains, so commits and new updates wait, and only an explicit
+	 * `recoverIncoming()` decides from what the folder holds.
+	 */
+	Unconfirmed: ({
+		applied,
+		uncertain,
+		error,
+	}: {
+		applied: readonly FileStep[];
+		uncertain: readonly string[];
+		error: string;
+	}) => ({
+		message: `The incoming update stopped where ${uncertain.join(', ')} may or may not have been written; it stays pending until it is recovered: ${error}`,
+		applied,
+		uncertain,
+		error,
+	}),
+	/** An earlier incoming update has not finished. Recover it before another starts. */
+	IncomingPending: ({ pending }: { pending: PendingIncoming }) => ({
+		message: `${incomingName(pending)} has not finished; recover it before starting another`,
+		pending,
+	}),
+	/**
+	 * Recovery found a changed path, the index, the branch, or the record
+	 * itself in neither the update's before nor its after state. Nothing was
+	 * written; the update stays pending. Once each named path holds one of its
+	 * states, recover again.
+	 */
+	RecoveryRefused: ({
+		pending,
+		paths,
+		reason,
+	}: {
+		pending: PendingIncoming;
+		paths: readonly string[];
+		reason: string;
+	}) => ({
+		message: `${incomingName(pending)} cannot be recovered: ${reason}`,
+		pending,
+		paths,
+		reason,
 	}),
 });
 export type PullError = InferErrors<typeof PullError>;

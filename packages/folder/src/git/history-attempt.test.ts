@@ -32,20 +32,15 @@ import { join } from 'node:path';
 import { IDBFactory, IDBKeyRange } from 'fake-indexeddb';
 import { expectOk } from 'wellcrafted/testing';
 import {
-	createBrowserFileBoundary,
-	openFolderDatabase,
-} from '../browser-store.js';
+	rawBrowserFolder,
+	type TestStorage,
+} from '../browser-storage.test-support.js';
+import { hashBytes } from '../capture.js';
 import { defineFolder, field } from '../contract.js';
 import { openNativeFolder } from '../directory.test-support.js';
 import { GIT_ENV, git, scratch } from '../git-http.test-support.js';
-import { hashBytes } from '../capture.js';
-import {
-	installWebLocks,
-	useWebLocks,
-	withoutWebLocks,
-} from '../web-locks.test-support.js';
+import { installWebLocks, useWebLocks } from '../web-locks.test-support.js';
 import type { GitBackend } from './backend.js';
-import { createBrowserGitBackend } from './browser-backend.js';
 import { createHistory } from './history.js';
 import { commitTree, readBlob, readTreeFiles } from './objects.js';
 
@@ -89,12 +84,12 @@ async function until(condition: () => boolean) {
  * just before the branch moves. `holds` stop the named backend call.
  */
 async function tab(
-	environment: { indexedDB: IDBFactory; IDBKeyRange: typeof IDBKeyRange },
+	environment: TestStorage,
 	name: string,
 	{ commitOnEdit = true } = {},
 ) {
-	const db = await openFolderDatabase(`epicenter-folder:${name}`, environment);
-	const base = createBrowserFileBoundary(db, environment);
+	const raw = await rawBrowserFolder({ id: name, storage: environment });
+	const base = raw.boundary;
 	const holds: {
 		pathStatus?: ReturnType<typeof gate>;
 		readRemoteTracking?: ReturnType<typeof gate>;
@@ -111,13 +106,7 @@ async function tab(
 		entered.open();
 		await hold.opened;
 	}
-	const real = await createBrowserGitBackend({
-		db,
-		environment,
-		lockName: name,
-		branch: 'main',
-		remote: undefined,
-	});
+	const real = await raw.backend();
 	const probe = {
 		/** Automatic attempts made, admitted or not. */
 		attempts: 0,
@@ -228,7 +217,6 @@ async function tab(
 		);
 	}
 	return {
-		db,
 		real,
 		history,
 		probe,
@@ -252,7 +240,7 @@ useWebLocks();
 // ============================================================================
 
 test('a published save makes one attempt that commits the folder with a subject from the committed tree', async () => {
-	const { db, history, probe, save, idle, committed } = await tab(
+	const { history, probe, save, idle, committed } = await tab(
 		freshEnvironment(),
 		'one-attempt',
 	);
@@ -276,11 +264,10 @@ test('a published save makes one attempt that commits the folder with a subject 
 	await Bun.sleep(30);
 	expect(probe.attempts).toBe(1);
 	await history.close();
-	db.close();
 });
 
 test('with commitOnEdit off, a save makes no attempt', async () => {
-	const { db, history, probe, save } = await tab(freshEnvironment(), 'off', {
+	const { history, probe, save } = await tab(freshEnvironment(), 'off', {
 		commitOnEdit: false,
 	});
 	await save('a.txt', 'one');
@@ -288,7 +275,6 @@ test('with commitOnEdit off, a save makes no attempt', async () => {
 	expect(probe.attempts).toBe(0);
 	expect(history.snapshot.lastCommit).toBeUndefined();
 	await history.close();
-	db.close();
 });
 
 test('a write this handle did not publish, and a noted edit alone, make no attempt', async () => {
@@ -314,8 +300,6 @@ test('a write this handle did not publish, and a noted edit alone, make no attem
 	});
 	await mine.history.close();
 	await other.history.close();
-	mine.db.close();
-	other.db.close();
 });
 
 // ============================================================================
@@ -323,7 +307,7 @@ test('a write this handle did not publish, and a noted edit alone, make no attem
 // ============================================================================
 
 test("a save during this handle's held commit is kept, makes no commit when that one finishes, and the next save captures it", async () => {
-	const { db, history, probe, save, idle, committed, saved } = await tab(
+	const { history, probe, save, idle, committed, saved } = await tab(
 		freshEnvironment(),
 		'held-own',
 	);
@@ -359,7 +343,6 @@ test("a save during this handle's held commit is kept, makes no commit when that
 	});
 	expect(await committed()).toEqual({ 'a.txt': 'two', 'b.txt': 'new' });
 	await history.close();
-	db.close();
 });
 
 test('while another tab holds the Web Lock, a save is kept, records nothing, and is not committed when the lock frees', async () => {
@@ -398,8 +381,6 @@ test('while another tab holds the Web Lock, a save is kept, records nothing, and
 		});
 		await a.history.close();
 		await b.history.close();
-		a.db.close();
-		b.db.close();
 	} finally {
 		restore();
 	}
@@ -408,8 +389,10 @@ test('while another tab holds the Web Lock, a save is kept, records nothing, and
 test("a save during this handle's held pull or path listing makes no commit, then or later", async () => {
 	const restore = installWebLocks();
 	try {
-		const { db, history, probe, holds, entered, save, idle, committed } =
-			await tab(freshEnvironment(), 'own-lock');
+		const { history, probe, holds, entered, save, idle, committed } = await tab(
+			freshEnvironment(),
+			'own-lock',
+		);
 
 		// A pull holds the protection while it reads the fetched head.
 		const pulling = gate();
@@ -449,14 +432,13 @@ test("a save during this handle's held pull or path listing makes no commit, the
 		});
 		expect(await committed()).toEqual({ 'a.txt': 'two', 'b.txt': 'new' });
 		await history.close();
-		db.close();
 	} finally {
 		restore();
 	}
 });
 
 test('an explicit commit during a held attempt waits and captures a save made while it waited', async () => {
-	const { db, history, probe, save, committed } = await tab(
+	const { history, probe, save, committed } = await tab(
 		freshEnvironment(),
 		'explicit-waits',
 	);
@@ -487,7 +469,6 @@ test('an explicit commit during a held attempt waits and captures a save made wh
 	// Both the automatic attempt and the explicit commit stayed local.
 	expect(probe.pushes).toBe(0);
 	await history.close();
-	db.close();
 });
 
 // ============================================================================
@@ -495,7 +476,7 @@ test('an explicit commit during a held attempt waits and captures a save made wh
 // ============================================================================
 
 test('a failed explicit push is not retried by a save; another explicit push uploads the new history', async () => {
-	const { db, history, probe, save, idle } = await tab(
+	const { history, probe, save, idle } = await tab(
 		freshEnvironment(),
 		'push-again',
 	);
@@ -522,11 +503,10 @@ test('a failed explicit push is not retried by a save; another explicit push upl
 	const sync = history.snapshot.sync;
 	expect(sync.state === 'observed' && sync.value.ahead).toBe(0);
 	await history.close();
-	db.close();
 });
 
 test('explicit commit is local; commitAndPush pushes', async () => {
-	const { db, history, probe, land } = await tab(
+	const { history, probe, land } = await tab(
 		freshEnvironment(),
 		'explicit-local',
 		{ commitOnEdit: false },
@@ -543,11 +523,10 @@ test('explicit commit is local; commitAndPush pushes', async () => {
 	expect(both.push.status).toBe('pushed');
 	expect(probe.pushes).toBe(1);
 	await history.close();
-	db.close();
 });
 
 test('a caller that stops waiting on commitAndPush leaves its commit to finish and starts no push later', async () => {
-	const { db, history, probe, land, committed } = await tab(
+	const { history, probe, land, committed } = await tab(
 		freshEnvironment(),
 		'abandoned',
 		{ commitOnEdit: false },
@@ -576,7 +555,6 @@ test('a caller that stops waiting on commitAndPush leaves its commit to finish a
 	expect(probe.pushes).toBe(0);
 	expect(history.snapshot.lastPush).toBeUndefined();
 	await history.close();
-	db.close();
 });
 
 // ============================================================================
@@ -615,8 +593,6 @@ test("closing refuses an explicit commit still waiting on another tab's Web Lock
 		expect(await a.committed()).toEqual({ 'a.txt': 'from a' });
 		expect(await a.saved()).toEqual({ 'a.txt': 'from a', 'b.txt': 'from b' });
 		await a.history.close();
-		a.db.close();
-		b.db.close();
 	} finally {
 		restore();
 	}
@@ -625,7 +601,7 @@ test("closing refuses an explicit commit still waiting on another tab's Web Lock
 test('closing waits for an attempt already inside the protection, refuses a commit waiting behind it, and makes no last commit', async () => {
 	const restore = installWebLocks();
 	try {
-		const { db, history, probe, save, committed, saved } = await tab(
+		const { history, probe, save, committed, saved } = await tab(
 			freshEnvironment(),
 			'close-admitted',
 		);
@@ -677,86 +653,9 @@ test('closing waits for an attempt already inside the protection, refuses a comm
 			'b.txt': 'late',
 			'c.txt': 'later still',
 		});
-		db.close();
 	} finally {
 		restore();
 	}
-});
-
-// ============================================================================
-// A browser with no Web Locks
-// ============================================================================
-
-test('without Web Locks, a save makes no commit and touches nothing of Git; the file is kept and the observation goes stale', async () => {
-	const { db, history, probe, save, saved, committed } = await tab(
-		freshEnvironment(),
-		'no-locks',
-	);
-	expectOk(await history.status());
-	const before = { ...probe };
-	await withoutWebLocks(async () => {
-		await save('a.txt', 'one');
-		await Bun.sleep(30);
-	});
-	// The attempt was made and refused before any Git work began.
-	expect(probe.attempts).toBe(before.attempts + 1);
-	expect(probe.captures).toBe(before.captures);
-	expect(probe.objectSessions).toBe(before.objectSessions);
-	expect(probe.publications).toBe(0);
-	expect(probe.pushes).toBe(0);
-	expect(history.snapshot.lastCommit).toBeUndefined();
-	expect(history.snapshot.lastPush).toBeUndefined();
-	expect(history.snapshot.activity.commit).toEqual({ active: false });
-	expect(await committed()).toEqual({});
-	// The save is intact, and the snapshot no longer calls the folder clean.
-	expect(await saved()).toEqual({ 'a.txt': 'one' });
-	expect(history.snapshot.files).toMatchObject({
-		state: 'observed',
-		stale: true,
-		error: undefined,
-	});
-	await history.close();
-	db.close();
-});
-
-test('without Web Locks, explicit commits still run in each tab, and the stored compare-and-swap refuses the loser and forces nothing', async () => {
-	await withoutWebLocks(async () => {
-		const environment = freshEnvironment();
-		const a = await tab(environment, 'tabs', { commitOnEdit: false });
-		const b = await tab(environment, 'tabs', { commitOnEdit: false });
-		await a.land('a.txt', 'from a');
-		const held = gate();
-		a.probe.hold = held;
-		const losing = a.history.commit();
-		await a.probe.reached.opened;
-
-		// Tab B commits while A sits between capture and publication. Nothing
-		// orders the two tabs here except the branch itself.
-		await b.land('b.txt', 'from b');
-		const winner = await b.history.commit();
-		expect(winner.status).toBe('committed');
-		const winning = winner.status === 'committed' ? winner.oid : undefined;
-
-		held.open();
-		expect(await losing).toMatchObject({
-			status: 'branchMoved',
-			expected: undefined,
-			actual: winning,
-		});
-		expect(await a.real.readBranch()).toBe(winning);
-		expect(await a.committed()).toEqual({
-			'a.txt': 'from a',
-			'b.txt': 'from b',
-		});
-		// Nothing retried for tab A.
-		await Bun.sleep(20);
-		expect(a.probe.publications).toBe(1);
-		expect((await a.history.commit()).status).toBe('unchanged');
-		await a.history.close();
-		await b.history.close();
-		a.db.close();
-		b.db.close();
-	});
 });
 
 // ============================================================================
@@ -764,7 +663,7 @@ test('without Web Locks, explicit commits still run in each tab, and the stored 
 // ============================================================================
 
 test('status requests during a held scan share one following scan, which reads the last saved edit; nothing is committed or pushed', async () => {
-	const { db, history, probe, holds, land } = await tab(
+	const { history, probe, holds, land } = await tab(
 		freshEnvironment(),
 		'scan-burst',
 	);
@@ -813,11 +712,10 @@ test('status requests during a held scan share one following scan, which reads t
 	expectOk(await history.status());
 	expect(probe.captures).toBe(3);
 	await history.close();
-	db.close();
 });
 
 test('closing waits for the running scan and refuses the scan waiting behind it', async () => {
-	const { db, history, probe, holds, land } = await tab(
+	const { history, probe, holds, land } = await tab(
 		freshEnvironment(),
 		'scan-close',
 	);
@@ -840,7 +738,6 @@ test('closing waits for the running scan and refuses the scan waiting behind it'
 	for (const result of await Promise.all(following))
 		expect(result.error?.name).toBe('Closed');
 	expect(probe.captures).toBe(1);
-	db.close();
 });
 
 // ============================================================================
@@ -848,7 +745,7 @@ test('closing waits for the running scan and refuses the scan waiting behind it'
 // ============================================================================
 
 test('a push whose caller leaves while it is queued behind a held push starts no transport when the holder finishes', async () => {
-	const { db, history, probe, holds, land } = await tab(
+	const { history, probe, holds, land } = await tab(
 		freshEnvironment(),
 		'push-queued',
 		{ commitOnEdit: false },
@@ -875,11 +772,10 @@ test('a push whose caller leaves while it is queued behind a held push starts no
 	expect(history.snapshot.activity.push).toEqual({ active: false });
 	expect(history.snapshot.lastPush?.status).toBe('pushed');
 	await history.close();
-	db.close();
 });
 
 test('a push asked for with an already aborted signal starts no transport', async () => {
-	const { db, history, probe, land } = await tab(
+	const { history, probe, land } = await tab(
 		freshEnvironment(),
 		'push-aborted',
 		{ commitOnEdit: false },
@@ -898,11 +794,10 @@ test('a push asked for with an already aborted signal starts no transport', asyn
 	expect((await history.push()).status).toBe('pushed');
 	expect(probe.pushes).toBe(1);
 	await history.close();
-	db.close();
 });
 
 test('a caller that leaves commitAndPush while its push is queued keeps its commit and starts no transport', async () => {
-	const { db, history, probe, holds, land } = await tab(
+	const { history, probe, holds, land } = await tab(
 		freshEnvironment(),
 		'both-queued',
 		{ commitOnEdit: false },
@@ -935,11 +830,10 @@ test('a caller that leaves commitAndPush while its push is queued keeps its comm
 	await Bun.sleep(30);
 	expect(probe.pushes).toBe(1);
 	await history.close();
-	db.close();
 });
 
 test('a caller that leaves after its push started is told so; the transport finishes and close waits for one that has not', async () => {
-	const { db, history, probe, holds, land } = await tab(
+	const { history, probe, holds, land } = await tab(
 		freshEnvironment(),
 		'push-admitted',
 		{ commitOnEdit: false },
@@ -966,11 +860,10 @@ test('a caller that leaves after its push started is told so; the transport fini
 	await closing;
 	expect(probe.pushes).toBe(1);
 	expect(history.snapshot.lastPush?.status).toBe('pushed');
-	db.close();
 });
 
 test('a fetch whose caller leaves while it is queued, or before it asks, starts no transport', async () => {
-	const { db, history, probe, holds } = await tab(
+	const { history, probe, holds } = await tab(
 		freshEnvironment(),
 		'fetch-queued',
 		{ commitOnEdit: false },
@@ -996,7 +889,6 @@ test('a fetch whose caller leaves while it is queued, or before it asks, starts 
 	expect(probe.fetches).toBe(1);
 	expect(history.snapshot.activity.fetch).toEqual({ active: false });
 	await history.close();
-	db.close();
 });
 
 // ============================================================================
@@ -1203,6 +1095,5 @@ test('close from a commit activity observer refuses unadmitted work or waits for
 		unsubscribe();
 		await closing;
 		await mine.history.close();
-		mine.db.close();
 	}
 });

@@ -28,6 +28,11 @@ function setNavigator(value: unknown) {
 
 /** Install the stand-in as `navigator.locks`. Returns the function that removes it. */
 export function installWebLocks(): () => void {
+	return setNavigator({ locks: createWebLocks() });
+}
+
+/** A stand-in lock manager of its own, shared by whoever is handed it. */
+export function createWebLocks() {
 	const tails = new Map<string, Promise<unknown>>();
 	const busy = new Map<string, number>();
 	const locks = {
@@ -67,7 +72,7 @@ export function installWebLocks(): () => void {
 			});
 		},
 	};
-	return setNavigator({ locks });
+	return locks;
 }
 
 /**

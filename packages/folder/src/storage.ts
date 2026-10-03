@@ -49,6 +49,11 @@ export function withPublication({
 			} else if (result.error?.name === 'Partial') {
 				history.noteEdit();
 				landed(result.error.applied.flatMap(stepPaths));
+			} else if (result.error?.name === 'Unconfirmed') {
+				// The paths may have changed. Say so, but request no commit for an
+				// outcome nobody knows.
+				history.noteEdit();
+				landed(changes.flatMap(stepPaths));
 			}
 			return result;
 		},

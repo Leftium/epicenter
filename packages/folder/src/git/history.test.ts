@@ -20,29 +20,17 @@
  * - `browser.test.ts` for a folder-level stalled push
  */
 import { expect, test } from 'bun:test';
-import { IDBFactory, IDBKeyRange } from 'fake-indexeddb';
-import {
-	createBrowserFileBoundary,
-	openFolderDatabase,
-} from '../browser-store.js';
+import { rawBrowserFolder } from '../browser-storage.test-support.js';
 import { hashBytes } from '../capture.js';
 import type { GitBackend } from './backend.js';
-import { createBrowserGitBackend } from './browser-backend.js';
 import { createHistory } from './history.js';
 
 const author = { name: 'History', email: 'history@example.test' };
 
 async function setup() {
-	const environment = { indexedDB: new IDBFactory(), IDBKeyRange };
-	const db = await openFolderDatabase('epicenter-folder:history', environment);
-	const boundary = createBrowserFileBoundary(db, environment);
-	const real = await createBrowserGitBackend({
-		db,
-		environment,
-		lockName: 'history',
-		branch: 'main',
-		remote: undefined,
-	});
+	const raw = await rawBrowserFolder({ id: 'history' });
+	const boundary = raw.boundary;
+	const real = await raw.backend();
 	const probe = {
 		pushStarts: 0,
 		pushAborts: 0,
@@ -72,11 +60,11 @@ async function setup() {
 		]);
 		expect(applied.error).toBeNull();
 	}
-	return { db, boundary, backend, probe, write };
+	return { boundary, backend, probe, write };
 }
 
 test('close aborts the active push at once while a held local pass finishes', async () => {
-	const { db, boundary, backend, probe, write } = await setup();
+	const { boundary, backend, probe, write } = await setup();
 	const history = createHistory({
 		backend,
 		boundary,
@@ -125,11 +113,10 @@ test('close aborts the active push at once while a held local pass finishes', as
 	// The commit that finished during close started no push.
 	expect(probe.pushStarts).toBe(1);
 	expect(await history.push()).toEqual({ status: 'closed' });
-	db.close();
 });
 
 test('a caller signal stops waiting without aborting the shared push', async () => {
-	const { db, boundary, backend, probe, write } = await setup();
+	const { boundary, backend, probe, write } = await setup();
 	const history = createHistory({
 		backend,
 		boundary,
@@ -150,5 +137,4 @@ test('a caller signal stops waiting without aborting the shared push', async () 
 
 	await history.close();
 	expect(probe.pushAborts).toBe(1);
-	db.close();
 });

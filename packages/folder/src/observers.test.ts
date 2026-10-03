@@ -30,7 +30,8 @@ import {
 import { IDBFactory, IDBKeyRange } from 'fake-indexeddb';
 import { expectErr, expectOk } from 'wellcrafted/testing';
 import { openFolder as openBrowserFolder } from './browser.js';
-import type { IndexedDbEnvironment } from './browser-store.js';
+import type { TestStorage } from './browser-storage.test-support.js';
+import { browserStorage } from './browser-storage.test-support.js';
 import { hashBytes } from './capture.js';
 import { defineFolder, defineTable, type Folder, field } from './contract.js';
 import { openNativeFolder } from './directory.test-support.js';
@@ -82,7 +83,7 @@ describe.each(['browser', 'directory'])('%s folder observers', (kind) => {
 							definition,
 							browser: {
 								author,
-								indexedDb: { indexedDB: new IDBFactory(), IDBKeyRange },
+								...browserStorage({ indexedDB: new IDBFactory(), IDBKeyRange }),
 							},
 						}),
 					)
@@ -270,7 +271,7 @@ describe('browser channel', () => {
 	] as const)('a channel that fails to %s is a returned Unavailable, and what was opened is released', async (fail) => {
 		const { indexedDB, state } = watchedIndexedDb();
 		const { Channel, log } = channelClass(fail);
-		const environment: IndexedDbEnvironment = {
+		const environment: TestStorage = {
 			indexedDB,
 			IDBKeyRange,
 			BroadcastChannel: Channel,
@@ -280,7 +281,7 @@ describe('browser channel', () => {
 			await openBrowserFolder({
 				id: 'so.epicenter.observerstest',
 				definition,
-				browser: { indexedDb: environment },
+				browser: browserStorage(environment),
 			}),
 		);
 
@@ -301,7 +302,7 @@ describe('browser channel', () => {
 			await openBrowserFolder({
 				id: 'so.epicenter.observerstest',
 				definition,
-				browser: { indexedDb: { indexedDB, IDBKeyRange } },
+				browser: browserStorage({ indexedDB, IDBKeyRange }),
 			}),
 		);
 		await reopened.close();
@@ -316,7 +317,11 @@ describe('browser channel', () => {
 				definition,
 				browser: {
 					author,
-					indexedDb: { indexedDB, IDBKeyRange, BroadcastChannel: Channel },
+					...browserStorage({
+						indexedDB,
+						IDBKeyRange,
+						BroadcastChannel: Channel,
+					}),
 				},
 			}),
 		);
@@ -324,6 +329,8 @@ describe('browser channel', () => {
 		folder.onFilesChanged((paths) => heard.push(...paths));
 
 		expectOk(await folder.files.create('note.txt', 'submitted'));
+		// Let the first automatic commit finish before the next save asks.
+		await settled(folder);
 		expectOk(await folder.files.create('b.txt', 'b'));
 		expect(heard).toEqual(['note.txt', 'b.txt']);
 		await settled(folder);
@@ -343,7 +350,11 @@ describe('browser channel', () => {
 				browser: {
 					author,
 					commitOnEdit: false,
-					indexedDb: { indexedDB, IDBKeyRange, BroadcastChannel: Channel },
+					...browserStorage({
+						indexedDB,
+						IDBKeyRange,
+						BroadcastChannel: Channel,
+					}),
 				},
 			}),
 		);
@@ -367,7 +378,7 @@ describe('browser channel', () => {
 					browser: {
 						author,
 						commitOnEdit: false,
-						indexedDb: environment,
+						...browserStorage(environment),
 					},
 				}),
 			);
@@ -399,7 +410,7 @@ test('a cross-tab file hint marks history stale without requesting an automatic 
 			await openBrowserFolder({
 				id: 'so.epicenter.observerstest',
 				definition,
-				browser: { author, commitOnEdit, indexedDb: environment },
+				browser: { author, commitOnEdit, ...browserStorage(environment) },
 			}),
 		);
 	const reader = await open(true);

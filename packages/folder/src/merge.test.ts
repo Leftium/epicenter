@@ -2,10 +2,10 @@
  * Browser Merge Tests
  *
  * `mergeIncoming` merges the fetched remote head into a clean browser folder
- * with one two-parent commit, published with its files and index in one
- * IndexedDB transaction. These run the real browser backend and
- * isomorphic-git over fake IndexedDB; the journey also fetches over real Git
- * smart HTTP and reopens the database.
+ * with one two-parent commit, published with its files, index, and branch.
+ * These run the real browser backend and isomorphic-git on the in-memory
+ * OPFS stand-in; the journey also fetches over real Git smart HTTP and
+ * reopens the folder.
  *
  * Key behaviors:
  * - Independent root KV keys merge into sorted `kv.json`; the commit's
@@ -31,7 +31,6 @@ import {
 	expect,
 	test,
 } from 'bun:test';
-import { createHash } from 'node:crypto';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { IDBFactory, IDBKeyRange } from 'fake-indexeddb';
@@ -39,17 +38,15 @@ import * as isogit from 'isomorphic-git';
 import { expectErr, expectOk } from 'wellcrafted/testing';
 import { openFolder as openBrowserFolder } from './browser.js';
 import {
-	createBrowserFileBoundary,
-	type IndexedDbEnvironment,
-	openFolderDatabase,
-	STORES,
-} from './browser-store.js';
+	browserStorage,
+	rawBrowserFolder,
+	type TestStorage,
+} from './browser-storage.test-support.js';
 import { hashBytes } from './capture.js';
 import { defineFolder, type Folder, field } from './contract.js';
 import { openNativeFolder } from './directory.test-support.js';
 import type { GitBackend } from './git/backend.js';
-import { createBrowserGitBackend } from './git/browser-backend.js';
-import { WORKDIR } from './git/browser-fs.js';
+import { WORKDIR } from './git/browser-backend.js';
 import { createHistory } from './git/history.js';
 import { writeCommitObject, writeFilesTree } from './git/objects.js';
 import {
@@ -72,14 +69,9 @@ type Tree = Record<string, string | Uint8Array>;
 async function setup(
 	overrides: (real: GitBackend) => Partial<GitBackend> = () => ({}),
 ) {
-	const environment = { indexedDB: new IDBFactory(), IDBKeyRange };
-	const db = await openFolderDatabase('epicenter-folder:merge', environment);
-	const boundary = createBrowserFileBoundary(db, environment);
-	const real = await createBrowserGitBackend({
-		db,
-		environment,
-		lockName: 'merge',
-		branch: 'main',
+	const raw = await rawBrowserFolder({ id: 'merge' });
+	const boundary = raw.boundary;
+	const real = await raw.backend({
 		remote: { url: 'http://unused.test/remote.git', branch: 'main' },
 	});
 	const backend: GitBackend = { ...real, ...overrides(real) };
@@ -151,33 +143,7 @@ async function setup(
 	 * a refused merge may leave unreachable ones, which change nothing a
 	 * person or Git reads.
 	 */
-	async function dump() {
-		const result: Record<string, string> = {};
-		for (const store of Object.values(STORES)) {
-			const tx = db.transaction(store, 'readonly');
-			const [keys, values] = await Promise.all(
-				[
-					tx.objectStore(store).getAllKeys(),
-					tx.objectStore(store).getAll(),
-				].map(
-					(request) =>
-						new Promise<unknown[]>((resolve, reject) => {
-							request.onsuccess = () => resolve(request.result as unknown[]);
-							request.onerror = () => reject(request.error);
-						}),
-				),
-			);
-			(keys as string[]).forEach((key, index) => {
-				if (key.startsWith('/git/objects/')) return;
-				const value = (values as unknown[])[index];
-				result[`${store}:${key}`] =
-					value instanceof Uint8Array
-						? createHash('sha256').update(value).digest('hex')
-						: JSON.stringify(value);
-			});
-		}
-		return result;
-	}
+	const dump = () => raw.dump();
 	/** The live state, after one status look has refreshed the index's stat cache. */
 	async function settledDump() {
 		expectOk(await history.paths());
@@ -209,7 +175,7 @@ async function setup(
 	}
 
 	return {
-		db,
+		raw,
 		real,
 		history,
 		landed,
@@ -220,10 +186,7 @@ async function setup(
 		dump,
 		settledDump,
 		diverge,
-		close: async () => {
-			await history.close();
-			db.close();
-		},
+		close: () => history.close(),
 	};
 }
 
@@ -680,7 +643,7 @@ describe('the browser journey', () => {
 			else process.env[key] = originalEnv[key];
 	});
 
-	async function open(environment: IndexedDbEnvironment): Promise<Opened> {
+	async function open(environment: TestStorage): Promise<Opened> {
 		const opened = expectOk(
 			await openBrowserFolder({
 				id: 'so.epicenter.mergetest',
@@ -689,7 +652,7 @@ describe('the browser journey', () => {
 					author,
 					commitOnEdit: false,
 					remote: { url: 'http://git.test/remote.git', branch: 'main' },
-					indexedDb: environment,
+					...browserStorage(environment),
 				},
 			}),
 		);

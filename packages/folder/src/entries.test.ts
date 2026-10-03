@@ -25,6 +25,7 @@
 import { afterEach, expect, mock, test } from 'bun:test';
 import { IDBFactory, IDBKeyRange } from 'fake-indexeddb';
 import { expectErr, expectOk } from 'wellcrafted/testing';
+import { browserStorage, locationOf } from './browser-storage.test-support.js';
 import { useWebLocks } from './web-locks.test-support.js';
 
 let inShell = false;
@@ -125,7 +126,7 @@ test('every opener refuses a missing folder ID before it acquires anything, even
 	const indexedDB = new IDBFactory();
 	const untyped = {
 		definition,
-		browser: { author, indexedDb: { indexedDB, IDBKeyRange } },
+		browser: { author, ...browserStorage({ indexedDB, IDBKeyRange }) },
 	} as never;
 	expect(expectErr(await browser.openFolder(untyped)).name).toBe('InvalidId');
 	expect(expectErr(await root.openFolder(untyped)).name).toBe('InvalidId');
@@ -143,15 +144,12 @@ test('the automatic entry decides when it is called: the desktop adapter in the 
 	const options = {
 		id,
 		definition,
-		browser: { author, indexedDb: { indexedDB, IDBKeyRange } },
+		browser: { author, ...browserStorage({ indexedDB, IDBKeyRange }) },
 	};
 
 	// The same imported function, first outside the shell, then inside it.
 	const inBrowser = expectOk(await root.openFolder(options));
-	expect(inBrowser.location).toEqual({
-		kind: 'indexedDb',
-		database: 'epicenter-folder:so.epicenter.entriestest',
-	});
+	expect(inBrowser.location).toEqual(locationOf('so.epicenter.entriestest'));
 	await inBrowser.close();
 	expect(invoked).toEqual([]);
 	const databases = await indexedDB.databases();
@@ -163,7 +161,7 @@ test('the automatic entry decides when it is called: the desktop adapter in the 
 		await root.openFolder({
 			definition,
 			id: 'another.folder',
-			browser: { author, indexedDb: { indexedDB: other, IDBKeyRange } },
+			browser: { author, ...browserStorage({ indexedDB: other, IDBKeyRange }) },
 		}),
 	);
 	// The shell has no plugin. That is reported; it is not papered over with
@@ -181,7 +179,7 @@ test('the browser entry refuses inside the desktop app even when handed storage'
 		await browser.openFolder({
 			id,
 			definition,
-			browser: { author, indexedDb: { indexedDB, IDBKeyRange } },
+			browser: { author, ...browserStorage({ indexedDB, IDBKeyRange }) },
 		}),
 	);
 	expect(refused.name).toBe('InsideTauri');
@@ -198,7 +196,7 @@ test('a browser folder defaults to a local author and local automatic history; a
 			definition,
 			browser: {
 				remote: { url: 'http://git.test/remote.git', branch: 'main' },
-				indexedDb: environment,
+				...browserStorage(environment),
 			},
 		}),
 	);
@@ -212,7 +210,7 @@ test('a browser folder defaults to a local author and local automatic history; a
 		await browser.openFolder({
 			id,
 			definition,
-			browser: { indexedDb: environment },
+			browser: browserStorage(environment),
 		}),
 	);
 	// The policy in effect is observable on the handle.
@@ -246,7 +244,11 @@ test('handles sharing browser storage hear each other, when the storage carries 
 			await browser.openFolder({
 				id,
 				definition,
-				browser: { author, commitOnEdit: false, indexedDb: environment },
+				browser: {
+					author,
+					commitOnEdit: false,
+					...browserStorage(environment),
+				},
 			}),
 		);
 	const first = await open();

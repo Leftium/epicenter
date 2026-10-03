@@ -28,6 +28,7 @@ import {
 	field,
 	openFolder,
 } from './browser.js';
+import { browserStorage } from './browser-storage.test-support.js';
 import { hashBytes } from './capture.js';
 
 const definition = defineFolder({
@@ -49,7 +50,7 @@ async function open() {
 			browser: {
 				author: { name: 'Owner', email: 'owner@example.test' },
 				commitOnEdit: false,
-				indexedDb: { indexedDB: new IDBFactory(), IDBKeyRange },
+				...browserStorage({ indexedDB: new IDBFactory(), IDBKeyRange }),
 			},
 		}),
 	);

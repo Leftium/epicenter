@@ -26,6 +26,11 @@ import { afterAll, afterEach, expect, test } from 'bun:test';
 import { IDBFactory, IDBKeyRange } from 'fake-indexeddb';
 import { expectErr, expectOk } from 'wellcrafted/testing';
 import { openFolder } from './browser.js';
+import {
+	browserStorage,
+	locationOf,
+	opfsOf,
+} from './browser-storage.test-support.js';
 import { defineFolder, defineTable, field } from './contract.js';
 import { prepareFolderDefinition } from './definition.js';
 import { installWebLocks } from './web-locks.test-support.js';
@@ -53,7 +58,7 @@ async function open<
 			browser: {
 				author: { name: 'Definition', email: 'definition@example.test' },
 				commitOnEdit: false,
-				indexedDb: { indexedDB, IDBKeyRange },
+				...browserStorage({ indexedDB, IDBKeyRange }),
 			},
 		}),
 	);
@@ -126,11 +131,12 @@ test('a definition names no folder: an id is refused where it is written and whe
 		await openFolder({
 			id: 'so.epicenter.named',
 			definition: { ...declared, id: 'so.epicenter.named' } as never,
-			browser: { indexedDb: { indexedDB, IDBKeyRange } },
+			browser: browserStorage({ indexedDB, IDBKeyRange }),
 		}),
 	);
 	expect(refused.name).toBe('InvalidDefinition');
 	expect(await indexedDB.databases()).toEqual([]);
+	expect(opfsOf({ indexedDB, IDBKeyRange }).directories()).toEqual([]);
 });
 
 test('one prepared definition opens two folders that stay apart, and another definition keeps what it does not declare', async () => {
@@ -151,14 +157,8 @@ test('one prepared definition opens two folders that stay apart, and another def
 		id: 'so.epicenter.todos.work',
 		indexedDB,
 	});
-	expect(personal.location).toEqual({
-		kind: 'indexedDb',
-		database: 'epicenter-folder:so.epicenter.todos',
-	});
-	expect(work.location).toEqual({
-		kind: 'indexedDb',
-		database: 'epicenter-folder:so.epicenter.todos.work',
-	});
+	expect(personal.location).toEqual(locationOf('so.epicenter.todos'));
+	expect(work.location).toEqual(locationOf('so.epicenter.todos.work'));
 
 	const made = expectOk(
 		await personal.tables.todos.create({

@@ -279,10 +279,43 @@ export const OpenFolderError = defineErrors({
 		message:
 			'This page runs in the desktop app, whose folders are files on disk; browser storage is not opened there',
 	}),
-	/** No IndexedDB here: a server render, a worker without it, or a blocked origin. */
+	/**
+	 * No IndexedDB here: a server render, a worker without it, or a blocked
+	 * origin. A browser folder reads it to find folders earlier versions saved.
+	 */
 	NoIndexedDb: () => ({
 		message:
-			'Browser folders are stored in IndexedDB, which is not available here',
+			'Browser folders need IndexedDB to find folders saved by earlier versions, and it is not available here',
+	}),
+	/** The origin private file system, its writable streams, or Web Locks are missing. */
+	NoFileSystem: ({ missing }: { missing: string }) => ({
+		message: `Browser folders are stored in the origin private file system, which is not usable here: ${missing}`,
+		missing,
+	}),
+	/**
+	 * A folder an earlier version saved in IndexedDB is still open in a tab
+	 * that does not let go of it. Nothing was copied; close that tab and open
+	 * again.
+	 */
+	LegacyInUse: ({ database }: { database: string }) => ({
+		message: `The folder saved by an earlier version in '${database}' is open in another tab; close it, then open this folder again`,
+		database,
+	}),
+	/**
+	 * Copying a folder an earlier version saved in IndexedDB did not finish or
+	 * did not verify. The IndexedDB database is kept unchanged, and opening
+	 * again copies it again.
+	 */
+	LegacyMigration: ({
+		database,
+		cause,
+	}: {
+		database: string;
+		cause: unknown;
+	}) => ({
+		message: `The folder saved by an earlier version in '${database}' could not be moved to this version's storage, and is kept as it was: ${describe(cause)}`,
+		database,
+		cause,
 	}),
 	/** A browser folder with a remote records pushed commits under a named author. */
 	AuthorRequired: () => ({
@@ -327,6 +360,25 @@ export const OpenFolderError = defineErrors({
 	}),
 });
 export type OpenFolderError = InferErrors<typeof OpenFolderError>;
+
+/**
+ * Internal: a private write whose outcome is unknown, such as a stream that
+ * failed to close, or a file it created whose absence could not be shown
+ * after it failed. Git work that meets one reports `unconfirmed`, never
+ * `failed`, and does not treat the private file's current bytes as proof of
+ * what landed.
+ */
+export class UnconfirmedWrite extends Error {
+	constructor(
+		readonly path: string,
+		cause: unknown,
+	) {
+		super(`Whether '${path}' was written is unknown: ${describe(cause)}`, {
+			cause,
+		});
+		this.name = 'UnconfirmedWrite';
+	}
+}
 
 export function describe(cause: unknown): string {
 	if (cause instanceof Error) return cause.message;

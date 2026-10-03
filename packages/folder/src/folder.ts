@@ -16,6 +16,7 @@
 import type { CreateRowOf, KvOf } from '@epicenter/definition';
 import type { Result } from 'wellcrafted/result';
 import type { FolderStorage } from './boundary.js';
+import type { FolderDefinition } from './definition.js';
 import { createFiles, type FolderFiles } from './files.js';
 import type { GitRemote, PathStatus } from './git/backend.js';
 import type {
@@ -30,9 +31,9 @@ import type {
 	PullError,
 	PullOutcome,
 	PushOutcome,
+	RecoverOutcome,
 } from './git/history.js';
 import type { Author, CommitSummary } from './git/objects.js';
-import type { FolderDefinition } from './definition.js';
 import { createKv, type FileKv } from './kv.js';
 import { callObserver } from './observer.js';
 import { fenceStorage } from './storage.js';
@@ -91,6 +92,21 @@ export type FolderGit = {
 	>;
 	/** Why `mergeIncoming` is unavailable here, or `undefined` when it is available. */
 	readonly mergeUnsupported: string | undefined;
+	/**
+	 * Finish or clear the incoming update in `snapshot.pendingIncoming`, only
+	 * because it is asked for. An `unadmitted` (empty) record is removed:
+	 * `admissionCleared`. A branch already at the published commit is cleared
+	 * without writing a file: `cleared`. Over the admitted head, each changed
+	 * path at its before state is written and each at its after state is left,
+	 * removals first, then the index and the branch: `completed`. A path, the
+	 * index, the branch, or an unreadable record in neither state is
+	 * `RecoveryRefused`, names it, and writes nothing; the update stays
+	 * pending. A step whose outcome is unknown is `Unconfirmed` and leaves it
+	 * pending too. Status is observed again afterward, never assumed clean.
+	 * Nothing retries. Browser and desktop folders retain their own incoming
+	 * record and evaluate current paths again on each explicit recovery.
+	 */
+	recoverIncoming(): Promise<Result<RecoverOutcome, PullError | GitError>>;
 	/** Per-path staged and unstaged state, as `git status` reports it. */
 	paths(): Promise<Result<PathStatus[], GitError>>;
 	/** Staged authoring requires `commitOnEdit: false`. */
@@ -123,8 +139,8 @@ export type FolderAccess<TDefinition extends FolderDefinition> = {
  * folders apart; file paths passed to the folder are never joined onto it.
  */
 export type FolderLocation =
-	/** An IndexedDB database of this origin, by name. */
-	| { readonly kind: 'indexedDb'; readonly database: string }
+	/** A directory of this origin's private file system, by its path from the root. */
+	| { readonly kind: 'opfs'; readonly directory: string }
 	/** An ordinary directory, by absolute path. */
 	| { readonly kind: 'directory'; readonly root: string };
 
@@ -224,6 +240,7 @@ function createFolderGit(history: FolderHistory): FolderGit {
 		fetch: (options) => history.fetch(options),
 		pullFastForward: () => history.pullFastForward(),
 		mergeIncoming: () => history.mergeIncoming(),
+		recoverIncoming: () => history.recoverIncoming(),
 		mergeUnsupported: history.mergeUnsupported,
 		paths: () => history.paths(),
 		stage: (paths) => history.stage(paths),

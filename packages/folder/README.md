@@ -861,8 +861,9 @@ commit's attribute files the same way, matching patterns as a case-insensitive
 checkout does.
 
 A browser folder publishes an incoming update in steps, under its Git Web Lock
-and then its files lock. Ordinary saves take only the files lock, so they wait
-for at most one step and never for the Git work.
+and then its files lock. Ordinary saves take only the files lock. They wait
+while an incoming update publishes or recovers its working tree, index, and
+branch, but not for fetching or preparing the incoming Git objects.
 
 1. Admission. Every portable file must still have the hash the update
    captured, no new file may have appeared, and the index must be the bytes
@@ -882,10 +883,16 @@ for at most one step and never for the Git work.
    are removed.
 
 A step that fails reports the steps that landed (`Partial`), or `Unconfirmed`
-when its outcome is unknown; either way the record stays. A folder on disk
-applies ordered file steps, updates the index, and moves the branch last; a
-failure reports the steps that completed, marks the saved-files observation
-stale, and requests no commit.
+when its outcome is unknown; either way the record stays. The desktop Rust
+owner retains its equivalent record at `.git/epicenter/incoming.json` and
+recovers explicitly from pinned commits under the same rules.
+
+The Bun directory opener applies ordered file steps, updates the index, and
+moves the branch last. A failure reports the steps that completed, marks the
+saved-files observation stale, and requests no commit. It does not retain an
+incoming recovery record: its `pendingIncoming` is absent and
+`recoverIncoming()` returns `none`. Durable incoming recovery is implemented
+for the browser and desktop Rust owner.
 
 ### Interrupted incoming updates
 

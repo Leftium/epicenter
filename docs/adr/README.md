@@ -715,7 +715,7 @@ When you add an ADR, add its row here.
 | [0460](0460-vocab-and-whispering-are-braden-wongs-apps-built-on-epicenter.md) | Vocab and Whispering are Braden Wong's apps built on Epicenter | Proposed (personal-domain homes and Whispering ID migration unbuilt) |
 | [0461](0461-portable-data-folders-live-under-local-and-derived-account-scopes.md) | Portable data folders live under Local and derived account scopes | Proposed (Whispering Local default implemented; account folders and explicit transfers unbuilt) |
 | [0462](0462-file-table-entries-carry-source-and-use-issues-for-conformance.md) | Table snapshots expose usable fields and source diagnostics | Proposed |
-| [0463](0463-a-data-folder-exposes-a-generated-root-sqlite-index.md) | A data folder exposes a generated root SQLite index | Proposed (query generator and public folder publication unbuilt) |
+| [0463](0463-queryable-exports-contain-completed-sqlite-snapshots.md) | Queryable exports contain completed SQLite snapshots | Proposed (query generation, export publication, and cache validation unbuilt) |
 | [0464](0464-file-table-updates-conditionally-replace-the-captured-whole-file.md) | File table updates conditionally replace the captured whole file | Proposed |
 | [0465](0465-editors-keep-unsaved-source-separate-from-the-saved-baseline.md) | Editors keep unsaved source separate from the saved baseline | Proposed (file-backed editor lifecycle unbuilt) |
 | [0466](0466-opened-media-provides-stable-input-bytes.md) | Opened media provides stable input bytes | Proposed (stable media reads and transcription migration unbuilt) |
@@ -738,6 +738,7 @@ When you add an ADR, add its row here.
 | [0491](0491-field-helpers-build-native-typebox-schemas-with-ui-metadata.md) | Field helpers build native TypeBox schemas with UI metadata | Accepted |
 | [0492](0492-the-source-cli-keeps-sessions-in-one-operating-system-credential.md) | The source CLI keeps sessions in one operating system credential | Proposed (source commands implemented; OS acceptance and hosted callback deployment pending) |
 | [0493](0493-whispering-runs-as-one-application-in-three-deployment-forms.md) | Whispering runs as one application in three deployment forms | Proposed (Epicenter integration, remaining shared native services, and release distribution unbuilt) |
+| [0494](0494-file-folders-reserve-epicenter-for-rebuildable-caches.md) | File folders reserve .epicenter for rebuildable caches | Proposed (reserved-path boundary, managed ignore initialization, query caches, exports, and file-first resource composition unbuilt) |
 | [0495](0495-the-ark-community-profiles-use-at-handle-paths.md) | The Ark community profiles use at-handle paths | Proposed (community routing and stable profile identity unbuilt; custom domains open) |
 | [0496](0496-native-app-runtime-storage-is-independent-of-the-shell.md) | Native app runtime storage is independent of the shell | Proposed (shared root, cross-process admission, credentials, and migration unbuilt) |
 | [0497](0497-browser-folders-use-opfs-with-recoverable-publication.md) | Browser folders use OPFS with recoverable publication | Proposed (OPFS Folder adapter, recovery, admission, and migration unbuilt) |

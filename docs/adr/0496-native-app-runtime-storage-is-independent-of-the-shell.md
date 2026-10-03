@@ -27,11 +27,15 @@ A shared Rust implementation resolves the OS local-data directory and appends
 append the running shell's bundle ID. Standalone applications can resolve the
 root without installing or running the Epicenter host.
 
-| Platform | Release root |
-| --- | --- |
-| macOS | `~/Library/Application Support/so.epicenter` |
-| Windows | `%LOCALAPPDATA%\so.epicenter` |
-| Linux | `$XDG_DATA_HOME/so.epicenter`, defaulting to `~/.local/share/so.epicenter` |
+| Platform | Release root | Development root |
+| --- | --- | --- |
+| macOS | `~/Library/Application Support/so.epicenter` | `~/Library/Application Support/so.epicenter.dev` |
+| Windows | `%LOCALAPPDATA%\so.epicenter` | `%LOCALAPPDATA%\so.epicenter.dev` |
+| Linux | `$XDG_DATA_HOME/so.epicenter` | `$XDG_DATA_HOME/so.epicenter.dev` |
+
+On Linux, an unset local-data base defaults to `~/.local/share`. Default authored
+roots are exactly `~/Epicenter` for release and `~/Epicenter Dev` for development,
+including capitalization and the space. These names match ADR-0497's OPFS roots.
 
 These bases follow [Tauri's local-data resolver](https://docs.rs/tauri/latest/tauri/path/struct.PathResolver.html#method.local_data_dir).
 Use the persistent local-data directory, not the cache directory or the OS
@@ -66,6 +70,11 @@ OS local-data directory/
 New application databases use `.sqlite3`. This layout does not relocate or
 rename existing databases automatically. Root selection, owner encoding, and
 file suffix changes require explicit migration that preserves committed work.
+Migration must exclude active owners of the old namespace as well as the new
+one. A new lease key alone cannot fence an older build. Require a quiesced
+cutover or a verified admission bridge before moving retained databases; preserve
+uncheckpointed work through SQLite-aware migration rather than renaming only the
+main file.
 
 **One active runtime owns an app/account namespace across native processes.**
 The native shell acquires an OS-held exclusive lease before exposing SQL or

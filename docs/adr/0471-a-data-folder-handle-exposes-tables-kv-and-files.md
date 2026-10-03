@@ -170,8 +170,10 @@ rename affect only the row file.
 
 Recording, inference, secrets, and account transport remain independently
 composed product resources. This namespace decision does not replace current
-store-owned SQLite under ADR-0436 or settle its migration. The generated root
-`index.sqlite3` under ADR-0463 remains derived data. ADR-0479 proposes the raw
+store-owned SQLite under ADR-0436 or settle its migration. ADR-0494 proposes
+optional folder-derived caches under `.epicenter/`; ADR-0463 proposes completed
+query exports named `query.sqlite3` by default. Neither adds SQL to this handle.
+ADR-0479 proposes the raw
 file mutation signatures. ADR-0478 records openers; ADR-0482 records batch
 receipts; the package README and Git contracts record exact history result
 types. Save and Git completion follow their own decisions, not the spelling of a

@@ -27,38 +27,66 @@ Markdown, `kv.json`, and media remain ordinary file bytes. SQLite remains an
 optional derived projection or a justified transactional database; it does not
 become the authoritative container for every authored file.
 
-The origin's release root has this logical layout:
+The origin's release storage uses two sibling directories with this logical layout:
 
 ```text
-OPFS/epicenter/
-  local/<folder-id>/
-    kv.json
-    recordings/take.md
-    recordings/take.opus
-    .git/...
-    .epicenter/query.sqlite3       optional rebuildable projection
-  accounts/<account-key>/<folder-id>/...
-  runtime/<app-id>/<account-owner>/
-    local.sqlite3                 retained pending work
-    mail-<google-sub>.sqlite3      downloaded mailbox
+OPFS/
+  Epicenter/
+    local/<folder-id>/
+      kv.json
+      recordings/take.md
+      recordings/take.opus
+      .git/...
+      .epicenter/query.sqlite3     optional logical query cache
+    accounts/<account-key>/<folder-id>/...
+  so.epicenter/
+    <app-id>/<account-owner>/
+      local                       logical retained database
+      mail-<google-sub>            logical downloaded mailbox
 ```
 
-Development uses a separate `epicenter-dev` root. Account keys and owners use
-ADR-0461 and ADR-0496. `runtime/` earns its boundary here because the OPFS root
-contains authored scopes as well as private application state. There is no
-additional `apps/` prefix. Moving or exporting a source folder excludes runtime
-state and its optional `.epicenter/` cache.
+Root names match the native conventions exactly:
+
+| Role | Release directory | Development directory |
+| --- | --- | --- |
+| Authored folders | `Epicenter` | `Epicenter Dev` |
+| Private app/account storage | `so.epicenter` | `so.epicenter.dev` |
+
+Use these exact spellings, including capitalization and the space in `Epicenter Dev`.
+Separate origins do not replace explicit channel separation. Account keys and
+owners use ADR-0461 and ADR-0496. There is no `runtime/`, `apps/`, or `sqlite/`
+prefix. An authored-root export traverses `Epicenter`, not its private sibling.
+Moving or exporting a source folder excludes app/account state and its optional
+`.epicenter/` cache. This hierarchy is an Epicenter convention, not an OPFS standard.
+
+Capture the deployment channel once and use it in storage addresses, ownership
+claims, notifications, and SQL pool directory and VFS-registration identities.
+Changing only a database filename or directory does not isolate a shared pool
+registration. Provider credential addresses follow the same channel ownership;
+origin-scoped authentication cookies and server sessions remain separate concerns.
+Verify storage isolation with both channels on one origin before claiming it.
 
 Authored relative paths and bytes match a desktop data folder. OPFS is
 origin-private, not a user-visible desktop directory or a grant to another
 origin. Export materializes authored paths; it does not expose the browser's
-runtime root. Native and browser databases remain physically separate.
+private app/account root. Native and browser databases remain physically separate.
 
 The tree specifies logical addresses. SQLite's existing access-handle pool
 manages physical files internally; its synthetic database names do not promise
 literal OPFS filenames. A cache stays outside the authored file boundary even
 when its logical address is beside the folder. No query database is created
 until a consumer needs it; reuse validates source and definition interpretation.
+The first folder-query consumer captures and projects in memory, so it needs no
+cache directory or SAH pool. An explicit query session may share that immutable
+capture across several queries until refresh or closure, as defined in ADR-0494.
+If measured benefit justifies a
+persistent cache, prefer a completed snapshot file at the folder's
+`.epicenter/query.sqlite3`, matching ADR-0494, loaded into memory for querying.
+Verify serialization, peak memory, validity checks, and failed-publication
+recovery before adopting that strategy. Private app database pools keep their
+adapter-owned physical filenames. Mail's databases stay in `so.epicenter`
+because their source and retention belong to the app/account, not the selected
+authored folder.
 
 **One admitted owner serializes each protected resource's operations.**
 Tabs cannot bypass conditional-save checks, publication, or Git admission.

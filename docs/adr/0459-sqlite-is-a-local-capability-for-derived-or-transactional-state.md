@@ -69,7 +69,7 @@ is insufficient. The application also defines retention, migrations, recovery,
 and explicit deletion for those durable bytes. A search index may use SQL
 transactions internally without becoming authoritative.
 
-**Private application databases stay device-local, and SQLite files do not participate in Epicenter data folder synchronization.**
+**Private application databases stay device-local, and application-managed SQLite files do not participate in Epicenter data folder synchronization.**
 
 Account scoping selects local ownership; it does not synchronize the database.
 Neither database files nor their WAL/journal companions enter data folder sync.
@@ -78,16 +78,22 @@ proposes one native app/account address shared by standalone and hosted shells,
 with cross-process admission. [ADR-0497](0497-browser-folders-use-opfs-with-recoverable-publication.md)
 proposes OPFS-backed browser folders with the same logical separation. Both
 require implementation and migration before current storage paths change.
-Private databases remain in runtime-managed storage outside data folder contents;
-this includes browser-managed storage on browser targets. A `.gitignore` entry
-does not establish this boundary.
+Provider mirrors and retained transactional databases stay with the app/account
+runtime outside authored folders. Current native databases use AppData; browser
+databases use OPFS. Optional rebuildable caches derived from a folder may live
+under that folder's root `.epicenter/`, as proposed in
+[ADR-0494](0494-file-folders-reserve-epicenter-for-rebuildable-caches.md).
+Browser targets preserve the same logical separation in browser-managed storage.
+A `.gitignore` entry does not establish the source boundary.
 
-A generated external query snapshot may instead appear as root `index.sqlite3`
-under [ADR-0463](0463-a-data-folder-exposes-a-generated-root-sqlite-index.md).
-It is derived from the enclosing folder and excluded from authoritative folder
-sync. It does not move private transactional databases or runtime-managed
-caches into portable source. A public index is generated from selected public
-files after private material is removed.
+A completed query export uses the default filename `query.sqlite3` at an
+explicitly selected destination under
+[ADR-0463](0463-queryable-exports-contain-completed-sqlite-snapshots.md).
+No live root filename is reserved for this export. It is generated explicitly,
+not kept continuously current. Public exports are generated from selected public
+files after private material is removed. An intentionally saved SQLite dataset can be an authored
+attachment with an explicit Git ignore exception; its format alone does not
+make it an application cache.
 
 This is Epicenter's contract, not a claim that SQLite can never be replicated.
 A local transaction supplies no cross-device commit or ordering guarantee.
@@ -137,10 +143,11 @@ Most applications use one editable table/KV model for local and synchronized
 data. SQLite remains available without making every application maintain a
 second authoritative representation of its records.
 
-A copied data folder includes its authored data and attachment bytes. It does not
-include private transactional work. Mail's pending edits remain on the device
-that owns them; erasing that database loses undelivered work. Any transfer of
-those obligations needs an explicit transfer and execution contract.
+An authored-folder copy includes its authored data and attachment bytes and
+omits optional `.epicenter/` caches. Mail's app/account databases require a
+separate backup. Erasing the pending-work database loses undelivered work.
+Copying or restoring those obligations does not authorize execution; transfer
+or restore needs an explicit activation contract regardless of database location.
 
 File editing, conflict handling, and save publication still need defined
 behavior. A SQL index cannot repair missing guarantees in authoritative file

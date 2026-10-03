@@ -1525,6 +1525,7 @@ dependencies = [
  "notify",
  "rusqlite",
  "serde",
+ "serde_json",
  "sha2",
  "specta",
  "unicode-normalization",

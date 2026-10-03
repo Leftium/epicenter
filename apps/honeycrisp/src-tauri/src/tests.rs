@@ -255,8 +255,8 @@ fn repository_author_is_used_for_local_history_without_adopting_origin() {
         "plugin:epicenter-folder|apply",
         json!({
             "session": attached["session"],
-            "changes": [{ "kind": "write", "path": "kv.json", "bytes": b"{}\n",
-                "expected": { "kind": "absent" } }],
+            "submission": 1,
+            "changes": [{ "kind": "create", "path": "kv.json", "bytes": b"{}\n" }],
         }),
     )
     .unwrap();
@@ -449,17 +449,19 @@ fn a_new_folder_is_set_up_through_the_owner_and_its_settings_are_the_first_commi
         .unwrap();
         assert!(fixture.root.join(table).is_dir());
     }
+    let submitted = std::cell::Cell::new(0_u64);
     let create = |text: &str| {
+        submitted.set(submitted.get() + 1);
         invoke(
             &main,
             "plugin:epicenter-folder|apply",
             json!({
                 "session": session,
+                "submission": submitted.get(),
                 "changes": [{
-                    "kind": "write",
+                    "kind": "create",
                     "path": "kv.json",
                     "bytes": text.as_bytes(),
-                    "expected": { "kind": "absent" },
                 }],
             }),
         )
@@ -476,7 +478,7 @@ fn a_new_folder_is_set_up_through_the_owner_and_its_settings_are_the_first_commi
     // A second creation loses to the file that is there and changes nothing.
     let refused = create("{\"overwritten\":true}\n").unwrap_err();
     assert_eq!(refused["name"], json!("Refused"));
-    assert_eq!(refused["error"]["name"], json!("Conflict"));
+    assert_eq!(refused["error"]["name"], json!("Exists"));
     assert_eq!(
         std::fs::read_to_string(fixture.root.join("kv.json")).unwrap(),
         "{}\n"
@@ -514,17 +516,19 @@ fn a_save_that_cannot_be_written_fails_alone_and_a_commit_that_cannot_be_recorde
     )
     .unwrap();
     let session = &attached["session"];
+    let submitted = std::cell::Cell::new(0_u64);
     let write = |path: &str, text: &str| {
+        submitted.set(submitted.get() + 1);
         invoke(
             &main,
             "plugin:epicenter-folder|apply",
             json!({
                 "session": session,
+                "submission": submitted.get(),
                 "changes": [{
-                    "kind": "write",
+                    "kind": "overwrite",
                     "path": path,
                     "bytes": text.as_bytes(),
-                    "expected": { "kind": "any" },
                 }],
             }),
         )
@@ -535,7 +539,7 @@ fn a_save_that_cannot_be_written_fails_alone_and_a_commit_that_cannot_be_recorde
             "plugin:epicenter-folder|commit",
             json!({ "session": session }),
         )
-        .unwrap()["outcome"]["status"]
+        .unwrap()["status"]
             .clone()
     };
     write("notes/a.md", "first\n").expect("an ordinary save lands");

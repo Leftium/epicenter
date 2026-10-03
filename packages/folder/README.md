@@ -592,7 +592,8 @@ waited. If the folder closes while it still waits, it is told `closed` and
 nothing runs.
 
 Source files are tracked files plus untracked files that `.gitignore` does not
-exclude; the root `index.sqlite3` and private Git state never are. Plain Git
+exclude; private Git state is never source. SQLite filenames have no special
+exclusion: an intentionally saved database follows ordinary Git rules. Plain Git
 records binary files like any other file. There is no default audio ignore, no
 format list, and no LFS.
 

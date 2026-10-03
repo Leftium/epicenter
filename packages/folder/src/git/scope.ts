@@ -3,10 +3,10 @@
  *
  * Status, automatic commits, and incoming fast-forwards share one rule: a file
  * tracked in the committed tree stays source; an untracked file is source
- * unless `.gitignore` excludes it. Private Git state, operating-system scratch
- * files, and the root generated `index.sqlite3` are excluded earlier by
- * `isPortablePath`. The browser evaluates `.gitignore` files from the
- * captured bytes; the native backend asks `git check-ignore`, which also
+ * unless `.gitignore` excludes it. Private Git state and operating-system
+ * scratch files are excluded earlier by `isPortablePath`. The browser evaluates
+ * `.gitignore` files from the captured bytes; the native backend asks
+ * `git check-ignore`, which also
  * honors `.git/info/exclude` and the user's excludes file.
  */
 import ignore, { type Ignore } from 'ignore';

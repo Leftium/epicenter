@@ -3,7 +3,7 @@
  *
  * Status, automatic commits, and incoming fast-forwards share one inclusion
  * rule: tracked files stay source, untracked files are source unless
- * `.gitignore` excludes them, and the root generated `index.sqlite3` never is.
+ * `.gitignore` excludes them. SQLite filenames have no special source policy.
  *
  * Key behaviors:
  * - Root and nested `.gitignore` rules, negation, and ignored directories
@@ -56,10 +56,11 @@ const LAYOUT: Record<string, string> = {
 	'notes/keep.log': 're-included by the nested file\n',
 	'notes/secret.txt': 'ignored by the nested file\n',
 	'notes/plain.txt': 'ordinary source\n',
-	'index.sqlite3': 'generated query index\n',
+	'index.sqlite3': 'an intentionally saved dataset\n',
 };
 const SOURCE = [
 	'.gitignore',
+	'index.sqlite3',
 	'notes/.gitignore',
 	'notes/keep.log',
 	'notes/plain.txt',
@@ -81,7 +82,7 @@ describe('gitignoreMatcher', () => {
 			Object.keys(LAYOUT)
 				.filter((path) => !ignored(path))
 				.sort(),
-		).toEqual([...SOURCE, 'index.sqlite3'].sort());
+		).toEqual(SOURCE);
 	});
 });
 
@@ -113,11 +114,8 @@ describe('browser folder scope', () => {
 		const outcome = await folder.git.commit();
 		expect(outcome.status).toBe('committed');
 		expect((await folder.git.status()).data?.changes).toEqual([]);
-		// The terminal's `git status` keeps Git semantics: the generated index is
-		// untracked (not ignored), exactly as native Git reports it.
-		expect((await folder.git.paths()).data).toEqual([
-			{ path: 'index.sqlite3', index: '?', worktree: '?' },
-		]);
+		// Folder commits include the same authored SQLite path as ordinary Git.
+		expect((await folder.git.paths()).data).toEqual([]);
 		await folder.close();
 	});
 });
@@ -145,16 +143,13 @@ describe('native folder scope', () => {
 			.split('\n')
 			.map((line) => line.replace(/^\S+\s+/, ''))
 			.sort();
-		// Native Git lists index.sqlite3; it is derived data, never history source.
-		expect(porcelain).toEqual(
-			[...SOURCE, 'index.sqlite3', 'tracked.log'].sort(),
-		);
+		expect(porcelain).toEqual([...SOURCE, 'tracked.log'].sort());
 
 		expect((await folder.git.commit()).status).toBe('committed');
 		expect((await git(root, 'ls-files')).split('\n').sort()).toEqual(
 			[...SOURCE, 'tracked.log'].sort(),
 		);
-		expect(await git(root, 'status', '--porcelain')).toBe('?? index.sqlite3');
+		expect(await git(root, 'status', '--porcelain')).toBe('');
 		await folder.close();
 	});
 

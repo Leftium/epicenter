@@ -197,8 +197,9 @@ account removal while work is owed remain Mail requirements.
 This removes the planned universal per-folder SQL namespace and cache/state
 taxonomy. It does not remove SQL lifecycle ownership. Current `.epicenter/`
 paths are ordinary source in the file-folder engine until enforcement ships.
-Current root `index.sqlite3` exclusions remain implementation debt to remove
-with their tests; this documentation change does not remove them.
+The folder engine no longer treats root `index.sqlite3` specially. An authored
+SQLite file follows ordinary Git rules; the future reserved-cache boundary and
+managed ignore initialization remain unbuilt.
 
 ## Considered alternatives
 

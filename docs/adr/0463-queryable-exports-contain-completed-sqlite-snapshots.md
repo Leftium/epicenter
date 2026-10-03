@@ -3,7 +3,7 @@
 - **Status:** Proposed
 - **Date:** 2026-09-30
 - **Relates:** [ADR-0494](0494-file-folders-reserve-epicenter-for-rebuildable-caches.md) separates optional folder caches from app/account working state.
-- **Unbuilt:** SQL snapshot generation, standalone export validation, and complete public folder publication. Current special root `index.sqlite3` exclusions remain until a code change removes them.
+- **Unbuilt:** SQL snapshot generation, standalone export validation, and complete public folder publication. No live root database filename is reserved by the folder engine.
 
 ## Context
 

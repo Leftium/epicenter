@@ -10,8 +10,6 @@
 const PRIVATE_SEGMENTS = new Set(['.git']);
 /** Operating-system scratch files that commits and status never include. */
 const SCRATCH_NAMES = new Set(['.DS_Store']);
-/** The root generated query index; derived data, never history source. */
-export const GENERATED_INDEX = 'index.sqlite3';
 
 // biome-ignore lint/suspicious/noControlCharactersInRegex: control characters are what this rejects.
 const CONTROL = /[\u0000-\u001f\u007f]/;
@@ -39,12 +37,10 @@ export function pathProblem(path: string): string | undefined {
 
 /**
  * Candidate history source: every valid path except operating-system scratch
- * files and the root generated index. `.gitignore` narrows it further in
- * `git/scope.ts`.
+ * files. `.gitignore` narrows it further in `git/scope.ts`.
  */
 export function isPortablePath(path: string): boolean {
 	if (pathProblem(path) !== undefined) return false;
-	if (path === GENERATED_INDEX) return false;
 	return !SCRATCH_NAMES.has(basename(path));
 }
 

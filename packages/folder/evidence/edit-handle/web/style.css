@@ -1,0 +1,135 @@
+:root {
+	font-family: system-ui, sans-serif;
+	font-size: 14px;
+	color: #1d1d1f;
+	background: #f6f6f4;
+}
+body {
+	margin: 0 auto;
+	max-width: 1500px;
+	padding: 16px 24px 48px;
+}
+h1 {
+	margin: 0 0 4px;
+	font-size: 20px;
+}
+h2 {
+	font-size: 15px;
+	margin: 0 0 8px;
+}
+h3,
+h4 {
+	font-size: 13px;
+	margin: 12px 0 6px;
+}
+section {
+	margin-top: 20px;
+}
+article {
+	background: #fff;
+	border: 1px solid #ddd;
+	border-radius: 6px;
+	padding: 12px;
+	min-width: 0;
+}
+.columns {
+	display: grid;
+	gap: 12px;
+}
+.columns.two {
+	grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.columns.three {
+	grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+.section-head {
+	display: flex;
+	align-items: center;
+	gap: 12px;
+}
+.panel label {
+	display: block;
+	margin-bottom: 8px;
+}
+.panel input:not([type="checkbox"]),
+.panel select,
+.panel textarea,
+#notes textarea {
+	display: block;
+	width: 100%;
+	box-sizing: border-box;
+	margin-top: 2px;
+	font: inherit;
+}
+textarea.source,
+pre {
+	font-family: ui-monospace, monospace;
+	font-size: 12px;
+}
+pre {
+	background: #f3f3f0;
+	padding: 8px;
+	margin: 4px 0;
+	white-space: pre-wrap;
+	overflow-wrap: anywhere;
+}
+.buttons {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px;
+	margin: 8px 0;
+}
+button {
+	font: inherit;
+	padding: 4px 10px;
+}
+button.armed {
+	background: #ffe7a3;
+}
+.facts {
+	display: grid;
+	grid-template-columns: max-content 1fr;
+	gap: 4px 12px;
+	margin: 0;
+}
+.facts dd {
+	margin: 0;
+}
+.compare {
+	display: grid;
+	grid-template-columns: 1fr 1fr;
+	gap: 8px;
+}
+.warn {
+	color: #9a4b00;
+}
+.refusal {
+	color: #a01818;
+	min-height: 1em;
+}
+.quiet {
+	color: #666;
+}
+.diagnostics {
+	color: #9a4b00;
+	padding-left: 18px;
+}
+.immediate {
+	list-style: none;
+	padding: 0;
+}
+.log {
+	font-size: 12px;
+	padding-left: 0;
+	list-style: none;
+	max-height: 320px;
+	overflow: auto;
+}
+.log time {
+	color: #666;
+	font-family: ui-monospace, monospace;
+}
+details summary {
+	cursor: pointer;
+	font-family: ui-monospace, monospace;
+}

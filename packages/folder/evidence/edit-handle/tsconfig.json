@@ -1,0 +1,12 @@
+{
+	"extends": "../../../../tsconfig.dom.json",
+	"compilerOptions": {
+		"types": ["bun", "svelte"],
+		"jsx": "preserve",
+		"jsxImportSource": "solid-js",
+		"noUnusedLocals": true,
+		"noUnusedParameters": true
+	},
+	"include": ["**/*.ts", "**/*.tsx", "**/*.svelte"],
+	"exclude": ["node_modules", "dist"]
+}

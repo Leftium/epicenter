@@ -5,6 +5,7 @@
 - **Supersedes:** [ADR-0337](0337-the-folder-is-a-working-copy-and-pull-and-push-are-the-whole-cycle.md), the Yjs store working-copy workflow. Later checkout refinements remain historical evidence, not a replacement workflow.
 - **Relates:** [ADR-0494](0494-file-folders-reserve-epicenter-for-rebuildable-caches.md) defines transient folder queries; [ADR-0463](0463-queryable-exports-contain-completed-sqlite-snapshots.md) defers SQL export.
 - **Implementation:** store checkout API, baseline/manifest code, NDJSON wire format, host checkout route, checkout tests, and checkout benchmark are removed.
+- **Removal commit:** `5984d2cbde20068062c1cd09e80ce5049501c589` (`refactor: remove store checkout push and pull`).
 - **Unbuilt:** generic file-folder query sessions remain unbuilt under ADR-0494. No replacement store checkout, automatic manifest conversion, or SQL export is planned.
 
 ## Context
@@ -63,3 +64,19 @@ obligations; Git history preserves the implementation for investigation.
   product requirement. Removing execution does not require deleting files.
 - Build SQL export alongside queries: adds external schema and publication
   contracts before a reader requests them.
+
+## Find the removed implementation
+
+The removal commit's parent contains the implementation and tests. Inspect them
+without changing the working tree:
+
+```sh
+git show 5984d2cbde^:packages/app/src/data/artifact/checkout.ts
+git show 5984d2cbde^:packages/app/src/data/artifact/checkout.test.ts
+git show 5984d2cbde^:apps/epicenter/src/checkout.ts
+git show 5984d2cbde --stat
+```
+
+Restoring this code would also require restoring its package export, wire helpers,
+host routes, and ownership contract. The historical source is recoverable; it
+is not an active compatibility path.

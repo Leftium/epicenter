@@ -102,23 +102,17 @@ EVIDENCE
 ```
 
 Resume a completed consultation for the same assignment in the same checkout.
-State source changes and new evidence in the follow-up. Use a fresh session for
-an independent review of Claude-authored work or a materially different frame;
-resuming retains context and does not restore independence.
-The launcher reapplies the access boundary on every turn. If the shell tool
-yields a running process, keep monitoring it and provide progress updates.
-There is no interactive attach step.
+Supply changed source, new evidence, and the next question explicitly. Use a
+fresh session for independent exploration, review of Claude-authored work, or a
+materially different frame. Resuming retains context: a challenge to another
+proposal or Codex's synthesis is an informed follow-up, not blind discovery.
 
-Actively steer through those completed-turn follow-ups: supply new facts,
-correct misunderstandings, and redirect duplicated or low-value investigation
-without prescribing its conclusion. Preserve useful findings and state the next
-question when redirecting. The launcher sends one fixed brief per turn and has
-no mid-turn instruction channel. Use natural assignment boundaries when new
-evidence may change substantial work; avoid mandatory checkpoints for simple
-questions. For independent exploration or a materially different frame, brief
-a fresh session from raw evidence. After initial answers are preserved, an
-informed follow-up may challenge another proposal or Codex's synthesis;
-resumption does not make that challenge independent discovery.
+The launcher sends one fixed brief per turn, reapplies the access boundary on
+every turn, and provides no mid-turn instruction channel or interactive attach.
+Steer at completed-turn boundaries using
+[adversarial-review](../adversarial-review/SKILL.md)'s coordination guidance for
+design investigations. If the shell tool yields a running process, monitor it
+and keep the user informed.
 
 `--model` selects a model; the default is `claude-opus-5-5`.
 `--effort` selects the effort for this launch; omitting it leaves effort selection

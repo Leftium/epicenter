@@ -39,12 +39,11 @@ contract or requesting broader access.
 
 Keep the destination and the reasons it is worth pursuing in the brief. Let
 Claude choose implementation details within the accepted outcome. For greenfield
-experiments, evidence may challenge the preferred design; do not make proving it
-right the acceptance criterion. Ask Claude to surface discoveries that change
-the bargain or suggest a better destination, with concrete evidence. Codex owns
-any resulting requirement or design decision through
-[rethink](../rethink/SKILL.md), rather than letting the worker silently replace
-the assignment.
+experiments, acceptance is evidence that distinguishes designs, not proof that
+the preferred design is right. Claude surfaces discoveries that suggest a better
+destination; Codex owns the resulting decision through
+[rethink](../rethink/SKILL.md). A convenient implementation must not silently
+replace the vision or the assignment.
 
 ## Prepare the workspace
 
@@ -102,15 +101,12 @@ FOLLOWUP
 
 Manage the assignment through evidence and acceptance. Resume for new facts,
 corrected misunderstandings, or a focused change in direction as well as failed
-checks. State what remains accepted and what changed; retain useful partial
-work and identify source changes before continuing. Steer toward the result
-without prescribing implementation details that the worker can decide.
-
-The launcher sends one fixed brief per turn and provides no mid-turn instruction
-channel. For substantial work whose direction depends on new evidence, choose
-natural assignment boundaries so Codex can redirect the next turn. Do not impose
-checkpoints on straightforward work. Keep one writer per clone; parallel workers
-need separate clones and results Codex can accept and integrate independently.
+checks. State what remains accepted and what changed, and retain useful partial
+work. The launcher's completed-turn follow-up limits are described in
+[consult-claude](../consult-claude/SKILL.md#send-a-brief). Choose natural assignment
+boundaries when evidence could change substantial work; straightforward tasks
+need no mandatory checkpoints. Keep one writer per clone: parallel workers need
+separate clones and independently reviewable results.
 
 Use `--dry-run` to inspect arguments without calling Claude. Use consultation
 with a fresh session when independent judgment is needed on Claude's output.

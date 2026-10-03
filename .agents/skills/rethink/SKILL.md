@@ -12,21 +12,17 @@ description: >
 
 # Rethink
 
-Pursue the best possible version of what this could be. Suspend inherited
-constraints long enough to discover the strongest shape: question the
-boundaries, assumptions, and promises that make the current system feel
-inevitable.
+Pursue the strongest vision of what this could become. Greenfield discovery is
+the default: start from the desired outcome and actual users and callers, then
+question the inherited boundaries, promises, and organizing idea. Discover what
+deserves to be built before narrowing to whether an emerging proposal works.
 
-Use [dialectic](../../skills/dialectic/SKILL.md) to articulate that vision
-together and give it concrete expression. Push it far enough that we can
-recognize what makes it worth pursuing. Then work backward from that destination,
-distinguishing constraints we must solve from assumptions we can discard.
-
-Greenfield discovery is the default posture when this skill is invoked. Start
-with what deserves to be built before narrowing to whether an emerging proposal
-works. Make the deletion prize concrete: machinery, obligations, or planned work
-that disappears and the guarantees that replace it. The strongest design may
-also introduce an abstraction that earns its place; judge the whole bargain.
+Use [dialectic](../dialectic/SKILL.md) to make that vision concrete enough to
+experience and challenge. Make the deletion prize and new complexity explicit:
+what machinery, obligations, or planned work disappears, and what guarantees
+replace it? A better design may introduce an abstraction that earns its place.
+Establish which constraints are real, then work backward from the strongest
+supported destination. Judge the whole bargain rather than the number of parts.
 
 ## Pursue the vision
 
@@ -55,12 +51,8 @@ require changing one.
 
 Use independent explorations when they could reveal a better destination,
 different boundary, or neglected caller need. A known blind spot is not required.
-[adversarial-review](../adversarial-review/SKILL.md) owns reviewer selection,
-independence, active steering, and adjudication. Brief reviewers from the outcome
-and actual callers, with permission to challenge the coordinator's framing.
-Bring discoveries back into a concrete proposal through dialectic; do not make
-the person assemble reviewer reports. A settled direction needs focused evidence
-and execution rather than repeated discovery without a consequential reason.
+[adversarial-review](../adversarial-review/SKILL.md) owns that search and its
+coordination. Bring discoveries back into the concrete vision through dialectic.
 
 ## Work backward from the destination
 

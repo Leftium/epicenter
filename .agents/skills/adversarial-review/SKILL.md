@@ -6,11 +6,11 @@ description: Independently pursue the strongest greenfield design, challenge the
 # Adversarial review
 
 Independently pursue the strongest greenfield design from the desired outcome
-and actual users and callers. Reconstruct the affected system as evidence about
-the problem, then question its boundaries, ownership, lifecycle, representation,
-and promises. Ask what you would build if the current abstraction did not exist.
-Passing tests and individually defensible abstractions do not settle whether
-the model deserves to survive.
+and actual users and callers. Hold that outcome steady while questioning the
+organizing idea, boundaries, ownership, lifecycle, representation, and inherited
+promises. Reconstruct the system as evidence about the problem, not the boundary
+of the solution. Develop a concrete vision of what you would build if the current
+abstraction did not exist, even when no bugs are apparent.
 
 Make the deletion prize concrete: what machinery, obligations, or planned work
 becomes unnecessary, and what stronger guarantee replaces it? The strongest
@@ -18,16 +18,11 @@ design may introduce an abstraction that earns its place. Judge the whole
 bargain; fewer parts alone do not establish improvement. Keep migration cost
 visible without letting it define the destination before exploring that design.
 
-Hold the user's desired outcome steady while challenging the implementation,
-remaining plan, and inherited requirements. Reconstruct from actual callers so
-the implementer's explanation does not become the reviewer's frame. Even when
-no bugs are apparent, develop a concrete greenfield alternative to stress-test
-the current design. Zoom out when local cleanup leaves the model intact.
-
 Success is a better-supported next decision. Count complexity introduced as
 well as removed, including work transferred to the user. Keeping the design is
-valid after testing the alternative; neither forced disagreement nor deletion
-at any cost is the job.
+valid after testing the alternative. Passing tests and individually defensible
+abstractions do not settle whether the model deserves to survive; forced
+disagreement and deletion at any cost do not establish improvement either.
 
 ## Establish independence
 
@@ -60,8 +55,8 @@ Reviewer two starts with:
 > Independently develop the strongest greenfield design. What must it preserve
 > to be worth adopting? Trace concrete callers and lifecycle sequences to find
 > the guarantees the current complexity provides. Which matter to the user,
-> and which are inherited assumptions? Show where an alternative would break a necessary
-> guarantee or move the burden onto someone else.
+> and which are inherited assumptions? Show where an alternative would break
+> a necessary guarantee or move the burden onto someone else.
 
 These are starting questions, not assigned conclusions or separate file lanes.
 Reviewer two explores alternatives without waiting for reviewer one's proposal.
@@ -74,9 +69,10 @@ without the implementer's proposed design or rationale. Ask each to sketch the
 strongest greenfield design and name what it deletes and introduces. Preserve
 their independent initial answers. Then provide the full proposal and reasoning
 to each reviewer for a challenge against those answers. This ordering tests
-whether the proposal anchored the search. For implemented work, the current checkout may already
-expose the proposal; do not claim that the first pass was blind. Start from the
-outcome, actual callers, and task-start baseline when available. Explore the
+whether the proposal anchored the search. For implemented work, the current
+checkout may already expose the proposal; do not claim that the first pass was
+blind. Start from the outcome, actual callers, and task-start baseline when
+available. Explore the
 destination before narrowing to critique of the cumulative diff.
 
 Give each reviewer raw artifacts, concrete proposals, engineering reasoning, and
@@ -121,10 +117,9 @@ questions. Model symmetry and a fixed panel size are not requirements.
 
 Use parallel reviewers to broaden the search and sequential reviewers to
 challenge emerging alternatives, shared assumptions, or the coordinator's
-synthesis. Preserve independent initial findings before sharing competing
-recommendations. Give later reviewers raw evidence alongside those findings;
-label their passes as informed challenges rather than blind discovery. A fresh
-reviewer can reopen the destination, not merely validate the preferred proposal:
+synthesis. Later reviewers receive raw evidence alongside preserved findings;
+their passes are informed challenges rather than blind discovery. A fresh
+reviewer can reopen the destination:
 
 > The current recommendation is evidence to examine, not your destination.
 > Independently consider whether a different organizing idea would better
@@ -136,25 +131,22 @@ Actively manage assignments. Clarify questions, supply new evidence, correct
 factual misunderstandings, and redirect duplicated or low-value work. Share
 material facts with affected reviewers while withholding competing conclusions
 until their independent initial answers are preserved. Steer toward the
-uncertainty that matters without prescribing the conclusion. If a reviewer
-stops at local cleanup, ask what makes the model necessary and whether a
-different owner, lifetime, representation, or interaction would eliminate it.
-
-Preserve consequential discoveries when redirecting an assignment and state the
-new question. Intervene when evidence or the investigation's trajectory warrants
-it; avoid repeated status requests that interrupt useful work. Use messages
-during a run only when the agent interface supports them; consult-claude owns
-Claude's completed-turn follow-ups. Use natural assignment boundaries for
-substantial uncertainty without imposing checkpoints on straightforward work.
+uncertainty that matters without prescribing the conclusion. Preserve useful
+findings and state the new question when redirecting. If a reviewer stops at
+local cleanup, ask what makes the model necessary and what different organizing
+idea would eliminate it. Intervene when evidence or the investigation's trajectory
+warrants it, rather than repeatedly requesting status. Choose natural assignment
+boundaries when evidence could change substantial work. Use mid-run messages only
+when supported; consult-claude owns Claude's completed-turn follow-ups.
 
 As the destination earns support, focus effort on claims that could change the
 decision or establish how to realize it. Prefer a concrete counterexample,
 caller trace, or executable check when it can settle the question. Reopen the
 destination when evidence reveals a better organizing idea or changes the
-bargain; difficulty alone does not justify lowering the ambition. Stop when
-consequential claims have sufficient evidence and further review has no
-plausible route to changing the design or its justification. Agreement is not
-proof, and repeated review to obtain unanimity is not the goal.
+bargain; difficulty alone does not justify lowering the ambition. Close when a
+concrete destination has survived serious alternatives and its consequential
+claims have sufficient evidence. Further reviewers need an opportunity to improve
+that decision, not a demand for unanimity or proof that no better design exists.
 
 ## Reconstruct before judging
 

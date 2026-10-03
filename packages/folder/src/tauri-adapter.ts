@@ -40,6 +40,12 @@
  * pages and windows are not ordered against it: the last save to land wins.
  * Directory changes are not numbered.
  *
+ * A fast-forward that stops partway leaves the owner's incoming record
+ * (ADR-0474). The snapshot reports it as `pendingIncoming`; until it is
+ * settled, commits, staging, and new updates are refused and saves continue.
+ * `recoverIncoming()` is the only way it is resumed, and the owner decides
+ * from what the folder holds then.
+ *
  * This module loads no Git implementation and no IndexedDB store.
  */
 
@@ -60,7 +66,11 @@ import {
 	createFileHints,
 	type FolderHistory,
 } from './folder.js';
-import type { StatusCode } from './git/backend.js';
+import type {
+	PendingIncoming,
+	RecordedIncoming,
+	StatusCode,
+} from './git/backend.js';
 import { GitError, MergeError, PullError } from './git/errors.js';
 import type {
 	CommitOutcome,
@@ -69,6 +79,7 @@ import type {
 	MergeOutcome,
 	PullOutcome,
 	PushOutcome,
+	RecoverOutcome,
 } from './git/history.js';
 import {
 	commands,
@@ -81,9 +92,11 @@ import {
 	type FileStep as WireFileStep,
 	type GitError as WireGitError,
 	type GitSnapshot as WireGitSnapshot,
+	type PendingIncoming as WirePendingIncoming,
 	type PullError as WirePullError,
 	type PullOutcome as WirePullOutcome,
 	type PushOutcome as WirePushOutcome,
+	type RecoverOutcome as WireRecoverOutcome,
 } from './native/bindings.gen.js';
 import { callObserver } from './observer.js';
 
@@ -213,7 +226,46 @@ function gitError(error: WireGitError, operation: string): GitError {
 				expected: orUndefined(error.expected),
 				actual: orUndefined(error.actual),
 			}).error;
+		case 'IncomingPending':
+			return GitError.IncomingPending({
+				pending: pendingFromWire(error.pending),
+			}).error;
 	}
+}
+
+/** The owner's incoming record, as the shared history names it. */
+function pendingFromWire(pending: WirePendingIncoming): PendingIncoming {
+	return pending.state === 'recorded'
+		? recordedFromWire(pending)
+		: Object.freeze({ state: 'unreadable', reason: pending.reason });
+}
+
+function recordedFromWire(
+	pending: Extract<WirePendingIncoming, { state: 'recorded' }>,
+): RecordedIncoming {
+	return Object.freeze({
+		state: 'recorded',
+		operationId: pending.operationId,
+		branch: pending.branch,
+		expectedHead: orUndefined(pending.expectedHead),
+		nextHead: pending.nextHead,
+	});
+}
+
+/** A settled recovery. A cleared or completed one names the record it settled. */
+function recoverOutcome(
+	outcome: WireRecoverOutcome,
+): Result<RecoverOutcome, GitError> {
+	if (outcome.status === 'none') return Ok({ status: 'none' });
+	if (outcome.pending.state !== 'recorded')
+		return GitError.Failed({
+			operation: 'recover',
+			cause: 'the folder host settled an incoming update without its record',
+		});
+	const pending = recordedFromWire(outcome.pending);
+	return outcome.status === 'cleared'
+		? Ok({ status: 'cleared', pending })
+		: Ok({ status: 'completed', pending, changedPaths: outcome.changedPaths });
 }
 
 function pullError(error: WirePullError): PullError | GitError {
@@ -248,6 +300,23 @@ function pullError(error: WirePullError): PullError | GitError {
 			}).error;
 		case 'IndexFailed':
 			return PullError.IndexFailed(error).error;
+		// The record stays; only an explicit recovery decides what happened.
+		case 'Unconfirmed':
+			return PullError.Unconfirmed({
+				applied: error.applied as WireFileStep[] as FileStep[],
+				uncertain: error.uncertain,
+				error: error.error,
+			}).error;
+		case 'IncomingPending':
+			return PullError.IncomingPending({
+				pending: pendingFromWire(error.pending),
+			}).error;
+		case 'RecoveryRefused':
+			return PullError.RecoveryRefused({
+				pending: pendingFromWire(error.pending),
+				paths: error.paths,
+				reason: error.reason,
+			}).error;
 	}
 }
 
@@ -380,6 +449,10 @@ function snapshotFromWire(wire: WireGitSnapshot): GitSnapshot {
 								: Err(pullError(wire.lastPull.result.error)),
 					},
 		lastMerge: undefined,
+		// Absent where none is pending, as the shared snapshot has it.
+		...(wire.pendingIncoming === null
+			? {}
+			: { pendingIncoming: pendingFromWire(wire.pendingIncoming) }),
 		closed: wire.closed,
 	});
 }
@@ -747,6 +820,22 @@ function createHistory(
 				if (result.settled === 'refused') return Err(pullError(result.error));
 				return Ok(pullOutcome(result.data));
 			}),
+		// Only because the page asked: the owner reports a pending update on
+		// opening and in status, and never resumes it by itself.
+		recoverIncoming: () =>
+			client.local(
+				closed,
+				async (): Promise<Result<RecoverOutcome, PullError | GitError>> => {
+					const result = await call(commands.recoverIncoming(session));
+					if (!result.sent)
+						return GitError.Unconfirmed({
+							operation: 'recover',
+							cause: result.cause,
+						});
+					if (result.settled === 'refused') return Err(pullError(result.error));
+					return recoverOutcome(result.data);
+				},
+			),
 		// The desktop owner merges nothing yet; nothing is sent to it.
 		mergeIncoming: () =>
 			client.local<Result<MergeOutcome, MergeError | PullError | GitError>>(

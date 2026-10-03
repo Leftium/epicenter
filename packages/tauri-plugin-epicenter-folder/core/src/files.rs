@@ -223,6 +223,17 @@ pub enum ApplyError {
     },
 }
 
+/// What occupies one literal path, as an incoming update sees it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum Entry {
+    Absent,
+    File,
+    Directory,
+    /// Something no update writes to: another spelling of an existing entry,
+    /// a symbolic link on the way, or a special file.
+    Other(String),
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum Kind {
     File,
@@ -759,6 +770,47 @@ impl Files {
         children.files.sort();
         children.directories.sort();
         Ok(children)
+    }
+
+    /// What is at exactly this spelling, for an incoming update's checks. A
+    /// path below a file is absent; it cannot exist while the file does.
+    pub(crate) fn entry(&self, path: &str) -> Result<Entry, FileError> {
+        match self.verify_literal(path) {
+            Ok(Kind::Absent) | Err(FileError::NotADirectory { .. }) => Ok(Entry::Absent),
+            Ok(Kind::File) => Ok(Entry::File),
+            Ok(Kind::Directory) => Ok(Entry::Directory),
+            Ok(Kind::Aliased(alias)) => Ok(Entry::Other(match aliased(path, &alias) {
+                FileError::InvalidPath { reason, .. } => reason,
+                other => format!("{other:?}"),
+            })),
+            Err(FileError::InvalidPath { reason, .. }) => Ok(Entry::Other(reason)),
+            Err(error) => Err(error),
+        }
+    }
+
+    /// Every entry below `directory`, as folder paths: what is not a
+    /// directory, and the directories, deepest first.
+    pub(crate) fn beneath(&self, directory: &str) -> Result<(Vec<String>, Vec<String>), FileError> {
+        let mut others = Vec::new();
+        let mut directories = Vec::new();
+        let mut pending = vec![directory.to_string()];
+        while let Some(current) = pending.pop() {
+            let list = |cause: io::Error| io(&current, "list", &cause);
+            for entry in fs::read_dir(self.absolute(&current)).map_err(list)? {
+                let entry = entry.map_err(list)?;
+                let name = entry.file_name().to_string_lossy().into_owned();
+                let path = format!("{current}/{name}");
+                if entry.file_type().map_err(list)?.is_dir() {
+                    directories.push(path.clone());
+                    pending.push(path);
+                } else {
+                    others.push(path);
+                }
+            }
+        }
+        directories.sort_by_key(|path| std::cmp::Reverse(path.matches('/').count()));
+        others.sort();
+        Ok((others, directories))
     }
 
     pub fn read(&self, path: &str) -> Result<FileRead, FileError> {

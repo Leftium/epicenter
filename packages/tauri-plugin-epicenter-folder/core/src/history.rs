@@ -11,6 +11,7 @@ use specta::Type;
 
 use crate::files::{FileError, FileStep};
 use crate::git::Remote;
+pub use crate::incoming::PendingIncoming;
 use crate::messages::PathChange;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
@@ -44,6 +45,11 @@ pub enum GitError {
     BranchMoved {
         expected: Option<String>,
         actual: Option<String>,
+    },
+    /// An incoming update has not finished; staging and staged commits wait
+    /// for `recoverIncoming`. Saves continue.
+    IncomingPending {
+        pending: PendingIncoming,
     },
 }
 
@@ -189,6 +195,51 @@ pub enum PullError {
     IndexFailed {
         error: String,
     },
+    /// A step of the incoming update may or may not have been written: a
+    /// file, the index, the branch, or the record itself, named in
+    /// `uncertain`. The record remains, and only `recoverIncoming` decides
+    /// from what the folder holds.
+    Unconfirmed {
+        applied: Vec<FileStep>,
+        uncertain: Vec<String>,
+        error: String,
+    },
+    /// An earlier incoming update has not finished. Recover it first.
+    IncomingPending {
+        pending: PendingIncoming,
+    },
+    /// Recovery found a path, the index, the branch, or the record itself in
+    /// neither the update's before nor its after state. Nothing was written;
+    /// the update stays pending. Once each named path holds one of its
+    /// states, recover again.
+    RecoveryRefused {
+        pending: PendingIncoming,
+        paths: Vec<String>,
+        reason: String,
+    },
+}
+
+/// What `recover_incoming` did with a pending incoming update.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
+#[serde(tag = "status", rename_all = "camelCase")]
+pub enum RecoverOutcome {
+    /// Nothing was pending.
+    None,
+    /// The branch already named the update's commit, so its record was
+    /// cleared. No file was written; later edits stay as they are.
+    Cleared { pending: PendingIncoming },
+    /// The paths still at their before state were written, then the index
+    /// and the branch. `changedPaths` are the paths this recovery wrote or
+    /// removed; a path already at its after state is not among them. Other
+    /// files are not assumed clean: status is observed again. If the record
+    /// could not be removed, the branch still moved, and the snapshot still
+    /// reports the record until a recovery finds the branch at the target
+    /// and clears it.
+    #[serde(rename_all = "camelCase")]
+    Completed {
+        pending: PendingIncoming,
+        changed_paths: Vec<String>,
+    },
 }
 
 impl From<GitError> for PullError {
@@ -282,6 +333,10 @@ pub struct GitSnapshot {
     pub last_push: Option<Attempt<PushOutcome>>,
     pub last_fetch: Option<Attempt<Settled<FetchOutcome, GitError>>>,
     pub last_pull: Option<Attempt<Settled<PullOutcome, PullError>>>,
+    /// An incoming update whose record exists, as last read. While there is
+    /// one, staging, commits, and new incoming updates wait for
+    /// `recoverIncoming`; file saves continue.
+    pub pending_incoming: Option<PendingIncoming>,
     pub closed: bool,
 }
 

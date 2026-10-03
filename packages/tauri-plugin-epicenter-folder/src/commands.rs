@@ -19,7 +19,7 @@ use epicenter_folder_core::files::{
 use epicenter_folder_core::git::{CommitSummary, PathStatus};
 use epicenter_folder_core::history::{
     CommitOutcome, FetchOutcome, FilesObservation, GitError, GitSnapshot, OwnerEvent, PullError,
-    PullOutcome, PushOutcome, Settled,
+    PullOutcome, PushOutcome, RecoverOutcome, Settled,
 };
 use epicenter_folder_core::owner::{Caller, FolderOwner};
 use epicenter_folder_core::registry::AttachError;
@@ -53,16 +53,17 @@ pub struct FolderFilesChanged {
 /// The version of this command contract. A page built against another
 /// version is refused at attach, before it can change anything.
 ///
-/// Version 4 is the unreleased command contract. Push and fetch name a
+/// Version 5 is the unreleased command contract. Push and fetch name a
 /// session-owned request that can withdraw before transport admission. No
 /// command holds the folder across calls or names a terminal lease. A read
 /// returns its bytes and their SHA-256, and a file change is one of create,
 /// replace, overwrite, remove, or move, guarded by `expectedSha256`.
 ///
-/// Version 4 adds the number every `apply` must name, which orders the
-/// session's saves. A version 3 page sends none, so it is refused at attach
-/// rather than having every save rejected afterward.
-pub const PROTOCOL: u32 = 4;
+/// Version 4 added the number every `apply` must name, which orders the
+/// session's saves. Version 5 adds the incoming record: the snapshot's
+/// `pendingIncoming`, `recover_incoming`, and the refusals a pending update
+/// causes. An older page would not know them, so it is refused at attach.
+pub const PROTOCOL: u32 = 5;
 
 /// What a window receives when it attaches to a scope.
 #[derive(Debug, Clone, Serialize, Type)]
@@ -621,6 +622,25 @@ pub async fn pull_fast_forward<R: Runtime>(
     blocking(
         move || owner.pull_fast_forward(),
         |cause| Err(git_unconfirmed("pull")(cause).into()),
+    )
+    .await
+}
+
+/// Finish or clear this folder's pending incoming update, only because the
+/// page asked. Opening and status report a pending update and never resume
+/// it. Recovery writes only paths still at the update's before state; a path,
+/// the index, or the branch in neither state stops it, keeping the record,
+/// and names what to resolve.
+#[tauri::command]
+#[specta::specta]
+pub async fn recover_incoming<R: Runtime>(
+    webview: Webview<R>,
+    session: u32,
+) -> Result<RecoverOutcome, PullError> {
+    let owner = owner(&webview, session).map_err(|reason| PullError::from(git_denied(reason)))?;
+    blocking(
+        move || owner.recover_incoming(),
+        |cause| Err(git_unconfirmed("recover")(cause).into()),
     )
     .await
 }

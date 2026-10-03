@@ -1915,17 +1915,83 @@ fn a_window_without_the_permission_cannot_call_the_plugin() {
         .build(mock_context(noop_assets()))
         .unwrap();
     let main = window(&app, "main");
-    let refused = invoke(
-        &main,
+    for (command, args) in [
+        ("attach", json!({ "scope": "notes", "protocol": PROTOCOL })),
+        ("recover_incoming", json!({ "session": 1 })),
+    ] {
+        let refused = invoke(&main, command, args).unwrap_err();
+        assert!(
+            refused
+                .as_str()
+                .is_some_and(|message| message.contains("not allowed")),
+            "{command}: {refused}"
+        );
+    }
+    drop(directory);
+}
+
+#[test]
+fn recovering_an_incoming_update_is_a_command_of_a_session_on_that_scope() {
+    let fixture = fixture("recover-scope", &["owner", "other"], false);
+    let owner = window(&fixture.app, "owner");
+    let other = window(&fixture.app, "other");
+    let intruder = window(&fixture.app, "intruder");
+    let session = attach(&owner);
+    let other_session = attach(&other);
+    let recover = |window: &WebviewWindow<MockRuntime>, session: u64| {
+        invoke(window, "recover_incoming", json!({ "session": session }))
+    };
+
+    // Nothing is pending.
+    assert_eq!(
+        recover(&owner, session).unwrap(),
+        json!({ "status": "none" })
+    );
+
+    // A window naming a session it did not attach is denied, whether or not
+    // the scope lists it, and nothing is read or written for it.
+    let denied = json!({
+        "name": "Git",
+        "error": {
+            "name": "Denied",
+            "reason": "this window has no such folder session; attach first",
+        },
+    });
+    assert_eq!(recover(&other, session).unwrap_err(), denied);
+    assert_eq!(recover(&intruder, session).unwrap_err(), denied);
+    assert_eq!(
+        invoke(
+            &intruder,
+            "attach",
+            json!({ "scope": "notes", "protocol": PROTOCOL })
+        )
+        .unwrap_err()["name"],
+        "WindowNotPermitted"
+    );
+
+    // A record the folder cannot read is reported to every session of the
+    // scope, refused by name, and never removed.
+    let record = fixture.root.join(".git/epicenter/incoming.json");
+    std::fs::create_dir_all(record.parent().unwrap()).unwrap();
+    std::fs::write(&record, "not a record").unwrap();
+    invoke(&owner, "status", json!({ "session": session })).unwrap();
+    for (window, session) in [(&owner, session), (&other, other_session)] {
+        let refused = recover(window, session).unwrap_err();
+        assert_eq!(refused["name"], "RecoveryRefused", "{refused}");
+        assert_eq!(refused["pending"]["state"], "unreadable", "{refused}");
+        assert_eq!(refused["paths"], json!([]));
+    }
+    assert!(record.exists());
+    let blocked = invoke(&other, "commit", json!({ "session": other_session })).unwrap();
+    assert_eq!(blocked["status"], "blocked", "{blocked}");
+    let attached = invoke(
+        &other,
         "attach",
         json!({ "scope": "notes", "protocol": PROTOCOL }),
     )
-    .unwrap_err();
-    assert!(
-        refused
-            .as_str()
-            .is_some_and(|message| message.contains("not allowed")),
-        "{refused}"
+    .unwrap();
+    assert_eq!(
+        attached["snapshot"]["pendingIncoming"]["state"],
+        "unreadable"
     );
-    drop(directory);
 }

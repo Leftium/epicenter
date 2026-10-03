@@ -66,17 +66,21 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use unicode_normalization::UnicodeNormalization;
 
 use crate::files::{
-    resolve_root, sha256, verify_layout, ApplyError, Children, FileChange, FileError, FileListing,
+    resolve_root, verify_layout, ApplyError, Children, FileChange, FileError, FileListing,
     FileRead, FileStep, Files,
 };
 use crate::git::{Author, Capture, Cas, CommitSummary, Git, IndexCommit, PathStatus, Remote};
 use crate::history::{
     Activities, Activity, Attempt, CommitOutcome, FetchOutcome, FilesObservation, GitError,
-    GitSnapshot, Observation, OwnerEvent, PullError, PullOutcome, PushOutcome, SyncObservation,
+    GitSnapshot, Observation, OwnerEvent, PendingIncoming, PullError, PullOutcome, PushOutcome,
+    RecoverOutcome, SyncObservation,
 };
+use crate::incoming::{self, Record, Written};
 use crate::messages::{commit_subject, message_problem, ChangeKind};
 use crate::paths::{ancestors, is_portable_path, path_problem};
 use crate::runner::{CloseMode, Endings, Leaving, PassRunner};
+
+mod recovery;
 
 #[derive(Debug, Clone)]
 pub struct FolderConfig {
@@ -196,6 +200,9 @@ struct HistoryState {
     last_fetch: Option<Attempt<Result<FetchOutcome, GitError>>>,
     last_pull: Option<Attempt<Result<PullOutcome, PullError>>>,
     remote_sequence: u64,
+    /// The incoming record as last read: at opening, by status, and by every
+    /// incoming update and recovery.
+    pending_incoming: Option<PendingIncoming>,
 }
 
 type Listener = Arc<dyn Fn(&OwnerEvent) + Send + Sync>;
@@ -227,6 +234,11 @@ pub(crate) struct Hooks {
     pub during_push: Option<Arc<dyn Fn() + Send + Sync>>,
     /// Runs inside an admitted fetch, before the transport starts.
     pub during_fetch: Option<Arc<dyn Fn() + Send + Sync>>,
+    /// Asked at each boundary of an incoming update or its recovery, named
+    /// as in `Inner::boundary`. Returning `true` stops the update right
+    /// there, as a process that stopped would: nothing after it runs and
+    /// nothing is cleaned up.
+    pub incoming_boundary: Option<Arc<dyn Fn(&str) -> bool + Send + Sync>>,
 }
 
 struct Inner {
@@ -475,6 +487,8 @@ impl FolderOwner {
             }
         }
         git.clear_snapshots();
+        // An update an earlier process left is reported, never resumed.
+        let pending_incoming = incoming::read(git.gitdir()).pending();
         let watching = Arc::new(AtomicBool::new(true));
         let inner = Arc::new_cyclic(|owner: &Weak<Inner>| Inner {
             files: Files::new(&root),
@@ -491,6 +505,7 @@ impl FolderOwner {
                 last_fetch: None,
                 last_pull: None,
                 remote_sequence: 0,
+                pending_incoming: pending_incoming.clone(),
             }),
             emitted: Mutex::new(Emitted {
                 sequence: 0,
@@ -505,6 +520,7 @@ impl FolderOwner {
                     last_push: None,
                     last_fetch: None,
                     last_pull: None,
+                    pending_incoming,
                     closed: false,
                 }),
             }),
@@ -837,6 +853,25 @@ impl FolderOwner {
         self.inner.run_pull()
     }
 
+    /// The incoming update whose record exists, read now.
+    pub fn pending_incoming(&self) -> Option<PendingIncoming> {
+        self.inner.read_pending().pending()
+    }
+
+    /// Finish or clear the pending incoming update, only because someone
+    /// asked. It waits for the file gate and the Git lock like a
+    /// fast-forward, then reads the record, the branch, the index, and every
+    /// path the update changes again. It writes only paths still at their
+    /// before state, and stops, keeping the record, at anything in neither
+    /// state. Nothing retries it.
+    pub fn recover_incoming(&self) -> Result<RecoverOutcome, PullError> {
+        let Ok(_admitted) = self.inner.admit() else {
+            return Err(GitError::Closed.into());
+        };
+        let _running = self.inner.running(&self.inner.pulls);
+        self.inner.run_recovery()
+    }
+
     /// Per-path staged and unstaged state, as `git status` reports it.
     pub fn paths(&self) -> Result<Vec<PathStatus>, GitError> {
         self.inner.manual("status", |inner| {
@@ -853,10 +888,17 @@ impl FolderOwner {
         if self.inner.config.commit_on_edit {
             return Err(GitError::AutomaticHistory);
         }
-        self.inner.manual("add", |inner| {
-            let _git = lock(&inner.git_lock);
-            inner.git.stage(paths)
-        })
+        let Ok(_admitted) = self.inner.admit() else {
+            return Err(GitError::Closed);
+        };
+        let _git = lock(&self.inner.git_lock);
+        if let Some(pending) = self.inner.read_pending().pending() {
+            return Err(GitError::IncomingPending { pending });
+        }
+        self.inner
+            .git
+            .stage(paths)
+            .map_err(|cause| GitError::failed("add", cause))
     }
 
     /// Commit staged changes with a user-authored message in manual mode.
@@ -1053,6 +1095,7 @@ impl Inner {
                     result: attempt.result.into(),
                     at: attempt.at,
                 }),
+                pending_incoming: state.pending_incoming.clone(),
                 closed: self.closing.load(Ordering::SeqCst),
             }
         };
@@ -1306,6 +1349,8 @@ impl Inner {
                 Err(GitError::failed("status", cause))
             }
         };
+        // Status reports a pending update; reading it resumes nothing.
+        self.read_pending();
         self.emit();
         result
     }
@@ -1503,6 +1548,12 @@ impl Inner {
         if let Some(reason) = self.git.blocked()? {
             return Ok(CommitOutcome::Blocked { reason });
         }
+        // A tree an incoming update left half changed is never committed.
+        if let Some(pending) = self.read_pending().pending() {
+            return Ok(CommitOutcome::Blocked {
+                reason: incoming_blocks(&pending, "committing"),
+            });
+        }
         // The parent is pinned and the folder snapshotted under both locks,
         // so no fast-forward or staged commit of this owner falls between
         // them: bytes snapshotted for one parent are never committed on
@@ -1604,6 +1655,9 @@ impl Inner {
         }
         let (result, changed_paths) = {
             let _git = lock(&self.git_lock);
+            if let Some(pending) = self.read_pending().pending() {
+                return Err(GitError::IncomingPending { pending });
+            }
             let staged = self
                 .git
                 .path_status()
@@ -1744,6 +1798,10 @@ impl Inner {
         _files: MutexGuard<'_, ()>,
         _git: MutexGuard<'_, ()>,
     ) -> Result<Result<PullOutcome, PullError>, String> {
+        // One update at a time: an earlier one is recovered explicitly first.
+        if let Some(pending) = self.read_pending().pending() {
+            return Ok(Err(PullError::IncomingPending { pending }));
+        }
         if let Some(reason) = self.git.blocked()? {
             return Ok(Err(PullError::Blocked { reason }));
         }
@@ -1841,8 +1899,14 @@ impl Inner {
             .map(|(path, (_, oid))| (path.clone(), oid.clone()))
             .collect();
         let changes = Git::changes(&committed, &incoming_oids);
-        // Ignored and untracked files are preserved, never overwritten.
-        let raw: BTreeSet<&str> = raw.iter().map(String::as_str).collect();
+        // Ignored and untracked files are preserved, never overwritten. A
+        // committed file is the update's own to remove: a file can become a
+        // directory, and a directory a file.
+        let raw: BTreeSet<&str> = raw
+            .iter()
+            .map(String::as_str)
+            .filter(|path| !committed.contains_key(*path))
+            .collect();
         let colliding: Vec<String> = changes
             .iter()
             .filter(|change| change.kind == ChangeKind::Add)
@@ -1860,76 +1924,48 @@ impl Inner {
         }
         #[cfg(test)]
         self.hook(|hooks| &hooks.during_pull);
-        let mut removals = Vec::new();
-        let mut writes = Vec::new();
-        for change in &changes {
-            // The clean check above proved the snapshot held exactly the
-            // committed bytes, so the committed blob is the baseline each
-            // step is conditional on. Reading the working file again here
-            // would authorize overwriting whatever another program wrote
-            // since the snapshot.
-            let path = change.path.clone();
-            let baseline = match committed.get(&path) {
-                Some((_, oid)) => Some(sha256(&self.git.read_blob(oid)?)),
-                None => None,
-            };
-            let fetched_bytes = |path: &str| self.git.read_blob(&incoming_oids[path]);
-            match (change.kind, baseline) {
-                (ChangeKind::Add, None) => writes.push(FileChange::Create {
-                    bytes: fetched_bytes(&path)?,
-                    path,
-                }),
-                (ChangeKind::Modify, Some(expected_sha256)) => writes.push(FileChange::Replace {
-                    bytes: fetched_bytes(&path)?,
-                    path,
-                    expected_sha256,
-                }),
-                // Always guarded: a fast-forward never removes bytes it did
-                // not prove were the committed ones.
-                (ChangeKind::Delete, Some(expected_sha256)) => removals.push(FileChange::Remove {
-                    path,
-                    expected_sha256: Some(expected_sha256),
-                }),
-                // A change whose kind disagrees with the committed tree has no
-                // step that keeps the guarantee above. Nothing is published.
-                (kind, baseline) => {
-                    return Err(format!(
-                        "the fast-forward computed {kind:?} for '{path}', whose committed baseline is {}",
-                        if baseline.is_some() { "present" } else { "absent" }
-                    ))
-                }
+
+        // Admission: pin both commits, then put the record in place, before
+        // any authored file, index entry, or ref of the branch changes.
+        let record = Record::new(&self.git.branch, head.clone(), fetched);
+        if self.boundary("record") {
+            return Ok(Err(recovery::stopped_at("record", Vec::new())));
+        }
+        incoming::pin(&self.git, &record)?;
+        match incoming::write(self.git.gitdir(), &record) {
+            Written::Durable => {}
+            Written::Absent(reason) => {
+                let _ = incoming::unpin(&self.git, &record);
+                return Err(reason);
+            }
+            Written::Unknown(error) => {
+                self.read_pending();
+                return Ok(Err(PullError::Unconfirmed {
+                    applied: Vec::new(),
+                    uncertain: vec![recovery::RECORD_LABEL.to_string()],
+                    error,
+                }));
             }
         }
-        let paths: Vec<String> = changes.iter().map(|change| change.path.clone()).collect();
-        removals.extend(writes);
-        let steps: Vec<FileStep> = removals.iter().map(FileChange::step).collect();
-        match self.publish(&removals) {
-            Ok(()) => {}
-            Err(ApplyError::Refused { error }) => return Ok(Err(PullError::Refused { error })),
-            Err(ApplyError::Unconfirmed { cause, .. }) => return Err(cause),
-            Err(ApplyError::Partial { applied, error, .. }) => {
-                self.landed(&applied);
-                return Ok(Err(PullError::Partial { applied, error }));
-            }
+        self.read_pending();
+        if self.boundary("recorded") {
+            return Ok(Err(recovery::stopped_at("recorded", Vec::new())));
         }
-        if let Err(error) = self.git.sync_index(&fetched, &paths) {
-            self.landed(&steps);
-            return Ok(Err(PullError::IndexFailed { error }));
+        let result = self.finish_pull(&record, head, captured_at);
+        self.read_pending();
+        result
+    }
+}
+
+/// Why history work waits for the pending update.
+fn incoming_blocks(pending: &PendingIncoming, action: &str) -> String {
+    match pending {
+        PendingIncoming::Recorded { operation_id, .. } => {
+            format!("incoming update {operation_id} has not finished; recover it before {action}")
         }
-        if let Cas::Lost { actual } = self.git.cas_branch(head.as_deref(), &fetched)? {
-            self.landed(&steps);
-            return Ok(Err(PullError::BranchMoved {
-                actual,
-                files_applied: true,
-            }));
-        }
-        self.observe_committed(captured_at, Some(&fetched));
-        self.files_changed(paths.clone());
-        Ok(Ok(PullOutcome::FastForwarded {
-            from: head,
-            to: fetched,
-            changed_paths: paths,
-        }))
+        PendingIncoming::Unreadable { reason } => format!(
+            "an incoming update's record cannot be read ({reason}); resolve it before {action}"
+        ),
     }
 }
 

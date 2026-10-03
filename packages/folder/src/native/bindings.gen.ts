@@ -66,6 +66,14 @@ export const commands = {
 	/**  Fetch for a request this session opened, like `push`. */
 	fetch: (session: number, request: number) => typedError<FetchOutcome, GitError>(__TAURI_INVOKE("plugin:epicenter-folder|fetch", { session, request })),
 	pullFastForward: (session: number) => typedError<PullOutcome, PullError>(__TAURI_INVOKE("plugin:epicenter-folder|pull_fast_forward", { session })),
+	/**
+	 *  Finish or clear this folder's pending incoming update, only because the
+	 *  page asked. Opening and status report a pending update and never resume
+	 *  it. Recovery writes only paths still at the update's before state; a path,
+	 *  the index, or the branch in neither state stops it, keeping the record,
+	 *  and names what to resolve.
+	 */
+	recoverIncoming: (session: number) => typedError<RecoverOutcome, PullError>(__TAURI_INVOKE("plugin:epicenter-folder|recover_incoming", { session })),
 	paths: (session: number) => typedError<PathStatus[], GitError>(__TAURI_INVOKE("plugin:epicenter-folder|paths", { session })),
 	/**  Stage current contents of `paths`, including deletions; `null` stages everything. */
 	stage: (session: number, paths: string[] | null) => typedError<null, GitError>(__TAURI_INVOKE("plugin:epicenter-folder|stage", { session, paths })),
@@ -81,7 +89,7 @@ export const events = {
 };
 
 /* Constants */
-export const FOLDER_PROTOCOL = 4 as const;
+export const FOLDER_PROTOCOL = 5 as const;
 
 /* Types */
 export type Activities = {
@@ -277,7 +285,12 @@ export type GitError =
 /**  The caller has no session for this folder, or names another window's. */
 { name: "Denied"; reason: string } | { name: "NoRemote" } | { name: "InvalidMessage"; reason: string } | { name: "NothingToCommit" } |
 /**  Staged authoring requires `commitOnEdit: false`. */
-{ name: "AutomaticHistory" } | { name: "BranchMoved"; expected: string | null; actual: string | null };
+{ name: "AutomaticHistory" } | { name: "BranchMoved"; expected: string | null; actual: string | null } |
+/**
+ *  An incoming update has not finished; staging and staged commits wait
+ *  for `recoverIncoming`. Saves continue.
+ */
+{ name: "IncomingPending"; pending: PendingIncoming };
 
 export type GitSnapshot = {
 	branch: string,
@@ -290,6 +303,12 @@ export type GitSnapshot = {
 	lastPush: Attempt<PushOutcome> | null,
 	lastFetch: Attempt<Settled<FetchOutcome, GitError>> | null,
 	lastPull: Attempt<Settled<PullOutcome, PullError>> | null,
+	/**
+	 *  An incoming update whose record exists, as last read. While there is
+	 *  one, staging, commits, and new incoming updates wait for
+	 *  `recoverIncoming`; file saves continue.
+	 */
+	pendingIncoming: PendingIncoming | null,
 	closed: boolean,
 };
 
@@ -319,6 +338,22 @@ export type PathStatus = {
 	worktree: string,
 };
 
+/**
+ *  What the folder's incoming record says, as the snapshot and refusals
+ *  report it.
+ */
+export type PendingIncoming =
+/**
+ *  An update that may have begun changing files. Recovery derives
+ *  everything else from the trees of `expectedHead` and `nextHead`.
+ */
+{ state: "recorded"; operationId: string; branch: string; expectedHead: string | null; nextHead: string } |
+/**
+ *  The record holds something that is not a record. Nothing reads past
+ *  it, acts on it, or removes it.
+ */
+{ state: "unreadable"; reason: string };
+
 export type PullError =
 /**  A failure every Git operation can report. */
 { name: "Git"; error: GitError } | { name: "NoFetchedHead" } |
@@ -331,7 +366,23 @@ export type PullError =
 /**  The update stopped after some file steps; the branch did not move. */
 { name: "Partial"; applied: FileStep[]; error: FileError } | { name: "BranchMoved"; actual: string | null; filesApplied: boolean } |
 /**  Files were updated, but the index could not be; the branch did not move. */
-{ name: "IndexFailed"; error: string };
+{ name: "IndexFailed"; error: string } |
+/**
+ *  A step of the incoming update may or may not have been written: a
+ *  file, the index, the branch, or the record itself, named in
+ *  `uncertain`. The record remains, and only `recoverIncoming` decides
+ *  from what the folder holds.
+ */
+{ name: "Unconfirmed"; applied: FileStep[]; uncertain: string[]; error: string } |
+/**  An earlier incoming update has not finished. Recover it first. */
+{ name: "IncomingPending"; pending: PendingIncoming } |
+/**
+ *  Recovery found a path, the index, the branch, or the record itself in
+ *  neither the update's before nor its after state. Nothing was written;
+ *  the update stays pending. Once each named path holds one of its
+ *  states, recover again.
+ */
+{ name: "RecoveryRefused"; pending: PendingIncoming; paths: string[]; reason: string };
 
 export type PullOutcome = { status: "upToDate"; head: string | null } | { status: "ahead"; head: string } | { status: "fastForwarded"; from: string | null; to: string; changedPaths: string[] };
 
@@ -340,6 +391,26 @@ export type PushOutcome = { status: "pushed"; oid: string } | { status: "noRemot
 { status: "skipped"; reason: string } | { status: "failed"; oid: string; error: string } |
 /**  The push started and its outcome is unknown. */
 { status: "unconfirmed"; error: string } | { status: "cancelled"; oid: string | null } | { status: "closed" };
+
+/**  What `recover_incoming` did with a pending incoming update. */
+export type RecoverOutcome =
+/**  Nothing was pending. */
+{ status: "none" } |
+/**
+ *  The branch already named the update's commit, so its record was
+ *  cleared. No file was written; later edits stay as they are.
+ */
+{ status: "cleared"; pending: PendingIncoming } |
+/**
+ *  The paths still at their before state were written, then the index
+ *  and the branch. `changedPaths` are the paths this recovery wrote or
+ *  removed; a path already at its after state is not among them. Other
+ *  files are not assumed clean: status is observed again. If the record
+ *  could not be removed, the branch still moved, and the snapshot still
+ *  reports the record until a recovery finds the branch at the target
+ *  and clears it.
+ */
+{ status: "completed"; pending: PendingIncoming; changedPaths: string[] };
 
 export type Remote = {
 	url: string,

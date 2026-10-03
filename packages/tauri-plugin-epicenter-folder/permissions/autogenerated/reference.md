@@ -20,6 +20,7 @@ Attach to the folders the shell registered for this window, then read, publish, 
 - `allow-push`
 - `allow-fetch`
 - `allow-pull-fast-forward`
+- `allow-recover-incoming`
 - `allow-paths`
 - `allow-stage`
 - `allow-commit-staged`
@@ -473,6 +474,32 @@ Enables the read_many command without any pre-configured scope.
 <td>
 
 Denies the read_many command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`epicenter-folder:allow-recover-incoming`
+
+</td>
+<td>
+
+Enables the recover_incoming command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`epicenter-folder:deny-recover-incoming`
+
+</td>
+<td>
+
+Denies the recover_incoming command without any pre-configured scope.
 
 </td>
 </tr>

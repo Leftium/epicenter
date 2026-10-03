@@ -21,6 +21,7 @@ permissions = [
   "allow-push",
   "allow-fetch",
   "allow-pull-fast-forward",
+  "allow-recover-incoming",
   "allow-paths",
   "allow-stage",
   "allow-commit-staged",

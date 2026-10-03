@@ -26,9 +26,12 @@ use std::time::{Duration, Instant};
 
 use sha2::{Digest, Sha256};
 
-use crate::files::{sha256, FileChange};
+use crate::files::FileChange;
 use crate::git::Remote;
-use crate::history::{CommitOutcome, GitError, Observation, PullError, PullOutcome, PushOutcome};
+use crate::history::{
+    CommitOutcome, GitError, Observation, PendingIncoming, PullError, PullOutcome, PushOutcome,
+    RecoverOutcome,
+};
 use crate::messages::{ChangeKind, PathChange};
 use crate::owner::{FolderConfig, FolderOwner};
 use crate::testing::{config, create, eventually, git, open, overwrite, replace, tree, TempDir};
@@ -1198,22 +1201,18 @@ fn a_fast_forward_never_overwrites_bytes_written_after_it_found_the_folder_clean
         std::fs::write(outside.join("removed.md"), "also written outside").unwrap();
     }));
 
-    let refused = owner.pull_fast_forward().unwrap_err();
-    let PullError::Refused {
-        error:
-            crate::files::FileError::Conflict {
-                path,
-                expected_sha256,
-                actual_sha256,
-            },
-    } = refused
-    else {
-        panic!("the outside write is a conflict, not {refused:?}");
-    };
-    // Removals are applied first; the baseline is the committed bytes.
-    assert_eq!(path, "removed.md");
-    assert_eq!(expected_sha256, sha256(b"committed"));
-    assert_eq!(actual_sha256, Some(sha256(b"also written outside")));
+    // The update's own look at every path, after its record is in place and
+    // before it writes, finds both in neither state. It is withdrawn whole:
+    // nothing written, no record left, the branch where it was.
+    assert_eq!(
+        owner.pull_fast_forward(),
+        Err(PullError::Dirty {
+            paths: vec!["edited.md".to_string(), "removed.md".to_string()]
+        })
+    );
+    assert_eq!(owner.snapshot().pending_incoming, None);
+    assert_eq!(git(&root, &["for-each-ref", "refs/epicenter"]), "");
+    assert!(!root.join(".git/epicenter/incoming.json").exists());
     assert_eq!(
         std::fs::read_to_string(root.join("edited.md")).unwrap(),
         "written by another program"
@@ -2061,10 +2060,12 @@ fn a_published_fast_forward_survives_a_failed_observation_after_the_root_moves()
     let to = incoming.publish("update the notes");
     incoming.owner.status().unwrap();
     let moved_root = incoming.root.with_file_name("local-moved");
+    // The root moves once the branch itself is published. The pins the
+    // update takes first are ref transactions too; they move nothing.
     let hook = incoming.root.join(".git/hooks/reference-transaction");
     std::fs::write(
         &hook,
-        "#!/bin/sh\nif [ \"$1\" = committed ]; then mv \"$PWD\" \"$PWD-moved\"; fi\n",
+        "#!/bin/sh\nif [ \"$1\" = committed ] && grep -q ' refs/heads/main$'; then mv \"$PWD\" \"$PWD-moved\"; fi\n",
     )
     .unwrap();
     std::fs::set_permissions(&hook, std::fs::Permissions::from_mode(0o755)).unwrap();
@@ -2086,7 +2087,7 @@ fn a_published_fast_forward_survives_a_failed_observation_after_the_root_moves()
         outcome,
         Ok(PullOutcome::FastForwarded {
             from: Some(from),
-            to,
+            to: to.clone(),
             changed_paths: vec!["notes.md".to_string()]
         })
     );
@@ -2094,4 +2095,19 @@ fn a_published_fast_forward_survives_a_failed_observation_after_the_root_moves()
         matches!(&snapshot.files, Observation::Observed { stale: true, error: Some(error), .. } if error.contains("could not start"))
     );
     assert_eq!(snapshot.last_pull.as_ref().unwrap().result, outcome.into());
+
+    // The move could not be read back, so the record was not cleared. An
+    // explicit recovery finds the branch at the target and clears it,
+    // writing no file.
+    let reopened = manual(&incoming.root);
+    assert!(matches!(
+        reopened.snapshot().pending_incoming,
+        Some(PendingIncoming::Recorded { ref next_head, .. }) if *next_head == to
+    ));
+    assert!(matches!(
+        reopened.recover_incoming(),
+        Ok(RecoverOutcome::Cleared { .. })
+    ));
+    assert_eq!(reopened.snapshot().pending_incoming, None);
+    assert_eq!(git(&incoming.root, &["for-each-ref", "refs/epicenter"]), "");
 }

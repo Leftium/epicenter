@@ -8,6 +8,7 @@
 pub mod files;
 pub mod git;
 pub mod history;
+pub mod incoming;
 pub mod kv_merge;
 pub mod lock;
 pub mod messages;
@@ -18,6 +19,8 @@ mod runner;
 
 #[cfg(test)]
 mod history_tests;
+#[cfg(test)]
+mod incoming_tests;
 #[cfg(test)]
 mod publication_tests;
 #[cfg(test)]

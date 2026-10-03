@@ -438,10 +438,21 @@ impl Git {
 
     /// Move the branch only if it still names `expected`.
     pub fn cas_branch(&self, expected: Option<&str>, next: &str) -> Result<Cas, Failure> {
+        self.move_branch(expected, next, "epicenter: commit")
+    }
+
+    /// Move the branch only if it still names `expected`, with `reason` in
+    /// its reflog. `Lost` is certain; an error leaves the branch unknown.
+    pub fn move_branch(
+        &self,
+        expected: Option<&str>,
+        next: &str,
+        reason: &str,
+    ) -> Result<Cas, Failure> {
         let args = [
             "update-ref",
             "-m",
-            "epicenter: commit",
+            reason,
             &self.branch_ref,
             next,
             expected.unwrap_or(ZERO),
@@ -700,6 +711,107 @@ impl Git {
     /// The exact bytes of a blob.
     pub fn read_blob(&self, oid: &str) -> Result<Vec<u8>, Failure> {
         self.ok(&["cat-file", "blob", oid], None, &[])
+    }
+
+    /// Whether the object store holds `oid` as a commit.
+    pub fn has_commit(&self, oid: &str) -> Result<bool, Failure> {
+        let object = format!("{oid}^{{commit}}");
+        let args = ["cat-file", "-e", &object];
+        let output = self.run(&args, None, &[])?;
+        match output.code {
+            Some(0) => Ok(true),
+            Some(1) | Some(128) => Ok(false),
+            _ => Err(Self::failure(&args, &output)),
+        }
+    }
+
+    /// Create every ref in one transaction, each only if it does not exist.
+    pub fn create_refs(&self, refs: &[(String, String)]) -> Result<(), Failure> {
+        let input: String = refs
+            .iter()
+            .map(|(name, oid)| format!("create {name} {oid}\n"))
+            .collect();
+        self.ok(&["update-ref", "--stdin"], Some(input.as_bytes()), &[])?;
+        Ok(())
+    }
+
+    /// Delete every ref below `prefix`, in one transaction.
+    pub fn delete_refs_under(&self, prefix: &str) -> Result<(), Failure> {
+        let listed = self.ok(&["for-each-ref", "--format=%(refname)", prefix], None, &[])?;
+        let input: String = text(&listed)
+            .lines()
+            .filter(|name| !name.is_empty())
+            .map(|name| format!("delete {name}\n"))
+            .collect();
+        if input.is_empty() {
+            return Ok(());
+        }
+        self.ok(&["update-ref", "--stdin"], Some(input.as_bytes()), &[])?;
+        Ok(())
+    }
+
+    /// Every stage-0 index entry as `(mode, oid)` by path. A path in conflict
+    /// is listed with the mode `conflict`, so it matches no tree entry.
+    pub fn index_entries(&self) -> Result<BTreeMap<String, (String, String)>, Failure> {
+        let listing = self.ok(&["ls-files", "--stage", "-z"], None, &[])?;
+        let mut entries = BTreeMap::new();
+        for record in records(&listing) {
+            let Some((meta, path)) = record.split_once('\t') else {
+                continue;
+            };
+            let mut fields = meta.split(' ');
+            let (mode, oid, stage) = (
+                fields.next().unwrap_or(""),
+                fields.next().unwrap_or(""),
+                fields.next().unwrap_or(""),
+            );
+            let entry = if stage == "0" {
+                (mode.to_string(), oid.to_string())
+            } else {
+                ("conflict".to_string(), String::new())
+            };
+            entries.insert(path.to_string(), entry);
+        }
+        Ok(entries)
+    }
+
+    /// Index paths that differ from `base`'s tree, or from the empty tree.
+    pub fn staged_against(&self, base: Option<&str>) -> Result<Vec<String>, Failure> {
+        let listing = self.ok(
+            &[
+                "diff-index",
+                "--cached",
+                "--name-only",
+                "--no-renames",
+                "-z",
+                base.unwrap_or(EMPTY_TREE),
+            ],
+            None,
+            &[],
+        )?;
+        Ok(records(&listing))
+    }
+
+    /// Blob IDs of the working files at `paths`, without writing anything.
+    /// No filter runs; every byte is read.
+    pub fn hash_paths(&self, paths: &[String]) -> Result<Vec<String>, Failure> {
+        if paths.is_empty() {
+            return Ok(Vec::new());
+        }
+        let listing: String = paths
+            .iter()
+            .map(|path| format!("{}\n", line_quoted(path)))
+            .collect();
+        let output = self.ok(
+            &["hash-object", "--no-filters", "--stdin-paths"],
+            Some(listing.as_bytes()),
+            &[],
+        )?;
+        let oids: Vec<String> = text(&output).lines().map(str::to_string).collect();
+        if oids.len() != paths.len() {
+            return Err("git hash-object returned an unexpected number of IDs".to_string());
+        }
+        Ok(oids)
     }
 
     /// Reset the named index entries to `commit` without changing working files.

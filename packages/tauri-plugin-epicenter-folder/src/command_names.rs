@@ -17,6 +17,7 @@ pub const COMMANDS: &[&str] = &[
     "push",
     "fetch",
     "pull_fast_forward",
+    "recover_incoming",
     "paths",
     "stage",
     "commit_staged",

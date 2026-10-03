@@ -36,6 +36,8 @@
  */
 import { afterEach, expect, mock, spyOn, test } from 'bun:test';
 import { IDBFactory, IDBKeyRange } from 'fake-indexeddb';
+import { browserStorage } from './browser-storage.test-support.js';
+import type { RecordedIncoming } from './git/backend.js';
 import { expectErr, expectOk } from 'wellcrafted/testing';
 import { hashBytes } from './capture.js';
 import { defineFolder, defineTable, field } from './contract.js';
@@ -103,6 +105,7 @@ const wireSnapshot = (overrides: Record<string, unknown> = {}) => ({
 	lastPush: null,
 	lastFetch: null,
 	lastPull: null,
+	pendingIncoming: null,
 	closed: false,
 	...overrides,
 });
@@ -136,7 +139,7 @@ async function attached() {
 		withdraw_request: () => null,
 	};
 	const folder = expectOk(await openFolder({ id: 'notes', definition }));
-	expect(sent('attach')[0]?.args).toEqual({ scope: 'notes', protocol: 4 });
+	expect(sent('attach')[0]?.args).toEqual({ scope: 'notes', protocol: 5 });
 	expect(folder.location).toEqual({
 		kind: 'directory',
 		root: '/Users/someone/Epicenter/notes',
@@ -173,7 +176,7 @@ test('the folder opened is the scope the opener names', async () => {
 	);
 	expect(sent('attach')[0]?.args).toEqual({
 		scope: 'so.epicenter.taurifoldertest',
-		protocol: 4,
+		protocol: 5,
 	});
 	expect(folder.git.snapshot.commitOnEdit).toBe(false);
 	await folder.close();
@@ -191,7 +194,7 @@ test('a refusal inside the shell is returned; browser storage is never opened in
 			await openFolder({
 				id: 'notes',
 				definition,
-				browser: { indexedDb: { indexedDB, IDBKeyRange } },
+				browser: browserStorage({ indexedDB, IDBKeyRange }),
 			}),
 		);
 		expect<string>(refused.name).toBe(
@@ -248,14 +251,14 @@ test.each([
 test('a desktop app that speaks another protocol is refused at attach, before any other call', async () => {
 	calls = [];
 	replies = {
-		// A desktop app from before saves were numbered.
-		attach: () => refuse({ name: 'Incompatible', host: 3, page: 4 }),
+		// A desktop app from before incoming recovery.
+		attach: () => refuse({ name: 'Incompatible', host: 4, page: 5 }),
 	};
 	const refused = expectErr(await openFolder({ id: 'notes', definition }));
-	expect(refused).toMatchObject({ name: 'Incompatible', host: 3, page: 4 });
+	expect(refused).toMatchObject({ name: 'Incompatible', host: 4, page: 5 });
 	expect(refused.message).toContain('Update the app');
 	expect(calls).toEqual([
-		{ cmd: 'attach', args: { scope: 'notes', protocol: 4 } },
+		{ cmd: 'attach', args: { scope: 'notes', protocol: 5 } },
 	]);
 });
 
@@ -968,6 +971,134 @@ const committed = {
 	changedPaths: 1,
 	indexWarning: null,
 };
+
+// ============================================================================
+// A pending incoming update (ADR-0474)
+// ============================================================================
+
+const RECORD = {
+	state: 'recorded',
+	operationId: 'op-1',
+	branch: 'main',
+	expectedHead: null,
+	nextHead: 'b'.repeat(40),
+} as const;
+const RECORDED: RecordedIncoming = {
+	state: 'recorded',
+	operationId: 'op-1',
+	branch: 'main',
+	expectedHead: undefined,
+	nextHead: 'b'.repeat(40),
+};
+
+test('a pending incoming update appears in the snapshot, and is absent where there is none', async () => {
+	const folder = await attached();
+	expect('pendingIncoming' in folder.git.snapshot).toBe(false);
+	emit('folder-snapshot-changed', {
+		scope: 'notes',
+		sequence: 4,
+		snapshot: wireSnapshot({ pendingIncoming: RECORD }),
+	});
+	expect(folder.git.snapshot.pendingIncoming).toEqual(RECORDED);
+	emit('folder-snapshot-changed', {
+		scope: 'notes',
+		sequence: 5,
+		snapshot: wireSnapshot({
+			pendingIncoming: {
+				state: 'unreadable',
+				reason: 'the incoming record is empty',
+			},
+		}),
+	});
+	expect(folder.git.snapshot.pendingIncoming).toEqual({
+		state: 'unreadable',
+		reason: 'the incoming record is empty',
+	});
+});
+
+test('recovery is sent only when asked, and each settled outcome names its record', async () => {
+	const folder = await attached();
+	expect(sent('recover_incoming')).toEqual([]);
+
+	replies.recover_incoming = () => ({ status: 'none' });
+	expect(expectOk(await folder.git.recoverIncoming())).toEqual({
+		status: 'none',
+	});
+	replies.recover_incoming = () => ({ status: 'cleared', pending: RECORD });
+	expect(expectOk(await folder.git.recoverIncoming())).toEqual({
+		status: 'cleared',
+		pending: RECORDED,
+	});
+	replies.recover_incoming = () => ({
+		status: 'completed',
+		pending: RECORD,
+		changedPaths: ['a.md'],
+	});
+	expect(expectOk(await folder.git.recoverIncoming())).toEqual({
+		status: 'completed',
+		pending: RECORDED,
+		changedPaths: ['a.md'],
+	});
+	expect(sent('recover_incoming')).toEqual(
+		Array.from({ length: 3 }, () => ({
+			cmd: 'recover_incoming',
+			args: { session: 7 },
+		})),
+	);
+});
+
+test('a refused, partial, or unanswered recovery keeps the update unknown or pending, and is not retried', async () => {
+	const folder = await attached();
+	replies.recover_incoming = () =>
+		refuse({
+			name: 'RecoveryRefused',
+			pending: RECORD,
+			paths: ['a.md'],
+			reason: 'a.md holds bytes in neither state',
+		});
+	expect(expectErr(await folder.git.recoverIncoming())).toMatchObject({
+		name: 'RecoveryRefused',
+		pending: RECORDED,
+		paths: ['a.md'],
+	});
+
+	replies.recover_incoming = () =>
+		refuse({
+			name: 'Unconfirmed',
+			applied: [{ kind: 'write', path: 'a.md' }],
+			uncertain: ['.git/refs/heads/main'],
+			error: 'update-ref did not finish',
+		});
+	expect(expectErr(await folder.git.recoverIncoming())).toMatchObject({
+		name: 'Unconfirmed',
+		applied: [{ kind: 'write', path: 'a.md' }],
+		uncertain: ['.git/refs/heads/main'],
+	});
+
+	calls = [];
+	replies.recover_incoming = () => {
+		throw new Error('the webview lost its IPC connection');
+	};
+	expect(expectErr(await folder.git.recoverIncoming()).name).toBe(
+		'Unconfirmed',
+	);
+	expect(sent('recover_incoming')).toHaveLength(1);
+});
+
+test('history work a pending update holds back is refused with the record that holds it', async () => {
+	const folder = await attached();
+	replies.pull_fast_forward = () =>
+		refuse({ name: 'IncomingPending', pending: RECORD });
+	expect(expectErr(await folder.git.pullFastForward())).toMatchObject({
+		name: 'IncomingPending',
+		pending: RECORDED,
+	});
+	replies.stage = () => refuse({ name: 'IncomingPending', pending: RECORD });
+	expect(expectErr(await folder.git.stage('all'))).toMatchObject({
+		name: 'IncomingPending',
+		pending: RECORDED,
+	});
+});
 
 test('a merge is unsupported in the desktop app: nothing is sent and the snapshot shows no merge', async () => {
 	const folder = await attached();

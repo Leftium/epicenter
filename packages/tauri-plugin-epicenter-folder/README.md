@@ -103,8 +103,9 @@ await folder.close();           // detaches this page only
 `openFolder` returns its refusals: an unknown scope, a window the scope does
 not list, a folder another process holds, a shell without this plugin, and a
 desktop app built for another protocol version. The unreleased protocol is
-version 4, which added the number every `apply` names. No command holds the
-folder across calls or names a terminal lease.
+version 5: version 4 added the number every `apply` names, and version 5 the
+incoming record, `recover_incoming`, and the refusals a pending update
+causes. No command holds the folder across calls or names a terminal lease.
 A page built for a different version is refused at attach. It never opens
 browser storage instead. `@epicenter/folder/tauri` is the same opener without the
 browser adapter in the build.
@@ -152,6 +153,65 @@ A fast-forward publishes through the same changes: `create` for an added path,
 `replace` and a guarded `remove` conditional on the committed bytes. It never
 removes or replaces a file without that guard, and refuses before writing
 anything if it cannot name one.
+
+## Incoming updates and their recovery
+
+A fast-forward changes files, then the index, then the branch, and a process
+can stop between any two (ADR-0474). Before it changes anything, it pins its
+before and after commits under `refs/epicenter/incoming/<operationId>/` and
+writes one record, `.git/epicenter/incoming.json`, holding exactly
+`operationId`, `branch`, `expectedHead` (`null` for an empty history), and
+`nextHead`. The record is written to a scratch name, flushed, and renamed into
+place. Every path, byte, and index entry is derived from the two pinned trees,
+so a later fetch that moves the tracking ref, or a garbage collection, cannot
+take the target away. Ordinary saves keep no record.
+
+- **While a record exists**, saves and fetches carry on. Commits, automatic
+  commits, staging, staged commits, and new fast-forwards are refused:
+  `CommitOutcome` `blocked`, `GitError` `IncomingPending`, and `PullError`
+  `IncomingPending`. The snapshot's `pendingIncoming` reports it: `recorded`
+  with the four fields, or `unreadable` with the exact reason a record could
+  not be read. Opening the folder and `status` read it and never resume it.
+- **`recover_incoming`** runs only when asked, under the file gate and the
+  Git lock, and reads everything again:
+  - nothing pending: `{ status: 'none' }`;
+  - the branch already names `nextHead`: the record and pins go, no file is
+    written, and later edits stay: `{ status: 'cleared', pending }`;
+  - otherwise each changed path must hold its before or its after state, the
+    index must hold nothing staged but the update's own entries, and the
+    branch must still name `expectedHead`. Paths still at their before state
+    are written, removals first, each conditional on the bytes it was found
+    with; every path is checked for its after state; the index is written
+    through Git's lock; the branch moves by compare-and-swap; then the record
+    goes, then its pins: `{ status: 'completed', pending, changedPaths }`,
+    where `changedPaths` are the paths this recovery wrote or removed.
+  - Recovery looks only at the paths the update changes. Files edited while
+    it was pending stay as they are, so after `cleared` or `completed` the
+    files observation is marked stale and a real status follows; nothing is
+    reported clean that was not looked at.
+- **What stops it** keeps the record and writes nothing, or reports what it
+  wrote. `RecoveryRefused { pending, paths, reason }` names third bytes, a
+  missing file, an empty file where a nonempty one is added (that is not
+  absence), a file or directory in the way, a foreign or mixed index entry,
+  an unreadable index, a moved branch, HEAD off the branch, an unreadable
+  record, or a missing pinned commit. `Partial`, `IndexFailed`, `BranchMoved`,
+  and `Unconfirmed { applied, uncertain, error }` say what landed and what is
+  unknown; the record stays, and nothing infers that a step did not happen.
+- **Files and directories trade places.** A removal goes first, so a file can
+  become a directory. Where a file must go and a directory is, the before
+  tree says which directories are Git's: those, emptied by the update's
+  removals now or by an earlier attempt, are removed deepest first. Any
+  other file or directory there, even an empty one, stops the update before
+  it writes, and no other directory is pruned.
+- A fast-forward whose first look finds a path in neither state, before it
+  writes anything, withdraws its record and pins and reports `Dirty`,
+  `Collision`, `StagedChanges`, or `BranchMoved` as before. Once it has
+  written, it stops like a recovery and keeps its record.
+- When the branch moved but could not be read back, or moved and its record
+  could not be removed, the fast-forward or recovery is reported as
+  published, because the branch did move, and the snapshot still reports
+  the record. A later recovery finds the branch at the target and clears it
+  without writing a file.
 
 ## Lifetimes
 
@@ -333,9 +393,10 @@ time.
 - A snapshot is exact against the owner's own writes, which replace files by
   rename or link. A program that edits a file in place can change bytes a
   snapshot links to while it is being hashed.
-- A fast-forward that stops partway leaves the landed files in place and the
-  branch unmoved, and reports it. Nothing records it for replay; a later
-  commit may commit those bytes.
+- A fast-forward or recovery checks every path before it writes and each
+  write's own condition again, but another program can still write between
+  a check and a rename. Its record keeps a stopped update from being
+  committed as a mixed tree; it does not make the transition atomic.
 - A commit whose compare-and-swap lost to another Git process is reported as
   `branchMoved` and is not retried. A commit whose branch update landed is
   reported as committed even if the owner could not read the branch back

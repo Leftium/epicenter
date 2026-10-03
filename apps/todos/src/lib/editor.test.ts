@@ -1,16 +1,14 @@
 /**
- * Todo Editor Tests
+ * Raw Text Editor Tests
  *
- * Drives the real todo editor runes module (compiled with Svelte's module
- * compiler) against a recording table. The editor keeps its buffer and
- * accepted baseline separate and never crashes on source it cannot interpret.
+ * Drives the real raw draft runes module (compiled with Svelte's module
+ * compiler): the plain editor for any text file, and the source editor that
+ * repairs a todo row. Both keep the buffer and the accepted baseline separate,
+ * save conditionally, and never crash on source they cannot interpret.
  *
  * Key behaviors:
- * - Typing an unresolvable YAML alias fails the draft's parse; nothing throws
- * - A structured edit on that source, a body edit included, is refused and
- *   the buffer is unchanged; the malformed text still saves
- * - A draft is inspected as typed: its diagnostics are the buffer's, never
- *   the saved entry's, and a field issue leaves the other fields editable
+ * - A row's source editor saves text that does not parse exactly as typed,
+ *   and its diagnostics are the buffer's, never the saved file's
  * - Saving writes the exact buffer against the captured baseline
  * - Typing during a save stays dirty after the save is accepted
  * - A same-byte observation becomes the baseline without replacing typing
@@ -22,9 +20,13 @@
  * - A conflict reads as removed only when the saved file is absent; a saved
  *   file that cannot be read fails the save, keeps the baseline and the
  *   buffer, and a retry repeats the same conditional save
+ * - A failed save, or one whose reply was lost, sends nothing more on its
+ *   own: newer input stays on screen, and no timer, settle, or move resends
+ *   it. Trying again makes one conditional attempt; bytes an unknown save did
+ *   land come back as a conflict, and a read of them is never a receipt
  *
  * See also:
- * - `packages/folder/src/markdown.test.ts` for the shared source preparation
+ * - `todo-editor.test.ts` for the structured todo editor
  * - `todos.test.ts` for raw text drafts against a real browser folder
  */
 import './svelte-modules.test-support.js';
@@ -40,11 +42,12 @@ import { FileError, hashBytes, TableError } from '@epicenter/folder';
 import { openFolder } from '@epicenter/folder/browser';
 import { IDBFactory, IDBKeyRange } from 'fake-indexeddb';
 import { Err, Ok, type Result } from 'wellcrafted/result';
-import { expectErr, expectOk } from 'wellcrafted/testing';
+import { expectOk } from 'wellcrafted/testing';
 import { type TodoFields, todosDefinition } from './definition.js';
+import type { SavedText } from './editor.svelte.js';
 import { EDITABLE_TEXT_LIMIT } from './files.js';
 
-const { createTextFileEditor, createTodoEditor, patchTodo } = await import(
+const { createRowSourceEditor, createTextFileEditor } = await import(
 	'./editor.svelte.ts'
 );
 
@@ -77,7 +80,8 @@ async function entryFor(source: string): Promise<TableSnapshot<TodoFields>> {
 function recordingTable(release?: Promise<void>) {
 	const writes: { baseline: string; source: string }[] = [];
 	const table = {
-		async replace(baseline: TableSnapshot<TodoFields>, source: string) {
+		name: 'todos',
+		async replace(baseline: SavedText, source: string) {
 			writes.push({ baseline: baseline.source, source });
 			await release;
 			return { data: await entryFor(source), error: null };
@@ -89,11 +93,15 @@ function recordingTable(release?: Promise<void>) {
 	return { table, writes };
 }
 
-test('an unresolvable alias typed into the source fails parsing, refuses structured edits, and still saves', async () => {
+test('a row source editor saves text that does not parse, and its diagnostics describe the buffer', async () => {
 	const { table, writes } = recordingTable();
 	const original = '---\ntitle: Milk\ndone: false\n---\n';
-	const editor = createTodoEditor(table, await entryFor(original), () => {});
-	const broken = '---\ntitle: *missing\ndone: false\n---\nbody\n';
+	const editor = createRowSourceEditor(
+		table,
+		await entryFor(original),
+		() => {},
+	);
+	const broken = '---\ntitle: *missing\ndone: soon\n---\nbody\n';
 
 	editor.input(broken);
 	// The draft is inspected as it is typed. A failed parse recovers no body.
@@ -102,51 +110,24 @@ test('an unresolvable alias typed into the source fails parsing, refuses structu
 	expect(draft.parseError?.diagnostics[0].message).toContain(
 		'Unresolved alias',
 	);
-	// The saved entry still reads as it was saved: the two are different text.
-	expect(editor.baseline.fields.title).toBe('Milk');
+	// The saved file still reads as it was saved: the two are different text.
+	expect(inspect(editor.baseline.source).fields.title).toBe('Milk');
 
-	for (const change of [{ fields: { done: true } }, { body: 'new\n' }]) {
-		expect(patchTodo(editor, change)).toBe(false);
-		expect(editor.refusal).toContain('Unresolved alias');
-		expect(editor.buffer).toBe(broken);
-	}
+	// A field issue leaves the other fields readable, and is the buffer's own.
+	editor.input(original.replace('done: false', 'done: soon'));
+	expect(inspect(editor.buffer).fields).toEqual({ title: 'Milk' });
+	expect(inspect(editor.buffer).issues.map((issue) => issue.field)).toEqual([
+		'done',
+	]);
+	expect(inspect(editor.baseline.source).issues).toEqual([]);
 
 	// Malformed text saves, and the saved capture is the next baseline.
+	editor.input(broken);
 	await editor.save();
 	expect(writes).toEqual([{ baseline: original, source: broken }]);
 	expect(editor.baseline.source).toBe(broken);
-	expect(editor.baseline.parseError).toBeDefined();
 	expect(editor.saveState).toEqual({ kind: 'saved' });
 	expect(editor.dirty).toBe(false);
-	editor.dispose();
-});
-
-test('draft diagnostics describe the buffer: a field issue leaves the other fields editable', async () => {
-	const { table } = recordingTable();
-	const original = '---\ntitle: Milk\ndone: false\n---\nNotes\n';
-	const editor = createTodoEditor(table, await entryFor(original), () => {});
-
-	editor.input(original.replace('done: false', 'done: soon'));
-	const draft = inspect(editor.buffer);
-	expect(draft.parseError).toBeUndefined();
-	expect(draft.fields).toEqual({ title: 'Milk' });
-	expect(draft.body).toBe('Notes\n');
-	expect(draft.issues.map((issue) => issue.field)).toEqual(['done']);
-	// The saved entry has no issue; none is carried over from it or into it.
-	expect(editor.baseline.issues).toEqual([]);
-
-	// The title is assignable beside the unrelated issue, and so is its repair.
-	expect(patchTodo(editor, { fields: { title: 'Oat milk' } })).toBe(true);
-	expect(inspect(editor.buffer).fields).toEqual({
-		title: 'Oat milk',
-	});
-	expect(patchTodo(editor, { fields: { done: true } })).toBe(true);
-	expect(inspect(editor.buffer)).toEqual({
-		fields: { title: 'Oat milk', done: true },
-		body: 'Notes\n',
-		parseError: undefined,
-		issues: [],
-	});
 	editor.dispose();
 });
 
@@ -158,10 +139,14 @@ test('typing during a save stays dirty after the earlier generation is accepted'
 		}),
 	);
 	const original = '---\ntitle: Milk\ndone: false\n---\n';
-	const editor = createTodoEditor(table, await entryFor(original), () => {});
-	patchTodo(editor, { body: 'A\n' });
+	const editor = createRowSourceEditor(
+		table,
+		await entryFor(original),
+		() => {},
+	);
+	editor.input(`${original}A\n`);
 	const saving = editor.save();
-	patchTodo(editor, { body: 'A and B\n' });
+	editor.input(`${original}A and B\n`);
 	release();
 	await saving;
 	expect(writes[0]?.source).toBe(`${original}A\n`);
@@ -174,7 +159,7 @@ test('typing during a save stays dirty after the earlier generation is accepted'
 test('a same-byte observation becomes the baseline without replacing typing, and changed bytes do not', async () => {
 	const { table, writes } = recordingTable();
 	const original = await entryFor('---\ntitle: Milk\ndone: false\n---\n');
-	const editor = createTodoEditor(table, original, () => {});
+	const editor = createRowSourceEditor(table, original, () => {});
 	const mine = `${original.source}mine\n`;
 	editor.input(mine);
 
@@ -192,7 +177,7 @@ test('a same-byte observation becomes the baseline without replacing typing, and
 	expect(editor.buffer).toBe(mine);
 
 	// An observation of another path is not this draft's file.
-	editor.observe({ ...again, path: 'todos/oat.md', stem: 'oat' });
+	editor.observe({ ...again, path: 'todos/oat.md' });
 	expect(editor.baseline).toBe(again);
 
 	await editor.save();
@@ -207,10 +192,10 @@ test('a same-byte observation becomes the baseline without replacing typing, and
 test('a move drains the admitted save, holds later saves, and resumes them at the adopted path', async () => {
 	const { table, writes } = recordingTable();
 	const original = await entryFor('---\ntitle: Milk\ndone: false\n---\n');
-	const editor = createTodoEditor(table, original, () => {});
+	const editor = createRowSourceEditor(table, original, () => {});
 	const first = `${original.source}first\n`;
 	const second = `${original.source}second\n`;
-	const run: { settled?: TableSnapshot<TodoFields>; answer?: () => void } = {};
+	const run: { settled?: SavedText; answer?: () => void } = {};
 
 	editor.input(first);
 	const moving = editor.move(async (settled) => {
@@ -218,7 +203,7 @@ test('a move drains the admitted save, holds later saves, and resumes them at th
 		await new Promise<void>((resolve) => {
 			run.answer = resolve;
 		});
-		return Ok({ ...settled, path: 'todos/oat.md', stem: 'oat' });
+		return Ok({ ...settled, path: 'todos/oat.md' });
 	});
 	while (run.answer === undefined) await Bun.sleep(1);
 	// The move ran against the file the drained save was accepted as.
@@ -255,7 +240,7 @@ test('a move does not run while the input cannot be saved, and a failed move ado
 		await entryFor('elsewhere'),
 		Ok(undefined),
 	);
-	const editor = createTodoEditor(table, original, () => {});
+	const editor = createRowSourceEditor(table, original, () => {});
 	let runs = 0;
 	const run = async () => {
 		runs++;
@@ -267,7 +252,7 @@ test('a move does not run while the input cannot be saved, and a failed move ado
 	expect(runs).toBe(0);
 	expect(editor.saveState.kind).toBe('conflict');
 
-	const clean = createTodoEditor(table, original, () => {});
+	const clean = createRowSourceEditor(table, original, () => {});
 	expect((await clean.move(run))?.error).toBe('The destination is taken.');
 	expect(runs).toBe(1);
 	expect(clean.baseline).toBe(original);
@@ -290,7 +275,8 @@ function conflictingTable(theirs: TableSnapshot<TodoFields>, saved: TodoRead) {
 	const writes: { baseline: string; source: string }[] = [];
 	const state = { saved };
 	const table = {
-		async replace(baseline: TableSnapshot<TodoFields>, source: string) {
+		name: 'todos',
+		async replace(baseline: SavedText, source: string) {
 			writes.push({ baseline: baseline.source, source });
 			return baseline.sha256 === theirs.sha256
 				? Ok(await entryFor(source))
@@ -305,7 +291,7 @@ function conflictingTable(theirs: TableSnapshot<TodoFields>, saved: TodoRead) {
 	return { table, writes, state };
 }
 
-test('a conflict whose saved todo cannot be read fails the save, and a retry repeats it', async () => {
+test('a conflict whose saved row cannot be read fails the save, and a retry repeats it', async () => {
 	const original = await entryFor('---\ntitle: Milk\ndone: false\n---\n');
 	const theirs = await entryFor(`${original.source}theirs\n`);
 	const mine = `${original.source}mine\n`;
@@ -318,7 +304,7 @@ test('a conflict whose saved todo cannot be read fails the save, and a retry rep
 			cause: new Error('disk unplugged'),
 		}),
 	);
-	const editor = createTodoEditor(table, original, () => {});
+	const editor = createRowSourceEditor(table, original, () => {});
 
 	editor.input(mine);
 	await editor.save();
@@ -356,13 +342,13 @@ test('a conflict whose saved todo cannot be read fails the save, and a retry rep
 	editor.dispose();
 });
 
-test('a conflicting todo reads as removed only when its file is absent', async () => {
+test('a conflicting row source reads as removed only when its file is absent', async () => {
 	const original = await entryFor('---\ntitle: Milk\ndone: false\n---\n');
 	const { table, state } = conflictingTable(
 		await entryFor('elsewhere'),
 		FileError.Closed(),
 	);
-	const editor = createTodoEditor(table, original, () => {});
+	const editor = createRowSourceEditor(table, original, () => {});
 
 	editor.input(`${original.source}mine\n`);
 	await editor.save();
@@ -426,9 +412,9 @@ test('a raw save replaces the captured baseline and adopts the capture the folde
 	editor.dispose();
 });
 
-for (const kind of ['row', 'raw file'] as const)
+for (const kind of ['row source', 'raw file'] as const)
 	test(`a ${kind} saved with an unpaired surrogate settles on the text of the bytes sent and is not sent again`, async () => {
-		const path = kind === 'row' ? 'todos/lone.md' : 'lone.txt';
+		const path = kind === 'row source' ? 'todos/lone.md' : 'lone.txt';
 		const original = '---\ntitle: Milk\ndone: false\n---\n';
 		const created = expectOk(await folder.files.create(path, original));
 		let saves = 0;
@@ -436,8 +422,8 @@ for (const kind of ['row', 'raw file'] as const)
 			saves += 1;
 		};
 		const editor =
-			kind === 'row'
-				? createTodoEditor(
+			kind === 'row source'
+				? createRowSourceEditor(
 						folder.tables.todos,
 						expectOk(await folder.tables.todos.get('lone'))!,
 						onSaved,
@@ -480,7 +466,11 @@ test('typing during a save whose text encoding changed stays as typed, and settl
 		}),
 	);
 	const original = '---\ntitle: Milk\ndone: false\n---\n';
-	const editor = createTodoEditor(table, await entryFor(original), () => {});
+	const editor = createRowSourceEditor(
+		table,
+		await entryFor(original),
+		() => {},
+	);
 	editor.input(`${original}a\uD800`);
 	const saving = editor.save();
 	editor.input(`${original}a\uD800b`);
@@ -581,6 +571,179 @@ for (const [name, saved, message] of unreadable)
 		expect(writes).toEqual([attempt, attempt]);
 		editor.dispose();
 	});
+
+/**
+ * One saved file behind both draft kinds, counting every write it is sent.
+ * `next` answers the next write: `land` publishes it, `lost` publishes it and
+ * loses the reply, and `fail` publishes nothing. A write whose baseline is no
+ * longer the stored text conflicts, as a conditional save does.
+ */
+async function countingStore(kind: 'raw file' | 'row source') {
+	const path = kind === 'raw file' ? 'notes.txt' : 'todos/milk.md';
+	const store = {
+		stored: 'saved',
+		writes: [] as string[],
+		next: 'land' as 'land' | 'lost' | 'fail',
+	};
+	const capture = async (source: string) => ({
+		path,
+		source,
+		sha256: await hashBytes(encoder.encode(source)),
+	});
+	async function write(baseline: SavedText, source: string) {
+		store.writes.push(source);
+		const current = await capture(store.stored);
+		if (baseline.sha256 !== current.sha256)
+			return FileError.Conflict({
+				path,
+				expectedSha256: baseline.sha256,
+				actualSha256: current.sha256,
+			});
+		const outcome = store.next;
+		store.next = 'land';
+		if (outcome === 'fail')
+			return FileError.Io({
+				path,
+				operation: 'write',
+				cause: new Error('disk full'),
+			});
+		store.stored = source;
+		if (outcome === 'lost')
+			return FileError.Unconfirmed({
+				path,
+				operation: 'write',
+				cause: new Error('the reply was lost'),
+			});
+		return Ok(await capture(source));
+	}
+	const original = await capture('saved');
+	const editor =
+		kind === 'raw file'
+			? createTextFileEditor(
+					{
+						// A raw save checks only the capture's hash.
+						replace: (file: FileCapture, content: Uint8Array) =>
+							write({ ...file, source: '' }, new TextDecoder().decode(content)),
+						read: async () => fileRead(encoder.encode(store.stored)),
+					} as unknown as FolderFiles,
+					original,
+					() => {},
+				)
+			: createRowSourceEditor(
+					{
+						name: 'todos',
+						replace: write,
+						get: async () =>
+							Ok({ ...(await capture(store.stored)), stem: 'milk' }),
+					} as unknown as FileTable<TodoFields>,
+					original,
+					() => {},
+				);
+	return { store, editor, original, capture };
+}
+
+for (const kind of ['raw file', 'row source'] as const) {
+	test(`a ${kind} save whose reply was lost sends nothing more on its own, and a matching read does not make it saved`, async () => {
+		const { store, editor, original, capture } = await countingStore(kind);
+
+		store.next = 'lost';
+		editor.input('mine');
+		await editor.save();
+		expect(editor.saveState).toEqual({ kind: 'unknown', operation: 'save' });
+		expect(editor.hasProblem).toBe(true);
+		expect(editor.isDiscardable).toBe(true);
+		expect(store.writes).toEqual(['mine']);
+		// The file now holds the sent bytes. Reading them is not a receipt.
+		editor.observe(await capture('mine'));
+		expect(editor.saveState).toEqual({ kind: 'unknown', operation: 'save' });
+		expect(editor.baseline).toEqual(original);
+
+		// Newer input stays on screen; no timer, save, settle, or move sends it.
+		editor.input('mine and more');
+		await Bun.sleep(450);
+		await editor.save();
+		expect(await editor.settle()).toBe(false);
+		let moves = 0;
+		expect(
+			await editor.move(async (settled) => {
+				moves++;
+				return Ok(settled);
+			}),
+		).toBeUndefined();
+		expect(moves).toBe(0);
+		expect(editor.buffer).toBe('mine and more');
+		expect(store.writes).toEqual(['mine']);
+
+		// Trying again makes one new conditional attempt. The bytes that did
+		// land are no longer the baseline, so they come back for review.
+		await editor.retry();
+		expect(store.writes).toEqual(['mine', 'mine and more']);
+		expect(editor.saveState).toMatchObject({
+			kind: 'conflict',
+			current: { source: 'mine' },
+		});
+		expect(editor.buffer).toBe('mine and more');
+		await editor.keepMine();
+		expect(store.writes).toEqual(['mine', 'mine and more', 'mine and more']);
+		expect(store.stored).toBe('mine and more');
+		expect(editor.saveState).toEqual({ kind: 'saved' });
+		editor.dispose();
+	});
+
+	test(`a ${kind} whose delete reply was lost sends nothing more on its own, and only trying again checks the file`, async () => {
+		const { store, editor } = await countingStore(kind);
+
+		// Typing arrives before the delete's reply, which is lost.
+		const removed = await editor.remove(async () => {
+			editor.input('typed during');
+			return FileError.Unconfirmed({
+				path: editor.path,
+				operation: 'remove',
+				cause: new Error('the reply was lost'),
+			});
+		});
+		expect(removed?.error?.name).toBe('Unconfirmed');
+		expect(editor.saveState).toEqual({ kind: 'unknown', operation: 'delete' });
+		expect(editor.isDiscardable).toBe(true);
+		await Bun.sleep(450);
+		await editor.save();
+		expect(await editor.settle()).toBe(false);
+		expect(store.writes).toEqual([]);
+		expect(editor.buffer).toBe('typed during');
+
+		// The person's attempt is one conditional save. This delete never
+		// landed, so the file is the baseline and the save is accepted.
+		await editor.retry();
+		expect(store.writes).toEqual(['typed during']);
+		expect(editor.saveState).toEqual({ kind: 'saved' });
+		editor.dispose();
+	});
+
+	test(`a failed ${kind} save sends nothing more on its own, and trying again makes one attempt`, async () => {
+		const { store, editor } = await countingStore(kind);
+
+		store.next = 'fail';
+		editor.input('mine');
+		await editor.save();
+		expect(editor.saveState).toEqual({
+			kind: 'failed',
+			message: expect.stringContaining('disk full'),
+		});
+		editor.input('mine and more');
+		await Bun.sleep(450);
+		await editor.save();
+		expect(await editor.settle()).toBe(false);
+		expect(store.writes).toEqual(['mine']);
+		expect(store.stored).toBe('saved');
+
+		await editor.retry();
+		expect(store.writes).toEqual(['mine', 'mine and more']);
+		expect(store.stored).toBe('mine and more');
+		expect(editor.saveState).toEqual({ kind: 'saved' });
+		expect(editor.dirty).toBe(false);
+		editor.dispose();
+	});
+}
 
 test('a raw conflict reads as removed only when the file is absent', async () => {
 	const sha256 = await hashBytes(encoder.encode('saved'));

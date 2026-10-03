@@ -20,7 +20,7 @@ console.log(
 		`  Bare repository: ${session.bare}`,
 		`  Native checkout: ${session.nativeCheckout}`,
 		'',
-		'  After the browser pushes:',
+		'  After pressing Commit and push in the browser:',
 		`    cd ${session.nativeCheckout} && git pull --ff-only`,
 		`    bun apps/todos/scripts/native.ts ${session.nativeCheckout} status`,
 		'  Then edit, commit, and push natively, and press Pull in the browser.',

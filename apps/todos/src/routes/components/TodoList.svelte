@@ -3,8 +3,7 @@
 	import { Checkbox } from '@epicenter/ui/checkbox';
 	import { Input } from '@epicenter/ui/input';
 	import { toast } from '@epicenter/ui/sonner';
-	import { needsRepair, type TodoEntry } from '$lib/editor.svelte.js';
-	import type { Todos } from '$lib/todos.svelte.js';
+	import { needsRepair, type TodoEntry, type Todos } from '$lib/todos.svelte.js';
 
 	let { todos, onOpen }: { todos: Todos; onOpen?: () => void } = $props();
 	let draft = $state('');

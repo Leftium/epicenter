@@ -10,7 +10,6 @@ import {
  * the Markdown body. The stem is the file's identity; the title is a field.
  */
 export const todosDefinition = defineFolder({
-	id: 'so.epicenter.todos',
 	title: 'Todos',
 	kv: {},
 	tables: {

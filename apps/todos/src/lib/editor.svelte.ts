@@ -1,5 +1,6 @@
 /**
- * Editors over saved text files (ADR-0465).
+ * Raw text editors (ADR-0465): the plain editor for any text file, and the
+ * source editor that repairs a todo row the structured editor cannot open.
  *
  * A draft's `buffer` is the text on screen, including unsaved typing.
  * `baseline` is the saved file the next conditional save is checked against. A
@@ -9,33 +10,25 @@
  * encoding replaced an unpaired surrogate; a buffer still at the generation
  * that was sent becomes that text, so the draft settles. A conflict pauses autosave
  * and keeps the input until the person chooses. A conflict whose saved file
- * cannot be read is a failed save, never a removal. A rename runs through the
- * draft's `move`, which holds saves until the file is at its new path. Git
- * outcomes never affect this state.
+ * cannot be read is a failed save, never a removal. A save whose reply was
+ * lost is unknown, and a later read of the same bytes does not make it saved.
+ * A failed or unknown save also stops automatic saves: new typing stays on
+ * screen, and no timer, settle, rename, or close sends it until the person
+ * tries again. That attempt is still checked against the baseline, which
+ * stays where it was. A rename runs through the draft's `move`, which holds saves
+ * until the file is at its new path; a move that fails, even one that left a
+ * copy at the new path, keeps the draft at the old one. Git outcomes never
+ * affect this state.
  *
- * Todo rows save through their table; other text files save through raw
- * conditional replacements. Both use this one draft, so the retained-draft and
- * conflict rules are the same for every file the app edits.
+ * Ordinary files save through raw conditional replacements; a row repair
+ * saves its complete text through `table.replace`. Structured todo editing is
+ * a different save shape: see `todo-editor.svelte.ts`.
  */
-import {
-	type FileCapture,
-	type FileTable,
-	type FolderFiles,
-	patchSource,
-	type SourceChange,
-	type TableSnapshot,
-	type TextCapture,
-} from '@epicenter/folder';
+import type { FileTable, FolderFiles, TextCapture } from '@epicenter/folder';
+import { FileError, rowStemOf } from '@epicenter/folder';
 import { Err, Ok, type Result } from 'wellcrafted/result';
 import type { TodoFields } from './definition.js';
 import { readTextFile, type SubmittedText, submittedText } from './files.js';
-
-export type TodoEntry = TableSnapshot<TodoFields>;
-
-/** Whether a saved todo's text fails to parse or leaves a declared field with an issue. */
-export function needsRepair(entry: TodoEntry): boolean {
-	return entry.parseError !== undefined || entry.issues.length > 0;
-}
 
 /**
  * One saved text file as its draft last accepted it: the capture the next
@@ -43,50 +36,54 @@ export function needsRepair(entry: TodoEntry): boolean {
  */
 export type SavedText = TextCapture;
 
-export type SaveState<T> =
+export type SaveState =
 	| { readonly kind: 'saved' }
 	| { readonly kind: 'saving' }
 	| { readonly kind: 'failed'; readonly message: string }
+	/**
+	 * A request's reply was lost: a save's bytes may or may not be in the
+	 * file, or a delete may or may not have removed it. No later read answers
+	 * it; only the person's choice does.
+	 */
+	| { readonly kind: 'unknown'; readonly operation: 'save' | 'delete' }
 	| {
 			readonly kind: 'conflict';
 			readonly message: string;
 			/** The saved file now, or undefined when it was removed. */
-			readonly current: T | undefined;
+			readonly current: SavedText | undefined;
 	  };
 
 /** Where a draft saves: one conditional write, and a fresh read for conflict review. */
-type DraftStore<T extends SavedText> = {
+type DraftStore = {
 	/** The accepted file's `source` is the text of the submitted bytes. */
 	write(
-		baseline: T,
+		baseline: SavedText,
 		submitted: SubmittedText,
-	): Promise<Result<T, { readonly name: string; readonly message: string }>>;
+	): Promise<
+		Result<SavedText, { readonly name: string; readonly message: string }>
+	>;
 	/**
 	 * The saved file now. Only absence is `undefined`; a file that could not be
 	 * read, or is no longer editable text, is an error and never reads as removed.
-	 * The baseline names the file: a row by its stem, a raw file by its path.
 	 */
 	read(
-		baseline: T,
-	): Promise<Result<T | undefined, { readonly message: string }>>;
+		baseline: SavedText,
+	): Promise<Result<SavedText | undefined, { readonly message: string }>>;
 };
 
 /** Typing batches for this long before a save; the folder adds no Git delay. */
-const TYPING_BATCH_MS = 400;
+export const TYPING_BATCH_MS = 400;
 
-export type Draft<T extends SavedText> = ReturnType<typeof createDraft<T>>;
-export type TodoEditor = Draft<TodoEntry>;
-export type TextFileEditor = Draft<SavedText>;
+export type TextFileEditor = ReturnType<typeof createDraft>;
 
-function createDraft<T extends SavedText>(
-	store: DraftStore<T>,
-	initial: T,
+function createDraft(
+	store: DraftStore,
+	initial: SavedText,
 	onSaved: () => void,
 ) {
-	let baseline = $state.raw<T>(initial);
+	let baseline = $state.raw<SavedText>(initial);
 	let buffer = $state(initial.source);
-	let saveState = $state.raw<SaveState<T>>({ kind: 'saved' });
-	let refusal = $state<string | undefined>();
+	let saveState = $state.raw<SaveState>({ kind: 'saved' });
 	let timer: ReturnType<typeof setTimeout> | undefined;
 	let saving: Promise<void> | undefined;
 	/** Pending while a rename owns the file's path; resolves when it settles. */
@@ -94,15 +91,25 @@ function createDraft<T extends SavedText>(
 
 	const dirty = () => buffer !== baseline.source;
 
+	/**
+	 * Nothing is sent on its own while the person must choose: a conflict to
+	 * review, or a save that failed or whose reply was lost. A hash check makes
+	 * a resend safe from overwriting, but it is still a new request the person
+	 * did not make; only `retry` or a conflict choice sends again.
+	 */
+	const isHeld = () =>
+		saveState.kind === 'conflict' ||
+		saveState.kind === 'failed' ||
+		saveState.kind === 'unknown';
+
 	function schedule() {
 		clearTimeout(timer);
-		if (saveState.kind === 'conflict' || moving) return;
+		if (isHeld() || moving) return;
 		timer = setTimeout(() => void save(), TYPING_BATCH_MS);
 	}
 
 	function input(text: string) {
 		buffer = text;
-		refusal = undefined;
 		schedule();
 	}
 
@@ -119,6 +126,12 @@ function createDraft<T extends SavedText>(
 				if (buffer === captured) buffer = result.data.source;
 				saveState = { kind: 'saved' };
 				onSaved();
+				return;
+			}
+			if (result.error.name === 'Unconfirmed') {
+				// The baseline stays, so a retry is checked against the file as
+				// it was: bytes that did land read as a change to review.
+				saveState = { kind: 'unknown', operation: 'save' };
 				return;
 			}
 			if (result.error.name !== 'Conflict') {
@@ -151,7 +164,7 @@ function createDraft<T extends SavedText>(
 	/** Run admitted saves to completion. A move drains through here before it runs. */
 	async function drain(): Promise<void> {
 		clearTimeout(timer);
-		if (saveState.kind === 'conflict') return;
+		if (isHeld()) return;
 		if (saving) {
 			await saving;
 			return dirty() ? drain() : undefined;
@@ -168,8 +181,9 @@ function createDraft<T extends SavedText>(
 	}
 
 	/**
-	 * Save the current generation now. Resolves when no save is running. A
-	 * move holds saves: this returns at once, the input stays dirty, and it
+	 * Save the current generation now, as the typing timer does. Resolves when
+	 * no save is running. A held draft sends nothing; see `isHeld`. A move
+	 * holds saves too: this returns at once, the input stays dirty, and it
 	 * saves when the move settles.
 	 */
 	async function save(): Promise<void> {
@@ -186,29 +200,44 @@ function createDraft<T extends SavedText>(
 		get saveState() {
 			return saveState;
 		},
-		/** Why the last structured change was refused; typing clears it. */
-		get refusal() {
-			return refusal;
-		},
 		get dirty() {
 			return dirty();
+		},
+		/** Nothing typed is waiting, saving, failed, or in conflict. */
+		get isIdle() {
+			return !dirty() && saveState.kind === 'saved';
+		},
+		get isSaving() {
+			return saveState.kind === 'saving';
+		},
+		/** The input cannot save on its own until the person chooses. */
+		get hasProblem() {
+			return (
+				saveState.kind === 'failed' ||
+				saveState.kind === 'unknown' ||
+				saveState.kind === 'conflict'
+			);
+		},
+		/** Discarding is offered only when the input cannot save. */
+		get isDiscardable() {
+			return (
+				saveState.kind === 'failed' ||
+				saveState.kind === 'unknown' ||
+				(saveState.kind === 'conflict' && saveState.current === undefined)
+			);
 		},
 		get path() {
 			return baseline.path;
 		},
 		/** Replace the whole buffer, as a source editor does. */
 		input,
-		/** Record that a requested change could not be applied; the buffer is unchanged. */
-		refuse(reason: string) {
-			refusal = reason;
-		},
 		save,
 		/**
 		 * Same-byte observations adopt the newer observation without replacing input.
 		 * Changed bytes are adopted only by a clean, idle draft; a dirty draft
 		 * keeps its sha256 so its next save detects the other writer.
 		 */
-		observe(next: T) {
+		observe(next: SavedText) {
 			if (next.path !== baseline.path) return;
 			if (next.sha256 === baseline.sha256) {
 				baseline = next;
@@ -237,13 +266,21 @@ function createDraft<T extends SavedText>(
 			saveState = { kind: 'saved' };
 			await save();
 		},
+		/**
+		 * The person's explicit attempt after a failed save, or a save or
+		 * delete whose reply was lost: one new save of the current text, still
+		 * checked against the baseline, so bytes an unknown save did land, or a
+		 * removal an unknown delete did make, come back as a conflict to review.
+		 */
 		async retry() {
-			if (saveState.kind === 'failed') saveState = { kind: 'saved' };
+			if (saveState.kind === 'failed' || saveState.kind === 'unknown')
+				saveState = { kind: 'saved' };
 			await save();
 		},
 		/**
 		 * Settle pending input before the file is deleted or closed. Waits for a
-		 * running move, then for the saves it held.
+		 * running move, then for the saves it held. A held draft sends nothing
+		 * and answers false.
 		 */
 		async settle(): Promise<boolean> {
 			while (moving) await moving;
@@ -264,8 +301,8 @@ function createDraft<T extends SavedText>(
 		 * first or another move is running.
 		 */
 		async move(
-			run: (settled: T) => Promise<Result<T, string>>,
-		): Promise<Result<T, string> | undefined> {
+			run: (settled: SavedText) => Promise<Result<SavedText, string>>,
+		): Promise<Result<SavedText, string> | undefined> {
 			if (moving) return undefined;
 			let finish = () => {};
 			moving = new Promise<void>((resolve) => {
@@ -287,25 +324,54 @@ function createDraft<T extends SavedText>(
 				if (dirty() && saveState.kind === 'saved') schedule();
 			}
 		},
+		/**
+		 * Delete this draft's file. `run` removes the version the person
+		 * confirmed. A save already running finishes first, and none starts
+		 * until `run` answers, so no save of this draft lands during the delete.
+		 * Typing is accepted throughout.
+		 *
+		 * A delete whose reply was lost, or that threw, may or may not have
+		 * removed the file: the draft becomes unknown before this returns, so
+		 * nothing is sent on its own, and no later read answers it; only the
+		 * person's choice does. A delete that removed the file leaves typing
+		 * that arrived meanwhile as a draft of a removed file.
+		 *
+		 * Returns `undefined` without running while the draft holds input that
+		 * is not saved or another move or delete is running.
+		 */
+		async remove(
+			run: () => Promise<Result<undefined, FileError>>,
+		): Promise<Result<undefined, FileError> | undefined> {
+			if (moving) return undefined;
+			const finished = Promise.withResolvers<void>();
+			moving = finished.promise;
+			try {
+				clearTimeout(timer);
+				while (saving) await saving;
+				if (dirty() || saveState.kind !== 'saved') return undefined;
+				let removed: Result<undefined, FileError>;
+				try {
+					removed = await run();
+				} catch (cause) {
+					removed = FileError.Unconfirmed({
+						path: baseline.path,
+						operation: 'remove',
+						cause,
+					});
+				}
+				if (removed.error?.name === 'Unconfirmed')
+					saveState = { kind: 'unknown', operation: 'delete' };
+				return removed;
+			} finally {
+				moving = undefined;
+				finished.resolve();
+				if (dirty() && saveState.kind === 'saved') schedule();
+			}
+		},
 		dispose() {
 			clearTimeout(timer);
 		},
 	};
-}
-
-export function createTodoEditor(
-	table: FileTable<TodoFields>,
-	entry: TodoEntry,
-	onSaved: () => void,
-): TodoEditor {
-	return createDraft<TodoEntry>(
-		{
-			write: (baseline, { source }) => table.replace(baseline, source),
-			read: (baseline) => table.get(baseline.stem),
-		},
-		entry,
-		onSaved,
-	);
 }
 
 /**
@@ -319,7 +385,7 @@ export function createTextFileEditor(
 	file: SavedText,
 	onSaved: () => void,
 ): TextFileEditor {
-	return createDraft<SavedText>(
+	return createDraft(
 		{
 			async write(baseline, { bytes, source }) {
 				const replaced = await files.replace(baseline, bytes);
@@ -345,23 +411,28 @@ export function createTextFileEditor(
 }
 
 /**
- * Change frontmatter fields or the body with the preparation table updates
- * use. A buffer that does not parse, or that the preparation cannot change
- * safely, is refused and kept as typed: the source editor is how it is fixed.
+ * The source editor for a todo row: complete text, saved exactly as typed
+ * through the table's conditional replacement, whether or not it parses. It
+ * repairs a row the structured editor refuses, and edits what that editor
+ * cannot, such as frontmatter the table does not declare. The row is
+ * addressed by its baseline's path, so it follows a rename.
  */
-export function patchTodo(
-	editor: TodoEditor | TextFileEditor,
-	change: SourceChange,
-): boolean {
-	const patched = patchSource(editor.buffer, change);
-	if (patched.error) {
-		editor.refuse(
-			patched.error.kind === 'unparsed'
-				? patched.error.error.message
-				: patched.error.reason,
-		);
-		return false;
-	}
-	editor.input(patched.data);
-	return true;
+export function createRowSourceEditor(
+	table: FileTable<TodoFields>,
+	row: SavedText,
+	onSaved: () => void,
+): TextFileEditor {
+	return createDraft(
+		{
+			write: (baseline, { source }) => table.replace(baseline, source),
+			async read(baseline) {
+				const stem = rowStemOf(table.name, baseline.path);
+				if (stem === undefined)
+					return Err({ message: `'${baseline.path}' is not a todo row` });
+				return table.get(stem);
+			},
+		},
+		row,
+		onSaved,
+	);
 }

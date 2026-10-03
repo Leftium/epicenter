@@ -13,6 +13,12 @@ import type { todosDefinition } from '../definition.js';
 export type TodosFolder = Folder<typeof todosDefinition>;
 
 /**
+ * The folder both leaves open. The browser names its IndexedDB database after
+ * it; the desktop shell registers its directory under it.
+ */
+export const TODOS_FOLDER_ID = 'so.epicenter.todos';
+
+/**
  * Opens the build's folder. A refusal is returned for the page to show; a
  * leaf never opens another kind of storage instead.
  */

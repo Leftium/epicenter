@@ -15,6 +15,7 @@
 	import FolderTerminal from './FolderTerminal.svelte';
 	import TodoDetail from './TodoDetail.svelte';
 	import TodoList from './TodoList.svelte';
+	import TodoSource from './TodoSource.svelte';
 
 	let { todos }: { todos: Todos } = $props();
 
@@ -86,6 +87,8 @@
 	{@const selection = todos.selection}
 	{#if selection?.kind === 'todo'}
 		<TodoDetail {todos} editor={selection.editor} {onBack} />
+	{:else if selection?.kind === 'source'}
+		<TodoSource {todos} editor={selection.editor} reason={selection.reason} {onBack} />
 	{:else if selection?.kind === 'file'}
 		<FileView {todos} path={selection.path} file={selection.file} {onBack} />
 	{:else}

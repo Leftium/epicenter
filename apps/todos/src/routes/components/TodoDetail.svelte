@@ -3,15 +3,17 @@
 	import { Button } from '@epicenter/ui/button';
 	import { Checkbox } from '@epicenter/ui/checkbox';
 	import { Input } from '@epicenter/ui/input';
+	import { toast } from '@epicenter/ui/sonner';
 	import * as Tabs from '@epicenter/ui/tabs';
 	import { Textarea } from '@epicenter/ui/textarea';
 	import ArrowLeftIcon from '@lucide/svelte/icons/arrow-left';
-	import { patchTodo, type TodoEditor } from '$lib/editor.svelte.js';
+	import { rowStemOf } from '@epicenter/folder';
 	import { withFileNewlines } from '$lib/files.js';
+	import type { TodoEditor } from '$lib/todo-editor.svelte.js';
 	import type { Todos } from '$lib/todos.svelte.js';
 	import { confirmDelete } from './file-actions.js';
 	import FileNameBar from './FileNameBar.svelte';
-	import SaveStatus from './SaveStatus.svelte';
+	import TodoStatus from './TodoStatus.svelte';
 
 	let {
 		todos,
@@ -25,16 +27,21 @@
 	} = $props();
 
 	/**
-	 * How the text on screen reads, by the table's own interpreter. Every
-	 * control and every diagnostic below describes this buffer, saved or not,
-	 * and never the file as it was last saved.
+	 * The editor's draft, saved or not. The controls show its own values, not
+	 * the validated ones, so a value that does not conform stays on screen.
 	 */
-	const draft = $derived(todos.folder.tables.todos.inspect(editor.buffer));
-	const title = $derived(draft.fields.title ?? '');
-	const done = $derived(draft.fields.done === true);
-	// A buffer that does not parse has no fields or body to edit; its source does.
-	const structured = $derived(draft.parseError === undefined);
+	const current = $derived(editor.state);
+	const title = $derived(
+		typeof current.document.fields.title === 'string' ? current.document.fields.title : '',
+	);
+	const done = $derived(current.document.fields.done === true);
+	const stem = $derived(rowStemOf(todos.folder.tables.todos.name, current.path) ?? '');
 	let tab = $state('notes');
+
+	async function editSource() {
+		const problem = await todos.editSource(editor.path);
+		if (problem) toast.error('Could not open the source', { description: problem });
+	}
 </script>
 
 <section class="flex h-full min-h-0 flex-col" aria-label="Todo">
@@ -46,45 +53,33 @@
 		{/if}
 		<Checkbox
 			checked={done}
-			disabled={!structured}
 			aria-label="Done"
-			onCheckedChange={(checked) => patchTodo(editor, { fields: { done: checked === true } })}
+			onCheckedChange={(checked) => editor.change({ fields: { done: checked === true } })}
 		/>
 		<Input
 			class="flex-1 text-base font-medium"
 			value={title}
 			placeholder="Title"
 			aria-label="Title"
-			disabled={!structured}
-			oninput={(event) => patchTodo(editor, { fields: { title: event.currentTarget.value } })}
+			oninput={(event) => {
+				const control = event.currentTarget;
+				// A refused change leaves the draft as it was; so does the control.
+				if (editor.change({ fields: { title: control.value } }) !== undefined)
+					control.value = title;
+			}}
 		/>
 	</div>
 
-	<SaveStatus {editor} onDiscard={() => todos.discard(editor.path)} />
+	<TodoStatus {editor} onDiscard={() => void todos.discard(editor.path)} />
 
-	{#if draft.parseError}
-		<div class="border-b bg-destructive/5 px-4 py-2 text-xs">
-			<p class="mb-1 flex flex-wrap items-center gap-2 font-medium">
-				<Badge variant="destructive">Needs repair</Badge>
-				{draft.parseError.message}. Edit the source to fix it.
-				{#if tab !== 'source'}
-					<Button size="xs" variant="outline" onclick={() => (tab = 'source')}>Edit Source</Button>
-				{/if}
-			</p>
-			<ul class="space-y-0.5 text-muted-foreground">
-				{#each draft.parseError.diagnostics as diagnostic, index (index)}
-					{#if diagnostic.message !== draft.parseError.message}<li>{diagnostic.message}</li>{/if}
-				{/each}
-			</ul>
-		</div>
-	{:else if draft.issues.length > 0}
+	{#if current.reading.issues.length > 0}
 		<div class="border-b bg-destructive/5 px-4 py-2 text-xs">
 			<p class="mb-1 flex items-center gap-2 font-medium">
-				<Badge variant="destructive">Needs repair</Badge>
-				Some fields need fixing. The rest of the todo still works.
+				<Badge variant="destructive">Needs fixing</Badge>
+				These fields are kept as typed, and the todo is not saved until they are fixed.
 			</p>
 			<ul class="space-y-0.5 text-muted-foreground">
-				{#each draft.issues as issue, index (index)}
+				{#each current.reading.issues as issue, index (index)}
 					<li>{issue.message}</li>
 				{/each}
 			</ul>
@@ -99,30 +94,37 @@
 		<Tabs.Content value="notes" class="min-h-0 flex-1">
 			<Textarea
 				class="h-full min-h-40 resize-none font-sans"
-				value={draft.body ?? ''}
+				value={current.document.body}
 				placeholder="Notes in Markdown"
 				aria-label="Notes"
-				disabled={!structured}
-				oninput={(event) =>
-					patchTodo(editor, { body: withFileNewlines(event.currentTarget.value, draft.body ?? '') })}
+				oninput={(event) => {
+					const control = event.currentTarget;
+					const body = current.document.body;
+					if (editor.change({ body: withFileNewlines(control.value, body) }) !== undefined)
+						control.value = body;
+				}}
 			/>
 		</Tabs.Content>
-		<Tabs.Content value="source" class="min-h-0 flex-1">
+		<Tabs.Content value="source" class="flex min-h-0 flex-1 flex-col gap-2">
+			<p class="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+				Saving writes this text, the whole file, in one standard form.
+				<Button size="xs" variant="outline" onclick={() => void editSource()}>Edit source</Button>
+			</p>
 			<Textarea
-				class="h-full min-h-40 resize-none font-mono text-xs"
-				value={editor.buffer}
+				class="min-h-40 flex-1 resize-none font-mono text-xs"
+				value={current.source}
 				aria-label="Markdown source"
+				readonly
 				spellcheck={false}
-				oninput={(event) => editor.input(withFileNewlines(event.currentTarget.value, editor.buffer))}
 			/>
 		</Tabs.Content>
 	</Tabs.Root>
 
 	<FileNameBar
 		prefix="todos/"
-		name={editor.baseline.stem}
+		name={stem}
 		suffix=".md"
-		onRename={(stem) => todos.rename(editor.path, `${stem}.md`)}
+		onRename={(next) => todos.rename(editor.path, `${next}.md`)}
 		onDelete={() => void confirmDelete(todos, editor.path)}
 	/>
 </section>

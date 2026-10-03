@@ -2,8 +2,9 @@
 
 - **Status:** Proposed
 - **Date:** 2026-10-01
-- **Relates:** [ADR-0480](0480-file-tables-own-only-their-markdown-row-files.md) proposes row-only operations without inferred attachments; [ADR-0457](0457-a-row-filename-is-its-exact-id-and-a-title-is-a-field.md), [ADR-0464](0464-file-table-updates-conditionally-replace-the-captured-whole-file.md), [ADR-0467](0467-interrupted-file-operations-report-partial-results.md), and [ADR-0474](0474-incoming-file-folder-sync-is-an-explicit-clean-fast-forward.md) state the per-operation rules this layout promise bounds.
-- **Unbuilt:** destination identity checks without a separate portability naming policy and remaining application adoption. Row-only operations and intent-based mutations already exist in Folder.
+- **Relates:** [ADR-0480](0480-file-tables-own-only-their-markdown-row-files.md) proposes row-only operations without inferred attachments; [ADR-0457](0457-a-row-filename-is-its-exact-id-and-a-title-is-a-field.md), [ADR-0464](0464-file-table-updates-conditionally-replace-the-captured-whole-file.md), [ADR-0467](0467-file-workflows-report-each-operations-outcome.md), and [ADR-0474](0474-incoming-git-adoption-retains-a-recoverable-plan.md) state the per-operation rules this layout promise bounds.
+- **Implementation:** row-only operations and intent-based mutations in Folder. `create`, `rename`, and a batched row read the table directory once before publication and refuse a destination a file occupies at that exact name, as the files' `Exists`. No portability naming policy and no case or Unicode folding applies: a filesystem that holds one file for two spellings refuses the second through the publication's exclusive destination condition. Todos, Honeycrisp, Whispering, and Capture are on this contract.
+- **Unbuilt:** the same destination coverage against the desktop Rust owner, which was not run for this change.
 
 ## Context
 
@@ -83,9 +84,10 @@ between the final version check and the `rename` or `unlink` can be replaced or
 removed. Those bytes can be unrecoverable without another retained copy. Git
 repairs only bytes it retained.
 
-Incoming updates use ADR-0474's separate rule: report a stopped adoption, allow
-later checkpoints of the partial files, and leave divergent history for manual
-Git repair. Neither rule guarantees recovery of uncommitted bytes.
+Incoming updates use ADR-0474's separate Git-owned record: retain the before
+and after commits, refuse mixed checkpoints, and explicitly roll forward only
+over expected path states. Unrelated app edits remain available. This does not
+retain every uncommitted version or authorize overwriting outside edits.
 
 The layout rule removes these mechanisms:
 

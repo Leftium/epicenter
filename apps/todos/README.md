@@ -22,6 +22,24 @@ such as `todos/milk.png` or `todos/milk.webm` beside `todos/milk.md`, is an
 ordinary file: renaming or deleting the todo leaves it where it is, and you
 rename or delete it yourself from the file browser.
 
+
+## Storage and editor migration
+
+The selected migration uses one scoped OPFS directory for browser files and
+`.git/`, individual file operations, and the folder's canonical table editor.
+The app owns editor retention and autosave; unsupported source remains available
+for raw repair. Structured saves replace the complete document and rewrite
+frontmatter formatting. An unknown reply stays unknown in save history even
+when a later read finds the desired content. Incoming Git adoption retains its
+own recovery record and refuses mixed checkpoints until explicit recovery.
+
+Integration and UI verification are pending. Sections describing IndexedDB,
+app-owned editor engines or older recovery controls document the implementation
+before this migration. The decisions are recorded in
+[ADR-0497](../../docs/adr/0497-browser-folders-use-scoped-opfs-directories.md),
+[ADR-0482](../../docs/adr/0482-folder-mutations-publish-one-file-at-a-time.md), and
+[ADR-0483](../../docs/adr/0483-honeycrisp-shares-one-canonical-editor-per-open-row.md).
+
 ## Desktop, inside Epicenter
 
 Todos is one of Epicenter's compiled applications. Open it from Epicenter Home,
@@ -66,7 +84,7 @@ next save.
 - A new folder has no Git remote, and the window says so: Pull and Fetch are
   off, and the commit button reads "Commit". To use a remote, add one named
   `origin` with your own Git in the directory, then reopen Epicenter. Todos
-  then pushes after each automatic commit and offers Pull. It follows `main`
+  records automatic commits locally and offers Commit and push and Pull. It follows `main`
   only.
 - The terminal is the same restricted shell as the browser demo, over the real
   directory. It is not `/bin/sh`: it has the listed file commands and
@@ -132,7 +150,7 @@ conflict, a failed save, or text typed in the last moment.
 ### How it is wired
 
 The Rust shell installs `tauri-plugin-epicenter-folder` once and registers the
-Todos folder under the definition's ID, `so.epicenter.todos`, with its
+Todos folder under the ID the page opens, `so.epicenter.todos`, with its
 directory, author, remote, history policy, and allowed window label. Importing
 the page's adapter acquires nothing; opening Todos calls `openFolder` from
 `@epicenter/folder/tauri`, which attaches this page to that folder and sends
@@ -290,8 +308,8 @@ todo; `todos/a.MD` is an ordinary file.
 
 | Path | Role |
 | --- | --- |
-| `src/lib/definition.ts` | The inert `defineFolder` declaration, written with the shared `defineTable` and `field` vocabulary. |
-| `src/lib/platform/` | The `#platform/folder` seam: `types.ts` is its contract, `folder.browser.ts` opens the IndexedDB folder through `@epicenter/folder/browser`, and `folder.epicenter-host.ts` opens the host's directory through `@epicenter/folder/tauri`. Each returns the folder or the refusal. The mounted page calls it; importing it opens nothing. |
+| `src/lib/definition.ts` | The inert `defineFolder` declaration, written with the shared `defineTable` and `field` vocabulary. It names no folder. |
+| `src/lib/platform/` | The `#platform/folder` seam: `types.ts` is its contract and holds `TODOS_FOLDER_ID`, `folder.browser.ts` opens the IndexedDB folder through `@epicenter/folder/browser`, and `folder.epicenter-host.ts` opens the host's directory through `@epicenter/folder/tauri`. Each returns the folder or the refusal. The mounted page calls it; importing it opens nothing. |
 | `src/lib/editor.svelte.ts` | One draft's buffer, baseline, save queue, and conflict choice, shared by todo and raw text editors. |
 | `src/lib/files.ts` | File browser rows, and which files open as editable text. |
 | `src/lib/todos.svelte.ts` | Todo and folder listings, path selection, retained editors, and file actions. |

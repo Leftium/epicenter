@@ -17,6 +17,24 @@ Run the browser build with `bun dev:capture` (or `bun dev:capture:ui`) from
 the repository root. It starts the app and nothing else. Start `bun dev:api`
 yourself only to export old captures from a hosted account, described below.
 
+
+## Storage and editor migration
+
+The selected migration uses one scoped OPFS directory for browser files and
+`.git/`, individual file operations, and the folder's canonical table editor.
+The app owns editor retention and autosave; unsupported source remains available
+for raw repair. Structured saves replace the complete document and rewrite
+frontmatter formatting. An unknown reply stays unknown in save history even
+when a later read finds the desired content. Incoming Git adoption retains its
+own recovery record and refuses mixed checkpoints until explicit recovery.
+
+Integration and UI verification are pending. Sections describing IndexedDB,
+app-owned editor engines or older recovery controls document the implementation
+before this migration. The decisions are recorded in
+[ADR-0497](../../docs/adr/0497-browser-folders-use-scoped-opfs-directories.md),
+[ADR-0482](../../docs/adr/0482-folder-mutations-publish-one-file-at-a-time.md), and
+[ADR-0483](../../docs/adr/0483-honeycrisp-shares-one-canonical-editor-per-open-row.md).
+
 ## What you can do
 
 - **New capture** saves the text exactly as written, with an empty Thoughts
@@ -166,15 +184,16 @@ means for Capture:
 
 ```text
 Capture window (WebView)
-   openFolder({ definition })      from @epicenter/folder/tauri
+   openFolder({ id, definition })  from @epicenter/folder/tauri
         |  Tauri invoke: plugin:epicenter-folder|attach, read, apply, commit, ...
         |  Tauri events: folder-files-changed, folder-snapshot-changed
         v
 Epicenter shell (Rust)  ->  tauri-plugin-epicenter-folder  ->  <directory>
 ```
 
-The page names the folder by its ID, `so.epicenter.capture`, and nothing
-else. The shell registered that ID with its directory, its history policy, and
+The page names the folder by its ID, `so.epicenter.capture`
+(`CAPTURE_FOLDER_ID` in `src/lib/platform/types.ts`), and nothing else. The
+shell registered that ID with its directory, its history policy, and
 the windows that may use it, so a page cannot ask for an arbitrary path or
 choose an author or a remote. There is no HTTP route and no Bun process
 between the window and its files.

@@ -1,21 +1,21 @@
-# 0461. Portable data folders live under Local and derived account scopes
+# 0461. Portable data folders group by Local or account owner
 
 - **Status:** Proposed
 - **Date:** 2026-09-29
-- **Implementation:** Whispering's desktop shell opens `~/Epicenter/local/so.epicenter.whispering` by default, or the directory `WHISPERING_DATA_ROOT` names.
-- **Unbuilt:** account-key derivation and golden-vector tests, managed folder-name admission, account-folder discovery and bootstrap, explicit cloud transfers, credential separation for portable copies, scope-bounded opening, copying, and link resolution, and migration from Yjs-backed stores and working copies.
+- **Implementation:** Whispering's desktop shell opens `~/Epicenter/local/so.epicenter.whispering` by default, or the directory `WHISPERING_DATA_ROOT` names. `@epicenter/principal` derives portable account keys with golden-vector tests; Local CLI admission validates managed folder names and layout. The source CLI reports account paths without creating them.
+- **Unbuilt:** account-folder discovery and bootstrap, explicit cloud transfers, credential separation for portable copies, owner-bounded opening, copying, and link resolution, and migration from Yjs-backed stores and working copies.
 
 ## Context
 
 A portable file root needs separate places for Local and account-linked data. The older Yjs store addresses put a definition before its Local or account owner. The current checkout is a working copy of a Yjs document. Neither layout decides the root of a file-authoritative folder. Whispering's desktop shell already uses a Local file-authoritative folder.
 
-One person can retain Local data and data for several accounts. An account's identity is the pair of authority ID and principal ID, not an email, display name, or principal alone. Principal IDs can repeat across authorities. Independent native applications must find the same account scope after sign-in, including when Epicenter desktop is not installed. A chosen folder name such as `braden-cloud` would require every application to ask for the folder or consult a shared device registry.
+One person can retain Local data and data for several accounts. An account's identity is the pair of authority ID and principal ID, not an email, display name, or principal alone. Principal IDs can repeat across authorities. Independent native applications must find the same account directory after sign-in, including when Epicenter desktop is not installed. A chosen folder name such as `braden-cloud` would require every application to ask for the folder or consult a shared device registry.
 
 Private storage already uses `deviceOwnerPath` to encode each identity component as UTF-8 hex. That reversible address is appropriate for app-private storage, but a self-hosted authority ID already contains the hex of its origin. Encoding it again can make a portable path component too long. A lossy slug can merge distinct identities on case-insensitive filesystems.
 
 ## Decision
 
-**The portable root groups data folders by scope.** `~/Epicenter/local/` is the Local scope. `~/Epicenter/accounts/` contains one directory for each account identity. A data folder has a stable folder ID relative to its owner, conventionally a reverse-DNS name. Its name is not a globally unique repository identity.
+**The portable root groups data folders by owner.** The owner is Local for account-independent data, or a specific account. `~/Epicenter/local/` contains Local data. `~/Epicenter/accounts/` contains one directory for each account identity. A data folder has a stable folder ID relative to its owner, conventionally a reverse-DNS name. Its name is not a globally unique repository identity.
 
 ```text
 ~/Epicenter/
@@ -36,7 +36,7 @@ Private storage already uses `deviceOwnerPath` to encode each identity component
         files/f3.jpg
 ```
 
-The account directory in this example derives from `{ authorityId: "epicenter-api", principalId: "user-123" }`. The same definition can have a separate data folder in Local and in each account scope. Copying an account directory copies its contained data folders together.
+The account directory in this example derives from `{ authorityId: "epicenter-api", principalId: "user-123" }`. The same definition can have a separate data folder in Local and for each account. Copying an account directory copies its contained data folders together.
 
 **A folder ID names a dataset; a definition interprets its files.** The complete
 managed address includes the deployment channel, Local or account owner, and
@@ -45,11 +45,11 @@ Reverse-DNS names give compatible tools a shared addressing convention.
 `so.epicenter.notes.work` names an independent sibling dataset: dots are literal
 characters, with no directory nesting or permission inheritance.
 
-`defineFolder` requires an `id` as its convenient default dataset name.
-`openFolder({ definition, id })` can select another dataset with the same
-interpretation. That default is neither a schema fingerprint nor an application
-ownership claim. Several tools may interpret one dataset, and one application
-may open several datasets. Applications must agree on the meaning of shared
+A folder definition names no dataset. Opening names it: the browser and
+desktop openers require the folder ID, and an application keeps its usual ID
+beside its opening code. A folder ID is neither a schema fingerprint nor an application ownership claim.
+Several tools may interpret one dataset, and one application may open several
+datasets with one definition. Applications must agree on the meaning of shared
 fields they write. App IDs and private SQL namespaces remain separate choices.
 Opening captures the selected address; changing sign-in does not retarget the
 existing handle or move its files.
@@ -73,29 +73,31 @@ These examples pin the byte contract:
   -> 1f9770442aa6f99e1fe926643b4ba2cc764e63abaee38dcc6bb158a62c3d4720
 ```
 
-Each implementation must pass the same golden vectors. The derivation is a permanent path contract. An incompatible change requires an explicit migration from the old path. A missing account directory is not evidence of an empty account. An application creates one only through an explicit online create or download, never because sign-in computed a path that does not exist yet. An external rename breaks automatic discovery until the derived name is restored. Applications show a human account name in their UI and can reveal the directory, but that name does not participate in the path.
+Each implementation must pass the same golden vectors. The derivation is a permanent path contract. An incompatible change requires an explicit migration from the old path. Account identity selects local storage independently of cloud discovery. A selected account folder can be created and edited offline from the cached identity without an origin. Its absence says nothing about cloud contents. An external rename breaks automatic discovery until the derived name is restored. Applications show a human account name in their UI and can reveal the directory, but that name does not participate in the path.
 
-**Finding a directory does not authorize a transfer.** Sign-in lets an application calculate a path and open saved files for inspection. It transfers no folder content. Each standalone application owns its Epicenter authentication session; none keeps a private record that enrolls a folder for automatic publication. Directory names and configured origins can be compared with the cloud listing without a local installation database. Standard Git origin records the repository destination; it grants no permission. Git owns history comparison and reconciliation, while Epicenter captures the account and supplies trusted-service credentials ([ADR-0489](0489-cloud-folder-transfers-are-explicit-and-bootstrap-before-opening.md)).
+**Finding a directory does not authorize a transfer.** Sign-in lets an application calculate a path and open saved files for local editing. It transfers no folder content. Each standalone application owns its Epicenter authentication session; none keeps a private record that enrolls a folder for automatic publication. Directory names and configured origins can be compared with the cloud listing without a local installation database. Standard Git origin records the repository destination; it grants no permission. Git owns history comparison and reconciliation, while Epicenter captures the account and supplies trusted-service credentials ([ADR-0489](0489-cloud-folder-transfers-are-explicit-and-bootstrap-before-opening.md)).
 
-The portable-folder contract keeps credentials outside copied content. Whispering's current Local development host stores its transcription API key privately under `.git`; a filesystem copy can carry that key, so this separation is not implemented there yet. Managed account operations resolve the selected account's derived path and leave mismatching origins unchanged. They do not create an empty replacement and treat missing files as deletions. Restoring old contents in place over a folder that kept operating looks like an edit; the directory name cannot distinguish the two, and no stored identity detects it in every case. Raw Git at an arbitrary path remains outside Epicenter's scope selection.
+Changing accounts is a deliberate departure and opening, with unsaved work handled before replacing the runtime. A native shell captures one account and root for its process lifetime. Switching follows the guarded close handshake and a whole-shell relaunch; detaching or reloading its page retains the owner and its lock. Recordings, drafts, admitted writes, and transports retain the identity captured when they began. Signing in does not move existing Local data. Browser storage uses the same account identity and folder ID in its database, lock, and notification names; each browser origin still has its own physical storage. Account startup on both platforms remains unbuilt.
+
+The portable-folder contract keeps credentials outside copied content. Whispering's current Local development host stores its transcription API key privately under `.git`; a filesystem copy can carry that key, so this separation is not implemented there yet. Managed account operations resolve the selected account's derived path and leave mismatching origins unchanged. They do not create an empty replacement and treat missing files as deletions. Restoring old contents in place over a folder that kept operating looks like an edit; the directory name cannot distinguish the two, and no stored identity detects it in every case. Raw Git at an arbitrary path remains outside Epicenter's owner selection.
 
 **Local data stays Local.** No operation moves a `local/` folder into an account, binds it to one, or uploads it in place. A person may explicitly copy selected current files from a Local folder into an account folder after reviewing them. The copy creates new files at the destination; they carry no history, pending work, or credentials from their source, and the Local folder is unchanged.
 
-**A selected scope bounds opening, copying, and links between data folders.** A Local view opens `local/`; an account view opens one derived `accounts/<account-key>/`. A parent `Epicenter/` directory containing other scopes is not an implicit grant to them. A link leaving the selected scope remains unresolved even if its target exists elsewhere under `Epicenter/`.
+**A selected owner bounds opening, copying, and links between data folders.** A Local view opens `local/`; an account view opens one derived `accounts/<account-key>/`. A parent `Epicenter/` directory containing data for other owners is not an implicit grant to them. A link leaving the selected owner’s directory remains unresolved even if its target exists elsewhere under `Epicenter/`.
 
-Copying one complete scope's authored content preserves its saved current files and relative links between its data folders, provided the copy includes all file attachment bytes. Copying one data folder's authored content preserves its owned files but may leave links to siblings unresolved. Credentials, authentication sessions, and app/account SQL remain outside authored folders. File-first queries use transient in-memory projections under [ADR-0494](0494-file-folders-reserve-epicenter-for-rebuildable-caches.md). No new `.epicenter/` subtree is reserved or omitted by name. Store checkout and its baseline are removed under ADR-0501; existing manifest files remain on disk. Persistent query caching and placement are deferred. Pending-work databases require a separate backup and activation contract. The agreed default root is `~/Epicenter`; moving the root requires each independent app to select the new location or a separately specified root-discovery mechanism. Deriving an account child does not locate a moved root.
+Copying one complete owner's authored content preserves its saved current files and relative links between its data folders, provided the copy includes all file attachment bytes. Copying one data folder's authored content preserves its owned files but may leave links to siblings unresolved. Credentials, authentication sessions, and app/account SQL remain outside authored folders. File-first queries use transient in-memory projections under [ADR-0494](0494-file-folders-reserve-epicenter-for-rebuildable-caches.md). No new `.epicenter/` subtree is reserved or omitted by name. Store checkout and its baseline are removed under ADR-0501; existing manifest files remain on disk. Persistent query caching and placement are deferred. Pending-work databases require a separate backup and activation contract. The agreed default root is `~/Epicenter`; moving the root requires each independent app to select the new location or a separately specified root-discovery mechanism. Deriving an account child does not locate a moved root.
 
-[ADR-0496](0496-native-app-runtime-storage-is-independent-of-the-shell.md) proposes shared native provider credentials and a fixed app/account runtime root outside the authored tree. Moving this portable root does not move that runtime. [ADR-0497](0497-browser-folders-use-indexeddb-and-private-sqlite-uses-opfs.md) maps these logical authored scopes to one IndexedDB database per captured folder address; private live SQL remains in OPFS. Browser storage remains origin-private. These targets do not relocate existing stores.
+[ADR-0496](0496-native-app-runtime-storage-is-independent-of-the-shell.md) proposes shared native provider credentials and a fixed app/account runtime root outside the authored tree. Moving this portable root does not move that runtime. [ADR-0497](0497-browser-folders-use-scoped-opfs-directories.md) maps these logical authored owners to one IndexedDB database per captured folder address; private live SQL remains in OPFS. Browser storage remains origin-private. These targets do not relocate existing stores.
 
 This address applies only to folders deliberately migrated to file authority. It does not relocate current IndexedDB databases, native Yjs/SQLite/blob paths, claims, or Markdown checkouts. Shared-owner addressing and permissions require a separate decision before Shared file folders exist.
 
 ## Consequences
 
 - Independent native applications calculate the same account directory from the same authenticated identity without Epicenter desktop, a chosen alias, or a shared device registry.
-- A person can copy one scope's saved files and relative links as a subtree. Its opaque name is stable but does not identify the person at a glance.
+- A person can copy one owner's saved files and relative links as a subtree. Its opaque name is stable but does not identify the person at a glance.
 - The derivation removes folder-name allocation, collision handling for human names, and rename tracking. It does not remove per-transfer validation or reconciliation of a restored folder.
 - The shared account path does not coordinate two processes writing the same data folder. A data definition needs its own writer and file-change contract before multiple applications open it concurrently.
-- Filesystem traversal and link resolution must stay inside the selected scope, including through native symlinks. A writer must not follow a link into another scope and then treat those bytes as owned or synchronizable data.
+- Filesystem traversal and link resolution must stay inside the selected owner’s directory, including through native symlinks. A writer must not follow a link into another owner’s directory and then treat those bytes as owned or synchronizable data.
 
 ## Considered alternatives
 

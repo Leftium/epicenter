@@ -77,7 +77,7 @@ Account scoping selects local ownership; it does not synchronize the database.
 Private database files and their WAL/journal companions do not enter data folder sync.
 [ADR-0496](0496-native-app-runtime-storage-is-independent-of-the-shell.md)
 proposes one native app/account address shared by standalone and hosted shells,
-with cross-process admission. [ADR-0497](0497-browser-folders-use-indexeddb-and-private-sqlite-uses-opfs.md)
+with cross-process admission. [ADR-0497](0497-browser-folders-use-scoped-opfs-directories.md)
 retains IndexedDB authored folders and separate private OPFS SQL, with captured
 channel and account addresses. Address changes require implementation and
 preserving migration before current storage paths change.

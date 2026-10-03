@@ -28,86 +28,44 @@ against the code. The constraints below apply to every edit here.
   only when a read confirmed it absent and only if it is still absent, and
   never retry an outcome that is unknown. Table directories come from the
   declaration; do not list them a second time in Rust.
-- Change a note's text as a patch to its source through
-  `src/lib/note-source.ts`, saved by the file's session. Do not re-emit
-  frontmatter: unknown keys, comments, quoting, and key order belong to the
-  person.
-- Tables are listings. Read `folder.tables.*.list()` and nothing else from a
-  table: a note's fields, a folder's name, a new note, and a deleted folder
-  are all changes to a file's source. Do not add a second way to save a note.
+- Structured rows use `folder.tables.<name>.edit(stem)`. Retain one editor
+  per open row and share it across rich-body, body-text and metadata controls.
+  Do not add another app-owned save or observation engine for those rows.
+- A structured save writes the complete canonical document through `overwrite`.
+  Unknown metadata values remain; YAML comments, quoting and prior key order
+  are rewritten. Opening and listing do not rewrite a file.
+- Unsupported or invalid source uses a separate raw repair workflow. Raw file
+  access must remain available even when a table editor cannot open the file.
+- A file whose text does not parse stays listed and opens for source repair.
+  Show a draft's diagnostics from its current text, never from the saved file.
+- An action checks the fields it needs, not whether the whole entry is free
+  of issues. A destructive action that must find every related file refuses
+  when any file's relation did not validate (`deleteFolder`).
 
-## One session per file, one buffer
+## Editor ownership
 
-- Every open text file has one session, `createFileSession` in
-  `src/lib/file-session.svelte.ts`, kept by path in `notes.svelte.ts`. A
-  note and a raw file are the same kind of session. Do not branch on which
-  one a path is to save, move, delete, or recover it.
-- That module is the only place that asks the folder to create, replace,
-  move, or remove a file, and the only place that reads the folder's reply.
-  Every such call names a capture: `files.create(path, …)`,
-  `files.replace(capture, …)`, `files.move(capture, to)`,
-  `files.remove(capture)`. Do not use `files.overwrite`.
-- The session's `buffer` is the whole source text. The rich-text view, the
-  Source view, and the metadata controls are all views of it. Do not give
-  any view state the buffer does not hold.
-- Keep `saved`, `buffer`, `attempt`, `pathChange`, and `external` separate.
-  `saved` is the folder's capture plus its text, and it is the baseline. A
-  write acknowledges the text it submitted at the capture the folder
-  returned; never read the file to find out what was saved, and never let
-  the owner hand a session a new base.
-- A refused or failed write does not move `saved` and does not clear
-  `external`.
-- A review choice names the `external` object the person was shown.
-  `saveMine` and `takeTheirs` refuse any other, so a newer observation
-  invalidates the choice. There is no unconditional overwrite.
-- An unconfirmed write stays exactly as it was sent: path, text, condition.
-  Nothing more is saved while it does, and retry sends that same write, never
-  the newer buffer. No read removes it. The old file, no file, or other text
-  does not show the command cannot still land; other text is recorded beside
-  it as `external`, and none of them becomes the base. That holds when the
-  buffer equals the saved text too: a session with a write still out adopts
-  nothing.
-- An unconfirmed write ends in two ways only: a successful reply to a
-  reissue of that same write, or a read of exactly its text at its path.
-  The second says what the file holds, not which command wrote it. It makes
-  that text `saved`; newer typing is then dirty against it, and the read
-  itself starts no save. Only a confirmed write restarts the autosave timer;
-  after a read, the newer typing is saved by the **Save** control, the next
-  edit, or a close. Do not add a way for the person to drop an attempt.
-- A save takes the buffer as it is when `save()` is called, and chooses its
-  condition when its turn comes. Do not move the capture into the queue.
-- An unconfirmed or partial move, and an unconfirmed removal, of an open
-  file is kept as `pathChange`. Nothing is saved, moved, removed, or
-  concluded from a read while it stands, and the session is not forgotten.
-  Do not add a retry, a way to pick a path, or any cleanup: which file to go
-  on with is not something this app can show.
-- A change to a file with no open session whose outcome is unknown is kept
-  in `notes.pending` as it was sent. It blocks further changes to its paths
-  and a second create of the same kind. `create`, `replace`, and `mkdir`
-  records end on a read of exactly what they asked for, or a confirmed
-  resend; `move`, `remove`, and `rmdir` records do not end. Do not report
-  one as failed, resend one without the person asking, or make a new one
-  under a fresh name.
-- Every change with no session goes through `send` in `notes.svelte.ts`. It
-  checks the fence in the step it makes the call, registers the call before
-  anything is awaited, and records an unknown outcome in the step the reply
-  arrives. Do not call the folder for such a change any other way, and do
-  not put an await between the fence check and the call. Directory calls go
-  through the same reply mapping as files, so a call that throws is kept as
-  not confirmed.
-- `notes.unsettled` and `settleAll` count pending records and changes still
-  being sent, not only drafts. A close waits for what was sent and asks
-  about what was never confirmed.
-- Do not report any of these as "not saved".
-- Rename and delete act on the version the session holds, or on a version
-  captured when the person was asked. Do not read the file again to get
-  permission.
-- Saving a removed file's draft uses another path only when a first,
-  confirmed refusal shows other text at its own path. A retried attempt
-  never does: the occupant may be its own earlier write.
+- The folder editor owns a structured row's document, comparison baseline,
+  admitted save, observation and subscription lifetime. The app owns selection,
+  retained editors, autosave timing and close fencing. Views share the retained
+  editor; they do not start separate autosave timers or reopen it on keystrokes.
+- A save receipt acknowledges submitted bytes. A later read is a separate
+  observation and never proves which request published those bytes.
+- Unknown replies remain unknown in save history. Do not force the editor to
+  retain and reissue only the old attempt, clear uncertainty from matching text,
+  or prevent explicit adoption or discard under the editor's rules.
+- Autosave pauses after failed or unknown outcomes. Resume is app policy and
+  must not replay a provider request or an old file command on its own.
+- Arbitrary text files and source repair remain raw file workflows. Do not
+  invent a table schema for them or introduce a second current-content store.
+- Rename and delete use a reviewed file capture. Inspect both paths after an
+  interrupted or unknown move before a renewed destructive action. A generic
+  batch journal or permanent path-change lock is not required.
+- Register admitted file actions before awaiting them and check the input fence
+  at admission. Close counts drafts, admitted work and unknown workflow outcomes
+  separately. A failed or unknown reply is not proof that nothing was saved.
 - Every ProseMirror transaction that changes the document goes through
-  `RichSession.apply`, which checks it before it is displayed and writes it
-  to the draft in the same step. Do not call `view.updateState` with a
+  `RichSession.apply`, which checks it before it is displayed and writes its body
+  to the shared editor in the same step. Do not call `view.updateState` with a
   document the session did not return.
 - Do not weaken `checkNoteDoc` to let an edit through. If Markdown cannot
   spell it, the edit is refused. If it should be spellable, fix the
@@ -117,8 +75,8 @@ against the code. The constraints below apply to every edit here.
 - Adding a node or mark to `editor/schema.ts` requires its Markdown in both
   directions and tests for both. Source the schema cannot hold is refused by
   `inspectNoteBody`, not dropped.
-- A view shows only text the session took. `input` returns false when it did
-  not; `RichSession.apply` refuses that transaction.
+- A view shows only input the editor accepted. If the shared editor refuses a
+  change, `RichSession.apply` refuses that transaction too.
 - The rich-text view's lifetime depends on one boolean (`editable`) and its
   element. Do not make its mount effect read anything that changes on a
   keystroke; that recreates the view and erases undo history.

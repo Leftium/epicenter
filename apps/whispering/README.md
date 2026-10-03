@@ -12,27 +12,49 @@ stop, save, play, transcribe, transform, inspect files and history, quit, reopen
 Native verification results and remaining checks are recorded below. Dictating into other apps is not part
 of it. [What is not supported](#what-is-not-supported) lists the rest.
 
+
+## Storage and editor migration
+
+The selected migration uses one scoped OPFS directory for browser files and
+`.git/`, individual file operations, and the folder's canonical table editor.
+The app owns editor retention and autosave; unsupported source remains available
+for raw repair. Structured saves replace the complete document and rewrite
+frontmatter formatting. An unknown reply stays unknown in save history even
+when a later read finds the desired content. Incoming Git adoption retains its
+own recovery record and refuses mixed checkpoints until explicit recovery.
+
+Integration and UI verification are pending. Sections describing IndexedDB,
+app-owned editor engines or older recovery controls document the implementation
+before this migration. The decisions are recorded in
+[ADR-0497](../../docs/adr/0497-browser-folders-use-scoped-opfs-directories.md),
+[ADR-0482](../../docs/adr/0482-folder-mutations-publish-one-file-at-a-time.md), and
+[ADR-0483](../../docs/adr/0483-honeycrisp-shares-one-canonical-editor-per-open-row.md).
+
 ## The data folder
 
 ```text
 ~/Epicenter/local/so.epicenter.whispering/
-├── kv.json                          transcription endpoint and model
+├── kv.json                          transcription endpoint and model an earlier version saved; read, never written
 ├── recordings/
 │   ├── <recording-id>.md            title, time, length, and audioPath in frontmatter; notes in the body
 │   └── <recording-id>.<extension>   the audio that row names, with the extension its bytes call for
 ├── transcriptions/
 │   └── <result-id>.md               names its recording in frontmatter; transcript in the body
 ├── transformations/
-│   └── <transformation-id>.md       title, model, endpoint in frontmatter; the prompt in the body
+│   └── <transformation-id>.md       title (and an optional model) in frontmatter; the instructions in the body
 ├── transformation_runs/
-│   └── <run-id>.md                  what it was made from and with in frontmatter; the result in the body
+│   └── <run-id>.md                  a result on a transcript: what it was made from and with; the result in the body
+├── text_runs/
+│   └── <run-id>.md                  a result on pasted text you saved: what was sent and with what; the result in the body
 └── .git/                            ordinary Git: Markdown, kv.json, and audio bytes
 ```
 
-Opening the folder creates Git metadata. Settings use defaults in memory until
-you save them, which creates `kv.json`. Recording, transcript,
-prompt, and result files are created by explicit actions. A folder has no
-`transformations/` until you create a transformation.
+Opening the folder creates Git metadata. Where requests go is set up per
+device in Settings and is never in the folder; until you set it up, nothing
+is sent and nothing is saved. Recording, transcript, transformation, and
+result files are created by explicit actions. A folder has no
+`transformations/` until you create a transformation, and no `text_runs/`
+until you save a result on pasted text.
 
 These files are the data. The app, the embedded terminal, and any other program
 edit the same paths; there is no export step and no second copy. Set
@@ -101,8 +123,8 @@ cargo test --manifest-path src-tauri/Cargo.toml   # the shell: folder registrati
 | Variable | Meaning |
 | --- | --- |
 | `WHISPERING_DATA_ROOT` | The data folder. Default `~/Epicenter/local/so.epicenter.whispering`. Created when absent. |
-| `WHISPERING_TRANSCRIPTION_BASE_URL`, `WHISPERING_TRANSCRIPTION_MODEL` | Defaults for settings absent from `kv.json`. They can change on each launch until you save settings. |
-| `WHISPERING_TRANSCRIPTION_API_KEY` | The API key for this launch, used for transcription and for transformations. Overrides the key saved from Settings. |
+| `WHISPERING_TRANSCRIPTION_API_KEY` | Makes the transcription connection for this launch: this key (empty for none) at `WHISPERING_TRANSCRIPTION_BASE_URL` with `WHISPERING_TRANSCRIPTION_MODEL`. It replaces the saved transcription connection and cannot be changed from the app. It is never used for text. |
+| `WHISPERING_TRANSCRIPTION_BASE_URL`, `WHISPERING_TRANSCRIPTION_MODEL` | With the key above, that connection's base URL and model (default `https://api.openai.com/v1` and `whisper-1`). Without it, only where the transcription form starts. |
 | `WHISPERING_AUDIO_FIXTURE` | Debug builds only. A file whose bytes answer every recording. See [Fixture audio](#fixture-audio). |
 | `WHISPERING_BUN` | Debug builds only. The Bun executable that runs the host, when `bun` is not on `PATH`. |
 
@@ -117,7 +139,7 @@ forward, and refresh work.
 | --- | --- | --- |
 | Home | `/` | The recorder, and the newest recording with its transcript. |
 | Recordings | `/recordings` | Search, sort, and select recordings; open playback and transcript editing beside the table. |
-| Transformations | `/transformations` | The prompts you apply to transcripts, and the results they produced. |
+| Transformations | `/transformations` | The instructions you apply to transcripts or pasted text, and the results they produced. |
 
 Changing pages keeps everything in progress: a recording keeps recording, a
 request keeps running, unsaved typing stays in its editor, and the terminal
@@ -132,9 +154,9 @@ page, is anything that is not saved yet.
 | --- | --- |
 | Start recording / Stop recording | On Home. Records, then saves the audio and its row to `recordings/`. On other pages the header has a microphone button to start, and while a recording runs it shows the elapsed time and Stop. |
 | Microphone input | On Home, under the recorder. Chooses the microphone the next recording uses: System default, or one by name. See [Under the recorder](#under-the-recorder). |
-| Transcription model | On Home, under the recorder. Shows the model in use and opens the same form as Settings. |
+| Transcription model | On Home, under the recorder. Shows the transcription connection in use and opens its part of Settings. |
 | Post-processing | On Home, under the recorder. Chooses one of your transformations, or None. Choosing sends nothing; **Run** on the latest transcript does. |
-| Transcribe | Sends the saved audio to the endpoint in Settings and saves the answer as a row in `transcriptions/`. Nothing is transcribed until you press it. |
+| Transcribe | Sends the saved audio over the transcription connection in Settings and saves the answer as a row in `transcriptions/`. Nothing is transcribed until you press it. |
 | A recording | Opens an optional detail pane for playback, title, transcript editing, Copy, Transform, and notes. Close restores the full table. Narrow windows show the detail with Back. Source edits the recording's Markdown. |
 | Search recordings | Matches the title, notes, ID, and every transcript. Excerpts show the matching passage. A recording that needs repair stays listed. |
 | Sort | Click Recording, Recorded, Length, or Status to sort; click again to reverse. |
@@ -144,7 +166,7 @@ page, is anything that is not saved yet.
 | Delete selected | Captures the selected rows shown and their results before confirmation. Audio stays in the folder. |
 | Transform | On a transcript. Applies one of your transformations and saves the answer as a new file under the transcript. |
 | Status | Saved files, uncommitted changes, the last commit attempt, and the folder path as separate lines, with Check again and Commit now. |
-| Settings | Transcription endpoint and model (saved in `kv.json`) and the API key (kept on this device, outside history). |
+| Settings | The two connections, transcription and text: each an endpoint, a default model, and an optional key, kept on this device and outside history. See [Connections](#connections). |
 | Reveal folder | Opens the data folder in Finder. |
 | Files (Ctrl+Shift+E) | The folder's files, beside any page. A recording row opens on Recordings and a transformation on Transformations; an audio file opens a player and other text a plain editor, both on Recordings. |
 | Terminal (Ctrl+\`) | Commands in the data folder, under any page. Its output, history, typed command, and directory stay when it is hidden. |
@@ -187,7 +209,7 @@ popover.
   when you close the popover, leave Home, start a recording, or close the app.
   Only one of the two runs at a time, and never beside a recording.
 - The choice is kept on this device and is never written to `kv.json`. In the
-  desktop app it is in the same file as the API key, under the folder's
+  desktop app it is in the same file as the connections, under the folder's
   `.git`; in a browser tab it is in `localStorage`.
 - A microphone is identified by the ID the app is given for it, never by its
   name: two microphones can share a name. If the saved ID is not among the
@@ -201,10 +223,10 @@ popover.
 - With fixture audio there is no real input: the popover says so, and no
   microphone is listed, asked for, or opened.
 
-**Transcription model.** The model and endpoint that **Transcribe** uses. It is
-the Settings form, with the same draft, so typing in one shows in the other.
-The model is a name you type: the app keeps no list of models and never asks
-an endpoint what it serves.
+**Transcription model.** The transcription connection that **Transcribe**
+uses. It is the transcription part of Settings, with the same draft, so typing
+in one shows in the other. The model is a name you type: the app keeps no list
+of models and never asks an endpoint what it serves.
 
 **Post-processing.** None, or one of the transformations in the folder. It
 starts as None each time the app opens, and the choice stays while you move
@@ -216,37 +238,68 @@ empty and links to the Transformations page.
   the chosen transformation, exactly as Transform does on Recordings. The
   result is a new file in `transformation_runs/`; the transcript and its Copy
   button are unchanged.
-- A choice that was deleted, or that lacks its title, model, endpoint, or
-  prompt, is shown as that and does not run.
+- A choice that was deleted, or that cannot run now (it needs repair, or no
+  text connection is set up), is shown as that, with why, and does not run.
 
 ### Transformations
 
-A transformation is a prompt you reuse: clean up dictation, summarize, draft an
-email. It is one Markdown file in `transformations/` with a title, a model, and
-an endpoint in its frontmatter and the prompt as its body.
+A transformation is a title and instructions you reuse: clean up dictation,
+summarize, draft an email. It is one Markdown file in `transformations/` with
+the title in its frontmatter and the instructions as its body. Where it is
+sent is the text connection in Settings, never the file.
 
 - **New** creates one. It offers three starters (Clean up, Summarize, Draft an
   email) and an empty one. Nothing is created until you choose; the app never
-  adds files on its own.
-- Edit the title, prompt, endpoint, and model in Details, or the whole file in
-  Source. Edits save like any other file here, with the same conflict handling.
-  Fields the app does not know are kept as written.
-- The endpoint is an OpenAI-compatible base URL and the model is whatever that
-  endpoint calls it. Whispering keeps no list of providers or models. A new
-  transformation copies the endpoint and model of one you already have; the
-  first one starts with the transcription endpoint and no model.
-- Run one from a transcript's **Transform** menu on Recordings, or from the
-  transformation's own page by choosing a transcript and pressing **Run**.
+  adds files on its own. A new transformation is written with `model: null`
+  and `endpoint: null`: it uses the text connection and its model.
+- Edit the title, instructions, and an optional model in Details, or the whole
+  file in Source. Edits save like any other file here, with the same conflict
+  handling. Fields the app does not know are kept as written.
+- A model typed in a transformation is used instead of the text connection's;
+  leave it empty to use the connection's. Whispering keeps no list of
+  providers or models.
+- A transformation an earlier version wrote names an endpoint. That file still
+  reads and runs, but its endpoint is only a condition: it runs while the text
+  connection is exactly that base URL, and otherwise says so and sends
+  nothing. **Remove the endpoint and use the text connection** on its page
+  sets it to `null`. The app never rewrites these files on its own.
+- Run one from a transcript's **Transform** menu on Recordings, from the
+  transformation's own page on a chosen transcript, or on pasted text (below).
+  The Run button, the post-processing choice, the Transform menu, and the run
+  itself all make the same decision about whether it can run and with what.
 
-Running sends one request: `POST <endpoint>/chat/completions` with the model,
-the prompt as the system message, and the transcript as the user message. The
-answer is saved as a new file in `transformation_runs/`. The transcript's own
-file is never written, so the original text is always there.
+Running sends one request: `POST <text connection>/chat/completions` with the
+model, the instructions as the system message, and the transcript or pasted
+text as the user message. An answer on a transcript is saved as a new file in
+`transformation_runs/`. The transcript's own file is never written, so the
+original text is always there.
 
-Each result file records the recording, transcription, and transformation it
-came from, when, the model and endpoint, and the exact prompt and transcript
-text that were sent. A result therefore still reads correctly after you edit or
-delete its transformation. Deleting a transformation keeps its results.
+Each result file records what it came from, when, the model and endpoint, and
+the exact instructions and text that were sent. A result therefore still reads
+correctly after you edit or delete its transformation. Deleting a
+transformation keeps its results. Nothing here claims an endpoint answers the
+same way twice.
+
+**Pasted text.** A transformation's page has **A transcript** and **Pasted
+text**. Paste any text and press **Run on pasted text**; no recording is
+needed. The pasted text stays while you move between pages and
+transformations, and is never written anywhere.
+
+- Running saves open edits to the transformation first, then fixes the run
+  before anything is sent: its file name and the exact instructions, text,
+  model, and endpoint. Editing the text, the transformation, or Settings
+  afterward changes nothing about that run.
+- The answer is shown beside the text that was sent, with **Copy**, **Save**,
+  and **Discard**. It is held in the window, not saved, until you press
+  **Save**, which writes it to `text_runs/`. A held answer keeps the app from
+  closing without asking, and the notice under the header points to it from
+  every page.
+- One transformation holds one answer on pasted text at a time. While it runs,
+  or while its answer waits, Run on pasted text sends nothing.
+- Saved results on pasted text are listed with the transformation's results as
+  "Pasted text", and open, copy, and delete like any other result. They name
+  no recording, so they are never deleted with one, and a file in
+  `text_runs/` that does not read never stops a recording from being deleted.
 Deleting a recording deletes its file, its transcripts, and the results made
 from them. Its audio file is kept, and the confirmation says so; delete it
 from Files when you no longer want it. A recording cannot be deleted while a transcription or transformation of it is
@@ -258,19 +311,53 @@ transcript's file was edited in Files, the terminal, or another program, the
 edited text is sent; if it or its recording is gone, or the file cannot be
 read, nothing is sent and the app says why.
 
-**The key.** Transformations use the same API key as transcription, the one in
-Settings. There is one key per device, sent to whichever endpoint a
-transformation names, so point transformations only at endpoints you would give
-that key to. In the desktop app the host process sends the request and the key
-never reaches the window, the folder, or history. In a browser tab
-(`bun dev:whispering:ui`) the tab sends the request itself, so the endpoint
-must allow the page's origin (CORS). Most hosted providers refuse that; a local
-endpoint or the desktop app works.
+When a request fails, the notice under the header (for a transcript) or the
+transformation's page (for pasted text) says why and offers **Try again**,
+which sends the same request, under the same file name, only while the text
+connection is still the endpoint it was prepared for. If you changed the
+connection since, it is not sent: dismiss it and run again. When an answer
+cannot be written, the text is kept in the window and saving it again writes
+the same file. Saving again never calls the endpoint, recognizes a file an
+earlier save already wrote, and never overwrites another file of that name.
 
-When a request fails, the notice under the header says why and offers **Try
-again**, which sends the same request. When the answer arrives but its file
-cannot be written, the text is kept in the window with **Save it again**, which
-writes the same file and does not call the endpoint a second time.
+### Connections
+
+Settings has two connections, **Transcription** and **Text**. Each is a base
+URL, the model used when a request names none, and an optional API key. They
+are kept on this device: in the desktop app in the folder's `.git` (Git never
+commits it, but copying the whole directory carries it), in a browser tab in
+this site's `localStorage`. Nothing about them is in `kv.json` or history.
+
+- Nothing is sent until a connection is saved. A keyless local endpoint is
+  set up the same way, with no key.
+- A request goes only to its connection's base URL, with that connection's
+  key. No file in the folder, and nothing the window sends, chooses the URL. A
+  request names the base URL it was prepared for, and is refused, with nothing
+  sent, if the connection no longer is that URL. One already sent keeps the
+  connection it started with.
+- The transcription key is never sent to the text endpoint, and the text key
+  never to the transcription endpoint.
+- A saved key is kept only for the endpoint it was saved for. Change the
+  endpoint and Save asks you to enter the new endpoint's key or remove the
+  key; **Keep the saved key** is offered only while the endpoint is unchanged.
+- A redirect from an endpoint is refused, not followed, so a key is never
+  carried to another URL. Base URLs are `http` or `https` with no user name,
+  password, query, or fragment.
+- The window is told only each connection's endpoint, model, and whether it
+  has a key. In the desktop app the key never reaches the window, the folder,
+  or history, and errors that echo it have it removed.
+- In a browser tab (`bun dev:whispering:ui`) the tab sends requests itself, so
+  the endpoint must allow the page's origin (CORS). Most hosted providers
+  refuse that; a local endpoint or the desktop app works.
+
+**From an earlier version.** An earlier version kept one key for every
+endpoint, and the endpoint and model in `kv.json`. That key stays where it was
+and is sent nowhere. Settings shows it as "A key saved by an earlier version";
+tick the connections it may go to, each at the endpoint its form shows, and
+press **Use the earlier key there**. It moves into those connections and is
+removed from where it was; it is never shown. The `kv.json` endpoint and model
+fill in the transcription form until you save it; this version never writes
+`kv.json`.
 
 One failure is different. If the desktop app's host process stops answering
 partway, the window cannot tell whether the request reached the endpoint: it
@@ -351,7 +438,8 @@ the Whispering menu) both ask the window first:
   closes with no prompt.
 - When something is held (a recording in progress, a recording that is not in
   the folder, a transcript or transformation result whose file was not written,
-  a running transcription or transformation, or edits that cannot be saved),
+  a result on pasted text not saved yet, a running transcription or
+  transformation, or edits that cannot be saved),
   the app stays open and shows what would be lost. **Keep working** closes the
   prompt and changes nothing. **Discard and quit** closes the app and drops
   what was held.
@@ -413,8 +501,9 @@ malformed works.
 A row that reads but has a missing or bad field is marked the same way, and
 everything that does not need that field keeps working: a recording with a bad
 title still plays and transcribes, and one with no `audioPath` still takes
-notes. A transformation runs once its title, model, endpoint, and prompt are
-all there. The messages shown describe the text on screen, saved or not.
+notes. A transformation runs once its file reads without issues (title,
+model, and endpoint present, `null` allowed for the last two) and it has
+instructions. The messages shown describe the text on screen, saved or not.
 Fields the app does not know are kept as written.
 
 Any file name works for a row, including a trailing space or `recordings/.md`.
@@ -517,8 +606,9 @@ These are absent, not hidden behind a setting:
 - On-device transcription models. Transcription needs an endpoint.
 - Transformations beyond one prompt and one request: chained steps, find and
   replace rules, tools, running code, importing the earlier Whispering's
-  transformations or recipes, a provider or model catalog, and a separate key
-  per transformation or provider.
+  transformations or recipes, a provider or model catalog, and a connection or
+  key per transformation. There are exactly two connections, transcription and
+  text.
 - A settings page. Settings is one form, shown in the header's popover and in
   the transcription control on Home.
 - Importing audio files and recording overlays.
@@ -545,7 +635,9 @@ Nothing reads that data. There is no migration. The pages, sidebar, and
 recorder follow that app's layout; the code and the data underneath do not come
 from it.
 
-See [ARCHITECTURE.md](./ARCHITECTURE.md) for how the pieces fit, and
+See [ARCHITECTURE.md](./ARCHITECTURE.md) for how the pieces fit,
+[recipes and connections](./docs/recipe-playground.md) for why requests are
+routed by device connections and what that change costs an existing folder, and
 [desktop verification](./docs/desktop-verification.md) for native acceptance
 results, screenshots, the microphone hardware limit, and what has not been
 checked in the desktop app since the pages and transformations were added.

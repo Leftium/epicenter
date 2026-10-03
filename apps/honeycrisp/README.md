@@ -7,6 +7,24 @@ There is no account, no sync, and no database behind it.
 Part of the [Epicenter](https://github.com/EpicenterHQ/epicenter) monorepo.
 Licensed under AGPL-3.0-or-later.
 
+
+## Storage and editor migration
+
+The selected migration uses one scoped OPFS directory for browser files and
+`.git/`, individual file operations, and the folder's canonical table editor.
+The app owns editor retention and autosave; unsupported source remains available
+for raw repair. Structured saves replace the complete document and rewrite
+frontmatter formatting. An unknown reply stays unknown in save history even
+when a later read finds the desired content. Incoming Git adoption retains its
+own recovery record and refuses mixed checkpoints until explicit recovery.
+
+Integration and UI verification are pending. Sections describing IndexedDB,
+app-owned editor engines or older recovery controls document the implementation
+before this migration. The decisions are recorded in
+[ADR-0497](../../docs/adr/0497-browser-folders-use-scoped-opfs-directories.md),
+[ADR-0482](../../docs/adr/0482-folder-mutations-publish-one-file-at-a-time.md), and
+[ADR-0483](../../docs/adr/0483-honeycrisp-shares-one-canonical-editor-per-open-row.md).
+
 ## Run it
 
 From the repository root:
@@ -58,8 +76,9 @@ A note's file stem is its identity. Its frontmatter holds `title`, `folderId`,
 `pinned`, `createdAt`, `updatedAt`, and `deletedAt`; its body is the note.
 Folders are logical: a note belongs to one through `folderId`, so moving a note
 between folders changes one field and never moves or renames its file. Keys
-Honeycrisp does not know, comments, quoting, and key order in frontmatter are
-kept as written.
+Honeycrisp does not know remain in a canonical structured save. That save
+rewrites comments, quoting and key order. Raw source repair remains separate;
+opening or listing a file does not rewrite it. This editor integration is pending.
 
 A note file starts with a `---` line, its fields, and a closing `---` line.
 A file in `notes/` whose text does not read that way, including plain
@@ -108,43 +127,30 @@ dividers, and line breaks. There is no underline and there are no images.
 
 ## When the file changes underneath you
 
-Every opened text file has one editing session, kept by its path. A note is a
-view of that file, with metadata controls and a rich-text view; changing its
-title, folder, or pin is a change to the same text, saved the same way.
-Renaming a file moves its session with it instead of opening a second one.
-Each mutation reserves its paths before preparation starts, including its
-rename destination or recovery target. Opening a reserved path cannot create
-a competing editor. Close waits for preparation already admitted, and its
-input fence prevents a new publication.
+The selected editor migration retains one folder editor per open structured row.
+Rich text, body text and metadata controls share its document. The app keeps that
+editor across selection changes and owns its autosave timer. Arbitrary text
+files and invalid or unsupported row source remain separate raw workflows.
 
-Each session keeps these apart: the saved file it last agreed with, your
-draft, the exact text a save submitted, a rename or delete that was submitted,
-and any other version seen on disk.
+The editor records the comparison baseline, local document, submitted save and
+latest file observation separately. A successful reply proves the text that
+save submitted. Typing during the save remains a draft. A later read reports
+what is on disk and does not replace that publication evidence.
 
-| What happened | What Honeycrisp does |
-| --- | --- |
-| The file changed and you had no unsaved edits | Shows the new file. Nothing is written back. Undo history restarts. |
-| The file changed and you had unsaved edits | Keeps your draft, stops autosaving, and offers **Compare and choose**. The comparison shows one version of the file, and **Discard my draft and load the file** and **Save my draft over the file** apply to exactly that version. If the file changes again while it is open, both are held back until you look at the new version. |
-| You typed while a save was running | The save accepts only the text it submitted. The newer typing stays a draft and saves next. |
-| Your save was based on an older file | The save is refused and writes nothing. Your draft is kept. |
-| A save failed | Your draft is kept, with **Try again**. |
-| A save got no reply | It is shown as not confirmed: the file may or may not have it. Nothing more is saved. **Send it again** sends exactly that text again; anything typed since stays a draft. It ends when a resend is confirmed, or when the file is found to hold exactly that text. Typing since then is saved when you press **Save**, edit again, or close. If the file holds other text, that is shown beside it and the save stays not confirmed, even when your draft equals the saved file. |
-| A rename or delete of an open file got no reply, or a rename created the new file without removing the old one | The editor stays where it was, keeps what you type, and saves nothing more. It renames, deletes, and removes nothing else. **Copy draft** keeps your text; look in Files to see what is there. |
-| A change to a file that is not open got no reply (a new note, a pin, a rename or delete from Files) | It is listed under **Not confirmed** in the status menu, never as failed. Nothing else is changed at that file from the app, and a second new note is not made under another name. A new file or a field change clears when the folder shows exactly what was asked for, and can be sent again exactly. A rename or delete stays listed for as long as the app runs; restarting stops listing it and does not show that it did or did not happen. Closing waits for a change that is still being sent, and asks before leaving one that was never confirmed. |
-| The file was deleted, or can no longer be read as text | Your draft is kept, with **Copy draft**, **Save draft as a note** (or **as a file**), and **Discard draft**. |
-| You rename or delete a file | It applies to the version the editor holds. If another program changed the file since, nothing is renamed or deleted, and the editor shows that change. |
-| You open another note | Each note keeps its draft. |
+Structured saves publish the complete canonical document through `overwrite`.
+They can replace content changed by another writer; the baseline describes
+dirty state and observations, not a conditional write guard. Raw captured
+replacement, rename and delete retain their captured conditions. Native checks
+for those operations remain best effort against outside programs.
 
-A draft saved back after its file was deleted goes to the same path. A note
-whose path meanwhile holds a different file becomes a new note; any other
-file stays a draft for you to compare. A save back that got no reply is never
-saved a second time somewhere else.
+A clean editor can adopt observed content. A dirty editor keeps its document
+until the person explicitly adopts a reviewed version or saves their document.
+Autosave pauses after failed or unknown outcomes. Finding the attempted bytes
+on disk does not turn an unknown reply into a confirmed save. Explicit discard
+can release a draft without erasing the unknown attempt from history.
 
-A save checks the file just before it replaces it. On a real directory that
-check is not atomic: another program can still write in the instant between
-the check and the replacement, and that write would be lost. A refused save
-means staleness was detected; it is not a guarantee that every stale save is
-caught.
+These controls and the shared editor are pending integration. The app must
+verify the final actions and labels before presenting them as delivered behavior.
 
 Drafts exist only in the open window. Closing the window, quitting the app
 (including Cmd+Q), and reloading the page are held back while any draft is

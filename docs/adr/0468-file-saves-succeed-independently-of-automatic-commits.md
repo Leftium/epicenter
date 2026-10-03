@@ -2,8 +2,8 @@
 
 - **Status:** Proposed
 - **Date:** 2026-09-30
-- **Implementation:** independent saves, eager automatic commit attempts, independent pushes, and actionable history status in Todos.
-- **Unbuilt:** released application integration and production Git LFS storage in Cloudflare R2.
+- **Implemented:** browser, Bun and shared Rust owner history in commit `3ff6ab86f6`, including nonwaiting automatic admission and native queued-request withdrawal.
+- **Implemented integration:** Whispering opens its folder through the shared native owner; its private host handles provider requests and device preferences. Account-scoped startup and hosted Git transport remain separate work.
 
 ## Context
 
@@ -18,69 +18,68 @@ versions, and checkpoints of partial external workflows are accepted costs.
 
 ## Decision
 
-**Files are saved data. By default, after the file operation completes, a
-mutation requests an eager background Git commit and returns its accepted file
-result without waiting for history or network work.**
-Commit failure does not turn that save into failure or restore the previous
-files. Typing remains in the editor until its save boundary; a keystroke does
-not itself require a commit.
+**Files are saved data; Git checkpoints need not retain every saved version.**
+A successful mutation returns its file-publication result without waiting for
+history or network work. A commit failure does not undo that save. Drafts,
+received provider results and unconfirmed file operations remain app-owned work
+until published, reconciled or explicitly discarded. Git cannot rediscover
+content that exists only in memory.
 
-The commit captures the folder's saved portable source, including other writers'
-changes. It does not certify an isolated app action or an instantaneous native
-folder snapshot. Unchanged content needs no empty commit. Failure leaves current
-files available for the next explicit commit attempt; overwritten intermediate
-versions may never enter history. No save outbox, persisted job queue, timed
-retry loop, application-wide editing lock, or writer registration is required.
-Git retains its normal object and ref safety. A competing branch update must
-not be overwritten through a blind forced update.
+For example, a note can be saved as A, then B, then C before a checkpoint.
+The current file contains C. The next successful checkpoint may record only C;
+A and B need not be recoverable. If the app closes before that checkpoint,
+C remains saved. A later edit or explicit action can checkpoint it. This is history of
+checkpoints, not an audit log of saves.
 
-**The opened folder coordinates commit requests with one active pass and one
-pending pass.** A request received during an active pass asks for the next pass:
-the active pass may already have read the files. Several pending requests share
-that next pass rather than creating a job for every save. This coordination
-serializes this owner's Git attempts; it does not block file edits or serialize
-other processes. Coalescing can omit intermediate saves from history. Messages
-describe the source actually captured, not a list of supposedly isolated saves.
+**A successful managed edit attempts history without scheduling future work.**
+After file publication, the owner starts a background checkpoint attempt when
+automatic history is enabled. An unavailable runner or shared lock skips the
+attempt, with no pending pass, rerun bit, retry timer or catch-up promise.
+A later successful edit or explicit action rediscovers current saved files.
+Individual public operations request history independently under ADR-0482.
+An incomplete Git incoming record refuses checkpoints until explicit recovery
+completes; ordinary multi-file app workflows impose no such hold. There is no periodic trigger, debounce or final close checkpoint.
 
-**Coalescing is not a timed debounce.** If the runner is idle, a request starts
-work without waiting for a quiet period. If it is busy, requests share the next
-pass. This bounds the backlog, not commit frequency: fast Git can create one
-commit per save, while expensive discovery can run almost continuously during
-sustained editing. The history layer introduces no debounce duration or timer.
-Editors own their save boundaries and typing batches. Do not delay file saving
-solely to reduce Git work, because that enlarges the unsaved-input window.
-Production measurements must establish whether discovery or history volume
-needs further work; the scratch adapter does not establish a suitable cadence.
+Ownership is local resource ownership, not a globally elected leader.
+Owners that address the same stored folder share Git exclusion. An automatic
+attempt must atomically acquire that exclusion without waiting; checking a busy
+flag before a separate acquisition is insufficient. No leader registry,
+election, failover or queued automatic retry is required. The owner observes
+background failures and exposes history status; fire-and-forget describes the
+save caller's independence, not an unhandled promise or abandoned resources.
 
-**A proposed `git.commitOnEdit` open option defaults to `true` and is fixed for
-the opened owner's lifetime.** Setting it to `false` suppresses that handle's
-implicit commit and outgoing requests. File results and status invalidation
-still work; explicit `git.commitAndPush()` remains available. An importer or CLI
-can save several files and then request one explicit attempt. The option is
-runtime configuration, not authored folder data or a global editing mode.
-Another enabled handle or external Git tool can still commit those files.
-No mutable toggle, scoped suspension, or timing option is introduced. The native
-Todos CLI opens with automatic commits disabled and explicitly commits and
-pushes its completed changes. `git.commit()` attempts only the local commit;
-`git.commitAndPush()` explicitly requests both stages.
+If the last attempt is skipped or fails, saved files may remain uncommitted
+indefinitely until another managed edit or explicit action. External edits alone
+need not trigger automatic history. Opening or refreshing a folder does not
+promise an automatic checkpoint.
 
-The policy applies equally to completed table, KV, and literal file mutations.
-`files.write`, `files.move`, and `files.remove` request history without per-call
-flags. Empty-directory operations have no Git tree content to record. A partial
-publication invalidates status but requests no checkpoint; its landed files may
-enter a later whole-folder checkpoint.
+The checkpoint includes current portable source, including other writers'
+changes. It does not certify one app action or an instantaneous native folder
+snapshot. Unchanged content needs no empty commit. Several saves can enter one
+checkpoint; intermediate bytes may never enter history. A later attempt can
+also fail, so eventual history and remote delivery are not guaranteed.
 
-Embedded terminal file mutations follow the same policy. Staged authoring through
-`git.stage` and `git.commitStaged` requires `commitOnEdit: false`; an automatic
-checkpoint supersedes staged-only intent. Native programs and real shells write
-outside the folder API and request no automatic history. Their changes enter a
-later checkpoint or an explicit commit.
+**Automatic history has no future scheduling obligation.**
+The owner can retain a running operation to protect resources and prevent
+unsafe overlap. It retains no automatic request for execution afterward.
+Automatic history stays local even when a remote exists. Only an explicit
+push or commit-and-push request starts outgoing transport. A failed push needs
+no remembered pending-push request: a later explicit request discovers outgoing
+commits from Git.
+Local commits and outgoing transport remain independent so a slow push does
+not hold file publication. Whether an explicit concurrent action refuses as
+busy or joins compatible work must be verified against callers; it must not
+silently promise a later automatic pass.
 
-Outgoing work has an independent runner with one active attempt and one pending
-request. Each attempt captures the commit it will push; a later pass reads the
-latest local commit. A slow upload or push does not block local commit attempts.
-Failure is reported without a timed retry. A later save or explicit action may
-request another attempt; nothing promises an eventual commit or delivery.
+Automatic history is one owner-wide policy for table, KV, file and terminal
+changes. Its enablement remains `commitOnEdit`: it requests a best-effort
+attempt, not a promise that every edit enters history. Native shell configuration owns
+native policy; browser acquisition configures its owner. Explicit commit and
+push controls remain available when automatic history is disabled. Staged
+manual authoring requires automatic whole-folder checkpoints to be disabled.
+Empty directories have no Git tree content. Confirmed files from an unfinished
+application workflow may enter a later checkpoint without repairing that
+workflow. Incoming Git adoption uses ADR-0474's distinct checkpoint hold.
 
 **History status describes current saved files against the latest commit.**
 Use "Uncommitted changes", not "Unstaged changes": modified, deleted, new,
@@ -97,20 +96,27 @@ Without continuous observation, status describes the latest check. A failed
 status read must not appear as a clean folder. ADR-0471 records the shared status
 snapshot and its explicit refresh and subscription API.
 
-**The explicit recovery action is "Commit and push".** It reads current saved
-source, attempts a commit when changes exist, uploads required Git LFS objects,
-verifies their availability, and then attempts to push the Git commits. If
-there is nothing to commit, it can still push existing local commits. A successful
-automatic commit also attempts this upload-and-push sequence when a remote is
-configured. Network work does not hold an application editing lock. Failure
+Refreshing the display does not retry a file mutation. An app with an
+unconfirmed publication must reconcile its original target before retrying.
+Saved uncommitted files need only a history attempt; unpublished drafts or
+provider output still need file publication. Neither state requires replaying
+the provider request or the original application workflow.
+
+**The explicit outgoing-history recovery action is "Commit and push".** It reads current saved
+source, attempts a commit when changes exist, and then attempts to push the Git
+commits and their ordinary file objects. If there is nothing to commit, it can
+still push existing local commits. Automatic commits never attempt a push.
+Network work does not hold an application
+editing lock. Failure
 leaves saved files and local commits intact; a later explicit attempt catches up.
 No future attempt or eventual delivery is guaranteed.
 
 `folder.git.commitAndPush()` is the awaitable API for this explicit action.
-Its result distinguishes commit and upload/push outcomes, including nothing to
-commit, no configured remote, and a skipped push after commit failure. A request
-made during an active commit waits for the requested next pass, not an earlier
-pass that may exclude the current files. The push result identifies the commit
+Its result distinguishes commit and push outcomes, including nothing to
+commit, no configured remote, and a skipped push after commit failure.
+A concurrent explicit request must report its actual admission outcome;
+it cannot claim a checkpoint containing changes an earlier attempt did not read.
+The push result identifies the commit
 actually attempted; later local edits do not turn that outcome into proof that
 the entire folder is synchronized. Ordinary file methods return no per-save
 Git receipt or promise that their exact accepted bytes entered a commit.
@@ -122,14 +128,18 @@ work. File storage, hooks, signing, and transports can delay completion. This
 decision promises neither a universal commit deadline nor that every backend
 can cancel an in-flight commit.
 
-Closing fences new requests and settles admitted local commit passes. It cancels
-all outgoing attempts that have not started, including already pending ones;
-commits finishing during close do not start automatic uploads or pushes. Active
-network work receives cancellation through the owner's signal and stays owned
-until it actually settles. An explicit command reports its local commit outcome
-and skipped or cancelled outgoing work separately. Close cannot claim completion
-while work still uses acquired resources, and has no universal duration bound.
-Saved files and local commits remain available for a later owner's attempt.
+**Closing does not require a final automatic checkpoint.**
+Close fences new requests. It retains ownership
+of active operations until they settle or safely cancel before releasing their
+resources. It creates no last-minute commit or push obligation. Application
+close still protects unsaved drafts, admitted writes, uncertain mutations and
+received provider outputs. Saved uncommitted files remain available on reopening.
+
+**Publication success survives observation failure.**
+After a Git ref update succeeds, the operation retains its committed outcome
+and actual commit identity. A later failed status refresh reports an observation
+problem; it cannot reclassify the published commit as failed. Newer edits can
+already make the folder uncommitted again without invalidating that receipt.
 
 The action does not save editor drafts or apply incoming remote changes.
 Remote adoption and merge semantics require their own explicit design. Saved,
@@ -137,14 +147,26 @@ uncommitted, and not synced are separate facts, even when one control attempts
 both commit and push. Report actual file-save failure in the editor, commit
 failure in history status, and upload/push failure in sync status.
 
-**Use Git LFS for media, with a local object copy and Cloudflare R2 for remote
-objects.** Working files and complete saved-folder copies contain actual media.
-Git stores pointer blobs; the authenticated LFS API authorizes R2 transfers.
-Renaming unchanged media changes its tree path, not its LFS SHA-256 object ID,
-and needs no new payload upload. R2 does not itself implement the LFS protocol.
-Git object reachability alone does not retain LFS payloads; retained history
-needs the corresponding media. Initial retention does not automatically prune
-old media. Compaction and permanent erasure are separate decisions.
+**The initial history backend records included media as ordinary Git file objects.**
+Text and binary files use the same history policy and source-selection rules.
+The backend introduces no asset namespace, media immutability rule, separate
+upload service, or lazy hydration. Remotes are optional. Managed plain-byte
+checkpoints and incoming adoption must refuse unsupported attribute
+transformations; this does not claim to disable filters in ordinary Git commands.
+
+Applications or people may author Git ignore rules. Ignored untracked media
+does not enter Git history or reach another device through Git synchronization.
+That is an explicit product or repository choice, not a folder-wide audio
+default or extension whitelist. Native Git also reads repository-local and
+global excludes; the browser currently interprets folder `.gitignore` files.
+Complete current-state backup has a separate inclusion rule under ADR-0481.
+
+LFS, a hosted media service, and lazy payload availability are deferred whole
+capabilities. Supporting them later requires coherent object transfer,
+materialization, and historical retention, not an attribute toggle. They are
+not prerequisites for the ordinary-file API. A remote's refusal of a binary
+object can block the branch's push, including its text changes; it remains a
+push failure and never reverses the saved files or local commit.
 
 Native apps and agents can edit concurrently without an application-wide lock.
 A stale-source check is a local safeguard, not operating-system-wide isolation.
@@ -155,9 +177,9 @@ keep their current implementation until deliberately migrated.
 
 ## Consequences
 
-- The usual app-only path leaves no uncommitted source after a successful commit
-  attempt. Concurrent edits or failures can leave changes; an attempted push
-  does not establish remote synchronization.
+- Saved uncommitted source is expected between checkpoints. Failed or skipped
+  attempts can leave it uncommitted after close; a push attempt does not establish
+  remote synchronization.
 - Ordinary saves need no pending-ref journal solely to complete history.
 - With automatic commits disabled, uncommitted source is an expected state;
   local history and outgoing backup depend on an explicit action or another
@@ -170,7 +192,7 @@ keep their current implementation until deliberately migrated.
   actual outcomes. A commit neither completes nor repairs a partial rename.
 - Discovery cost depends on the filesystem adapter. Browser background promises
   do not move CPU work off the main thread. Production adapter performance,
-  history growth, and the LFS integration still need validation.
+  history growth, and binary transfer cost still need validation.
 
 ## Measurement evidence
 
@@ -190,7 +212,8 @@ for filesystem reads, not the Epicenter production adapter or LightningFS.
 Initial creation, initial commits, LFS uploads, and remote pushes were excluded.
 The browser's maximum observed gap in a 10 ms timer was 218 ms at 10,000 notes.
 These results justify separating file acknowledgement from history completion
-and avoiding periodic full scans. They do not validate production Git ref
+and measuring the production adapter's automatic-attempt cost.
+They do not validate production Git ref
 concurrency, power-loss durability, or transport cancellation.
 
 ## Considered alternatives
@@ -199,12 +222,17 @@ concurrency, power-loss durability, or transport cancellation.
   operations and recovery for a history guarantee the user declined.
 - Await commit and push in every file method. Filesystem discovery and network
   delays would hold the file result even after the edit was accepted.
-- Watch arbitrary writers and schedule catch-up commits. Explicit app save and
-  user action boundaries remove the need to infer when another writer finished.
-- Add a configurable trailing commit debounce. It introduces pending timers,
-  explicit bypass, close behavior, and a maximum wait to prevent continuous
-  editing from postponing history indefinitely. Eager coalescing keeps the
-  initial design free of that scheduling machinery.
+- Watch arbitrary writers and schedule catch-up commits. Managed publication
+  and explicit actions provide trigger boundaries; observation hints remain
+  useful for refreshing app views without promising automatic history.
+- Remember one pending pass during an active attempt. It restores a scheduling
+  obligation the chosen best-effort contract does not require.
+- Add a trailing per-edit debounce. It retains edit-triggered timer state and
+  close-flush promises the chosen immediate-attempt model does not require.
+- Periodically checkpoint current files. It can discover external edits and
+  retry skipped work without an outbox, but introduces a timer, repeated idle
+  discovery and timer lifecycle. The chosen contract accepts uncommitted files
+  without automatic catch-up, so those mechanisms are unnecessary.
 - Make every caller commit manually. It removes automatic runners but makes
   ordinary users responsible for remembering history and outgoing backup.
 - Commit only app-attributed changes. It requires attribution and does not

@@ -37,23 +37,32 @@ desktop: no copy of the plugin's bindings and no second transport.
 
 The host does not open the folder. It is told the directory by the shell and
 uses it as any other program would. The terminal runs the person's shell
-there. Transcription reads one audio file out of it. The device key is a file
-under its `.git`. Nothing in the host takes the folder's lock, initializes Git,
-watches the directory, or saves a file the folder tracks.
+there. Transcription reads one audio file out of it. The device's connections
+and keys are a file under its `.git`. Nothing in the host takes the folder's
+lock, initializes Git, watches the directory, or saves a file the folder
+tracks.
 
 This is not the end of the host. The page is still served by it, and the
-terminal, revealing the folder, the provider requests, the key, fixture audio,
-and the close relay still live there. A new native ability that is not the
+terminal, revealing the folder, the provider requests, the connections and
+their keys, fixture audio, and the close relay still live there. A new native ability that is not the
 folder is a host operation in `native/`, exposed through the workspace type
 with a browser implementation or an explicit `undefined`.
 
 The two fail apart. If the host stops while the app is open, the folder is
 still open and still saves; what stops is what the host did.
 
+## Migration boundary
+
+OPFS acquisition, canonical table editors and independent recording operations
+are selected but pending integration and UI verification. The target sections
+on recording publication and draft ownership describe the required replacement.
+Other IndexedDB and adapter descriptions document the implementation before
+that migration. Exact result names and debug controls must follow integrated code.
+
 ## The data model
 
 `src/lib/definition.ts` declares the folder with the shared vocabulary
-(`@epicenter/definition`): four tables and `kv`. `@epicenter/folder` turns that
+(`@epicenter/definition`): five tables and `kv`. `@epicenter/folder` turns that
 into Markdown rows at `<table>/<stem>.md` and `kv.json`. A table owns exactly
 one Markdown file per row; any other file is an ordinary file reached through
 `folder.files`. The package's [README](../../packages/folder/README.md) is the
@@ -73,23 +82,37 @@ What Whispering adds on top:
   which is deleted from Files like any other file.
 - A transcription is a separate row, so a recording can have several and each is
   a readable file.
-- A transformation is a row in `transformations/`: title, model, and endpoint
-  in frontmatter, the prompt as its body. Its results refer to it by stem, so
-  the app never renames it either.
-- A transformation result is a row in `transformation_runs/`. A table name is
+- A transformation (a recipe) is a row in `transformations/`: title in
+  frontmatter, the instructions as its body. `model` and `endpoint` are
+  nullable: `null` or empty means "the text connection's". A string `model`
+  overrides the connection's model. A string `endpoint` (written by an earlier
+  build) is kept and read as a constraint the text connection must meet
+  exactly; it never chooses where a request goes. Its results refer to it by
+  stem, so the app never renames it either.
+- A result on a transcript is a row in `transformation_runs/`. A table name is
   one bare identifier, which is why the folder is not `transformation-runs`.
   The row names its recording, transcription, and transformation, and carries
   the prompt and transcript text that were sent, so it can be read on its own
   after any of the three changes or is deleted. Nothing mirrors it elsewhere.
-- The API key is not folder data. On the desktop it is in
-  `<root>/.git/epicenter/whispering/device.json`, which Git never commits.
-  Transcription and transformations use the same key.
+- A result on pasted text is a row in `text_runs/`, written only when the
+  person saves it. It carries the same snapshot (transformation and title,
+  time, model, endpoint, prompt, input) and names no recording or
+  transcript, so recording deletion never counts or waits on it.
+- `kv.json` holds the transcription endpoint and model an earlier build saved.
+  It is read, to fill in the transcription form, and never written.
+- Connections are not folder data. There are two, transcription and text, each
+  a canonical base URL, a default model, and an optional key. On the desktop
+  they are fields of `<root>/.git/epicenter/whispering/device.json`, which Git
+  never commits; an earlier build's single key stays in that file, unused,
+  until the person moves it into a connection. `src/lib/connections.ts` holds
+  the rules both storages apply.
 - The chosen microphone is not folder data either: it names hardware on one
-  device. It is a second field of the same `device.json`, never `kv.json`.
+  device. It is another field of the same `device.json`, never `kv.json`.
   `native/device-file.ts` owns that file. Each change starts from what the
-  file holds, replaces only the field it names, and keeps every other field,
-  including ones this build does not know. Changes run one at a time, so a
-  key save and a microphone save that overlap both land.
+  file holds when its turn comes, replaces only the fields it names, and keeps
+  every other field, including ones this build does not know. Changes run one
+  at a time, so a connection save and a microphone save that overlap both
+  land, and a connection's base URL and key change in one write.
 
 Short file commands, including settings saves and file creation or deletion,
 start independently. The library joins their completion promises. Quit
@@ -106,9 +129,9 @@ implementation when the app layout mounts:
 | --- | --- | --- |
 | Folder | The real directory, through the shell's owner (`openFolder` from `@epicenter/folder/tauri`) | A folder in IndexedDB (`openFolder` from `@epicenter/folder/browser`) |
 | Terminal | Your shell in the directory, run by the host | The folder's own in-page shell (`folder.terminal()`) |
-| Transcription | The host reads the audio and makes the request | The page makes the request |
-| Transformation | The host makes the request | The page makes the request, so the endpoint must allow its origin (CORS) |
-| Key | A file under `.git` | `localStorage` |
+| Transcription | The host reads the connection, then the audio, and makes the request | The page does the same |
+| Transformation | The host reads the text connection and makes the request | The page makes the request, so the endpoint must allow its origin (CORS) |
+| Connections and keys | Fields of a file under `.git`; the page is told no key | `whispering.connections` in `localStorage` |
 | Chosen microphone | The same file under `.git`. The page's own storage does not last, since the host serves it from a new port each launch | `localStorage` |
 | Outside changes | The owner's hints: any program, this app included | Other tabs' saves, as hints to read again |
 | Reveal, failure injection | Yes | No |
@@ -122,8 +145,8 @@ each is opened or refused on its own terms:
    before the page runs. A desktop app that injected none did not start
    Whispering's host, and the page refuses with `HostMissing` before it asks
    anyone for a folder. A host that does not answer is `HostUnreachable`.
-2. The folder. `openFolder({ definition })` attaches to the scope
-   `so.epicenter.whispering`. The owner's refusal (an unknown scope, a window
+2. The folder. `openFolder({ id: WHISPERING_FOLDER_ID, definition })`
+   attaches to the scope `so.epicenter.whispering`. The owner's refusal (an unknown scope, a window
    the scope does not list, a folder another process holds, a missing
    permission, another protocol version) is `DesktopFolder`, with the owner's
    own reason.
@@ -199,15 +222,18 @@ module-level store, so a session exists only while a layout holds it, and
 releasing the layout releases the folder. `src/lib/page-boundary.test.ts` reads
 the sources and fails if anything but the layout holds an opening.
 
-A session exists only once it has started: the folder was read, the settings
-file exists, and the close guard is listening. An opening that fails leaves no
+A session exists only once it has started: the folder was read, the device's
+connections were read (or their read failed and says so), and the close guard
+is listening. An opening that fails leaves no
 session. The same holder then answers the shell's close question, so the
 window showing the refusal can be closed; see "Closing".
 
 Because the pages are routes under that one layout, a page change is a
 re-render inside the same session. The live recording, pending captures,
-selections, running requests, drafts, and the terminal session are fields of
-the library, not of any page, so none of them is touched by navigation. What a
+selections, running requests, held results, drafts, and the terminal session
+are fields of the library, and the pasted text a transformation is tried on is
+a field of the session's view, not of any page, so none of them is touched by
+navigation. What a
 page keeps in its own component (which tab is showing) is the only thing a page
 change resets.
 
@@ -224,8 +250,9 @@ The host serves `index.html` for any path that is not a file, so
 The bridge is the page's link to the host. It carries Whispering's own
 operations and the close question, and nothing of the folder: there is no
 folder route, no generic method call, no batch sent as data, and no Git
-snapshot pushed over it. Tables, KV, conditional publication, `folder.batch`,
-and history are the shared adapter's calls to the shell's owner.
+snapshot pushed over it. Tables, KV, individual file operations and history
+are the shared adapter's calls to the shell's owner. Recording composition
+remains page-owned workflow state; the target contract exposes no public batch.
 
 ```text
 POST /bridge/app      { op, payload }   -> { ok: <value> } | { fault: "<message>" }
@@ -243,13 +270,34 @@ served with a content security policy that allows connections to the host and
 to the shell's own commands (`ipc:`), and to nothing else.
 
 `/bridge/app` operations: `info`, `terminal`, `reveal`, `transcribe`,
-`transform`, `credential`, `preferences`, `set-preferences`, `close`, and, in a
-debug shell only, `fixture`, `inject`, `injection`, `injection-launch`,
-`obstruct`, and `unobstruct`. `transcribe` and `transform` take what to send
-and return a `Result`; the host adds the key and never returns it.
+`transform`, `connections`, `set-connection`, `adopt-legacy-key`,
+`preferences`, `set-preferences`, `close`, and, in a debug shell only,
+`fixture`, `inject`, `injection`, `injection-launch`, `obstruct`, and
+`unobstruct`.
+
+`transcribe` and `transform` take what to send, the model, and the base URL
+the page prepared the request for (`expectedBaseUrl`). The host reads the
+operation's connection once, at entry; if none is set up, or its base URL is
+not exactly `expectedBaseUrl`, it answers `ConnectionUnavailable` or
+`ConnectionChanged` and sends nothing. Otherwise it sends to the
+connection's own base URL with the connection's key, and a connection saved
+while the request is out does not change it. The payload never chooses a
+destination. The answer is a `Result`; the key is never in it.
+
+`connections` answers each connection's base URL, model, whether it has a key,
+and why it is read-only, plus whether an earlier build's key is present.
+`set-connection` takes an operation, base URL, model, and a key change
+(`keep`, `replace` with the key, or `remove`); keeping is refused when the
+base URL changes. `adopt-legacy-key` moves the earlier key into the chosen
+connections at the base URLs the page showed. All three answer with what
+`connections` answers, never a key. With `WHISPERING_TRANSCRIPTION_API_KEY`
+set, the transcription connection is that key at the launch's base URL and
+model, read-only; it is never used for text.
+
 `preferences` and `set-preferences` read and save the chosen microphone. Their
-replies are built from that field alone, so the key beside it is never in one,
-and saving a microphone works while the key comes from the environment.
+replies are built from that field alone, so no key beside it is ever in one,
+and saving a microphone works while the transcription connection comes from
+the environment.
 
 A bridge call that fails says only that no reply arrived. The host may never
 have been reached, or it may have called the endpoint and had its reply lost.
@@ -257,12 +305,14 @@ The page reports that as `HostUnavailable`, worded as an unknown outcome and
 never as "not sent", and does not make the call again; trying again is the
 person's choice and is one more request. `AudioUnreadable` is the opposite,
 certain case: it is the host's own answer that the file was not read and no
-request was made.
+request was made. So are `ConnectionUnavailable` and `ConnectionChanged`.
 
 ### Reading audio for transcription
 
 `transcribe` is given the folder-relative path a recording's row names, the
-endpoint, and the model. The page sends no audio. The host reads the file
+base URL it was prepared for, and the model. The page sends no audio. The
+connection is checked first, so a request that will not be sent reads no
+audio. The host reads the file
 itself (`native/audio.ts`), once, and sends those bytes with the file's own
 name and the type its extension calls for.
 
@@ -349,91 +399,79 @@ the same microphone another ID in a new origin, and the desktop page's origin
 changes with the host's port, so a choice may need choosing again after a
 restart. That is a known limit, not yet checked on hardware.
 
-`src/lib/recordings/publish.ts` publishes a capture and finishes one that
-stopped partway. A capture is fixed when it ends: its ID, its bytes, and every
-field of its row, including the `audioPath` its audio is saved at. Both files
-are one `folder.batch`: the audio, then the row. A folder on disk applies those
-as ordered steps, so a failure between them leaves audio with no row
-(`Partial`), and a lost reply leaves the outcome unknown (`Unconfirmed`). The
-capture stays in the page through both, and each attempt starts from what is
-in the folder:
+The recording publisher keeps a capture's fixed ID, bytes and declared fields,
+including `audioPath`, while independent operations finish. The selected
+replacement creates audio through `files.create`, then creates the row through
+`tables.recordings.create`. A confirmed audio operation followed by a failed row
+is workflow progress; no generic batch receipt or `Partial` error is needed.
 
-| The folder has | The attempt |
-| --- | --- |
-| Neither file | One batch: `files.create` the audio, then `tables.recordings.create` the row. |
-| Exactly this capture's audio, and no row | One batch: `files.replace` the audio that was read with the same bytes, then create the row. |
-| This capture's row and exactly its audio | Reports it saved and writes nothing. |
-| Another row, other audio (same size or not), or the row without its audio | Refuses and writes nothing. |
+Explicit retry reads the two named paths. Matching audio with an absent row
+allows creation of the missing row. A matching recording and audio establish
+that the intended content is present. Foreign audio, a foreign row or a row
+missing its audio require review. A same-stem sibling proves no ownership.
+Do not rewrite matching audio to imitate a condition spanning two file calls:
+independent operations permit another writer to change it between them.
 
-The replacement in the second case writes bytes that are already there. Its
-purpose is its condition: the batch lands only if the audio is still exactly
-what was read, so a row is never created beside audio another writer changed in
-between. Nothing is ever saved with `overwrite`, and the row's source always
-comes from the table's own `create`.
+Each confirmed result proves its own publication. A following row read is a
+separate observation for display. When confirmed publication is followed by a
+missing, foreign or unreadable row, retain the publication evidence and offer
+inspection; do not create the recording again. A matching read after an unknown
+reply establishes current content without claiming that reply became confirmed.
+Pending input and unknown outcomes remain app-owned workflow state.
 
-Only the two paths the capture names are looked at. A file that merely shares
-the stem, such as `recordings/<id>.m4a`, is not the recording's and does not
-block it.
-
-A complete batch receipt that names both writes, with the audio capture equal
-to the pending bytes, proves the recording was published. It is not a reading
-of the folder, and no entry or editor baseline is made from it. So after a
-successful batch the row is read as a new observation, to have a current entry
-to show. Publication and observation are separate facts:
-
-| After a confirmed receipt, the row | Outcome |
-| --- | --- |
-| Reads as this recording | `saved`. The capture leaves the window's list and that entry is shown. |
-| Cannot be read | `published`, problem `unreadable`. |
-| Is gone | `published`, problem `missing`: another writer removed it after publication. |
-| Is there and is not this recording | `published`, problem `foreign`: another writer changed it after publication. |
-
-"This recording" is a valid row with the capture's `recordedAt`, `durationMs`,
-`capture`, and `audioPath`. The title and notes are the person's to change and
-are not compared, so an edited row is still this recording and becomes the
-fresh baseline.
-
-A `published` capture is saved. It keeps its fixed ID and bytes and the
-receipt's two captures in `library.pending`, as state `published`, only so the
-notice can be shown and the row looked at again. It is not counted as unsaved:
-it does not hold the app open, and the status line reads "Saved · 1 recording
-to check". **Refresh** calls `observePublication`, which reads the row and
-nothing else. From a confirmed publication there is no path to another batch,
-a file write, or a request: a missing or foreign row is left as found and the
-notice says what the person can do.
-
-`Partial`, `Unconfirmed`, a receipt that does not cover both files, and a
-refusal before publication are not confirmed publications. They stay
-unresolved, are reported as not saved, hold the app open, and **Try again**
-starts from the table at the top of this section.
-
-So a retry keeps the recording's identity, cannot create a second recording,
-and never replaces a file it did not just read and recognize as its own. A
-save is reported on its own; the commit it requests is a separate outcome.
+Recovery does not repeat a provider request or mint another recording identity.
+Debug injection must obstruct the actual independent operation instead of
+returning a fabricated result. These publication and debug changes are pending
+integration; exact UI outcomes must be verified against that implementation.
 
 ## Transformations
 
 `src/lib/transformation.ts` is the request: `POST <base>/chat/completions` with
-the model, the prompt as the system message, and the transcript as the user
-message, reading `choices[0].message.content`. It is plain `fetch`, shared by
-the Bun host and the browser workspace like the transcription request. An error
-never carries the key: an endpoint that echoes it has it removed.
+the model, the prompt as the system message, and the input as the user
+message, reading `choices[0].message.content`. It is plain `fetch` with
+`redirect: 'error'` and `credentials: 'omit'`, shared by the Bun host and the
+browser workspace like the transcription request, and it refuses a base URL
+that is not plain HTTP(S) before sending. `transformOverConnection` is the one
+entry both use: it reads the text connection once, refuses a request prepared
+for another base URL, and sends with that connection's key. An error never
+carries the key: an endpoint that echoes it has it removed.
 
-`library.transform` applies a saved transformation to a saved transcript, both
-named by path. Nothing is taken from a list entry, which may predate an edit or
-a deletion made outside. It saves open edits to either file (and refuses if
-they cannot be saved), then reads the transformation, the transcription row,
-and the recording that row names. A missing, malformed, or empty transcript, or
-a missing recording, refuses and nothing is sent. Then it fixes a run before
-anything is sent: the result's stem, and every field the result row will hold,
-including the prompt and transcript text. From there a run ends one of three
-ways:
+`src/lib/recipe.ts` decides whether a recipe runs and with what, from the
+recipe as read (a listed row, or the draft on screen) and the text connection
+as last read: the file must read without issues and have instructions; a text
+connection must be set up; an endpoint the recipe names must be exactly the
+connection's base URL (canonical spelling, no same-origin relaxation); the
+model is the recipe's if it names one, else the connection's. The library
+exposes it as `library.resolve`, and the Run check, the post-processing
+choice, a transcript's Transform menu, the recipe's page, and both run entry
+points call it, so they cannot disagree.
+
+`library.transform` applies a saved recipe to a saved transcript, both named
+by path. Nothing is taken from a list entry, which may predate an edit or a
+deletion made outside. It saves open edits to either file (and refuses if
+they cannot be saved), then reads the recipe and resolves it, then the
+transcription row and the recording that row names. A missing, malformed, or
+empty transcript, or a missing recording, refuses and nothing is sent.
+`library.transformText` applies a saved recipe to pasted text; the text is
+taken when it is called, and needs no recording.
+
+Both fix a run before anything is sent: the result's stem, and every field the
+result row will hold, including the instructions, input, model, and the text
+connection's base URL. One lifecycle serves both, with the destination as the
+only difference: a transcript's run writes `transformation_runs/` as soon as
+its answer arrives; a pasted-text run holds its answer until `saveTextRun`,
+which writes `text_runs/`. From there a run ends one of three ways:
 
 | The run | What is held | Trying again |
 | --- | --- | --- |
-| Saved | Nothing. The row is in `transformation_runs/`. | |
-| Failed: the endpoint refused, was unreachable, answered wrongly, the transport threw, or the host's reply was lost | Nothing was received. The run is listed as failed. After a lost reply the endpoint may still have been called. | Only when the person asks. Sends the same request, under the same stem, only while the folder still has that transcript text and its recording. Otherwise it stays failed and says why. |
-| Unsaved: the answer arrived and the row could not be written | The text, in the window. It blocks closing. | Writes the row. The endpoint is not called. |
+| Saved | Nothing. The row is in its table. | |
+| Failed: the endpoint refused, was unreachable, answered wrongly, the transport threw, the connection moved, or the host's reply was lost | Nothing was received. The run is listed as failed. After a lost reply the endpoint may still have been called. | Only when the person asks. Sends the same request, under the same stem, only while the text connection is still the base URL in the snapshot and, for a transcript, while the folder still has that transcript text and its recording. Otherwise it stays failed and says why. |
+| Unsaved: the answer arrived and its row is not written (a pasted-text answer waiting for Save, or a write that failed) | The text, in the window. It blocks closing. | Writes the row. The endpoint is not called. |
+
+One recipe holds at most one pasted-text run that is running or unsaved; a
+new run on pasted text is refused until it is saved or discarded, so a
+received answer is never replaced. Concurrent saves or retries of one run are
+one.
 
 Saving a run looks at the folder first, as recording publication does. No file
 at the stem: the row is created exclusively. This run's own row already there
@@ -441,11 +479,14 @@ at the stem: the row is created exclusively. This run's own row already there
 is written. Its own row means a valid row with the same body and every field
 of the run's snapshot; fields the app does not declare are ignored. Any other
 file there, including one that differs only in its prompt, model, endpoint,
-transcript, or source, is not overwritten and the run stays unsaved. So one run
-can produce at most one result file.
+input, or source, is not overwritten and the run stays unsaved. So one run
+can produce at most one result file. A run discarded while its row is being
+written may still land; the discard is not undone.
 
-A transformation only ever creates rows in `transformation_runs/`. No code path
-writes a transcription row from a transformation.
+A transformation only ever creates rows in `transformation_runs/` and
+`text_runs/`. No code path writes a transcription row from a transformation.
+A listing of `text_runs/` that fails keeps the last list and reports why; a
+file there that does not read is listed apart.
 
 Deleting a recording deletes its row, its transcripts, and the results made
 from them, and keeps its audio. It must not race the work that writes those
@@ -454,20 +495,26 @@ both refuse while a transcription or transformation of that recording is
 running, or its answer is received and unsaved, and `remove` also refuses when
 a result was saved after the person was asked. While `remove` runs, no request
 starts for that recording. A failed run holds nothing; it is dropped with the
-recording.
+recording. Results on pasted text name no recording, so they are neither
+deleted with one nor in the way of deleting one, readable or not.
 
-## Drafts and conflicts
+## Drafts and observations
 
-`src/lib/editor.svelte.ts` holds one draft per open file: the text on screen
-and the saved file its next conditional save is checked against. A recording's
-Details and Source views read and write the same draft, and a transformation
-is edited through the same row editor, so its conflicts, repairs, and unknown
-fields behave identically.
+The selected migration uses `folder.tables.<name>.edit(stem)` for structured
+recording and transformation rows. The folder owns local document state, schema
+diagnostics, save attempts, observations and disposal. Details and body controls
+share the retained editor. The app owns selection, autosave and close policy.
 
-A refresh hands each open draft the file as it is now. A clean draft adopts it.
-A dirty draft keeps its text, stops saving, and holds both versions until the
-person picks one, or keeps both by writing theirs to `conflicts/`. A save the
-folder refuses as stale ends in the same state.
+A structured save replaces the complete canonical document through `overwrite`.
+The comparison baseline tracks semantic dirty state; it does not guard the write
+against newer file content. Unknown keys remain while YAML comments and spelling
+are rewritten. Invalid or unsupported files stay accessible through separate raw
+source repair. Arbitrary files do not acquire a table schema.
+
+An unknown reply remains historical save evidence. A later observation may be
+adopted under the editor's rules and cannot prove which request published it.
+Autosave pauses after failed or unknown outcomes; views do not own competing
+timers or perform hidden retries. Integration remains pending.
 
 ## Closing
 
@@ -541,10 +588,10 @@ answer for them.
 
 ### While the session is starting
 
-Opening is three steps: the workspace opens, the library reads the folder
-once, and on a first launch it writes `kv.json`. That read and that write are
-the session's own work in the folder, and a close must not be approved over
-them. So the close guard is not created until all three have settled
+Opening starts the workspace, reads the folder, and reads the device's
+connections. A connection that is not set up stays that way; opening creates
+no file and sends nothing.
+The close guard is not created until startup has settled
 (`createSession` in `src/lib/session.svelte.ts`): until then there is an
 opening, not a session, and nothing answers the shell, not even `asking`.
 
@@ -594,7 +641,7 @@ It is narrow on purpose:
 
 - It answers requests. It never closes anything unasked and has no timer.
 - It does not run while an opening is under way, which includes the session's
-  first read and settings write. A close asked then waits: for the session's
+  first read and connections read. A close asked then waits: for the session's
   guard if the opening succeeds, for this answer if it fails, and in that case
   only after everything the opening had opened was closed.
 - It does not run while a session exists, and it is stopped when the layout
@@ -678,9 +725,11 @@ attached and says so (`injection-launch`).
 | `src/lib/definition.ts` | The inert folder declaration. |
 | `src/lib/workspace/` | The storage seam and its two implementations. |
 | `src/lib/bridge/` | The page's link to the host: its wire encoding and the HTTP calls. Nothing of the folder. |
-| `src/lib/session.svelte.ts` | The one session a mounted layout owns, and its context. It holds what the shell shows, the post-processing choice, and the settings draft. |
-| `src/lib/settings-draft.svelte.ts` | The one draft of the transcription settings, shown by the header's Settings and by the control on Home. |
-| `src/lib/post-processing.ts` | What the post-processing choice is now, read against the listed transformations. It runs nothing. |
+| `src/lib/session.svelte.ts` | The one session a mounted layout owns, and its context. It holds what the shell shows, the post-processing choice, the pasted text, and the settings draft. |
+| `src/lib/settings-draft.svelte.ts` | The one draft of the two connections, shown by the header's Settings and (transcription only) by the control on Home. |
+| `src/lib/connections.ts` | The connection rules both storages apply: canonical base URLs, key keep/replace/remove, moving an earlier build's key. Pure; stores nothing. |
+| `src/lib/recipe.ts` | The one decision about whether a recipe runs and with what. |
+| `src/lib/post-processing.ts` | What the post-processing choice is now, read against the listed transformations and the recipe resolver. It runs nothing. |
 | `src/lib/library.svelte.ts` | Product state: lists, selections, retained editors, pending captures, transcription and transformation runs, settings. |
 | `src/lib/recordings/publish.ts` | Publication and recovery. |
 | `src/lib/capture.ts`, `microphone.ts`, `audio-format.ts`, `transcription.ts`, `transformation.ts` | The capture contract and fixture device, the real microphone, container detection, the transcription and transformation requests. |

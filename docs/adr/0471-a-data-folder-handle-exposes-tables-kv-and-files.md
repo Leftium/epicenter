@@ -2,6 +2,7 @@
 
 - **Status:** Proposed
 - **Date:** 2026-09-30
+- **Unbuilt:** production canonical table editors, OPFS browser integration and incoming Git recovery.
 - **Relates:** [ADR-0450](0450-current-files-own-portable-document-data.md) defines authoritative current files; [ADR-0480](0480-file-tables-own-only-their-markdown-row-files.md) proposes single-file rows; [ADR-0430](0430-define-store-declares-data-and-products-compose-resources.md) separates stores from product composition.
 
 ## Context
@@ -29,7 +30,7 @@ const audioResult = await folder.files.open('recordings/interview.opus');
 
 | Member | Responsibility |
 | --- | --- |
-| `tables.<name>` | Interpret that table's Markdown rows. `get` returns a flat snapshot with usable fields and diagnostics; `list` returns one inventory of per-file Results; `inspect(source)` interprets draft text; `update(stem, change)` patches current source; `replace(snapshot, source)` saves complete text against a capture. |
+| `tables.<name>` | Interpret that table's Markdown rows. `get` returns a flat snapshot with usable fields and diagnostics; `list` returns one inventory of per-file Results; `inspect(source)` interprets draft text; `update(stem, change)` patches current source; `replace(snapshot, source)` saves complete text against a capture. `edit(stem, { signal })` opens a retained canonical editor with `get`, `subscribe`, `change`, `save`, `refresh`, `adopt`, and `dispose`. |
 | `kv` | Interpret declared stored values in the fixed `kv.json`; applications own defaults. |
 | `files` | Enumerate literal paths and read bytes, including uninterpreted files and media. `open(path)` supplies stable media bytes without a media version under ADR-0466. Intent-based mutations in ADR-0479 use the same file boundary as table and KV edits. |
 | `git` | Observe history and outgoing synchronization status; explicitly refresh it and request commit-and-push attempts. |
@@ -103,9 +104,8 @@ save whose completion is required before calling `close()`.
 Promise<void>` is terminal and idempotent; repeated calls share its completion
 or cleanup failure. A helper still reading or hashing may be refused at its next
 storage call. An already-started publication returns its actual Result to that
-operation's caller, including `Partial` or `Unconfirmed`. Closing does not
-relabel it, roll back changes, or delete files. A browser transaction can finish
-after `close()` returns.
+operation's caller, including an operation-specific interrupted move or `Unconfirmed`. Closing does not
+relabel it, roll back changes, or delete files. An admitted publication can finish after retirement. Await required saves before closing; storage ownership must remain valid until admitted backend work settles.
 
 The product owns workflow cancellation across independent resources. It can use
 the folder's signal to stop inference that depends on that folder; passing the
@@ -119,8 +119,8 @@ Definitions, owners, snapshots, and opened content have different roles:
 
 | Object | Acquisition and lifetime |
 | --- | --- |
-| `defineFolder(...)` / `defineTable(...)` | Inert schema declarations; acquire no resources and need no close. |
-| Opened folder | Owns acquired file access, borrowed table/KV/file views, and Git attempt/status coordination; exposes `signal` and `close`. |
+| `defineFolder(...)` / `defineTable(...)` | Inert schema declarations; name no folder, acquire no resources, and need no close. |
+| Opened folder | Opened at the folder ID its opener names. Owns acquired file access, borrowed table/KV/file views, and Git attempt/status coordination; exposes `signal` and `close`. |
 | Table snapshot | Captured Markdown source, interpretation, and version for conditional writes; no methods, signal, or close. |
 | Opened media | Stable bytes for consumption, with no required content hash or media version. A temporary native capture needs a consumption and cleanup boundary under ADR-0466. |
 
@@ -129,8 +129,7 @@ Definitions, owners, snapshots, and opened content have different roles:
 snapshot. Both return the published snapshot on success under ADR-0464 and never
 retry a conflict. `files.open` opens content, not another folder. Its eventual
 transport must account for temporary captures until consumption finishes; a
-temporary-backed Blob alone supplies no cleanup notification. No per-row
-resource handle is introduced to solve that problem.
+temporary-backed Blob alone supplies no cleanup notification. The canonical table editor owns a row draft, not a media capture; its disposal does not dispose referenced media.
 
 **Table lookup takes a file stem; file access takes a literal path.**
 `folder.tables.recordings.get('interview')` resolves `recordings/interview.md`.
@@ -163,7 +162,7 @@ interprets the Markdown; failed interpretation leaves the file accessible
 through `files`. Table snapshots retain exact source alongside `fields`, `body`,
 `parseError`, and an always-present `issues` array under ADR-0462. Parsing
 failure and field issues have separate stages; literal filenames produce no
-conformance issues. Table writes preserve unrelated source under ADR-0464. Raw
+conformance issues. Captured source replacement preserves submitted source under ADR-0464. Canonical editor saves publish the complete canonical document through `files.overwrite`; unknown keys remain, while YAML comments, spelling and order are rewritten. Raw
 writes can create malformed documents or broken links; inspection preserves
 those bytes without silently repairing references. Table creation, deletion, and
 rename affect only the row file.
@@ -174,8 +173,7 @@ store-owned SQLite under ADR-0436 or settle its migration. ADR-0494 proposes
 transient in-memory query sessions with persistent caching deferred; ADR-0463
 defers SQLite query export. Neither adds SQL to this handle.
 ADR-0479 proposes the raw
-file mutation signatures. ADR-0478 records openers; ADR-0482 records batch
-receipts; the package README and Git contracts record exact history result
+file mutation signatures. ADR-0478 records openers; ADR-0482 records individual publication and application workflow recovery; the package README and Git contracts record exact history result
 types. Save and Git completion follow their own decisions, not the spelling of a
 path or the shape of this handle.
 
@@ -185,7 +183,7 @@ Literal access stays within the opened folder, refusing absolute paths and
 parent or symlink escapes. The raw inventory must account for unrecognized
 files; portability and history inclusion are separate filters.
 
-The public data API is summarized below. Error aliases retain the
+The target public data API is summarized below; the `Unbuilt` line identifies pending integration. Error aliases retain the
 underlying storage failures and add only method-specific preparation refusals.
 Each async data operation in this inventory returns `Promise<Result<Success,
 Error>>`; only pure `inspect` returns a plain reading. The package exports the reading and snapshot types shown below; the former
@@ -197,6 +195,7 @@ Error>>`; only pure `inspect` returns a plain reading. The package exports the r
 | | `get(stem)` | `TableSnapshot<T> \| undefined` |
 | | `list()` | `{ path, result: Result<TableSnapshot<T>, TableReadError> }[]` |
 | | `create({ stem?, fields, body? })` | `TableSnapshot<T>` |
+| | `edit(stem, { signal? })` | Retained canonical editor |
 | | `update(stem, { fields?, body? })` | `TableSnapshot<T>` |
 | | `replace(capture, source)` | `TableSnapshot<T>` |
 | | `rename(textCapture, nextStem)` | `TableSnapshot<T>` |
@@ -238,12 +237,12 @@ separate caller-driven decision, not a status journal implied by this API. A
 creator that needs to locate an uncertain generated row supplies an explicit
 stem.
 
-`folder.batch` collects ordered file mutations and explicit-stem table creations
-under ADR-0482. It does not run an async transaction callback over table/KV
-methods or return typed snapshots. Git methods remain separate from save
-receipts. File-change notifications are invalidation hints, not a mandatory row
-cache or proof of complete external-edit observation. No `watch`, `transact`,
-live row object, or per-snapshot close is added by symmetry with Yjs.
+The folder exposes individual operations under ADR-0482, without a batch
+collector or generic partial receipt. Git methods remain separate from file-save
+receipts. File-change notifications are invalidation hints, not proof of complete
+external observation. An editor subscribes for its own lifetime; the application
+chooses retention, shared controls and autosave timing. Invalid or unsupported
+source remains accessible through a separate raw repair workflow.
 
 ## Consequences
 
@@ -255,7 +254,7 @@ live row object, or per-snapshot close is added by symmetry with Yjs.
   Application fields and Markdown links can address them directly.
 - External edits can leave stale links. The folder
   preserves those files; supported app operations enforce their own admission
-  checks and report partial results.
+  checks and report each file operation separately.
 - One shared status owner removes per-consumer scan coordination and stale
   response guards. Cached status can be unknown or stale; subscription is not
   proof that every external edit has been observed.

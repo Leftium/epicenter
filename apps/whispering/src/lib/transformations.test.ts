@@ -117,7 +117,7 @@ test('opening a folder seeds no transformation; creating one writes an ordinary 
 	expect(needsRepair(entry)).toBe(false);
 	expect(library.selectedTransformationPath).toBe(entry.path);
 	const source = await readFile(join(root, entry.path), 'utf8');
-	expect(source).toBe(entry.source);
+	expect(source).toBe(entry.text);
 	// A new recipe names no model or endpoint: it runs with the text connection.
 	expect(entry.fields).toEqual({
 		title: 'Clean up',
@@ -166,7 +166,7 @@ test('editing a transformation saves the whole row in one form and keeps fields 
 	expect(editor.status.kind).toBe('saved');
 	const saved = await readFile(path, 'utf8');
 	// The save is the editor's whole document in its one form.
-	expect(saved).toBe(editor.state.source);
+	expect(saved).toBe(editor.state.text);
 	const row = expectOk(
 		await library.folder.tables.transformations.get('mine'),
 	)!;
@@ -196,7 +196,7 @@ test('a malformed transformation stays listed, cannot run, and is repaired in it
 		(item) => item.path === 'transformations/broken.md',
 	);
 	// It was read, so it is listed with its source; its text did not parse.
-	expect(entry?.source).toBe(broken);
+	expect(entry?.text).toBe(broken);
 	expect(entry?.parseError).toBeDefined();
 	expect(entry?.body).toBeUndefined();
 	expect(library.unreadableTransformations).toEqual([]);
@@ -260,7 +260,7 @@ test('a dirty transformation draft keeps both versions when the file changes out
 	const kept = expectOk(await library.keepDraftCopy(editor.path));
 	// The typing went to the copy; the draft took the version in the folder.
 	expect(editor.isDirty).toBe(false);
-	expect(editor.state.source).toBe(outside);
+	expect(editor.state.text).toBe(outside);
 	expect(await readFile(path, 'utf8')).toBe(outside);
 	expect(await readFile(join(root, kept), 'utf8')).toContain('My prompt');
 });
@@ -374,7 +374,7 @@ test('a transformation with no instructions, or a transcript with no text, sends
 	editor.change({ body: 'Fix it.\n' });
 	await writeFile(
 		join(root, transcript.path),
-		transcript.source.replace(transcript.body!, ' \n'),
+		transcript.text.replace(transcript.body!, ' \n'),
 	);
 	expect(await library.transform(transcript.path, editor.path)).toContain(
 		'no text',
@@ -395,7 +395,7 @@ test('a transcript edited outside is sent as the folder has it now, and is not r
 	const editor = await cleanupProfile(library);
 	// Another program rewrites the transcript and adds a field. No refresh follows.
 	await library.refresh();
-	const outside = transcript.source
+	const outside = transcript.text
 		.replace('---\n', '---\nreviewedBy: someone\n')
 		.replace(transcript.body!, 'A steady tone, corrected by hand.\n');
 	await writeFile(join(root, transcript.path), outside);
@@ -492,7 +492,7 @@ test('a transcript draft in conflict refuses, and both versions are kept', async
 	const source = await transcriptDraft(library, transcript.path);
 	library.autosave.paused = true;
 	source.change({ body: 'Mine.\n' });
-	const outside = transcript.source.replace(transcript.body!, 'Theirs.\n');
+	const outside = transcript.text.replace(transcript.body!, 'Theirs.\n');
 	await writeFile(join(root, transcript.path), outside);
 	await library.refreshAll();
 	expect(source.status.kind).toBe('changed');
@@ -615,7 +615,7 @@ test('a failed run is not sent again once its recording or transcript text is go
 	// The transcript changes outside: the old request is not what the folder holds.
 	await writeFile(
 		join(root, transcript.path),
-		transcript.source.replace(transcript.body!, 'Different now.\n'),
+		transcript.text.replace(transcript.body!, 'Different now.\n'),
 	);
 	await library.retryTransformation(failed.id);
 	expect(library.transformationRuns[0]!.state).toMatchObject({
@@ -952,11 +952,13 @@ test('this run’s exact row is recognized even with fields the app does not kno
 		}),
 	);
 	// Another program annotates the row without touching what the run recorded.
-	const annotated = mine.source.replace(
+	const annotated = mine.text.replace(
 		'---\n',
 		'---\n# reviewed\nreviewedBy: someone\n',
 	);
-	const { error: replaceError } = await table.replace(mine, annotated);
+	const { error: replaceError } = await table.replace(mine.stem, annotated, {
+		expectedSha256: mine.sha256,
+	});
 	expect(replaceError).toBeNull();
 
 	await library.retryTransformation(held.id);

@@ -99,13 +99,13 @@ export function heldEntries(table: VocabTables['entries']) {
 			await holds.edit;
 			return table.edit(stem, options);
 		},
-		async replace(capture, source) {
-			const replaced = await table.replace(capture, source);
+		async replace(stem, text, options) {
+			const replaced = await table.replace(stem, text, options);
 			await holds.replaceAnswer;
 			return replaced;
 		},
-		async delete(capture) {
-			const deleted = await table.delete(capture);
+		async delete(stem, options) {
+			const deleted = await table.delete(stem, options);
 			await holds.deleteAnswer;
 			return deleted;
 		},

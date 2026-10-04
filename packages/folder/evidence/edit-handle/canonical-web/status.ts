@@ -72,7 +72,7 @@ export function mountEditorStatus(root: HTMLElement, editor: TodoEditor) {
 			),
 			...fact(
 				'Baseline',
-				`${shortSha(baseline.sha256)}${baseline.source === baseline.canonical ? ', canonical text' : ', formatted differently: an explicit save rewrites it canonically'}`,
+				`${shortSha(baseline.sha256)}${baseline.text === baseline.canonical ? ', canonical text' : ', formatted differently: an explicit save rewrites it canonically'}`,
 			),
 			...fact('Latest read', describeObservation(state)),
 			...fact(
@@ -130,7 +130,7 @@ export function mountEditorStatus(root: HTMLElement, editor: TodoEditor) {
 				'div',
 				{},
 				h('h4', {}, `Baseline, exact text (${shortSha(baseline.sha256)})`),
-				h('pre', {}, baseline.source),
+				h('pre', {}, baseline.text),
 			),
 			h(
 				'div',
@@ -142,7 +142,7 @@ export function mountEditorStatus(root: HTMLElement, editor: TodoEditor) {
 				'div',
 				{},
 				h('h4', {}, 'What Save writes (canonical draft)'),
-				h('pre', {}, state.source),
+				h('pre', {}, state.text),
 			),
 		);
 
@@ -180,11 +180,11 @@ function describeObservation({
 }: TodoState): string {
 	switch (observation.kind) {
 		case 'present': {
-			const { sha256, source } = observation.revision;
+			const { sha256, text: source } = observation.revision;
 			if (sha256 === baseline.sha256)
 				return `${shortSha(sha256)}, the baseline`;
 			// Equal text is a content fact; it does not say which writer put it there.
-			if (saving !== undefined && source === saving.source)
+			if (saving !== undefined && source === saving.text)
 				return `${shortSha(sha256)}, the text the running save submitted, read before its reply`;
 			return `${shortSha(sha256)}, changed since the baseline`;
 		}
@@ -206,10 +206,10 @@ function describeObservation({
 function observedText({ observation }: TodoState): string | undefined {
 	switch (observation.kind) {
 		case 'present':
-			return observation.revision.source;
+			return observation.revision.text;
 		case 'unsupported':
 		case 'invalid':
-			return observation.file.source;
+			return observation.file.text;
 		default:
 			return undefined;
 	}

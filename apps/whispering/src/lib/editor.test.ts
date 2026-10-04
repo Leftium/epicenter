@@ -106,7 +106,7 @@ async function draft(
 	const counts = { saved: 0 };
 	const editor = createTextFileEditor(
 		files,
-		{ ...created, source: 'original' },
+		{ ...created, text: 'original' },
 		{ paused },
 		() => {
 			counts.saved += 1;
@@ -141,8 +141,8 @@ test('a save whose reply is lost stays unknown, and typing, a pause, settling, a
 	expect(editor.saveState).toMatchObject({ kind: 'unconfirmed' });
 	expect(editor.unknown).toContain('reply lost');
 	// The write landed; nothing is concluded from that.
-	expect((await current(folder)).source).toBe('desired');
-	expect(editor.baseline.source).toBe('original');
+	expect((await current(folder)).text).toBe('desired');
+	expect(editor.baseline.text).toBe('original');
 	expect(editor.dirty).toBe(true);
 	expect(counts.saved).toBe(0);
 
@@ -156,7 +156,7 @@ test('a save whose reply is lost stays unknown, and typing, a pause, settling, a
 	editor.observe(await current(folder));
 	expect(editor.saveState).toMatchObject({
 		kind: 'conflict',
-		current: { source: 'desired' },
+		current: { text: 'desired' },
 	});
 	expect(editor.unknown).toContain('reply lost');
 	expect(editor.buffer).toBe('desired, and more');
@@ -165,7 +165,7 @@ test('a save whose reply is lost stays unknown, and typing, a pause, settling, a
 	editor.dispose();
 	await pause();
 	expect(script.sent).toEqual(['desired']);
-	expect((await current(folder)).source).toBe('desired');
+	expect((await current(folder)).text).toBe('desired');
 	expect(counts.saved).toBe(0);
 });
 
@@ -211,9 +211,9 @@ test('trying again after a lost reply is one conditional save against the origin
 	expect(script.sent).toEqual(['desired', 'desired, and more']);
 	expect(editor.saveState).toMatchObject({
 		kind: 'conflict',
-		current: { source: 'desired' },
+		current: { text: 'desired' },
 	});
-	expect((await current(folder)).source).toBe('desired');
+	expect((await current(folder)).text).toBe('desired');
 	expect(editor.buffer).toBe('desired, and more');
 	// In review, trying again is not offered; nothing is sent.
 	await editor.retry();
@@ -228,7 +228,7 @@ test('trying again after a lost reply is one conditional save against the origin
 	]);
 	expect(editor.saveState).toEqual({ kind: 'saved' });
 	expect(editor.unknown).toBeUndefined();
-	expect((await current(folder)).source).toBe('desired, and more');
+	expect((await current(folder)).text).toBe('desired, and more');
 	expect(counts.saved).toBe(1);
 });
 
@@ -261,7 +261,7 @@ test('trying again after a lost reply that did not land saves once', async () =>
 
 	expect(script.sent).toEqual(['desired', 'desired']);
 	expect(editor.saveState).toEqual({ kind: 'saved' });
-	expect((await current(folder)).source).toBe('desired');
+	expect((await current(folder)).text).toBe('desired');
 });
 
 // ============================================================================
@@ -282,13 +282,13 @@ for (const reply of ['refuse', 'throw'] as const)
 		await pause();
 		expect(await editor.settle()).toBe(false);
 		expect(script.sent).toEqual(['one']);
-		expect((await current(folder)).source).toBe('original');
+		expect((await current(folder)).text).toBe('original');
 		expect(editor.unknown).toBeUndefined();
 
 		await editor.retry();
 		expect(script.sent).toEqual(['one', 'two']);
 		expect(editor.saveState).toEqual({ kind: 'saved' });
-		expect((await current(folder)).source).toBe('two');
+		expect((await current(folder)).text).toBe('two');
 		expect(counts.saved).toBe(1);
 
 		// Saving goes on by itself again after a confirmed save.
@@ -317,7 +317,7 @@ test('typing while a save is out stays typed, and is saved after it', async () =
 	held.resolve();
 	await saving;
 
-	expect(editor.baseline.source).toBe('first');
+	expect(editor.baseline.text).toBe('first');
 	expect(editor.buffer).toBe('first and second');
 	expect(editor.dirty).toBe(true);
 	expect(editor.saveState).toEqual({ kind: 'saved' });
@@ -325,7 +325,7 @@ test('typing while a save is out stays typed, and is saved after it', async () =
 	await editor.save();
 	expect(script.sent).toEqual(['first', 'first and second']);
 	expect(editor.dirty).toBe(false);
-	expect((await current(folder)).source).toBe('first and second');
+	expect((await current(folder)).text).toBe('first and second');
 });
 
 test('a draft disposed while its save is out lets that save settle, then takes no typing and writes nothing', async () => {
@@ -349,7 +349,7 @@ test('a draft disposed while its save is out lets that save settle, then takes n
 	expect(await editor.settle()).toBe(false);
 	await pause();
 	expect(script.sent).toEqual(['sent before closing']);
-	expect((await current(folder)).source).toBe('sent before closing');
+	expect((await current(folder)).text).toBe('sent before closing');
 });
 
 // ============================================================================
@@ -377,7 +377,7 @@ for (const failure of ['unreachable', 'binary'] as const) {
 		};
 		const editor = createTextFileEditor(
 			files,
-			{ path: 'note.md', source: 'original', sha256 },
+			{ path: 'note.md', text: 'original', sha256 },
 			{ paused: true },
 			() => {},
 		);
@@ -398,7 +398,7 @@ for (const failure of ['unreachable', 'binary'] as const) {
 		await editor.retry();
 		expect(editor.saveState).toMatchObject({
 			kind: 'conflict',
-			current: { source: 'outside' },
+			current: { text: 'outside' },
 		});
 		expect(editor.buffer).toBe('my typing');
 	});
@@ -416,9 +416,9 @@ test('a file changed elsewhere to exactly the typed text is still reviewed, not 
 	expect(script.sent).toEqual(['the same words']);
 	expect(editor.saveState).toMatchObject({
 		kind: 'conflict',
-		current: { source: 'the same words' },
+		current: { text: 'the same words' },
 	});
-	expect(editor.baseline.source).toBe('original');
+	expect(editor.baseline.text).toBe('original');
 	editor.loadSaved();
 	expect(editor.dirty).toBe(false);
 	expect(editor.unknown).toBeUndefined();
@@ -444,7 +444,7 @@ test('a file saved with an unpaired surrogate settles on the text of the bytes s
 	await editor.save();
 	const read = expectOk(await folder.files.read(editor.path));
 	expect(decoder.decode(read.bytes)).toBe(stored);
-	expect(editor.baseline.source).toBe(stored);
+	expect(editor.baseline.text).toBe(stored);
 	expect(editor.baseline.sha256).toBe(read.sha256);
 	expect(editor.buffer).toBe(stored);
 	expect(editor.dirty).toBe(false);
@@ -471,9 +471,9 @@ test('a save with an unpaired surrogate whose reply is lost keeps the typing as 
 	await editor.save();
 
 	// The file holds the bytes that were sent; the draft does not take them.
-	expect((await current(folder)).source).toBe(stored);
+	expect((await current(folder)).text).toBe(stored);
 	expect(editor.saveState).toMatchObject({ kind: 'unconfirmed' });
-	expect(editor.baseline.source).toBe('original');
+	expect(editor.baseline.text).toBe('original');
 	expect(editor.buffer).toBe(typed);
 	editor.input(`${typed}newer \uD800`);
 	await editor.save();

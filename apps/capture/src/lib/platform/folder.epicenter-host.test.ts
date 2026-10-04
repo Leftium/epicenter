@@ -314,7 +314,7 @@ test('the page names the Capture scope and is told the directory', async () => {
 
 	expect(sent('attach')[0]?.args).toEqual({
 		scope: 'so.epicenter.capture',
-		protocol: 5,
+		protocol: 6,
 	});
 	expect(host.location).toEqual({ kind: 'directory', root: ROOT });
 	expect(host.quitProtectionProblem).toBeUndefined();
@@ -664,10 +664,10 @@ test('save B admitted, typing C, then D written elsewhere: B is the receipt, C i
 
 	const B = CANONICAL.replace('\nText\n', '\nB\n');
 	const lastSave = draft.editor?.lastSave;
-	expect(lastSave?.kind === 'saved' && lastSave.receipt.source).toBe(B);
+	expect(lastSave?.kind === 'saved' && lastSave.receipt.text).toBe(B);
 	expect(draft.text).toBe('C');
 	const notice = draft.notice;
-	expect(notice?.kind === 'changed' && notice.revision.source).toBe(D);
+	expect(notice?.kind === 'changed' && notice.revision.text).toBe(D);
 	expect(await captures.settleAll()).toBe(1);
 	expect(sent('apply')).toHaveLength(1);
 	expect(text(PATH)).toBe(D);

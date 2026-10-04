@@ -202,9 +202,16 @@ test('a checkpoint that overlaps a table rename commits the files from before it
 
 		const committing = opened.git.commit();
 		await pause.paused;
-		const renaming = pause.during(opened.tables.todos.rename(entry, 'new'));
+		const renaming = pause.during(
+			opened.tables.todos.rename('old', 'new', {
+				expectedSha256: entry.sha256,
+			}),
+		);
 		await committing;
-		expect(expectOk(await renaming).path).toBe('todos/new.md');
+		expectOk(await renaming);
+		expect(expectOk(await opened.tables.todos.get('new'))?.sha256).toBe(
+			entry.sha256,
+		);
 
 		expect(await tree()).toBe('todos/old.md\ntodos/old.png');
 		expect(pause.overlapped).toBe(false);

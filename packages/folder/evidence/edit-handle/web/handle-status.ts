@@ -113,7 +113,7 @@ export function mountHandleStatus(root: HTMLElement, edit: TodoEdit) {
 					'div',
 					{},
 					h('h4', {}, 'Saved elsewhere'),
-					h('pre', {}, reviewed.source),
+					h('pre', {}, reviewed.text),
 				),
 				h('div', {}, h('h4', {}, 'Your draft'), h('pre', {}, state.source)),
 			),

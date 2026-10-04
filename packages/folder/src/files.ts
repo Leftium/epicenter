@@ -13,7 +13,7 @@ import {
 	ownBytes,
 	ownCapture,
 } from './capture.js';
-import type { FileError, MoveError } from './errors.js';
+import type { CapturedMoveError, FileError } from './errors.js';
 import { applyOne, reserveSubmission } from './storage.js';
 
 /**
@@ -48,14 +48,15 @@ export type FolderFiles = {
 	remove(file: FileCapture): Promise<Result<undefined, FileError>>;
 	/**
 	 * Move the captured file to an unoccupied path. The returned capture is the
-	 * same content hash at the destination. A move that landed the destination
+	 * guarded hash at the destination: a receipt of the move, conditioned on
+	 * the captured bytes, never a read of what the destination holds now. A move that landed the destination
 	 * but could not remove the source reports `MoveError.SourceNotRemoved`;
 	 * both paths then hold the bytes.
 	 */
 	move(
 		file: FileCapture,
 		destination: string,
-	): Promise<Result<FileCapture, FileError | MoveError>>;
+	): Promise<Result<FileCapture, FileError | CapturedMoveError>>;
 	/** Save at the path whatever is there, as a shell redirection does. */
 	overwrite(
 		path: string,

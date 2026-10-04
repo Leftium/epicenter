@@ -1,10 +1,10 @@
 import {
 	type CreateRowOf,
-	type DataSchema,
 	defineTable,
 	field,
 	type KvOf,
 } from '@epicenter/definition';
+import { defineFolder } from '@epicenter/folder';
 
 /**
  * Whispering's folder: each recording is `recordings/<id>.md` with its
@@ -38,10 +38,11 @@ import {
  *
  * The page and Whispering's Bun host both load this module, so it names only
  * the inert vocabulary. It names no folder: each workspace opens
- * `WHISPERING_FOLDER_ID`. Each opener checks the definition before it acquires
- * anything, and `definition.test.ts` checks it with `defineFolder`.
+ * `WHISPERING_FOLDER_ID`. `defineFolder` checks and prepares the definition
+ * here, where it is written, so the openers and `inspectRow` read rows through
+ * the same prepared fields without opening anything.
  */
-export const whisperingDefinition = {
+export const whisperingDefinition = defineFolder({
 	title: 'Whispering',
 	kv: {
 		/** Saved by an earlier build. Offered at setup; never written, never a destination. */
@@ -123,7 +124,7 @@ export const whisperingDefinition = {
 			},
 		}),
 	},
-} as const satisfies DataSchema;
+});
 
 export type CaptureSource = 'microphone' | 'fixture';
 

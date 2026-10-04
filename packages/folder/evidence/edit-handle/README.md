@@ -97,9 +97,10 @@ const saved = await edits.tables.todos.save(displayed, { fields: { done } });
 if (saved.error?.name === 'Conflict') showFileAsItIsNow();
 ```
 
-`save` patches exactly `displayed.source`, keeping unknown keys, comments,
-and every other byte, and calls `table.replace(displayed, prepared)` once. A
-change the source cannot take returns `Unparsed`, `UnsupportedSource`, or
+`save` patches exactly `displayed.text`, keeping unknown keys, comments,
+and every other byte, and calls `table.replace(displayed.stem, patched, {
+expectedSha256: displayed.sha256 })` once. A
+change the text cannot take returns `Unparsed`, `UnsupportedSource`, or
 `InvalidValues` and writes nothing. A stale snapshot is a `Conflict`; a lost
 reply is `Unconfirmed`. Nothing retries. It has no lifecycle; the caller owns
 which paths have a save pending.

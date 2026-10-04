@@ -52,7 +52,7 @@ const canonicalOf = (document: Document) =>
 const revisionOf = (document: Document): RowRevision => ({
 	path: PATH,
 	sha256: `sha:${canonicalOf(document)}`,
-	source: canonicalOf(document),
+	text: canonicalOf(document),
 	document,
 	canonical: canonicalOf(document),
 });
@@ -101,7 +101,7 @@ function scriptedEditor(initial: Document) {
 		path: PATH,
 		baseline: first,
 		document: initial,
-		source: first.canonical,
+		text: first.canonical,
 		reading: readingOf(initial),
 		isDirty: false,
 		observation: { kind: 'present', revision: first },
@@ -120,7 +120,7 @@ function scriptedEditor(initial: Document) {
 		if (file === 'unrecognized')
 			return {
 				kind: 'unsupported',
-				file: { path: PATH, sha256: 'sha:unrecognized', source: '!tagged' },
+				file: { path: PATH, sha256: 'sha:unrecognized', text: '!tagged' },
 				refusal: { reason: 'The tag !tagged is not supported', path: [] },
 			};
 		return { kind: 'present', revision: revisionOf(file) };
@@ -134,12 +134,12 @@ function scriptedEditor(initial: Document) {
 		const { revision } = observation;
 		if (
 			revision.sha256 !== state.baseline.sha256 &&
-			(!state.isDirty || revision.canonical === state.source)
+			(!state.isDirty || revision.canonical === state.text)
 		)
 			update({
 				baseline: revision,
 				document: revision.document,
-				source: revision.canonical,
+				text: revision.canonical,
 				reading: readingOf(revision.document),
 				isDirty: false,
 				observation,
@@ -163,7 +163,7 @@ function scriptedEditor(initial: Document) {
 			const source = canonicalOf(document);
 			update({
 				document,
-				source,
+				text: source,
 				reading: readingOf(document),
 				isDirty: source !== state.baseline.canonical,
 			});
@@ -180,7 +180,7 @@ function scriptedEditor(initial: Document) {
 			const attempt = {
 				path: PATH,
 				document: state.document,
-				source: state.source,
+				text: state.text,
 			};
 			update({ saving: attempt });
 			const run = (async () => {
@@ -194,7 +194,7 @@ function scriptedEditor(initial: Document) {
 					outcome = { kind: 'saved', receipt };
 					update({
 						baseline: receipt,
-						isDirty: state.source !== receipt.canonical,
+						isDirty: state.text !== receipt.canonical,
 						saving: undefined,
 						lastSave: outcome,
 					});
@@ -235,7 +235,7 @@ function scriptedEditor(initial: Document) {
 			update({
 				baseline: latest.revision,
 				document: latest.revision.document,
-				source: latest.revision.canonical,
+				text: latest.revision.canonical,
 				reading: readingOf(latest.revision.document),
 				isDirty: false,
 			});

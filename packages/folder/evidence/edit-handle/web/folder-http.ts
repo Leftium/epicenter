@@ -2,19 +2,18 @@
  * EXPERIMENT: a browser stand-in for the demo folder, over HTTP and one
  * EventSource to `server.ts`. Production `Folder` code is untouched.
  *
- * It implements only the members the demo calls: `tables.todos` `inspect`,
- * `get`, `list`, and `replace`; `files.read` and `files.replace`; and
- * `onFilesChanged`. The real folder methods run on the server.
+ * It implements only the members the demo calls: `tables.todos` `get`,
+ * `list`, and `replace`, plus the `inspect` an edit handle interprets rows
+ * with; `files.read` and `files.replace`; and `onFilesChanged`. The real
+ * folder methods run on the server.
  *
  * Transport limits, stated plainly:
  * - A save is one request. When the request fails or the response is not
  *   JSON, the save is reported `Unconfirmed`: it may have run.
  * - Hints arrive over one EventSource. They are lossy across reconnects, as
  *   folder hints are anyway; a hint is a reason to read, never a capture.
- * - `inspect` runs here, against the same prepared definition, so a reading
- *   is never taken from the wire. That needs the folder's internal
- *   `inspectSource`: the public contract has no `inspect` without an opened
- *   folder.
+ * - `inspectRow` runs here, against the same prepared definition, so a
+ *   reading is never taken from the wire. It needs no opened folder.
  */
 import { Err, Ok } from 'wellcrafted/result';
 import type { CapturedFile, FileCapture } from '../../../src/capture.js';
@@ -26,7 +25,7 @@ import {
 } from '../../../src/errors.js';
 import type { FolderFiles } from '../../../src/files.js';
 import type { FolderAccess } from '../../../src/folder.js';
-import { inspectSource } from '../../../src/table.js';
+import { inspectRow } from '../../../src/row-text.js';
 import type {
 	DemoEvent,
 	HarnessRequest,
@@ -80,14 +79,15 @@ export function createHttpFolder({
 		return (await response.json()) as WireResult<TData>;
 	}
 
-	const inspect: TodosTable['inspect'] = (source) =>
-		inspectSource(definition.tables.todos.fields, source);
+	const inspect = (text: string) => inspectRow(definition.tables.todos, text);
 
-	/** Rebuild a snapshot from its capture and source; the reading is this page's own. */
+	/** Rebuild a snapshot from its capture and text; the reading is this page's own. */
 	const snapshotOf = (wire: WireSnapshot): TodoSnapshot =>
-		Object.freeze({ ...wire, ...inspect(wire.source) });
+		Object.freeze({ ...wire, ...inspect(wire.text) });
 
-	const todos: Pick<TodosTable, 'inspect' | 'get' | 'list' | 'replace'> = {
+	const todos: Pick<TodosTable, 'get' | 'list' | 'replace'> & {
+		inspect: typeof inspect;
+	} = {
 		inspect,
 		async get(stem) {
 			let got: WireResult<WireSnapshot | null>;
@@ -123,22 +123,63 @@ export function createHttpFolder({
 				})),
 			);
 		},
-		async replace(capture, source) {
+		async replace(stem, text, options) {
+			const path = `todos/${stem}.md`;
+			// The wire flattens options into the request, so options the table
+			// would refuse are refused here, before anything is sent: a key this
+			// page does not forward would otherwise vanish into an unguarded save.
+			const supplied: unknown = options;
+			if (
+				typeof supplied !== 'object' ||
+				supplied === null ||
+				Array.isArray(supplied)
+			)
+				return FileError.InvalidPath({
+					path,
+					reason:
+						'Write options are required: pass {} to act on the current row, or { expectedSha256 } to act on reviewed bytes',
+				});
+			const unknown = Object.keys(supplied).find(
+				(key) => key !== 'expectedSha256',
+			);
+			if (unknown !== undefined)
+				return FileError.InvalidPath({
+					path,
+					reason: `Write options take only expectedSha256, not '${unknown}'`,
+				});
+			// JSON drops an `undefined` value, which would turn a guard that went
+			// missing into an unguarded save. A present guard, inherited or not,
+			// is read once and travels, as `null` when it is `undefined`, and the
+			// table refuses that.
+			const guard =
+				'expectedSha256' in supplied
+					? { expectedSha256: options.expectedSha256 ?? null }
+					: {};
 			let saved: WireResult<WireSnapshot>;
 			try {
 				saved = await call('/api/tables/todos/replace', {
-					capture: { path: capture.path, sha256: capture.sha256 },
-					source,
+					stem,
+					text,
+					...guard,
 				});
 			} catch (cause) {
 				return FileError.Unconfirmed({
-					path: capture.path,
+					path,
 					operation: 'replace',
 					cause,
 				});
 			}
 			if (saved.error) return Err(saved.error as TableReplaceError);
-			return Ok(snapshotOf(saved.data));
+			// The receipt is the submitted bytes' address, text, and hash.
+			const { sha256 } = saved.data;
+			return Ok(
+				Object.freeze({
+					stem,
+					path: saved.data.path,
+					text: saved.data.text,
+					sha256,
+				}),
+			);
 		},
 	};
 

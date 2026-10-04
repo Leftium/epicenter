@@ -114,7 +114,7 @@
 	{:else if review?.kind === 'invalid'}
 		<div role="alert" class="mt-2 space-y-2 text-xs text-destructive">
 			<p>This word was changed in another tab into text Vocab cannot read as a word ({review.message}). Your note is not saved over it until you choose. The file now:</p>
-			<pre class="max-h-40 overflow-auto rounded border p-2 whitespace-pre-wrap text-foreground">{review.file.source}</pre>
+			<pre class="max-h-40 overflow-auto rounded border p-2 whitespace-pre-wrap text-foreground">{review.file.text}</pre>
 			<div class="flex flex-wrap gap-1">
 				<Button size="sm" variant="outline" disabled={busy} onclick={async () => report(await word.saveMine())}>Save my word over it</Button>
 				<Button size="sm" variant="ghost" disabled={busy} onclick={() => word.repairFile()}>Repair the file's text (discard my note)</Button>

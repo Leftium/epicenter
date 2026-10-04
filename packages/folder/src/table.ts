@@ -2,17 +2,24 @@
  * File-backed tables: Markdown rows at `<table>/<stem>.md` (ADR-0457, ADR-0462).
  *
  * A snapshot is one captured row file: its literal path and stem, its exact
- * source, the SHA-256 of those bytes, and how that text reads. Reading the
+ * text, the SHA-256 of those bytes, and how that text reads. Reading the
  * file and interpreting its text are separate. A file that was read is a
  * snapshot even when its text does not parse. A parse failure and a field
  * that does not conform are different things: the first leaves no fields or
  * body at all, the second leaves every field that validated.
  *
- * `inspect` is that interpretation by itself: reads, save receipts, and
- * editors checking an unsaved buffer all use it.
+ * `inspectRow` (`row-text.ts`) is that interpretation by itself, from the
+ * table's definition and no open folder. A caller that wants a write's
+ * interpretation inspects the receipt's text: a write receipt names the
+ * bytes submitted and nothing more.
  *
- * Structured updates read current source once; complete replacements use the
- * supplied capture's baseline. Both conditionally publish once and return a
+ * Every mutation addresses its row by stem and takes its options explicitly.
+ * `{}` acts on whatever the row holds now; `{ expectedSha256 }` is a
+ * condition on the current bytes, checked where the change is published. The
+ * hash is a condition on bytes, not an identity or a revision. Structured
+ * updates read current text once and always publish against that read;
+ * complete replacements read no row while preparing, and the publisher
+ * checks any condition against the current bytes. Each publishes once and returns a
  * conflict without retrying (ADR-0464). `edit` is the other save shape: a
  * retained canonical draft of one row whose save overwrites the complete
  * document unconditionally (`editor.ts`).
@@ -23,16 +30,11 @@
  * row leaves it where it is.
  */
 
-import { conformance, type FieldMap, isJsonSafe } from '@epicenter/definition';
+import type { FieldMap } from '@epicenter/definition';
 import { customAlphabet } from 'nanoid';
 import { Err, Ok, type Result } from 'wellcrafted/result';
 import type { FolderStorage } from './boundary.js';
-import {
-	type FileCapture,
-	hashBytes,
-	ownCapture,
-	type TextCapture,
-} from './capture.js';
+import { hashBytes } from './capture.js';
 import {
 	openRowEditor,
 	type RowEditor,
@@ -50,50 +52,21 @@ import {
 	type TableReplaceError,
 	type TableUpdateError,
 } from './errors.js';
+import { patchRowText } from './markdown.js';
+import { ROW_EXTENSION, rowAddressProblem, rowPath } from './paths.js';
+import { type DeepReadonly, ownSupplied } from './reading.js';
 import {
-	composeSource,
-	parseSource,
-	patchSource,
-	valueProblem,
-} from './markdown.js';
-import {
-	ROW_EXTENSION,
-	rowAddressProblem,
-	rowPath,
-	rowStemOf,
-} from './paths.js';
-import {
-	type DeepReadonly,
-	type FieldIssue,
-	freezeDeep,
-	freezeIssues,
-	ownSupplied,
-	type ParseError,
-} from './reading.js';
+	composeRowText,
+	readRowText,
+	submittedText,
+	type TableReading,
+	unrepresentable,
+} from './row-text.js';
 import { applyOne, reserveSubmission } from './storage.js';
 
 /**
- * How row source reads. Text that does not parse has a `parseError`, no
- * fields, no body, and no issues. Text that parses has a body and every
- * declared field that validated by itself, so one field's issue does not
- * hide another field's value.
- *
- * `fields` is always partial: an empty `issues` does not make it a complete
- * row, so check the fields an action needs. Every declared field the source
- * lacks is an issue. Keys the table does not declare stay in the source and
- * are not issues.
- */
-export type TableReading<TFields> = {
-	readonly fields: DeepReadonly<Partial<TFields>>;
-	/** The text after the closing fence, possibly empty; `undefined` when the source does not parse. */
-	readonly body: string | undefined;
-	readonly parseError: ParseError | undefined;
-	readonly issues: readonly FieldIssue[];
-};
-
-/**
- * One immutable capture of a row file and how its text reads. `source` and
- * `sha256` always describe the same bytes, and the reading is of that source.
+ * One immutable capture of a row file and how its text reads. `text` and
+ * `sha256` always describe the same bytes, and the reading is of that text.
  * It is the same repair baseline whether or not the text parses.
  */
 export type TableSnapshot<TFields> = TableReading<TFields> & {
@@ -103,7 +76,8 @@ export type TableSnapshot<TFields> = TableReading<TFields> & {
 	 * It may be empty (`<table>/.md`), so never test it by truthiness.
 	 */
 	readonly stem: string;
-	readonly source: string;
+	/** The exact text of the whole file, fences and frontmatter included; `body` is only what follows them. */
+	readonly text: string;
 	readonly sha256: string;
 };
 
@@ -118,14 +92,49 @@ export type TableListing<TFields> = readonly {
 	readonly result: Result<TableSnapshot<TFields>, TableReadError>;
 }[];
 
+/**
+ * What a create, update, or replace submitted: the row's address, the exact
+ * text of the whole file sent, and the SHA-256 of its bytes. Nothing is read
+ * back, so it says nothing of later changes; `inspectRow(definition.tables.x,
+ * receipt.text)` interprets it.
+ */
+export type TableWriteReceipt = {
+	readonly stem: string;
+	readonly path: string;
+	/** The text of the submitted bytes: an unpaired surrogate was replaced when they were encoded. */
+	readonly text: string;
+	readonly sha256: string;
+};
+
+/**
+ * The condition a mutation publishes under, always passed. `{}` acts on
+ * whatever the row holds now. `{ expectedSha256: snapshot.sha256 }` acts on
+ * the bytes the caller reviewed: the change is refused as `Conflict` unless
+ * the row's current bytes still hash to it. The hash is a condition on bytes,
+ * not an identity or an acknowledgment: two files with the same text have the
+ * same hash.
+ *
+ * Requiring the argument makes a call site say which it means. It does not
+ * make a wrapper forward what it was given: a wrapper that passes `{}` of its
+ * own drops its caller's guard, and nothing here can tell. An object with any
+ * other enumerable own string key, such as a misspelled `expectedSHA256` or a
+ * snapshot passed in place of options, is `InvalidPath` before anything is
+ * read. Symbol, inherited, and non-enumerable keys other than the guard are
+ * not inspected.
+ *
+ * `{}` is the only way to say "the current row". An `expectedSha256` that is
+ * present but `undefined`, as `{ expectedSha256: snapshot?.sha256 }` makes
+ * when there is no snapshot, is `InvalidPath` before anything is read, not
+ * an unguarded write. The type cannot refuse it, since the property is
+ * optional; the check runs where the call arrives, as the lowercase-hex check
+ * does.
+ */
+export type TableWriteOptions = {
+	readonly expectedSha256?: string;
+};
+
 export type FileTable<TFields> = {
 	readonly name: string;
-	/**
-	 * Interpret row source: parse it once, then check each declared field by
-	 * itself. Synchronous and pure: it reads no file and invents no capture, so
-	 * an editor can inspect the text it has not saved.
-	 */
-	inspect(source: string): TableReading<TFields>;
 	/** An outer error means the listing itself failed; no partial listing is returned. */
 	list(): Promise<Result<TableListing<TFields>, TableEnumerationError>>;
 	/** `undefined` only when no file is at the stem. A file whose text does not parse is still a snapshot. */
@@ -133,19 +142,24 @@ export type FileTable<TFields> = {
 		stem: string,
 	): Promise<Result<TableSnapshot<TFields> | undefined, TableGetError>>;
 	/**
-	 * Save a new row. The source always has both fences, even with no fields
-	 * and no body. The supplied values are copied, never frozen or kept.
+	 * Save a new row. The text always has both fences, even with no fields
+	 * and no body; `serializeRow` previews it. The supplied values are copied,
+	 * never frozen or kept.
 	 */
 	create(input: {
 		/** The file stem; generated when omitted. It is not the title. */
 		readonly stem?: string;
 		readonly fields: DeepReadonly<TFields>;
 		readonly body?: string;
-	}): Promise<Result<TableSnapshot<TFields>, TableCreateError>>;
+	}): Promise<Result<TableWriteReceipt, TableCreateError>>;
 	/**
-	 * Assign fields/body in current source. The source must parse, for a body
-	 * change too; other fields may have issues. A publication race returns
-	 * Conflict; nothing retries, and nothing is rewritten on a refusal.
+	 * Assign fields/body in the current text, preserving everything else. The
+	 * text must parse, for a body change too; other fields may have issues.
+	 * With `expectedSha256`, the bytes read must have that hash; a missing row
+	 * is then `Conflict`, and `NotFound` without it. The save is always
+	 * conditional on the bytes this call read, which is separate from the
+	 * caller's guard: a publication race returns Conflict; nothing retries,
+	 * and nothing is rewritten on a refusal.
 	 */
 	update(
 		stem: string,
@@ -153,30 +167,45 @@ export type FileTable<TFields> = {
 			readonly fields?: DeepReadonly<Partial<TFields>>;
 			readonly body?: string;
 		},
-	): Promise<Result<TableSnapshot<TFields>, TableUpdateError>>;
+		options: TableWriteOptions,
+	): Promise<Result<TableWriteReceipt, TableUpdateError>>;
 	/**
-	 * Save complete text against this capture's baseline, exactly as given.
-	 * Text that does not parse is saved all the same: the returned snapshot
-	 * then has a `parseError`, and the save still succeeded.
+	 * Save the complete text of the file over the existing row at `stem`,
+	 * exactly as given. The row must exist: a missing row is `NotFound`
+	 * unguarded and `Conflict` with `expectedSha256`, and a replacement never
+	 * creates a file. Text that does not parse is saved all the same. Nothing
+	 * is read before or after.
 	 */
 	replace(
-		capture: FileCapture,
-		source: string,
-	): Promise<Result<TableSnapshot<TFields>, TableReplaceError>>;
+		stem: string,
+		text: string,
+		options: TableWriteOptions,
+	): Promise<Result<TableWriteReceipt, TableReplaceError>>;
 	/**
-	 * Move the row file to another stem. No other file moves with it. The
-	 * capture's `source` must be the text of its `sha256`: the returned
-	 * snapshot reads that text, so a capture whose two halves disagree is
-	 * refused as `InvalidPath` before anything moves. A move that landed the
-	 * new path but kept the old one is `MoveError.SourceNotRemoved`, as for
-	 * `files.move`.
+	 * Move the row file to a vacant stem. No other file moves with it, and
+	 * nothing is read or decoded for a reply. A move that landed the new path
+	 * but kept the old one is `MoveError.SourceNotRemoved`, as for
+	 * `files.move`; it names a hash only when `expectedSha256` guarded it.
+	 *
+	 * A `nextStem` equal to `stem` is `InvalidPath` before anything is read:
+	 * such a move would verify neither the row nor `expectedSha256`, so it is
+	 * refused rather than reported as done. Skip the call when the name is
+	 * unchanged.
 	 */
 	rename(
-		capture: TextCapture,
+		stem: string,
 		nextStem: string,
-	): Promise<Result<TableSnapshot<TFields>, TableRenameError>>;
-	/** Remove the row file. No other file is removed with it. */
-	delete(capture: FileCapture): Promise<Result<undefined, TableDeleteError>>;
+		options: TableWriteOptions,
+	): Promise<Result<undefined, TableRenameError>>;
+	/**
+	 * Remove the row file. No other file is removed with it. An absent row is
+	 * `NotFound`, with or without `expectedSha256`; it does not count as done.
+	 * Present bytes that differ from `expectedSha256` are `Conflict`.
+	 */
+	delete(
+		stem: string,
+		options: TableWriteOptions,
+	): Promise<Result<undefined, TableDeleteError>>;
 	/**
 	 * Open a retained editor on the row at `stem`. It subscribes to change
 	 * hints, then reads once. It opens only a file that has a canonical form
@@ -191,7 +220,6 @@ export type FileTable<TFields> = {
 };
 
 const utf8 = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true });
-const encoder = new TextEncoder();
 const generateStem = customAlphabet('0123456789abcdefghijklmnopqrstuvwxyz', 10);
 
 function decode(bytes: Uint8Array): string | undefined {
@@ -200,61 +228,6 @@ function decode(bytes: Uint8Array): string | undefined {
 	} catch {
 		return undefined;
 	}
-}
-
-/**
- * The bytes a save submits and the text those bytes are. Encoding replaces
- * an unpaired surrogate, so a receipt's source is the text of the bytes, not
- * a string assumed to equal them. The text is always decoded from the bytes,
- * with the decoder that reads files: a byte-order mark stays in it.
- */
-function submitted(source: string): { bytes: Uint8Array; source: string } {
-	const bytes = encoder.encode(source);
-	return { bytes, source: utf8.decode(bytes) };
-}
-
-/**
- * Interpret row source against a table's prepared fields. Parsing comes first
- * and fails as a whole. The shared conformance read then checks each declared
- * field by itself; nothing is coerced, defaulted, or repaired.
- *
- * The values are this parse's own, so freezing them at every depth touches
- * nothing a caller holds. Each declared value that is JSON is frozen before
- * its field checks it, so a field's callback cannot make a reading say what
- * its source does not.
- *
- * YAML can also hold what JSON cannot: a `!!binary` byte array, a date, a
- * set, a map, a number that is not finite. A declared value like that is
- * handed over as it is, since a byte array cannot be frozen: the conformance
- * read refuses it as an issue before any callback runs. A key the table does
- * not declare is never checked, so nothing here touches its value.
- */
-export function inspectSource<TFields>(
-	schemas: FieldMap,
-	source: string,
-): TableReading<TFields> {
-	const { data: parsed, error: parseError } = parseSource(source);
-	if (parseError !== null)
-		return Object.freeze({
-			fields: Object.freeze({}) as DeepReadonly<Partial<TFields>>,
-			body: undefined,
-			parseError,
-			issues: freezeIssues([]),
-		});
-	const declared: Record<string, unknown> = {};
-	for (const key of Object.keys(schemas)) {
-		if (!Object.hasOwn(parsed.values, key)) continue;
-		const value = parsed.values[key];
-		declared[key] = isJsonSafe(value) ? freezeDeep(value) : value;
-	}
-	const { conforming, issues } = conformance(schemas, declared);
-	return Object.freeze({
-		// Every value is frozen already; only the map that holds them is new.
-		fields: Object.freeze(conforming) as DeepReadonly<Partial<TFields>>,
-		body: parsed.body,
-		parseError: undefined,
-		issues: freezeIssues(issues),
-	});
 }
 
 /** The row path a literal stem addresses, or the refusal of a stem that is not one filename segment in this folder. */
@@ -269,6 +242,57 @@ function rowAddress(
 			reason: problem,
 		});
 	return Ok(rowPath(table, stem));
+}
+
+/**
+ * The caller's options, owned before anything is awaited: the guard is read
+ * once, so a getter cannot answer differently later. Options are required
+ * and hold nothing but the guard. Absent options, or an object with another
+ * enumerable own string key (a misspelled guard, or a snapshot passed where
+ * options go), would otherwise publish unguarded, so they are refused.
+ *
+ * Only an absent `expectedSha256` acts on the current row. A present one,
+ * own or inherited, must be a lowercase SHA-256: `undefined` there is a
+ * guard that went missing on its way here, such as `{ expectedSha256:
+ * snapshot?.sha256 }`, and is refused rather than published unguarded. The
+ * type allows `undefined` in the property; this check is what refuses it.
+ */
+function ownExpected(
+	path: string,
+	options: TableWriteOptions,
+): Result<string | undefined, Extract<FileError, { name: 'InvalidPath' }>> {
+	const supplied: unknown = options;
+	if (
+		typeof supplied !== 'object' ||
+		supplied === null ||
+		Array.isArray(supplied)
+	)
+		return FileError.InvalidPath({
+			path,
+			reason:
+				'Write options are required: pass {} to act on the current row, or { expectedSha256 } to act on reviewed bytes',
+		});
+	const unknown = Object.keys(supplied).find((key) => key !== 'expectedSha256');
+	if (unknown !== undefined)
+		return FileError.InvalidPath({
+			path,
+			reason: `Write options take only expectedSha256, not '${unknown}'`,
+		});
+	// Presence is decided before the value is read, and the value read once.
+	if (!('expectedSha256' in supplied)) return Ok(undefined);
+	const expected: unknown = (supplied as TableWriteOptions).expectedSha256;
+	if (expected === undefined)
+		return FileError.InvalidPath({
+			path,
+			reason:
+				'expectedSha256 is present but undefined: omit it, or pass {}, to act on the current row',
+		});
+	if (typeof expected !== 'string' || !/^[0-9a-f]{64}$/.test(expected))
+		return FileError.InvalidPath({
+			path,
+			reason: 'expectedSha256 is not a lowercase SHA-256',
+		});
+	return Ok(expected);
 }
 
 /**
@@ -290,22 +314,15 @@ function ownValues(
 		{ complete },
 	);
 	if (issues.length > 0) return TableError.InvalidValues({ issues });
-	for (const [key, value] of Object.entries(values)) {
-		const problem = valueProblem(value);
-		if (problem !== undefined)
-			issues.push({
-				field: key,
-				message: `${key} cannot be saved: ${problem}`,
-			});
-	}
+	issues.push(...unrepresentable(values));
 	if (issues.length > 0) return TableError.InvalidValues({ issues });
 	return Ok(values);
 }
 
-/** The exact file a new row is: its path, its source text, and that text's bytes. */
+/** The exact file a new row is: its path, its text, and that text's bytes. */
 type PreparedRow = {
 	readonly path: string;
-	readonly source: string;
+	readonly text: string;
 	readonly bytes: Uint8Array;
 };
 
@@ -335,22 +352,13 @@ function prepareRow(
 		true,
 	);
 	if (valuesError !== null) return Err(valuesError);
-	const ordered: Record<string, unknown> = {};
-	for (const key of Object.keys(schemas)) ordered[key] = values[key];
-	const { data: source, error: composeError } = composeSource(
-		ordered,
+	const { data: text, error: composeError } = composeRowText(
+		schemas,
+		values,
 		input.body ?? '',
 	);
-	if (composeError !== null)
-		return TableError.InvalidValues({
-			issues: [
-				{
-					field: composeError.field,
-					message: `${composeError.field} cannot be saved: ${composeError.reason}`,
-				},
-			],
-		});
-	return Ok({ path, ...submitted(source) });
+	if (composeError !== null) return Err(composeError);
+	return Ok({ path, ...submittedText(text) });
 }
 
 /** The filenames directly in a table's directory; none when it does not exist yet. */
@@ -386,22 +394,34 @@ export function createTable<TFields>(
 	name: string,
 	schemas: FieldMap,
 ): FileTable<TFields> {
-	const inspect = (source: string) => inspectSource<TFields>(schemas, source);
+	const inspect = (text: string) => readRowText<TFields>(schemas, text);
 	const declaredKeys = Object.freeze(Object.keys(schemas));
 
-	/** The snapshot of captured bytes: what was read, or exactly what was submitted. */
+	const stemOf = (path: string) =>
+		path.slice(name.length + 1, -ROW_EXTENSION.length);
+
+	/** The snapshot of bytes that were read. */
 	function snapshotOf(
 		path: string,
 		sha256: string,
-		source: string,
+		text: string,
 	): TableSnapshot<TFields> {
 		return Object.freeze({
 			path,
-			stem: path.slice(name.length + 1, -ROW_EXTENSION.length),
+			stem: stemOf(path),
 			sha256,
-			source,
-			...inspect(source),
+			text,
+			...inspect(text),
 		});
+	}
+
+	/** The receipt of bytes about to be submitted, prepared before publication and never after. */
+	function receiptOf(
+		path: string,
+		sha256: string,
+		text: string,
+	): TableWriteReceipt {
+		return Object.freeze({ stem: stemOf(path), path, text, sha256 });
 	}
 
 	/** Interpret the bytes of one read, or say why they are not text. */
@@ -412,9 +432,10 @@ export function createTable<TFields>(
 		TableSnapshot<TFields>,
 		Extract<TableError, { name: 'InvalidUtf8' }>
 	> {
-		const source = decode(read.bytes);
-		if (source === undefined) return TableError.InvalidUtf8({ path });
-		return Ok(snapshotOf(path, read.sha256, source));
+		const text = decode(read.bytes);
+		if (text === undefined)
+			return TableError.InvalidUtf8({ path, sha256: read.sha256 });
+		return Ok(snapshotOf(path, read.sha256, text));
 	}
 
 	/**
@@ -442,26 +463,8 @@ export function createTable<TFields>(
 		return Ok(undefined);
 	}
 
-	/**
-	 * Own a capture of a row file directly in this table's directory. A
-	 * nested path such as `todos/a/b.md` is not a row, and neither is `a.MD`.
-	 */
-	function captureRow(
-		capture: FileCapture,
-	): Result<FileCapture, Extract<FileError, { name: 'InvalidPath' }>> {
-		const { data: own, error: captureError } = ownCapture(capture);
-		if (captureError !== null) return Err(captureError);
-		if (rowStemOf(name, own.path) === undefined)
-			return FileError.InvalidPath({
-				path: own.path,
-				reason: `the capture is not a row of '${name}'`,
-			});
-		return Ok(own);
-	}
-
 	return {
 		name,
-		inspect,
 		async list() {
 			const { data: filenames, error: listError } = await tableFilenames(
 				storage,
@@ -521,12 +524,11 @@ export function createTable<TFields>(
 				},
 			);
 			if (prepareError !== null) return Err(prepareError);
-			const { path, source, bytes } = prepared;
+			const { path, text, bytes } = prepared;
 			const vacancy = await vacant(path);
 			if (vacancy.error !== null) return vacancy;
 			const sha256 = await hashBytes(bytes);
-			// The receipt is prepared before anything is published and never after.
-			const receipt = snapshotOf(path, sha256, source);
+			const receipt = receiptOf(path, sha256, text);
 			const { error: applyError } = await applyOne(
 				storage,
 				{ kind: 'create', path, bytes, sha256 },
@@ -535,11 +537,17 @@ export function createTable<TFields>(
 			if (applyError !== null) return Err(applyError);
 			return Ok(receipt);
 		},
-		async update(stem, change) {
+		async update(stem, change, options) {
 			const submission = reserveSubmission();
 			const { data: path, error: addressError } = rowAddress(name, stem);
 			if (addressError !== null) return Err(addressError);
-			// Own the supplied values and body before the first asynchronous read.
+			// Own the baseline, the supplied values, and the body before the
+			// first asynchronous read.
+			const { data: expected, error: expectedError } = ownExpected(
+				path,
+				options,
+			);
+			if (expectedError !== null) return Err(expectedError);
 			const { data: values, error: valuesError } = ownValues(
 				schemas,
 				change.fields,
@@ -548,10 +556,26 @@ export function createTable<TFields>(
 			if (valuesError !== null) return Err(valuesError);
 			const body = change.body;
 			const { data: read, error: readError } = await storage.read(path);
-			if (readError !== null) return Err(readError);
-			const source = decode(read.bytes);
-			if (source === undefined) return TableError.InvalidUtf8({ path });
-			const { data: patched, error: refusal } = patchSource(source, {
+			if (readError !== null) {
+				// An absent row does not have the caller's bytes either.
+				if (readError.name === 'NotFound' && expected !== undefined)
+					return FileError.Conflict({
+						path,
+						expectedSha256: expected,
+						actualSha256: undefined,
+					});
+				return Err(readError);
+			}
+			if (expected !== undefined && read.sha256 !== expected)
+				return FileError.Conflict({
+					path,
+					expectedSha256: expected,
+					actualSha256: read.sha256,
+				});
+			const text = decode(read.bytes);
+			if (text === undefined)
+				return TableError.InvalidUtf8({ path, sha256: read.sha256 });
+			const { data: patched, error: refusal } = patchRowText(text, {
 				fields: values,
 				body,
 			});
@@ -569,10 +593,12 @@ export function createTable<TFields>(
 					],
 				});
 			}
-			const next = submitted(patched);
+			const next = submittedText(patched);
 			const { bytes } = next;
 			const sha256 = await hashBytes(bytes);
-			const receipt = snapshotOf(path, sha256, next.source);
+			const receipt = receiptOf(path, sha256, next.text);
+			// Published against this call's own read, whether or not the caller
+			// named a baseline: the patch is of exactly those bytes.
 			const { error: applyError } = await applyOne(
 				storage,
 				{
@@ -587,17 +613,22 @@ export function createTable<TFields>(
 			if (applyError !== null) return Err(applyError);
 			return Ok(receipt);
 		},
-		async replace(capture, source) {
+		async replace(stem, text, options) {
 			const submission = reserveSubmission();
-			const { data: captured, error: captureError } = captureRow(capture);
-			if (captureError !== null) return Err(captureError);
-			const { path, sha256: expectedSha256 } = captured;
-			const next = submitted(source);
+			const { data: path, error: addressError } = rowAddress(name, stem);
+			if (addressError !== null) return Err(addressError);
+			const { data: expectedSha256, error: expectedError } = ownExpected(
+				path,
+				options,
+			);
+			if (expectedError !== null) return Err(expectedError);
+			const next = submittedText(text);
 			const { bytes } = next;
 			const sha256 = await hashBytes(bytes);
-			// The receipt is the submitted text and its hash, never a reread. It is
-			// prepared before publication, so returning it needs no further validation.
-			const receipt = snapshotOf(path, sha256, next.source);
+			// The receipt is the submitted text and its hash, never a reread.
+			const receipt = receiptOf(path, sha256, next.text);
+			// A replacement requires an existing row at the storage that
+			// publishes it, guarded or not; it is never an overwrite.
 			const { error: applyError } = await applyOne(
 				storage,
 				{ kind: 'replace', path, bytes, sha256, expectedSha256 },
@@ -606,61 +637,46 @@ export function createTable<TFields>(
 			if (applyError !== null) return Err(applyError);
 			return Ok(receipt);
 		},
-		async rename(capture, nextStem) {
+		async rename(stem, nextStem, options) {
 			const submission = reserveSubmission();
-			const { data: captured, error: captureError } = captureRow(capture);
-			if (captureError !== null) return Err(captureError);
-			// Own the source before the first await, like the path and the hash.
-			const supplied: unknown = (capture as Partial<TextCapture>).source;
-			if (typeof supplied !== 'string')
+			const { data: from, error: fromError } = rowAddress(name, stem);
+			if (fromError !== null) return Err(fromError);
+			const { data: to, error: toError } = rowAddress(name, nextStem);
+			if (toError !== null) return Err(toError);
+			const { data: expectedSha256, error: expectedError } = ownExpected(
+				from,
+				options,
+			);
+			if (expectedError !== null) return Err(expectedError);
+			// A move to its own path would check neither the row nor the
+			// baseline, so success would claim what nothing verified.
+			if (to === from)
 				return FileError.InvalidPath({
-					path: captured.path,
-					reason: 'the capture has no source',
+					path: to,
+					reason: 'A row cannot be renamed to the stem it already has',
 				});
-			const { data: path, error: addressError } = rowAddress(name, nextStem);
-			if (addressError !== null) return Err(addressError);
-			// The receipt reads this source under this hash, so the two must be one
-			// capture: the bytes of the source have the captured hash.
-			const { bytes, source } = submitted(supplied);
-			if ((await hashBytes(bytes)) !== captured.sha256)
-				return FileError.InvalidPath({
-					path: captured.path,
-					reason: "the capture's source does not have its SHA-256",
-				});
-			const receipt = snapshotOf(path, captured.sha256, source);
-			// The row already has this path: nothing is published, and nothing is
-			// asked of storage.
-			if (path === captured.path) return Ok(receipt);
-			const vacancy = await vacant(path);
+			const vacancy = await vacant(to);
 			if (vacancy.error !== null) return vacancy;
-			const { error: applyError } = await applyOne(
+			return applyOne(
 				storage,
-				{
-					kind: 'move',
-					from: captured.path,
-					to: path,
-					expectedSha256: captured.sha256,
-				},
+				{ kind: 'move', from, to, expectedSha256 },
 				submission,
 			);
-			if (applyError !== null) return Err(applyError);
-			return Ok(receipt);
 		},
-		async delete(capture) {
+		async delete(stem, options) {
 			const submission = reserveSubmission();
-			const { data: captured, error: captureError } = captureRow(capture);
-			if (captureError !== null) return Err(captureError);
-			const { error: applyError } = await applyOne(
+			const { data: path, error: addressError } = rowAddress(name, stem);
+			if (addressError !== null) return Err(addressError);
+			const { data: expectedSha256, error: expectedError } = ownExpected(
+				path,
+				options,
+			);
+			if (expectedError !== null) return Err(expectedError);
+			return applyOne(
 				storage,
-				{
-					kind: 'remove',
-					path: captured.path,
-					expectedSha256: captured.sha256,
-				},
+				{ kind: 'remove', path, expectedSha256 },
 				submission,
 			);
-			if (applyError !== null) return Err(applyError);
-			return Ok(undefined);
 		},
 		async edit(stem, options) {
 			const { data: path, error: addressError } = rowAddress(name, stem);

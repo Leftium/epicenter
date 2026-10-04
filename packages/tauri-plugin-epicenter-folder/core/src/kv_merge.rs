@@ -27,7 +27,7 @@ pub struct KeyConflict {
 #[derive(Debug, PartialEq, Eq, Serialize)]
 #[serde(tag = "kind", rename_all = "kebab-case")]
 pub enum KvMerge {
-    Merged { source: Option<String> },
+    Merged { text: Option<String> },
     Conflict { conflicts: Vec<KeyConflict> },
     FileConflict,
     Invalid { side: Side },
@@ -168,7 +168,7 @@ fn same_file(left: &Document<'_>, right: &Document<'_>) -> bool {
             .all(|(key, member)| right.get(key).is_some_and(|r| member.value == r.value))
 }
 
-/// Prepare a complete source or conflicts without publishing anything.
+/// Prepare the complete merged file text, or conflicts, without publishing anything.
 ///
 /// `None` means no file; empty text is invalid. Nested objects and arrays are
 /// atomic merge units. Equality ignores object order and string escape spelling,
@@ -178,7 +178,7 @@ fn same_file(left: &Document<'_>, right: &Document<'_>) -> bool {
 ///
 /// Output has sorted root keys and canonical framing, without a BOM. Chosen
 /// value spans survive, and equal choices use the smaller UTF-8 spelling so
-/// swapping ours and theirs produces the same successful source.
+/// swapping ours and theirs produces the same merged text.
 pub fn merge_kv(base: Option<&str>, ours: Option<&str>, theirs: Option<&str>) -> KvMerge {
     let b = match read(base) {
         Ok(value) => value,
@@ -194,11 +194,11 @@ pub fn merge_kv(base: Option<&str>, ours: Option<&str>, theirs: Option<&str>) ->
     };
     if o.is_none() || t.is_none() {
         let Some(present) = o.as_ref().or(t.as_ref()) else {
-            return KvMerge::Merged { source: None };
+            return KvMerge::Merged { text: None };
         };
         if let Some(base) = b.as_ref() {
             return if same_file(base, present) {
-                KvMerge::Merged { source: None }
+                KvMerge::Merged { text: None }
             } else {
                 KvMerge::FileConflict
             };
@@ -242,7 +242,7 @@ pub fn merge_kv(base: Option<&str>, ours: Option<&str>, theirs: Option<&str>) ->
         return KvMerge::Conflict { conflicts };
     }
     KvMerge::Merged {
-        source: Some(if members.is_empty() {
+        text: Some(if members.is_empty() {
             "{}\n".into()
         } else {
             format!("{{\n{}\n}}\n", members.join(",\n"))
@@ -291,9 +291,9 @@ mod tests {
                     case.name
                 );
             }
-            if let KvMerge::Merged { source } = &result {
+            if let KvMerge::Merged { text } = &result {
                 assert_eq!(
-                    merge_kv(source.as_deref(), source.as_deref(), source.as_deref()),
+                    merge_kv(text.as_deref(), text.as_deref(), text.as_deref()),
                     result,
                     "{}: output remains valid and stable",
                     case.name

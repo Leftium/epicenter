@@ -108,7 +108,7 @@
 			<Alert.Description>Your draft below was not saved over it. Saving is paused until you choose.</Alert.Description>
 			<p class="mt-2 text-xs font-medium text-muted-foreground">Saved file now</p>
 			<!-- svelte-ignore a11y_no_noninteractive_tabindex: the preview scrolls, so the keyboard must reach it -->
-			<pre aria-label="Saved file now" role="region" tabindex="0" class="max-h-64 overflow-auto whitespace-pre-wrap break-words rounded-md border bg-background p-3 text-xs">{review.revision.source}</pre>
+			<pre aria-label="Saved file now" role="region" tabindex="0" class="max-h-64 overflow-auto whitespace-pre-wrap break-words rounded-md border bg-background p-3 text-xs">{review.revision.text}</pre>
 			<div class="mt-2 flex flex-wrap gap-2">
 				<Button size="sm" variant="outline" disabled={busy} onclick={() => draft.loadSaved()}>Load saved (discard my draft)</Button>
 				<Button size="sm" disabled={busy} onclick={() => run(() => draft.saveMine())}>Save my draft over this version</Button>
@@ -119,7 +119,7 @@
 			<Alert.Description>{draft.dirty ? 'Your draft below was not saved over it. Saving is paused until you choose.' : 'The window still shows the capture as it was.'}</Alert.Description>
 			<p class="mt-2 text-xs font-medium text-muted-foreground">Saved file now</p>
 			<!-- svelte-ignore a11y_no_noninteractive_tabindex: the preview scrolls, so the keyboard must reach it -->
-			<pre aria-label="Saved file now" role="region" tabindex="0" class="max-h-64 overflow-auto whitespace-pre-wrap break-words rounded-md border bg-background p-3 text-xs">{review.file.source}</pre>
+			<pre aria-label="Saved file now" role="region" tabindex="0" class="max-h-64 overflow-auto whitespace-pre-wrap break-words rounded-md border bg-background p-3 text-xs">{review.file.text}</pre>
 			<div class="mt-2 flex flex-wrap gap-2">
 				<Button size="sm" variant="outline" disabled={busy} onclick={() => run(() => draft.repairFile())}>Repair the saved file in Source (discard my draft)</Button>
 				<Button size="sm" disabled={busy} onclick={() => run(() => draft.saveMine())}>Save my draft over it</Button>

@@ -430,7 +430,7 @@
 					{#if raw.problem && typeof raw.over === 'object'}
 						<p class="mt-2 text-xs font-medium text-muted-foreground">Saved file now</p>
 						<!-- svelte-ignore a11y_no_noninteractive_tabindex: the preview scrolls, so the keyboard must reach it -->
-						<pre aria-label="Saved file now" role="region" tabindex="0" class="max-h-64 overflow-auto whitespace-pre-wrap break-words rounded-md border bg-background p-3 text-xs">{raw.over.source}</pre>
+						<pre aria-label="Saved file now" role="region" tabindex="0" class="max-h-64 overflow-auto whitespace-pre-wrap break-words rounded-md border bg-background p-3 text-xs">{raw.over.text}</pre>
 					{/if}
 					<div class="mt-2 flex flex-wrap gap-2">
 						<Button size="sm" disabled={draft.saving || raw.over === 'settling'} onclick={() => draft.writeRaw()}>{raw.over === 'absent' ? 'Save this file back' : 'Save this source as the file'}</Button>
@@ -451,7 +451,7 @@
 		<div class="flex min-w-0 flex-col gap-3">
 			{#if draft.unsettled}<p class="font-medium">Text in this window that is not saved will be discarded too.</p>{/if}
 			<!-- svelte-ignore a11y_no_noninteractive_tabindex: the preview scrolls, so the keyboard must reach it -->
-			<pre aria-label="Saved file" role="region" tabindex="0" class="max-h-64 overflow-auto whitespace-pre-wrap break-words rounded-md border bg-background p-3 text-xs">{deletion?.source}</pre>
+			<pre aria-label="Saved file" role="region" tabindex="0" class="max-h-64 overflow-auto whitespace-pre-wrap break-words rounded-md border bg-background p-3 text-xs">{deletion?.text}</pre>
 			{#if deletionProblem}<p role="status">{deletionProblem}</p>{/if}
 		</div>
 		<Dialog.Footer>

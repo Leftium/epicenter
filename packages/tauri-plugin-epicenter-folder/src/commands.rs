@@ -53,17 +53,21 @@ pub struct FolderFilesChanged {
 /// The version of this command contract. A page built against another
 /// version is refused at attach, before it can change anything.
 ///
-/// Version 5 is the unreleased command contract. Push and fetch name a
+/// Version 6 is the unreleased command contract. Push and fetch name a
 /// session-owned request that can withdraw before transport admission. No
 /// command holds the folder across calls or names a terminal lease. A read
 /// returns its bytes and their SHA-256, and a file change is one of create,
-/// replace, overwrite, remove, or move, guarded by `expectedSha256`.
+/// replace, overwrite, remove, or move. Replace, remove, and move take an
+/// optional `expectedSha256` guard; a replacement without one still requires
+/// an existing file.
 ///
 /// Version 4 added the number every `apply` must name, which orders the
 /// session's saves. Version 5 adds the incoming record: the snapshot's
 /// `pendingIncoming`, `recover_incoming`, and the refusals a pending update
-/// causes. An older page would not know them, so it is refused at attach.
-pub const PROTOCOL: u32 = 5;
+/// causes. Version 6 makes `replace`'s `expectedSha256` optional: a version 5
+/// page would read a missing unguarded target as `Conflict`, not `NotFound`.
+/// An older page would not know these, so it is refused at attach.
+pub const PROTOCOL: u32 = 6;
 
 /// What a window receives when it attaches to a scope.
 #[derive(Debug, Clone, Serialize, Type)]

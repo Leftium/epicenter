@@ -25,6 +25,41 @@ import { Err, Ok, type Result } from 'wellcrafted/result';
 /** A table a folder can keep: declared with `defineTable`, with no body conversion. */
 export type FolderTable = DeclaredTable & { readonly body?: undefined };
 
+/**
+ * Declared and never assigned: the mark exists only in types, so a prepared
+ * table is the same plain object at runtime.
+ */
+declare const PREPARED: unique symbol;
+
+/**
+ * A table of a definition `defineFolder` prepared: what `inspectRow` and
+ * `serializeRow` take. Only `defineFolder`'s return type carries the mark, so
+ * a raw `defineTable` declaration handed to either is a compile error rather
+ * than a call that works until a declared value appears.
+ *
+ * The mark is a type, not a proof. It survives a spread, so an object built
+ * from a prepared table with replaced or cloned `fields` still type-checks,
+ * and reading a value through such a field throws, as every read of an
+ * unprepared schema does. Keep the prepared objects as `defineFolder` returned
+ * them; a changed field or table needs `defineFolder` again.
+ */
+export type PreparedFolderTable<TTable extends FolderTable = FolderTable> =
+	TTable & { readonly [PREPARED]: true };
+
+/**
+ * The type `defineFolder` returns: the declared definition with each table
+ * marked prepared. The runtime value is the prepared definition itself.
+ */
+type PreparedFolderDefinition<TDefinition extends FolderDefinition> = {
+	readonly [K in keyof TDefinition]: K extends 'tables'
+		? {
+				readonly [Name in keyof TDefinition['tables']]: TDefinition['tables'][Name] extends FolderTable
+					? PreparedFolderTable<TDefinition['tables'][Name]>
+					: never;
+			}
+		: TDefinition[K];
+};
+
 /** What a folder reads its files through: a schema that names no dataset. */
 export type FolderDefinition = DataSchema & { readonly id?: never };
 
@@ -59,7 +94,8 @@ export function prepareFolderDefinition<TDefinition extends FolderDefinition>(
  * The definition is checked here, where it is written: a malformed schema, a
  * body conversion, or an `id` throws at the declaration, not at the first
  * open. What comes back has the declared shape and type, and is the prepared
- * definition: an owned, frozen snapshot of each schema.
+ * definition: an owned, frozen snapshot of each schema. Its tables are typed
+ * {@link PreparedFolderTable}, so `inspectRow` and `serializeRow` take them.
  */
 export function defineFolder<const TDefinition extends DataSchema>(
 	schema: TDefinition & {
@@ -70,7 +106,9 @@ export function defineFolder<const TDefinition extends DataSchema>(
 				: FolderTable;
 		};
 	} & Record<Exclude<keyof TDefinition, keyof DataSchema>, never>,
-) {
+): PreparedFolderDefinition<
+	Pick<TDefinition & Pick<DataSchema, 'title'>, 'title' | 'kv' | 'tables'>
+> {
 	type Definition = Pick<
 		TDefinition & Pick<DataSchema, 'title'>,
 		'title' | 'kv' | 'tables'
@@ -88,5 +126,6 @@ export function defineFolder<const TDefinition extends DataSchema>(
 	const { data: prepared, error: definitionError } =
 		prepareFolderDefinition(declaration);
 	if (definitionError !== null) throw new Error(definitionError.reason);
-	return prepared;
+	// The mark is a type alone: the prepared definition is returned as it is.
+	return prepared as PreparedFolderDefinition<Definition>;
 }

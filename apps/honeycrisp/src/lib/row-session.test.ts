@@ -80,8 +80,10 @@ function disk(initial: string = NOTE) {
 	let source: string | undefined = initial;
 	const writes: string[] = [];
 	let held: PromiseWithResolvers<void> | undefined;
-	let reply: { kind: 'ok' } | { kind: 'fail' } | { kind: 'lose'; landed: boolean } =
-		{ kind: 'ok' };
+	let reply:
+		| { kind: 'ok' }
+		| { kind: 'fail' }
+		| { kind: 'lose'; landed: boolean } = { kind: 'ok' };
 	const hints = new Set<() => void>();
 	return {
 		file: {
@@ -316,7 +318,7 @@ describe('a save that does not end saved', () => {
 		expect(session.dirty).toBe(true);
 		expect(session.state.lastSave).toMatchObject({
 			kind: 'unconfirmed',
-			attempt: { source: canonical('B') },
+			attempt: { text: canonical('B') },
 		});
 		session.change({ fields: { title: 'C' } });
 		file.answer({ kind: 'ok' });

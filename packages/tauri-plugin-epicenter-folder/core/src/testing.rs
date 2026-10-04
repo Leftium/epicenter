@@ -114,7 +114,16 @@ pub fn replace(path: &str, content: &str, expected_sha256: &str) -> FileChange {
     FileChange::Replace {
         path: path.to_string(),
         bytes: content.as_bytes().to_vec(),
-        expected_sha256: expected_sha256.to_string(),
+        expected_sha256: Some(expected_sha256.to_string()),
+    }
+}
+
+/// A replacement of whatever file is at the path; it never creates one.
+pub fn replace_existing(path: &str, content: &str) -> FileChange {
+    FileChange::Replace {
+        path: path.to_string(),
+        bytes: content.as_bytes().to_vec(),
+        expected_sha256: None,
     }
 }
 

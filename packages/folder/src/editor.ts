@@ -45,19 +45,19 @@ import { hashBytes, ownBytes, type TextCapture } from './capture.js';
 import { FileError, TableError, type TableReadError } from './errors.js';
 import { callObserver } from './observer.js';
 import { type DeepReadonly, freezeDeep } from './reading.js';
+import type { TableReading } from './row-text.js';
 import { applyOne, reserveSubmission } from './storage.js';
-import type { TableReading } from './table.js';
 
 /**
  * One exact version of the row: the bytes' hash and text, their document,
- * and that document's canonical text. A save receipt's `source` is its
+ * and that document's canonical text. A save receipt's `text` is its
  * `canonical`; a file another writer formatted differently is not.
  */
 export type RowRevision = {
 	readonly path: string;
 	readonly sha256: string;
-	/** The exact text of the bytes. */
-	readonly source: string;
+	/** The exact text of the whole file's bytes. */
+	readonly text: string;
 	readonly document: DeepReadonly<CanonicalDocument>;
 	/** The text a save of `document` writes. Equal canonical text is equal content. */
 	readonly canonical: string;
@@ -95,7 +95,7 @@ export type RowSaveAttempt = {
 	readonly path: string;
 	readonly document: DeepReadonly<CanonicalDocument>;
 	/** The canonical text sent, as UTF-8. */
-	readonly source: string;
+	readonly text: string;
 };
 
 /**
@@ -120,10 +120,10 @@ export type RowEditorState<TFields> = {
 	readonly baseline: RowRevision;
 	readonly document: DeepReadonly<CanonicalDocument>;
 	/** The canonical text of `document`: exactly what `save()` writes. */
-	readonly source: string;
-	/** How `source` reads. Issues here make `save()` refuse; they never block `change`. */
+	readonly text: string;
+	/** How `text` reads. Issues here make `save()` refuse; they never block `change`. */
 	readonly reading: TableReading<TFields>;
-	/** `source` differs from the baseline's canonical text. */
+	/** `text` differs from the baseline's canonical text. */
 	readonly isDirty: boolean;
 	/**
 	 * The latest read that was applied. It may predate a save receipt until
@@ -261,7 +261,7 @@ type EditedRow<TFields> = {
 	onFilesChanged(listener: (paths: readonly string[]) => void): () => void;
 	/** The table's declared field names, in declared order. */
 	readonly declaredKeys: readonly string[];
-	inspect(source: string): TableReading<TFields>;
+	inspect(text: string): TableReading<TFields>;
 };
 
 const utf8 = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true });
@@ -288,21 +288,21 @@ async function readRow<TFields>(
 			return Object.freeze({ kind: 'missing' });
 		return Object.freeze({ kind: 'unreadable', error: readError });
 	}
-	let source: string;
+	let text: string;
 	try {
-		source = utf8.decode(current.bytes);
+		text = utf8.decode(current.bytes);
 	} catch {
 		return Object.freeze({
 			kind: 'unreadable',
-			error: TableError.InvalidUtf8({ path }).error,
+			error: TableError.InvalidUtf8({ path, sha256: current.sha256 }).error,
 		});
 	}
 	const file: TextCapture = Object.freeze({
 		path,
 		sha256: current.sha256,
-		source,
+		text,
 	});
-	const { data: parsed, error: parseRefusal } = parseCanonicalDocument(source);
+	const { data: parsed, error: parseRefusal } = parseCanonicalDocument(text);
 	if (parseRefusal !== null)
 		return Object.freeze({ kind: 'unsupported', file, refusal: parseRefusal });
 	const { data: canonical, error: formatRefusal } = formatCanonicalDocument(
@@ -315,7 +315,7 @@ async function readRow<TFields>(
 			file,
 			refusal: formatRefusal,
 		});
-	const reading = row.inspect(source);
+	const reading = row.inspect(text);
 	if (reading.parseError !== undefined || reading.issues.length > 0)
 		return Object.freeze({ kind: 'invalid', file, reading });
 	return Object.freeze({
@@ -400,7 +400,7 @@ function createRowEditor<TFields>(
 		path,
 		baseline: initial,
 		document: initial.document,
-		source: initial.canonical,
+		text: initial.canonical,
 		reading: row.inspect(initial.canonical),
 		isDirty: false,
 		observation: first,
@@ -454,11 +454,11 @@ function createRowEditor<TFields>(
 
 	/** Make `revision` the baseline and the local document. */
 	function follow(revision: RowRevision): Partial<State> {
-		const same = revision.canonical === state.source;
+		const same = revision.canonical === state.text;
 		return {
 			baseline: revision,
 			document: same ? state.document : revision.document,
-			source: revision.canonical,
+			text: revision.canonical,
 			reading: same ? state.reading : row.inspect(revision.canonical),
 			isDirty: false,
 		};
@@ -515,7 +515,7 @@ function createRowEditor<TFields>(
 		// the file already holds that content, it is no longer unsaved. That
 		// is a content fact: it does not say which writer put it there, so an
 		// unconfirmed `lastSave` stays unconfirmed.
-		if (!state.isDirty || revision.canonical === state.source) {
+		if (!state.isDirty || revision.canonical === state.text) {
 			update({ ...follow(revision), observation });
 			return;
 		}
@@ -543,7 +543,7 @@ function createRowEditor<TFields>(
 		);
 		if (formatRefusal !== null)
 			return RowEditorError.Unrepresentable({ path, refusal: formatRefusal });
-		if (formatted === state.source) return Ok(undefined);
+		if (formatted === state.text) return Ok(undefined);
 		// Reading the canonical text back gives the editor its own frozen copy,
 		// exactly the document a save writes.
 		const { data: owned, error: parseRefusal } =
@@ -552,7 +552,7 @@ function createRowEditor<TFields>(
 			return RowEditorError.Unrepresentable({ path, refusal: parseRefusal });
 		update({
 			document: freezeDeep(owned),
-			source: formatted,
+			text: formatted,
 			reading: row.inspect(formatted),
 			isDirty: formatted !== state.baseline.canonical,
 		});
@@ -580,7 +580,7 @@ function createRowEditor<TFields>(
 		const attempt: RowSaveAttempt = Object.freeze({
 			path,
 			document: state.document,
-			source: state.source,
+			text: state.text,
 		});
 		// Admission is synchronous and recorded before anyone hears of it: a
 		// second call, a disposal, and later input all see it at once. Its place
@@ -614,7 +614,7 @@ function createRowEditor<TFields>(
 		let applied: Result<undefined, FileError>;
 		try {
 			// Canonical text is well formed, so these bytes decode back to it.
-			const bytes = ownBytes(attempt.source);
+			const bytes = ownBytes(attempt.text);
 			sha256 = await hashBytes(bytes);
 			applied = await applyOne(
 				row.storage,
@@ -637,12 +637,12 @@ function createRowEditor<TFields>(
 			const receipt: RowRevision = Object.freeze({
 				...attempt,
 				sha256,
-				canonical: attempt.source,
+				canonical: attempt.text,
 			});
 			outcome = Object.freeze({ kind: 'saved', receipt });
 			update({
 				baseline: receipt,
-				isDirty: state.source !== receipt.canonical,
+				isDirty: state.text !== receipt.canonical,
 				saving: undefined,
 				lastSave: outcome,
 			});
@@ -722,7 +722,7 @@ function createRowEditor<TFields>(
 		 * reviewed canonical content: another tool may have changed its
 		 * comments or quoting since, but not its content. The editor then
 		 * follows its own latest revision. Only `path` and `canonical` are read
-		 * from `reviewed`, so a supplied document, source, or hash never enters
+		 * from `reviewed`, so a supplied document, text, or hash never enters
 		 * the editor. This chooses the reviewed current content; it never
 		 * restores history.
 		 */

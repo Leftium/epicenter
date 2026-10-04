@@ -31,9 +31,9 @@ for (const fixture of cases) {
 		if (result.kind === 'merged') {
 			expect(
 				mergeKv({
-					base: result.source,
-					ours: result.source,
-					theirs: result.source,
+					base: result.text,
+					ours: result.text,
+					theirs: result.text,
 				}),
 			).toEqual(result);
 		}

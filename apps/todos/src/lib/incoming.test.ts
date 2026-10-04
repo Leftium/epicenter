@@ -27,7 +27,7 @@ import './svelte-modules.test-support.js';
 import { afterAll, afterEach, beforeAll, expect, test } from 'bun:test';
 import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { openFolder } from '@epicenter/folder/browser';
+import { inspectRow, openFolder } from '@epicenter/folder/browser';
 import { expectErr, expectOk } from 'wellcrafted/testing';
 import {
 	browserStorage,
@@ -444,7 +444,7 @@ test('a file still opening when recovery starts is held with the rest: typing in
 	const saved = (await text(todos, MILK))!;
 	expect(saved).not.toBe(before);
 	expect(saved).not.toContain('Buy milk"');
-	expect(todos.folder.tables.todos.inspect(saved)).toMatchObject({
+	expect(inspectRow(todosDefinition.tables.todos, saved)).toMatchObject({
 		fields: { title: 'Buy oat milk', done: true },
 		body: 'typed while recovering\n',
 	});

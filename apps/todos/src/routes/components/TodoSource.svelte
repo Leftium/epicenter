@@ -4,7 +4,8 @@
 	import { toast } from '@epicenter/ui/sonner';
 	import { Textarea } from '@epicenter/ui/textarea';
 	import ArrowLeftIcon from '@lucide/svelte/icons/arrow-left';
-	import { rowStemOf } from '@epicenter/folder';
+	import { inspectRow, rowStemOf } from '@epicenter/folder';
+	import { todosDefinition } from '$lib/definition.js';
 	import type { TextFileEditor } from '$lib/editor.svelte.js';
 	import { withFileNewlines } from '$lib/files.js';
 	import type { Todos } from '$lib/todos.svelte.js';
@@ -31,7 +32,7 @@
 	 * diagnostic below describes this buffer, saved or not, and never the file
 	 * as it was last saved.
 	 */
-	const draft = $derived(todos.folder.tables.todos.inspect(editor.buffer));
+	const draft = $derived(inspectRow(todosDefinition.tables.todos, editor.buffer));
 	const stem = $derived(rowStemOf(todos.folder.tables.todos.name, editor.path) ?? '');
 	const title = $derived(
 		typeof draft.fields.title === 'string' && draft.fields.title.trim() !== ''

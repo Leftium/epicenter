@@ -3,8 +3,8 @@
 - **Status:** Proposed
 - **Date:** 2026-09-30
 - **Relates:** [ADR-0480](0480-file-tables-own-only-their-markdown-row-files.md) proposes single-file rows; [ADR-0477](0477-file-folder-operations-tolerate-repairable-layout-disorder.md) bounds native layout guarantees.
-- **Implementation:** filename-based rows and byte-preserving single-row rename in `@epicenter/folder` and Todos.
-- **Unbuilt:** literal destination naming without portability conformance, removal of filename-based application admission, and migration to the captured content contract in ADR-0462.
+- **Implementation:** literal stem addressing with no portable-name rule, stem-addressed byte-preserving `rename(stem, nextStem, options)`, and the ADR-0462 snapshot contract in `@epicenter/folder`, consumed by Todos, Whispering, Honeycrisp, Capture, and Vocab.
+- **Unbuilt:** nothing in `@epicenter/folder`. Reference repair stays a separate application capability, as below.
 
 ## Context
 
@@ -74,10 +74,12 @@ There is no additional portable-name conformance rule for creation or rename.
 A readable stem may become less descriptive as its content changes.
 
 **A row's current address is its table and stem; rename changes that address.**
-`table.rename(entry, nextStem)` moves only the captured Markdown file, preserving
-its bytes. It checks the captured row version and an absent destination. A
-destination collision refuses the operation. Title edits do not invoke rename.
-No alias silently preserves the old address.
+`table.rename(stem, nextStem, options)` moves only the Markdown file, preserving
+its bytes. With `{ expectedSha256 }` it checks the reviewed bytes; with `{}` it
+moves whatever the row holds (ADR-0464). It checks an absent destination, and a
+collision refuses the operation. Renaming to the current stem is `InvalidPath`,
+since that move would check nothing. Title edits do not invoke rename. No alias
+silently preserves the old address.
 
 ```text
 move recordings/r123.md to recordings/r456.md

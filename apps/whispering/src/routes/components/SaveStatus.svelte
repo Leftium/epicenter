@@ -38,7 +38,7 @@
 	{:else if editor.saveState.kind === 'conflict'}
 		<span class="text-destructive" role="alert">
 			{editor.saveState.current
-				? editor.saveState.current.source === editor.buffer
+				? editor.saveState.current.text === editor.buffer
 					? 'This file changed after it was read, and now holds exactly your text. Which save put it there is not known.'
 					: 'This file changed elsewhere. Your edits are kept here and not saved.'
 				: 'This file was removed elsewhere. Your edits are kept here and not saved.'}
@@ -74,6 +74,6 @@
 {#if editor.saveState.kind === 'conflict' && editor.saveState.current && showSaved}
 	<div class="border-b bg-muted/40 px-4 py-2" data-testid="conflict-saved-version">
 		<p class="mb-1 text-xs font-medium">Saved version in the folder now</p>
-		<pre class="max-h-48 overflow-auto rounded border bg-background p-2 font-mono text-xs whitespace-pre-wrap">{editor.saveState.current.source}</pre>
+		<pre class="max-h-48 overflow-auto rounded border bg-background p-2 font-mono text-xs whitespace-pre-wrap">{editor.saveState.current.text}</pre>
 	</div>
 {/if}

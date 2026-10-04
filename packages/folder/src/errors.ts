@@ -133,11 +133,18 @@ export type ApplyError = InferErrors<typeof ApplyError>;
 
 export const MoveError = defineErrors({
 	/**
-	 * A move is two steps: the captured bytes are put at `to`, then `from`
+	 * A move is two steps: the bytes at `from` are put at `to`, then `from`
 	 * is removed. A native directory and browser OPFS storage both move this
-	 * way. The first step landed and the second failed, so both paths hold
-	 * the captured bytes. Nothing was rolled back. `moved` is the capture of
-	 * the bytes now at `to`; `cause` is why `from` was not removed.
+	 * way. The first step landed and the second failed, so `to` was written
+	 * and `from` is still there. Nothing was rolled back. `cause` is why
+	 * `from` was not removed.
+	 *
+	 * `moved` is `to` with the SHA-256 the move was guarded by, and
+	 * `undefined` when it was not: an unguarded move never learned which bytes
+	 * it carried, so it names no hash. It is a receipt conditioned on that
+	 * baseline, never a read of `to`: another program may have written there
+	 * since, and a native directory checks the source only as well as another
+	 * program lets it. Read `to` to learn what it holds now.
 	 */
 	SourceNotRemoved: ({
 		from,
@@ -147,7 +154,7 @@ export const MoveError = defineErrors({
 	}: {
 		from: string;
 		to: string;
-		moved: FileCapture;
+		moved: FileCapture | undefined;
 		cause: FileError;
 	}) => ({
 		message: `The file reached '${to}', but '${from}' could not be removed, so both paths hold it: ${cause.message}`,
@@ -158,6 +165,14 @@ export const MoveError = defineErrors({
 	}),
 });
 export type MoveError = InferErrors<typeof MoveError>;
+
+/**
+ * A guarded move's `SourceNotRemoved` always names `moved`: `to` with the
+ * SHA-256 the caller reviewed and guarded the move by. It is that baseline
+ * at the new address, not a verification of the bytes at `to`; read `to` to
+ * learn what it holds.
+ */
+export type CapturedMoveError = MoveError & { readonly moved: FileCapture };
 
 /**
  * Failures of reading a row or `kv.json` as text and of preparing a
@@ -189,9 +204,14 @@ export const TableError = defineErrors({
 		path,
 		reason,
 	}),
-	InvalidUtf8: ({ path }: { path: string }) => ({
+	/**
+	 * The file was read, but its bytes are not UTF-8. `sha256` is the hash of
+	 * the bytes read, so a repair can be guarded by them.
+	 */
+	InvalidUtf8: ({ path, sha256 }: { path: string; sha256: string }) => ({
 		message: `'${path}' is not valid UTF-8 text`,
 		path,
+		sha256,
 	}),
 });
 export type TableError = InferErrors<typeof TableError>;
@@ -221,10 +241,10 @@ export type TableUpdateError =
 /** Complete source publication needs no parsing or field preparation. */
 export type TableReplaceError = FileError;
 
-/** Moving a captured row preserves the file move's failures. */
+/** Moving a row preserves the file move's failures. */
 export type TableRenameError = FileError | MoveError;
 
-/** Removing a captured row preserves the storage operation's failures. */
+/** Removing a row preserves the storage operation's failures. */
 export type TableDeleteError = FileError;
 
 /** Every failure a table write can report. */

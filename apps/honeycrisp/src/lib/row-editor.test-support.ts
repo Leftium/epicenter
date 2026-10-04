@@ -49,7 +49,9 @@ function parse(source: string): Document | undefined {
 		if (colon < 0) return undefined;
 		const rawKey = line.slice(0, colon).trim();
 		const rawValue = line.slice(colon + 1).trim();
-		const key = rawKey.startsWith('"') ? (JSON.parse(rawKey) as string) : rawKey;
+		const key = rawKey.startsWith('"')
+			? (JSON.parse(rawKey) as string)
+			: rawKey;
 		let value: unknown;
 		try {
 			value = JSON.parse(rawValue);
@@ -113,13 +115,13 @@ export async function openFakeRowEditor<TFields>({
 			reading.parseError !== undefined ||
 			reading.issues.length > 0
 		)
-			return { kind: 'invalid', file: { path, sha256, source }, reading };
+			return { kind: 'invalid', file: { path, sha256, text: source }, reading };
 		return {
 			kind: 'present',
 			revision: {
 				path,
 				sha256,
-				source,
+				text: source,
 				document,
 				canonical: format(document, declared),
 			},
@@ -130,7 +132,10 @@ export async function openFakeRowEditor<TFields>({
 	if (first.kind === 'missing') return FileError.NotFound({ path });
 	if (first.kind !== 'present')
 		return first.kind === 'invalid'
-			? RowEditorError.InvalidSource({ file: first.file, reading: first.reading })
+			? RowEditorError.InvalidSource({
+					file: first.file,
+					reading: first.reading,
+				})
 			: FileError.NotFound({ path });
 
 	type State = RowEditorState<TFields>;
@@ -138,7 +143,7 @@ export async function openFakeRowEditor<TFields>({
 		path,
 		baseline: first.revision,
 		document: first.revision.document,
-		source: first.revision.canonical,
+		text: first.revision.canonical,
 		reading: inspect(first.revision.canonical),
 		isDirty: false,
 		observation: first,
@@ -159,7 +164,7 @@ export async function openFakeRowEditor<TFields>({
 		return {
 			baseline: revision,
 			document: revision.document,
-			source: revision.canonical,
+			text: revision.canonical,
 			reading: inspect(revision.canonical),
 			isDirty: false,
 		};
@@ -174,7 +179,7 @@ export async function openFakeRowEditor<TFields>({
 		const { revision } = observation;
 		if (revision.sha256 === state.baseline.sha256)
 			return update({ observation });
-		if (!state.isDirty || revision.canonical === state.source)
+		if (!state.isDirty || revision.canonical === state.text)
 			return update({ ...follow(revision), observation });
 		update({ observation });
 	}
@@ -201,10 +206,10 @@ export async function openFakeRowEditor<TFields>({
 				body: change.body ?? state.document.body,
 			};
 			const source = format(document, declared);
-			if (source === state.source) return Ok(undefined);
+			if (source === state.text) return Ok(undefined);
 			update({
 				document,
-				source,
+				text: source,
 				reading: inspect(source),
 				isDirty: source !== state.baseline.canonical,
 			});
@@ -219,26 +224,26 @@ export async function openFakeRowEditor<TFields>({
 			const attempt: RowSaveAttempt = {
 				path,
 				document: state.document,
-				source: state.source,
+				text: state.text,
 			};
 			// Settles after the outcome is delivered, so disposal waits for it.
 			const settled = Promise.withResolvers<void>();
 			admitted = settled.promise;
 			update({ saving: attempt });
-			const sha256 = await sha(attempt.source);
-			const { error } = await file.write(attempt.source);
+			const sha256 = await sha(attempt.text);
+			const { error } = await file.write(attempt.text);
 			admitted = undefined;
 			let outcome: RowSaveOutcome;
 			if (error === undefined) {
 				const receipt: RowRevision = {
 					...attempt,
 					sha256,
-					canonical: attempt.source,
+					canonical: attempt.text,
 				};
 				outcome = { kind: 'saved', receipt };
 				update({
 					baseline: receipt,
-					isDirty: state.source !== receipt.canonical,
+					isDirty: state.text !== receipt.canonical,
 					saving: undefined,
 					lastSave: outcome,
 				});
@@ -258,8 +263,7 @@ export async function openFakeRowEditor<TFields>({
 						: {
 								kind: 'failed',
 								attempt,
-								error: FileError.Io({ path, operation: 'write', cause })
-									.error,
+								error: FileError.Io({ path, operation: 'write', cause }).error,
 							};
 				update({ saving: undefined, lastSave: outcome });
 			}

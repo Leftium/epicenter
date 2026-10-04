@@ -19,7 +19,7 @@ export async function mountNotes(
 	const edit = edits.files.edit({
 		path: NOTES_PATH,
 		sha256: read.data.sha256,
-		source: new TextDecoder().decode(read.data.bytes),
+		text: new TextDecoder().decode(read.data.bytes),
 	});
 	const text = h('textarea', {
 		rows: 3,

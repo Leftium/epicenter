@@ -44,7 +44,7 @@
 				external.revision.canonical !== reviewed.revision.canonical),
 	);
 	const diff = $derived(
-		reviewed === undefined ? [] : diffLines(reviewed.revision.canonical, row.source),
+		reviewed === undefined ? [] : diffLines(reviewed.revision.canonical, row.text),
 	);
 
 	function review() {
@@ -53,7 +53,7 @@
 
 	async function copyDraft() {
 		try {
-			await navigator.clipboard.writeText(row.source);
+			await navigator.clipboard.writeText(row.text);
 			toast.success('Copied the draft');
 		} catch {
 			toast.error('Could not copy the draft', {
@@ -98,7 +98,7 @@
 		<span class="text-muted-foreground">
 			{session.pathChange?.kind === 'move' ? 'Renaming…' : session.pathChange ? 'Deleting…' : 'Saving…'}
 		</span>
-		{#if row.saving && row.source !== row.saving.source}
+		{#if row.saving && row.text !== row.saving.text}
 			<span class="text-muted-foreground">Newer typing will be saved next.</span>
 		{/if}
 	{:else if stuck}

@@ -37,8 +37,15 @@ import type {
 	FileTable,
 	FolderFiles,
 	TableSnapshot,
+	TableWriteOptions,
+	TableWriteReceipt,
 } from '@epicenter/folder';
-import { FileError, hashBytes, TableError } from '@epicenter/folder';
+import {
+	FileError,
+	hashBytes,
+	inspectRow,
+	TableError,
+} from '@epicenter/folder';
 import { openFolder } from '@epicenter/folder/browser';
 import { Err, Ok, type Result } from 'wellcrafted/result';
 import { expectOk } from 'wellcrafted/testing';
@@ -53,7 +60,7 @@ const { createRowSourceEditor, createTextFileEditor } = await import(
 
 const encoder = new TextEncoder();
 
-// The real table's interpreter, so a fake entry reads exactly as a saved one.
+// A real folder, for the tests that save through one.
 const folder = expectOk(
 	await openFolder({
 		id: 'todos-editor-test',
@@ -62,32 +69,52 @@ const folder = expectOk(
 	}),
 );
 afterAll(() => folder.close());
-const { inspect } = folder.tables.todos;
+// The table's interpreter, so a fake entry reads exactly as a saved one.
+const inspect = (text: string) =>
+	inspectRow(todosDefinition.tables.todos, text);
+
+/** Every source a test hashed, by hash: a row save names its baseline only by hash. */
+const hashed = new Map<string, string>();
 
 async function entryFor(source: string): Promise<TableSnapshot<TodoFields>> {
+	const sha256 = await hashBytes(encoder.encode(source));
+	hashed.set(sha256, source);
 	return {
 		path: 'todos/milk.md',
 		stem: 'milk',
-		source,
-		sha256: await hashBytes(encoder.encode(source)),
+		text: source,
+		sha256,
 		...inspect(source),
 	};
 }
 
+/** The receipt a row save returns: the submitted bytes' address, text, and hash. */
+async function receiptFor(source: string): Promise<TableWriteReceipt> {
+	const { stem, path, sha256 } = await entryFor(source);
+	return { stem, path, text: source, sha256 };
+}
+
+/** The source a row save's baseline names, by its expected hash. */
+function baselineOf(options: TableWriteOptions | undefined) {
+	return hashed.get(options?.expectedSha256 ?? '');
+}
+
 function recordingTable(release?: Promise<void>) {
-	const writes: { baseline: string; source: string }[] = [];
+	const writes: { baseline: string | undefined; source: string }[] = [];
+	const stems: string[] = [];
 	const table = {
 		name: 'todos',
-		async replace(baseline: SavedText, source: string) {
-			writes.push({ baseline: baseline.source, source });
+		async replace(stem: string, source: string, options?: TableWriteOptions) {
+			stems.push(stem);
+			writes.push({ baseline: baselineOf(options), source });
 			await release;
-			return { data: await entryFor(source), error: null };
+			return Ok(await receiptFor(source));
 		},
 		async get() {
 			return { data: undefined, error: null };
 		},
 	} as unknown as FileTable<TodoFields>;
-	return { table, writes };
+	return { table, writes, stems };
 }
 
 test('a row source editor saves text that does not parse, and its diagnostics describe the buffer', async () => {
@@ -108,7 +135,7 @@ test('a row source editor saves text that does not parse, and its diagnostics de
 		'Unresolved alias',
 	);
 	// The saved file still reads as it was saved: the two are different text.
-	expect(inspect(editor.baseline.source).fields.title).toBe('Milk');
+	expect(inspect(editor.baseline.text).fields.title).toBe('Milk');
 
 	// A field issue leaves the other fields readable, and is the buffer's own.
 	editor.input(original.replace('done: false', 'done: soon'));
@@ -116,13 +143,13 @@ test('a row source editor saves text that does not parse, and its diagnostics de
 	expect(inspect(editor.buffer).issues.map((issue) => issue.field)).toEqual([
 		'done',
 	]);
-	expect(inspect(editor.baseline.source).issues).toEqual([]);
+	expect(inspect(editor.baseline.text).issues).toEqual([]);
 
 	// Malformed text saves, and the saved capture is the next baseline.
 	editor.input(broken);
 	await editor.save();
 	expect(writes).toEqual([{ baseline: original, source: broken }]);
-	expect(editor.baseline.source).toBe(broken);
+	expect(editor.baseline.text).toBe(broken);
 	expect(editor.saveState).toEqual({ kind: 'saved' });
 	expect(editor.dirty).toBe(false);
 	editor.dispose();
@@ -147,7 +174,7 @@ test('typing during a save stays dirty after the earlier generation is accepted'
 	release();
 	await saving;
 	expect(writes[0]?.source).toBe(`${original}A\n`);
-	expect(editor.baseline.source).toBe(`${original}A\n`);
+	expect(editor.baseline.text).toBe(`${original}A\n`);
 	expect(editor.buffer).toBe(`${original}A and B\n`);
 	expect(editor.dirty).toBe(true);
 	editor.dispose();
@@ -157,11 +184,11 @@ test('a same-byte observation becomes the baseline without replacing typing, and
 	const { table, writes } = recordingTable();
 	const original = await entryFor('---\ntitle: Milk\ndone: false\n---\n');
 	const editor = createRowSourceEditor(table, original, () => {});
-	const mine = `${original.source}mine\n`;
+	const mine = `${original.text}mine\n`;
 	editor.input(mine);
 
 	// A later listing of the same bytes: a new observation of the same file.
-	const again = await entryFor(original.source);
+	const again = await entryFor(original.text);
 	editor.observe(again);
 	expect(editor.baseline).toBe(again);
 	expect(editor.buffer).toBe(mine);
@@ -169,7 +196,7 @@ test('a same-byte observation becomes the baseline without replacing typing, and
 
 	// Another writer's bytes are not adopted under unsaved typing, so the next
 	// save is still checked against the version the typing started from.
-	editor.observe(await entryFor(`${original.source}theirs\n`));
+	editor.observe(await entryFor(`${original.text}theirs\n`));
 	expect(editor.baseline).toBe(again);
 	expect(editor.buffer).toBe(mine);
 
@@ -178,7 +205,7 @@ test('a same-byte observation becomes the baseline without replacing typing, and
 	expect(editor.baseline).toBe(again);
 
 	await editor.save();
-	expect(writes).toEqual([{ baseline: original.source, source: mine }]);
+	expect(writes).toEqual([{ baseline: original.text, source: mine }]);
 	editor.dispose();
 });
 
@@ -187,11 +214,11 @@ test('a same-byte observation becomes the baseline without replacing typing, and
 // ============================================================================
 
 test('a move drains the admitted save, holds later saves, and resumes them at the adopted path', async () => {
-	const { table, writes } = recordingTable();
+	const { table, writes, stems } = recordingTable();
 	const original = await entryFor('---\ntitle: Milk\ndone: false\n---\n');
 	const editor = createRowSourceEditor(table, original, () => {});
-	const first = `${original.source}first\n`;
-	const second = `${original.source}second\n`;
+	const first = `${original.text}first\n`;
+	const second = `${original.text}second\n`;
 	const run: { settled?: SavedText; answer?: () => void } = {};
 
 	editor.input(first);
@@ -204,8 +231,8 @@ test('a move drains the admitted save, holds later saves, and resumes them at th
 	});
 	while (run.answer === undefined) await Bun.sleep(1);
 	// The move ran against the file the drained save was accepted as.
-	expect(run.settled?.source).toBe(first);
-	expect(writes).toEqual([{ baseline: original.source, source: first }]);
+	expect(run.settled?.text).toBe(first);
+	expect(writes).toEqual([{ baseline: original.text, source: first }]);
 
 	editor.input(second);
 	await editor.save();
@@ -228,6 +255,8 @@ test('a move drains the admitted save, holds later saves, and resumes them at th
 	await settling;
 	expect(settled).toBe(true);
 	expect(writes[1]).toEqual({ baseline: first, source: second });
+	// The resumed save addresses the row at the adopted path.
+	expect(stems).toEqual(['milk', 'oat']);
 	editor.dispose();
 });
 
@@ -244,7 +273,7 @@ test('a move does not run while the input cannot be saved, and a failed move ado
 		return Err('The destination is taken.');
 	};
 
-	editor.input(`${original.source}mine\n`);
+	editor.input(`${original.text}mine\n`);
 	expect(await editor.move(run)).toBeUndefined();
 	expect(runs).toBe(0);
 	expect(editor.saveState.kind).toBe('conflict');
@@ -269,17 +298,18 @@ type TodoRead = Awaited<ReturnType<FileTable<TodoFields>['get']>>;
  * conflicts, and the fresh read for review answers whatever `saved` is now.
  */
 function conflictingTable(theirs: TableSnapshot<TodoFields>, saved: TodoRead) {
-	const writes: { baseline: string; source: string }[] = [];
+	const writes: { baseline: string | undefined; source: string }[] = [];
 	const state = { saved };
 	const table = {
 		name: 'todos',
-		async replace(baseline: SavedText, source: string) {
-			writes.push({ baseline: baseline.source, source });
-			return baseline.sha256 === theirs.sha256
-				? Ok(await entryFor(source))
+		async replace(_stem: string, source: string, options?: TableWriteOptions) {
+			writes.push({ baseline: baselineOf(options), source });
+			const expectedSha256 = options?.expectedSha256 ?? '';
+			return expectedSha256 === theirs.sha256
+				? Ok(await receiptFor(source))
 				: FileError.Conflict({
-						path: baseline.path,
-						expectedSha256: baseline.sha256,
+						path: theirs.path,
+						expectedSha256,
 						actualSha256: theirs.sha256,
 					});
 		},
@@ -290,9 +320,9 @@ function conflictingTable(theirs: TableSnapshot<TodoFields>, saved: TodoRead) {
 
 test('a conflict whose saved row cannot be read fails the save, and a retry repeats it', async () => {
 	const original = await entryFor('---\ntitle: Milk\ndone: false\n---\n');
-	const theirs = await entryFor(`${original.source}theirs\n`);
-	const mine = `${original.source}mine\n`;
-	const attempt = { baseline: original.source, source: mine };
+	const theirs = await entryFor(`${original.text}theirs\n`);
+	const mine = `${original.text}mine\n`;
+	const attempt = { baseline: original.text, source: mine };
 	const { table, writes, state } = conflictingTable(
 		theirs,
 		FileError.Io({
@@ -316,7 +346,10 @@ test('a conflict whose saved row cannot be read fails the save, and a retry repe
 	expect(editor.buffer).toBe(mine);
 	expect(writes).toEqual([attempt]);
 
-	state.saved = TableError.InvalidUtf8({ path: original.path });
+	state.saved = TableError.InvalidUtf8({
+		path: original.path,
+		sha256: original.sha256,
+	});
 	await editor.retry();
 	expect(editor.saveState).toEqual({
 		kind: 'failed',
@@ -333,7 +366,7 @@ test('a conflict whose saved row cannot be read fails the save, and a retry repe
 	expect(writes).toEqual([attempt, attempt, attempt]);
 
 	await editor.keepMine();
-	expect(writes[3]).toEqual({ baseline: theirs.source, source: mine });
+	expect(writes[3]).toEqual({ baseline: theirs.text, source: mine });
 	expect(editor.saveState.kind).toBe('saved');
 	expect(editor.dirty).toBe(false);
 	editor.dispose();
@@ -347,7 +380,7 @@ test('a conflicting row source reads as removed only when its file is absent', a
 	);
 	const editor = createRowSourceEditor(table, original, () => {});
 
-	editor.input(`${original.source}mine\n`);
+	editor.input(`${original.text}mine\n`);
 	await editor.save();
 	expect(editor.saveState).toEqual({
 		kind: 'failed',
@@ -360,7 +393,7 @@ test('a conflicting row source reads as removed only when its file is absent', a
 		kind: 'conflict',
 		current: undefined,
 	});
-	expect(editor.buffer).toBe(`${original.source}mine\n`);
+	expect(editor.buffer).toBe(`${original.text}mine\n`);
 	editor.dispose();
 });
 
@@ -381,7 +414,7 @@ test('a raw save replaces the captured baseline and adopts the capture the folde
 	} as unknown as FolderFiles;
 	const file = {
 		path: 'notes.txt',
-		source: 'saved',
+		text: 'saved',
 		sha256: await hashBytes(encoder.encode('saved')),
 	};
 	const editor = createTextFileEditor(files, file, () => {});
@@ -392,7 +425,7 @@ test('a raw save replaces the captured baseline and adopts the capture the folde
 	const first = await hashBytes(encoder.encode('first'));
 	expect(editor.baseline).toEqual({
 		path: 'notes.txt',
-		source: 'first',
+		text: 'first',
 		sha256: first,
 	});
 	expect(editor.saveState).toEqual({ kind: 'saved' });
@@ -427,7 +460,7 @@ for (const kind of ['row source', 'raw file'] as const)
 					)
 				: createTextFileEditor(
 						folder.files,
-						{ ...created, source: original },
+						{ ...created, text: original },
 						onSaved,
 					);
 
@@ -439,7 +472,7 @@ for (const kind of ['row source', 'raw file'] as const)
 		await editor.save();
 		const bytes = expectOk(await folder.files.read(path)).bytes;
 		expect(bytes).toEqual(encoder.encode(stored));
-		expect(editor.baseline.source).toBe(stored);
+		expect(editor.baseline.text).toBe(stored);
 		expect(editor.baseline.sha256).toBe(await hashBytes(bytes));
 		expect(editor.buffer).toBe(stored);
 		expect(editor.dirty).toBe(false);
@@ -473,7 +506,7 @@ test('typing during a save whose text encoding changed stays as typed, and settl
 	editor.input(`${original}a\uD800b`);
 	release();
 	await saving;
-	expect(editor.baseline.source).toBe(`${original}a�`);
+	expect(editor.baseline.text).toBe(`${original}a�`);
 	// The newer generation is not the text that was sent: it is left alone.
 	expect(editor.buffer).toBe(`${original}a\uD800b`);
 	expect(editor.dirty).toBe(true);
@@ -541,7 +574,7 @@ for (const [name, saved, message] of unreadable)
 	test(`a raw conflict review that reads ${name} fails the save and keeps the draft`, async () => {
 		const original = encoder.encode('saved');
 		const sha256 = await hashBytes(original);
-		const file = { path: 'notes.txt', source: 'saved', sha256 };
+		const file = { path: 'notes.txt', text: 'saved', sha256 };
 		const { files, writes } = conflictingFiles(await saved());
 		const editor = createTextFileEditor(files, file, () => {});
 		const attempt = {
@@ -584,7 +617,7 @@ async function countingStore(kind: 'raw file' | 'row source') {
 	};
 	const capture = async (source: string) => ({
 		path,
-		source,
+		text: source,
 		sha256: await hashBytes(encoder.encode(source)),
 	});
 	async function write(baseline: SavedText, source: string) {
@@ -620,7 +653,7 @@ async function countingStore(kind: 'raw file' | 'row source') {
 					{
 						// A raw save checks only the capture's hash.
 						replace: (file: FileCapture, content: Uint8Array) =>
-							write({ ...file, source: '' }, new TextDecoder().decode(content)),
+							write({ ...file, text: '' }, new TextDecoder().decode(content)),
 						read: async () => fileRead(encoder.encode(store.stored)),
 					} as unknown as FolderFiles,
 					original,
@@ -629,7 +662,20 @@ async function countingStore(kind: 'raw file' | 'row source') {
 			: createRowSourceEditor(
 					{
 						name: 'todos',
-						replace: write,
+						// A row save names its baseline by hash alone.
+						replace: (
+							stem: string,
+							source: string,
+							options?: TableWriteOptions,
+						) =>
+							write(
+								{
+									path: `todos/${stem}.md`,
+									sha256: options?.expectedSha256 ?? '',
+									text: '',
+								},
+								source,
+							),
 						get: async () =>
 							Ok({ ...(await capture(store.stored)), stem: 'milk' }),
 					} as unknown as FileTable<TodoFields>,
@@ -677,7 +723,7 @@ for (const kind of ['raw file', 'row source'] as const) {
 		expect(store.writes).toEqual(['mine', 'mine and more']);
 		expect(editor.saveState).toMatchObject({
 			kind: 'conflict',
-			current: { source: 'mine' },
+			current: { text: 'mine' },
 		});
 		expect(editor.buffer).toBe('mine and more');
 		await editor.keepMine();
@@ -747,7 +793,7 @@ test('a raw conflict reads as removed only when the file is absent', async () =>
 	const { files } = conflictingFiles(FileError.NotFound({ path: 'notes.txt' }));
 	const editor = createTextFileEditor(
 		files,
-		{ path: 'notes.txt', source: 'saved', sha256 },
+		{ path: 'notes.txt', text: 'saved', sha256 },
 		() => {},
 	);
 
@@ -766,7 +812,7 @@ test('a retry after a failed raw review reaches the saved file for the conflict 
 	const { files, state } = conflictingFiles(FileError.Closed());
 	const editor = createTextFileEditor(
 		files,
-		{ path: 'notes.txt', source: 'saved', sha256 },
+		{ path: 'notes.txt', text: 'saved', sha256 },
 		() => {},
 	);
 
@@ -779,7 +825,7 @@ test('a retry after a failed raw review reaches the saved file for the conflict 
 	await editor.retry();
 	expect(editor.saveState).toMatchObject({
 		kind: 'conflict',
-		current: { path: 'notes.txt', source: 'theirs' },
+		current: { path: 'notes.txt', text: 'theirs' },
 	});
 	expect(editor.buffer).toBe('mine');
 

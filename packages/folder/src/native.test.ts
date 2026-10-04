@@ -21,6 +21,7 @@ import {
 	type Folder,
 	type FolderDefinition,
 	field,
+	inspectRow,
 	openFolder,
 } from './bun.js';
 import { hashBytes } from './capture.js';
@@ -122,7 +123,7 @@ describe('native folder', () => {
 			});
 		expect(createError).toBeNull();
 		expect(await readFile(join(root, 'todos/walk.md'), 'utf8')).toBe(
-			created!.source,
+			created!.text,
 		);
 		await settled(folder);
 		expect(await git(root, 'log', '--format=%s')).toBe('Add todos/walk.md');
@@ -131,16 +132,17 @@ describe('native folder', () => {
 		// An external edit is preserved when a command updates current content.
 		await writeFile(
 			join(root, 'todos/walk.md'),
-			created!.source.replace('Walk', 'Run'),
+			created!.text.replace('Walk', 'Run'),
 		);
 		const current = expectOk(await folder.tables.todos.get('walk'))!;
 		expect(current.fields.title).toBe('Run');
 		const { data: done, error: updateError } = await folder.tables.todos.update(
 			'walk',
 			{ fields: { done: true } },
+			{},
 		);
 		expect(updateError).toBeNull();
-		expect(done!.fields).toEqual({
+		expect(inspectRow(definition.tables.todos, done!.text).fields).toEqual({
 			title: 'Run',
 			done: true,
 		});
@@ -259,7 +261,9 @@ describe('native folder', () => {
 			fields: { title: 'Q', done: false },
 		});
 		const plan = expectOk(await folder.tables.todos.get('Plan'))!;
-		const moved = await folder.tables.todos.rename(plan, 'PLAN');
+		const moved = await folder.tables.todos.rename('Plan', 'PLAN', {
+			expectedSha256: plan.sha256,
+		});
 		if (oneFile) {
 			expect(expectErr(other)).toMatchObject({
 				name: 'Exists',
@@ -268,7 +272,7 @@ describe('native folder', () => {
 			expect(expectErr(moved).name).toBe('Exists');
 			expect(await readdir(join(root, 'todos'))).toEqual(['Plan.md']);
 			expect(await readFile(join(root, 'todos/Plan.md'), 'utf8')).toBe(
-				plan.source,
+				plan.text,
 			);
 		} else {
 			expectOk(other);
@@ -298,13 +302,19 @@ describe('native folder', () => {
 			);
 			expect(created.stem).toBe(stem);
 			expect(await readFile(join(root, 'todos', `${stem}.md`), 'utf8')).toBe(
-				created.source,
+				created.text,
 			);
-			expect(expectOk(await folder.tables.todos.get(stem))).toEqual(created);
+			expect(expectOk(await folder.tables.todos.get(stem))).toEqual({
+				...created,
+				...inspectRow(definition.tables.todos, created.text),
+			});
 			const updated = expectOk(
-				await folder.tables.todos.update(stem, { fields: { done: true } }),
+				await folder.tables.todos.update(stem, { fields: { done: true } }, {}),
 			);
-			expect(updated).toMatchObject({ parseError: undefined, issues: [] });
+			expect(inspectRow(definition.tables.todos, updated.text)).toMatchObject({
+				parseError: undefined,
+				issues: [],
+			});
 		}
 		// An uppercase extension is an ordinary file, not a row.
 		await writeFile(join(root, 'todos/Loud.MD'), 'not a row');
@@ -325,8 +335,9 @@ describe('native folder', () => {
 		).toBe('InvalidUtf8');
 
 		const empty = expectOk(await folder.tables.todos.get(''))!;
-		const named = expectOk(await folder.tables.todos.rename(empty, 'named'));
-		expectOk(await folder.tables.todos.delete(named));
+		const guard = { expectedSha256: empty.sha256 };
+		expectOk(await folder.tables.todos.rename('', 'named', guard));
+		expectOk(await folder.tables.todos.delete('named', guard));
 		expect(await readdir(join(root, 'todos'))).not.toContain('.md');
 		await folder.close();
 	});
@@ -347,11 +358,12 @@ describe('native folder', () => {
 				fields: { title: 'Take', done: false },
 			}),
 		);
-		expect(created).toMatchObject({ parseError: undefined, issues: [] });
+		expect(inspectRow(definition.tables.todos, created.text)).toMatchObject({
+			parseError: undefined,
+			issues: [],
+		});
 
-		const renamed = expectOk(
-			await folder.tables.todos.rename(created, 'take2'),
-		);
+		expectOk(await folder.tables.todos.rename('take', 'take2', {}));
 		expect((await readdir(join(root, 'todos'))).sort()).toEqual([
 			'take.opus',
 			'take2.md',
@@ -359,11 +371,19 @@ describe('native folder', () => {
 
 		// The audio disappears outside the app. The row does not depend on it.
 		await rm(join(root, 'todos/take.opus'));
-		const again = expectOk(await folder.tables.todos.rename(renamed, 'take3'));
+		expectOk(
+			await folder.tables.todos.rename('take2', 'take3', {
+				expectedSha256: created.sha256,
+			}),
+		);
 		await writeFile(join(root, 'todos/take3.opus'), audio);
 		await writeFile(join(root, 'todos/take3.wav'), audio);
 
-		expectOk(await folder.tables.todos.delete(again));
+		expectOk(
+			await folder.tables.todos.delete('take3', {
+				expectedSha256: created.sha256,
+			}),
+		);
 		expect((await readdir(join(root, 'todos'))).sort()).toEqual([
 			'take3.opus',
 			'take3.wav',
@@ -611,9 +631,13 @@ describe('browser and native exchange through a real bare repository', () => {
 		const nativeEntry = expectOk(await native.tables.todos.get('first'))!;
 		expect(nativeEntry.fields.title).toBe('First');
 
-		await native.tables.todos.update(nativeEntry.stem, {
-			fields: { done: true },
-		});
+		await native.tables.todos.update(
+			nativeEntry.stem,
+			{
+				fields: { done: true },
+			},
+			{},
+		);
 		await settled(native);
 		expect(native.git.snapshot.lastPush).toBeUndefined();
 		expect((await native.git.push()).status).toBe('pushed');
@@ -632,9 +656,13 @@ describe('browser and native exchange through a real bare repository', () => {
 		expect((await browser.git.paths()).data).toEqual([]);
 
 		// A dirty folder refuses the next fast-forward before writing anything.
-		await native.tables.todos.update('first', {
-			fields: { title: 'Native edit' },
-		});
+		await native.tables.todos.update(
+			'first',
+			{
+				fields: { title: 'Native edit' },
+			},
+			{},
+		);
 		await settled(native);
 		expect((await native.git.push()).status).toBe('pushed');
 		// Another writer publishes without a save request on this handle.

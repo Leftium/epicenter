@@ -41,7 +41,7 @@
 	let reviewed = $state.raw<Extract<External, { kind: 'changed' }>>();
 	const superseded = $derived(reviewed !== undefined && external !== reviewed);
 	const diff = $derived(
-		reviewed === undefined ? [] : diffLines(reviewed.current.source, session.buffer),
+		reviewed === undefined ? [] : diffLines(reviewed.current.text, session.buffer),
 	);
 
 	function review() {
@@ -167,7 +167,7 @@
 				The file holds other text now.
 			{:else if external !== undefined}
 				The file is {external.kind === 'removed' ? 'not there' : 'not readable as text'} now.
-			{:else if session.saved.source === session.attempt.source}
+			{:else if session.saved.text === session.attempt.source}
 				The file holds the text of that save now; that does not show which save put it there.
 			{/if}
 		</span>

@@ -37,7 +37,11 @@ import { readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { Ok } from 'wellcrafted/result';
 import { expectOk } from 'wellcrafted/testing';
-import type { RecordingFields, TranscriptionFields } from './definition.js';
+import {
+	type RecordingFields,
+	type TranscriptionFields,
+	whisperingDefinition,
+} from './definition.js';
 import {
 	captureDeletions,
 	DEFAULT_SORT,
@@ -52,7 +56,7 @@ import {
 	transcriptExcerpt,
 	transcriptsToCopy,
 } from './recording-collection.js';
-import type { RowEditor } from '@epicenter/folder/bun';
+import { inspectRow, type RowEditor } from '@epicenter/folder/bun';
 import type { Session } from './session.svelte.js';
 import { toneWav } from './capture.js';
 import type { Workspace } from './workspace/types.js';
@@ -644,8 +648,9 @@ test('a transcript is edited through the one draft kept for its file, and its re
 
 	const saved = await readFile(join(root, TRANSCRIPT), 'utf8');
 	// The whole row is saved in its one form: the fields as they were, the new text.
-	expect(saved).toBe(editor.state.source);
-	const { inspect } = library.folder.tables.transcriptions;
+	expect(saved).toBe(editor.state.text);
+	const inspect = (text: string) =>
+		inspectRow(whisperingDefinition.tables.transcriptions, text);
 	expect(inspect(saved).fields).toEqual(inspect(before).fields);
 	expect(inspect(saved).body).toBe(
 		'Yesterday I finished the importer. Today: the exporter.\n',
@@ -683,7 +688,7 @@ test('a transcript changed outside while it is being typed in keeps both: the ty
 
 	expect(editor.review).toMatchObject({
 		kind: 'changed',
-		current: { source: outside },
+		current: { text: outside },
 	});
 	expect(editor.state.document.body).toBe('What I typed.\n');
 	// Nothing saves on its own while both stand: the outside text is still the file.
@@ -694,7 +699,7 @@ test('a transcript changed outside while it is being typed in keeps both: the ty
 
 	// The person takes the saved version; nothing is held any more.
 	expect(await library.discardDraft(TRANSCRIPT)).toBeUndefined();
-	expect(editor.state.baseline.source).toBe(outside);
+	expect(editor.state.baseline.text).toBe(outside);
 	expect(editor.isDirty).toBe(false);
 	expect(library.holdsUnsavedWork).toBe(false);
 });

@@ -63,7 +63,7 @@ test('only UTF-8 text without NUL bytes opens for editing', async () => {
 	const text = expectOk(await readTextFile(filesWith(withBom), 'a.txt'));
 	expect(text.kind).toBe('text');
 	if (text.kind !== 'text') throw new Error('Expected editable text');
-	const source = text.file.source;
+	const source = text.file.text;
 	expect(new TextEncoder().encode(source)).toEqual(withBom);
 
 	const nul = expectOk(

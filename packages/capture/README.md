@@ -50,7 +50,7 @@ offered, and the source stays editable as text:
 | --- | --- |
 | `missing-frontmatter` | The source does not start with a `---` line. Markdown without frontmatter lines is not read as a capture's text, and no operation adds them. |
 | `unclosed-frontmatter` | The opening `---` has no closing line. |
-| `unparsed` | The frontmatter is framed but does not parse. `parseCapture` reads no YAML; a caller that asked the capture table (`table.inspect(source)`) passes its reason to `unparsedCapture(source, message)`. |
+| `unparsed` | The frontmatter is framed but does not parse. `parseCapture` reads no YAML; a caller that asked the capture table (`inspectRow(captureDefinition.tables.captures, text)`) passes its reason to `unparsedCapture(source, message)`. |
 | `duplicate-heading` | More than one root-level heading reads "Thoughts". |
 | `heading-form` | The Thoughts heading is not `## Thoughts` at the start of a line. |
 | `section-shape` | Something other than a bullet list comes first under the heading, or the section holds a second bullet list. |

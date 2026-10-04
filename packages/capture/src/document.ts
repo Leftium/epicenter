@@ -42,7 +42,7 @@
  * the heading, or a second bullet list in the section. The source stays
  * editable as text.
  */
-import { frameSource } from '@epicenter/folder';
+import { frameRowText } from '@epicenter/folder';
 import MarkdownIt from 'markdown-it';
 
 export type Newline = '\n' | '\r\n';
@@ -258,7 +258,7 @@ export function unparsedCapture(
  * uses `unparsedCapture` for source that does not.
  */
 export function parseCapture(source: string): CaptureDocument {
-	const frame = frameSource(source);
+	const frame = frameRowText(source);
 	if (frame.kind !== 'frontmatter')
 		return refused(
 			source,

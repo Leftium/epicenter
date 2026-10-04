@@ -94,8 +94,11 @@ export type FileOutcome<T = undefined> =
 			readonly kind: 'sourceNotRemoved';
 			readonly from: string;
 			readonly to: string;
-			/** The capture of the bytes at `to`. */
-			readonly moved: FileCapture;
+			/**
+			 * The capture of the bytes at `to`, when the move was guarded by a
+			 * hash. A file move always is; an unguarded move names no hash.
+			 */
+			readonly moved: FileCapture | undefined;
 			readonly message: string;
 	  };
 
@@ -160,10 +163,10 @@ export async function createFile(
 	path: string,
 	text: string,
 ): Promise<FileOutcome<Capture>> {
-	const { bytes, source } = submittedText(text);
+	const { bytes, text: source } = submittedText(text);
 	const created = await ask(() => files.create(path, bytes));
 	return created.kind === 'done'
-		? { kind: 'done', value: { ...created.value, source } }
+		? { kind: 'done', value: { ...created.value, text: source } }
 		: created;
 }
 
@@ -176,10 +179,10 @@ export async function replaceFile(
 	base: FileCapture,
 	text: string,
 ): Promise<FileOutcome<Capture>> {
-	const { bytes, source } = submittedText(text);
+	const { bytes, text: source } = submittedText(text);
 	const replaced = await ask(() => files.replace(base, bytes));
 	return replaced.kind === 'done'
-		? { kind: 'done', value: { ...replaced.value, source } }
+		? { kind: 'done', value: { ...replaced.value, text: source } }
 		: replaced;
 }
 
@@ -328,7 +331,7 @@ export function createFileSession(
 	} = {},
 ) {
 	let saved = $state.raw<Capture>(initial);
-	let buffer = $state(initial.source);
+	let buffer = $state(initial.text);
 	let attempt = $state.raw<Attempt | undefined>();
 	let pathChange = $state.raw<PathChange | undefined>();
 	let external = $state.raw<External | undefined>();
@@ -351,7 +354,7 @@ export function createFileSession(
 	 */
 	let typedOver: object = {};
 
-	const dirty = () => buffer !== saved.source;
+	const dirty = () => buffer !== saved.text;
 	/**
 	 * Nothing to review, nothing outstanding, and no failed or unconfirmed
 	 * write waiting for the person: saving may run by itself.
@@ -402,11 +405,8 @@ export function createFileSession(
 	 * end. Typing that encodes to other bytes is left as it is.
 	 */
 	function showSaved() {
-		if (
-			buffer !== saved.source &&
-			submittedText(buffer).source === saved.source
-		)
-			buffer = saved.source;
+		if (buffer !== saved.text && submittedText(buffer).text === saved.text)
+			buffer = saved.text;
 	}
 
 	/**
@@ -441,10 +441,10 @@ export function createFileSession(
 			// outcome is unknown: that is what the file holds now. It does not
 			// show which write put it there, so an unconfirmed one stays.
 			if (
-				next.source === buffer ||
+				next.text === buffer ||
 				(attempt?.state === 'unconfirmed' &&
 					attempt.path === next.path &&
-					attempt.source === next.source)
+					attempt.source === next.text)
 			) {
 				agree(next);
 				return 'agreed';
@@ -453,7 +453,7 @@ export function createFileSession(
 			// not, whatever its buffer holds: other text never becomes its base.
 			if (!dirty() && attempt === undefined) {
 				agree(next);
-				buffer = next.source;
+				buffer = next.text;
 				refusal = undefined;
 				typedOver = {};
 				return 'adopted';
@@ -524,7 +524,7 @@ export function createFileSession(
 	): Promise<void> {
 		if (answer.kind === 'done') {
 			// Only the submitted text is acknowledged, at the capture returned.
-			agree({ ...answer.value, source: sent.source });
+			agree({ ...answer.value, text: sent.source });
 			// An earlier unconfirmed replace can still land only while the file
 			// is the bytes it was conditional on. A write that left exactly those
 			// bytes there does not end it.
@@ -541,7 +541,7 @@ export function createFileSession(
 		} else if (answer.kind === 'refused') {
 			recheck = false;
 			const now = await read(sent.path);
-			const ours = now.kind === 'present' && now.file.source === sent.source;
+			const ours = now.kind === 'present' && now.file.text === sent.source;
 			if (
 				alternate !== undefined &&
 				prior === undefined &&
@@ -581,9 +581,9 @@ export function createFileSession(
 	 * the saved ones is not sent.
 	 */
 	async function saveText(text: string, typed: object) {
-		if (!idle() || typed !== typedOver || text === saved.source) return;
-		const { source } = submittedText(text);
-		if (source === saved.source) return showSaved();
+		if (!idle() || typed !== typedOver || text === saved.text) return;
+		const { text: source } = submittedText(text);
+		if (source === saved.text) return showSaved();
 		const sent: Submission = {
 			kind: 'replace',
 			path: saved.path,
@@ -735,7 +735,7 @@ export function createFileSession(
 			return exclusive(async () => {
 				if (pathChange !== undefined || typed !== typedOver) return;
 				const prior = attempt?.state === 'unconfirmed' ? attempt : undefined;
-				const { source } = submittedText(text);
+				const { text: source } = submittedText(text);
 				// Nothing differs from the file, and no outcome is in question. A
 				// detached draft is still sent: its conditional write is what shows
 				// the file is there as it was.
@@ -743,7 +743,7 @@ export function createFileSession(
 					prior === undefined &&
 					detached === undefined &&
 					external === undefined &&
-					source === saved.source
+					source === saved.text
 				) {
 					failure = undefined;
 					showSaved();
@@ -782,7 +782,7 @@ export function createFileSession(
 			attempt = undefined;
 			failure = undefined;
 			detached = undefined;
-			buffer = saved.source;
+			buffer = saved.text;
 			refusal = undefined;
 			typedOver = {};
 			return true;
@@ -825,7 +825,7 @@ export function createFileSession(
 				)
 					return false;
 				const prior = attempt?.state === 'unconfirmed' ? attempt : undefined;
-				const { source } = submittedText(text);
+				const { text: source } = submittedText(text);
 				const sent: Submission =
 					reviewed.kind === 'changed'
 						? {
@@ -861,7 +861,7 @@ export function createFileSession(
 				return false;
 			clearTimeout(timer);
 			agree(reviewed.current);
-			buffer = reviewed.current.source;
+			buffer = reviewed.current.text;
 			attempt = undefined;
 			failure = undefined;
 			detached = undefined;

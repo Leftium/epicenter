@@ -55,7 +55,7 @@ export type SaveState =
 
 /** Where a draft saves: one conditional write, and a fresh read for conflict review. */
 type DraftStore = {
-	/** The accepted file's `source` is the text of the submitted bytes. */
+	/** The accepted file's `text` is the text of the submitted bytes. */
 	write(
 		baseline: SavedText,
 		submitted: SubmittedText,
@@ -82,14 +82,14 @@ function createDraft(
 	onSaved: () => void,
 ) {
 	let baseline = $state.raw<SavedText>(initial);
-	let buffer = $state(initial.source);
+	let buffer = $state(initial.text);
 	let saveState = $state.raw<SaveState>({ kind: 'saved' });
 	let timer: ReturnType<typeof setTimeout> | undefined;
 	let saving: Promise<void> | undefined;
 	/** Pending while a rename owns the file's path; resolves when it settles. */
 	let moving: Promise<void> | undefined;
 
-	const dirty = () => buffer !== baseline.source;
+	const dirty = () => buffer !== baseline.text;
 
 	/**
 	 * Nothing is sent on its own while the person must choose: a conflict to
@@ -123,7 +123,7 @@ function createDraft(
 				baseline = result.data;
 				// The same text unless encoding replaced an unpaired surrogate.
 				// Newer typing is a later generation and stays as typed.
-				if (buffer === captured) buffer = result.data.source;
+				if (buffer === captured) buffer = result.data.text;
 				saveState = { kind: 'saved' };
 				onSaved();
 				return;
@@ -245,14 +245,14 @@ function createDraft(
 			}
 			if (dirty() || saving || moving || saveState.kind !== 'saved') return;
 			baseline = next;
-			buffer = next.source;
+			buffer = next.text;
 		},
 		/** Conflict choice: discard my input and load the saved file. */
 		loadSaved() {
 			if (saveState.kind !== 'conflict' || saveState.current === undefined)
 				return;
 			baseline = saveState.current;
-			buffer = saveState.current.source;
+			buffer = saveState.current.text;
 			saveState = { kind: 'saved' };
 			// The reviewed version may predate later external writes. Refresh
 			// now that this editor can adopt them, without publishing anything.
@@ -315,7 +315,7 @@ function createDraft(
 				if (result.error === null) {
 					const wasDirty = dirty();
 					baseline = result.data;
-					if (!wasDirty) buffer = result.data.source;
+					if (!wasDirty) buffer = result.data.text;
 				}
 				return result;
 			} finally {
@@ -408,10 +408,10 @@ export function createTextFileEditor(
 ): TextFileEditor {
 	return createDraft(
 		{
-			async write(baseline, { bytes, source }) {
+			async write(baseline, { bytes, text }) {
 				const replaced = await files.replace(baseline, bytes);
 				if (replaced.error) return Err(replaced.error);
-				return Ok({ ...replaced.data, source });
+				return Ok({ ...replaced.data, text });
 			},
 			async read(baseline) {
 				const read = await readTextFile(files, baseline.path);
@@ -445,7 +445,17 @@ export function createRowSourceEditor(
 ): TextFileEditor {
 	return createDraft(
 		{
-			write: (baseline, { source }) => table.replace(baseline, source),
+			async write(baseline, { text }) {
+				const stem = rowStemOf(table.name, baseline.path);
+				if (stem === undefined)
+					return FileError.InvalidPath({
+						path: baseline.path,
+						reason: `'${baseline.path}' is not a todo row`,
+					});
+				return table.replace(stem, text, {
+					expectedSha256: baseline.sha256,
+				});
+			},
 			async read(baseline) {
 				const stem = rowStemOf(table.name, baseline.path);
 				if (stem === undefined)

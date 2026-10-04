@@ -141,7 +141,7 @@ async function attached() {
 		withdraw_request: () => null,
 	};
 	const folder = expectOk(await openFolder({ id: 'notes', definition }));
-	expect(sent('attach')[0]?.args).toEqual({ scope: 'notes', protocol: 5 });
+	expect(sent('attach')[0]?.args).toEqual({ scope: 'notes', protocol: 6 });
 	expect(folder.location).toEqual({
 		kind: 'directory',
 		root: '/Users/someone/Epicenter/notes',
@@ -178,7 +178,7 @@ test('the folder opened is the scope the opener names', async () => {
 	);
 	expect(sent('attach')[0]?.args).toEqual({
 		scope: 'so.epicenter.taurifoldertest',
-		protocol: 5,
+		protocol: 6,
 	});
 	expect(folder.git.snapshot.commitOnEdit).toBe(false);
 	await folder.close();
@@ -253,14 +253,14 @@ test.each([
 test('a desktop app that speaks another protocol is refused at attach, before any other call', async () => {
 	calls = [];
 	replies = {
-		// A desktop app from before incoming recovery.
-		attach: () => refuse({ name: 'Incompatible', host: 4, page: 5 }),
+		// A desktop app from before the optional replace guard.
+		attach: () => refuse({ name: 'Incompatible', host: 5, page: 6 }),
 	};
 	const refused = expectErr(await openFolder({ id: 'notes', definition }));
-	expect(refused).toMatchObject({ name: 'Incompatible', host: 4, page: 5 });
+	expect(refused).toMatchObject({ name: 'Incompatible', host: 5, page: 6 });
 	expect(refused.message).toContain('Update the app');
 	expect(calls).toEqual([
-		{ cmd: 'attach', args: { scope: 'notes', protocol: 5 } },
+		{ cmd: 'attach', args: { scope: 'notes', protocol: 6 } },
 	]);
 });
 
@@ -603,8 +603,16 @@ test("a table save changes exactly its row file, under that file's exact conditi
 	]);
 
 	calls = [];
-	expectOk(await folder.tables.todos.rename(created, 'next'));
-	expectOk(await folder.tables.todos.delete(created));
+	const guard = { expectedSha256: created.sha256 };
+	expectOk(await folder.tables.todos.rename('take', 'next', guard));
+	expectOk(await folder.tables.todos.delete('take', guard));
+	// Without a baseline, each change goes as an existing-only condition with
+	// no hash: a replacement is never sent as an overwrite.
+	expectOk(await folder.tables.todos.replace('take', 'text', {}));
+	expectOk(await folder.tables.todos.rename('take', 'next', {}));
+	expectOk(await folder.tables.todos.delete('take', {}));
+	// A rename reads the directory and publishes; it reads no row back.
+	expect(calls.some((call) => call.cmd === 'read')).toBe(false);
 	expect(sent('apply').map((call) => call.args.changes)).toEqual([
 		[
 			{
@@ -615,6 +623,23 @@ test("a table save changes exactly its row file, under that file's exact conditi
 			},
 		],
 		[{ kind: 'remove', path: 'todos/take.md', expectedSha256: created.sha256 }],
+		[
+			{
+				kind: 'replace',
+				path: 'todos/take.md',
+				bytes: Array.from(new TextEncoder().encode('text')),
+				expectedSha256: null,
+			},
+		],
+		[
+			{
+				kind: 'move',
+				from: 'todos/take.md',
+				to: 'todos/next.md',
+				expectedSha256: null,
+			},
+		],
+		[{ kind: 'remove', path: 'todos/take.md', expectedSha256: null }],
 	]);
 });
 

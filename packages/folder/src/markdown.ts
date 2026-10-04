@@ -1,11 +1,11 @@
 /**
- * Markdown row source: mandatory frontmatter framing, parsing, and
- * source-preserving patches (ADR-0462, ADR-0464).
+ * Markdown row text: mandatory frontmatter framing, parsing, and
+ * text-preserving patches (ADR-0462, ADR-0464).
  *
- * Row source is an opening `---` line, a YAML mapping with string keys, a
- * closing `---` line, and a body. Source that is not that shape fails
- * parsing as a whole: there are no recovered values and no recovered body.
- * Parsing knows no schema; `table.inspect` adds field conformance.
+ * Row text is the whole file: an opening `---` line, a YAML mapping with
+ * string keys, a closing `---` line, and a body. Text that is not that shape
+ * fails parsing as a whole: there are no recovered values and no recovered
+ * body. Parsing knows no schema; `inspectRow` adds field conformance.
  *
  * Patching never re-emits YAML. It locates the touched value's node range in
  * the parsed frontmatter and replaces only that span, or appends a new key
@@ -29,8 +29,8 @@ import { type ParseError, parseError } from './reading.js';
 
 const BOM = '﻿';
 
-/** The located parts of a row file's text. Offsets index into the source string. */
-export type SourceFrame =
+/** The located parts of a row file's whole text. Offsets index into that string. */
+export type RowTextFrame =
 	| {
 			readonly kind: 'frontmatter';
 			readonly bom: string;
@@ -41,7 +41,7 @@ export type SourceFrame =
 			readonly bodyStart: number;
 			readonly newline: '\n' | '\r\n';
 	  }
-	/** The source does not start with an exact `---` line. */
+	/** The text does not start with an exact `---` line. */
 	| { readonly kind: 'missing'; readonly bom: string }
 	/** The opening line has no exact `---` line after it. */
 	| { readonly kind: 'unclosed'; readonly bom: string };
@@ -50,7 +50,7 @@ export type SourceFrame =
  * Locate frontmatter. Only an exact `---` first line opens it, after an
  * optional byte-order mark; the next exact `---` line closes it.
  */
-export function frameSource(source: string): SourceFrame {
+export function frameRowText(source: string): RowTextFrame {
 	const bom = source.startsWith(BOM) ? BOM : '';
 	const start = bom.length;
 	const openingNewline = source.startsWith('---\r\n', start)
@@ -100,7 +100,7 @@ function parseFailure(
 	return Err(parseError(message, diagnostics));
 }
 
-type Framed = Extract<SourceFrame, { kind: 'frontmatter' }>;
+type Framed = Extract<RowTextFrame, { kind: 'frontmatter' }>;
 
 type Parsed = {
 	readonly frame: Framed;
@@ -110,7 +110,7 @@ type Parsed = {
 };
 
 function parse(source: string): Result<Parsed, ParseError> {
-	const frame = frameSource(source);
+	const frame = frameRowText(source);
 	if (frame.kind === 'missing')
 		return parseFailure(
 			'The source does not start with a --- line opening its frontmatter',
@@ -222,7 +222,8 @@ export type PatchRefusal =
 	| ValueRefusal
 	| { readonly kind: 'unsafe'; readonly reason: string };
 
-export type SourceChange = {
+/** Declared values to assign and a replacement body; the rest of the text is kept. */
+export type RowTextChange = {
 	readonly fields?: Readonly<Record<string, unknown>>;
 	readonly body?: string;
 };
@@ -231,14 +232,15 @@ const unsafe = (reason: string): Result<never, PatchRefusal> =>
 	Err({ kind: 'unsafe', reason });
 
 /**
- * Apply field values and an optional replacement body to source that parses,
- * preserving every unrelated byte. Returns the new source or a refusal. A
- * body-only change still requires the source to parse: without both fences
- * there is no body to replace.
+ * Apply field values and an optional replacement body to whole row text that
+ * parses, preserving every unrelated byte, unknown keys included. Returns the
+ * new whole text or a refusal. `body` replaces only what follows the closing
+ * fence. A body-only change still requires the text to parse: without both
+ * fences there is no body to replace.
  */
-export function patchSource(
+export function patchRowText(
 	source: string,
-	change: SourceChange,
+	change: RowTextChange,
 ): Result<string, PatchRefusal> {
 	const { data: parsed, error: sourceError } = parse(source);
 	if (sourceError !== null)

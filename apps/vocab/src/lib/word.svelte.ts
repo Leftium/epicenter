@@ -29,14 +29,21 @@
  *   word again. Taking the saved word answers that outcome without calling it
  *   saved, so later typing saves as usual.
  */
-import type {
-	RowRevision,
-	RowSaveOutcome,
-	TableEditError,
-	TextCapture,
+import {
+	inspectRow,
+	type RowRevision,
+	type RowSaveOutcome,
+	type TableEditError,
+	type TextCapture,
 } from '@epicenter/folder';
 import { extractErrorMessage } from 'wellcrafted/error';
-import { type Entry, readEntry, type Stage, type VocabTables } from './data.js';
+import {
+	type Entry,
+	readEntry,
+	type Stage,
+	type VocabTables,
+	vocabFolder,
+} from './data.js';
 
 type EntriesTable = VocabTables['entries'];
 type WordEditor = NonNullable<
@@ -152,10 +159,10 @@ function wordReview(
 	}
 }
 
-const captureOf = ({ path, sha256, source }: TextCapture): TextCapture => ({
+const captureOf = ({ path, sha256, text }: TextCapture): TextCapture => ({
 	path,
 	sha256,
-	source,
+	text,
 });
 
 const noop = () => {};
@@ -221,7 +228,7 @@ export function createWordDraft({
 			: 'This word is being deleted.';
 	const dirty = () => mode.kind === 'editing' && (state?.isDirty ?? false);
 	const repairTyped = () =>
-		mode.kind === 'repair' && mode.text !== mode.file.source;
+		mode.kind === 'repair' && mode.text !== mode.file.text;
 
 	// Shown side by side, and each judged on its own: an old outcome never
 	// hides what the latest read found, and what it found never hides that a
@@ -240,13 +247,13 @@ export function createWordDraft({
 	);
 
 	/** The word a save receipt wrote, read as the listing reads it. */
-	function entryOf({ path, source, sha256 }: RowRevision): Entry | undefined {
+	function entryOf({ path, text, sha256 }: RowRevision): Entry | undefined {
 		return readEntry({
 			path,
 			stem: id,
-			source,
+			text,
 			sha256,
-			...table.inspect(source),
+			...inspectRow(vocabFolder.tables.entries, text),
 		});
 	}
 
@@ -269,7 +276,7 @@ export function createWordDraft({
 	/** Hold a file that has no row form as repair text, keeping text typed here. */
 	function holdRepair(file: TextCapture, reason: string) {
 		const text =
-			repairTyped() && mode.kind === 'repair' ? mode.text : file.source;
+			repairTyped() && mode.kind === 'repair' ? mode.text : file.text;
 		mode = {
 			kind: 'repair',
 			file: captureOf(file),
@@ -567,7 +574,7 @@ export function createWordDraft({
 			mode = {
 				kind: 'repair',
 				file: captureOf(file),
-				text: file.source,
+				text: file.text,
 				reason: message,
 				problem: undefined,
 			};
@@ -598,11 +605,16 @@ export function createWordDraft({
 				const { file, text } = mode;
 				try {
 					const { data: replaced, error: replaceError } = await table.replace(
-						file,
+						id,
 						text,
+						{ expectedSha256: file.sha256 },
 					);
 					if (replaceError === null) {
-						const entry = readEntry(replaced);
+						// The receipt names the bytes sent; the word is how they read.
+						const entry = readEntry({
+							...replaced,
+							...inspectRow(vocabFolder.tables.entries, replaced.text),
+						});
 						if (entry !== undefined) onSaved(entry);
 						if (mode.kind !== 'repair') return;
 						mode = { ...mode, file: captureOf(replaced), problem: undefined };

@@ -474,7 +474,7 @@ function changeToWire(change: FileChange): WireFileChange {
 				kind: 'replace',
 				path: change.path,
 				bytes: Array.from(change.bytes),
-				expectedSha256: change.expectedSha256,
+				expectedSha256: change.expectedSha256 ?? null,
 			};
 		case 'remove':
 			return {

@@ -15,6 +15,8 @@
 //! - A replacement, removal, or move that names a hash is refused as a
 //!   `Conflict` when the bytes differ; a missing replace target has no actual
 //!   hash, and a missing removal or move source is `NotFound`.
+//! - A replacement never creates a file: without a hash its missing target is
+//!   `NotFound`, never an overwrite.
 //! - Nothing holds the folder between one caller's calls: a write built on an
 //!   earlier read is refused once another caller wrote in between.
 
@@ -24,7 +26,9 @@ use std::time::Duration;
 use crate::files::{sha256, ApplyError, FileChange, FileError, FileStep};
 use crate::history::{Observation, OwnerEvent};
 use crate::owner::{FolderConfig, FolderOwner};
-use crate::testing::{config, create, eventually, git, open, overwrite, replace, TempDir};
+use crate::testing::{
+    config, create, eventually, git, open, overwrite, replace, replace_existing, TempDir,
+};
 
 /// Wait for the commit a save was admitted for, if it was. The save decided
 /// that before it returned, so nothing can start after this sees it idle.
@@ -393,7 +397,16 @@ fn a_named_hash_guards_replacement_removal_and_moves_and_its_absence_guards_noth
         Err(FileError::NotFound { .. })
     ));
 
-    // A missing source is not found, guarded or not.
+    // A missing source is not found, guarded or not. Without a hash, a
+    // replacement still needs its target, so it creates nothing.
+    assert_eq!(
+        owner.apply(&[replace_existing("missing.md", "x")]),
+        not_found("missing.md")
+    );
+    assert!(matches!(
+        owner.read("missing.md"),
+        Err(FileError::NotFound { .. })
+    ));
     for expected_sha256 in [None, Some(stale.clone())] {
         assert_eq!(
             owner.apply(&[FileChange::Remove {
@@ -412,9 +425,11 @@ fn a_named_hash_guards_replacement_removal_and_moves_and_its_absence_guards_noth
         );
     }
 
-    // Without a hash, a move and a removal act on whatever bytes are there.
+    // Without a hash, a replacement, a move, and a removal act on whatever
+    // bytes are there.
     owner
         .apply(&[
+            replace_existing("a.md", "a, replaced"),
             FileChange::Move {
                 from: "a.md".into(),
                 to: "b.md".into(),
@@ -427,7 +442,7 @@ fn a_named_hash_guards_replacement_removal_and_moves_and_its_absence_guards_noth
             },
         ])
         .unwrap();
-    assert_eq!(owner.read("b.md").unwrap().bytes, b"a");
+    assert_eq!(owner.read("b.md").unwrap().bytes, b"a, replaced");
     assert!(matches!(
         owner.read("c.md"),
         Err(FileError::NotFound { .. })

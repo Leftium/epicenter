@@ -48,7 +48,6 @@ async function open() {
 		folder: {
 			tables: {
 				notes: {
-					inspect: inspectNote,
 					list: async () => ({ data: listingOf([note]), error: null }),
 					// The note opens its row editor; nothing here saves it.
 					edit: (stem: string) =>
@@ -193,7 +192,7 @@ test('refresh requests during a read wait for one follow-up without overlapping 
 	await Promise.all([first, again, also]);
 	expect(calls).toBe(2);
 	expect(maximum).toBe(1);
-	expect(notes.notes[0]?.source).toBe(NOTE);
+	expect(notes.notes[0]?.text).toBe(NOTE);
 });
 
 test('an externally removed binary keeps its selected path without a selected file', async () => {

@@ -14,10 +14,10 @@ import {
 	type CreateRowOf,
 	defineFolder,
 	defineTable,
-	type FileTable,
 	field,
 	rowPath,
 	rowStemOf,
+	type TableReading,
 	type TableSnapshot,
 } from '@epicenter/folder';
 
@@ -78,8 +78,8 @@ export function noteIdOf(path: string): NoteId | undefined {
 	return rowStemOf(NOTES, path);
 }
 
-/** How the notes table reads source text: `folder.tables.notes.inspect`. */
-export type InspectNote = FileTable<NoteFields>['inspect'];
+/** How a note's text reads: `inspectRow(honeycrispDefinition.tables.notes, text)`. */
+export type InspectNote = (text: string) => TableReading<NoteFields>;
 
 /** The name a person sees for a folder: its `name`, else its file. */
 export function folderLabel(folder: FolderEntry): string {

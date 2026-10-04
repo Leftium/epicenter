@@ -12,8 +12,8 @@ export type FileCapture = {
 /** A capture with detached bytes. */
 export type CapturedFile = FileCapture & { bytes: Uint8Array };
 
-/** A capture with the exact text decoded from its bytes. */
-export type TextCapture = FileCapture & { source: string };
+/** A capture with the exact text decoded from its whole bytes. */
+export type TextCapture = FileCapture & { text: string };
 
 /** Detach a capture from its caller. Later saves return new captures. */
 export function fileCapture(path: string, sha256: string): FileCapture {

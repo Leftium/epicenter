@@ -131,14 +131,19 @@ describe('row files', () => {
 			}),
 		);
 		expectOk(
-			await folder.tables.todos.update(row.stem, { fields: { done: true } }),
+			await folder.tables.todos.update(
+				row.stem,
+				{ fields: { done: true } },
+				{},
+			),
 		);
-		expect((await folder.tables.todos.rename(row, 'next')).error?.name).toBe(
-			'Conflict',
-		);
-		expect((await folder.tables.todos.delete(row)).error?.name).toBe(
-			'Conflict',
-		);
+		const stale = { expectedSha256: row.sha256 };
+		expect(
+			(await folder.tables.todos.rename(row.stem, 'next', stale)).error?.name,
+		).toBe('Conflict');
+		expect(
+			(await folder.tables.todos.delete(row.stem, stale)).error?.name,
+		).toBe('Conflict');
 		expect(expectOk(await folder.files.children('todos')).files).toEqual([
 			'row.md',
 		]);
@@ -155,26 +160,28 @@ describe('row files', () => {
 		);
 		expect(expectOk(await folder.tables.todos.list())).toEqual([]);
 
-		const real = expectOk(
+		expectOk(
 			await folder.tables.todos.create({
 				stem: 'real',
 				fields: { title: 'Real', done: false },
 			}),
 		);
-		const forged = { ...real, path: 'todos/a/b.md' };
-		expect((await folder.tables.todos.replace(forged, 'x')).error?.name).toBe(
+		expect(
+			(await folder.tables.todos.replace('a/b', 'x', {})).error?.name,
+		).toBe('InvalidPath');
+		expect(
+			(await folder.tables.todos.update('a/b', { fields: { done: true } }, {}))
+				.error?.name,
+		).toBe('InvalidPath');
+		expect((await folder.tables.todos.delete('a/b', {})).error?.name).toBe(
+			'InvalidPath',
+		);
+		expect((await folder.tables.todos.rename('a/b', 'c', {})).error?.name).toBe(
 			'InvalidPath',
 		);
 		expect(
-			(await folder.tables.todos.update('a/b', { fields: { done: true } }))
-				.error?.name,
+			(await folder.tables.todos.rename('real', 'a/b', {})).error?.name,
 		).toBe('InvalidPath');
-		expect((await folder.tables.todos.delete(forged)).error?.name).toBe(
-			'InvalidPath',
-		);
-		expect((await folder.tables.todos.rename(forged, 'c')).error?.name).toBe(
-			'InvalidPath',
-		);
 
 		// An externally written row with an unusual name is an ordinary row.
 		await folder.files.create(

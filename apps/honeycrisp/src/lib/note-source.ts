@@ -8,7 +8,7 @@
  * file the row editor cannot hold is repaired as text, and `repairFields` is
  * the one change made to that text here: a person asks for it.
  */
-import { patchSource, type TableReading } from '@epicenter/folder';
+import { patchRowText, type TableReading } from '@epicenter/folder';
 import { Err, Ok, type Result } from 'wellcrafted/result';
 import { instantNow, type NoteFields } from './data.js';
 import { type BodyInspection, inspectNoteBody } from './editor/markdown.js';
@@ -107,10 +107,12 @@ export function repairFields(
 	source: string,
 	fields: Partial<NoteFields>,
 ): Result<string, string> {
-	const patched = patchSource(source, { fields });
+	const patched = patchRowText(source, { fields });
 	if (patched.error === null) return Ok(patched.data);
 	const refusal = patched.error;
-	return Err(refusal.kind === 'unparsed' ? refusal.error.message : refusal.reason);
+	return Err(
+		refusal.kind === 'unparsed' ? refusal.error.message : refusal.reason,
+	);
 }
 
 /** Plain text from the start of a Markdown body, for list previews. */

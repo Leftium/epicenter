@@ -55,7 +55,7 @@ test('overlapping creates of one stem land one row and refuse the other, beside 
 			'take.wav',
 		]);
 		expect(await readFile(join(root, 'todos/take.md'), 'utf8')).toBe(
-			landed[0]!.data!.source,
+			landed[0]!.data!.text,
 		);
 		expect(
 			new Uint8Array(await readFile(join(root, 'todos/take.wav'))),

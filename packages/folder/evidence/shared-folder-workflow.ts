@@ -35,7 +35,10 @@ import {
 	type FolderDefinition,
 	field,
 	hashBytes,
+	inspectRow,
 	openFolder,
+	type PreparedFolderTable,
+	type TableWriteReceipt,
 } from '@epicenter/folder/bun';
 import type { Result } from 'wellcrafted/result';
 
@@ -126,6 +129,14 @@ function ok<T, E>({ data, error }: Result<T, E>): T {
 	return data as T;
 }
 
+/** A write receipt with its text interpreted: what a read of those bytes returns. */
+function interpreted<const TTable extends PreparedFolderTable>(
+	table: TTable,
+	receipt: TableWriteReceipt,
+) {
+	return { ...receipt, ...inspectRow(table, receipt.text) };
+}
+
 function refusal<T, E>({ data, error }: Result<T, E>): E {
 	if (error === null)
 		throw new Error(`Expected a refusal, got ${JSON.stringify(data)}`);
@@ -189,7 +200,7 @@ try {
 			'the row is one ordinary Markdown file at todos/milk.md',
 			disk.exists(ROW),
 		);
-		check('the receipt source is the bytes on disk', created.source === onDisk);
+		check('the receipt text is the bytes on disk', created.text === onDisk);
 		check(
 			'the receipt hash is the hash of the bytes on disk',
 			created.sha256 === (await hashBytes(await disk.bytes(ROW))),
@@ -242,13 +253,14 @@ try {
 			row.issues,
 		);
 		check(
-			'B still has the exact source, comment and unknown keys included',
-			row.source === AGENT_ROW,
+			'B still has the exact text, comment and unknown keys included',
+			row.text === AGENT_ROW,
 		);
 		check('B reads the body exactly', row.body === BODY);
 
-		const updated = ok(
-			await b.tables.todos.update('milk', { fields: { priority: 2 } }),
+		const updated = interpreted(
+			appB.tables.todos,
+			ok(await b.tables.todos.update('milk', { fields: { priority: 2 } }, {})),
 		);
 		await b.close();
 		const onDisk = await disk.text(ROW);
@@ -265,7 +277,7 @@ try {
 		);
 		check(
 			"the receipt is the bytes on disk and now reads B's field",
-			updated.source === onDisk && updated.fields.priority === 2,
+			updated.text === onDisk && updated.fields.priority === 2,
 		);
 		check(
 			'the update left B with no issues',
@@ -276,10 +288,14 @@ try {
 		// A second application's value for a field it does not declare is refused.
 		const b2 = await open(appB);
 		const undeclared = refusal(
-			await b2.tables.todos.update('milk', {
-				// @ts-expect-error `done` is not a field of B's table.
-				fields: { done: true },
-			}),
+			await b2.tables.todos.update(
+				'milk',
+				{
+					// @ts-expect-error `done` is not a field of B's table.
+					fields: { done: true },
+				},
+				{},
+			),
 		);
 		await b2.close();
 		check(
@@ -310,13 +326,13 @@ try {
 			row.issues,
 		);
 		check(
-			"A's source still carries B's field and the agent's comment",
-			row.source.includes('priority: 2\n') &&
-				row.source.includes('# agent: reviewed'),
+			"A's text still carries B's field and the agent's comment",
+			row.text.includes('priority: 2\n') &&
+				row.text.includes('# agent: reviewed'),
 		);
 		check('A reads the same body it wrote', row.body === BODY);
 
-		ok(await a.tables.todos.update('milk', { fields: { done: true } }));
+		ok(await a.tables.todos.update('milk', { fields: { done: true } }, {}));
 		await a.close();
 		const after = await disk.text(ROW);
 		show(ROW, after);
@@ -369,7 +385,7 @@ try {
 		show('kv.json', onDisk);
 		check(
 			'create() wrote only the supplied key: the file is sparse, defaults are not saved',
-			onDisk === '{\n  "theme": "dark"\n}\n' && created.source === onDisk,
+			onDisk === '{\n  "theme": "dark"\n}\n' && created.text === onDisk,
 		);
 		const again = refusal(await a.kv.create({ theme: 'light' }));
 		check(
@@ -511,9 +527,9 @@ try {
 		const snapshot = ok(await a.kv.get());
 		if (snapshot === undefined) throw new Error('A did not find kv.json');
 		check(
-			'get() is a snapshot with a parseError, the exact source, and no values',
+			'get() is a snapshot with a parseError, the exact text, and no values',
 			snapshot.parseError !== undefined &&
-				snapshot.source === BROKEN &&
+				snapshot.text === BROKEN &&
 				Object.keys(snapshot.values).length === 0,
 		);
 		note(`parseError: ${snapshot.parseError?.message}`);
@@ -535,14 +551,14 @@ try {
 		const reading = a.kv.inspect(good);
 		await a.close();
 		check(
-			'files.replace(snapshot, source) repairs it; the receipt is a bare capture of the bytes on disk',
+			'files.replace(snapshot, text) repairs it; the receipt is a bare capture of the bytes on disk',
 			(await disk.text('kv.json')) === good &&
 				capture.sha256 === (await hashBytes(await disk.bytes('kv.json'))) &&
 				Object.keys(capture).sort().join() === 'path,sha256',
 			Object.keys(capture),
 		);
 		check(
-			"kv.inspect(source) is the second call that says how the repair reads: A's theme is back",
+			"kv.inspect(text) is the second call that says how the repair reads: A's theme is back",
 			reading.parseError === undefined && reading.values.theme === 'light',
 			reading.values,
 		);
@@ -563,7 +579,7 @@ try {
 			'the text parses: there is no parseError',
 			row.parseError === undefined,
 		);
-		check('the source is available exactly', row.source === INVALID_FIELD);
+		check('the text is available exactly', row.text === INVALID_FIELD);
 		check(
 			'the healthy field is still available',
 			row.fields.title === 'Buy milk',
@@ -579,20 +595,28 @@ try {
 		note(`issue: ${row.issues[0]?.message}`);
 
 		// A structured update of the healthy field is not blocked by the other field's issue.
-		const retitled = ok(
-			await a.tables.todos.update('milk', {
-				fields: { title: 'Buy oat milk' },
-			}),
+		const retitled = interpreted(
+			appA.tables.todos,
+			ok(
+				await a.tables.todos.update(
+					'milk',
+					{
+						fields: { title: 'Buy oat milk' },
+					},
+					{},
+				),
+			),
 		);
 		check(
 			"updating the healthy field succeeds and leaves the agent's invalid value in place",
-			retitled.source ===
+			retitled.text ===
 				INVALID_FIELD.replace('title: Buy milk', 'title: Buy oat milk') &&
 				retitled.issues[0]?.field === 'done',
 		);
 		// A structured update is also the repair for one invalid field.
-		const repaired = ok(
-			await a.tables.todos.update('milk', { fields: { done: false } }),
+		const repaired = interpreted(
+			appA.tables.todos,
+			ok(await a.tables.todos.update('milk', { fields: { done: false } }, {})),
 		);
 		check(
 			'assigning the invalid field through update repairs it',
@@ -620,7 +644,7 @@ try {
 			'the snapshot has a parseError with at least one diagnostic',
 			row.parseError !== undefined && row.parseError.diagnostics.length >= 1,
 		);
-		check('the source is available exactly', row.source === MALFORMED);
+		check('the text is available exactly', row.text === MALFORMED);
 		check(
 			'there are no fields, no body, and no issues',
 			Object.keys(row.fields).length === 0 &&
@@ -630,7 +654,7 @@ try {
 		note(`parseError: ${row.parseError?.message}`);
 
 		const refused = refusal(
-			await a.tables.todos.update('milk', { fields: { done: true } }),
+			await a.tables.todos.update('milk', { fields: { done: true } }, {}),
 		);
 		check(
 			'a structured update is refused as Unparsed and writes nothing',
@@ -641,13 +665,20 @@ try {
 		// Repair: complete replacement text against the unparsed snapshot's capture.
 		const REPAIRED = MALFORMED.replace('[Buy milk', 'Buy milk');
 		check(
-			'inspect() says the candidate repair parses, before anything is saved',
-			a.tables.todos.inspect(REPAIRED).parseError === undefined,
+			'inspectRow() says the candidate repair parses, before anything is saved',
+			inspectRow(appA.tables.todos, REPAIRED).parseError === undefined,
 		);
-		const repaired = ok(await a.tables.todos.replace(row, REPAIRED));
+		const repaired = interpreted(
+			appA.tables.todos,
+			ok(
+				await a.tables.todos.replace('milk', REPAIRED, {
+					expectedSha256: row.sha256,
+				}),
+			),
+		);
 		await a.close();
 		check(
-			'replace(snapshot, source) repairs it: the receipt parses and is the bytes on disk',
+			'replace(stem, text, { expectedSha256 }) repairs it: the receipt parses and is the bytes on disk',
 			repaired.parseError === undefined &&
 				repaired.fields.title === 'Buy milk' &&
 				repaired.body === BODY &&
@@ -666,15 +697,17 @@ try {
 		const row = ok(await b.tables.todos.get('milk'));
 		if (row === undefined) throw new Error('B did not find the row');
 		check(
-			'the snapshot has a parseError and the exact source',
-			row.parseError !== undefined && row.source === UNFENCED,
+			'the snapshot has a parseError and the exact text',
+			row.parseError !== undefined && row.text === UNFENCED,
 		);
 		check(
 			'the text is not read as a body, and nothing inserted fences',
 			row.body === undefined && (await disk.text(ROW)) === UNFENCED,
 		);
 		note(`parseError: ${row.parseError?.message}`);
-		const refused = refusal(await b.tables.todos.update('milk', { body: 'x' }));
+		const refused = refusal(
+			await b.tables.todos.update('milk', { body: 'x' }, {}),
+		);
 		check(
 			'a body-only update is refused as Unparsed too',
 			refused.name === 'Unparsed',
@@ -683,7 +716,14 @@ try {
 
 		// Repair, keeping the agent's text as the body. The application builds the text itself.
 		const REPAIRED = `---\ntitle: Buy milk\npriority: 2\n---\n${UNFENCED}`;
-		const repaired = ok(await b.tables.todos.replace(row, REPAIRED));
+		const repaired = interpreted(
+			appB.tables.todos,
+			ok(
+				await b.tables.todos.replace('milk', REPAIRED, {
+					expectedSha256: row.sha256,
+				}),
+			),
+		);
 		await b.close();
 		check(
 			"raw replacement repairs it and keeps the agent's text as the body",
@@ -693,13 +733,13 @@ try {
 		);
 		check(
 			"B's repair did not write A's field, so A will see an issue for done",
-			!repaired.source.includes('done'),
+			!repaired.text.includes('done'),
 		);
 	}
 	{
 		const a = await open(appA);
 		const row = ok(await a.tables.todos.get('milk'));
-		ok(await a.tables.todos.update('milk', { fields: { done: false } }));
+		ok(await a.tables.todos.update('milk', { fields: { done: false } }, {}));
 		await a.close();
 		check(
 			"A sees its field missing after B's repair, and restores it with one update",
@@ -719,7 +759,7 @@ try {
 		});
 		const captured = ok(await a.tables.todos.get('milk'));
 		if (captured === undefined) throw new Error('A did not find the row');
-		const baseline = captured.source;
+		const baseline = captured.text;
 
 		// The person in app A edits a draft of the whole text.
 		const candidate = baseline.replace(
@@ -736,7 +776,11 @@ try {
 			hints,
 		);
 
-		const refused = refusal(await a.tables.todos.replace(captured, candidate));
+		const refused = refusal(
+			await a.tables.todos.replace('milk', candidate, {
+				expectedSha256: captured.sha256,
+			}),
+		);
 		stop();
 		check(
 			'the stale replacement is refused as Conflict',
@@ -759,37 +803,41 @@ try {
 		);
 		check(
 			'the captured snapshot is unchanged and still holds the baseline',
-			captured.source === baseline && Object.isFrozen(captured),
+			captured.text === baseline && Object.isFrozen(captured),
 		);
 
 		// The conflict carries hashes, not text: disk text takes one more read.
 		const current = ok(await a.tables.todos.get('milk'));
 		check(
 			'one more get() gives the disk text, and its hash is the one the conflict named',
-			current?.source === agentText && current.sha256 === refused.actualSha256,
+			current?.text === agentText && current.sha256 === refused.actualSha256,
 		);
 		// The candidate is the caller's own string; the refusal neither took nor changed it.
 		check(
 			'all three texts are in hand and distinct: baseline, candidate, and disk',
 			candidate.includes('title: Buy milk and eggs') &&
-				new Set([baseline, candidate, current?.source]).size === 3,
+				new Set([baseline, candidate, current?.text]).size === 3,
 		);
 		show('candidate (unsaved)', candidate);
 		show('disk (agent)', agentText);
 
 		// What the application does next is its own decision. Here: redo the
-		// one-field change as a structured update, which reads current source.
+		// one-field change as a structured update, which reads the current text.
 		const merged = ok(
-			await a.tables.todos.update('milk', {
-				fields: { title: 'Buy milk and eggs' },
-			}),
+			await a.tables.todos.update(
+				'milk',
+				{
+					fields: { title: 'Buy milk and eggs' },
+				},
+				{},
+			),
 		);
 		await a.close();
 		check(
-			"a structured update against current source keeps the agent's line and lands the title",
-			merged.source ===
+			"a structured update against the current text keeps the agent's line and lands the title",
+			merged.text ===
 				agentText.replace('title: Buy milk', 'title: Buy milk and eggs') &&
-				(await disk.text(ROW)) === merged.source,
+				(await disk.text(ROW)) === merged.text,
 		);
 	}
 
@@ -804,7 +852,14 @@ try {
 			'﻿---\r\ntitle: "Café vs Café \u{1F95B}"\r\ndone: false\r\n---\r\nLigne un\r\nLigne deux';
 		const snapshot = ok(await a.tables.todos.get('milk'));
 		if (snapshot === undefined) throw new Error('A did not find the row');
-		const receipt = ok(await a.tables.todos.replace(snapshot, EXACT));
+		const receipt = interpreted(
+			appA.tables.todos,
+			ok(
+				await a.tables.todos.replace('milk', EXACT, {
+					expectedSha256: snapshot.sha256,
+				}),
+			),
+		);
 		const diskBytes = await disk.bytes(ROW);
 		show(ROW, diskBytes.toString('utf8'));
 		check(
@@ -812,8 +867,8 @@ try {
 			Buffer.compare(diskBytes, Buffer.from(encoder.encode(EXACT))) === 0,
 		);
 		check(
-			'the receipt source is the submitted string, code unit for code unit',
-			receipt.source === EXACT,
+			'the receipt text is the submitted string, code unit for code unit',
+			receipt.text === EXACT,
 		);
 		check(
 			'the receipt hash is the hash of the bytes on disk',
@@ -831,26 +886,30 @@ try {
 
 		// A structured update keeps the BOM and CRLF it finds.
 		const updated = ok(
-			await a.tables.todos.update('milk', { fields: { done: true } }),
+			await a.tables.todos.update('milk', { fields: { done: true } }, {}),
 		);
 		check(
 			'a structured update on that file keeps the BOM and every CRLF',
-			updated.source === EXACT.replace('done: false', 'done: true') &&
-				(await disk.text(ROW)) === updated.source,
+			updated.text === EXACT.replace('done: false', 'done: true') &&
+				(await disk.text(ROW)) === updated.text,
 		);
 
 		// A string that is not valid UTF-16: the receipt reports the bytes, not the string.
 		const LONE = '---\ntitle: lone \uD800 surrogate\ndone: false\n---\n';
-		const lone = ok(await a.tables.todos.replace(updated, LONE));
+		const lone = ok(
+			await a.tables.todos.replace('milk', LONE, {
+				expectedSha256: updated.sha256,
+			}),
+		);
 		const loneDisk = await disk.text(ROW);
 		await a.close();
 		check(
 			'for an unpaired surrogate the receipt differs from the submitted string',
-			lone.source !== LONE,
+			lone.text !== LONE,
 		);
 		check(
 			'and it equals the text of the bytes on disk (U+FFFD)',
-			lone.source === loneDisk && loneDisk.includes('�'),
+			lone.text === loneDisk && loneDisk.includes('�'),
 		);
 	}
 
@@ -895,7 +954,7 @@ try {
 		for (const stem of names) {
 			const row = ok(await a.tables.todos.get(stem));
 			const updated = ok(
-				await a.tables.todos.update(stem, { fields: { done: true } }),
+				await a.tables.todos.update(stem, { fields: { done: true } }, {}),
 			);
 			check(
 				`stem ${JSON.stringify(stem)}: get() finds it at ${JSON.stringify(`todos/${stem}.md`)} and update() saves it there`,

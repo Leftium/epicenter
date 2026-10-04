@@ -23,7 +23,7 @@ import * as realFs from 'node:fs/promises';
 import { join, sep } from 'node:path';
 import { expectErr, expectOk } from 'wellcrafted/testing';
 import { hashBytes } from './capture.js';
-import { defineFolder, defineTable, field } from './contract.js';
+import { defineFolder, defineTable, field, inspectRow } from './contract.js';
 import { GIT_ENV, scratch } from './git-http.test-support.js';
 
 const real = { ...realFs };
@@ -193,10 +193,14 @@ test('racing current-row updates return a conflict without retrying', async () =
 		holdFirstRename();
 
 		const results = await Promise.all([
-			opened.tables.todos.update(captured.stem, {
-				fields: { title: 'Renamed' },
-			}),
-			opened.tables.todos.update(captured.stem, { fields: { done: true } }),
+			opened.tables.todos.update(
+				captured.stem,
+				{
+					fields: { title: 'Renamed' },
+				},
+				{},
+			),
+			opened.tables.todos.update(captured.stem, { fields: { done: true } }, {}),
 		]);
 
 		const firstWon = results[0].error === null;
@@ -211,11 +215,15 @@ test('racing current-row updates return a conflict without retrying', async () =
 		);
 		// The caller explicitly resubmits; update performs its own current read.
 		const retried = expectOk(
-			await opened.tables.todos.update('one', {
-				fields: firstWon ? { done: true } : { title: 'Renamed' },
-			}),
+			await opened.tables.todos.update(
+				'one',
+				{
+					fields: firstWon ? { done: true } : { title: 'Renamed' },
+				},
+				{},
+			),
 		);
-		expect(retried.fields).toEqual({
+		expect(inspectRow(definition.tables.todos, retried.text).fields).toEqual({
 			title: 'Renamed',
 			done: true,
 		});

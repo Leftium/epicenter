@@ -149,13 +149,13 @@ export function createRowDraft<TFields>(
 				return {
 					kind: 'unrecognized',
 					message: observation.refusal.reason,
-					source: observation.file.source,
+					source: observation.file.text,
 				};
 			case 'invalid':
 				return {
 					kind: 'unrecognized',
 					message: describeIssues(observation.reading),
-					source: observation.file.source,
+					source: observation.file.text,
 				};
 			default:
 				return observation satisfies never;
@@ -388,7 +388,7 @@ export function createRowDraft<TFields>(
 			if (!admits())
 				return Err('Whispering is closing, so nothing was written.');
 			const copy = conflictCopyPath(state.path);
-			const { error: createError } = await files.create(copy, state.source);
+			const { error: createError } = await files.create(copy, state.text);
 			if (createError !== null) return Err(createError.message);
 			return Ok(copy);
 		},

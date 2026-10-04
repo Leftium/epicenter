@@ -25,7 +25,7 @@ import { readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { mkdtemp, realpath, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { type FileCapture, FileError } from '@epicenter/folder';
+import { type FileCapture, FileError, inspectRow } from '@epicenter/folder';
 import { openFolder } from '@epicenter/folder/bun';
 import { undoDepth } from 'prosemirror-history';
 import { Ok } from 'wellcrafted/result';
@@ -154,7 +154,6 @@ async function folder() {
 			tables: {
 				notes: {
 					list: notes.list,
-					inspect: notes.inspect,
 					create: (input: Parameters<typeof notes.create>[0]) =>
 						publish(`notes/${input.stem}.md`, () => notes.create(input)),
 					// The production editor; only its saves cross the scripted boundary.
@@ -210,7 +209,8 @@ async function folder() {
 	return {
 		host,
 		/** How the notes table reads text. */
-		inspect: notes.inspect,
+		inspect: (text: string) =>
+			inspectRow(honeycrispDefinition.tables.notes, text),
 		saved(path: string): string | undefined {
 			try {
 				return readFileSync(join(root, path), 'utf8');
@@ -311,7 +311,8 @@ async function editingNote() {
 	const notes = await opening;
 	await notes.open(NOTE_PATH);
 	const draft = notes.noteAt(NOTE_PATH);
-	if (draft === undefined) throw new Error(`${NOTE_PATH} did not open as a note`);
+	if (draft === undefined)
+		throw new Error(`${NOTE_PATH} did not open as a note`);
 	cleanup.push(() => void draft.dispose());
 	const rich = createRichSession(noteBody(() => draft));
 	if (rich === undefined) throw new Error('The note is not rich text');

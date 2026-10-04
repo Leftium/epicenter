@@ -1,0 +1,225 @@
+/**
+ * Row text without a folder: interpret it, or write draft values as it.
+ *
+ * Both functions take a table of a prepared folder definition, the one
+ * `defineFolder` returns, so they work before `openFolder` and with no
+ * storage at all. `PreparedFolderTable` marks that table in types only. Neither reads a file, hashes, or invents a snapshot or a
+ * capture: they describe text, not a file.
+ *
+ *     const definition = defineFolder({ kv: {}, tables: { todos } });
+ *     const { data: text } = serializeRow(definition.tables.todos, { fields, body });
+ *     const reading = inspectRow(definition.tables.todos, text);
+ *
+ * `serializeRow` writes the declared values it is given, so it never
+ * reproduces an existing file: a field that did not conform and every key the
+ * table does not declare are absent from a reading. Change an existing row
+ * with `table.update`, `patchRowText`, or `table.replace` of edited text.
+ */
+
+import {
+	type CreateRowOf,
+	conformance,
+	type FieldMap,
+	isJsonSafe,
+} from '@epicenter/definition';
+import { Ok, type Result } from 'wellcrafted/result';
+import type { PreparedFolderTable } from './definition.js';
+import { TableError } from './errors.js';
+import { composeSource, parseSource, valueProblem } from './markdown.js';
+import {
+	type DeepReadonly,
+	type FieldIssue,
+	freezeDeep,
+	freezeIssues,
+	type ParseError,
+} from './reading.js';
+
+/**
+ * How row text reads. Text that does not parse has a `parseError`, no
+ * fields, no body, and no issues. Text that parses has a body and every
+ * declared field that validated by itself, so one field's issue does not
+ * hide another field's value.
+ *
+ * `fields` is always partial: an empty `issues` does not make it a complete
+ * row, so check the fields an action needs. Every declared field the text
+ * lacks is an issue. Keys the table does not declare stay in the text and
+ * are not issues.
+ */
+export type TableReading<TFields> = {
+	readonly fields: DeepReadonly<Partial<TFields>>;
+	/** The text after the closing fence, possibly empty; `undefined` when the text does not parse. */
+	readonly body: string | undefined;
+	readonly parseError: ParseError | undefined;
+	readonly issues: readonly FieldIssue[];
+};
+
+/**
+ * Draft values for one row: declared keys, any value. A value need not
+ * conform, so a form can preview what a person is still typing; `undefined`
+ * leaves the key out.
+ */
+export type RowDraft<TFields> = {
+	readonly fields: { readonly [K in keyof TFields & string]?: unknown };
+	readonly body?: string;
+};
+
+const encoder = new TextEncoder();
+const utf8 = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true });
+
+/**
+ * Interpret row text against a table's prepared fields. Parsing comes first
+ * and fails as a whole. The shared conformance read then checks each declared
+ * field by itself; nothing is coerced, defaulted, or repaired.
+ *
+ * The values are this parse's own, so freezing them at every depth touches
+ * nothing a caller holds. Each declared value that is JSON is frozen before
+ * its field checks it, so a field's callback cannot make a reading say what
+ * its text does not.
+ *
+ * YAML can also hold what JSON cannot: a `!!binary` byte array, a date, a
+ * set, a map, a number that is not finite. A declared value like that is
+ * handed over as it is, since a byte array cannot be frozen: the conformance
+ * read refuses it as an issue before any callback runs. A key the table does
+ * not declare is never checked, so nothing here touches its value.
+ */
+export function readRowText<TFields>(
+	schemas: FieldMap,
+	text: string,
+): TableReading<TFields> {
+	const { data: parsed, error: parseError } = parseSource(text);
+	if (parseError !== null)
+		return Object.freeze({
+			fields: Object.freeze({}) as DeepReadonly<Partial<TFields>>,
+			body: undefined,
+			parseError,
+			issues: freezeIssues([]),
+		});
+	const declared: Record<string, unknown> = {};
+	for (const key of Object.keys(schemas)) {
+		if (!Object.hasOwn(parsed.values, key)) continue;
+		const value = parsed.values[key];
+		declared[key] = isJsonSafe(value) ? freezeDeep(value) : value;
+	}
+	const { conforming, issues } = conformance(schemas, declared);
+	return Object.freeze({
+		// Every value is frozen already; only the map that holds them is new.
+		fields: Object.freeze(conforming) as DeepReadonly<Partial<TFields>>,
+		body: parsed.body,
+		parseError: undefined,
+		issues: freezeIssues(issues),
+	});
+}
+
+/**
+ * Why values cannot be written as frontmatter that reads back as supplied.
+ * A schema decides nothing here.
+ */
+export function unrepresentable(
+	values: Readonly<Record<string, unknown>>,
+): FieldIssue[] {
+	const issues: FieldIssue[] = [];
+	for (const [key, value] of Object.entries(values)) {
+		const problem = valueProblem(value);
+		if (problem !== undefined)
+			issues.push({
+				field: key,
+				message: `${key} cannot be saved: ${problem}`,
+			});
+	}
+	return issues;
+}
+
+/**
+ * Complete row text for values: both fences around the declared keys present,
+ * in declared order, then the body. The text is that of its UTF-8 bytes, so
+ * an unpaired surrogate is already U+FFFD, exactly as a save would submit it.
+ * `create` and `serializeRow` both write rows through this; only `create`
+ * checks the values against the schema first.
+ */
+export function composeRowText(
+	schemas: FieldMap,
+	values: Readonly<Record<string, unknown>>,
+	body: string,
+): Result<string, Extract<TableError, { name: 'InvalidValues' }>> {
+	const ordered: Record<string, unknown> = Object.create(null);
+	for (const key of Object.keys(schemas))
+		if (Object.hasOwn(values, key)) ordered[key] = values[key];
+	const { data: text, error: composeError } = composeSource(ordered, body);
+	if (composeError !== null)
+		return TableError.InvalidValues({
+			issues: [
+				{
+					field: composeError.field,
+					message: `${composeError.field} cannot be saved: ${composeError.reason}`,
+				},
+			],
+		});
+	return Ok(submittedText(text).text);
+}
+
+/**
+ * The bytes a save submits for `text` and the text those bytes are. Encoding
+ * replaces an unpaired surrogate, so a receipt's text is the text of the
+ * bytes, not a string assumed to equal them. The text is decoded with the
+ * decoder that reads files: a byte-order mark stays in it.
+ */
+export function submittedText(text: string): {
+	bytes: Uint8Array;
+	text: string;
+} {
+	const bytes = encoder.encode(text);
+	return { bytes, text: utf8.decode(bytes) };
+}
+
+/**
+ * Interpret row text with a table of a prepared definition: parse it once,
+ * then check each declared field by itself. Synchronous and pure: it reads no
+ * file and invents no capture, so it reads an unsaved buffer, a receipt's
+ * `text`, or a draft before any folder is open.
+ *
+ * `table` comes from the definition `defineFolder` returned; its type says
+ * so, and a raw `defineTable` declaration does not compile here. The type is
+ * not a proof of identity: a table rebuilt with replaced or cloned fields
+ * still compiles, and reading a declared value through such a field throws,
+ * as every read of an unprepared schema does. Prepare it again instead.
+ */
+export function inspectRow<const TTable extends PreparedFolderTable>(
+	table: TTable,
+	text: string,
+): TableReading<CreateRowOf<TTable>> {
+	return readRowText(table.fields, text);
+}
+
+/**
+ * Preview the text `create` would write for draft values, before any folder
+ * is open. Values are not checked against the schema: one that does not
+ * conform is written all the same, and `inspectRow` of the result reports
+ * it, as it reports each declared field the draft leaves out. A value YAML
+ * cannot hold as supplied, such as `NaN` or a `Date`, and a key the table
+ * does not declare are `InvalidValues`, since no row could be saved with
+ * them. `create` writes the same text for the same values once they conform.
+ *
+ * Like `inspectRow`, it takes a table `defineFolder` prepared, so the
+ * preview reads back through the same schemas. It checks no value itself, so
+ * a rebuilt table that `inspectRow` would refuse is not noticed here.
+ *
+ * It writes only what it is given. Never pass it an existing row's reading
+ * to rewrite that file: the reading lacks unknown keys and fields that did
+ * not conform, so the text would lose them.
+ */
+export function serializeRow<const TTable extends PreparedFolderTable>(
+	table: TTable,
+	draft: RowDraft<CreateRowOf<TTable>>,
+): Result<string, Extract<TableError, { name: 'InvalidValues' }>> {
+	const supplied: Record<string, unknown> = Object.create(null);
+	const issues: FieldIssue[] = [];
+	for (const [key, value] of Object.entries(draft.fields ?? {})) {
+		if (value === undefined) continue;
+		if (!Object.hasOwn(table.fields, key))
+			issues.push({ field: key, message: `${key} is not declared` });
+		else supplied[key] = value;
+	}
+	issues.push(...unrepresentable(supplied));
+	if (issues.length > 0) return TableError.InvalidValues({ issues });
+	return composeRowText(table.fields, supplied, draft.body ?? '');
+}

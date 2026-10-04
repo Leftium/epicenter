@@ -38,7 +38,7 @@ import type {
 	TableSnapshot,
 	TableWriteError,
 } from '@epicenter/folder';
-import { rowPath, rowStemOf } from '@epicenter/folder';
+import { inspectRow, rowPath, rowStemOf } from '@epicenter/folder';
 import { customAlphabet } from 'nanoid';
 import { SvelteMap, SvelteSet } from 'svelte/reactivity';
 import { Err, Ok, type Result } from 'wellcrafted/result';
@@ -63,6 +63,7 @@ import {
 	type TranscriptionFields,
 	type TransformationFields,
 	type TransformationRunFields,
+	whisperingDefinition,
 } from './definition.js';
 import {
 	type Autosave,
@@ -1321,7 +1322,7 @@ export function createLibrary(workspace: Workspace) {
 		const slot = slotAt(path);
 		if (slot?.kind === 'form')
 			return slot.draft.isDirty
-				? { document: slot.draft.state.document, text: slot.draft.state.source }
+				? { document: slot.draft.state.document, text: slot.draft.state.text }
 				: undefined;
 		const editor = textDraftAt(path);
 		return editor?.dirty
@@ -1411,7 +1412,7 @@ export function createLibrary(workspace: Workspace) {
 			const text = rawEditorOf({
 				path: to,
 				sha256: baseline.sha256,
-				source: baseline.source,
+				text: baseline.text,
 			});
 			if (!text.carry(typed.text)) return notCarried;
 			withRowTable(to, ({ rows }) =>
@@ -1629,7 +1630,7 @@ export function createLibrary(workspace: Workspace) {
 	/** The whole text a draft holds now, typed or not. */
 	function draftText(path: string): string | undefined {
 		const slot = slotAt(path);
-		if (slot?.kind === 'form') return slot.draft.state.source;
+		if (slot?.kind === 'form') return slot.draft.state.text;
 		return textDraftAt(path)?.buffer;
 	}
 
@@ -1771,7 +1772,7 @@ export function createLibrary(workspace: Workspace) {
 			kept === undefined || kept.kind === 'opening'
 				? await openRow(recordingRows, path)
 				: kept;
-		let source: string;
+		let text: string;
 		switch (slot.kind) {
 			case 'missing':
 				return missing;
@@ -1784,10 +1785,10 @@ export function createLibrary(workspace: Workspace) {
 				if (observation.kind === 'missing') return missing;
 				if (observation.kind === 'unreadable')
 					return unreadable(observation.error.message);
-				source =
+				text =
 					observation.kind === 'present'
-						? observation.revision.source
-						: observation.file.source;
+						? observation.revision.text
+						: observation.file.text;
 				break;
 			}
 			case 'raw': {
@@ -1802,13 +1803,18 @@ export function createLibrary(workspace: Workspace) {
 				if (opened.kind !== 'text')
 					return unreadable('it is not text the app can read');
 				slot.editor.observe(opened.file);
-				source = opened.file.source;
+				text = opened.file.text;
 				break;
 			}
 			default:
 				return slot satisfies never;
 		}
-		if (isThisRecording(table.inspect(source), capture))
+		if (
+			isThisRecording(
+				inspectRow(whisperingDefinition.tables.recordings, text),
+				capture,
+			)
+		)
 			return { status: 'present' };
 		return {
 			status: 'foreign',
@@ -1969,10 +1975,17 @@ export function createLibrary(workspace: Workspace) {
 					fields,
 					body,
 				});
+				// The receipt names the bytes sent; the row is how they read.
 				published =
 					createError !== null
 						? Err(describeWriteError(createError))
-						: Ok(created);
+						: Ok({
+								...created,
+								...inspectRow(
+									whisperingDefinition.tables.transcriptions,
+									created.text,
+								),
+							});
 			} else
 				published = isThisResult(existing, fields, body)
 					? Ok(existing)
@@ -2052,10 +2065,22 @@ export function createLibrary(workspace: Workspace) {
 								fields: run.fields,
 								body,
 							});
+				// The receipt names the bytes sent; the row is how they read.
 				published =
 					createError !== null
 						? Err(describeWriteError(createError))
-						: Ok(created);
+						: Ok({
+								...created,
+								...(run.destination === 'transcript'
+									? inspectRow(
+											whisperingDefinition.tables.transformation_runs,
+											created.text,
+										)
+									: inspectRow(
+											whisperingDefinition.tables.text_runs,
+											created.text,
+										)),
+							});
 			} else
 				published = isThisResult(existing, run.fields, body)
 					? Ok(existing)
@@ -3126,7 +3151,9 @@ export function createLibrary(workspace: Workspace) {
 		},
 		deleteTransformationResult: submitFileChange(
 			async (entry: TransformationRunEntry): Promise<string | undefined> => {
-				const { error: deleteError } = await outputs.delete(entry);
+				const { error: deleteError } = await outputs.delete(entry.stem, {
+					expectedSha256: entry.sha256,
+				});
 				if (deleteError === null) unlistedOutputs.delete(entry.path);
 				await refreshAll();
 				return deleteError !== null
@@ -3136,7 +3163,9 @@ export function createLibrary(workspace: Workspace) {
 		),
 		deleteTextResult: submitFileChange(
 			async (entry: TextRunEntry): Promise<string | undefined> => {
-				const { error: deleteError } = await textOutputs.delete(entry);
+				const { error: deleteError } = await textOutputs.delete(entry.stem, {
+					expectedSha256: entry.sha256,
+				});
 				await refreshAll();
 				return deleteError !== null
 					? describeWriteError(deleteError)
@@ -3333,7 +3362,9 @@ export function createLibrary(workspace: Workspace) {
 						// A transformation's saved results are separate files and stay.
 						const { error: deleteError } = await deleteRetired(path, () =>
 							deletion.kind === 'transformation'
-								? profiles.delete(deletion.entry)
+								? profiles.delete(deletion.entry.stem, {
+										expectedSha256: deletion.entry.sha256,
+									})
 								: folder.files.remove({ path, sha256: deletion.sha256 }),
 						);
 						await refreshAll();
@@ -3383,7 +3414,9 @@ export function createLibrary(workspace: Workspace) {
 						// The table removes the row file and nothing else. The audio the row
 						// names is an ordinary file; it stays, and Files can delete it.
 						const { error: deleteError } = await deleteRetired(path, () =>
-							table.delete(deletion.entry),
+							table.delete(deletion.entry.stem, {
+								expectedSha256: deletion.entry.sha256,
+							}),
 						);
 						if (deleteError !== null) {
 							await refreshAll();
@@ -3401,7 +3434,10 @@ export function createLibrary(workspace: Workspace) {
 							waiting.delete(result.path);
 							const { error: deleteError } = await deleteRetired(
 								result.path,
-								() => results.delete(result),
+								() =>
+									results.delete(result.stem, {
+										expectedSha256: result.sha256,
+									}),
 							);
 							if (deleteError !== null) leftovers.push(result.path);
 							else unlistedResults.delete(result.path);
@@ -3410,7 +3446,10 @@ export function createLibrary(workspace: Workspace) {
 							waiting.delete(output.path);
 							const { error: deleteError } = await deleteRetired(
 								output.path,
-								() => outputs.delete(output),
+								() =>
+									outputs.delete(output.stem, {
+										expectedSha256: output.sha256,
+									}),
 							);
 							if (deleteError !== null) leftovers.push(output.path);
 							else unlistedOutputs.delete(output.path);

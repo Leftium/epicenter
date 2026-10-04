@@ -6,6 +6,9 @@
  *     const notes = edits.files.edit(textCapture);
  *     const saved = await edits.tables.todos.save(displayed, { fields: { done } });
  *
+ * Each table must bring its own `inspect`: `inspectRow` with the table's
+ * definition, since an open table no longer interprets text.
+ *
  * Each `edit()` call opens a fresh handle. Controls that should share one
  * draft share that handle explicitly; there is no registry that hands two
  * callers the same draft for one path. A one-click control needs no handle:
@@ -22,8 +25,9 @@ import {
 	type TableReplaceError,
 } from '../../src/errors.js';
 import type { FolderFiles } from '../../src/files.js';
-import { type PatchRefusal, patchSource } from '../../src/markdown.js';
+import { type PatchRefusal, patchRowText } from '../../src/markdown.js';
 import { rowPath } from '../../src/paths.js';
+import type { TableReading } from '../../src/row-text.js';
 import type { FileTable } from '../../src/table.js';
 import {
 	createEditHandle,
@@ -32,11 +36,13 @@ import {
 	type Observation,
 } from './edit-handle.js';
 
-/** The table members an edit reads and saves through. */
-export type EditableTable = Pick<
-	FileTable<object>,
-	'inspect' | 'get' | 'replace'
->;
+/**
+ * The table members an edit reads and saves through, and how the caller
+ * interprets a row: `inspectRow` with the table's definition.
+ */
+export type EditableTable = Pick<FileTable<object>, 'get' | 'replace'> & {
+	inspect(text: string): TableReading<object>;
+};
 
 /** The folder members an edit reads and saves through. */
 export type EditableFolder<TTables extends Record<string, EditableTable>> = {
@@ -104,18 +110,34 @@ export function createFolderEdits<
 			readonly body?: string;
 		};
 		const prepare = (source: string, change: Change) =>
-			patchSource(source, {
+			patchRowText(source, {
 				fields: change.fields as Readonly<Record<string, unknown>> | undefined,
 				body: change.body,
 			});
 		/** Whether a snapshot is a row of this table: its path is its stem's row path. */
 		const isRow = (snapshot: Snapshot) =>
 			snapshot.path === rowPath(name, snapshot.stem);
+		/**
+		 * Replace the row under the baseline's hash. The receipt names only
+		 * the submitted bytes, so the snapshot a handle keeps is its reading.
+		 */
+		async function replaceUnder(
+			baseline: Snapshot,
+			source: string,
+		): Promise<Result<Snapshot, TableReplaceError>> {
+			const { data: receipt, error } = await table.replace(
+				baseline.stem,
+				source,
+				{ expectedSha256: baseline.sha256 },
+			);
+			if (error !== null) return Err(error);
+			return Ok({ ...receipt, ...table.inspect(receipt.text) } as Snapshot);
+		}
 
 		return {
 			/**
 			 * Save one change to the row as displayed, once, with no handle and
-			 * nothing to dispose. It patches exactly `displayed.source`, keeping
+			 * nothing to dispose. It patches exactly `displayed.text`, keeping
 			 * every other byte, and replaces the file only if it is still that
 			 * version. A change the source cannot take is refused before anything
 			 * is written. Nothing retries; an `Unconfirmed` result stays unknown.
@@ -129,12 +151,9 @@ export function createFolderEdits<
 						path: displayed.path,
 						reason: `the snapshot is not a row of '${name}'`,
 					});
-				const prepared = prepare(displayed.source, change);
+				const prepared = prepare(displayed.text, change);
 				if (prepared.error) return refusalError(displayed.path, prepared.error);
-				return (await table.replace(displayed, prepared.data)) as Result<
-					Snapshot,
-					TableReplaceError
-				>;
+				return replaceUnder(displayed, prepared.data);
 			},
 			/** Open a fresh handle on the row the caller displays. */
 			edit(displayed: Snapshot) {
@@ -151,11 +170,7 @@ export function createFolderEdits<
 						if (got.data === undefined) return { kind: 'missing' };
 						return { kind: 'present', snapshot: got.data as Snapshot };
 					},
-					save: async (baseline, source) =>
-						(await table.replace(baseline, source)) as Result<
-							Snapshot,
-							TableReplaceError
-						>,
+					save: replaceUnder,
 					watch: watchPath(displayed.path),
 				};
 				const handle = createEditHandle(document, displayed);
@@ -205,13 +220,16 @@ export function createFolderEdits<
 							if (read.error.name === 'NotFound') return { kind: 'missing' };
 							return { kind: 'unreadable', error: read.error };
 						}
-						let source: string;
+						let text: string;
 						try {
-							source = utf8.decode(read.data.bytes);
+							text = utf8.decode(read.data.bytes);
 						} catch {
 							return {
 								kind: 'unreadable',
-								error: TableError.InvalidUtf8({ path }).error,
+								error: TableError.InvalidUtf8({
+									path,
+									sha256: read.data.sha256,
+								}).error,
 							};
 						}
 						return {
@@ -219,7 +237,7 @@ export function createFolderEdits<
 							snapshot: Object.freeze({
 								path,
 								sha256: read.data.sha256,
-								source,
+								text,
 							}),
 						};
 					},
@@ -232,7 +250,7 @@ export function createFolderEdits<
 							Object.freeze({
 								path,
 								sha256: saved.data.sha256,
-								source: utf8.decode(bytes),
+								text: utf8.decode(bytes),
 							}),
 						);
 					},

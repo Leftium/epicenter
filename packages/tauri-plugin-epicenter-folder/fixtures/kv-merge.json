@@ -6,7 +6,7 @@
 		"theirs": null,
 		"expected": {
 			"kind": "merged",
-			"source": null
+			"text": null
 		}
 	},
 	{
@@ -16,7 +16,7 @@
 		"theirs": null,
 		"expected": {
 			"kind": "merged",
-			"source": "{}\n"
+			"text": "{}\n"
 		}
 	},
 	{
@@ -26,7 +26,7 @@
 		"theirs": "{ }",
 		"expected": {
 			"kind": "merged",
-			"source": "{}\n"
+			"text": "{}\n"
 		}
 	},
 	{
@@ -36,7 +36,7 @@
 		"theirs": "{\"theme\":\"light\",\"language\":\"fr\"}",
 		"expected": {
 			"kind": "merged",
-			"source": "{\n  \"language\": \"fr\",\n  \"theme\": \"dark\"\n}\n"
+			"text": "{\n  \"language\": \"fr\",\n  \"theme\": \"dark\"\n}\n"
 		}
 	},
 	{
@@ -46,7 +46,7 @@
 		"theirs": "{\"language\":\"fr\"}",
 		"expected": {
 			"kind": "merged",
-			"source": "{\n  \"language\": \"fr\",\n  \"theme\": \"dark\"\n}\n"
+			"text": "{\n  \"language\": \"fr\",\n  \"theme\": \"dark\"\n}\n"
 		}
 	},
 	{
@@ -56,7 +56,7 @@
 		"theirs": "{\"x\":1}",
 		"expected": {
 			"kind": "merged",
-			"source": "{\n  \"x\": 1\n}\n"
+			"text": "{\n  \"x\": 1\n}\n"
 		}
 	},
 	{
@@ -100,7 +100,7 @@
 		"theirs": "{\"a\":1,\"b\":3}",
 		"expected": {
 			"kind": "merged",
-			"source": "{\n  \"b\": 3\n}\n"
+			"text": "{\n  \"b\": 3\n}\n"
 		}
 	},
 	{
@@ -110,7 +110,7 @@
 		"theirs": "{}",
 		"expected": {
 			"kind": "merged",
-			"source": "{}\n"
+			"text": "{}\n"
 		}
 	},
 	{
@@ -137,7 +137,7 @@
 		"theirs": "{}",
 		"expected": {
 			"kind": "merged",
-			"source": "{\n  \"x\": null\n}\n"
+			"text": "{\n  \"x\": null\n}\n"
 		}
 	},
 	{
@@ -164,7 +164,7 @@
 		"theirs": "{ \"x\": 1 }",
 		"expected": {
 			"kind": "merged",
-			"source": null
+			"text": null
 		}
 	},
 	{
@@ -192,7 +192,7 @@
 		"theirs": null,
 		"expected": {
 			"kind": "merged",
-			"source": null
+			"text": null
 		}
 	},
 	{
@@ -202,7 +202,7 @@
 		"theirs": "{\"x\":\"\\u0061\"}",
 		"expected": {
 			"kind": "merged",
-			"source": null
+			"text": null
 		}
 	},
 	{
@@ -212,7 +212,7 @@
 		"theirs": "{\"x\":{\"b\":2,\"a\":1}}",
 		"expected": {
 			"kind": "merged",
-			"source": null
+			"text": null
 		}
 	},
 	{
@@ -265,7 +265,7 @@
 		"theirs": "{\"x\":{\"a\":1,\"b\":3}}",
 		"expected": {
 			"kind": "merged",
-			"source": "{\n  \"x\": {\"a\":1,\"b\":3}\n}\n"
+			"text": "{\n  \"x\": {\"a\":1,\"b\":3}\n}\n"
 		}
 	},
 	{
@@ -275,7 +275,7 @@
 		"theirs": "{\"x\":{\"a\":1,\"b\":2}}",
 		"expected": {
 			"kind": "merged",
-			"source": "{\n  \"x\": { \"b\": 2, \"a\": 1 }\n}\n"
+			"text": "{\n  \"x\": { \"b\": 2, \"a\": 1 }\n}\n"
 		}
 	},
 	{
@@ -285,7 +285,7 @@
 		"theirs": "{\"x\":\"\\u0061\"}",
 		"expected": {
 			"kind": "merged",
-			"source": "{\n  \"x\": \"\\u0061\"\n}\n"
+			"text": "{\n  \"x\": \"\\u0061\"\n}\n"
 		}
 	},
 	{
@@ -329,7 +329,7 @@
 		"theirs": "{\"overflow\":1e400,\"tiny\":1e-9999,\"large\":9007199254740993,\"x\":0}",
 		"expected": {
 			"kind": "merged",
-			"source": "{\n  \"large\": 9007199254740993,\n  \"overflow\": 1e400,\n  \"tiny\": 1e-9999,\n  \"x\": 1\n}\n"
+			"text": "{\n  \"large\": 9007199254740993,\n  \"overflow\": 1e400,\n  \"tiny\": 1e-9999,\n  \"x\": 1\n}\n"
 		}
 	},
 	{
@@ -373,7 +373,7 @@
 		"theirs": "{\"constructor\":2}",
 		"expected": {
 			"kind": "merged",
-			"source": "{\n  \"__proto__\": 1,\n  \"constructor\": 2\n}\n"
+			"text": "{\n  \"__proto__\": 1,\n  \"constructor\": 2\n}\n"
 		}
 	},
 	{
@@ -383,7 +383,7 @@
 		"theirs": "{\"x\":0}",
 		"expected": {
 			"kind": "merged",
-			"source": "{\n  \"x\": 1\n}\n"
+			"text": "{\n  \"x\": 1\n}\n"
 		}
 	},
 	{
@@ -393,7 +393,7 @@
 		"theirs": "{\"\":2}",
 		"expected": {
 			"kind": "merged",
-			"source": "{\n  \"\": 2,\n  \"𐀀\": 1\n}\n"
+			"text": "{\n  \"\": 2,\n  \"𐀀\": 1\n}\n"
 		}
 	},
 	{
@@ -403,7 +403,7 @@
 		"theirs": "{\"x\":{\"\":2,\"𐀀\":1}}",
 		"expected": {
 			"kind": "merged",
-			"source": "{\n  \"x\": {\"\":2,\"𐀀\":1}\n}\n"
+			"text": "{\n  \"x\": {\"\":2,\"𐀀\":1}\n}\n"
 		}
 	},
 	{
@@ -413,7 +413,7 @@
 		"theirs": "{\"x\":\"\\ud83d\\ude00\"}",
 		"expected": {
 			"kind": "merged",
-			"source": "{\n  \"x\": \"\\ud83d\\ude00\"\n}\n"
+			"text": "{\n  \"x\": \"\\ud83d\\ude00\"\n}\n"
 		}
 	},
 	{
@@ -423,7 +423,7 @@
 		"theirs": "{}",
 		"expected": {
 			"kind": "merged",
-			"source": "{\n  \"\\u0000\": 1\n}\n"
+			"text": "{\n  \"\\u0000\": 1\n}\n"
 		}
 	},
 	{
@@ -433,7 +433,7 @@
 		"theirs": "{\"x\":0}",
 		"expected": {
 			"kind": "merged",
-			"source": "{\n  \"x\": 1\n}\n"
+			"text": "{\n  \"x\": 1\n}\n"
 		}
 	},
 	{
@@ -686,7 +686,7 @@
 		"theirs": "{}",
 		"expected": {
 			"kind": "merged",
-			"source": "{\n  \"x\": [[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[0]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]\n}\n"
+			"text": "{\n  \"x\": [[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[0]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]\n}\n"
 		}
 	},
 	{
@@ -706,7 +706,7 @@
 		"theirs": "{}",
 		"expected": {
 			"kind": "merged",
-			"source": "{\n  \"x\": \"[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[\\\"\\\\]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]\"\n}\n"
+			"text": "{\n  \"x\": \"[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[\\\"\\\\]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]\"\n}\n"
 		}
 	},
 	{
@@ -766,7 +766,7 @@
 		"theirs": "{}",
 		"expected": {
 			"kind": "merged",
-			"source": "{\n  \"\\u0000\\u0001\\b\\t\\n\\f\\r\\\"\\\\  \": 1\n}\n"
+			"text": "{\n  \"\\u0000\\u0001\\b\\t\\n\\f\\r\\\"\\\\  \": 1\n}\n"
 		}
 	},
 	{
@@ -983,7 +983,7 @@
 		"theirs": "{\"x\":\"/\"}",
 		"expected": {
 			"kind": "merged",
-			"source": "{\n  \"x\": \"/\"\n}\n"
+			"text": "{\n  \"x\": \"/\"\n}\n"
 		}
 	},
 	{
@@ -993,7 +993,7 @@
 		"theirs": "{}",
 		"expected": {
 			"kind": "merged",
-			"source": "{\n  \"x\": \" \"\n}\n"
+			"text": "{\n  \"x\": \" \"\n}\n"
 		}
 	},
 	{
@@ -1003,7 +1003,7 @@
 		"theirs": "{}",
 		"expected": {
 			"kind": "merged",
-			"source": "{\n  \"x\": 1\n}\n"
+			"text": "{\n  \"x\": 1\n}\n"
 		}
 	}
 ]

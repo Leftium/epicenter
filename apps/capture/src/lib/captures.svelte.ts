@@ -21,6 +21,7 @@ import {
 	CAPTURES_TABLE,
 	type CaptureDocument,
 	type CaptureFields,
+	captureDefinition,
 	composeBody,
 	excerpt,
 	parseCapture,
@@ -31,7 +32,13 @@ import {
 	type LegacyBundle,
 	runLegacyImport,
 } from '@epicenter/capture/legacy';
-import { type FileCapture, type GitSnapshot, rowPath } from '@epicenter/folder';
+import {
+	type FileCapture,
+	type GitSnapshot,
+	inspectRow,
+	rowPath,
+	type TableWriteReceipt,
+} from '@epicenter/folder';
 import { SvelteMap } from 'svelte/reactivity';
 import {
 	type CaptureEntry,
@@ -101,6 +108,9 @@ export function createCaptures(
 ) {
 	const { folder } = host;
 	const table = folder.tables.captures;
+	/** How the captures table reads text; it reads no file. */
+	const inspect = (text: string) =>
+		inspectRow(captureDefinition.tables.captures, text);
 
 	let entries = $state.raw<readonly CaptureEntry[]>([]);
 	let unreadable = $state.raw<
@@ -166,7 +176,7 @@ export function createCaptures(
 	async function createExact(stem: string, source: string) {
 		const bytes = encoder.encode(source);
 		const text = utf8.decode(bytes);
-		const reading = table.inspect(text);
+		const reading = inspect(text);
 		const written = await writing(() =>
 			folder.files.create(pathOf(stem), bytes),
 		);
@@ -176,18 +186,29 @@ export function createCaptures(
 		const entry: CaptureEntry = Object.freeze({
 			path,
 			stem,
-			source: text,
+			text,
 			sha256,
 			...reading,
 		});
 		return { data: entry, error: null } as const;
 	}
 
+	/** A write receipt names the bytes sent; the entry is how they read. */
+	const entryOf = (receipt: TableWriteReceipt): CaptureEntry =>
+		Object.freeze({ ...receipt, ...inspect(receipt.text) });
+
 	const storeFor = (stem: string): DraftStore => ({
-		inspect: table.inspect,
+		inspect,
 		edit: (signal) => table.edit(stem, { signal }),
 		read: () => read(stem),
-		replace: (file, source) => writing(() => table.replace(file, source)),
+		async replace(file, source) {
+			const written = await writing(() =>
+				table.replace(stem, source, { expectedSha256: file.sha256 }),
+			);
+			if (written.error !== null)
+				return { data: null, error: written.error } as const;
+			return { data: entryOf(written.data), error: null } as const;
+		},
 		create: (source) => createExact(stem, source),
 		writing,
 	});
@@ -272,19 +293,19 @@ export function createCaptures(
 		return refreshing;
 	}
 
-	/** One parse per distinct source, for the timeline. */
+	/** One parse per distinct file text, for the timeline. */
 	const parsed = new Map<string, CaptureDocument>();
 	function documentOf(entry: CaptureEntry): CaptureDocument {
-		const { source, parseError } = entry;
-		let document = parsed.get(source);
+		const { text, parseError } = entry;
+		let document = parsed.get(text);
 		if (document === undefined) {
 			if (parsed.size > 2000) parsed.clear();
 			// Text and thoughts are read only from a file that parses as a capture.
 			document =
 				parseError === undefined
-					? parseCapture(source)
-					: unparsedCapture(source, parseError.message);
-			parsed.set(source, document);
+					? parseCapture(text)
+					: unparsedCapture(text, parseError.message);
+			parsed.set(text, document);
 		}
 		return document;
 	}
@@ -471,7 +492,7 @@ export function createCaptures(
 							}),
 						);
 						if (created.error === null) {
-							noteSaved(created.data);
+							noteSaved(entryOf(created.data));
 							if (newCapture === text) newCapture = '';
 							return { ok: true, stem: created.data.stem };
 						}
@@ -605,7 +626,10 @@ export function createCaptures(
 				// The open draft deletes, so no save of its own can land after the
 				// delete and write the file back.
 				const draft = drafts.get(reviewed.path);
-				const deleting = () => writing(() => table.delete(reviewed));
+				const deleting = () =>
+					writing(() =>
+						table.delete(reviewed.stem, { expectedSha256: reviewed.sha256 }),
+					);
 				try {
 					const removed = await (draft ? draft.remove(deleting) : deleting());
 					if (removed.error !== null)

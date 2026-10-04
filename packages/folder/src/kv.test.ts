@@ -149,7 +149,7 @@ test('get returns a text capture with the stored values that validated, and a mi
 	expect(snapshot).toEqual({
 		path: 'kv.json',
 		sha256: await hashBytes(encoder.encode(source)),
-		source,
+		text: source,
 		values: { theme: 'dark' },
 		parseError: undefined,
 		issues: [{ field: 'size', message: expect.stringContaining('size') }],
@@ -177,7 +177,7 @@ test.each([
 	expect(snapshot).toEqual({
 		path: 'kv.json',
 		sha256: await hashBytes(encoder.encode(source)),
-		source,
+		text: source,
 		values: {},
 		parseError: expect.anything(),
 		issues: [],
@@ -313,19 +313,19 @@ test('a refinement is shown a frozen copy: the supplied objects stay unfrozen, a
 	if (refused.name === 'InvalidValues')
 		expect(refused.issues.map((issue) => issue.field)).toEqual(['mutated']);
 	expect(change).toEqual({ theme: 'dark', mutated: { answer: 1 } });
-	expect(await source()).toBe(created.source);
+	expect(await source()).toBe(created.text);
 
 	// The same value in a file somebody wrote: it reads with the issue, the
 	// key beside it still reads and updates, and the text stays as written.
 	const written = '{"theme": "light", "mutated": {"answer": 1}}';
 	expectOk(await files.replace(created, written));
 	const read = expectOk(await kv.get())!;
-	expect(read.source).toBe(written);
+	expect(read.text).toBe(written);
 	expect(read.values).toEqual({ theme: 'light' });
 	expect(read.issues.map((issue) => issue.field)).toEqual(['mutated']);
 	const updated = expectOk(await kv.update({ theme: 'dark' }));
-	expect(updated.source).toBe(written.replace('light', 'dark'));
-	expect(await source()).toBe(updated.source);
+	expect(updated.text).toBe(written.replace('light', 'dark'));
+	expect(await source()).toBe(updated.text);
 	expect(updated.issues.map((issue) => issue.field)).toEqual(['mutated']);
 });
 
@@ -401,7 +401,7 @@ test('declared keys that every object inherits are read only when the file has t
 	const updated = expectOk(
 		await kv.update({ constructor: 'mine', toString: 'text' }),
 	);
-	expect(updated.source).toBe(
+	expect(updated.text).toBe(
 		'{"theme": "dark","constructor": "mine","toString": "text"}',
 	);
 	expect(Object.entries(updated.values)).toEqual([
@@ -421,7 +421,7 @@ test('create saves only the supplied values as two-space JSON and reads nothing'
 	);
 	const text =
 		'{\n  "theme": "dark",\n  "layout": {\n    "panes": [\n      1,\n      2\n    ]\n  }\n}\n';
-	expect(created.source).toBe(text);
+	expect(created.text).toBe(text);
 	expect(await source()).toBe(text);
 	expect(created.sha256).toBe(await hashBytes(encoder.encode(text)));
 	expect(created.values).toEqual({ theme: 'dark', layout: { panes: [1, 2] } });
@@ -522,10 +522,10 @@ test('update reads once, publishes once, and returns the capture of what it subm
 	const { kv, calls, source } = await setup('{"theme": "light"}\n');
 	const updated = expectOk(await kv.update({ theme: 'dark' }));
 	expect(calls).toEqual({ reads: 1, applies: 1 });
-	expect(updated.source).toBe('{"theme": "dark"}\n');
-	expect(updated.sha256).toBe(await hashBytes(encoder.encode(updated.source)));
+	expect(updated.text).toBe('{"theme": "dark"}\n');
+	expect(updated.sha256).toBe(await hashBytes(encoder.encode(updated.text)));
 	expect(updated.values).toEqual({ theme: 'dark' });
-	expect(await source()).toBe(updated.source);
+	expect(await source()).toBe(updated.text);
 });
 
 test('update returns Conflict when the file changes after its one read, and does not retry', async () => {
@@ -623,9 +623,9 @@ test('update keeps a byte order mark, number spellings, nesting, and spacing out
 
 	const updated = expectOk(await kv.update({ theme: 'dark' }));
 	const after = before.replace('"light"', '"dark"');
-	expect(updated.source).toBe(after);
+	expect(updated.text).toBe(after);
 	expect(await source()).toBe(after);
-	expect(updated.source.startsWith(BOM)).toBe(true);
+	expect(updated.text.startsWith(BOM)).toBe(true);
 	expect(updated.values).toEqual({ theme: 'dark', size: 1.5 });
 	expect(updated.issues).toEqual([]);
 });
@@ -633,7 +633,7 @@ test('update keeps a byte order mark, number spellings, nesting, and spacing out
 test('update leaves a declared value it was not given exactly as written, valid or not', async () => {
 	const { kv } = await setup('{"size": "1e2", "theme": "light"}');
 	const updated = expectOk(await kv.update({ theme: 'dark' }));
-	expect(updated.source).toBe('{"size": "1e2", "theme": "dark"}');
+	expect(updated.text).toBe('{"size": "1e2", "theme": "dark"}');
 	expect(updated.values).toEqual({ theme: 'dark' });
 	expect(updated.issues.map((issue) => issue.field)).toEqual(['size']);
 });
@@ -667,7 +667,7 @@ test('update keeps unknown keys that appear twice, with their number spellings',
 		'{"other": 1.0, "theme": "light", "other": {"n": 1e400, "big": 9007199254740993}, "__proto__": {"x": 1}}';
 	const { kv } = await setup(before);
 	const updated = expectOk(await kv.update({ theme: 'dark' }));
-	expect(updated.source).toBe(before.replace('"light"', '"dark"'));
+	expect(updated.text).toBe(before.replace('"light"', '"dark"'));
 	// Undeclared keys are never values or issues.
 	expect(updated).toMatchObject({ values: { theme: 'dark' }, issues: [] });
 });
@@ -683,16 +683,16 @@ test.each([
 ])('update adds several missing keys to %s as valid JSON', async (_name, before, after) => {
 	const { kv, source } = await setup(before);
 	const updated = expectOk(await kv.update({ theme: 'dark', size: 2 }));
-	expect(updated.source).toBe(after);
+	expect(updated.text).toBe(after);
 	expect(await source()).toBe(after);
-	expect(JSON.parse(updated.source)).toMatchObject({ theme: 'dark', size: 2 });
+	expect(JSON.parse(updated.text)).toMatchObject({ theme: 'dark', size: 2 });
 	expect(updated.values).toEqual({ theme: 'dark', size: 2 });
 });
 
 test('update replaces one key and adds another in the same publication', async () => {
 	const { kv, calls } = await setup('{\n  "size": 1\n}\n');
 	const updated = expectOk(await kv.update({ theme: 'dark', size: 22 }));
-	expect(updated.source).toBe('{\n  "size": 22,\n  "theme": "dark"\n}\n');
+	expect(updated.text).toBe('{\n  "size": 22,\n  "theme": "dark"\n}\n');
 	expect(calls.applies).toBe(1);
 });
 
@@ -720,7 +720,7 @@ test.each([
 	expect(refused.path).toBe('kv.json');
 	expect(snapshot.parseError).toEqual(refused.error);
 	expectOk(await files.replace(snapshot, '{"theme": "light"}'));
-	expect(expectOk(await kv.update({ theme: 'dark' })).source).toBe(
+	expect(expectOk(await kv.update({ theme: 'dark' })).text).toBe(
 		'{"theme": "dark"}',
 	);
 

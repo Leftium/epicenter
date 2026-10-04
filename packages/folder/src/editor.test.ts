@@ -273,14 +273,14 @@ test('opening refuses missing, unsupported, and invalid files, keeping the text 
 	const unsupported = createFakeTable(tagged);
 	const refusal = expectErr(await unsupported.table.edit('plan'));
 	if (refusal.name !== 'NoCanonicalForm') throw new Error(refusal.message);
-	expect(refusal.file.source).toBe(tagged);
+	expect(refusal.file.text).toBe(tagged);
 	expect(unsupported.watching()).toBe(0);
 
 	const empty = '---\ntitle: ""\ndone: false\npriority: low\n---\n';
 	const invalid = createFakeTable(empty);
 	const issue = expectErr(await invalid.table.edit('plan'));
 	if (issue.name !== 'InvalidSource') throw new Error(issue.message);
-	expect(issue.file.source).toBe(empty);
+	expect(issue.file.text).toBe(empty);
 	expect(issue.reading.issues.map((i) => i.field)).toEqual(['title']);
 
 	const badStem = createFakeTable(row('A'));
@@ -425,7 +425,7 @@ test('a listener that starts the next save when the first settles keeps that adm
 	await flush();
 
 	// The first save's continuation did not release the second admission.
-	expect(editor.get().saving?.source).toBe(row('C'));
+	expect(editor.get().saving?.text).toBe(row('C'));
 	expect(expectErr(await editor.save()).name).toBe('Saving');
 	const disposing = editor.dispose();
 	let settled = false;
@@ -463,7 +463,7 @@ test('a save is one unconditional overwrite of the complete canonical document, 
 	const { editor, writes } = fake;
 	// Opening a differently formatted file is clean: nothing local changed.
 	expect(editor.get().isDirty).toBe(false);
-	expect(editor.get().baseline.source).toBe(STYLED);
+	expect(editor.get().baseline.text).toBe(STYLED);
 
 	editor.change({ fields: { title: 'Plan B' } });
 	expect(editor.get().document.fields).toEqual({
@@ -481,7 +481,7 @@ test('a save is one unconditional overwrite of the complete canonical document, 
 	expect(fake.changes).toHaveLength(1);
 	expect(fake.changes[0]).not.toHaveProperty('expectedSha256');
 	expect(fake.changes[0]).toMatchObject({ kind: 'overwrite', path: PATH });
-	expect(receipt.source).toBe(expected);
+	expect(receipt.text).toBe(expected);
 	expect(receipt.sha256).toBe(await hashBytes(encoder.encode(expected)));
 	expect(editor.get().isDirty).toBe(false);
 
@@ -534,7 +534,7 @@ test('the own write read during a held reply is deferred; another writer afterwa
 	await flush();
 	// Storage hinted inside the write; that read found the submitted bytes.
 	const during = editor.get();
-	expect(during.saving?.source).toBe(row('B'));
+	expect(during.saving?.text).toBe(row('B'));
 	expect(during.observation.kind).toBe('present');
 	expect(during.baseline.canonical).toBe(row('A'));
 	expect(expectErr(await editor.save()).name).toBe('Saving');
@@ -659,7 +659,7 @@ test('a lost reply stays unknown when the file later holds its bytes; the conten
 	if (after.observation.kind !== 'present') throw new Error('expected a read');
 	// The attempt has no hash of its own; the read is compared by content.
 	expect(lastSave.attempt).not.toHaveProperty('sha256');
-	expect(after.observation.revision.canonical).toBe(lastSave.attempt.source);
+	expect(after.observation.revision.canonical).toBe(lastSave.attempt.text);
 	// The file holds the local content, so nothing is unsaved...
 	expect(after.isDirty).toBe(false);
 	// ...but which writer put it there is still unknown.
@@ -750,7 +750,7 @@ test('adopting reviewed content succeeds after a formatting-only rewrite, follow
 	expect(editor.adopt(reviewed).error).toBeNull();
 	// The baseline is the latest read, not the reviewed object.
 	expect(editor.get().baseline).toBe(latest.revision);
-	expect(editor.get().baseline.source).toBe(THEIRS_RESTYLED);
+	expect(editor.get().baseline.text).toBe(THEIRS_RESTYLED);
 	expect(editor.get().document.fields.title).toBe('Theirs');
 	expect(editor.get().isDirty).toBe(false);
 	expect(fake.writes).toEqual([]);
@@ -770,7 +770,7 @@ test('a supplied revision cannot inject its document, source, or hash through ad
 		path: latest.revision.path,
 		canonical: latest.revision.canonical,
 		sha256: '0'.repeat(64),
-		source: '---\n"title": "Injected"\n---\n',
+		text: '---\n"title": "Injected"\n---\n',
 		document: { fields: { title: 'Injected' }, body: 'Injected.\n' },
 	};
 	expect(editor.adopt(forged).error).toBeNull();
@@ -778,7 +778,7 @@ test('a supplied revision cannot inject its document, source, or hash through ad
 	expect(after.baseline).toBe(latest.revision);
 	expect(after.document).toBe(latest.revision.document);
 	expect(after.document.fields.title).toBe('Theirs');
-	expect(after.source).toBe(row('Theirs'));
+	expect(after.text).toBe(row('Theirs'));
 	expect(after.baseline.sha256).toBe(latest.revision.sha256);
 
 	// The same content at another path is not this file's content.
@@ -969,7 +969,7 @@ test('over a real folder: open styled source, save canonically, follow hinted an
 		expect(disk).toBe(
 			'---\n"title": "Plan B"\n"done": true\n"priority": "normal"\n"meta": {"a": [true, null], "b": 1}\n"owner": "sam"\n---\nBody A.\n',
 		);
-		expect(receipt.source).toBe(disk);
+		expect(receipt.text).toBe(disk);
 		const snapshot = expectOk(await folder.tables.todos.get('plan'));
 		expect(snapshot?.sha256).toBe(receipt.sha256);
 

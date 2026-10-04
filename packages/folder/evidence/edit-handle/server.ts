@@ -28,9 +28,11 @@ import { tmpdir } from 'node:os';
 import { join, sep } from 'node:path';
 import { openFolder } from '../../src/bun.js';
 import { hashBytes } from '../../src/capture.js';
+import { inspectRow } from '../../src/contract.js';
 import type { Folder } from '../../src/folder.js';
-import { patchSource } from '../../src/markdown.js';
+import { patchRowText } from '../../src/markdown.js';
 import { pathProblem } from '../../src/paths.js';
+import type { TableWriteOptions } from '../../src/table.js';
 import { createPublicationGates } from './gates.js';
 import {
 	CALLER_SOURCES,
@@ -48,9 +50,9 @@ const PREFIX = 'epicenter-edit-handle-';
 const utf8 = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true });
 const encoder = new TextEncoder();
 
-/** A snapshot's capture and source, without its reading. */
-function wire({ path, stem, sha256, source }: WireSnapshot): WireSnapshot {
-	return { path, stem, sha256, source };
+/** A snapshot's capture and text, without its reading. */
+function wire({ path, stem, sha256, text }: WireSnapshot): WireSnapshot {
+	return { path, stem, sha256, text };
 }
 
 /** JSON with each `Error` reduced to its name and message, so a `cause` survives the trip. */
@@ -235,7 +237,7 @@ export async function createDemoServer() {
 		path: string,
 		change: 'title' | 'body' | 'done',
 	): Promise<Response> {
-		const { root, folder } = session;
+		const { root } = session;
 		let text: string;
 		try {
 			text = utf8.decode(await readFile(join(root, path)));
@@ -245,20 +247,20 @@ export async function createDemoServer() {
 				409,
 			);
 		}
-		const reading = folder.tables.todos.inspect(text);
+		const reading = inspectRow(definition.tables.todos, text);
 		writes += 1;
 		const patched =
 			change === 'title'
-				? patchSource(text, {
+				? patchRowText(text, {
 						fields: { title: `Changed elsewhere #${writes}` },
 					})
 				: change === 'done'
-					? patchSource(text, {
+					? patchRowText(text, {
 							fields: { done: reading.fields.done !== true },
 						})
 					: reading.body === undefined
 						? undefined
-						: patchSource(text, {
+						: patchRowText(text, {
 								body: `${reading.body}Line added elsewhere #${writes}\n`,
 							});
 		if (patched === undefined || patched.error)
@@ -356,13 +358,15 @@ export async function createDemoServer() {
 				});
 			}
 			case 'POST /api/tables/todos/replace': {
-				const { capture, source } = await body<{
-					capture: { path: string; sha256: string };
-					source: string;
-				}>(request);
+				const { stem, text, ...options } = await body<
+					{ stem: string; text: string } & TableWriteOptions
+				>(request);
 				const saved = await gates.run(
-					capture.path,
-					() => todos.replace(capture, source),
+					`todos/${stem}.md`,
+					() =>
+						// The page's options, forwarded as sent: an absent guard is the
+						// current row, and a `null` one is refused by the table.
+						todos.replace(stem, text, options),
 					(receipt) => receipt.sha256,
 				);
 				if (saved.error) return json(saved);

@@ -13,7 +13,7 @@
  * value in JSON flow style, which is valid YAML 1.2. Comments, quoting, key
  * order, a byte-order mark, and header CRLF are normalized away. The body is
  * appended byte for byte. Schema validation is not this codec's job:
- * `table.inspect` reads the formatted text like any other row source.
+ * `inspectRow` reads the formatted text like any other row text.
  */
 import { Err, Ok, type Result } from 'wellcrafted/result';
 import {
@@ -24,7 +24,7 @@ import {
 	isSeq,
 	parseDocument,
 } from 'yaml';
-import { frameSource } from './markdown.js';
+import { frameRowText } from './markdown.js';
 
 /** A JSON value with an exact YAML and JSON form. */
 export type CanonicalValue =
@@ -78,7 +78,7 @@ type Walk = {
 export function parseCanonicalDocument(
 	source: string,
 ): Result<CanonicalDocument, CanonicalRefusal> {
-	const frame = frameSource(source);
+	const frame = frameRowText(source);
 	if (frame.kind === 'missing')
 		return refuse('The source does not start with a --- line');
 	if (frame.kind === 'unclosed')

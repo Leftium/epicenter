@@ -13,7 +13,11 @@ export type KvMergeInput = {
 };
 
 export type KvMerge =
-	| { kind: 'merged'; source: string | null }
+	| {
+			kind: 'merged';
+			/** The complete merged `kv.json` text, or null for no file. */
+			text: string | null;
+	  }
 	| {
 			kind: 'conflict';
 			conflicts: readonly {
@@ -215,10 +219,10 @@ export function mergeKv({ base, ours, theirs }: KvMergeInput): KvMerge {
 	if (t === undefined) return { kind: 'invalid', side: 'theirs' };
 	if (o === null || t === null) {
 		const present = o ?? t;
-		if (present === null) return { kind: 'merged', source: null };
+		if (present === null) return { kind: 'merged', text: null };
 		if (b !== null)
 			return sameFile(b, present)
-				? { kind: 'merged', source: null }
+				? { kind: 'merged', text: null }
 				: { kind: 'file-conflict' };
 	}
 
@@ -262,6 +266,6 @@ export function mergeKv({ base, ours, theirs }: KvMergeInput): KvMerge {
 	if (conflicts.length !== 0) return { kind: 'conflict', conflicts };
 	return {
 		kind: 'merged',
-		source: members.length === 0 ? '{}\n' : `{\n${members.join(',\n')}\n}\n`,
+		text: members.length === 0 ? '{}\n' : `{\n${members.join(',\n')}\n}\n`,
 	};
 }

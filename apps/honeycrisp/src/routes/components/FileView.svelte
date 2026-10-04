@@ -8,7 +8,8 @@
 	import CopyIcon from '@lucide/svelte/icons/copy';
 	import FileIcon from '@lucide/svelte/icons/file';
 	import TriangleAlertIcon from '@lucide/svelte/icons/triangle-alert';
-	import { instantNow, noteIdOf } from '$lib/data.js';
+	import { inspectRow } from '@epicenter/folder';
+	import { honeycrispDefinition, instantNow, noteIdOf } from '$lib/data.js';
 	import { basename, dirname, withFileNewlines } from '$lib/files.js';
 	import { fieldDefaults, repairFields } from '$lib/note-source.js';
 	import type { Notes, OpenFile } from '$lib/notes.svelte.js';
@@ -34,7 +35,7 @@
 	 */
 	const noteText = $derived(
 		file.kind === 'text' && noteIdOf(path) !== undefined
-			? notes.host.folder.tables.notes.inspect(file.session.buffer)
+			? inspectRow(honeycrispDefinition.tables.notes, file.session.buffer)
 			: undefined,
 	);
 	const defaults = $derived(noteText && fieldDefaults(noteText, instantNow()));

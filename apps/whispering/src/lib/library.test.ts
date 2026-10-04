@@ -53,11 +53,12 @@ import {
 } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { FileError, MoveError } from '@epicenter/folder/bun';
+import { FileError, inspectRow, MoveError } from '@epicenter/folder/bun';
 import { Ok } from 'wellcrafted/result';
 import { expectOk } from 'wellcrafted/testing';
 import { loadAudio } from './audio-source.js';
 import { createFixtureDevice, toneWav } from './capture.js';
+import { whisperingDefinition } from './definition.js';
 import { describeDeletion } from './deletion-copy.js';
 import type { Library } from './library.svelte.js';
 import { needsRepair } from './rows.js';
@@ -474,13 +475,13 @@ test('the title and notes are one row draft saved whole, and editing the text is
 	expect(editor.change({ fields: { title: 'Standup notes' } })).toBe(true);
 	expect(editor.change({ body: 'Typed as notes\n' })).toBe(true);
 	// Source shows exactly what a save will write.
-	expect(editor.state.source).toContain('"title": "Standup notes"');
-	expect(editor.state.source.endsWith('---\nTyped as notes\n')).toBe(true);
+	expect(editor.state.text).toContain('"title": "Standup notes"');
+	expect(editor.state.text.endsWith('---\nTyped as notes\n')).toBe(true);
 	expect(editor.isDirty).toBe(true);
 	await editor.saveNow();
 
 	expect(editor.status.kind).toBe('saved');
-	expect(await readFile(join(root, path), 'utf8')).toBe(editor.state.source);
+	expect(await readFile(join(root, path), 'utf8')).toBe(editor.state.text);
 	await library.refresh();
 	expect(library.entries[0]!.fields.title).toBe('Standup notes');
 	expect(library.entries[0]!.body).toBe('Typed as notes\n');
@@ -554,7 +555,7 @@ test('a dirty editor keeps both versions when the file changes outside, until a 
 	expect(editor.state.document.fields.title).toBe('Mine');
 	expect(editor.review).toMatchObject({
 		kind: 'changed',
-		current: { source: outside },
+		current: { text: outside },
 	});
 	// Nothing saves on its own while both versions stand; neither is written over.
 	expect(await editor.settle()).toBe(false);
@@ -567,7 +568,7 @@ test('a dirty editor keeps both versions when the file changes outside, until a 
 
 	const kept = expectOk(await library.keepDraftCopy(editor.path));
 	expect(editor.status.kind).toBe('saved');
-	expect(editor.state.baseline.source).toBe(outside);
+	expect(editor.state.baseline.text).toBe(outside);
 	expect(editor.state.document.fields.title).toBe('Theirs');
 	expect(await readFile(path, 'utf8')).toBe(outside);
 	expect(await readFile(join(root, kept), 'utf8')).toContain('"title": "Mine"');
@@ -589,7 +590,7 @@ test('choosing mine saves the whole draft over the reviewed outside version', as
 	await editor.saveNow();
 
 	expect(editor.status.kind).toBe('saved');
-	expect(await readFile(path, 'utf8')).toBe(editor.state.source);
+	expect(await readFile(path, 'utf8')).toBe(editor.state.text);
 	await library.refresh();
 	expect(library.entries[0]!.fields.title).toBe('Mine');
 });
@@ -652,7 +653,7 @@ test('a malformed row stays listed and selectable, saves while malformed, and it
 		library.entries.find((item) => item.path === path);
 	const entry = listed('recordings/broken.md');
 	// The capture is whole; the parse failed and recovered nothing.
-	expect(entry?.source).toBe(broken);
+	expect(entry?.text).toBe(broken);
 	expect(entry).toMatchObject({ fields: {}, body: undefined, issues: [] });
 	expect(entry?.parseError?.diagnostics[0].message).toContain(
 		'Unresolved alias',
@@ -670,7 +671,8 @@ test('a malformed row stays listed and selectable, saves while malformed, and it
 		broken,
 	);
 	// The draft is read as typed, by the table's own interpreter.
-	const inspect = library.folder.tables.recordings.inspect;
+	const inspect = (text: string) =>
+		inspectRow(whisperingDefinition.tables.recordings, text);
 	expect(entry).toMatchObject(inspect(editor.buffer));
 
 	// Text that is still malformed saves, and its capture is the next baseline.
@@ -678,8 +680,8 @@ test('a malformed row stays listed and selectable, saves while malformed, and it
 	editor.input(still);
 	await editor.save();
 	expect(editor.saveState).toEqual({ kind: 'saved' });
-	expect(editor.baseline.source).toBe(still);
-	expect(inspect(editor.baseline.source).parseError).toBeDefined();
+	expect(editor.baseline.text).toBe(still);
+	expect(inspect(editor.baseline.text).parseError).toBeDefined();
 	expect(await readFile(join(root, 'recordings', 'broken.md'), 'utf8')).toBe(
 		still,
 	);
@@ -730,7 +732,7 @@ test('typing with a field issue is held and says so; the other fields still chan
 	]);
 	// The form saves nothing with an issue, on its own or when settled.
 	expect(await editor.settle()).toBe(false);
-	expect(await readFile(join(root, saved.path), 'utf8')).toBe(saved.source);
+	expect(await readFile(join(root, saved.path), 'utf8')).toBe(saved.text);
 	expect(library.holdsUnsavedWork).toBe(true);
 
 	// Fixed, it saves with everything typed since.
@@ -750,7 +752,7 @@ test('a recording with an unusual file name is an ordinary recording: it is tran
 	const recorded = library.entries[0]!;
 	// The same valid row under a name with a trailing space.
 	const path = 'recordings/bad .md';
-	await writeFile(join(root, path), recorded.source);
+	await writeFile(join(root, path), recorded.text);
 	await library.refreshAll();
 	const entry = library.entries.find((item) => item.path === path)!;
 	expect(entry.stem).toBe('bad ');
@@ -772,13 +774,13 @@ test('a recording with an unusual file name is an ordinary recording: it is tran
 	const editor = recordingEditor(library);
 	library.autosave.paused = true;
 	editor.change({ fields: { title: 'Mine' } });
-	const outside = recorded.source.replace(/title: .*/, 'title: Theirs');
+	const outside = recorded.text.replace(/title: .*/, 'title: Theirs');
 	await writeFile(join(root, path), outside);
 	await library.refreshAll();
 	// The draft reads this row, not a neighbor and not nothing.
 	expect(editor.review).toMatchObject({
 		kind: 'changed',
-		current: { path, source: outside },
+		current: { path, text: outside },
 	});
 	expect(editor.state.document.fields.title).toBe('Mine');
 	expect(await readFile(join(root, path), 'utf8')).toBe(outside);
@@ -808,9 +810,7 @@ test('a recording is not deleted while a result cannot say which recording it be
 	const rowSource = await readFile(join(root, entry.path), 'utf8');
 	const untouched = async () => {
 		expect(await readFile(join(root, entry.path), 'utf8')).toBe(rowSource);
-		expect(await readFile(join(root, result!.path), 'utf8')).toBe(
-			result!.source,
-		);
+		expect(await readFile(join(root, result!.path), 'utf8')).toBe(result!.text);
 	};
 
 	// Each of these might be this recording's result: its text says so, or might.
@@ -1334,7 +1334,7 @@ test('a confirmed publication is reported as saved with a separate observation p
 	expect(seen.writes).toBe(2);
 	expect(library.pending).toHaveLength(0);
 	expect(library.selectedPath).toBe(`recordings/${held.capture.id}.md`);
-	expect(recordingEditor(library).state.baseline.source).toBe(
+	expect(recordingEditor(library).state.baseline.text).toBe(
 		await readFile(join(root, 'recordings', `${held.capture.id}.md`), 'utf8'),
 	);
 	expect(status(library).files.label).toBe('All changes saved to files');
@@ -1372,7 +1372,7 @@ test('a published row that another writer replaced or edited is observed as it i
 	expect(await readFile(path, 'utf8')).toBe(edited);
 	// The foreign text was opened as text; that draft followed the file and holds nothing.
 	const editor = textOf(recordingSlot(library));
-	expect(editor.baseline.source).toBe(edited);
+	expect(editor.baseline.text).toBe(edited);
 	expect(editor.dirty).toBe(false);
 	expect(library.entries[0]!.fields.title).toBe('Renamed since');
 });
@@ -2004,7 +2004,7 @@ test('a text file whose save reply was lost holds the close, and a refresh, prep
 	await library.refreshAll();
 	expect(editor.saveState).toMatchObject({
 		kind: 'conflict',
-		current: { source: 'typed\n' },
+		current: { text: 'typed\n' },
 	});
 	expect(editor.unknown).toContain('reply lost');
 	expect(library.unsavedWork).toEqual([

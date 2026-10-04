@@ -868,8 +868,8 @@ async function editing(id: string) {
 					!followed.isDirty &&
 						followed.document.fields.title === 'From outside' &&
 						followed.observation.kind === 'present' &&
-						followed.observation.revision.source === outside,
-					`clean editor holds ${JSON.stringify(followed.source)}`,
+						followed.observation.revision.text === outside,
+					`clean editor holds ${JSON.stringify(followed.text)}`,
 				);
 
 				// A dirty editor keeps its input when the file changes again.
@@ -885,9 +885,9 @@ async function editing(id: string) {
 				const dirty = editor.get();
 				assert(
 					dirty.isDirty && dirty.document.fields.title === 'Typed',
-					`dirty editor holds ${JSON.stringify(dirty.source)}`,
+					`dirty editor holds ${JSON.stringify(dirty.text)}`,
 				);
-				return `saved ${JSON.stringify(receipt.canonical)}; followed ${JSON.stringify(followed.source)}; kept ${JSON.stringify(dirty.source)}; states ${[...new Set(states)].join(' → ')}`;
+				return `saved ${JSON.stringify(receipt.canonical)}; followed ${JSON.stringify(followed.text)}; kept ${JSON.stringify(dirty.text)}; states ${[...new Set(states)].join(' → ')}`;
 			} finally {
 				stop();
 				await editor.dispose();

@@ -128,7 +128,7 @@ export type OpenedFile =
 			readonly kind: 'text';
 			readonly file: {
 				readonly path: string;
-				readonly source: string;
+				readonly text: string;
 				readonly sha256: string;
 			};
 	  }
@@ -142,7 +142,7 @@ const encoder = new TextEncoder();
 /** The exact bytes one save submits, and the text those bytes are. */
 export type SubmittedText = {
 	readonly bytes: Uint8Array;
-	readonly source: string;
+	readonly text: string;
 };
 
 /**
@@ -153,7 +153,7 @@ export type SubmittedText = {
  */
 export function submittedText(text: string): SubmittedText {
 	const bytes = encoder.encode(text);
-	return { bytes, source: utf8.decode(bytes) };
+	return { bytes, text: utf8.decode(bytes) };
 }
 
 /**
@@ -174,7 +174,7 @@ export async function readTextFile(
 	try {
 		return Ok({
 			kind: 'text',
-			file: { path, source: utf8.decode(bytes), sha256 },
+			file: { path, text: utf8.decode(bytes), sha256 },
 		});
 	} catch {
 		return Ok({ kind: 'binary', size: bytes.byteLength });

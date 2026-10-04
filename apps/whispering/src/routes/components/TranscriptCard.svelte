@@ -5,9 +5,11 @@
 	import { Spinner } from '@epicenter/ui/spinner';
 	import { Textarea } from '@epicenter/ui/textarea';
 	import WandSparklesIcon from '@lucide/svelte/icons/wand-sparkles';
+	import { inspectRow } from '@epicenter/folder';
 	import { untrack } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
+	import { whisperingDefinition } from '$lib/definition.js';
 	import { withFileNewlines } from '$lib/files.js';
 	import type { Library, TranscriptionEntry } from '$lib/library.svelte.js';
 	import { transformationName } from '$lib/post-processing.js';
@@ -38,7 +40,7 @@
 	const raw = $derived(slot?.kind === 'raw' ? slot.editor : undefined);
 	/** The text now, saved or not. Before the draft is open, the row as listed. */
 	const text = $derived(
-		form ? form.state.document.body : raw ? library.folder.tables.transcriptions.inspect(raw.buffer).body : result.body,
+		form ? form.state.document.body : raw ? inspectRow(whisperingDefinition.tables.transcriptions, raw.buffer).body : result.body,
 	);
 	/** Only the row editor edits the text here; text that is not a transcript is fixed in Files. */
 	const editable = $derived(form !== undefined);

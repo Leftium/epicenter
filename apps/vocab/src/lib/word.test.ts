@@ -223,7 +223,7 @@ test('a word changed elsewhere into a file that is not a word is shown, and wait
 	await entries.refresh();
 
 	const review = word.review;
-	expect(review?.kind === 'invalid' && review.file.source).toBe(broken);
+	expect(review?.kind === 'invalid' && review.file.text).toBe(broken);
 	expect(await word.setStage('usable')).toContain('cannot read as a word');
 	expect(await word.blur()).toBeNull();
 	expect(await context.file()).toBe(broken);
@@ -288,9 +288,9 @@ test('a delete that throws instead of answering gives the word back, saves nothi
 	const entries = createEntriesState({
 		table: {
 			...real,
-			async delete(capture) {
+			async delete(stem, options) {
 				if (throwing) throw new Error('the folder did not answer');
-				return real.delete(capture);
+				return real.delete(stem, options);
 			},
 		},
 	});
@@ -329,14 +329,14 @@ for (const landed of [true, false])
 			const entries = createEntriesState({
 				table: {
 					...real,
-					async delete(capture) {
+					async delete(stem, options) {
 						if (landed) {
-							const removed = await real.delete(capture);
+							const removed = await real.delete(stem, options);
 							const { error: removeError } = removed;
 							if (removeError !== null) return removed;
 						}
 						return FileError.Unconfirmed({
-							path: capture.path,
+							path,
 							operation: 'removing',
 							cause: new Error('the answer was lost'),
 						});

@@ -17,7 +17,7 @@
 	let showCurrent = $state(false);
 	/** The text the file holds now, when it differs from what the typing was made on. */
 	const current = $derived(
-		status.kind === 'changed' ? status.current.source : status.kind === 'unrecognized' ? status.source : undefined,
+		status.kind === 'changed' ? status.current.text : status.kind === 'unrecognized' ? status.source : undefined,
 	);
 
 	async function keepBoth() {

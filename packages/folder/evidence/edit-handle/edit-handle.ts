@@ -158,8 +158,8 @@ export function createEditHandle<TSnapshot extends TextCapture, TReading>(
 	let state: State = Object.freeze({
 		path,
 		baseline: Object.freeze({ ...displayed }),
-		source: displayed.source,
-		reading: document.interpret(displayed.source),
+		source: displayed.text,
+		reading: document.interpret(displayed.text),
 		isDirty: false,
 		incoming: undefined,
 		saving: undefined,
@@ -252,7 +252,7 @@ export function createEditHandle<TSnapshot extends TextCapture, TReading>(
 			if (
 				!saving.seenOnDisk &&
 				observation.kind === 'present' &&
-				observation.snapshot.source === saving.source
+				observation.snapshot.text === saving.source
 			)
 				update({ saving: { ...saving, seenOnDisk: true } });
 			return;
@@ -274,13 +274,13 @@ export function createEditHandle<TSnapshot extends TextCapture, TReading>(
 			// Idle: follow the saved file.
 			update({
 				baseline: snapshot,
-				source: snapshot.source,
-				reading: document.interpret(snapshot.source),
+				source: snapshot.text,
+				reading: document.interpret(snapshot.text),
 				incoming: undefined,
 			});
 			return;
 		}
-		if (snapshot.source === state.source) {
+		if (snapshot.text === state.source) {
 			// Someone saved exactly this draft: it is no longer unsaved.
 			update({ baseline: snapshot, isDirty: false, incoming: undefined });
 			return;
@@ -309,7 +309,7 @@ export function createEditHandle<TSnapshot extends TextCapture, TReading>(
 		update({
 			source,
 			reading: document.interpret(source),
-			isDirty: source !== state.baseline.source,
+			isDirty: source !== state.baseline.text,
 		});
 		return Ok(undefined);
 	}
@@ -382,7 +382,7 @@ export function createEditHandle<TSnapshot extends TextCapture, TReading>(
 			const outcome = { kind: 'saved', receipt } as const;
 			update({
 				baseline: receipt,
-				isDirty: state.source !== receipt.source,
+				isDirty: state.source !== receipt.text,
 				incoming: undefined,
 				saving: undefined,
 				lastSave: outcome,
@@ -419,7 +419,7 @@ export function createEditHandle<TSnapshot extends TextCapture, TReading>(
 			source,
 			reading:
 				source === state.source ? state.reading : document.interpret(source),
-			isDirty: source !== baseline.source,
+			isDirty: source !== baseline.text,
 			incoming:
 				incoming?.kind === 'present' &&
 				incoming.snapshot.sha256 === baseline.sha256
@@ -462,8 +462,8 @@ export function createEditHandle<TSnapshot extends TextCapture, TReading>(
 			if (state.saving !== undefined) return refusal('saving');
 			const { baseline } = state;
 			update({
-				source: baseline.source,
-				reading: document.interpret(baseline.source),
+				source: baseline.text,
+				reading: document.interpret(baseline.text),
 				isDirty: false,
 			});
 			void refresh();
@@ -472,7 +472,7 @@ export function createEditHandle<TSnapshot extends TextCapture, TReading>(
 		/** Keep the draft, now conditional on the reviewed snapshot. Saving is a separate call. */
 		keepDraft: (reviewed: TSnapshot) => resolve(reviewed, state.source),
 		/** Replace the draft with the reviewed snapshot's text. */
-		takeObserved: (reviewed: TSnapshot) => resolve(reviewed, reviewed.source),
+		takeObserved: (reviewed: TSnapshot) => resolve(reviewed, reviewed.text),
 		/**
 		 * Stop observing and admit no new input, read, or save. A save already
 		 * admitted keeps running; its outcome still lands in the state, and the

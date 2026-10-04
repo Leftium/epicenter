@@ -149,10 +149,10 @@ const encoder = new TextEncoder();
  */
 export function submittedText(text: string): {
 	readonly bytes: Uint8Array;
-	readonly source: string;
+	readonly text: string;
 } {
 	const bytes = encoder.encode(text);
-	return { bytes, source: utf8.decode(bytes) };
+	return { bytes, text: utf8.decode(bytes) };
 }
 
 /**
@@ -173,7 +173,7 @@ export async function readTextFile(
 	try {
 		return Ok({
 			kind: 'text',
-			file: { path, source: utf8.decode(bytes), sha256 },
+			file: { path, text: utf8.decode(bytes), sha256 },
 		});
 	} catch {
 		return Ok({ kind: 'binary', size: bytes.byteLength });

@@ -138,9 +138,12 @@ try {
 				print({ error: entry.error?.message ?? `No todo named ${stem}` });
 				break;
 			}
-			const updated = await folder.tables.todos.update(entry.data.stem, {
-				fields: { done: true },
-			});
+			// Marked done whatever the row holds now; nothing here was reviewed.
+			const updated = await folder.tables.todos.update(
+				entry.data.stem,
+				{ fields: { done: true } },
+				{},
+			);
 			if (updated.error) {
 				exitCode = 1;
 				print({ error: updated.error.message });

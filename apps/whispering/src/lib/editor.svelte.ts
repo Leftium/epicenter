@@ -100,7 +100,7 @@ export function createTextFileEditor(
 	writes: () => boolean = () => true,
 ) {
 	let baseline = $state.raw<SavedText>(file);
-	let buffer = $state(file.source);
+	let buffer = $state(file.text);
 	let saveState = $state.raw<SaveState>({ kind: 'saved' });
 	/**
 	 * Why an earlier save is not known to have landed, kept after the person
@@ -111,7 +111,7 @@ export function createTextFileEditor(
 	let saving: Promise<void> | undefined;
 	let disposed = false;
 
-	const dirty = () => buffer !== baseline.source;
+	const dirty = () => buffer !== baseline.text;
 	/** Whether saving goes on without the person: nothing failed, is unknown, or is in review. */
 	const proceeds = () => saveState.kind === 'saved' && !disposed;
 	/** Whether a save may be sent now, by a timer or by the person. */
@@ -174,11 +174,11 @@ export function createTextFileEditor(
 		if (error === null) {
 			baseline = {
 				path: observed.path,
-				source: submitted.source,
+				text: submitted.text,
 				sha256: replaced.sha256,
 			};
 			// Newer typing is a later generation and stays as typed.
-			if (buffer === captured) buffer = submitted.source;
+			if (buffer === captured) buffer = submitted.text;
 			saveState = { kind: 'saved' };
 			unknown = undefined;
 			onSaved();
@@ -304,7 +304,7 @@ export function createTextFileEditor(
 				return;
 			}
 			baseline = next;
-			buffer = next.source;
+			buffer = next.text;
 		},
 		/** The saved file is gone. A draft that holds anything keeps its text as a conflict. */
 		observeRemoved() {
@@ -331,7 +331,7 @@ export function createTextFileEditor(
 			if (saveState.kind !== 'conflict' || saveState.current === undefined)
 				return;
 			baseline = saveState.current;
-			buffer = saveState.current.source;
+			buffer = saveState.current.text;
 			saveState = { kind: 'saved' };
 		},
 		/** Conflict choice: save my input over the version I reviewed, once. */
@@ -356,7 +356,7 @@ export function createTextFileEditor(
 			if (createError !== null) return Err(createError.message);
 			if (saveState.kind === 'conflict' && saveState.current !== undefined) {
 				baseline = saveState.current;
-				buffer = saveState.current.source;
+				buffer = saveState.current.text;
 				saveState = { kind: 'saved' };
 			}
 			return Ok(copy);

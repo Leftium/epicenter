@@ -580,7 +580,7 @@ test('a capture or typing asked for while the approval is on its way is refused'
 	const selection = library.selection;
 	if (selection?.kind !== 'recording') throw new Error('expected a recording');
 	const editor = formOf(selection.slot);
-	const before = editor.state.source;
+	const before = editor.state.text;
 
 	// Nothing was held, so `proceed` is sent. It has not arrived yet.
 	await ask();
@@ -594,7 +594,7 @@ test('a capture or typing asked for while the approval is on its way is refused'
 	expect(editor.change({ body: 'typed straight into the draft' })).toBe(false);
 
 	expect(library.recorder.phase).toBe('idle');
-	expect(editor.state.source).toBe(before);
+	expect(editor.state.text).toBe(before);
 	expect(library.holdsUnsavedWork).toBe(false);
 
 	delivered.resolve();
@@ -744,9 +744,9 @@ test('a recipe run on pasted text whose read was under way when the person quit 
 		'A transformation is still running; its result would be lost.',
 	);
 	// A new run on pasted text is refused while the person decides.
-	expect(
-		await library.transformText(profile.path, 'other words\n'),
-	).toContain('closing');
+	expect(await library.transformText(profile.path, 'other words\n')).toContain(
+		'closing',
+	);
 	await guard.discardAndQuit();
 	expect(answers).toEqual(['asking', 'proceed']);
 
@@ -883,7 +883,7 @@ test('released library drafts cannot accept typing or resume admission', async (
 	const selection = library.selection;
 	if (selection?.kind !== 'recording') throw new Error('expected a recording');
 	const editor = formOf(selection.slot);
-	const before = editor.state.source;
+	const before = editor.state.text;
 	guard.dispose();
 	await library.close();
 	library.resumeAdmission();
@@ -891,6 +891,6 @@ test('released library drafts cannot accept typing or resume admission', async (
 		false,
 	);
 	expect(library.admitting).toBe(false);
-	expect(editor.state.source).toBe(before);
+	expect(editor.state.text).toBe(before);
 	expect(editor.state.isDisposed).toBe(true);
 });

@@ -17,6 +17,7 @@ import {
 	defineTable,
 	type Folder,
 	field,
+	inspectRow,
 	openFolder,
 } from './browser.js';
 import {
@@ -135,38 +136,48 @@ describe('browser folder tables', () => {
 			});
 		expect(createError).toBeNull();
 		expect(created!.path).toBe('todos/milk.md');
-		expect(created!.source).toBe(
+		expect(created!.text).toBe(
 			'---\ntitle: Buy milk\ndone: false\n---\nTwo liters.\n',
 		);
 		const { data: raw, error: rawError } =
 			await folder.files.read('todos/milk.md');
 		expect(rawError).toBeNull();
-		expect(new TextDecoder().decode(raw!.bytes)).toBe(created!.source);
+		expect(new TextDecoder().decode(raw!.bytes)).toBe(created!.text);
 		expect(raw!.sha256).toEqual(created!.sha256);
 
 		const completed = expectOk(
-			await folder.tables.todos.update('milk', {
-				fields: { done: true },
-			}),
+			await folder.tables.todos.update(
+				'milk',
+				{
+					fields: { done: true },
+				},
+				{},
+			),
 		);
-		expect(completed).toMatchObject({
+		expect(inspectRow(definition.tables.todos, completed.text)).toMatchObject({
 			fields: { title: 'Buy milk', done: true },
 			body: 'Two liters.\n',
 			parseError: undefined,
 			issues: [],
 		});
 
-		const { data: renamed, error: renameError } =
-			await folder.tables.todos.rename(completed, 'groceries');
+		const { error: renameError } = await folder.tables.todos.rename(
+			'milk',
+			'groceries',
+			{ expectedSha256: completed.sha256 },
+		);
 		expect(renameError).toBeNull();
-		expect(renamed!.path).toBe('todos/groceries.md');
 		expect((await folder.tables.todos.get('milk')).data).toBeUndefined();
 		const listed = expectOk(await folder.tables.todos.list());
-		expect(listed.map((item) => expectOk(item.result).stem)).toEqual([
-			'groceries',
+		expect(listed.map((item) => expectOk(item.result).path)).toEqual([
+			'todos/groceries.md',
 		]);
 
-		expectOk(await folder.tables.todos.delete(renamed!));
+		expectOk(
+			await folder.tables.todos.delete('groceries', {
+				expectedSha256: completed.sha256,
+			}),
+		);
 		expect(expectOk(await folder.tables.todos.list())).toEqual([]);
 	});
 
@@ -226,7 +237,7 @@ describe('browser folder tables', () => {
 			listed.find((found) => found.path === path)!.result;
 		expect(expectErr(item('todos/bad.md')).name).toBe('InvalidUtf8');
 		const odd = expectOk(item('todos/odd.md'));
-		expect(odd.source).toBe(source);
+		expect(odd.text).toBe(source);
 		expect(odd.parseError).toBeUndefined();
 		expect(odd.issues.map((issue) => issue.field)).toEqual(['done']);
 		expect(odd.fields).toEqual({ title: 'Kept' });
@@ -238,25 +249,32 @@ describe('browser folder tables', () => {
 			{
 				fields: { done: true },
 			},
+			{},
 		);
 		expect(fixError).toBeNull();
-		expect(fixed!.source).toBe(source.replace('done: maybe', 'done: true'));
-		expect(fixed!.issues).toEqual([]);
+		expect(fixed!.text).toBe(source.replace('done: maybe', 'done: true'));
+		expect(inspectRow(definition.tables.todos, fixed!.text).issues).toEqual([]);
 
 		const broken = expectOk(item('todos/broken.md'));
 		expect(broken.parseError).toBeDefined();
 		expect(broken).toMatchObject({ fields: {}, body: undefined, issues: [] });
 		expect(
-			(await folder.tables.todos.update('broken', { fields: { done: true } }))
-				.error?.name,
+			(
+				await folder.tables.todos.update(
+					'broken',
+					{ fields: { done: true } },
+					{},
+				)
+			).error?.name,
 		).toBe('Unparsed');
 		const repaired = expectOk(
 			await folder.tables.todos.replace(
-				broken,
+				'broken',
 				'---\ntitle: Repaired\ndone: false\n---\n',
+				{ expectedSha256: broken.sha256 },
 			),
 		);
-		expect(repaired).toMatchObject({
+		expect(inspectRow(definition.tables.todos, repaired.text)).toMatchObject({
 			fields: { title: 'Repaired', done: false },
 			parseError: undefined,
 			issues: [],
@@ -269,7 +287,7 @@ describe('browser folder tables', () => {
 		// The audio exists first. It does not block the row that shares its stem.
 		const opus = expectOk(await folder.files.create('todos/rec.opus', audio));
 		expectOk(await folder.files.create('todos/rec.wav', new Uint8Array([9])));
-		const created = expectOk(
+		const receipt = expectOk(
 			await folder.tables.todos.create({
 				stem: 'rec',
 				fields: { title: 'Recording', done: false },
@@ -277,6 +295,8 @@ describe('browser folder tables', () => {
 		);
 		// Siblings can also arrive after the row was captured.
 		expectOk(await folder.files.create('todos/rec.flac', 'late'));
+		const created = expectOk(await folder.tables.todos.get('rec'))!;
+		expect(created.sha256).toEqual(receipt.sha256);
 		expect(created.issues).toEqual([]);
 		// A snapshot is the capture and its reading: no attachment, no sibling.
 		expect(Object.keys(created).sort()).toEqual([
@@ -286,15 +306,18 @@ describe('browser folder tables', () => {
 			'parseError',
 			'path',
 			'sha256',
-			'source',
 			'stem',
+			'text',
 		]);
 		// Two siblings are not an ambiguity; the listed row is as valid as it was.
 		const listed = expectOk(await folder.tables.todos.list());
 		expect(listed.map((item) => expectOk(item.result))).toEqual([created]);
 
-		const renamed = expectOk(await folder.tables.todos.rename(created, 'rec2'));
-		expect(renamed.path).toBe('todos/rec2.md');
+		expectOk(
+			await folder.tables.todos.rename('rec', 'rec2', {
+				expectedSha256: created.sha256,
+			}),
+		);
 		expect(expectOk(await folder.files.children('todos')).files).toEqual([
 			'rec.flac',
 			'rec.opus',
@@ -312,7 +335,11 @@ describe('browser folder tables', () => {
 		const changedAudio = expectOk(
 			await folder.files.replace(movedAudio, 'rewritten'),
 		);
-		expectOk(await folder.tables.todos.delete(renamed));
+		expectOk(
+			await folder.tables.todos.delete('rec2', {
+				expectedSha256: created.sha256,
+			}),
+		);
 		expect(expectOk(await folder.files.children('todos')).files).toEqual([
 			'rec.flac',
 			'rec.wav',
@@ -410,7 +437,9 @@ describe('browser folder tables', () => {
 			);
 
 			// Renaming the row a reference names rewrites nothing that names it.
-			expectOk(await lists.rename(home, 'house'));
+			expectOk(
+				await lists.rename('home', 'house', { expectedSha256: home.sha256 }),
+			);
 			for (const [stem, list] of [
 				['milk', 'home'],
 				['dangling', 'no-such-list'],
@@ -430,7 +459,7 @@ describe('browser folder tables', () => {
 		const listed = expectOk(await folder.tables.todos.list());
 		expect(listed).toHaveLength(1);
 		const entry = expectOk(listed[0]!.result);
-		expect(entry.source).toBe(source);
+		expect(entry.text).toBe(source);
 		// The source is the repair baseline; a failed parse recovers no body.
 		expect(entry.parseError?.diagnostics[0].message).toContain(
 			'Unresolved alias',
@@ -440,17 +469,19 @@ describe('browser folder tables', () => {
 		// A structured edit, as the editor's title field makes, is refused safely.
 		for (const change of [{ fields: { title: 'Fixed' } }, { body: 'New.\n' }])
 			expect(
-				expectErr(await folder.tables.todos.update(entry.stem, change)).name,
+				expectErr(await folder.tables.todos.update(entry.stem, change, {}))
+					.name,
 			).toBe('Unparsed');
-		expect((await folder.tables.todos.get('alias')).data!.source).toBe(source);
+		expect((await folder.tables.todos.get('alias')).data!.text).toBe(source);
 
 		const repaired = expectOk(
 			await folder.tables.todos.replace(
-				entry,
+				entry.stem,
 				source.replace('*missing', 'Fixed'),
+				{ expectedSha256: entry.sha256 },
 			),
 		);
-		expect(repaired).toMatchObject({
+		expect(inspectRow(definition.tables.todos, repaired.text)).toMatchObject({
 			fields: { title: 'Fixed', done: false },
 			body: 'Notes stay.\n',
 			parseError: undefined,
@@ -469,7 +500,7 @@ describe('browser folder tables', () => {
 			'Exists',
 		);
 		const updated = expectOk(await folder.kv.update({ theme: 'dark' }));
-		expect(updated.source).toBe('{\n  "other": 1,\n  "theme": "dark"\n}\n');
+		expect(updated.text).toBe('{\n  "other": 1,\n  "theme": "dark"\n}\n');
 		expect(expectOk(await folder.kv.get())).toEqual(updated);
 	});
 });

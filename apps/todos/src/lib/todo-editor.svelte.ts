@@ -53,9 +53,11 @@ import {
 	type RowEditorState,
 	type RowRevision,
 	type RowSaveError,
+	rowPath,
+	rowStemOf,
 	type TableEditError,
 	type TableRenameError,
-	type TableSnapshot,
+	type TextCapture,
 } from '@epicenter/folder';
 import { Ok, type Result } from 'wellcrafted/result';
 import type { TodoFields } from './definition.js';
@@ -83,8 +85,14 @@ export type SaveHalt =
 
 /** Where a rename left the row. */
 export type Moved = {
-	/** The row at its new path, as the move published it. */
-	readonly row: TableSnapshot<TodoFields>;
+	/**
+	 * The reviewed baseline, named at the new path. The move was guarded by
+	 * its hash at the old path; nothing read the destination, and a native
+	 * folder checks that guard only as well as other programs allow. So this
+	 * is what the person reviewed, not verified bytes at the new path; the
+	 * editor reopened there reads what the file holds.
+	 */
+	readonly row: TextCapture;
 	/**
 	 * Set when the destination did not open as a structured todo. The editor
 	 * is disposed; `typed` is its unsaved text, if any, for the owner to keep.
@@ -433,7 +441,12 @@ export function createTodoEditor(
 				// The move captures the file as it is now; a clean draft follows it.
 				await row.refresh();
 				if (!isIdle()) return undefined;
-				const renamed = await table.rename(state.baseline, nextStem);
+				const { baseline } = state;
+				const stem = rowStemOf(table.name, baseline.path);
+				if (stem === undefined) return undefined;
+				const renamed = await table.rename(stem, nextStem, {
+					expectedSha256: baseline.sha256,
+				});
 				if (renamed.error !== null) {
 					if (renamed.error.name === 'Unconfirmed')
 						halt = {
@@ -444,8 +457,14 @@ export function createTodoEditor(
 						};
 					return renamed;
 				}
-				const destination = renamed.data;
-				const reopened = await table.edit(destination.stem);
+				// The reviewed baseline at its new address. The guard was checked
+				// at the old path; this is not a read of the destination.
+				const destination: TextCapture = Object.freeze({
+					path: rowPath(table.name, nextStem),
+					sha256: baseline.sha256,
+					text: baseline.text,
+				});
+				const reopened = await table.edit(nextStem);
 				// The retired editor's draft, with every change made during the move.
 				const typed = state;
 				const retired = row;
@@ -455,7 +474,7 @@ export function createTodoEditor(
 						row: destination,
 						unopened: {
 							error: reopened.error,
-							typed: typed.isDirty ? typed.source : undefined,
+							typed: typed.isDirty ? typed.text : undefined,
 						},
 					});
 				}

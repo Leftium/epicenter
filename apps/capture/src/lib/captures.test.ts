@@ -38,7 +38,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { captureDefinition } from '@epicenter/capture';
 import { readLegacyBundle } from '@epicenter/capture/legacy';
-import { type CommitOutcome, FileError } from '@epicenter/folder';
+import { type CommitOutcome, FileError, rowPath } from '@epicenter/folder';
 import { openFolder } from '@epicenter/folder/bun';
 import fixture from '../../fixtures/legacy-bundle.json';
 import type { Draft } from './draft.svelte.ts';
@@ -85,24 +85,27 @@ async function setup(options: { commit?: () => Promise<CommitOutcome> } = {}) {
 				tables: {
 					captures: {
 						...folder.tables.captures,
-						async delete(capture) {
+						async delete(stem, options) {
 							const answer = nextDelete;
 							nextDelete = undefined;
 							if (answer === 'throws')
 								throw new Error('Epicenter did not answer');
 							if (answer === 'landed' || answer === 'lost') {
 								if (answer === 'landed') {
-									const removed = await folder.tables.captures.delete(capture);
+									const removed = await folder.tables.captures.delete(
+										stem,
+										options,
+									);
 									if (removed.error !== null) return removed;
 								}
 								return FileError.Unconfirmed({
-									path: capture.path,
+									path: rowPath('captures', stem),
 									operation: 'removing',
 									cause: new Error('the answer was lost'),
 								});
 							}
 							await answer;
-							return folder.tables.captures.delete(capture);
+							return folder.tables.captures.delete(stem, options);
 						},
 						async create(options) {
 							const held = heldCreate;
@@ -311,7 +314,7 @@ test('a listing makes a clean draft follow an outside edit and a dirty one wait 
 	await captures.refresh();
 	expect(draft.text).toBe('My unsaved typing');
 	const notice = draft.notice;
-	expect(notice?.kind === 'changed' && notice.revision.source).toBe(again);
+	expect(notice?.kind === 'changed' && notice.revision.text).toBe(again);
 	expect(captures.rows.find((row) => row.stem === stem)?.attention).toBe(
 		'changed',
 	);
@@ -359,9 +362,7 @@ test('removed and unreadable files are told apart; a copy keeps one draft and a 
 	expect(removed.notice).toBeUndefined();
 	expect(removed.editor?.observation.kind).toBe('missing');
 	expect(broken.notice?.kind).toBe('unreadable');
-	expect(
-		captures.rows.map((row) => [row.stem, row.attention]).sort(),
-	).toEqual(
+	expect(captures.rows.map((row) => [row.stem, row.attention]).sort()).toEqual(
 		[
 			[removedStem, 'removed'],
 			[brokenStem, 'unreadable'],
@@ -494,7 +495,7 @@ test('deleting removes the reviewed file and refuses one that changed since', as
 	const reviewed = await captures.reviewDeletion(stem);
 	if (!reviewed.ok) throw new Error(reviewed.message);
 
-	await writeFile(file(stem), `${reviewed.entry.source}\nadded outside\n`);
+	await writeFile(file(stem), `${reviewed.entry.text}\nadded outside\n`);
 	const refused = await captures.remove(reviewed.entry);
 	expect(refused).toMatchObject({ ok: false, changed: true });
 	expect(await text(stem)).toContain('added outside');
@@ -579,9 +580,9 @@ for (const landed of [true, false])
 				landed ? 'missing' : 'present',
 			);
 			expect(draft.outcome?.kind).toBe('deletion');
-			expect(
-				t.captures.rows.find((row) => row.stem === stem)?.attention,
-			).toBe('deletion');
+			expect(t.captures.rows.find((row) => row.stem === stem)?.attention).toBe(
+				'deletion',
+			);
 			// Typing, saving, and settling write nothing by themselves.
 			await draft.save();
 			expect(await t.captures.settleAll()).toBe(1);
@@ -938,9 +939,9 @@ test('discard and close waits for a submitted save without publishing later typi
 	draft.inputText('Submitted');
 	const saving = draft.save();
 	draft.inputText('Discarded typing');
-	const closing = t.captures.close({ discard: true }).then(() =>
-		t.folder.close(),
-	);
+	const closing = t.captures
+		.close({ discard: true })
+		.then(() => t.folder.close());
 	await saving;
 	await closing;
 	expect(await t.text(stem)).toContain('\nSubmitted\n');

@@ -15,7 +15,7 @@ import { expect, test } from 'bun:test';
 import { mkdtemp, realpath, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { defineFolder } from '@epicenter/folder/bun';
+import { defineFolder, inspectRow } from '@epicenter/folder/bun';
 import {
 	audioPathIn,
 	recordingAudioPath,
@@ -57,8 +57,9 @@ test('a recipe written by an earlier build still reads, and a new one says “us
 	const root = await realpath(await mkdtemp(join(tmpdir(), 'whispering-def-')));
 	try {
 		const folder = await openTestFolder(root);
-		const recipes = folder.tables.transformations;
-		const earlier = recipes.inspect(
+		const recipes = (text: string) =>
+			inspectRow(whisperingDefinition.tables.transformations, text);
+		const earlier = recipes(
 			'---\ntitle: Clean up\nmodel: gpt-4o-mini\nendpoint: https://api.openai.com/v1\n---\nFix it.\n',
 		);
 		expect(earlier.issues).toEqual([]);
@@ -67,7 +68,7 @@ test('a recipe written by an earlier build still reads, and a new one says “us
 			model: 'gpt-4o-mini',
 			endpoint: 'https://api.openai.com/v1',
 		});
-		const inherits = recipes.inspect(
+		const inherits = recipes(
 			'---\ntitle: Clean up\nmodel: null\nendpoint: null\n---\nFix it.\n',
 		);
 		expect(inherits.issues).toEqual([]);
@@ -77,9 +78,9 @@ test('a recipe written by an earlier build still reads, and a new one says “us
 			endpoint: null,
 		});
 		// A field left out is still an issue: the file says nothing about it.
-		expect(
-			recipes.inspect('---\ntitle: Clean up\n---\nFix it.\n').issues,
-		).toHaveLength(2);
+		expect(recipes('---\ntitle: Clean up\n---\nFix it.\n').issues).toHaveLength(
+			2,
+		);
 		await folder.close();
 	} finally {
 		await rm(root, { recursive: true, force: true });

@@ -114,42 +114,51 @@ describe.each(Object.keys(openers))('%s folder file verbs', (kind) => {
 	const text = async (folder: Opened, path: string) =>
 		decoder.decode(expectOk(await folder.files.read(path)).bytes);
 
-	test('table mutations pin mutable capture payloads before awaiting', async () => {
+	test('table mutations own their baseline options before awaiting', async () => {
 		const folder = await open();
 		const table = folder.tables.todos;
 		const entry = expectOk(
 			await table.create({ stem: 'a', fields: { title: 'A' } }),
 		);
-		const mutable = { ...entry, sha256: entry.sha256 };
-		const source = entry.source.replace('title: A', 'title: Mine');
-		const saving = table.replace(mutable, source);
-		mutable.path = 'elsewhere.md';
-		mutable.sha256 = 'changed';
+		const options = { expectedSha256: entry.sha256 };
+		const source = entry.text.replace('title: A', 'title: Mine');
+		const saving = table.replace('a', source, options);
+		options.expectedSha256 = 'f'.repeat(64);
 		const saved = expectOk(await saving);
 		expect(saved.path).toBe(entry.path);
-		expect(saved.source).toBe(source);
+		expect(saved.text).toBe(source);
 		expect(await text(folder, entry.path)).toBe(source);
-		expect(expectErr(await folder.files.read('elsewhere.md')).name).toBe(
+
+		const moving = { expectedSha256: saved.sha256 };
+		const renamed = table.rename('a', 'b', moving);
+		moving.expectedSha256 = 'f'.repeat(64);
+		expect(expectOk(await renamed)).toBeUndefined();
+		expect(await text(folder, 'todos/b.md')).toBe(source);
+		expect(expectErr(await folder.files.read(entry.path)).name).toBe(
 			'NotFound',
 		);
 
-		const moving = { ...saved, sha256: saved.sha256 };
-		const renamed = table.rename(moving, 'b');
-		moving.path = 'elsewhere.md';
-		moving.source = 'different source';
-		moving.sha256 = 'changed';
-		const moved = expectOk(await renamed);
-		expect(moved.path).toBe('todos/b.md');
-		expect(moved.source).toBe(source);
-		expect(moved.sha256).toEqual(saved.sha256);
-		expect(await text(folder, moved.path)).toBe(source);
-
-		const deleting = { ...moved, sha256: moved.sha256 };
-		const removing = table.delete(deleting);
-		deleting.path = 'elsewhere.md';
-		deleting.sha256 = 'changed';
+		const deleting = { expectedSha256: saved.sha256 };
+		const removing = table.delete('b', deleting);
+		deleting.expectedSha256 = 'f'.repeat(64);
 		expectOk(await removing);
 		expect(expectOk(await table.get('b'))).toBeUndefined();
+	});
+
+	test('an unguarded table replacement requires an existing row in this storage', async () => {
+		const folder = await open();
+		const table = folder.tables.todos;
+		expect(expectErr(await table.replace('missing', 'text', {}))).toMatchObject(
+			{
+				name: 'NotFound',
+				path: 'todos/missing.md',
+			},
+		);
+		expect(expectOk(await table.get('missing'))).toBeUndefined();
+		expectOk(await table.create({ stem: 'a', fields: { title: 'A' } }));
+		const replaced = expectOk(await table.replace('a', 'not a row', {}));
+		expect(await text(folder, 'todos/a.md')).toBe('not a row');
+		expect(replaced.sha256).toEqual(await versionOf('not a row'));
 	});
 
 	test('create is exclusive even over identical bytes; overwrite is unconditional', async () => {
@@ -472,8 +481,16 @@ describe('a save never reads its bytes back', () => {
 			await folder.tables.todos.create({ stem: 'r', fields: { title: 'R' } }),
 		);
 		expectOk(
-			await folder.tables.todos.replace(row, row.source.replace('R', 'S')),
+			await folder.tables.todos.replace('r', row.text.replace('R', 'S'), {
+				expectedSha256: row.sha256,
+			}),
 		);
+		expectOk(
+			await folder.tables.todos.rename('r', 's', {
+				expectedSha256: await versionOf(row.text.replace('R', 'S')),
+			}),
+		);
+		expectOk(await folder.tables.todos.delete('s', {}));
 		expect(reads).toEqual([]);
 	});
 
@@ -513,7 +530,7 @@ describe('a save never reads its bytes back', () => {
 				fields: { title: 'Mine' },
 			}),
 		);
-		expect(row.fields).toEqual({ title: 'Mine' });
+		expect(row.text).toBe('---\ntitle: Mine\n---\n');
 		expect(row.sha256).toEqual(await versionOf('---\ntitle: Mine\n---\n'));
 		// An explicit get is the new observation; it never acknowledges the draft.
 		const current = expectOk(await folder.tables.todos.get('r'));
@@ -521,8 +538,9 @@ describe('a save never reads its bytes back', () => {
 		expect(
 			expectErr(
 				await folder.tables.todos.replace(
-					row,
-					row.source.replace('Mine', 'Again'),
+					'r',
+					row.text.replace('Mine', 'Again'),
+					{ expectedSha256: row.sha256 },
 				),
 			).name,
 		).toBe('Conflict');

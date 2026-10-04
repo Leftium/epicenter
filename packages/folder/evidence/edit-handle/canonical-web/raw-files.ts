@@ -6,7 +6,7 @@
  * writer; this panel is the one-tab way to change the file under the editor.
  */
 import { parseDocument, stringify } from 'yaml';
-import { type Folder, frameSource } from '../../../src/browser.js';
+import { type Folder, frameRowText } from '../../../src/browser.js';
 import { h } from './dom.js';
 import { type definition, NEW_ROW, SEED } from './todos.js';
 
@@ -117,7 +117,7 @@ export function mountRawFiles(
 		edit: (fields: Record<string, unknown>) => Record<string, unknown>,
 	) {
 		const source = await diskText();
-		const frame = frameSource(source ?? '');
+		const frame = frameRowText(source ?? '');
 		if (source === undefined || frame.kind !== 'frontmatter') {
 			message.textContent = 'Not rewritten: the file has no frontmatter.';
 			return;

@@ -31,7 +31,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { captureDefinition } from '@epicenter/capture';
-import { openFolder } from '@epicenter/folder/bun';
+import { inspectRow, openFolder } from '@epicenter/folder/bun';
 import type { Draft, DraftStore } from './draft.svelte.ts';
 
 const { createDraft } = await import('./draft.svelte.ts');
@@ -83,7 +83,7 @@ async function setup(initial: string | undefined = A) {
 	/** Held before the next opening reads anything, or the next write throws. */
 	const next: { edit?: Promise<void>; writeThrows?: Error } = {};
 	const store: DraftStore = {
-		inspect: table.inspect,
+		inspect: (text) => inspectRow(captureDefinition.tables.captures, text),
 		async edit(signal) {
 			const held = next.edit;
 			next.edit = undefined;
@@ -91,7 +91,18 @@ async function setup(initial: string | undefined = A) {
 			return table.edit('one', { signal });
 		},
 		read,
-		replace: (capture, source) => table.replace(capture, source),
+		async replace(capture, source) {
+			const written = await table.replace('one', source, {
+				expectedSha256: capture.sha256,
+			});
+			if (written.error !== null) return { data: null, error: written.error };
+			// The receipt names the bytes sent; the entry is how they read.
+			const entry = {
+				...written.data,
+				...inspectRow(captureDefinition.tables.captures, written.data.text),
+			};
+			return { data: entry, error: null };
+		},
 		async create(source) {
 			const created = await folder.files.create(PATH, source);
 			if (created.error !== null) return { data: null, error: created.error };
@@ -112,7 +123,7 @@ async function setup(initial: string | undefined = A) {
 	const draft = createDraft(
 		store,
 		{ path: PATH, stem: 'one' },
-		{ onSaved: (entry) => saved.push(entry.source), batchMs: 60_000 },
+		{ onSaved: (entry) => saved.push(entry.text), batchMs: 60_000 },
 	);
 	await draft.ready;
 	return {
@@ -169,7 +180,7 @@ test('a dirty draft keeps its text when the file changes elsewhere, stops saving
 
 	const notice = t.draft.notice;
 	expect(notice?.kind).toBe('changed');
-	expect(notice?.kind === 'changed' && notice.revision.source).toBe(D);
+	expect(notice?.kind === 'changed' && notice.revision.text).toBe(D);
 	expect(t.draft.text).toBe('mine');
 	// Typing does not save over it by itself.
 	await t.draft.save();
@@ -261,7 +272,7 @@ test('a file that cannot open as a row is raw source, written exactly and only o
 	expect(rawOf(t.draft)?.text).toBe(edited);
 	expect(rawOf(t.draft)?.problem).toContain('changed outside this window');
 	const over = rawOf(t.draft)?.over;
-	expect(typeof over === 'object' && over.source).toBe(other);
+	expect(typeof over === 'object' && over.text).toBe(other);
 
 	// Saving again replaces the version that was shown, exactly as typed.
 	await t.draft.writeRaw();
@@ -316,7 +327,7 @@ test('a frontmatter edit replaces only the version shown: a later change elsewhe
 	await t.draft.idle();
 	// The text is raw now: nothing follows the file, and unsent input stays.
 	const shown = rawOf(t.draft)?.over;
-	expect(typeof shown === 'object' && shown.source).toBe(A);
+	expect(typeof shown === 'object' && shown.text).toBe(A);
 	expect(t.draft.newThought).toBe('typed, not added');
 
 	await t.outside(D);
@@ -326,7 +337,7 @@ test('a frontmatter edit replaces only the version shown: a later change elsewhe
 	expect(await t.disk()).toBe(D);
 	expect(rawOf(t.draft)?.problem).toContain('changed outside this window');
 	const now = rawOf(t.draft)?.over;
-	expect(typeof now === 'object' && now.source).toBe(D);
+	expect(typeof now === 'object' && now.text).toBe(D);
 	expect(rawOf(t.draft)?.text).toBe(withKey);
 	await t.done();
 });
@@ -343,7 +354,7 @@ test('raw text typed while a raw write is out stays, over what was written, for 
 	expect(await t.disk()).toBe(first);
 	expect(rawOf(t.draft)?.text).toBe(second);
 	const over = rawOf(t.draft)?.over;
-	expect(typeof over === 'object' && over.source).toBe(first);
+	expect(typeof over === 'object' && over.text).toBe(first);
 	expect(t.draft.unsettled).toBe(true);
 	await t.draft.save();
 	expect(await t.disk()).toBe(first);
@@ -416,7 +427,7 @@ test('a draft let go while its editor opens takes no editor and saves nothing', 
 	const late = createDraft(
 		t.store,
 		{ path: PATH, stem: 'one' },
-		{ onSaved: (entry) => t.saved.push(entry.source), batchMs: 60_000 },
+		{ onSaved: (entry) => t.saved.push(entry.text), batchMs: 60_000 },
 	);
 	late.newThought = 'typed while opening';
 	const disposing = late.dispose();

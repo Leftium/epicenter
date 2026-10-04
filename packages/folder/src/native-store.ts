@@ -6,9 +6,10 @@
  * operating-system-wide compare-and-swap against other programs. Exclusive
  * creation and moves use hard links, which fail rather than overwrite an
  * existing destination. Replacement writes a scratch file under
- * `.git/epicenter/scratch`, checks the expected sha256 again, and renames the
- * scratch file into place. The second check catches a writer that landed while
- * the bytes were being staged; a writer that lands between that check and the
+ * `.git/epicenter/scratch`, checks again that a file is at the path (with the
+ * expected sha256, when one is given), and renames the scratch file into
+ * place. The second check catches a writer that landed, or a removal, while
+ * the bytes were being staged; a writer or removal between that check and the
  * rename is still overwritten.
  *
  * One boundary applies its batches one at a time, so two saves through the
@@ -167,6 +168,24 @@ export function createNativeFileBoundary(root: string): FileBoundary {
 	}
 
 	/**
+	 * A replacement needs a file at the path, guarded or not; with a baseline
+	 * the file's bytes must also hash to it.
+	 */
+	function replaceable(
+		path: string,
+		expectedSha256: string | undefined,
+		current: { sha256: string } | undefined,
+	) {
+		if (expectedSha256 !== undefined) {
+			if (current?.sha256 !== expectedSha256)
+				return conflict(path, expectedSha256, current?.sha256);
+			return undefined;
+		}
+		if (current === undefined) return FileError.NotFound({ path });
+		return undefined;
+	}
+
+	/**
 	 * Apply one change. A move is two filesystem steps; when its destination
 	 * link lands but retiring the source fails, `landed` receives the
 	 * destination write so the caller reports it instead of an ordinary error.
@@ -186,11 +205,14 @@ export function createNativeFileBoundary(root: string): FileBoundary {
 			if (readError !== null) return Err(readError);
 			if (change.kind === 'create' && current !== undefined)
 				return FileError.Exists({ path: change.path });
-			if (
-				change.kind === 'replace' &&
-				current?.sha256 !== change.expectedSha256
-			)
-				return conflict(change.path, change.expectedSha256, current?.sha256);
+			if (change.kind === 'replace') {
+				const refused = replaceable(
+					change.path,
+					change.expectedSha256,
+					current,
+				);
+				if (refused !== undefined) return refused;
+			}
 			const parent = await ensureParent(change.path);
 			if (parent.error !== null) return parent;
 			let temporary: string;
@@ -211,8 +233,8 @@ export function createNativeFileBoundary(root: string): FileBoundary {
 						change.path,
 					);
 					if (rereadError !== null) return Err(rereadError);
-					if (now?.sha256 !== change.expectedSha256)
-						return conflict(change.path, change.expectedSha256, now?.sha256);
+					const refused = replaceable(change.path, change.expectedSha256, now);
+					if (refused !== undefined) return refused;
 				}
 				if (change.kind === 'create') {
 					// Exclusive creation: link fails instead of replacing a newcomer.

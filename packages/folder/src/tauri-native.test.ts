@@ -427,7 +427,7 @@ describe.skipIf(!enabled)('tauri folder against the native owner', () => {
 		const updated = await b(async () =>
 			expectOk(await other.kv.update({ theme: 'light' })),
 		);
-		expect(updated.source).toBe(source.replace('"dark"', '"light"'));
+		expect(updated.text).toBe(source.replace('"dark"', '"light"'));
 		expect(await a(async () => expectOk(await folder.kv.get()))).toEqual(
 			updated,
 		);
@@ -498,7 +498,11 @@ describe.skipIf(!enabled)('tauri folder against the native owner', () => {
 		expect(image.sha256).toEqual(await hashBytes(IMAGE));
 
 		// Deleting the row leaves the image: the owner removes one file.
-		expectOk(await a(() => todos.delete(reread)));
+		expectOk(
+			await a(() =>
+				todos.delete(reread.stem, { expectedSha256: reread.sha256 }),
+			),
+		);
 		expect(
 			expectOk(await a(() => folder.files.children('todos'))).files,
 		).toEqual(['take.png']);
@@ -592,7 +596,11 @@ describe.skipIf(!enabled)('tauri folder against the native owner', () => {
 
 		// A rename reads the directory for its destination check, then moves
 		// the row under the sha256 the entry captured.
-		const refused = expectErr(await a(() => todos.rename(entry, 'next')));
+		const refused = expectErr(
+			await a(() =>
+				todos.rename('take', 'next', { expectedSha256: entry.sha256 }),
+			),
+		);
 
 		expect(refused.name).toBe('Conflict');
 		if (refused.name !== 'Conflict') return;

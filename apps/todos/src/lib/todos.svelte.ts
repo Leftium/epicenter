@@ -719,11 +719,21 @@ export function createTodos(folder: TodosFolder) {
 			let follow = false;
 			try {
 				if (stem !== undefined && nextStem !== undefined) {
+					// Guarded by the capture's hash at the old path. What the new
+					// path is given is that reviewed capture renamed, not a read of
+					// the destination: a native folder checks the guard only as well
+					// as other programs allow.
 					const renameRow = async (capture: TextCapture) => {
-						const renamed = await table.rename(capture, nextStem);
+						const renamed = await table.rename(stem, nextStem, {
+							expectedSha256: capture.sha256,
+						});
 						return renamed.error
 							? Err(describeWriteError(renamed.error))
-							: renamed;
+							: Ok({
+									path: to,
+									sha256: capture.sha256,
+									text: capture.text,
+								});
 					};
 					if (item?.kind === 'todo') {
 						const result = await item.editor.move(nextStem);
@@ -749,7 +759,7 @@ export function createTodos(folder: TodosFolder) {
 					moved = await item.editor.move(async (settled: SavedText) => {
 						const bytes = await moveFile(settled, to);
 						return bytes.error === null
-							? Ok({ ...bytes.data, source: settled.source })
+							? Ok({ ...bytes.data, text: settled.text })
 							: bytes;
 					});
 				else moved = await moveFile(path, to);
@@ -961,7 +971,9 @@ export function createTodos(folder: TodosFolder) {
 				const editor = editorOf(item);
 				const removeConfirmed = () =>
 					deletion.kind === 'todo'
-						? table.delete(deletion.entry)
+						? table.delete(deletion.entry.stem, {
+								expectedSha256: deletion.entry.sha256,
+							})
 						: folder.files.remove(deletion);
 				// An open editor owns the delete: a running save finishes first, no
 				// save starts during it, and it records a lost reply before the path

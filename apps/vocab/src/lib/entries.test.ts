@@ -70,7 +70,7 @@ test('a word is listed once its file exists, with a blank note and the New stage
 	const [path] = await tableFiles(folder, 'entries');
 	expect(path).toBe(`entries/${entries.entries[0]?.id}.md`);
 	expect(await fileText(folder, path ?? '')).toBe(
-		entries.entries[0]?.file.source,
+		entries.entries[0]?.file.text,
 	);
 	expect(summary(await context.reopened())).toEqual([
 		{ text: 'lucid', note: '', stage: 'new' },
@@ -153,7 +153,7 @@ test('a stage pressed while a note is typed saves both, from one editor shared b
 	// The whole word, in canonical form, with what it had before.
 	const source = await fileText(folder, `entries/${id}.md`);
 	expect(source).toStartWith('---\n"text": "candid"\n"note": ');
-	expect(entries.entries[0]?.file.source).toBe(source);
+	expect(entries.entries[0]?.file.text).toBe(source);
 });
 
 test('a word read here after another tab’s edit follows it when nothing is typed, and a stage pressed here keeps that note', async () => {
@@ -380,7 +380,7 @@ test('a different file where a new word belongs is refused and left as it is', a
 	const [path] = await tableFiles(folder, 'entries');
 	if (!path) throw new Error('the word was not added');
 	// Another program rewrote the file to hold another word.
-	const other = entries.entries[0]?.file.source.replace('lucid', 'lurid') ?? '';
+	const other = entries.entries[0]?.file.text.replace('lucid', 'lurid') ?? '';
 	expectOk(await folder.files.overwrite(path, other));
 
 	const stale = createEntriesState({ table: folder.tables.entries });

@@ -345,9 +345,13 @@ test('a published recording whose title was edited since is still this recording
 	const pending = capture();
 	await publishRecording(folder, pending, { retry: false });
 	expectOk(
-		await folder.tables.recordings.update(pending.id, {
-			fields: { title: 'Renamed by its owner' },
-		}),
+		await folder.tables.recordings.update(
+			pending.id,
+			{
+				fields: { title: 'Renamed by its owner' },
+			},
+			{},
+		),
 	);
 
 	const again = await publishRecording(folder, pending, { retry: true });

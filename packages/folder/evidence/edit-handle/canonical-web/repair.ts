@@ -69,7 +69,7 @@ function exactText(error: TableEditError): string | undefined {
 	switch (error.name) {
 		case 'NoCanonicalForm':
 		case 'InvalidSource':
-			return error.file.source;
+			return error.file.text;
 		default:
 			return undefined;
 	}

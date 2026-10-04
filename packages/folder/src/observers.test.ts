@@ -118,7 +118,11 @@ describe.each(['browser', 'directory'])('%s folder observers', (kind) => {
 			await folder.tables.notes.create({ stem: 'a', fields: { title: 'A' } }),
 		);
 		expectOk(
-			await folder.tables.notes.update(row.stem, { fields: { title: 'B' } }),
+			await folder.tables.notes.update(
+				row.stem,
+				{ fields: { title: 'B' } },
+				{},
+			),
 		);
 		expectOk(await folder.kv.create({ theme: 'dark' }));
 		expectOk(await folder.files.create('audio/a.webm', new Uint8Array([1])));

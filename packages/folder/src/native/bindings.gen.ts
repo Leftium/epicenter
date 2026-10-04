@@ -89,7 +89,7 @@ export const events = {
 };
 
 /* Constants */
-export const FOLDER_PROTOCOL = 5 as const;
+export const FOLDER_PROTOCOL = 6 as const;
 
 /* Types */
 export type Activities = {
@@ -196,8 +196,11 @@ export type FetchOutcome = {
 export type FileChange =
 /**  Exclusive creation: the path must be absent. */
 { kind: "create"; path: string; bytes: number[] } |
-/**  The current bytes must hash to `expected_sha256`. */
-{ kind: "replace"; path: string; bytes: number[]; expectedSha256: string } |
+/**
+ *  The path must hold a file: a replacement never creates one. With
+ *  `expected_sha256`, the current bytes must also hash to it.
+ */
+{ kind: "replace"; path: string; bytes: number[]; expectedSha256?: string | null } |
 /**  A deliberate overwrite, whether or not the path holds a file. */
 { kind: "overwrite"; path: string; bytes: number[] } |
 /**

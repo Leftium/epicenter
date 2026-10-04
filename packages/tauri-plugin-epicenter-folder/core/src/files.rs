@@ -69,12 +69,14 @@ pub struct Children {
 pub enum FileChange {
     /// Exclusive creation: the path must be absent.
     Create { path: String, bytes: Vec<u8> },
-    /// The current bytes must hash to `expected_sha256`.
+    /// The path must hold a file: a replacement never creates one. With
+    /// `expected_sha256`, the current bytes must also hash to it.
     #[serde(rename_all = "camelCase")]
     Replace {
         path: String,
         bytes: Vec<u8>,
-        expected_sha256: String,
+        #[serde(default)]
+        expected_sha256: Option<String>,
     },
     /// A deliberate overwrite, whether or not the path holds a file.
     Overwrite { path: String, bytes: Vec<u8> },
@@ -553,13 +555,29 @@ impl Files {
         })
     }
 
-    fn replace(&self, path: &str, bytes: &[u8], expected: &str) -> Result<(), FileError> {
+    /// Refuse a replacement unless a file is at the path and, when the caller
+    /// captured a hash, its bytes hash to it.
+    fn replaceable(
+        path: &str,
+        expected: Option<&str>,
+        actual: Option<String>,
+    ) -> Result<(), FileError> {
+        match expected {
+            Some(expected) => Self::expect(path, expected, actual),
+            None if actual.is_none() => Err(FileError::NotFound {
+                path: path.to_string(),
+            }),
+            None => Ok(()),
+        }
+    }
+
+    fn replace(&self, path: &str, bytes: &[u8], expected: Option<&str>) -> Result<(), FileError> {
         self.changeable(path)?;
-        Self::expect(path, expected, self.current_sha256(path)?)?;
+        Self::replaceable(path, expected, self.current_sha256(path)?)?;
         self.stage(path, bytes, |temporary| {
-            // Staging and parent creation took time. Check the hash again so
-            // the only unchecked window left is this read to the rename below.
-            Self::expect(path, expected, self.current_sha256(path)?)?;
+            // Staging and parent creation took time. Check again so the only
+            // unchecked window left is this read to the rename below.
+            Self::replaceable(path, expected, self.current_sha256(path)?)?;
             fs::rename(temporary, self.absolute(path)).map_err(|cause| io(path, "replace", &cause))
         })
     }
@@ -643,7 +661,7 @@ impl Files {
                 path,
                 bytes,
                 expected_sha256,
-            } => self.replace(path, bytes, expected_sha256),
+            } => self.replace(path, bytes, expected_sha256.as_deref()),
             FileChange::Overwrite { path, bytes } => self.overwrite(path, bytes),
             FileChange::Remove {
                 path,

@@ -36,7 +36,7 @@
 import './svelte-modules.test-support.js';
 import { afterEach, expect, test } from 'bun:test';
 import type { RowEditor } from '@epicenter/folder';
-import { FileError } from '@epicenter/folder';
+import { FileError, inspectRow } from '@epicenter/folder';
 import { openFolder } from '@epicenter/folder/browser';
 import { expectOk } from 'wellcrafted/testing';
 import { testBrowserStorage } from '../../../../packages/folder/src/browser-storage.test-support.js';
@@ -85,7 +85,7 @@ async function setup(wrap: (row: Row) => Row = (row) => row) {
 	}
 	/** How the file now reads as a todo. */
 	async function reading(path = PATH) {
-		return table.inspect((await text(path)) ?? '');
+		return inspectRow(todosDefinition.tables.todos, (await text(path)) ?? '');
 	}
 	return { folder, table, row, editor, saved, text, reading };
 }
@@ -109,7 +109,7 @@ test('title, done, and notes change one draft, and autosave writes the complete 
 
 	await eventually(() => editor.isIdle);
 	expect(saved.count).toBe(1);
-	expect(await text()).toBe(editor.state.source);
+	expect(await text()).toBe(editor.state.text);
 	expect(await reading()).toEqual({
 		fields: { title: 'Oat milk', done: true },
 		body: 'Notes\n',
@@ -207,7 +207,7 @@ test('a lost save reply stays unknown after a read finds its text, and autosave 
 		async save() {
 			if (lose-- <= 0) return row.save();
 			// The bytes land, but the reply that would confirm them never arrives.
-			expectOk(await folder.files.overwrite(PATH, row.get().source));
+			expectOk(await folder.files.overwrite(PATH, row.get().text));
 			return FileError.Unconfirmed({
 				path: PATH,
 				operation: 'write',
@@ -252,7 +252,7 @@ test("another writer's change never replaces input, holds autosave, and an expli
 	expect(await text()).toBe(`${ROW}theirs\n`);
 
 	expect(await editor.save()).toBeUndefined();
-	expect(await text()).toBe(editor.state.source);
+	expect(await text()).toBe(editor.state.text);
 	expect(await text()).not.toContain('theirs');
 	expect(editor.isAwaitingReview).toBe(false);
 });
@@ -301,7 +301,7 @@ test('a draft whose file was removed elsewhere writes the row again when it save
 	expect(editor.isDiscardable).toBe(true);
 
 	expect(await editor.save()).toBeUndefined();
-	expect(await text()).toBe(editor.state.source);
+	expect(await text()).toBe(editor.state.text);
 	expect(editor.state.document.body).toBe('mine\n');
 });
 

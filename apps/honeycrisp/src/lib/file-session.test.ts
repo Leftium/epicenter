@@ -29,12 +29,13 @@ import './svelte-modules.test-support.js';
 import { afterEach, expect, jest, test } from 'bun:test';
 import {
 	type CapturedFile,
+	type CapturedMoveError,
 	type FileCapture,
 	FileError,
 	hashBytes,
 	MoveError,
 } from '@epicenter/folder';
-import { Ok, type Result } from 'wellcrafted/result';
+import { type Err, Ok, type Result } from 'wellcrafted/result';
 import type { FileSession, Observed } from './file-session.svelte.ts';
 
 const { createFileSession } = await import('./file-session.svelte.ts');
@@ -198,7 +199,7 @@ function disk(initial: string | undefined) {
 				return { kind: 'unreadable', message: 'The file is no longer text.' };
 			return {
 				kind: 'present',
-				file: { path, source, sha256: await versionOf(source) },
+				file: { path, text: source, sha256: await versionOf(source) },
 			};
 		},
 		files: {
@@ -228,32 +229,36 @@ function disk(initial: string | undefined) {
 			move(
 				file: FileCapture,
 				to: string,
-			): Changed<FileCapture, FileError | MoveError> {
+			): Changed<FileCapture, FileError | CapturedMoveError> {
 				requests.push({ move: file.path, to, expected: file.sha256 });
 				const planned = plan;
-				return change<FileCapture, FileError | MoveError>(file.path, async () => {
-					const source = stored.get(file.path);
-					if (source === undefined)
-						return FileError.NotFound({ path: file.path });
-					const refused =
-						(await refusal(file.path, file.sha256)) ??
-						(stored.has(to) ? FileError.Exists({ path: to }) : undefined);
-					if (refused) return refused;
-					stored.set(to, source);
-					if (planned?.kind === 'sourceNotRemoved')
-						return MoveError.SourceNotRemoved({
-							from: file.path,
-							to,
-							moved: { path: to, sha256: file.sha256 },
-							cause: FileError.Io({
-								path: file.path,
-								operation: 'retire',
-								cause: 'the file is in use',
-							}).error,
-						});
-					stored.delete(file.path);
-					return Ok({ path: to, sha256: file.sha256 });
-				});
+				return change<FileCapture, FileError | CapturedMoveError>(
+					file.path,
+					async () => {
+						const source = stored.get(file.path);
+						if (source === undefined)
+							return FileError.NotFound({ path: file.path });
+						const refused =
+							(await refusal(file.path, file.sha256)) ??
+							(stored.has(to) ? FileError.Exists({ path: to }) : undefined);
+						if (refused) return refused;
+						stored.set(to, source);
+						if (planned?.kind === 'sourceNotRemoved')
+							// A file move is guarded, so its kept source names the capture.
+							return MoveError.SourceNotRemoved({
+								from: file.path,
+								to,
+								moved: { path: to, sha256: file.sha256 },
+								cause: FileError.Io({
+									path: file.path,
+									operation: 'retire',
+									cause: 'the file is in use',
+								}).error,
+							}) as Err<CapturedMoveError>;
+						stored.delete(file.path);
+						return Ok({ path: to, sha256: file.sha256 });
+					},
+				);
 			},
 			remove(file: FileCapture): Changed<undefined> {
 				requests.push({ remove: file.path, expected: file.sha256 });
@@ -281,7 +286,7 @@ async function open(source: string, admits: () => boolean = () => true) {
 	const files = disk(source);
 	const session = createFileSession(
 		files.files,
-		{ path: PATH, source, sha256: await versionOf(source) },
+		{ path: PATH, text: source, sha256: await versionOf(source) },
 		{ admits },
 	);
 	sessions.push(session);
@@ -329,7 +334,7 @@ test('a clean session adopts an external change without writing', async () => {
 	files.external('two\n');
 	expect(session.observe(await files.observed())).toBe('adopted');
 	expect(session.buffer).toBe('two\n');
-	expect(session.saved.source).toBe('two\n');
+	expect(session.saved.text).toBe('two\n');
 	expect(session.status).toBe('saved');
 	await session.save();
 	expect(files.requests).toEqual([]);
@@ -345,10 +350,10 @@ test('observing the same bytes changes nothing', async () => {
 test('a dirty session keeps its text and review target across repeated external observations', async () => {
 	const { files, session, reviewed } = await conflicted('theirs\n');
 	expect(session.buffer).toBe('mine\n');
-	expect(session.saved.source).toBe('one\n');
+	expect(session.saved.text).toBe('one\n');
 	expect(session.external).toMatchObject({
 		kind: 'changed',
-		current: { source: 'theirs\n' },
+		current: { text: 'theirs\n' },
 	});
 	expect(session.status).toBe('conflict');
 	expect(session.observe(await files.observed())).toBe('conflict');
@@ -417,7 +422,7 @@ test('a save takes the text as it is when it is asked for: typing in the same ti
 	expect(files.at()).toBe('A\n');
 	expect(session.saved).toEqual({
 		path: PATH,
-		source: 'A\n',
+		text: 'A\n',
 		sha256: await versionOf('A\n'),
 	});
 	expect(session.buffer).toBe('A and B\n');
@@ -471,7 +476,7 @@ test('typing during a save stays dirty after the submitted text is acknowledged'
 	files.release();
 	await saving;
 	expect(files.asked).toEqual(['A\n']);
-	expect(session.saved.source).toBe('A\n');
+	expect(session.saved.text).toBe('A\n');
 	expect(session.buffer).toBe('A and B\n');
 	expect(session.dirty).toBe(true);
 	expect(session.attempt).toBeUndefined();
@@ -488,7 +493,7 @@ test('a save acknowledges the text of the bytes it sent: an unpaired surrogate s
 	expect(files.at()).toBe(stored);
 	expect(session.saved).toEqual({
 		path: PATH,
-		source: stored,
+		text: stored,
 		sha256: await versionOf(stored),
 	});
 	expect(session.buffer).toBe(stored);
@@ -512,7 +517,7 @@ test('typing during a save whose text encoding changed stays as typed', async ()
 	session.input('a\uD800b');
 	files.release();
 	await saving;
-	expect(session.saved.source).toBe('a�');
+	expect(session.saved.text).toBe('a�');
 	// Other bytes than the ones acknowledged: the buffer is left alone.
 	expect(session.buffer).toBe('a\uD800b');
 	expect(session.dirty).toBe(true);
@@ -533,10 +538,10 @@ test('a stale save is refused and the draft is kept', async () => {
 	await saving;
 	expect(files.at()).toBe('theirs\n');
 	expect(session.buffer).toBe('mine\n');
-	expect(session.saved.source).toBe('one\n');
+	expect(session.saved.text).toBe('one\n');
 	expect(session.external).toMatchObject({
 		kind: 'changed',
-		current: { source: 'theirs\n' },
+		current: { text: 'theirs\n' },
 	});
 	expect(session.status).toBe('conflict');
 });
@@ -575,11 +580,11 @@ test('a change that lands right after a save is caught by the deferred recheck',
 	files.release();
 	await saving;
 	// The save is acknowledged as what it wrote; the other file is a conflict.
-	expect(session.saved.source).toBe('mine\n');
+	expect(session.saved.text).toBe('mine\n');
 	expect(session.buffer).toBe('mine and more\n');
 	expect(session.external).toMatchObject({
 		kind: 'changed',
-		current: { source: 'theirs\n' },
+		current: { text: 'theirs\n' },
 	});
 });
 
@@ -648,7 +653,7 @@ test('take theirs loads exactly the reviewed version, and only when chosen', asy
 	expect(session.buffer).toBe('mine\n');
 	expect(session.takeTheirs(reviewed)).toBe(true);
 	expect(session.buffer).toBe('theirs\n');
-	expect(session.saved.source).toBe('theirs\n');
+	expect(session.saved.text).toBe('theirs\n');
 	expect(session.status).toBe('saved');
 	expect(files.requests).toEqual([]);
 });
@@ -674,8 +679,8 @@ test('a review that a newer observation replaced can neither save nor load', asy
 	expect(files.requests).toEqual([]);
 	expect(files.at()).toBe('C\n');
 	expect(session.buffer).toBe('mine\n');
-	expect(session.saved.source).toBe('one\n');
-	expect(session.external).toMatchObject({ current: { source: 'C\n' } });
+	expect(session.saved.text).toBe('one\n');
+	expect(session.external).toMatchObject({ current: { text: 'C\n' } });
 });
 
 test('save mine is refused when the file changed after the review, and nothing it stood on moves', async () => {
@@ -686,11 +691,11 @@ test('save mine is refused when the file changed after the review, and nothing i
 	expect(files.at()).toBe('theirs again\n');
 	expect(session.buffer).toBe('mine\n');
 	// The refused write did not become the base, and the conflict is not cleared.
-	expect(session.saved.source).toBe('one\n');
+	expect(session.saved.text).toBe('one\n');
 	expect(session.external).not.toBe(reviewed);
 	expect(session.external).toMatchObject({
 		kind: 'changed',
-		current: { source: 'theirs again\n' },
+		current: { text: 'theirs again\n' },
 	});
 	expect(session.status).toBe('conflict');
 });
@@ -700,7 +705,7 @@ test('save mine that fails leaves the saved base and the reviewed conflict as th
 	files.next({ kind: 'fail', message: 'disk full' });
 	expect(await session.saveMine(reviewed)).toBe(true);
 	expect(files.at()).toBe('theirs\n');
-	expect(session.saved.source).toBe('one\n');
+	expect(session.saved.text).toBe('one\n');
 	expect(session.external).toBe(reviewed);
 	expect(session.failure).toContain('disk full');
 	expect(session.buffer).toBe('mine\n');
@@ -731,7 +736,7 @@ test('a call that throws leaves the save unconfirmed, not lost', async () => {
 test('an unconfirmed save holds saving; Save again is a new attempt of what is on screen, and the late first one is refused', async () => {
 	const { files, session, base } = await unconfirmed({ landed: false });
 	expect(session.status).toBe('unconfirmed');
-	expect(session.saved.source).toBe('one\n');
+	expect(session.saved.text).toBe('one\n');
 
 	// Nothing is sent by itself: not by typing, and not by settling.
 	session.input('A and B\n');
@@ -745,7 +750,7 @@ test('an unconfirmed save holds saving; Save again is a new attempt of what is o
 	]);
 	// This attempt was confirmed: it is what is saved, and nothing is held.
 	expect(files.at()).toBe('A and B\n');
-	expect(session.saved.source).toBe('A and B\n');
+	expect(session.saved.text).toBe('A and B\n');
 	expect(session.attempt).toBeUndefined();
 	expect(session.status).toBe('saved');
 	// The first send arrives at last, and its own condition refuses it.
@@ -774,7 +779,7 @@ test('an unconfirmed save of an unpaired surrogate is kept as the text of its by
 	const sent = { replace: PATH, source: 'A �\n', expected: base };
 	expect(files.requests).toEqual([sent, sent]);
 	expect(session.attempt).toBeUndefined();
-	expect(session.saved.source).toBe('A �\n');
+	expect(session.saved.text).toBe('A �\n');
 	expect(session.buffer).toBe('A �\n');
 	expect(session.status).toBe('saved');
 	expect((await files.land()).error?.name).toBe('Conflict');
@@ -795,7 +800,7 @@ test('a refused Save again that finds the unconfirmed text makes it the file’s
 	// not show which save wrote it.
 	expect(session.saved).toEqual({
 		path: PATH,
-		source: 'A\n',
+		text: 'A\n',
 		sha256: await versionOf('A\n'),
 	});
 	expect(session.attempt).toMatchObject({ ...sent, state: 'unconfirmed' });
@@ -828,7 +833,7 @@ test('reading the old file settles nothing; reading exactly the attempted text i
 	// It lands afterwards, with no further action.
 	expect((await files.land()).error).toBeNull();
 	expect(session.observe(await files.observed())).toBe('agreed');
-	expect(session.saved.source).toBe('A\n');
+	expect(session.saved.text).toBe('A\n');
 	expect(session.attempt).toMatchObject({ ...sent, state: 'unconfirmed' });
 	expect(session.buffer).toBe('A and B\n');
 	expect(session.status).toBe('unconfirmed');
@@ -855,7 +860,7 @@ test('an unconfirmed save survives other text and the old file coming back, and 
 	// Another program writes C. It is recorded beside the attempt, not instead of it.
 	files.external('C\n');
 	expect(session.observe(await files.observed())).toBe('conflict');
-	expect(session.external).toMatchObject({ current: { source: 'C\n' } });
+	expect(session.external).toMatchObject({ current: { text: 'C\n' } });
 	expect(session.attempt).toMatchObject({ ...sent, state: 'unconfirmed' });
 	expect(session.status).toBe('unconfirmed');
 
@@ -864,7 +869,7 @@ test('an unconfirmed save survives other text and the old file coming back, and 
 	expect(session.observe(await files.observed())).toBe('same');
 	expect(session.external).toBeUndefined();
 	expect(session.attempt).toMatchObject({ ...sent, state: 'unconfirmed' });
-	expect(session.saved.source).toBe('one\n');
+	expect(session.saved.text).toBe('one\n');
 
 	session.input('B\n');
 	await session.retry();
@@ -892,8 +897,8 @@ test('a refused Save again keeps the earlier attempt on record: other text is sh
 	});
 	expect(files.at()).toBe('theirs\n');
 	expect(session.attempt).toMatchObject({ ...sent, state: 'unconfirmed' });
-	expect(session.external).toMatchObject({ current: { source: 'theirs\n' } });
-	expect(session.saved.source).toBe('one\n');
+	expect(session.external).toMatchObject({ current: { text: 'theirs\n' } });
+	expect(session.saved.text).toBe('one\n');
 	expect(session.buffer).toBe('B\n');
 	// Nothing is sent by itself while it is held.
 	expect(await session.settle()).toBe(false);
@@ -931,7 +936,7 @@ test('a removed or unreadable file does not end an unconfirmed save', async () =
 		expected: base,
 	});
 	expect(session.attempt).toMatchObject({ ...sent, state: 'unconfirmed' });
-	expect(session.saved.source).toBe('one\n');
+	expect(session.saved.text).toBe('one\n');
 });
 
 test('a retry is not taken while input is not admitted', async () => {
@@ -939,7 +944,7 @@ test('a retry is not taken while input is not admitted', async () => {
 	const files = disk('one\n');
 	const session = createFileSession(
 		files.files,
-		{ path: PATH, source: 'one\n', sha256: await versionOf('one\n') },
+		{ path: PATH, text: 'one\n', sha256: await versionOf('one\n') },
 		{ admits: () => admitted },
 	);
 	sessions.push(session);
@@ -987,7 +992,7 @@ test('a removed file leaves a dirty draft, which is saved back as it was capture
 	expect(files.at()).toBe('mine\n');
 	expect(session.saved).toEqual({
 		path: PATH,
-		source: 'mine\n',
+		text: 'mine\n',
 		sha256: await versionOf('mine\n'),
 	});
 	expect(session.external).toBeUndefined();
@@ -1018,7 +1023,7 @@ test('without another path, a path that holds other text is a conflict to review
 	expect(session.buffer).toBe('mine\n');
 	expect(session.external).toMatchObject({
 		kind: 'changed',
-		current: { source: 'other\n' },
+		current: { text: 'other\n' },
 	});
 });
 
@@ -1046,7 +1051,7 @@ test('an unconfirmed save back is saved again at its own path only, and never se
 	expect(files.paths()).toEqual([PATH]);
 	expect(session.path).toBe(PATH);
 	// The file holds the earlier text. Which write put it there is not known.
-	expect(session.saved.source).toBe('mine\n');
+	expect(session.saved.text).toBe('mine\n');
 	expect(session.attempt).toMatchObject({ ...sent, state: 'unconfirmed' });
 	expect(session.buffer).toBe('mine and more\n');
 	await session.save();
@@ -1077,7 +1082,7 @@ test('an unconfirmed save back whose path then holds other text stays as it was 
 		source: 'mine\n',
 		state: 'unconfirmed',
 	});
-	expect(session.external).toMatchObject({ current: { source: 'other\n' } });
+	expect(session.external).toMatchObject({ current: { text: 'other\n' } });
 	// The first creation cannot land while the path is not empty.
 	expect((await files.land()).error?.name).toBe('Exists');
 });
@@ -1293,14 +1298,14 @@ test('a buffer typed back to the saved text does not let other text become the b
 	expect(session.dirty).toBe(false);
 	const kept = () => {
 		expect(session.attempt).toMatchObject({ ...sent, state: 'unconfirmed' });
-		expect(session.saved).toMatchObject({ source: 'one\n', sha256: base });
+		expect(session.saved).toMatchObject({ text: 'one\n', sha256: base });
 		expect(session.buffer).toBe('one\n');
 	};
 
 	// Other text is recorded beside the attempt. It is not adopted.
 	files.external('C\n');
 	expect(session.observe(await files.observed())).toBe('conflict');
-	expect(session.external).toMatchObject({ current: { source: 'C\n' } });
+	expect(session.external).toMatchObject({ current: { text: 'C\n' } });
 	kept();
 
 	// A removed file does not make the session forgettable either.
@@ -1328,14 +1333,14 @@ test('a buffer typed back to the saved text does not let other text become the b
 		{ replace: PATH, source: 'A\n', expected: base },
 		{ replace: PATH, source: 'one\n', expected: base },
 	]);
-	expect(session.saved.source).toBe('one\n');
+	expect(session.saved.text).toBe('one\n');
 	// It left the file as the bytes the first send was conditional on, so the
 	// first send can still land, and it stays on record.
 	expect(session.attempt).toMatchObject({ ...sent, state: 'unconfirmed' });
 	expect((await files.land()).error).toBeNull();
 	// When a read finds it, that is the file's content; the draft is kept.
 	expect(session.observe(await files.observed())).toBe('agreed');
-	expect(session.saved.source).toBe('A\n');
+	expect(session.saved.text).toBe('A\n');
 	expect(session.buffer).toBe('one\n');
 	expect(session.status).toBe('unconfirmed');
 });

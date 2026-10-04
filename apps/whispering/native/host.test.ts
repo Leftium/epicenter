@@ -559,8 +559,9 @@ test('a terminal edit is an outside write: the owner’s next read sees it, and 
 	expect(reread!.fields.title).toBe('Renamed in the shell');
 	// The page's older observation no longer matches: its save is refused, not applied.
 	const { error: replaceError } = await folder.tables.recordings.replace(
-		entry!,
-		entry!.source.replace('First take', 'Lost update'),
+		entry!.stem,
+		entry!.text.replace('First take', 'Lost update'),
+		{ expectedSha256: entry!.sha256 },
 	);
 	expect(replaceError?.name).toBe('Conflict');
 	expect(

@@ -480,13 +480,21 @@ async function plan(
 				});
 				continue;
 			}
-			// Only a replacement compares bytes; the others need not read them.
-			const found = await current(change.path, change.kind === 'replace');
+			// Only a guarded replacement compares bytes; the others need not read them.
+			const found = await current(
+				change.path,
+				change.kind === 'replace' && change.expectedSha256 !== undefined,
+			);
 			if (change.kind === 'create' && found.kind === 'file')
 				return FileError.Exists({ path: change.path });
 			if (change.kind === 'replace') {
 				const refused = conflict(change.path, found, change.expectedSha256);
 				if (refused) return Err(refused);
+				// A replacement never creates a file, guarded or not.
+				if (found.kind === 'directory')
+					return FileError.NotAFile({ path: change.path });
+				if (found.kind !== 'file')
+					return FileError.NotFound({ path: change.path });
 			}
 			if (found.kind !== 'file') {
 				const refused = blocked(change.path, found);

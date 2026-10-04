@@ -33,6 +33,7 @@ import {
 	type FileListing,
 	type FileTable,
 	type GitSnapshot,
+	inspectRow,
 	type RowChange,
 	type RowEditor,
 	rowPath,
@@ -45,6 +46,7 @@ import {
 	type FolderEntry,
 	type FolderFields,
 	folderLabel,
+	honeycrispDefinition,
 	NOTES,
 	type NoteEntry,
 	type NoteFields,
@@ -274,9 +276,9 @@ function saveProblem(session: FileSession): string | undefined {
 	}
 }
 
-const captureOf = ({ path, source, sha256 }: Capture): Capture => ({
+const captureOf = ({ path, text, sha256 }: Capture): Capture => ({
 	path,
-	source,
+	text,
 	sha256,
 });
 
@@ -502,10 +504,7 @@ export function createNotes(host: NotesHost) {
 	const keep =
 		(change: SentChange & { label: string }) =>
 		(outcome: FileOutcome<unknown>) => {
-			if (
-				outcome.kind === 'unconfirmed' ||
-				outcome.kind === 'sourceNotRemoved'
-			)
+			if (outcome.kind === 'unconfirmed' || outcome.kind === 'sourceNotRemoved')
 				pending = [
 					...pending,
 					{ ...change, state: outcome.kind, problem: outcome.message },
@@ -614,7 +613,7 @@ export function createNotes(host: NotesHost) {
 				Object.hasOwn(listed, key) &&
 				JSON.stringify(listed[key]) ===
 					JSON.stringify(
-						typeof value === 'string' ? submittedText(value).source : value,
+						typeof value === 'string' ? submittedText(value).text : value,
 					),
 		);
 	}
@@ -622,10 +621,10 @@ export function createNotes(host: NotesHost) {
 	/** The text a path holds in what was just listed, or what a read finds. */
 	async function sourceAt(path: string): Promise<string | undefined> {
 		const row = [...notes, ...folders].find((entry) => entry.path === path);
-		if (row !== undefined) return row.source;
+		if (row !== undefined) return row.text;
 		if (!listing?.files.some((file) => file.path === path)) return undefined;
 		const read = await readTextFile(folder.files, path).catch(() => undefined);
-		return read?.data?.kind === 'text' ? read.data.file.source : undefined;
+		return read?.data?.kind === 'text' ? read.data.file.text : undefined;
 	}
 
 	/**
@@ -1200,11 +1199,7 @@ export function createNotes(host: NotesHost) {
 			const label = `New folder "${name}"`;
 			if (pending.some((item) => item.label === label))
 				return 'This folder was already asked for and not confirmed. Send it again or dismiss it from the status menu.';
-			const created = await createRow(
-				'folders',
-				{ name, icon: null },
-				label,
-			);
+			const created = await createRow('folders', { name, icon: null }, label);
 			await refresh();
 			return created.error ?? undefined;
 		},
@@ -1248,7 +1243,9 @@ export function createNotes(host: NotesHost) {
 			if (needRepair.length > 0)
 				return `Some notes in this folder need repair before they can be moved out (${named(needRepair)}). Repair them first.`;
 			// Refused before any note moves, so no note is left half moved out.
-			const asText = members.filter((note) => sessionAt(note.path) !== undefined);
+			const asText = members.filter(
+				(note) => sessionAt(note.path) !== undefined,
+			);
 			if (asText.length > 0)
 				return `Some notes in this folder are open as text (${named(asText)}). Open them as notes first.`;
 			for (const note of members) {
@@ -1391,7 +1388,7 @@ export function createNotes(host: NotesHost) {
 		 */
 		useVersion(session: NoteSession, source: string): string | undefined {
 			if (fenced) return CLOSING;
-			const version = folder.tables.notes.inspect(source);
+			const version = inspectRow(honeycrispDefinition.tables.notes, source);
 			if (version.body === undefined)
 				return `This version does not read as a note (${version.parseError?.message}). Open the file in Files to use it as text.`;
 			if (!session.change({ fields: version.fields, body: version.body }))
@@ -1419,7 +1416,7 @@ export function createNotes(host: NotesHost) {
 			sessionFor({
 				path,
 				sha256: baseline.sha256,
-				source: baseline.source,
+				text: baseline.text,
 			});
 			return undefined;
 		},
@@ -1441,8 +1438,7 @@ export function createNotes(host: NotesHost) {
 							data: null,
 							error: {
 								name: 'Thrown',
-								message:
-									cause instanceof Error ? cause.message : String(cause),
+								message: cause instanceof Error ? cause.message : String(cause),
 							},
 						}) as const,
 				);
@@ -1637,7 +1633,7 @@ export function createNotes(host: NotesHost) {
 				});
 			}
 			const session = sessionAt(path);
-			let captured: FileCapture & { source: string | undefined };
+			let captured: FileCapture & { text: string | undefined };
 			if (session !== undefined) {
 				if (!(await session.settle())) return Err(UNSETTLED);
 				captured = session.saved;
@@ -1647,13 +1643,16 @@ export function createNotes(host: NotesHost) {
 				else {
 					const read = await folder.files.read(path);
 					if (read.error) return Err(read.error.message);
-					captured = { ...read.data, source: undefined };
+					captured = { ...read.data, text: undefined };
 				}
 			}
 			let title: string | undefined;
-			if (noteIdOf(path) !== undefined && captured.source !== undefined) {
+			if (noteIdOf(path) !== undefined && captured.text !== undefined) {
 				// A note whose text does not parse is named by nothing but its file.
-				const read = folder.tables.notes.inspect(captured.source);
+				const read = inspectRow(
+					honeycrispDefinition.tables.notes,
+					captured.text,
+				);
 				title = displayTitle(read.fields.title, read.body);
 			}
 			return Ok({

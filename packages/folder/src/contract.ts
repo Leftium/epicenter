@@ -40,6 +40,7 @@ export {
 	defineFolder,
 	type FolderDefinition,
 	type FolderTable,
+	type PreparedFolderTable,
 } from './definition.js';
 export {
 	type RowAdoptError,
@@ -56,6 +57,7 @@ export {
 	type TableEditError,
 } from './editor.js';
 export {
+	type CapturedMoveError,
 	FileError,
 	type FileStep,
 	type KvReadError,
@@ -114,11 +116,11 @@ export type { Author, CommitSummary } from './git/objects.js';
 export type { FileKv, KvReading, KvSnapshot } from './kv.js';
 export { type KvMerge, type KvMergeInput, mergeKv } from './kv-merge.js';
 export {
-	frameSource,
+	frameRowText,
 	type PatchRefusal,
-	patchSource,
-	type SourceChange,
-	type SourceFrame,
+	patchRowText,
+	type RowTextChange,
+	type RowTextFrame,
 } from './markdown.js';
 export type {
 	OpfsDirectoryHandle,
@@ -128,11 +130,18 @@ export type {
 } from './opfs-store.js';
 export { pathProblem, rowPath, rowStemOf } from './paths.js';
 export type { DeepReadonly, FieldIssue, ParseError } from './reading.js';
+export {
+	inspectRow,
+	type RowDraft,
+	serializeRow,
+	type TableReading,
+} from './row-text.js';
 export type {
 	FileTable,
 	TableListing,
-	TableReading,
 	TableSnapshot,
+	TableWriteOptions,
+	TableWriteReceipt,
 } from './table.js';
 export type { FolderTerminal, TerminalResult } from './terminal.js';
 

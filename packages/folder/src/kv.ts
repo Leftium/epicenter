@@ -15,7 +15,7 @@
  * An update changes only the value of each supplied key. Unknown keys,
  * number spellings, nesting, whitespace, and a byte order mark stay exactly
  * as they were. Source that is not one strict JSON object is refused; repair
- * it as an ordinary file with `files.replace(snapshot, source)`.
+ * it as an ordinary file with `files.replace(snapshot, text)`.
  */
 
 import {
@@ -68,16 +68,17 @@ export type KvReading<TValues> = {
 /** One immutable observation of `kv.json`, or the capture a save left behind. */
 export type KvSnapshot<TValues> = KvReading<TValues> & {
 	readonly path: typeof KV_PATH;
-	readonly source: string;
+	/** The exact text of the whole file. */
+	readonly text: string;
 	readonly sha256: string;
 };
 
 export type FileKv<TValues> = {
 	/**
-	 * Interpret `kv.json` source. Synchronous and pure: it reads no file and
+	 * Interpret `kv.json` text. Synchronous and pure: it reads no file and
 	 * invents no capture, so unsaved text can be inspected.
 	 */
-	inspect(source: string): KvReading<TValues>;
+	inspect(text: string): KvReading<TValues>;
 	/**
 	 * `undefined` only when `kv.json` does not exist. Text that is not a JSON
 	 * object is a snapshot with a `parseError`; a file that cannot be read is
@@ -355,12 +356,12 @@ export function createKv<TValues>(
 	const inspect = (source: string) => inspectSource<TValues>(schemas, source);
 
 	/** The snapshot of captured bytes: what was read, or exactly what was submitted. */
-	function snapshotOf(source: string, sha256: string): KvSnapshot<TValues> {
+	function snapshotOf(text: string, sha256: string): KvSnapshot<TValues> {
 		return Object.freeze({
 			path: KV_PATH,
 			sha256,
-			source,
-			...inspect(source),
+			text,
+			...inspect(text),
 		});
 	}
 
@@ -396,7 +397,10 @@ export function createKv<TValues>(
 				return readError.name === 'NotFound' ? Ok(undefined) : Err(readError);
 			const source = decode(read.bytes);
 			if (source === undefined)
-				return TableError.InvalidUtf8({ path: KV_PATH });
+				return TableError.InvalidUtf8({
+					path: KV_PATH,
+					sha256: read.sha256,
+				});
 			return Ok(snapshotOf(source, read.sha256));
 		},
 		async create(values) {
@@ -424,7 +428,10 @@ export function createKv<TValues>(
 			if (readError !== null) return Err(readError);
 			const source = decode(read.bytes);
 			if (source === undefined)
-				return TableError.InvalidUtf8({ path: KV_PATH });
+				return TableError.InvalidUtf8({
+					path: KV_PATH,
+					sha256: read.sha256,
+				});
 			const { data: patched, error: patchError } = assignKeys(source, owned);
 			if (patchError !== null) return Err(patchError);
 			return publish(submission, patched, {

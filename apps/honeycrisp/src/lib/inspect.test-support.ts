@@ -2,19 +2,17 @@
  * The notes table's interpreter for tests that hold no folder, and the
  * entries and listings a fake folder answers with.
  *
- * The interpreter is the real one, taken from a folder opened in memory that
- * nothing is ever saved to, so a test reads source exactly as the app does.
+ * The interpreter is the real one, read from the prepared definition with no
+ * folder open, so a test reads text exactly as the app does.
  */
 import {
 	hashBytes,
+	inspectRow,
 	rowStemOf,
 	type TableListing,
 	type TableSnapshot,
 } from '@epicenter/folder';
-import { openFolder } from '@epicenter/folder/browser';
 import { Ok } from 'wellcrafted/result';
-import { expectOk } from 'wellcrafted/testing';
-import { testBrowserStorage } from '../../../../packages/folder/src/browser-storage.test-support.js';
 import {
 	honeycrispDefinition,
 	type InspectNote,
@@ -22,15 +20,8 @@ import {
 	type NoteEntry,
 } from './data.js';
 
-const folder = expectOk(
-	await openFolder({
-		definition: honeycrispDefinition,
-		id: 'honeycrisp-inspect-test',
-		browser: { commitOnEdit: false, ...testBrowserStorage() },
-	}),
-);
-
-export const inspectNote: InspectNote = folder.tables.notes.inspect;
+export const inspectNote: InspectNote = (text) =>
+	inspectRow(honeycrispDefinition.tables.notes, text);
 
 /** A note file as the table lists it: the capture of `source` and how it reads. */
 export async function noteEntry(
@@ -40,7 +31,7 @@ export async function noteEntry(
 	return {
 		path,
 		stem: rowStemOf(NOTES, path) ?? '',
-		source,
+		text: source,
 		sha256: await hashBytes(new TextEncoder().encode(source)),
 		...inspectNote(source),
 	};

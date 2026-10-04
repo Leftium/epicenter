@@ -59,8 +59,14 @@
  */
 import './svelte-modules.test-support.js';
 import { afterEach, expect, test } from 'bun:test';
-import { FileError, MoveError, openFolder } from '@epicenter/folder/browser';
-import { Ok } from 'wellcrafted/result';
+import {
+	type CapturedMoveError,
+	FileError,
+	inspectRow,
+	MoveError,
+	openFolder,
+} from '@epicenter/folder/browser';
+import { type Err, Ok } from 'wellcrafted/result';
 import { expectOk } from 'wellcrafted/testing';
 import { testBrowserStorage } from '../../../../packages/folder/src/browser-storage.test-support.js';
 import { todosDefinition } from './definition.js';
@@ -166,7 +172,10 @@ function sourceEditor(todos: Todos) {
 
 /** How a file reads as a todo now. */
 async function reading(todos: Todos, path: string) {
-	return todos.folder.tables.todos.inspect((await text(todos, path)) ?? '');
+	return inspectRow(
+		todosDefinition.tables.todos,
+		(await text(todos, path)) ?? '',
+	);
 }
 
 type Move = TodosFolder['files']['move'];
@@ -342,7 +351,7 @@ test('renaming a todo row moves only its Markdown file, and its editor follows w
 	// Typing in the renamed editor saves at the new path only.
 	editor.change({ body: 'after\n' });
 	await editor.save();
-	expect(await text(todos, 'todos/renamed.md')).toBe(editor.state.source);
+	expect(await text(todos, 'todos/renamed.md')).toBe(editor.state.text);
 	expect((await reading(todos, 'todos/renamed.md')).body).toBe('after\n');
 	expect(await text(todos, path)).toBeUndefined();
 });
@@ -377,7 +386,7 @@ test('refresh forgets a removed idle todo, and a removed draft is kept and write
 	editor.change({ body: 'mine\n' });
 	editor.change({ fields: { done: false } });
 	expect(await editor.save()).toBeUndefined();
-	expect(await text(todos, path)).toBe(editor.state.source);
+	expect(await text(todos, path)).toBe(editor.state.text);
 	expect(todos.unsaved).toBe(false);
 });
 
@@ -494,7 +503,7 @@ test('a toggle on an open todo saves its whole draft, and is refused while a cha
 		body: 'mine\n',
 	});
 	expect(editor.isIdle).toBe(true);
-	expect(await text(todos, path)).toBe(editor.state.source);
+	expect(await text(todos, path)).toBe(editor.state.text);
 
 	// A toggle is not the person's choice about another writer's change.
 	editor.change({ body: 'mine again\n' });
@@ -557,7 +566,7 @@ for (const [stem, repaired] of [
 		expectOk(await todos.folder.files.overwrite(path, `${ROW}theirs\n`));
 		// The save writes the draft at the same stem, over the other writer.
 		expect(await editor.save()).toBeUndefined();
-		const mine = editor.state.source;
+		const mine = editor.state.text;
 		expect(await text(todos, path)).toBe(mine);
 		expect((await reading(todos, path)).body).toBe('mine\n');
 
@@ -927,7 +936,7 @@ test('a rename whose destination does not open as fields keeps the typing in the
 	await source.editor.save();
 	expect(source.editor.saveState).toMatchObject({
 		kind: 'conflict',
-		current: { path: 'todos/oat.md', source: invalid },
+		current: { path: 'todos/oat.md', text: invalid },
 	});
 	expect(await text(todos, path)).toBeUndefined();
 	await source.editor.keepMine();
@@ -1022,12 +1031,13 @@ test('a rename that lands its destination but keeps its source names both paths,
 	during.refuse = async (from, to) => {
 		const captured = expectOk(await todos.folder.files.read(from));
 		const moved = expectOk(await todos.folder.files.create(to, captured.bytes));
+		// A file move is guarded, so its kept source names the moved capture.
 		return MoveError.SourceNotRemoved({
 			from,
 			to,
 			moved,
 			cause: sourceKept(from),
-		});
+		}) as Err<CapturedMoveError>;
 	};
 	during.act = () => editor.input('typed during');
 	const problem = await todos.rename('notes.txt', 'renamed.txt');
@@ -1068,15 +1078,19 @@ test('a todo rename that lands its new path but keeps its old one leaves both ro
 	const original = (await text(todos, path))!;
 	const table = todos.folder.tables.todos;
 	const rename = table.rename;
-	table.rename = async (capture, nextStem) => {
+	table.rename = async (stem, nextStem, options) => {
+		const from = `todos/${stem}.md`;
 		const to = `todos/${nextStem}.md`;
-		const moved = expectOk(await todos.folder.files.create(to, capture.source));
+		const captured = expectOk(await todos.folder.files.read(from));
+		// The editor names the baseline it moves under.
+		expect(options?.expectedSha256).toBe(captured.sha256);
+		const moved = expectOk(await todos.folder.files.create(to, captured.bytes));
 		editor.change({ body: 'typed during\n' });
 		return MoveError.SourceNotRemoved({
-			from: capture.path,
+			from,
 			to,
 			moved,
-			cause: sourceKept(capture.path),
+			cause: sourceKept(from),
 		});
 	};
 
@@ -1111,11 +1125,11 @@ test('a todo rename whose reply was lost halts autosave and keeps the input unti
 	const table = todos.folder.tables.todos;
 	const rename = table.rename.bind(table);
 	// The move lands, but its reply never arrives.
-	table.rename = async (capture, nextStem) => {
-		expectOk(await rename(capture, nextStem));
+	table.rename = async (stem, nextStem, options) => {
+		expectOk(await rename(stem, nextStem, options));
 		editor.change({ body: 'typed during\n' });
 		return FileError.Unconfirmed({
-			path: capture.path,
+			path: `todos/${stem}.md`,
 			operation: 'move',
 			cause: new Error('the reply was lost'),
 		});
@@ -1186,7 +1200,7 @@ test("a row's source editor settles before table rename and delete, and refuses 
 	const deletion = await todos.deletionFor('todos/oat.md');
 	expect(deletion.data).toMatchObject({
 		kind: 'todo',
-		entry: { path: 'todos/oat.md', source: `${ROW}last\n` },
+		entry: { path: 'todos/oat.md', text: `${ROW}last\n` },
 	});
 	expect(await todos.remove(deletion.data!)).toBeUndefined();
 	expect(await text(todos, 'todos/oat.md')).toBeUndefined();
@@ -1393,7 +1407,7 @@ test('an open that resolves after its path was deleted and reopened cannot repla
 	gates[1]!();
 	await current;
 	const editor = textEditor(todos);
-	expect(editor.baseline.source).toBe('new');
+	expect(editor.baseline.text).toBe('new');
 	editor.input('mine');
 	await editor.save();
 	expect(await text(todos, 'notes.txt')).toBe('mine');
@@ -1519,10 +1533,14 @@ test("another tab's change holds a dirty todo draft: autosave writes nothing, an
 	const { todos, other, path, editor } = await dirtyTodoWithAnotherTab();
 	try {
 		expectOk(
-			await other.tables.todos.update(todos.entries[0]!.stem, {
-				fields: { title: 'Oat milk', done: true },
-				body: 'theirs\n',
-			}),
+			await other.tables.todos.update(
+				todos.entries[0]!.stem,
+				{
+					fields: { title: 'Oat milk', done: true },
+					body: 'theirs\n',
+				},
+				{},
+			),
 		);
 		await eventually(() => editor.isAwaitingReview);
 		const theirs = await text(todos, path);
@@ -1575,10 +1593,14 @@ test("discarding mine after another tab changed the row loads their version into
 	const { todos, other, path, editor } = await dirtyTodoWithAnotherTab();
 	try {
 		expectOk(
-			await other.tables.todos.update(todos.entries[0]!.stem, {
-				fields: { title: 'Oat milk', done: true },
-				body: 'theirs\n',
-			}),
+			await other.tables.todos.update(
+				todos.entries[0]!.stem,
+				{
+					fields: { title: 'Oat milk', done: true },
+					body: 'theirs\n',
+				},
+				{},
+			),
 		);
 		await eventually(() => editor.isAwaitingReview);
 		const theirs = await text(todos, path);
@@ -1614,7 +1636,7 @@ test('a dirty todo whose row another tab removed keeps its draft until the perso
 		expect(await text(todos, path)).toBeUndefined();
 
 		expect(await editor.save()).toBeUndefined();
-		expect(await text(todos, path)).toBe(editor.state.source);
+		expect(await text(todos, path)).toBe(editor.state.text);
 		expect(editor.isAwaitingReview).toBe(false);
 	} finally {
 		await other.close();
@@ -1707,8 +1729,8 @@ test('an own delete whose reply was lost after it landed holds the open todo: ty
 		const remove = table.delete;
 		// The delete lands where this app hears nothing of it, and typing
 		// arrives before its reply, which is lost.
-		table.delete = async (capture) => {
-			expectOk(await other.tables.todos.delete(capture));
+		table.delete = async (stem, options) => {
+			expectOk(await other.tables.todos.delete(stem, options));
 			editor.change({ body: 'typed during\n' });
 			return lostReply(path);
 		};
@@ -1805,8 +1827,8 @@ test('a clean todo whose own delete went unanswered stays open until the person 
 	const table = todos.folder.tables.todos;
 	const remove = table.delete;
 	// The delete lands, and the reply is lost.
-	table.delete = async (capture) => {
-		expectOk(await remove(capture));
+	table.delete = async (stem, options) => {
+		expectOk(await remove(stem, options));
 		return lostReply(path);
 	};
 	try {
@@ -1842,8 +1864,8 @@ test('typing during an own delete that removed the row is kept and never writes 
 		const deletion = expectOk(await todos.deletionFor(path));
 		const table = todos.folder.tables.todos;
 		const remove = table.delete;
-		table.delete = async (capture) => {
-			const removed = await other.tables.todos.delete(capture);
+		table.delete = async (stem, options) => {
+			const removed = await other.tables.todos.delete(stem, options);
 			editor.change({ body: 'typed during\n' });
 			return removed;
 		};
@@ -1864,7 +1886,7 @@ test('typing during an own delete that removed the row is kept and never writes 
 		// The person's choice writes the row again, whole.
 		expect(await editor.save()).toBeUndefined();
 		expect(editor.halt).toBeUndefined();
-		expect(await text(todos, path)).toBe(editor.state.source);
+		expect(await text(todos, path)).toBe(editor.state.text);
 		expect((await reading(todos, path)).body).toBe('typed during\n');
 	} finally {
 		await other.close();

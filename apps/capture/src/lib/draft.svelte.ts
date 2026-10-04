@@ -52,13 +52,13 @@ import {
 } from '@epicenter/capture';
 import {
 	type FileCapture,
-	type FileTable,
-	frameSource,
+	frameRowText,
 	type RowEditor,
 	type RowEditorState,
 	type RowRevision,
 	type RowSaveOutcome,
 	type TableEditError,
+	type TableReading,
 	type TableSnapshot,
 	type TextCapture,
 } from '@epicenter/folder';
@@ -84,8 +84,8 @@ type Written =
  * input.
  */
 export type DraftStore = {
-	/** How the captures table reads source text. It reads nothing. */
-	inspect: FileTable<CaptureFields>['inspect'];
+	/** How the captures table reads text: `inspectRow` with its definition. It reads nothing. */
+	inspect(text: string): TableReading<CaptureFields>;
 	/** Open the row editor on the file. */
 	edit(signal: AbortSignal): Promise<Result<CaptureEditor, TableEditError>>;
 	/** The file now. */
@@ -166,10 +166,10 @@ const TYPING_BATCH_MS = 600;
 const describe = (cause: unknown) =>
 	cause instanceof Error ? cause.message : String(cause);
 
-const captureOf = ({ path, sha256, source }: TextCapture): TextCapture => ({
+const captureOf = ({ path, sha256, text }: TextCapture): TextCapture => ({
 	path,
 	sha256,
-	source,
+	text,
 });
 
 const noop = () => {};
@@ -256,8 +256,8 @@ export function createDraft(
 	const source = $derived(
 		mode.kind === 'raw'
 			? mode.text
-			: (editorState?.source ??
-					(mode.kind === 'opening' ? (initial?.source ?? '') : '')),
+			: (editorState?.text ??
+					(mode.kind === 'opening' ? (initial?.text ?? '') : '')),
 	);
 	/** How that text reads as a row. */
 	const reading = $derived(
@@ -277,7 +277,7 @@ export function createDraft(
 	/** Raw text this window holds that the file, as last shown, does not. */
 	const rawTyped = () =>
 		mode.kind === 'raw' &&
-		(typeof mode.over !== 'object' || mode.text !== mode.over.source);
+		(typeof mode.over !== 'object' || mode.text !== mode.over.text);
 	// Any typed character counts, spaces included: only the person discards it.
 	const hasUnsentInput = () =>
 		newThought !== '' || editing !== undefined || pendingText !== undefined;
@@ -309,7 +309,7 @@ export function createDraft(
 				message: lastSave.error.message,
 				fileHoldsMine:
 					observation.kind === 'present' &&
-					observation.revision.canonical === editorState.source,
+					observation.revision.canonical === editorState.text,
 			};
 	});
 	const review = $derived.by((): Review | undefined => {
@@ -363,9 +363,9 @@ export function createDraft(
 		return Object.freeze({
 			path: revision.path,
 			stem,
-			source: revision.source,
+			text: revision.text,
 			sha256: revision.sha256,
-			...store.inspect(revision.source),
+			...store.inspect(revision.text),
 		});
 	}
 
@@ -425,7 +425,7 @@ export function createDraft(
 	 * kept; untouched raw text becomes the file's.
 	 */
 	function holdRaw(file: TextCapture, reason: string) {
-		const kept = mode.kind === 'raw' && rawTyped() ? mode.text : file.source;
+		const kept = mode.kind === 'raw' && rawTyped() ? mode.text : file.text;
 		mode = {
 			kind: 'raw',
 			text: kept,
@@ -472,7 +472,11 @@ export function createDraft(
 			if (mode.kind === 'raw' && rawTyped())
 				mode = { ...mode, problem: describe(cause) };
 			else
-				mode = { kind: 'unavailable', missing: false, message: describe(cause) };
+				mode = {
+					kind: 'unavailable',
+					missing: false,
+					message: describe(cause),
+				};
 			return;
 		}
 		if (opening === controller) opening = undefined;
@@ -544,7 +548,11 @@ export function createDraft(
 					deletion = undefined;
 					if (mode.kind !== 'raw') return;
 					if (mode.text !== text) {
-						mode = { ...mode, over: captureOf(written.data), problem: undefined };
+						mode = {
+							...mode,
+							over: captureOf(written.data),
+							problem: undefined,
+						};
 						return;
 					}
 					mode = { ...mode, over: captureOf(written.data), problem: undefined };
@@ -568,7 +576,8 @@ export function createDraft(
 				}
 				mode = {
 					...mode,
-					over: current.kind === 'present' ? captureOf(current.entry) : 'absent',
+					over:
+						current.kind === 'present' ? captureOf(current.entry) : 'absent',
 					problem:
 						current.kind === 'present'
 							? 'The file changed outside this window, so this source was not saved. The file now is shown below; saving again replaces it.'
@@ -594,7 +603,7 @@ export function createDraft(
 			refusal = edit.refusal.message;
 			return false;
 		}
-		const frame = frameSource(edit.source);
+		const frame = frameRowText(edit.source);
 		if (frame.kind !== 'frontmatter') {
 			refusal = 'The edited capture has no frontmatter.';
 			return false;
@@ -739,15 +748,16 @@ export function createDraft(
 			refusal = undefined;
 			if (mode.kind === 'raw') {
 				const next = fromTextarea(mode.text, value, document.newline);
-				if (next !== mode.text) mode = { ...mode, text: next, problem: undefined };
+				if (next !== mode.text)
+					mode = { ...mode, text: next, problem: undefined };
 				return;
 			}
 			if (mode.kind !== 'editing' || editorState === undefined) return;
-			const current = editorState.source;
+			const current = editorState.text;
 			const next = fromTextarea(current, value, document.newline);
 			if (next === current) return;
-			const head = frameSource(current);
-			const frame = frameSource(next);
+			const head = frameRowText(current);
+			const frame = frameRowText(next);
 			if (
 				head.kind === 'frontmatter' &&
 				frame.kind === 'frontmatter' &&
@@ -775,10 +785,14 @@ export function createDraft(
 			const { over } = mode;
 			refusal = undefined;
 			if (over === 'absent') {
-				mode = { kind: 'unavailable', missing: true, message: 'The file is not in the folder.' };
+				mode = {
+					kind: 'unavailable',
+					missing: true,
+					message: 'The file is not in the folder.',
+				};
 				return;
 			}
-			mode = { ...mode, text: over.source, problem: undefined };
+			mode = { ...mode, text: over.text, problem: undefined };
 			await track(acquire);
 		},
 
@@ -897,7 +911,7 @@ export function createDraft(
 			const disposing = release();
 			mode = {
 				kind: 'raw',
-				text: file.source,
+				text: file.text,
 				over: captureOf(file),
 				reason: message,
 				problem: undefined,
@@ -926,7 +940,10 @@ export function createDraft(
 		 */
 		async remove<
 			T extends {
-				readonly error: { readonly name: string; readonly message: string } | null;
+				readonly error: {
+					readonly name: string;
+					readonly message: string;
+				} | null;
 			},
 		>(remove: () => Promise<T>): Promise<T> {
 			gated = true;
@@ -944,7 +961,8 @@ export function createDraft(
 				return removed;
 			}
 			if (!retired) gated = false;
-			if (removed.error.name === 'Unconfirmed') deletion = removed.error.message;
+			if (removed.error.name === 'Unconfirmed')
+				deletion = removed.error.message;
 			else if (dirty()) schedule();
 			return removed;
 		},

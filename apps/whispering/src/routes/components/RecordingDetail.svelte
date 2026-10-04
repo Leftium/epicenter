@@ -11,8 +11,13 @@
 	import ArrowLeftIcon from '@lucide/svelte/icons/arrow-left';
 	import ChevronRightIcon from '@lucide/svelte/icons/chevron-right';
 	import XIcon from '@lucide/svelte/icons/x';
-	import { rowStemOf } from '@epicenter/folder';
-	import { audioPathIn, RECORDINGS, type RecordingFields } from '$lib/definition.js';
+	import { inspectRow, rowStemOf } from '@epicenter/folder';
+	import {
+		audioPathIn,
+		RECORDINGS,
+		type RecordingFields,
+		whisperingDefinition,
+	} from '$lib/definition.js';
 	import { withFileNewlines } from '$lib/files.js';
 	import type { Library, RecordingEntry, RowSlot } from '$lib/library.svelte.js';
 	import { committedState } from '$lib/status.js';
@@ -58,7 +63,7 @@
 	 * describes it, never the file as last saved.
 	 */
 	const draft = $derived(
-		form ? form.state.reading : library.folder.tables.recordings.inspect(raw?.editor.buffer ?? ''),
+		form ? form.state.reading : inspectRow(whisperingDefinition.tables.recordings, raw?.editor.buffer ?? ''),
 	);
 	/** The values being typed, which may not conform yet. */
 	const typed = $derived(form?.state.document);
@@ -300,7 +305,7 @@
 				</p>
 				<Textarea
 					class="h-full min-h-40 flex-1 resize-none font-mono text-xs"
-					value={form.state.source}
+					value={form.state.text}
 					aria-label="Markdown source"
 					readonly
 					spellcheck={false}

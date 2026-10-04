@@ -35,14 +35,14 @@ import { type AutosavePause, createAutosave } from './web/autosave.js';
 type Snap = {
 	readonly path: string;
 	readonly sha256: string;
-	readonly source: string;
+	readonly text: string;
 };
 
 const PATH = 'notes/doc.md';
 
 /** A content-addressed capture: equal text, equal version, as with SHA-256. */
-const snap = (source: string): Snap =>
-	Object.freeze({ path: PATH, sha256: `sha:${source}`, source });
+const snap = (text: string): Snap =>
+	Object.freeze({ path: PATH, sha256: `sha:${text}`, text });
 
 test('autosave pauses after an ordinary failure; later input and reads do not retry', async () => {
 	let attempts = 0;
@@ -84,7 +84,7 @@ test('autosave pauses after an ordinary failure; later input and reads do not re
 		await Bun.sleep(80);
 		expect(attempts).toBe(1);
 		expect(edit.get().source).toBe('C');
-		expect(edit.get().baseline.source).toBe('A');
+		expect(edit.get().baseline.text).toBe('A');
 	} finally {
 		autosave.stop();
 		stop();
@@ -183,7 +183,8 @@ function setup(initial = 'A') {
 		corrupt() {
 			disk = {
 				kind: 'unreadable',
-				error: TableError.InvalidUtf8({ path: PATH }).error,
+				error: TableError.InvalidUtf8({ path: PATH, sha256: '0'.repeat(64) })
+					.error,
 			};
 			hint();
 		},
@@ -506,7 +507,7 @@ test('a snapshot of another file neither opens a handle nor redirects its next s
 	const other = Object.freeze({
 		path: 'notes/other.md',
 		sha256: 'sha:X',
-		source: 'X',
+		text: 'X',
 	});
 	expect(() => createEditHandle(document, other)).toThrow(TypeError);
 

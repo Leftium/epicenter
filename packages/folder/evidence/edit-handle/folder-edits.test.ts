@@ -25,8 +25,8 @@ import { mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { expectOk } from 'wellcrafted/testing';
-import { openFolder } from '../../src/bun.js';
-import { patchSource } from '../../src/markdown.js';
+import { inspectRow, openFolder } from '../../src/bun.js';
+import { patchRowText } from '../../src/markdown.js';
 import { createFolderEdits } from './folder-edits.js';
 import { createPublicationGates } from './gates.js';
 import { definition, FORM_STEM, SEED } from './todos.js';
@@ -63,12 +63,12 @@ async function setup() {
 	const edits = createFolderEdits({
 		tables: {
 			todos: {
-				inspect: todos.inspect,
+				inspect: (text) => inspectRow(definition.tables.todos, text),
 				get: todos.get,
-				replace: (capture, source) =>
+				replace: (stem, text, options) =>
 					gates.run(
-						capture.path,
-						() => todos.replace(capture, source),
+						`todos/${stem}.md`,
+						() => todos.replace(stem, text, options),
 						(receipt) => receipt.sha256,
 					),
 			},
@@ -92,7 +92,7 @@ async function setup() {
 		/** The other writer: patch the file on disk with `node:fs`. */
 		async writeElsewhere(fields: Record<string, unknown>) {
 			const text = await readFile(file, 'utf8');
-			await writeFile(file, expectOk(patchSource(text, { fields })));
+			await writeFile(file, expectOk(patchRowText(text, { fields })));
 		},
 		disk: () => readFile(file, 'utf8'),
 		file,
@@ -126,7 +126,7 @@ test('the own write read during a held reply is not a change from elsewhere, and
 	expect(edit.get().baseline.fields.title).toBe('B');
 	expect(edit.get().isDirty).toBe(true);
 	expect(edit.get().reading.body).toBe('Typed during the save.\n');
-	expect(await demo.disk()).toBe(edit.get().baseline.source);
+	expect(await demo.disk()).toBe(edit.get().baseline.text);
 });
 
 test('another writer at the publication moment conflicts; keeping the draft over the reviewed file saves it with unknown keys intact', async () => {
@@ -194,7 +194,7 @@ test('a lost reply stays unknown; the file holding the draft afterward is an ord
 
 	await edit.refresh();
 	expect(edit.get().lastSave?.kind).toBe('unconfirmed');
-	expect(edit.get().baseline.source).toBe(submitted);
+	expect(edit.get().baseline.text).toBe(submitted);
 	expect(edit.get().isDirty).toBe(false);
 });
 
@@ -236,7 +236,7 @@ test('a lone surrogate is drafted as the text a save writes: clean after saving,
 	expect((await edit.save()).kind).toBe('unconfirmed');
 	await edit.refresh();
 	expect(edit.get().lastSave?.kind).toBe('unconfirmed');
-	expect(edit.get().baseline.source).toBe(submitted);
+	expect(edit.get().baseline.text).toBe(submitted);
 	expect(edit.get().isDirty).toBe(false);
 	expect(await demo.disk()).toBe(submitted);
 });
@@ -266,8 +266,8 @@ test('a handle stays bound to its row or file: another row or file is refused an
 
 	const notes = expectOk(await folder.files.create('notes.txt', 'notes\n'));
 	const other = expectOk(await folder.files.create('other.txt', 'other\n'));
-	const text = edits.files.edit({ ...notes, source: 'notes\n' });
-	expect(text.takeObserved({ ...other, source: 'other\n' }).error).toEqual({
+	const text = edits.files.edit({ ...notes, text: 'notes\n' });
+	expect(text.takeObserved({ ...other, text: 'other\n' }).error).toEqual({
 		kind: 'refused',
 		reason: 'otherPath',
 	});
@@ -285,15 +285,15 @@ test('a one-shot save patches the displayed source once, and a stale or unsafe s
 		await edits.tables.todos.save(displayed, { fields: { done: true } }),
 	);
 	expect(saved.fields.done).toBe(true);
-	expect(await demo.disk()).toBe(saved.source);
-	expect(saved.source).toContain('owner: sam # not declared by the table');
+	expect(await demo.disk()).toBe(saved.text);
+	expect(saved.text).toContain('owner: sam # not declared by the table');
 
 	// The snapshot that was displayed is stale now: no write, no retry.
 	const stale = await edits.tables.todos.save(displayed, {
 		fields: { done: false },
 	});
 	expect(stale.error?.name).toBe('Conflict');
-	expect(await demo.disk()).toBe(saved.source);
+	expect(await demo.disk()).toBe(saved.text);
 
 	// A value with a tag parses, but the patch refuses to change it.
 	await writeFile(demo.file, '---\ntitle: Tagged\ndone: !!bool false\n---\n');
@@ -304,7 +304,7 @@ test('a one-shot save patches the displayed source once, and a stale or unsafe s
 		fields: { done: true },
 	});
 	expect(unsafe.error?.name).toBe('UnsupportedSource');
-	expect(await demo.disk()).toBe(tagged.source);
+	expect(await demo.disk()).toBe(tagged.text);
 });
 
 // ============================================================================
@@ -404,7 +404,7 @@ test('autosave pauses on a conflict; typing and rereads do not retry, and resume
 	const saved = await until(edit, (state) => state.lastSave?.kind === 'saved');
 	await Bun.sleep(SEVERAL_DELAYS);
 	expect(demo.published()).toBe(1);
-	expect(await demo.disk()).toBe(saved.baseline.source);
+	expect(await demo.disk()).toBe(saved.baseline.text);
 	expect(saved.baseline.fields).toMatchObject({ done: true, priority: 'high' });
 	autosave.stop();
 });

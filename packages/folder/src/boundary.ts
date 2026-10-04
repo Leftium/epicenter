@@ -30,11 +30,17 @@ export type FileListing = {
 	readonly directories: readonly string[];
 };
 
-/** A write owns its bytes before the asynchronous hash is computed. */
+/**
+ * A write owns its bytes before the asynchronous hash is computed.
+ *
+ * `replace` always requires a file at the path: it never creates one, with
+ * or without `expectedSha256`. With it, the current bytes must also hash to
+ * that value. Only `overwrite` saves whatever is, or is not, there.
+ */
 export type FileWriteIntent = { path: string; bytes: Uint8Array } & (
 	| { kind: 'create' }
 	| { kind: 'overwrite' }
-	| { kind: 'replace'; expectedSha256: string }
+	| { kind: 'replace'; expectedSha256?: string }
 );
 
 /** The operation states its publication condition. Move destinations must be absent. */

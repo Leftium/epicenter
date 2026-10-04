@@ -16,7 +16,7 @@
  */
 
 import { InstantString } from '@epicenter/app/field';
-import { hashBytes } from '@epicenter/folder';
+import { hashBytes, inspectRow } from '@epicenter/folder';
 import {
 	defineErrors,
 	extractErrorMessage,
@@ -29,6 +29,7 @@ import {
 	readRows,
 	type UnreadableFile,
 	type VocabTables,
+	vocabFolder,
 } from './data.js';
 import { createReread } from './reread.js';
 import { createWordDraft, type WordDraft } from './word.svelte.js';
@@ -140,7 +141,9 @@ export function createEntriesState({
 	): Promise<Result<undefined, EntryError>> {
 		const entry = rows.find((row) => row.id === id);
 		if (!entry) return EntryError.Gone();
-		const { error: deleteError } = await table.delete(entry.file);
+		const { error: deleteError } = await table.delete(entry.id, {
+			expectedSha256: entry.file.sha256,
+		});
 		// Already removed elsewhere: the word is gone, which is what was asked.
 		const gone =
 			deleteError?.name === 'NotFound' ||
@@ -213,7 +216,14 @@ export function createEntriesState({
 				},
 			});
 			if (createError === null) {
-				receive(stem, readEntry(created));
+				// The receipt names the bytes sent; the word is how they read.
+				receive(
+					stem,
+					readEntry({
+						...created,
+						...inspectRow(vocabFolder.tables.entries, created.text),
+					}),
+				);
 				return Ok('added');
 			}
 			if (createError.name !== 'Exists')

@@ -17,6 +17,9 @@
  * - One declared table under two names is two tables with two directories
  * - A schema edited after `defineFolder` does not change what the folder
  *   accepts, and a second definition reusing it reads the edit
+ * - The prepared-table type is not a proof: a table rebuilt with a cloned
+ *   field compiles, and reading a value through that field throws until
+ *   `defineFolder` prepares it again
  *
  * See also:
  * - `packages/definition/src/prepare.test.ts` for preparation itself
@@ -32,7 +35,13 @@ import {
 	opfsOf,
 	type TestStorage,
 } from './browser-storage.test-support.js';
-import { defineFolder, defineTable, field } from './contract.js';
+import {
+	defineFolder,
+	defineTable,
+	field,
+	inspectRow,
+	serializeRow,
+} from './contract.js';
 import { prepareFolderDefinition } from './definition.js';
 import { installWebLocks } from './web-locks.test-support.js';
 
@@ -189,11 +198,15 @@ test('one prepared definition opens two folders that stay apart, and another def
 		title: 'Milk',
 	});
 	const renamed = expectOk(
-		await reopened.tables.todos.update('milk', {
-			fields: { title: 'Oat milk' },
-		}),
+		await reopened.tables.todos.update(
+			'milk',
+			{
+				fields: { title: 'Oat milk' },
+			},
+			{},
+		),
 	);
-	expect(renamed.source).toBe(made.source.replace('Milk', 'Oat milk'));
+	expect(renamed.text).toBe(made.text.replace('Milk', 'Oat milk'));
 	expect(
 		new TextDecoder().decode(
 			expectOk(await reopened.files.read('kv.json')).bytes,
@@ -286,12 +299,60 @@ test('a schema edited after defineFolder changes nothing the folder accepts, and
 		expectErr(await older.tables.todos.create({ stem: 'a', fields })).name,
 	).toBe('InvalidValues');
 	expect(
-		expectOk(await newer.tables.todos.create({ stem: 'a', fields })).fields,
+		inspectRow(
+			second.tables.todos,
+			expectOk(await newer.tables.todos.create({ stem: 'a', fields })).text,
+		).fields,
 	).toEqual(fields);
 	expect(
-		older.tables.todos.inspect('---\ntitle: Longer\n---\n').issues,
+		inspectRow(first.tables.todos, '---\ntitle: Longer\n---\n').issues,
 	).toHaveLength(1);
 	expect(
-		newer.tables.todos.inspect('---\ntitle: Longer\n---\n').issues,
+		inspectRow(second.tables.todos, '---\ntitle: Longer\n---\n').issues,
 	).toEqual([]);
+});
+
+test('a prepared table rebuilt with a cloned field still type-checks, and reading a value through that field throws until defineFolder prepares it again', () => {
+	const definition = defineFolder({
+		kv: {},
+		tables: {
+			todos: defineTable({
+				fields: { title: field.string(), done: field.boolean() },
+			}),
+		},
+	});
+	const prepared = definition.tables.todos;
+	const text = '---\ntitle: Milk\ndone: false\n---\n';
+
+	// A spread that keeps the prepared field objects reads as the table does.
+	expect(inspectRow({ ...prepared }, text)).toEqual(inspectRow(prepared, text));
+
+	// The prepared-table mark survives the spread, so the compiler accepts a
+	// rebuilt table; the clone is an object no preparation ever saw.
+	const rebuilt = {
+		...prepared,
+		fields: { ...prepared.fields, title: { ...prepared.fields.title } },
+	};
+	// A value the cloned field never has to read passes unchecked.
+	expect(inspectRow(rebuilt, '---\ndone: false\n---\n').fields).toEqual({
+		done: false,
+	});
+	// Once one appears, the read is refused as a programmer error, not an issue.
+	expect(() => inspectRow(rebuilt, text)).toThrow(
+		'This schema was not prepared',
+	);
+	// A preview checks no value, so it writes the text without noticing.
+	expect(
+		expectOk(serializeRow(rebuilt, { fields: { title: 'Milk', done: false } })),
+	).toBe(text);
+
+	// Preparing the rebuilt declaration again is the remedy.
+	const again = defineFolder({
+		kv: {},
+		tables: { todos: defineTable({ fields: rebuilt.fields }) },
+	});
+	expect(inspectRow(again.tables.todos, text).fields).toEqual({
+		title: 'Milk',
+		done: false,
+	});
 });

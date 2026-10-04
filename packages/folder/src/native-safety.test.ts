@@ -8,8 +8,9 @@
  * - A raw move whose destination landed but whose source could not be
  *   retired is a `Partial` result naming both facts, merged with earlier
  *   steps; both copies stay
- * - Through the folder it is `MoveError.SourceNotRemoved` with the capture at
- *   the destination; observations become stale without an automatic commit
+ * - Through the folder it is `MoveError.SourceNotRemoved` naming the guard
+ *   hash at the destination; observations become stale without an
+ *   automatic commit
  * - A pull whose files landed while the index was locked returns
  *   `IndexFailed`, keeps HEAD, and never leaves a fresh clean observation
  * - Whole-folder commits refuse repositories they would misrepresent

@@ -24,9 +24,9 @@ import { describe, expect, test } from 'bun:test';
 import { expectErr, expectOk } from 'wellcrafted/testing';
 import {
 	composeSource,
-	frameSource,
+	frameRowText,
 	parseSource,
-	patchSource,
+	patchRowText,
 } from './markdown.js';
 
 const BOM = '﻿';
@@ -34,7 +34,7 @@ const BOM = '﻿';
 describe('framing', () => {
 	test('locates frontmatter behind a BOM with CRLF lines', () => {
 		const source = `${BOM}---\r\ntitle: A\r\n---\r\nBody\r\n`;
-		const frame = frameSource(source);
+		const frame = frameRowText(source);
 		expect(frame.kind).toBe('frontmatter');
 		if (frame.kind !== 'frontmatter') return;
 		expect(frame.bom).toBe(BOM);
@@ -66,7 +66,7 @@ describe('framing', () => {
 			'----\ntitle: A\n---\n',
 			`\n---\ntitle: A\n---\n`,
 		]) {
-			expect(frameSource(source).kind).toBe('missing');
+			expect(frameRowText(source).kind).toBe('missing');
 			const error = expectErr(parseSource(source));
 			expect(error.message).toContain('does not start with a --- line');
 			expect(error.diagnostics.length).toBeGreaterThan(0);
@@ -80,7 +80,7 @@ describe('framing', () => {
 			'---\ntitle: A\n--- \nBody\n',
 			'---\ntitle: A\n ---\n',
 		]) {
-			expect(frameSource(source).kind).toBe('unclosed');
+			expect(frameRowText(source).kind).toBe('unclosed');
 			expect(expectErr(parseSource(source)).message).toContain('no closing');
 		}
 	});
@@ -123,7 +123,7 @@ describe('parse failures', () => {
 
 		test(`${name} refuses a field patch and a body-only patch as unparsed`, () => {
 			for (const change of [{ fields: { title: 'B' } }, { body: 'new\n' }]) {
-				const refusal = expectErr(patchSource(source, change));
+				const refusal = expectErr(patchRowText(source, change));
 				expect(refusal.kind).toBe('unparsed');
 			}
 		});
@@ -146,7 +146,7 @@ describe('parse failures', () => {
 	});
 });
 
-describe('patchSource', () => {
+describe('patchRowText', () => {
 	test('replaces only the touched value, keeping BOM, CRLF, comments, quotes, and unknown keys', () => {
 		const source = [
 			`${BOM}---`,
@@ -159,25 +159,25 @@ describe('patchSource', () => {
 			'Body line one',
 			'',
 		].join('\r\n');
-		expect(expectOk(patchSource(source, { fields: { done: true } }))).toBe(
+		expect(expectOk(patchRowText(source, { fields: { done: true } }))).toBe(
 			source.replace('done: false', 'done: true'),
 		);
 	});
 
 	test('appends a missing key before the closing fence with the file newline style', () => {
 		const source = '---\r\ntitle: A\r\n---\r\nBody';
-		expect(expectOk(patchSource(source, { fields: { done: false } }))).toBe(
+		expect(expectOk(patchRowText(source, { fields: { done: false } }))).toBe(
 			'---\r\ntitle: A\r\ndone: false\r\n---\r\nBody',
 		);
 		expect(
-			expectOk(patchSource('---\n---\nBody', { fields: { done: false } })),
+			expectOk(patchRowText('---\n---\nBody', { fields: { done: false } })),
 		).toBe('---\ndone: false\n---\nBody');
 	});
 
 	test('fills an empty value with a separating space', () => {
 		expect(
 			expectOk(
-				patchSource('---\ntitle:\ndone: false\n---\n', {
+				patchRowText('---\ntitle:\ndone: false\n---\n', {
 					fields: { title: 'Named' },
 				}),
 			),
@@ -186,47 +186,47 @@ describe('patchSource', () => {
 
 	test('quotes strings YAML would read as another type', () => {
 		const patched = expectOk(
-			patchSource('---\ntitle: A\n---\n', { fields: { title: 'true' } }),
+			patchRowText('---\ntitle: A\n---\n', { fields: { title: 'true' } }),
 		);
 		expect(expectOk(parseSource(patched)).values).toEqual({ title: 'true' });
 	});
 
 	test('writes multi-line strings on one line and keeps following keys intact', () => {
 		const source = '---\ntitle: |\n  one\n  two\ndone: false\n---\n';
-		expect(expectOk(patchSource(source, { fields: { title: 'a\nb' } }))).toBe(
+		expect(expectOk(patchRowText(source, { fields: { title: 'a\nb' } }))).toBe(
 			'---\ntitle: "a\\nb"\ndone: false\n---\n',
 		);
 	});
 
 	test('replaces the body without touching frontmatter bytes', () => {
 		const source = '---\r\ntitle: A # c\r\n---\r\nOld body\r\n';
-		expect(expectOk(patchSource(source, { body: 'New body\r\n' }))).toBe(
+		expect(expectOk(patchRowText(source, { body: 'New body\r\n' }))).toBe(
 			'---\r\ntitle: A # c\r\n---\r\nNew body\r\n',
 		);
 	});
 
 	test('fence-less source is not an instruction to insert frontmatter', () => {
 		const refusal = expectErr(
-			patchSource(`${BOM}Body\r\n`, { fields: { title: 'A' } }),
+			patchRowText(`${BOM}Body\r\n`, { fields: { title: 'A' } }),
 		);
 		expect(refusal.kind).toBe('unparsed');
 	});
 
 	test('source that parses but cannot be patched safely is refused as unsafe, not unparsed', () => {
 		const anchored = expectErr(
-			patchSource('---\nbase: &b x\ntitle: *b\n---\n', {
+			patchRowText('---\nbase: &b x\ntitle: *b\n---\n', {
 				fields: { title: 'y' },
 			}),
 		);
 		expect(anchored).toMatchObject({ kind: 'unsafe' });
 		expect(
 			expectErr(
-				patchSource('---\n{title: A}\n---\n', { fields: { title: 'B' } }),
+				patchRowText('---\n{title: A}\n---\n', { fields: { title: 'B' } }),
 			).kind,
 		).toBe('unsafe');
 		// The same sources still take a body change: no span of YAML is touched.
 		expect(
-			expectOk(patchSource('---\n{title: A}\n---\nold', { body: 'new' })),
+			expectOk(patchRowText('---\n{title: A}\n---\nold', { body: 'new' })),
 		).toBe('---\n{title: A}\n---\nnew');
 	});
 
@@ -234,7 +234,7 @@ describe('patchSource', () => {
 		for (const value of [Number.NaN, undefined, () => {}, { a: undefined }])
 			expect(
 				expectErr(
-					patchSource('---\ntitle: A\n---\n', { fields: { title: value } }),
+					patchRowText('---\ntitle: A\n---\n', { fields: { title: value } }),
 				),
 			).toMatchObject({ kind: 'value', field: 'title' });
 	});

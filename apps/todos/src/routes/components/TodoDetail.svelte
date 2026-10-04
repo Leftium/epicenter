@@ -112,7 +112,7 @@
 			</p>
 			<Textarea
 				class="min-h-40 flex-1 resize-none font-mono text-xs"
-				value={current.source}
+				value={current.text}
 				aria-label="Markdown source"
 				readonly
 				spellcheck={false}

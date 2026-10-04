@@ -580,7 +580,7 @@ impl Inner {
                     Ok(previous) => FileChange::Replace {
                         path: path.clone(),
                         bytes,
-                        expected_sha256: sha256(&previous),
+                        expected_sha256: Some(sha256(&previous)),
                     },
                     Err(cause) => return Ok(stop(wrote, Stop::File(unreadable(path, cause)))),
                 },

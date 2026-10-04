@@ -48,7 +48,7 @@ export async function callSite() {
 			case 'NoCanonicalForm':
 			case 'InvalidSource':
 				// Both refusals carry the exact text for raw repair.
-				error.file.source satisfies string;
+				error.file.text satisfies string;
 				break;
 			case 'Aborted':
 			case 'NotFound':

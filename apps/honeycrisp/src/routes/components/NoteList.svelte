@@ -5,7 +5,13 @@
 	import PinIcon from '@lucide/svelte/icons/pin';
 	import PlusIcon from '@lucide/svelte/icons/plus';
 	import { format } from 'date-fns';
-	import { folderLabel, type NoteEntry, repairReason } from '$lib/data.js';
+	import { inspectRow } from '@epicenter/folder';
+	import {
+		folderLabel,
+		honeycrispDefinition,
+		type NoteEntry,
+		repairReason,
+	} from '$lib/data.js';
 	import { getDateLabel } from '$lib/date-label.js';
 	import { displayTitle, previewText } from '$lib/note-source.js';
 	import type { Notes } from '$lib/notes.svelte.js';
@@ -28,7 +34,7 @@
 			opened?.dirty
 				? { fields: opened.state.reading.fields, body: opened.state.document.body }
 				: raw?.dirty
-					? notes.host.folder.tables.notes.inspect(raw.buffer)
+					? inspectRow(honeycrispDefinition.tables.notes, raw.buffer)
 					: note;
 		return {
 			title: displayTitle(reading.fields.title ?? note.fields.title, reading.body),

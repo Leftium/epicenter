@@ -24,9 +24,11 @@ const { data: created, error: createError } = await folder.tables.todos.create({
 });
 if (createError !== null) show(createError.message);
 else {
-  const { error: updateError } = await folder.tables.todos.update(created.stem, {
-    fields: { done: true },
-  });
+  const { error: updateError } = await folder.tables.todos.update(
+    created.stem,
+    { fields: { done: true } },
+    {},                                                // the current row; { expectedSha256 } for reviewed bytes
+  );
   if (updateError !== null) show(updateError.message);
 }
 await folder.close();                                  // closed either way
@@ -223,8 +225,8 @@ is not the desktop adapter, and it does not watch the directory.
 
 | Member | Contract |
 | --- | --- |
-| `tables.<name>` | Rows at `<name>/<stem>.md`. A snapshot is the captured file: its path, literal `stem`, exact `source`, and `sha256`, beside how that text reads: `fields`, `body`, `parseError`, and `issues`. `get(stem)` returns `undefined` only for absence. `list()` returns one `{ path, result }` for every row file. `inspect(source)` interprets text without reading anything. `create` is exclusive. `update(stem, change)` reads current source once and conditionally publishes without retry. `replace` and `delete` take a file capture; `rename` takes a text capture. They refuse if the file changed. Each changes exactly one Markdown file. `edit(stem, { signal })` opens a retained canonical editor whose `save()` overwrites the complete row. See [Reading a row](#reading-a-row) and [Editing a row](#editing-a-row). |
-| `kv` | Root `kv.json`, a sparse map of declared values. A snapshot is a text capture: `path`, exact `source`, and `sha256`, beside the stored `values` that validated, `parseError`, and `issues`. `get()` returns `undefined` only for absence; readable text that is not a JSON object is a snapshot with a `parseError`. `inspect(source)` interprets text without reading anything. `create(values)` saves a new file from the supplied values and refuses with `Exists` when one is there. `update(values)` reads current source once, assigns the supplied keys, and conditionally publishes without retry; a missing file is `NotFound`. An update changes only the values it assigns: unknown keys, number spellings, and formatting stay exact. See [Reading and saving kv.json](#reading-and-saving-kvjson). |
+| `tables.<name>` | Rows at `<name>/<stem>.md`. A snapshot is the captured file: its path, literal `stem`, exact whole-file `text`, and `sha256`, beside how that text reads: `fields`, `body`, `parseError`, and `issues`. `get(stem)` returns `undefined` only for absence. `list()` returns one `{ path, result }` for every row file. `create` is exclusive. `update`, `replace`, `rename`, and `delete` address the row by stem and take required options: `{}` acts on the current row, and `{ expectedSha256 }` is refused as `Conflict` when the bytes differ. `update(stem, change, options)` reads the current text once and conditionally publishes without retry. Interpreting text is `inspectRow(definition.tables.<name>, text)`, which needs no open folder. Each changes exactly one Markdown file. `edit(stem, { signal })` opens a retained canonical editor whose `save()` overwrites the complete row. See [Reading a row](#reading-a-row) and [Editing a row](#editing-a-row). |
+| `kv` | Root `kv.json`, a sparse map of declared values. A snapshot is a text capture: `path`, exact `text`, and `sha256`, beside the stored `values` that validated, `parseError`, and `issues`. `get()` returns `undefined` only for absence; readable text that is not a JSON object is a snapshot with a `parseError`. `inspect(text)` interprets text without reading anything. `create(values)` saves a new file from the supplied values and refuses with `Exists` when one is there. `update(values)` reads the current text once, assigns the supplied keys, and conditionally publishes without retry; a missing file is `NotFound`. An update changes only the values it assigns: unknown keys, number spellings, and formatting stay exact. See [Reading and saving kv.json](#reading-and-saving-kvjson). |
 | `files` | Ordinary files at literal paths. See below. |
 | `git` | A status snapshot, `status()`, `commit()`, `commitAndPush()`, `push()`, `fetch()`, `pullFastForward()`, `mergeIncoming()` and `mergeUnsupported`, `recoverIncoming()`, and `paths()`, `stage()`, `commitStaged(message)`, `diff()`, `log()`. |
 | `location` | `{ kind: 'opfs', directory }` or `{ kind: 'directory', root }`. For showing to a person. File paths are never joined onto it. |
@@ -264,15 +266,22 @@ result.
   back. If another writer lands right behind the save, the capture still names
   what this save wrote, and the next `replace` with it is a `Conflict`. Read
   the file to observe what is there now.
-- A moved file's capture is the captured hash at the new path.
+- A moved file's capture is the captured hash at the new path. It is a
+  receipt conditioned on that baseline, never a read of the destination:
+  another program may write there afterward, and a directory's source check
+  is best effort against outside programs. Read the file to know what it
+  holds now.
 - `create` reports `Exists` for an occupied path even when the bytes are identical.
 - A stale capture is a `Conflict`. Nothing is merged, replayed, or retried.
 
 Internally, the same intention reaches each backend as `create`, `replace`,
-`overwrite`, `remove`, or `move`. Only `replace` requires `expectedSha256`;
-removal and movement carry it when acting on a capture. Shell operations may
-omit that guard, but still require a source, and moves require an empty
-destination. There is no sentinel union mixing hashes with `'absent'` or `'any'`.
+`overwrite`, `remove`, or `move`. `replace`, `remove`, and `move` carry an
+optional `expectedSha256`; `files` always sends one, and a table sends one
+when its caller's options name a baseline. Without the guard, each still requires a
+file at its path or source: a `replace` never creates a file and is never sent
+as an `overwrite`, and a move's destination must be empty. Browser OPFS, the
+Bun directory, and the desktop owner enforce this where they publish. There
+is no sentinel union mixing hashes with `'absent'` or `'any'`.
 
 `list()` inventories the whole folder; `children(directory)` lists one level
 and accepts `''` for the root. `open(path)` returns a stable `Blob` for
@@ -300,12 +309,12 @@ const { data: todo, error: readError } = await folder.tables.todos.get(stem);
 if (readError !== null) return showReadFailure(readError); // the file could not be read as text
 if (todo === undefined) return showMissing();          // only absence
 
-showSource(todo.source);                               // the repair baseline, parsed or not
+showText(todo.text);                                   // the whole file: the repair baseline, parsed or not
 if (todo.parseError) return showParseFailure(todo.parseError);
 showIssues(todo.issues);                               // always an array
 if (typeof todo.fields.done === 'boolean') showCheckbox(todo.fields.done);
 
-const draft = folder.tables.todos.inspect(buffer);     // the same reading of unsaved text
+const draft = inspectRow(definition.tables.todos, buffer); // the same reading of unsaved text
 ```
 
 One Result says whether the file was acquired. The snapshot is flat: there is
@@ -314,8 +323,8 @@ no second Result to go through for its fields.
 | Outcome | Where it is | What it carries |
 | --- | --- | --- |
 | The file is absent | `get`: `Ok(undefined)`. A `list` item whose file went away after it was enumerated: that item's `NotFound`. | Nothing. |
-| The file could not be read as text | The outer `Err` of `get`, or one `list` item's `Err`: an inadmissible address, a directory at the path, I/O, a closed folder, or `InvalidUtf8`. | No source. Raw bytes may still be readable through `files`. |
-| The text does not parse | `snapshot.parseError`, with a `message` and one or more `diagnostics`. | `fields` is empty, `body` is `undefined`, and `issues` is empty. `source` is the whole text. |
+| The file could not be read as text | The outer `Err` of `get`, or one `list` item's `Err`: an inadmissible address, a directory at the path, I/O, a closed folder, or `InvalidUtf8`. | No text. `InvalidUtf8` carries the `sha256` of the bytes read, so a repair `replace` can be guarded by it. Raw bytes may still be readable through `files`. |
+| The text does not parse | `snapshot.parseError`, with a `message` and one or more `diagnostics`. | `fields` is empty, `body` is `undefined`, and `issues` is empty. `text` is the whole file. |
 | The text parses | `snapshot.parseError` is `undefined`. | `body` is the text after the closing fence, possibly empty. `fields` holds every declared field that validated by itself. `issues` names each declared field that is missing or does not conform, and is empty when none is. |
 
 `fields` is always partial. An empty `issues` does not turn it into a
@@ -325,12 +334,12 @@ source lacks is an issue, a nullable one included: a stored `null` is a
 value, and a key that is not there is not. No default stands in for it.
 
 Field values, issues, and parse errors are frozen at every depth, so a
-snapshot cannot come to disagree with its `source` and `sha256`. The
+snapshot cannot come to disagree with its `text` and `sha256`. The
 `DeepReadonly` type says the same thing, and leaves a branded string such as
 an `InstantString` as it is. A snapshot holds nothing open and has no
 methods; it stays readable after the folder closes.
 
-Row source is an opening `---` line, a YAML mapping with string keys, a closing
+Row text is the whole file: an opening `---` line, a YAML mapping with string keys, a closing
 `---` line, and a body. A byte-order mark may come first, and lines may end in
 LF or CRLF. An empty or comment-only block is an empty mapping, and the body
 may be empty. Anything else fails parsing as a whole: text with no opening
@@ -342,7 +351,7 @@ into it.
 
 After parsing, each declared field is checked by itself against its prepared
 schema.
-A key the table does not declare stays in the source and is not an issue.
+A key the table does not declare stays in the text and is not an issue.
 Nothing is coerced, defaulted, or repaired. An issue has `field`, `message`,
 and, when the validator names a location inside the field's value, a JSON
 pointer `path` such as `/1` for the second item of a list. Messages and the
@@ -356,11 +365,53 @@ and no snapshot is invented for it. The outer `Err` means the listing itself fai
 partial listing is returned. A table directory that does not exist lists as
 empty.
 
-`inspect(source)` is synchronous and reads nothing. It returns the reading by
-itself, `{ fields, body, parseError, issues }`: no path, no hash, and no
-Result. Reads, save receipts, and an editor checking its unsaved buffer get
-the same answer for the same text, so a draft's diagnostics describe the
-draft and never a saved file.
+### Interpreting and previewing text
+
+`inspectRow(table, text)` and `serializeRow(table, draft)` take a table of the
+definition `defineFolder` returned, so they work before `openFolder` and with
+no storage. Both are synchronous; neither reads a file, hashes, or invents a
+snapshot or capture.
+
+Both take a `PreparedFolderTable`, a type only `defineFolder`'s return
+carries, so passing a raw `defineTable` declaration is a compile error. The
+mark exists only in types; at runtime the table is the same plain object. It
+is not a proof of identity: it survives a spread, so a table rebuilt with
+replaced or cloned `fields` still compiles, and reading a value through such a
+field throws, as every read of an unprepared schema does. `serializeRow`
+checks no value, so it does not notice. Keep the objects `defineFolder`
+returned; a changed field or table needs `defineFolder` again. `openFolder`
+still takes a raw declaration and prepares it.
+
+```ts
+const definition = defineFolder({ kv: {}, tables: { todos } });
+const reading = inspectRow(definition.tables.todos, buffer);
+const { data: preview, error } = serializeRow(definition.tables.todos, {
+	fields: { title: draftTitle, done: false, tags: [] },
+	body: draftBody,
+});
+```
+
+`inspectRow` returns the reading by itself, `{ fields, body, parseError,
+issues }`: no path, no hash, and no Result. Reads, a caller interpreting a
+write receipt's `text`, and an editor checking its unsaved buffer get the same
+answer for the same text, so a draft's diagnostics describe the draft and
+never a saved file.
+
+`serializeRow` returns the text `create` would write for draft values: both
+fences, the declared keys present in declared order, then the body as given.
+The text is that of its UTF-8 bytes, so an unpaired surrogate in the body is
+already U+FFFD, as a save would submit it. It does not check values against
+the schema: a value that does not conform is written all the same, and
+`inspectRow` of the preview reports it, as it reports each declared field the
+draft leaves out or sets to `undefined`. A value YAML cannot hold as supplied,
+such as `NaN` or a `Date`, and an undeclared key are `InvalidValues`, since no
+row could be saved with them. `create` still checks the schema and writes the
+same text once the values conform.
+
+A reading leaves out every key the table does not declare and every field
+that did not conform, so serializing a reading is not a rewrite of the file
+it came from. Change an existing row with `update`, with `patchRowText` on its
+exact text, or with `replace` of edited text.
 
 ### Names
 
@@ -379,8 +430,8 @@ is an address, so compare a stem with `undefined` explicitly rather than by
 truthiness.
 
 What is refused is what any path in the folder is refused for: a stem with a
-path separator, a backslash, or a control character is `InvalidPath`, as is
-a capture at a nested path such as `todos/a/b.md`. Whether a name can be
+path separator, a backslash, or a control character is `InvalidPath`, so no
+stem can address a nested path such as `todos/a/b.md`. Whether a name can be
 stored, and whether two spellings are one file, is the backing storage's
 answer. Browser storage keeps names exactly, so `Plan` and `plan` are two
 rows. A directory on a filesystem that holds one file for both refuses the
@@ -397,33 +448,85 @@ with the files' `Exists` error; the publication then requires the destination
 to be empty, which is also where a filesystem refuses a second spelling of a
 name it holds as one file.
 
-`update(stem, change)` checks the supplied values, reads current source once,
-and patches it: it replaces only the touched frontmatter value spans or
-appends new keys. Comments, quoting, key order, unknown keys, a byte-order
-mark, and CRLF line endings survive. Fields the update does not assign may
-have issues; that does not block it. The current source must parse, even to
-change only the body. Nothing is rewritten on a refusal.
+Every mutation addresses its row by stem and takes required options. `{}`
+acts on whatever the row holds now. `{ expectedSha256 }` is the SHA-256 of
+bytes the caller reviewed, such as a snapshot's `sha256`: a condition on the
+current bytes, checked where the change is published, and refused as
+`Conflict` when they differ. It is not an identity, a revision, or an
+acknowledgment: two files with the same text have the same hash. Options are
+read and validated when the method is called, before anything is awaited.
+Absent or non-object options, an object with any enumerable own string key
+besides `expectedSha256` (a misspelled guard, or a snapshot passed where
+options go), and a guard that is not a lowercase SHA-256 are `InvalidPath`.
+Symbol, inherited, and non-enumerable keys other than the guard are not
+inspected. Nothing retries.
 
-`replace` encodes complete supplied text as UTF-8, so text that does not parse
-can be saved and later repaired. That save succeeds: the result is `Ok(snapshot)`
-with a `parseError`.
+Only an absent `expectedSha256` means the current row. One that is present
+but `undefined`, as `{ expectedSha256: snapshot?.sha256 }` makes when there is
+no snapshot, is `InvalidPath` before anything is read, so a guard that went
+missing on its way to the call never becomes an unguarded write. Presence
+counts an inherited or non-enumerable property too, and a getter is read
+once. The type cannot refuse it, since the property is optional and the
+compiler does not use `exactOptionalPropertyTypes`; the runtime refuses it,
+as it refuses uppercase hex. A caller with an optional baseline chooses
+explicitly: `snapshot ? { expectedSha256: snapshot.sha256 } : {}`.
 
-`create`, `update`, `replace`, and `rename` return the snapshot of the bytes
-they submitted, with their hash. Nothing is read back, and the capture that
-was passed in never changes. The receipt reads the text those bytes decode
-to. It is not the string that was passed, where encoding replaced an
-unpaired surrogate, and its fields are never the objects that were supplied.
-The receipt is interpreted and prepared before publication, so returning it
-after successful publication needs no further validation. Storage still reports
-partial or uncertain outcomes through its operation error. What the text reads
-as does not decide whether it is saved: text that does not parse, and text with a field that does
-not conform, are saved by `replace` all the same. A field whose validator or
+Requiring the argument makes each call site say which it means, and makes a
+wrapper that drops it fail to compile where it calls the table. It does not
+make a wrapper forward what it was given: one that passes `{}` of its own
+drops its caller's guard, and neither the type nor the runtime can tell. A
+wrapper passes the options it receives.
+
+```ts
+const guard = { expectedSha256: todo.sha256 };
+await folder.tables.todos.update(todo.stem, { fields: { done: true } }, guard);
+await folder.tables.todos.replace(todo.stem, repairedText, guard);
+await folder.tables.todos.rename(todo.stem, 'groceries', guard);
+await folder.tables.todos.delete('groceries', guard);
+```
+
+`update(stem, change, options)` checks the supplied values, reads the current
+text once, checks the caller's baseline against that read, and patches it:
+it replaces only the touched frontmatter value spans or appends new keys.
+Comments, quoting, key order, unknown keys, a byte-order mark, and CRLF line
+endings survive. Fields the update does not assign may have issues; that does
+not block it. The current text must parse, even to change only the body.
+The save is always conditional on the bytes this call read, so a writer that
+lands between the read and the publication is a `Conflict`. That internal
+condition is separate from the caller's guard: it covers only this call's own
+read, never what the caller reviewed earlier. A missing row is `Conflict`
+with a guard and `NotFound` without one. Nothing is rewritten on a refusal.
+
+`replace(stem, text, options)` encodes the complete text of the file as UTF-8,
+so text that does not parse can be saved and later repaired. It reads nothing
+before or after. The row must exist: a missing row is `NotFound` unguarded and
+`Conflict` guarded, and a replacement never creates a file.
+
+`create`, `update`, and `replace` return a write receipt,
+`{ stem, path, text, sha256 }`, for the bytes they submitted. It carries no
+`fields`, `body`, `issues`, or `parseError`;
+`inspectRow(definition.tables.<name>, receipt.text)` interprets it. Nothing is
+read back. The receipt's `text` is the whole file those bytes decode to: it is not the string that was passed where encoding replaced
+an unpaired surrogate. Storage still reports partial or uncertain outcomes
+through its operation error. What the text reads as does not decide whether it
+is saved: text that does not parse, and text with a field that does not
+conform, are saved by `replace` all the same. A field whose validator or
 refinement throws on a stored value is a field that does not conform: it is
 left out with an issue, and the other fields and the body are still read.
 
-`rename` submits no bytes, so its receipt reads the `source` of the capture it
-was given. That source must encode to the capture's `sha256`; a capture whose
-source and hash disagree is refused before anything is read or moved.
+`rename(stem, nextStem, options)` and `delete(stem, options)` return
+`Ok(undefined)`. A rename reads only the table directory, for its destination
+check; it reads and decodes no row for a reply, so a caller that needs the row
+at its new path keeps the baseline it guarded the move with or reads it. A
+move that landed its destination but kept its source is
+`MoveError.SourceNotRemoved`; its `moved` capture is present only when the
+rename was guarded, since an unguarded move never learned which bytes it
+carried. Like any moved capture, it is the guard hash at the destination, not
+a read of it. Renaming a row to its own stem is `InvalidPath` before anything is
+read: such a move would check neither existence nor the baseline, so it is
+refused rather than reported as done. A caller whose name did not change
+skips the call. A delete of an absent row is `NotFound`, guarded or not; it
+does not count as done.
 
 `create` and `update` copy the values they are given when they are called.
 They accept readonly values, so a field taken from a snapshot goes back in
@@ -436,16 +539,16 @@ A value that is not JSON, such as a class instance, is refused as it is and
 never copied into a plain object. The same holds for what YAML can spell and
 JSON cannot, such as `!!binary` bytes, a date, or `.inf`: under a declared
 field it is an issue and the other fields and the body still read, and under
-an undeclared key it stays in the source unreported.
+an undeclared key it stays in the text unreported.
 
 | Refusal | Error | Wrote anything |
 | --- | --- | --- |
 | A supplied value is undeclared, does not conform, is missing from a new row, or cannot be copied or written as YAML | `InvalidValues`, with `issues` | No |
-| The stem or capture does not address a row in this folder, or a `rename` capture's source is missing or is not the text of its hash | `InvalidPath` | No |
+| The stem does not address a row in this folder, options are absent or hold an enumerable own string key besides `expectedSha256`, `expectedSha256` is present but not a lowercase SHA-256 (`undefined` included), or a `rename` names the stem the row already has | `InvalidPath` | No |
 | `create` or `rename` found the destination taken | `Exists` | No |
-| `update` found no row at its read | `NotFound` | No |
-| `update` read source that does not parse | `Unparsed`, with the parse `error` | No |
-| `update` read source that parses but cannot be patched without changing source it was not asked to change: an anchor, alias, or tag on the value, or a flow mapping | `UnsupportedSource` | No |
+| `update` found no row at its read, without a guard | `NotFound` | No |
+| `update` read text that does not parse | `Unparsed`, with the parse `error` | No |
+| `update` read text that parses but cannot be patched without changing text it was not asked to change: an anchor, alias, or tag on the value, or a flow mapping | `UnsupportedSource` | No |
 | The file changed, or went away, before publication | `Conflict` | No |
 | Storage failed | `Io` | No |
 | A rename stopped between its two steps | `Partial` | Yes: the destination holds the bytes |
@@ -457,9 +560,74 @@ Each method's error type adds its own preparation failures to the shared storage
 `TableRenameError`, and `TableDeleteError`. `TableWriteError` is their union
 for code that presents any save failure alike.
 
-`patchSource` and `frameSource` are exported for editors that keep their own
-buffer. `patchSource` has the same refusals as `update`, as `unparsed`,
-`value`, and `unsafe`; it checks no table fields.
+`patchRowText(text, { fields?, body? })` and `frameRowText(text)` are
+exported for editors that keep their own buffer. Both take the whole file's
+text; `body` is only what follows the closing fence. `patchRowText` keeps every
+byte it was not asked to change, unknown keys and comments included, and has
+the same refusals as `update`, as `unparsed`, `value`, and `unsafe`; it checks
+no table fields.
+
+### Choosing a save
+
+Each kind of caller combines the same primitives. The guard is the hash of
+the bytes a decision was made from; whether to pass one depends on whether
+the change was derived from those bytes.
+
+```ts
+const todos = folder.tables.todos;
+
+// A checkbox assigns a value that does not depend on the rest of the row.
+await todos.update(stem, { fields: { done: true } }, {});
+
+// A title derived from the body the person reviewed. With `{}`, the update's
+// own read would be a newer body, and the title would land over it.
+await todos.update(
+	snapshot.stem,
+	{ fields: { title: firstLine(snapshot.body) } },
+	{ expectedSha256: snapshot.sha256 },
+);
+
+// Raw repair of text that does not parse, against the text the person saw.
+// An `InvalidUtf8` read has no snapshot; its `sha256` guards the same way.
+await todos.replace(snapshot.stem, repairedText, { expectedSha256: snapshot.sha256 });
+
+// Rename or delete the row the person selected, as they saw it.
+await todos.rename(snapshot.stem, 'groceries', { expectedSha256: snapshot.sha256 });
+await todos.delete(snapshot.stem, { expectedSha256: snapshot.sha256 });
+
+// A new row: preview the draft's text and its issues, then create it.
+const { data: preview } = serializeRow(definition.tables.todos, { fields: draft, body });
+const issues = inspectRow(definition.tables.todos, preview).issues;
+await todos.create({ fields: values, body });
+
+// An existing row's text: patch it, so what was not touched survives.
+const { data: patched } = patchRowText(snapshot.text, { fields: { title } });
+await todos.replace(snapshot.stem, patched, { expectedSha256: snapshot.sha256 });
+```
+
+| Operation | What the table reads while preparing | Missing row, `{}` | Missing row, guarded | Returns |
+| --- | --- | --- | --- | --- |
+| `create` | the table directory, for the destination | not applicable | not applicable | receipt |
+| `update` | the row, once | `NotFound` | `Conflict` | receipt |
+| `replace` | no row | `NotFound` | `Conflict` | receipt |
+| `rename` | the table directory, for the destination | `NotFound` | `NotFound` | `undefined` |
+| `delete` | no row | `NotFound` | `NotFound` | `undefined` |
+
+The column is the table's own preparation. Publication is separate: where a
+change carries a condition, the storage publisher reads and hashes the
+current bytes to check it, in the desktop owner process for a desktop folder.
+`update` reads because a patch needs the current text, and it publishes
+against that read whether or not the caller guarded it. `replace` already
+holds the complete text. `rename` and `delete` are prepared without the row,
+and publication finds whether it is there.
+
+A receipt names the bytes a save submitted; it is not an observation of the
+file. After `Unconfirmed`, a read that finds the same bytes does not confirm
+that save: another writer can produce the same text, so nothing infers an
+acknowledgment from matching bytes. A hint asks for a reread; it is not a
+snapshot, a receipt, or an acknowledgment. On a desktop folder, the guard is
+checked before publication by the owner process; another program writing at
+the same moment can still race it.
 
 ### Editing a row
 
@@ -501,16 +669,16 @@ function. Only `dispose()` stops watching.
 ```text
 state
 |-- baseline: RowRevision     what isDirty compares against
-|-- document, source          local fields and body; source is the canonical text save writes
-|-- reading                   inspect(source): issues make save refuse
-|-- isDirty                   source differs from baseline.canonical
+|-- document, text            local fields and body; text is the canonical text save writes
+|-- reading                   how text reads: issues make save refuse
+|-- isDirty                   text differs from baseline.canonical
 |-- observation               latest read: present | missing | unreadable | unsupported | invalid
 |-- saving: RowSaveAttempt    captured document while a save is admitted
 |-- lastSave                  saved{receipt} | unconfirmed{attempt} | failed{attempt}
 `-- isDisposed
 
-RowRevision    = { path, sha256, source (exact text), document, canonical }
-RowSaveAttempt = { path, document, source (canonical text sent) }    no hash: not a capture
+RowRevision    = { path, sha256, text (exact whole file), document, canonical }
+RowSaveAttempt = { path, document, text (canonical text sent) }    no hash: not a capture
 ```
 
 - Opening. `edit` subscribes to `onFilesChanged` before its single read, so
@@ -561,7 +729,7 @@ RowSaveAttempt = { path, document, source (canonical text sent) }    no hash: no
   save fails with `Closed` and keeps the draft.
 
 `table.update` and `table.replace` keep their own conditional,
-source-preserving contracts; the editor is a separate save shape for forms
+text-preserving contracts; the editor is a separate save shape for forms
 that own a complete draft. `TableEditError` is the opening error union;
 `RowChangeError`, `RowSaveError`, and `RowAdoptError` are the editor's.
 
@@ -584,8 +752,8 @@ showDiagnostics(snapshot?.parseError, snapshot?.issues ?? []);
 | Outcome | Where it is | What it carries |
 | --- | --- | --- |
 | The file is absent | `get`: `Ok(undefined)`. | Nothing. No capture is invented. |
-| The file could not be read as text | The `Err` of `get`: I/O, a directory at the path, a closed folder, or `InvalidUtf8`. | No source. |
-| The text is not one JSON object | `snapshot.parseError`. | `values` is empty and `issues` is empty. `source` is the whole text. |
+| The file could not be read as text | The `Err` of `get`: I/O, a directory at the path, a closed folder, or `InvalidUtf8`. | No text. |
+| The text is not one JSON object | `snapshot.parseError`. | `values` is empty and `issues` is empty. `text` is the whole file. |
 | The text is a JSON object | `snapshot.parseError` is `undefined`. | `values` holds every stored declared value that validated by itself. `issues` has an entry for each stored value that does not conform. |
 
 The format is one strict JSON object, after an optional byte-order mark.
@@ -593,8 +761,8 @@ Comments and trailing commas fail parsing. A root key that appears twice
 reads as its last value, as `JSON.parse` reads it.
 
 A declared key the file does not have is left out of `values` and is not an
-issue. An undeclared key stays in the source and is not reported. Values live
-under `values` so a declared key named `source` or `issues` cannot collide
+issue. An undeclared key stays in the text and is not reported. Values live
+under `values` so a declared key named `text` or `issues` cannot collide
 with the capture. Values and diagnostics are frozen at every depth.
 
 The folder has no defaults. `get`, `inspect`, preparing the definition, and
@@ -603,15 +771,15 @@ its own defaults where it derives its state, as above: a missing file, a
 missing key, and a stored value that was left out all fall back, and a stored
 `null` does not. The merge is one level deep.
 
-`inspect(source)` is the same reading of text that was not saved:
+`inspect(text)` is the same reading of text that was not saved:
 `{ values, parseError, issues }`, with no path, hash, or Result.
 
 `create(values)` checks the supplied values and saves a new file without
-reading; an existing file is `Exists`. `update(values)` reads current source
-once, assigns the supplied root keys, and replaces what it read. Both copy
+reading; an existing file is `Exists`. `update(values)` reads the current
+text once, assigns the supplied root keys, and replaces what it read. Both copy
 the supplied values when they are called, accept readonly values such as a
 snapshot's, and leave the caller's objects as they were. A receipt is the
-snapshot of the submitted source and its hash, with nothing read back. An
+snapshot of the submitted text and its hash, with nothing read back. An
 update is not an upsert: it never creates the file.
 
 | Refusal | Error | Wrote anything |
@@ -624,14 +792,14 @@ update is not an upsert: it never creates the file.
 
 A file can therefore read with valid values while one update of it is
 refused. Unknown keys are left exactly as written, repeated ones included.
-Repair the complete text with `files.replace(snapshot, source)`. That returns
+Repair the complete text with `files.replace(snapshot, text)`. That returns
 a raw capture; call `kv.inspect` on the text that was submitted to see how it
 reads. `KvReadError` and `KvWriteError` are the two error unions.
 
 ### Merging kv.json
 
-`mergeKv({ base, ours, theirs })` reconciles three captured sources without
-opening a folder. Each input is a JSON object string or `null` for a missing
+`mergeKv({ base, ours, theirs })` reconciles three captured `kv.json` texts
+without opening a folder. Each input is a JSON object string or `null` for a missing
 file. Rust exposes the equivalent `kv_merge::merge_kv(base, ours, theirs)` in
 `epicenter-folder-core`. Both implementations run the same fixtures.
 
@@ -641,9 +809,9 @@ raw base, ours, and theirs values. Nested objects and arrays stay together as
 one value. A missing key differs from a stored JSON `null`. Deleting the file
 conflicts with a change to its values and returns `kind: 'file-conflict'`.
 
-A successful result has `kind: 'merged'` and `source`, which is `null` for a
-deleted file. It preserves selected value text and regenerates root formatting
-with sorted keys. Object key order and string escape spelling do not affect
+A successful result has `kind: 'merged'` and `text`, the complete merged file
+text, which is `null` for a deleted file. It preserves selected value text and
+regenerates root formatting with sorted keys. Object key order and string escape spelling do not affect
 equality. Number tokens compare exactly, so `1` and `1.0` differ; large unknown
 numbers never round through JavaScript. Equal values choose the same raw text
 when ours and theirs swap.
@@ -677,35 +845,37 @@ draft and saves it unconditionally; see [Editing a row](#editing-a-row).
 An application may replace local input whenever it reads external content,
 refresh only while clean, or keep its local draft. Following external content
 while typing can discard unsaved input. Keeping a draft does not choose its
-save condition: `files.replace(capture, source)` refuses changed content, while
-`files.overwrite(path, source)` deliberately replaces whatever is there.
+save condition: `files.replace(capture, text)` refuses changed content, while
+`files.overwrite(path, text)` deliberately replaces whatever is there.
 An application offering review can compare its baseline, latest observation,
 and draft before conditionally saving against the reviewed capture.
 
-`tables.<name>.update(stem, { fields?, body? })` reads the current row and
-patches only the requested fields/body. Changes saved before that read survive
-when they concern other parts. A race after the read returns `Conflict`;
-there is no automatic retry. A missing row returns `NotFound` and is never
-created by an update. The caller may inspect `error.name` and decide what to do.
+`tables.<name>.update(stem, { fields?, body? }, options)` reads the current
+row and patches only the requested fields/body. With `{}`,
+changes saved before that read survive when they concern other parts; with one, any change since the caller's observation is a `Conflict`. A
+race after the read returns `Conflict`; there is no automatic retry. A missing
+row returns `NotFound`, or `Conflict` under a baseline, and is never created
+by an update. The caller may inspect `error.name` and decide what to do.
 
 For `update`, `NotFound` means the row was absent at its initial read;
-`Conflict` means the publication condition failed, including removal between
-read and save (`actualSha256 === undefined`). `Unconfirmed` means the outcome is
-unknown. These are common outcomes, not the entire error union: see
-[Saving a row](#saving-a-row). No outcome triggers automatic replay.
+`Conflict` means the caller's baseline or the publication condition failed,
+including removal between read and save (`actualSha256 === undefined`).
+`Unconfirmed` means the outcome is unknown. These are common outcomes, not the
+entire error union: see [Saving a row](#saving-a-row). No outcome triggers
+automatic replay.
 
-`replace(snapshot, source)` saves complete text against the snapshot's
-captured baseline. It uses the snapshot's path, accepts text that does not
-parse, and returns a snapshot of the submitted bytes with how they read. It
-does not merge fields, normalize text, or reread afterward. Neither method
-mutates a captured snapshot; each returns a new one on success.
+`replace(stem, text, { expectedSha256: snapshot.sha256 })` saves the complete
+text of the file against the snapshot's captured bytes. It accepts text that
+does not parse and returns the receipt of the submitted bytes. It does not
+merge fields, normalize text, or read before or afterward. With `{}` it
+replaces whatever row is there, and still never creates one.
 
-A snapshot is already a file capture, so `files.replace(snapshot, source)`
-also works. The table helper additionally checks row membership and returns
-the reading of the submitted text. The raw file helper returns only the new
-capture. Neither requires a separate path argument.
+A snapshot is already a file capture, so `files.replace(snapshot, text)`
+also works and returns only the new capture. The table method addresses the
+row by stem, so it cannot be pointed at a file outside the table.
 
-An editor checks its unsaved buffer with `inspect(buffer)`. It should not mix
+An editor checks its unsaved buffer with
+`inspectRow(definition.tables.<name>, buffer)`. It should not mix
 that with the saved snapshot's reading: the two describe different text.
 
 A successful receipt describes the submitted content, not newer typing or a
@@ -974,10 +1144,12 @@ definition keeps its required `id` and its own `prepareData`.
 
 `defineFolder` returns the prepared definition. It has the shape and type of
 what was declared: `kv` and each table's `fields` are records of native
-schemas, and a table's key is its name. Each schema is an owned, frozen
-snapshot, so editing a schema after `defineFolder` changes nothing an opened
-folder accepts. An opener handed any other declaration prepares it first and
-reads the snapshot.
+schemas, and a table's key is its name. Each table's type also carries the
+`PreparedFolderTable` mark that `inspectRow` and `serializeRow` require; the
+mark is a type, not a property. Each schema is an owned, frozen snapshot, so
+editing a schema after `defineFolder` changes nothing an opened folder
+accepts. An opener handed any other declaration prepares it first and reads
+the snapshot.
 
 A field's editor hint decides nothing about what a folder stores.
 `field.reference('lists')` is a nonempty string whose hint names a table. The

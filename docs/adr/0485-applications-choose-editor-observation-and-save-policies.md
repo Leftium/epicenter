@@ -58,10 +58,12 @@ that it was cancelled. An application may discard local input, but it cannot
 report an unknown outcome as a definite failed save or replay it as though
 nothing landed. Change hints request another observation, not an acknowledgement.
 
-`table.update(stem, change)` patches current content and publishes once against
-the version read by that call. `table.replace(entry, source)` saves complete
-text against the supplied entry. Neither retries a conflict. The captured
-`kv.update(snapshot, values)` contract is unchanged.
+`table.update(stem, change, options)` patches current text and publishes once
+against the version read by that call; `{ expectedSha256 }` in `options` also
+requires that read to be the bytes the caller reviewed. `table.replace(stem,
+text, { expectedSha256: snapshot.sha256 })` saves complete text against the
+presented snapshot, and `{}` saves it over whatever row is there. Neither
+retries a conflict (ADR-0464). KV commands follow ADR-0487.
 
 ## Consequences
 

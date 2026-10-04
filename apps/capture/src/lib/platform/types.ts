@@ -30,7 +30,7 @@ export type CaptureFolder = {
 		 */
 		readonly captures: Pick<
 			FileTable<CaptureFields>,
-			'list' | 'get' | 'inspect' | 'create' | 'replace' | 'delete' | 'edit'
+			'list' | 'get' | 'create' | 'replace' | 'delete' | 'edit'
 		>;
 	};
 	/**

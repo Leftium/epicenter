@@ -2,8 +2,8 @@
  * EXPERIMENT: what the demo server and the browser facade send each other.
  *
  * Results travel as `{ data, error }`. A snapshot travels as its capture and
- * source only; the browser interprets the source itself with the table's
- * `inspect`, so a reading is never trusted from the wire.
+ * text only; the browser interprets the text itself with `inspectRow` and
+ * the table's definition, so a reading is never trusted from the wire.
  */
 import type { GateName, GateSnapshot } from './gates.js';
 
@@ -21,7 +21,7 @@ export type WireSnapshot = {
 	readonly path: string;
 	readonly stem: string;
 	readonly sha256: string;
-	readonly source: string;
+	readonly text: string;
 };
 
 /** An error as JSON: its name, message, and plain fields. A `cause` becomes its message. */

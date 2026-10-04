@@ -103,9 +103,9 @@ await folder.close();           // detaches this page only
 `openFolder` returns its refusals: an unknown scope, a window the scope does
 not list, a folder another process holds, a shell without this plugin, and a
 desktop app built for another protocol version. The unreleased protocol is
-version 5: version 4 added the number every `apply` names, and version 5 the
+version 6: version 4 added the number every `apply` names, version 5 the
 incoming record, `recover_incoming`, and the refusals a pending update
-causes. No command holds the folder across calls or names a terminal lease.
+causes, and version 6 the optional `expectedSha256` on `replace`. No command holds the folder across calls or names a terminal lease.
 A page built for a different version is refused at attach. It never opens
 browser storage instead. `@epicenter/folder/tauri` is the same opener without the
 browser adapter in the build.
@@ -118,21 +118,24 @@ it read. `apply` takes ordered changes, each one of:
 | Change | Fields | Lands when |
 | --- | --- | --- |
 | `create` | `path`, `bytes` | Nothing is at the path. |
-| `replace` | `path`, `bytes`, `expectedSha256` | The file's bytes hash to `expectedSha256`. |
+| `replace` | `path`, `bytes`, `expectedSha256?` | A file is at the path and, when a hash is named, its bytes hash to it. It never creates a file. |
 | `overwrite` | `path`, `bytes` | Always, whether or not a file is there. |
 | `remove` | `path`, `expectedSha256?` | The file exists and, when a hash is named, its bytes match. |
 | `move` | `from`, `to`, `expectedSha256?` | The source exists, matches a named hash, and nothing is at `to`. |
 
 - No change carries the hash of its new bytes. The owner hashes what it reads
   from the folder and never trusts a hash a page computed for new content.
-- A `remove` or `move` without `expectedSha256` is a deliberate unguarded
-  operation, for a shell acting on whatever is there. Changes built from a read
-  name the hash.
+- A `replace`, `remove`, or `move` without `expectedSha256` is a deliberate
+  unguarded operation on whatever file is there, as a shell or a table caller
+  with no baseline acts. It still requires that file. Changes built from a
+  read name the hash.
 - `Conflict` is `{ path, expectedSha256, actualSha256 }`: the bytes differ from
-  the named hash. `actualSha256` is `null` when a `replace` target is missing.
+  the named hash. `actualSha256` is `null` when a guarded `replace` target is
+  missing.
 - `Exists` is `{ path }`: a `create` target or a `move` destination already
   holds a file.
-- A missing `remove` or `move` source is `NotFound`.
+- A missing unguarded `replace` target, and a missing `remove` or `move`
+  source, is `NotFound`.
 - Paths are literal. A filesystem that folds case or normalizes Unicode, as
   APFS and NTFS do, can resolve `note.md` to an existing `Note.md`, or
   `dir/` to an existing `Dir/`. Every change refuses such a spelling, of
@@ -384,10 +387,15 @@ time.
 
 ## What is best effort
 
-- A `replace` hashes the current bytes and replaces them only when they match
-  `expectedSha256`, checking once before staging and again before the rename.
-  Another program can still write between that second check and the rename. The owner orders its own windows; it does not lock files against
+- A `replace` checks that a file is there and, when `expectedSha256` is named,
+  that its bytes hash to it, once before staging and again before the rename.
+  Another program can still write, or remove the file, between that second
+  check and the rename. The owner orders its own windows; it does not lock files against
   other programs.
+- A `remove` or `move` source check is the same: another program can change
+  the source between the check and the step. A guarded `move` that reports
+  its destination landed names the hash it was guarded by, which says what
+  the source held when checked, not what `to` holds afterward.
 - A multi-file batch is ordered steps. A failure partway reports which steps
   landed; nothing is rolled back.
 - A snapshot is exact against the owner's own writes, which replace files by

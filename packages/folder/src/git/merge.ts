@@ -185,7 +185,7 @@ export async function prepareMerge(
 				: ({ kind: 'invalid', side: invalid } as const);
 		switch (merged.kind) {
 			case 'merged':
-				kv = merged.source === null ? null : encoder.encode(merged.source);
+				kv = merged.text === null ? null : encoder.encode(merged.text);
 				break;
 			case 'conflict':
 				for (const conflict of merged.conflicts)

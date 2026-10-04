@@ -60,6 +60,7 @@ import { createTerminalSession } from './terminal.svelte.js';
 import {
 	createTodoEditor,
 	describeEditError,
+	SAVING,
 	type TodoEditor,
 } from './todo-editor.svelte.js';
 
@@ -649,9 +650,11 @@ export function createTodos(folder: TodosFolder) {
 		/**
 		 * Toggle completion, to the opposite of what the list showed. An open
 		 * todo editor takes it as a change to its draft and saves the whole
-		 * draft. Otherwise `done` is assigned in the row's text as it is now,
-		 * and every other byte stays: other fields, unknown metadata, comments,
-		 * quoting, and the notes. A `done` the list could not read is refused;
+		 * draft, unless a save of it is still running or its draft waits for
+		 * the person's choice; then the draft is left as it was. Otherwise
+		 * `done` is assigned in the row's text as it is now, and every other
+		 * byte stays: other fields, unknown metadata, comments, quoting, and
+		 * the notes. A `done` the list could not read is refused;
 		 * so is text that no longer parses, or that cannot take the change
 		 * without altering what it did not name. The source editor fixes those.
 		 */
@@ -666,6 +669,10 @@ export function createTodos(folder: TodosFolder) {
 			let updated: Result<unknown, TableUpdateError>;
 			try {
 				const item = retained.get(entry.path);
+				// A save of the draft is still running, so its own save would be
+				// refused; refuse before the draft changes instead of leaving the
+				// toggle in it unsent.
+				if (item?.kind === 'todo' && item.editor.isSaving) return SAVING;
 				// A toggle is not the person's choice about a change made elsewhere,
 				// or about a save, rename, or delete that failed or went unanswered.
 				// The draft's save would write over what the editor shows: a valid

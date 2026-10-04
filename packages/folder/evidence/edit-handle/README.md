@@ -215,9 +215,9 @@ state subscription.
 - Requests are not serialized, so a held save does not block the writer that
   races it. The folder's hash check is best effort against native writers, as
   its README says; nothing here claims more.
-- The facade runs `inspect` in the page with the folder's internal
-  `inspectSource`, because the public contract has no `inspect` without an
-  opened folder.
+- The facade runs `inspect` in the page with the public, pure
+  `inspectRow(definition.tables.todos, text)`, which needs no opened folder,
+  against the same prepared definition the server uses.
 
 ## Browser journeys
 

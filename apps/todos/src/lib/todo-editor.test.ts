@@ -11,10 +11,10 @@
  *   complete canonical document once after a pause
  * - Fields that do not conform stay in the draft; nothing is saved, and
  *   fixing them saves
- * - A failed save halts autosave until an explicit save renews it; a save
- *   whose storage threw halts the same way, and disposal still resolves
- * - A lost save reply stays unknown after a read finds its text, and halts
- *   autosave the same way
+ * - A failed save halts autosave until an explicit save renews it
+ * - A lost save reply, or a save whose storage threw (published or not),
+ *   stays unknown after a read finds its text, keeps the throw's cause, and
+ *   halts autosave the same way; disposal still resolves
  * - Another writer's change never replaces input and holds autosave; only
  *   an explicit save replaces their text, and discarding mine loads it
  *   without writing
@@ -25,6 +25,8 @@
  *   state came before the save's own reply
  * - A removed file is written again by the draft's save
  * - A save captures the draft: input during it stays unsaved and saves next
+ * - A save is refused while another runs, explicit or not: nothing queues
+ *   behind a save whose reply may be lost
  * - A rename holds saves, carries input typed during the move to the
  *   destination's editor, disposes the old one, and writes nothing at the
  *   old path
@@ -174,7 +176,7 @@ test('a failed save halts autosave until an explicit save renews it', async () =
 	expect((await reading()).body).toBe('mine and more\n');
 });
 
-test('a save whose storage threw halts with the input kept, and disposal still resolves', async () => {
+test('a save whose storage threw halts as unknown with its cause, keeps the input, and disposal still resolves', async () => {
 	const { editor, reading } = await setup((row) => ({
 		...row,
 		save: () => Promise.reject(new Error('storage bug')),
@@ -186,18 +188,50 @@ test('a save whose storage threw halts with the input kept, and disposal still r
 	}));
 
 	editor.change({ body: 'mine\n' });
-	expect(await editor.save()).toBe('storage bug');
-	expect(editor.halt).toEqual({
-		kind: 'failed',
-		operation: 'save',
-		message: 'storage bug',
-	});
+	const message =
+		'The save ended with an error, so it may or may not be in the file: storage bug';
+	expect(await editor.save()).toBe(message);
+	expect(editor.halt).toEqual({ kind: 'unknown', operation: 'save', message });
 	expect(editor.isSaving).toBe(false);
 	expect(editor.state.document.body).toBe('mine\n');
 	await pastTypingBatch();
 	expect((await reading()).body).toBe('');
 	expect(await editor.settle()).toBe(false);
 	expect(await editor.dispose()).toBeUndefined();
+});
+
+test('a save that published and then threw is unknown: a read of its bytes does not answer it, and only an explicit save ends it', async () => {
+	let thrown = 0;
+	const { folder, editor, reading } = await setup((row) => ({
+		...row,
+		async save() {
+			if (thrown++ > 0) return row.save();
+			// The bytes land, then storage throws instead of answering.
+			expectOk(await folder.files.overwrite(PATH, row.get().text));
+			throw new Error('connection reset');
+		},
+	}));
+
+	editor.change({ body: 'mine\n' });
+	expect(await editor.save()).toContain('may or may not');
+	expect(editor.halt?.kind).toBe('unknown');
+	expect(editor.halt?.message).toContain('connection reset');
+	await editor.refresh();
+	// The file holds the draft's content, so nothing is unsaved; that read
+	// cannot say who wrote it, so the save is still unknown.
+	expect(editor.state.isDirty).toBe(false);
+	expect(editor.halt?.kind).toBe('unknown');
+	expect(editor.isIdle).toBe(false);
+
+	editor.change({ body: 'more\n' });
+	await pastTypingBatch();
+	expect(await editor.settle()).toBe(false);
+	expect((await reading()).body).toBe('mine\n');
+
+	// "Save again" is the person's choice, and ends it.
+	expect(await editor.save()).toBeUndefined();
+	expect(editor.halt).toBeUndefined();
+	expect((await reading()).body).toBe('more\n');
 });
 
 test('a lost save reply stays unknown after a read finds its text, and autosave waits for an explicit save', async () => {
@@ -386,6 +420,43 @@ test('a save captures the draft: input during it stays unsaved and saves next', 
 
 	expect(await editor.settle()).toBe(true);
 	expect((await reading()).body).toBe('A and B\n');
+});
+
+test('a second explicit save while one runs is refused and sends nothing, so the first lost reply stays unknown', async () => {
+	const reply = Promise.withResolvers<void>();
+	let saves = 0;
+	const { folder, editor, reading } = await setup((row) => ({
+		...row,
+		async save() {
+			if (saves++ > 0) return row.save();
+			// The bytes land; the reply, held, is then lost.
+			expectOk(await folder.files.overwrite(PATH, row.get().text));
+			await reply.promise;
+			return FileError.Unconfirmed({
+				path: PATH,
+				operation: 'write',
+				cause: new Error('the reply was lost'),
+			});
+		},
+	}));
+
+	editor.change({ body: 'A\n' });
+	const first = editor.save();
+	editor.change({ body: 'A and B\n' });
+	const second = editor.save();
+	reply.resolve();
+	expect(await second).toBe('A save of this todo is already running.');
+	expect(await first).toContain('may or may not');
+	expect(saves).toBe(1);
+	expect(editor.halt?.kind).toBe('unknown');
+
+	// Neither a pause nor a settle sends the newer input on its own.
+	await pastTypingBatch();
+	expect(await editor.settle()).toBe(false);
+	expect(saves).toBe(1);
+	expect(editor.halt?.kind).toBe('unknown');
+	expect((await reading()).body).toBe('A\n');
+	expect(editor.state.document.body).toBe('A and B\n');
 });
 
 test('a rename holds saves, carries input typed during the move to the destination, and writes nothing at the old path', async () => {

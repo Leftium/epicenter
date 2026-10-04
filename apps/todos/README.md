@@ -274,7 +274,10 @@ without the push.
    lands only if the file is still the version it read, and a save that races
    another writer offers the same two choices. A save that fails offers "Try
    again" and "Discard mine"; only that choice drops the typing, and it writes
-   nothing.
+   nothing. A save whose reply was lost, or that ended with an error, says it
+   may or may not be in the file; a later read that finds the same text does
+   not settle that, and nothing is sent again until you choose. A second save
+   is never sent while one is still running.
 3. Open the file browser. Folders expand and collapse; a todo file opens its
    todo editor, and any other text file opens in a plain editor with the
    Source editor's save and conflict rules. File saves request automatic history without waiting
@@ -326,7 +329,10 @@ without the push.
    follows it, and the file keeps the comment and keys byte for byte.
    Checking the todo off in the list while it is not open changes only its
    `done` value and keeps every other byte. Saving it from its open editor
-   writes its standard form, which keeps `owner` and `labels`.
+   writes its standard form, which keeps `owner` and `labels`. While the todo
+   is open, the list's checkbox is a change to its editor and saves the same
+   way; it changes nothing while that editor is still saving or waits for
+   your choice.
 7. `bun apps/todos/scripts/native.ts <checkout> status` prints the native
    folder's JSON status through `openFolder` from `@epicenter/folder/bun`.
    `create "<title>"`, `complete <stem>`, `commit-and-push`, `fetch`, and

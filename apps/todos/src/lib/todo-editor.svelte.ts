@@ -13,10 +13,13 @@
  *
  * - Autosave. A change saves after a short pause, one save at a time, while
  *   the draft is unsaved and its fields conform. A draft whose fields do not
- *   conform keeps its input on screen and is not saved.
+ *   conform keeps its input on screen and is not saved. No save, explicit or
+ *   not, starts while one is running; it is refused, never queued.
  * - Halting. A save that failed, or whose reply was lost, stops autosave
- *   until the person saves explicitly. A lost reply stays unknown even when a
- *   later read finds the same text: that read cannot say who wrote it.
+ *   until the person saves explicitly. A save whose storage threw is unknown
+ *   too: the throw cannot say whether the bytes landed. An unknown save stays
+ *   unknown even when a later read finds the same text: that read cannot say
+ *   who wrote it.
  * - Review. While the draft has unsaved input and the latest read shows a
  *   change this editor did not make (other bytes, a removal, a read that
  *   failed, or text that no longer reads as a todo), nothing saves on its
@@ -126,13 +129,16 @@ export function describeEditError(error: TableEditError): string {
 	}
 }
 
+/** Why a save was refused while another one of the same todo runs. */
+export const SAVING = 'A save of this todo is already running.';
+
 /** What a person is told when a save did not happen or may not have. */
 function describeSaveError(error: RowSaveError): string {
 	switch (error.name) {
 		case 'InvalidDocument':
 			return 'Some fields need fixing, so this todo was not saved.';
 		case 'Saving':
-			return 'A save of this todo is already running.';
+			return SAVING;
 		case 'Disposed':
 			return 'This todo is closed, so it was not saved.';
 		case 'Unconfirmed':
@@ -160,9 +166,10 @@ export function createTodoEditor(
 	let refusal = $state<string | undefined>();
 	let timer: ReturnType<typeof setTimeout> | undefined;
 	/**
-	 * The save this editor started, until its outcome is applied. Reactive:
-	 * it is cleared after the row editor's last state of the save, so a view
-	 * reading `isSaving` or `isIdle` must hear the clearing itself.
+	 * The one save this editor started, until its outcome is applied. Set by
+	 * the call that admits it, before any await. Reactive: it is cleared after
+	 * the row editor's last state of the save, so a view reading `isSaving` or
+	 * `isIdle` must hear the clearing itself.
 	 */
 	let saving = $state.raw<Promise<string | undefined> | undefined>();
 	/** Pending while a rename owns the row's path; resolves when it settles. */
@@ -240,10 +247,12 @@ export function createTodoEditor(
 			saved = await row.save();
 		} catch (cause) {
 			// Storage that throws is a bug, but the draft must not stay saving.
+			// The throw says nothing about whether the bytes landed, so the
+			// outcome is unknown, never a definite failure; the cause is kept.
 			halt = {
-				kind: 'failed',
+				kind: 'unknown',
 				operation: 'save',
-				message: cause instanceof Error ? cause.message : String(cause),
+				message: `The save ended with an error, so it may or may not be in the file: ${cause instanceof Error ? cause.message : String(cause)}`,
 			};
 			return halt.message;
 		}
@@ -268,10 +277,14 @@ export function createTodoEditor(
 		}
 	}
 
-	/** Start a save once any running one has settled. */
+	/**
+	 * Start a save now. Refused while one is running: nothing queues behind a
+	 * save whose reply is not yet known, since a second save would answer for
+	 * it. A caller that means to wait, waits for `saving` and checks again.
+	 */
 	async function run(): Promise<string | undefined> {
+		if (saving) return SAVING;
 		clearTimeout(timer);
-		while (saving) await saving;
 		const started = attempt();
 		saving = started;
 		try {
@@ -366,8 +379,9 @@ export function createTodoEditor(
 			return undefined;
 		},
 		/**
-		 * Save the complete document now, after any running save. This is the
-		 * person's explicit save: it renews autosave after a halt, and it is
+		 * Save the complete document now; refused while a save is running, so
+		 * a save is never sent before the last one's outcome is known. This is
+		 * the person's explicit save: it renews autosave after a halt, and it is
 		 * "save mine" in a review, writing the whole draft over a change made
 		 * elsewhere or writing a removed row again. It saves a draft with
 		 * nothing unsaved too. A rename holds saves: this returns at once, and

@@ -11,7 +11,8 @@
  * that was sent becomes that text, so the draft settles. A conflict pauses autosave
  * and keeps the input until the person chooses. A conflict whose saved file
  * cannot be read is a failed save, never a removal. A save whose reply was
- * lost is unknown, and a later read of the same bytes does not make it saved.
+ * lost, or whose store threw, is unknown, and a later read of the same bytes
+ * does not make it saved.
  * A failed or unknown save also stops automatic saves: new typing stays on
  * screen, and no timer, settle, rename, or close sends it until the person
  * tries again. That attempt is still checked against the baseline, which
@@ -41,11 +42,16 @@ export type SaveState =
 	| { readonly kind: 'saving' }
 	| { readonly kind: 'failed'; readonly message: string }
 	/**
-	 * A request's reply was lost: a save's bytes may or may not be in the
-	 * file, or a delete may or may not have removed it. No later read answers
-	 * it; only the person's choice does.
+	 * A request's reply was lost, or its storage threw: a save's bytes may or
+	 * may not be in the file, or a delete may or may not have removed it. No
+	 * later read answers it; only the person's choice does. `message` is what
+	 * a save's storage threw, when that is why its outcome is unknown.
 	 */
-	| { readonly kind: 'unknown'; readonly operation: 'save' | 'delete' }
+	| {
+			readonly kind: 'unknown';
+			readonly operation: 'save' | 'delete';
+			readonly message?: string;
+	  }
 	| {
 			readonly kind: 'conflict';
 			readonly message: string;
@@ -73,6 +79,9 @@ type DraftStore = {
 
 /** Typing batches for this long before a save; the folder adds no Git delay. */
 export const TYPING_BATCH_MS = 400;
+
+const messageOf = (cause: unknown) =>
+	cause instanceof Error ? cause.message : String(cause);
 
 export type TextFileEditor = ReturnType<typeof createDraft>;
 
@@ -117,48 +126,56 @@ function createDraft(
 		const captured = buffer;
 		const observed = baseline;
 		saveState = { kind: 'saving' };
+		let result: Awaited<ReturnType<DraftStore['write']>>;
 		try {
-			const result = await store.write(observed, submittedText(captured));
-			if (result.error === null) {
-				baseline = result.data;
-				// The same text unless encoding replaced an unpaired surrogate.
-				// Newer typing is a later generation and stays as typed.
-				if (buffer === captured) buffer = result.data.text;
-				saveState = { kind: 'saved' };
-				onSaved();
-				return;
-			}
-			if (result.error.name === 'Unconfirmed') {
-				// The baseline stays, so a retry is checked against the file as
-				// it was: bytes that did land read as a change to review.
-				saveState = { kind: 'unknown', operation: 'save' };
-				return;
-			}
-			if (result.error.name !== 'Conflict') {
-				saveState = { kind: 'failed', message: result.error.message };
-				return;
-			}
-			const current = await store.read(observed);
-			// Without the saved file there is nothing to review or replace. The
-			// baseline stays, so a retry repeats this save and this read.
-			saveState = current.error
-				? {
-						kind: 'failed',
-						message: `This file changed elsewhere, and the saved version cannot be shown: ${current.error.message}`,
-					}
-				: {
-						kind: 'conflict',
-						message: result.error.message,
-						current: current.data,
-					};
+			result = await store.write(observed, submittedText(captured));
 		} catch (cause) {
 			// A store that throws (its host went away mid-call) must not leave the
-			// draft saving forever. The baseline and the input stay for a retry.
+			// draft saving forever, and cannot say whether the bytes landed: the
+			// save is unknown, as a lost reply is. The baseline and the input
+			// stay for the person's retry.
 			saveState = {
-				kind: 'failed',
-				message: cause instanceof Error ? cause.message : String(cause),
+				kind: 'unknown',
+				operation: 'save',
+				message: messageOf(cause),
 			};
+			return;
 		}
+		if (result.error === null) {
+			baseline = result.data;
+			// The same text unless encoding replaced an unpaired surrogate.
+			// Newer typing is a later generation and stays as typed.
+			if (buffer === captured) buffer = result.data.text;
+			saveState = { kind: 'saved' };
+			onSaved();
+			return;
+		}
+		if (result.error.name === 'Unconfirmed') {
+			// The baseline stays, so a retry is checked against the file as
+			// it was: bytes that did land read as a change to review.
+			saveState = { kind: 'unknown', operation: 'save' };
+			return;
+		}
+		if (result.error.name !== 'Conflict') {
+			saveState = { kind: 'failed', message: result.error.message };
+			return;
+		}
+		// The conflict wrote nothing; a read that throws only hides the file.
+		const current = await store
+			.read(observed)
+			.catch((cause: unknown) => Err({ message: messageOf(cause) }));
+		// Without the saved file there is nothing to review or replace. The
+		// baseline stays, so a retry repeats this save and this read.
+		saveState = current.error
+			? {
+					kind: 'failed',
+					message: `This file changed elsewhere, and the saved version cannot be shown: ${current.error.message}`,
+				}
+			: {
+					kind: 'conflict',
+					message: result.error.message,
+					current: current.data,
+				};
 	}
 
 	/** Run admitted saves to completion. A move drains through here before it runs. */

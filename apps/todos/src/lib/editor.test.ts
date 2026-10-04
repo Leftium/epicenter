@@ -20,6 +20,8 @@
  * - A conflict reads as removed only when the saved file is absent; a saved
  *   file that cannot be read fails the save, keeps the baseline and the
  *   buffer, and a retry repeats the same conditional save
+ * - A save whose store threw, published or not, is unknown with the throw's
+ *   cause; a storage refusal such as `Io` stays a failed save
  * - A failed save, or one whose reply was lost, sends nothing more on its
  *   own: newer input stays on screen, and no timer, settle, or move resends
  *   it. Trying again makes one conditional attempt; bytes an unknown save did
@@ -605,7 +607,8 @@ for (const [name, saved, message] of unreadable)
 /**
  * One saved file behind both draft kinds, counting every write it is sent.
  * `next` answers the next write: `land` publishes it, `lost` publishes it and
- * loses the reply, and `fail` publishes nothing. A write whose baseline is no
+ * loses the reply, `thrown` publishes it and then throws instead of
+ * answering, and `fail` publishes nothing. A write whose baseline is no
  * longer the stored text conflicts, as a conditional save does.
  */
 async function countingStore(kind: 'raw file' | 'row source') {
@@ -613,7 +616,7 @@ async function countingStore(kind: 'raw file' | 'row source') {
 	const store = {
 		stored: 'saved',
 		writes: [] as string[],
-		next: 'land' as 'land' | 'lost' | 'fail',
+		next: 'land' as 'land' | 'lost' | 'thrown' | 'fail',
 	};
 	const capture = async (source: string) => ({
 		path,
@@ -638,6 +641,7 @@ async function countingStore(kind: 'raw file' | 'row source') {
 				cause: new Error('disk full'),
 			});
 		store.stored = source;
+		if (outcome === 'thrown') throw new Error('connection reset');
 		if (outcome === 'lost')
 			return FileError.Unconfirmed({
 				path,
@@ -686,6 +690,55 @@ async function countingStore(kind: 'raw file' | 'row source') {
 }
 
 for (const kind of ['raw file', 'row source'] as const) {
+	test(`a ${kind} save that published and then threw is unknown with its cause, a matching read does not make it saved, and the person's retry is still checked`, async () => {
+		const { store, editor, original, capture } = await countingStore(kind);
+		const unknown = {
+			kind: 'unknown',
+			operation: 'save',
+			message: 'connection reset',
+		} as const;
+
+		store.next = 'thrown';
+		editor.input('mine');
+		await editor.save();
+		expect(editor.saveState).toEqual(unknown);
+		expect(editor.hasProblem).toBe(true);
+		expect(editor.isDiscardable).toBe(true);
+		expect(store.stored).toBe('mine');
+		editor.observe(await capture('mine'));
+		expect(editor.saveState).toEqual(unknown);
+		expect(editor.baseline).toEqual(original);
+
+		editor.input('mine and more');
+		await Bun.sleep(450);
+		await editor.save();
+		expect(await editor.settle()).toBe(false);
+		expect(store.writes).toEqual(['mine']);
+
+		// The landed bytes are not the baseline, so the retry brings them back
+		// for review instead of overwriting them.
+		await editor.retry();
+		expect(store.writes).toEqual(['mine', 'mine and more']);
+		expect(editor.saveState).toMatchObject({
+			kind: 'conflict',
+			current: { text: 'mine' },
+		});
+		await editor.keepMine();
+		expect(store.stored).toBe('mine and more');
+		expect(editor.saveState).toEqual({ kind: 'saved' });
+		editor.dispose();
+	});
+
+	test(`a ${kind} save that storage refused as Io stays a failed save`, async () => {
+		const { store, editor } = await countingStore(kind);
+		store.next = 'fail';
+		editor.input('mine');
+		await editor.save();
+		expect(editor.saveState.kind).toBe('failed');
+		expect(store.stored).toBe('saved');
+		editor.dispose();
+	});
+
 	test(`a ${kind} save whose reply was lost sends nothing more on its own, and a matching read does not make it saved`, async () => {
 		const { store, editor, original, capture } = await countingStore(kind);
 

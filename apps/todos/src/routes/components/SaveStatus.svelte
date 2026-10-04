@@ -31,8 +31,10 @@
 		<Button size="xs" variant="outline" onclick={onDiscard}>{editor.dirty ? 'Discard mine' : 'Close'}</Button>
 	{:else if editor.saveState.kind === 'unknown'}
 		<span class="text-destructive" role="alert">
-			The save was sent, but its reply was lost, so it may or may not be in the file. Your typing stays
-			here and is not sent until you try again.
+			{editor.saveState.message === undefined
+				? 'The save was sent, but its reply was lost, so it may or may not be in the file.'
+				: `The save ended with an error, so it may or may not be in the file: ${editor.saveState.message}.`}
+			Your typing stays here and is not sent until you try again.
 		</span>
 		<Button size="xs" variant="outline" onclick={() => void editor.retry()}>Try again</Button>
 		<Button size="xs" variant="outline" onclick={onDiscard}>Discard mine</Button>

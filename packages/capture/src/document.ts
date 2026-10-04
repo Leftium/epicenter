@@ -254,8 +254,9 @@ export function unparsedCapture(
  * Read a capture's text and thoughts from its source. The source must have
  * both frontmatter lines: Markdown without them is not a capture's body, and
  * no operation adds them. Whether the frontmatter between them parses is the
- * capture table's question (`table.inspect`); a caller that has that answer
- * uses `unparsedCapture` for source that does not.
+ * captures table's question, answered by `inspectRow` with its definition,
+ * which interprets the text it is given and does no folder I/O; a caller that
+ * has that answer uses `unparsedCapture` for source that does not.
  */
 export function parseCapture(source: string): CaptureDocument {
 	const frame = frameRowText(source);

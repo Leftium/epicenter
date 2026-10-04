@@ -14,7 +14,9 @@
  * - A raw file renamed into a todo row reopens as a todo, still selected
  * - Whichever editor is open on a row settles before its table rename or delete
  * - An open todo's controls and a toggle from the list share its one draft,
- *   and its save writes the whole draft over whatever the file holds; a
+ *   and its save writes the whole draft over whatever the file holds. A
+ *   toggle while that editor's save runs is refused before it changes the
+ *   draft, so it never sends a second save that would answer a lost reply. A
  *   toggle with no editor open assigns `done` in the row as it is now and
  *   keeps every other byte, and a write that lands between its read and
  *   its save refuses it
@@ -96,6 +98,7 @@ const UNSETTLED = 'Save or discard the open edits first.';
 const CLOSING = 'Todos is closing, so nothing was changed.';
 const BUSY =
 	'Another change to this file is still in progress. Try again when it finishes.';
+const SAVING = 'A save of this todo is already running.';
 
 /** `adapt` wraps the folder the app sees, so a test can act inside an awaited file operation. */
 async function open(
@@ -728,6 +731,148 @@ test('a toggle is refused while a clean open todo shows a change made elsewhere 
 	expect(await todos.toggle(todos.entries[0]!)).toContain('changed elsewhere');
 	expect(await text(todos, path)).toBe(theirs);
 	expect(editor.state.isDirty).toBe(false);
+});
+
+/**
+ * Todos over a folder whose next save of a todo row publishes its bytes and
+ * loses the reply, as a stream close that throws after publishing. Every
+ * save an opened todo editor sends is counted in `saves`; arming `held`
+ * keeps the next one's reply back until the test resolves it.
+ */
+async function openLosingNextSave() {
+	const storage = createTestStorage();
+	const folder = expectOk(
+		await openFolder({
+			id: `todos-test-${count++}`,
+			definition: todosDefinition,
+			browser: {
+				author: { name: 'Test', email: 'test@example.test' },
+				commitOnEdit: false,
+				...browserStorage(storage),
+			},
+		}),
+	);
+	const table = folder.tables.todos;
+	const edit = table.edit;
+	const during: {
+		saves: number;
+		held?: PromiseWithResolvers<void>;
+		started: PromiseWithResolvers<void>;
+	} = { saves: 0, started: Promise.withResolvers() };
+	// The editor's real save runs; only its reply may be held, once.
+	table.edit = async (...args) => {
+		const opened = await edit(...args);
+		if (opened.error !== null) return opened;
+		const row = opened.data;
+		return Ok({
+			...row,
+			async save() {
+				during.saves++;
+				const saved = row.save();
+				during.started.resolve();
+				const held = during.held;
+				during.held = undefined;
+				if (held !== undefined) await held.promise;
+				return saved;
+			},
+		});
+	};
+	const todos = createTodos(folder);
+	opened.push(todos);
+	await todos.refreshAll();
+	await todos.create('Milk');
+	const { faults } = opfsOf(storage);
+	const loseNext = () => {
+		during.started = Promise.withResolvers();
+		faults.close = (path) => {
+			if (!/\/todos\/[^/]+\.md$/.test(path)) return undefined;
+			faults.close = undefined;
+			return 'lost';
+		};
+	};
+	return { todos, during, loseNext };
+}
+
+for (const timing of ['same-tick', 'delayed'] as const)
+	test(`a list toggle while an open todo's save is running (${timing} lost reply) is refused before it changes the draft: no second save, and the unknown save stays held`, async () => {
+		const { todos, during, loseNext } = await openLosingNextSave();
+		const path = todos.selectedPath!;
+		const editor = todoEditor(todos);
+		const listed = todos.entries[0]!;
+		const savesBefore = during.saves;
+		editor.change({ body: 'mine\n' });
+
+		loseNext();
+		if (timing === 'delayed') during.held = Promise.withResolvers();
+		const held = during.held;
+		const saving = editor.save();
+		let toggled: Promise<string | undefined>;
+		if (timing === 'same-tick') toggled = todos.toggle(listed);
+		else {
+			await during.started.promise;
+			expect(editor.isSaving).toBe(true);
+			toggled = todos.toggle(listed);
+			// Typing while the save runs is accepted, as ever.
+			expect(editor.change({ body: 'more\n' })).toBeUndefined();
+			held?.resolve();
+		}
+
+		expect(await toggled).toBe(SAVING);
+		expect(await saving).toContain('may or may not');
+		// The toggle never reached the draft; the typing did, and stays unsent.
+		expect(editor.state.document.fields.done).toBe(false);
+		expect(editor.state.document.body).toBe(
+			timing === 'delayed' ? 'more\n' : 'mine\n',
+		);
+		expect(editor.halt?.kind).toBe('unknown');
+		expect(during.saves).toBe(savesBefore + 1);
+
+		// No read, pause, or later toggle sends it again or answers the unknown.
+		await todos.refresh();
+		await Bun.sleep(450);
+		expect(during.saves).toBe(savesBefore + 1);
+		expect(editor.halt?.kind).toBe('unknown');
+		// With typing, the unknown save's bytes are a read the draft did not
+		// make, so the draft also waits for review.
+		expect(await todos.toggle(todos.entries[0]!)).toContain(
+			timing === 'delayed' ? 'changed elsewhere' : 'not settled',
+		);
+		expect(during.saves).toBe(savesBefore + 1);
+		expect(editor.state.document.fields.done).toBe(false);
+		expect((await reading(todos, path)).fields.done).toBe(false);
+		expect((await reading(todos, path)).body).toBe('mine\n');
+
+		// The person's explicit save is the choice that ends the halt.
+		expect(await editor.save()).toBeUndefined();
+		expect(editor.halt).toBeUndefined();
+		expect(await todos.toggle(todos.entries[0]!)).toBeUndefined();
+		expect((await reading(todos, path)).fields.done).toBe(true);
+	});
+
+test('a list toggle while an open todo saves is refused even when that save then succeeds, and the next toggle saves the whole draft', async () => {
+	const { todos, during } = await openLosingNextSave();
+	const path = todos.selectedPath!;
+	const editor = todoEditor(todos);
+	editor.change({ body: 'mine\n' });
+	during.started = Promise.withResolvers();
+	const held = Promise.withResolvers<void>();
+	during.held = held;
+	const saving = editor.save();
+	await during.started.promise;
+
+	const toggled = todos.toggle(todos.entries[0]!);
+	held.resolve();
+	expect(await toggled).toBe(SAVING);
+	expect(await saving).toBeUndefined();
+	expect(editor.isIdle).toBe(true);
+	expect(editor.state.document.fields.done).toBe(false);
+
+	await todos.refresh();
+	expect(await todos.toggle(todos.entries[0]!)).toBeUndefined();
+	expect(await reading(todos, path)).toMatchObject({
+		fields: { title: 'Milk', done: true },
+		body: 'mine\n',
+	});
 });
 
 for (const [stem, repaired] of [

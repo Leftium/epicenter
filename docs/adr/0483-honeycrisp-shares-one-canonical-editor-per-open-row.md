@@ -2,6 +2,7 @@
 
 - **Status:** Accepted
 - **Date:** 2026-10-01
+- **Amended by:** [Complete-row input and publication](0504-row-editors-own-complete-input-and-one-publication-queue.md), replacing partial changes, schema-gated opening/saving, row/raw transfers, overwrite/recreation, and the editor review/adoption/disposal protocol. One shared row owner and application close consent remain. The replacement is not implemented yet.
 
 ## Context
 

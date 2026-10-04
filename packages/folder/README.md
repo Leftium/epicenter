@@ -643,6 +643,14 @@ the same moment can still race it.
 
 ### Editing a row
 
+The section below describes the current implementation. The agreed replacement
+is recorded in [Complete-row editing](../../docs/adr/0504-row-editors-own-complete-input-and-one-publication-queue.md)
+and its [execution plan](../../specs/20261005T015758-complete-row-editing.md).
+That target has complete setters, one structured/raw queue, a row eligibility
+union with text/fields/body directly on its valid variant, and tracked Svelte
+getters. Invalid exposes text/error; unreadable exposes only error. The target
+is not available in this implementation.
+
 `tables.<name>.edit(stem, { signal })` opens a retained editor on one row. The
 table supplies the row's path, schema, and declared field order. The editor
 holds a local draft, the baseline it compares the draft against, and the latest

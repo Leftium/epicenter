@@ -2,6 +2,7 @@
 
 - **Status:** Accepted
 - **Date:** 2026-09-30
+- **Amended by:** [Complete-row input and publication](0504-row-editors-own-complete-input-and-one-publication-queue.md), replacing only the retained table editor's contract. Folder composition and ordinary table/file commands remain. The replacement is not implemented yet.
 - **Relates:** [ADR-0450](0450-current-files-own-portable-document-data.md) defines authoritative current files; [ADR-0480](0480-file-tables-own-only-their-markdown-row-files.md) defines single-file rows; [ADR-0430](0430-define-store-declares-data-and-products-compose-resources.md) separates stores from product composition.
 
 ## Context

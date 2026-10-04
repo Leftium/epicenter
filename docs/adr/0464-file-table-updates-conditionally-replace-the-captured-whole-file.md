@@ -159,8 +159,11 @@ pending-ref journal is required solely to complete history.
   not force forwarding: a wrapper that passes `{}` of its own drops its
   caller's guard, and neither the type nor the runtime can tell.
 - KV preparation and publication follow their own contract; this row decision
-  does not change KV commands. The retained canonical editor that `table.edit`
-  opens keeps its unconditional overwrite under ADR-0479.
+  does not change KV commands. The current retained canonical editor still uses
+  unconditional overwrite under ADR-0479. The [complete-row editor replacement](0504-row-editors-own-complete-input-and-one-publication-queue.md)
+  instead publishes through `table.replace(stem, text, {})`, so disappearance
+  before publication is reported rather than recreating the row. That editor
+  replacement is unbuilt; this record's ordinary mutation methods remain.
 
 ## Considered alternatives
 

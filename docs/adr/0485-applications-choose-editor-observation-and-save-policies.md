@@ -2,6 +2,7 @@
 
 - **Status:** Proposed
 - **Date:** 2026-10-02
+- **Unbuilt:** The complete-row editor option and migration of application observation and submission policies to that owner.
 
 ## Context
 
@@ -27,9 +28,26 @@ application saves or how it displays incoming content.
 | Publication condition | Use captured conditional replacement or deliberately overwrite current content. |
 | Conflict presentation | Show an error, retain input for retry, or offer comparison and resolution appropriate to the edit. |
 
-The folder owns neither Svelte bindings nor save timers. A shared draft
-controller is optional application code. A text input does not require the
-same buffer scope or schedule as a complete-document editor.
+The core folder commands own neither form bindings nor application save timers.
+A shared draft controller is optional application code. A text input does not
+require the same buffer scope or schedule as a complete-document editor.
+
+The [complete-row editor direction](0504-row-editors-own-complete-input-and-one-publication-queue.md)
+adds an optional retained publisher: its setters accept complete input and queue
+publication immediately, while a thin Svelte adapter tracks its getters.
+Applications wanting debounce, blur, or explicit submission retain their own
+draft and choose when to call those setters. Submitted structured and raw row
+input then share the same queue. No queue is required for ordinary table/file
+commands, and no continuing form draft is required for immediate row editing.
+
+The live row interface hides on a backing read failure. A continuing application
+draft survives that transition only when owned above the conditional UI. Core
+validation describes accepted input; a newer unsubmitted draft owns its own
+validation and repair. Automatic submission pauses after a save failure, since
+another setter call is renewed publication intent.
+Readable row variants expose text and complete structured values from one
+accepted snapshot. Unreadable exposes only error; draft access during the outage
+comes from application state, not a standalone core text getter.
 
 **Each application exposes the consequences of its chosen policy.**
 

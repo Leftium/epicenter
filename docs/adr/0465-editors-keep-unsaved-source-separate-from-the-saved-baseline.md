@@ -7,6 +7,12 @@
 
 ## Context
 
+This convention concerns applications deliberately retaining a continuing draft
+or conditionally saving raw source. The [complete-row editing direction](0504-row-editors-own-complete-input-and-one-publication-queue.md)
+instead gives the ordinary live row editor one accepted-input owner, eager
+complete replacement, and a row eligibility gate. It does not require a public
+baseline, dirty comparison, or adoption protocol. The replacement is unbuilt.
+
 This record describes the retained whole-source editor convention. It applies
 to applications choosing to preserve drafts and conditionally save complete
 source. It does not require every folder consumer to share one source buffer,
@@ -61,6 +67,13 @@ dirty editor keeps its baseline. Notifications received during a save are
 rechecked after acknowledgement: another writer's C may have followed A.
 
 **The app owns draft retention and disposal before closing folder I/O.**
+For a form draft independent of the live row owner, retain state above the
+conditional that hides the form when the row becomes unreadable. Receipts and
+external observations do not reseed that draft. Validate and repair the newest
+application input locally; older submitted core text is not its repair text.
+Submit complete rows through the shared row queue, and pause automatic timers
+after publication failure rather than implicitly retrying through setters.
+
 Selection changes retain the old draft, settle all remaining input, or obtain
 an explicit discard. Saving an earlier captured generation is insufficient for
 disposal if newer typing exists. Folder teardown must account for remaining

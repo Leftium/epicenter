@@ -10,7 +10,7 @@ Vocab opens straight to Words with no sign-in. Words, notes, stages, chats, and 
 
 ## Learner flow
 
-Add an expression directly, paste one expression per line, or browse the small built-in starter list. Paste and starter lists use the same review: blanks, repeated exact text, and already-saved text are skipped; eligible expressions are selected by default. Confirmed additions have empty notes and the New stage. Words provides search, stage filtering, note editing, and stage controls. A word appears once its file is saved; an addition the folder refused stays in the field or the review for another try.
+Add an expression directly, open Add multiple to paste one expression per line, or browse the small built-in starter list. Closing Add multiple keeps the pasted text and any open review. Paste and starter lists use the same review: blanks, repeated exact text, and already-saved text are skipped; eligible expressions are selected by default. Confirmed additions have empty notes and the New stage. Words provides search, stage filtering, note editing, and stage controls. A word appears once its file is saved; an addition the folder refused stays in the field or the review for another try.
 
 A note is saved on leaving its field, and a stage on pressing it with the note as typed, so neither resets the other. Each word opens the folder's row editor on first use, and a save writes the whole word, note and stage together. While the word read from the file differs from the one the note was typed over, nothing is saved on leaving the field and a stage is refused: the note being typed is kept beside the saved one until the learner chooses "Save mine instead" or "Keep the saved note". A save that failed or got no answer stays shown, unknown when unknown, until the learner tries again or keeps the saved word. A file that no longer reads as a word is repaired as exact text, which replaces only the version shown.
 
@@ -24,7 +24,7 @@ The phrase becomes one entry with an empty note and the New stage. "Saved to you
 
 ### Chat history
 
-Desktop Chat shows history, conversation, and focus words side by side; narrow Chat offers history and focus controls above the conversation. Returning to Words keeps the selected chat's draft and stream, but closes dictation and discards speech not yet inserted. Switching chats disposes the previous loop and its unsent draft. Focus text stays visible if its saved entry is deleted; its stage control then disappears. Earlier message-only chats remain readable, with their first learner question as the title.
+Below 768px, Words and Chat sit in a bottom navigation bar; desktop keeps them in the header. A selected practice action sits above the bar without covering words. Chat returns to the selected conversation without opening History. Desktop Chat shows history, conversation, and focus words side by side; narrow Chat offers separate history and focus controls above the conversation. Returning to Words keeps the selected chat's draft and stream, but closes dictation and discards speech not yet inserted. Switching chats disposes the previous loop and its unsent draft. Focus text stays visible if its saved entry is deleted; its stage control then disappears. Earlier message-only chats remain readable, with their first learner question as the title.
 
 ### Choosing a model
 

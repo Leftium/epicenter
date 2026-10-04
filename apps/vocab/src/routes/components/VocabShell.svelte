@@ -5,6 +5,8 @@
 	import { Button } from '@epicenter/ui/button';
 	import { LightSwitch } from '@epicenter/ui/light-switch';
 	import { toast } from '@epicenter/ui/sonner';
+	import BookOpenIcon from '@lucide/svelte/icons/book-open';
+	import MessageCircleIcon from '@lucide/svelte/icons/message-circle';
 	import { onDestroy } from 'svelte';
 	import { beforeNavigate } from '$app/navigation';
 	import { page } from '$app/state';
@@ -33,6 +35,10 @@
 	const selections = createBrowserInferenceSelections('vocab');
 	const accountChanged = $derived(auth.state.account?.principalId !== account?.principalId || auth.state.account?.authorityId !== account?.authorityId);
 
+	const VIEWS = [
+		{ id: 'words', label: 'Words', icon: BookOpenIcon },
+		{ id: 'chat', label: 'Chat', icon: MessageCircleIcon },
+	] as const;
 	let selectedChatId = $state<string | null>(null);
 	let view = $state<'words' | 'chat'>('words');
 	let historyOpen = $state(false);
@@ -103,10 +109,35 @@
 <svelte:window onbeforeunload={(event) => { if (entries.unsettled > 0) event.preventDefault(); }} />
 
 <div class="flex h-dvh min-w-0 flex-col">
-	<!-- Wraps on a narrow screen: the controls move under the views, right-aligned, and nothing is clipped. -->
-	<header class="flex flex-wrap items-center justify-between gap-x-2 gap-y-1 border-b px-4 py-2">
-		<div class="flex items-center gap-2"><h1 class="text-lg font-semibold">Vocab</h1><Button size="sm" variant={view === 'words' ? 'default' : 'ghost'} onclick={() => view = 'words'}>Words</Button><Button size="sm" variant={view === 'chat' ? 'default' : 'ghost'} disabled={chats.chats.length === 0} onclick={() => { view = 'chat'; historyOpen = true; }}>Chat</Button></div>
-		<div class="ml-auto flex items-center gap-1"><LightSwitch variant="ghost" /><AccountMenu /></div>
+	<!--
+		One nav at every width, moved by CSS alone. Below md the header is
+		`contents`, so the brand row and the nav are rows of this column and the
+		nav is ordered last: a bottom bar in the page flow. From md up the brand
+		row is `contents` instead, so the header is one row: brand, nav, then the
+		theme and account controls.
+	-->
+	<header class="contents md:flex md:items-center md:gap-2 md:border-b md:px-4 md:py-2">
+		<div class="flex items-center justify-between gap-2 border-b px-4 py-2 md:contents">
+			<h1 class="text-lg font-semibold">Vocab</h1>
+			<div class="flex items-center gap-1 md:order-last md:ml-auto"><LightSwitch variant="ghost" /><AccountMenu /></div>
+		</div>
+		<!--
+			Chat resumes the open chat; with none open, the chat view shows the
+			history to pick from. The bottom inset is zero unless the page is laid
+			out under the home indicator.
+		-->
+		<nav class="flex gap-1 max-md:order-last max-md:border-t max-md:border-sidebar-border max-md:bg-sidebar max-md:px-1 max-md:pt-1 max-md:pb-[calc(--spacing(1)+env(safe-area-inset-bottom))]" aria-label="Views">
+			{#each VIEWS as item (item.id)}
+				<Button
+					size="sm"
+					variant="ghost"
+					class="aria-[current=page]:bg-sidebar-accent aria-[current=page]:text-sidebar-accent-foreground max-md:h-auto max-md:flex-1 max-md:flex-col max-md:gap-0.5 max-md:py-1.5 max-md:text-xs"
+					aria-current={view === item.id ? 'page' : undefined}
+					disabled={item.id === 'chat' && chats.chats.length === 0}
+					onclick={() => view = item.id}
+				><item.icon class="size-4 max-md:size-5" />{item.label}</Button>
+			{/each}
+		</nav>
 	</header>
 	{#if loadError}
 		<div role="alert" class="flex items-center justify-between gap-2 border-b px-3 py-2 text-xs text-destructive">

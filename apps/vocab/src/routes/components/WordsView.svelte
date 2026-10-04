@@ -5,6 +5,7 @@
 	import { Label } from '@epicenter/ui/label';
 	import { toast } from '@epicenter/ui/sonner';
 	import { Textarea } from '@epicenter/ui/textarea';
+	import ChevronDownIcon from '@lucide/svelte/icons/chevron-down';
 	import { type Entry, type FocusItem, STAGE_LABELS, STAGES, type Stage } from '$lib/data.js';
 	import type { EntriesState } from '$lib/entries.svelte.js';
 	import { reviewImport, STARTER_LIST } from '$lib/import.js';
@@ -20,6 +21,7 @@
 	let stage = $state<'all' | Stage>('all');
 	let single = $state('');
 	let adding = $state(false);
+	let pasteOpen = $state(false);
 	let paste = $state('');
 	let review = $state<ReturnType<typeof reviewImport> | null>(null);
 	let selected = $state<string[]>([]);
@@ -70,52 +72,56 @@
 	}
 </script>
 
-<!-- The bottom padding keeps the last word clear of the floating start button. -->
-<div class="mx-auto flex h-full w-full max-w-5xl flex-col gap-6 overflow-y-auto px-4 pt-6 pb-24 md:px-8">
-	<div>
-		<h2 class="text-2xl font-semibold">Words</h2>
-		<p class="text-sm text-muted-foreground">Save expressions, write your own notes, and choose up to three for a tutor-led chat. Everything is saved in this browser; no sign-in is needed.</p>
-	</div>
-	<div class="flex flex-wrap items-end gap-2">
-		<form class="flex flex-1 gap-2" onsubmit={(event) => { event.preventDefault(); void addSingle(); }}>
-			<Input aria-label="New expression" placeholder="Add an expression" bind:value={single} />
-			<Button type="submit" disabled={adding}>Add</Button>
-		</form>
-		<Button variant="outline" onclick={() => openReview(STARTER_LIST)}>Browse starter list</Button>
-	</div>
-	<div class="space-y-2">
-		<label class="text-sm font-medium" for="paste-expressions">Paste expressions, one per line</label>
-		<Textarea id="paste-expressions" rows={3} bind:value={paste} placeholder="One expression per line" />
-		<Button variant="outline" disabled={!paste.trim()} onclick={() => openReview(paste)}>Review paste</Button>
-	</div>
-	{#if review}
-		<section class="space-y-3 rounded-lg border p-4" aria-label="Import review">
-			<h3 class="font-semibold">Review expressions</h3>
-			<p class="text-sm text-muted-foreground">{review.eligible.length} available; {review.repeated} repeated; {review.alreadySaved} already saved.</p>
-			{#each review.eligible as text (text)}
-				<Label class="min-h-11 leading-normal font-normal select-text"><Checkbox checked={selected.includes(text)} onCheckedChange={(checked) => selected = checked ? [...selected, text] : selected.filter((item) => item !== text)} />{text}</Label>
-			{/each}
-			<div class="flex gap-2"><Button disabled={!selected.length || adding} onclick={confirmImport}>{adding ? 'Saving…' : 'Add selected'}</Button><Button variant="ghost" onclick={() => review = null}>Cancel</Button></div>
-		</section>
-	{/if}
-	<div class="flex flex-wrap items-center gap-2">
-		<Input aria-label="Search words" placeholder="Search words" class="max-w-xs" bind:value={search} />
-		{#each ['all', ...STAGES] as const as option}
-			<Button size="sm" variant={stage === option ? 'default' : 'outline'} onclick={() => stage = option}>{option === 'all' ? 'All' : STAGE_LABELS[option]}</Button>
-		{/each}
-	</div>
-	{#if entries.entries.length === 0}
-		<p class="py-8 text-center text-muted-foreground">Your words will appear here. Add one above or browse the starter list.</p>
-	{:else if shown.length === 0}
-		<p class="py-8 text-center text-muted-foreground">No expressions match this search and stage.</p>
-	{:else}
-		<div class="space-y-3">
-			{#each shown as entry (entry.id)}
-				<EntryCard {entry} {entries} chosen={focusIds.includes(entry.id)} canChoose={focusIds.includes(entry.id) || selectedFocus.length < 3} onToggle={() => toggleFocus(entry.id)} />
+<!-- The start action is the last row of this column, so it never covers a word or the page's bottom bar. -->
+<div class="flex h-full flex-col">
+	<div class="mx-auto flex min-h-0 w-full max-w-5xl flex-1 flex-col gap-6 overflow-y-auto px-4 py-6 md:px-8">
+		<div>
+			<h2 class="text-2xl font-semibold">Words</h2>
+			<p class="text-sm text-muted-foreground">Save expressions, write your own notes, and choose up to three for a tutor-led chat. Everything is saved in this browser; no sign-in is needed.</p>
+		</div>
+		<div class="flex flex-wrap items-end gap-2">
+			<form class="flex flex-1 gap-2" onsubmit={(event) => { event.preventDefault(); void addSingle(); }}>
+				<Input aria-label="New expression" placeholder="Add an expression" bind:value={single} />
+				<Button type="submit" disabled={adding}>Add</Button>
+			</form>
+			<Button variant="outline" aria-expanded={pasteOpen} aria-controls="paste-expressions-panel" onclick={() => pasteOpen = !pasteOpen}>Add multiple<ChevronDownIcon class="transition-transform group-aria-expanded/button:rotate-180" /></Button>
+			<Button variant="outline" onclick={() => openReview(STARTER_LIST)}>Browse starter list</Button>
+		</div>
+		<!-- Hidden, not removed: closing it keeps the pasted text, and an open review stays below either way. -->
+		<div id="paste-expressions-panel" class="space-y-2" hidden={!pasteOpen}>
+			<label class="text-sm font-medium" for="paste-expressions">Paste expressions, one per line</label>
+			<Textarea id="paste-expressions" rows={3} bind:value={paste} placeholder="One expression per line" />
+			<Button variant="outline" disabled={!paste.trim()} onclick={() => openReview(paste)}>Review paste</Button>
+		</div>
+		{#if review}
+			<section class="space-y-3 rounded-lg border p-4" aria-label="Import review">
+				<h3 class="font-semibold">Review expressions</h3>
+				<p class="text-sm text-muted-foreground">{review.eligible.length} available; {review.repeated} repeated; {review.alreadySaved} already saved.</p>
+				{#each review.eligible as text (text)}
+					<Label class="min-h-11 leading-normal font-normal select-text"><Checkbox checked={selected.includes(text)} onCheckedChange={(checked) => selected = checked ? [...selected, text] : selected.filter((item) => item !== text)} />{text}</Label>
+				{/each}
+				<div class="flex gap-2"><Button disabled={!selected.length || adding} onclick={confirmImport}>{adding ? 'Saving…' : 'Add selected'}</Button><Button variant="ghost" onclick={() => review = null}>Cancel</Button></div>
+			</section>
+		{/if}
+		<div class="flex flex-wrap items-center gap-2">
+			<Input aria-label="Search words" placeholder="Search words" class="max-w-xs" bind:value={search} />
+			{#each ['all', ...STAGES] as const as option}
+				<Button size="sm" variant={stage === option ? 'default' : 'outline'} onclick={() => stage = option}>{option === 'all' ? 'All' : STAGE_LABELS[option]}</Button>
 			{/each}
 		</div>
+		{#if entries.entries.length === 0}
+			<p class="py-8 text-center text-muted-foreground">Your words will appear here. Add one above or browse the starter list.</p>
+		{:else if shown.length === 0}
+			<p class="py-8 text-center text-muted-foreground">No expressions match this search and stage.</p>
+		{:else}
+			<div class="space-y-3">
+				{#each shown as entry (entry.id)}
+					<EntryCard {entry} {entries} chosen={focusIds.includes(entry.id)} canChoose={focusIds.includes(entry.id) || selectedFocus.length < 3} onToggle={() => toggleFocus(entry.id)} />
+				{/each}
+			</div>
+		{/if}
+	</div>
+	{#if selectedFocus.length}
+		<div class="flex justify-center border-t p-2"><Button disabled={starting} onclick={start}>{starting ? 'Saving the chat…' : `Start chat with ${selectedFocus.length} ${selectedFocus.length === 1 ? 'word' : 'words'}`}</Button></div>
 	{/if}
 </div>
-{#if selectedFocus.length}
-	<div class="fixed bottom-4 left-1/2 z-20 -translate-x-1/2 rounded-lg border bg-background p-2 shadow-lg"><Button disabled={starting} onclick={start}>{starting ? 'Saving the chat…' : `Start chat with ${selectedFocus.length} ${selectedFocus.length === 1 ? 'word' : 'words'}`}</Button></div>
-{/if}

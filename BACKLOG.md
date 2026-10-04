@@ -36,28 +36,23 @@ starting: a prior session may already have completed it.
 
 ## Apply repairability to file-authoritative workflows
 
-- Desired result: Best-effort edits preserve information, expose repairable
-  inconsistencies, and allow unaffected work. A human or coding agent can
-  inspect current files and correct them without reconstructing erased intent.
-- Grounding: The 2026-10-04 discussion selected repairability as the design
-  criterion. [The decision draft](docs/adr/0503-file-authoritative-workflows-preserve-information-and-tolerate-repairable-states.md)
-  records its boundaries. This item proposes implementation slices; it does
-  not establish changed runtime behavior.
-- First slice: In Honeycrisp, display notes with missing folders and provide
-  reassignment. Verify visibility after reopen and a later repair. Then
-  simplify folder deletion so failed reassignments can leave visible dangling
-  references; preserve draft retention and per-file overwrite protections.
+- Desired result: Permit visible, repairable inconsistencies while protecting
+  source and unsaved input from accidental loss. [The decision draft](docs/adr/0503-file-authoritative-workflows-preserve-information-and-tolerate-repairable-states.md)
+  records the criterion selected on 2026-10-04.
+- First slice: Verify Honeycrisp's existing missing-folder path: All Notes
+  includes the note, the editor shows the missing ID, and reassignment repairs
+  it after reopening. Compare removing only the folder file, preserving note
+  references, with the current reassignment to `null`. Prefer the former for
+  evaluation: it writes no notes and permits restoration of membership. Settle
+  the product behavior, including reattachment when an ID is reused, and update
+  the deletion dialog before changing the operation.
 - Next slice: Review Todos and Honeycrisp refusals for unsettled operations.
-  For each, name the information it protects or the repairable state it merely
-  prevents. Remove the latter only with diagnostics and a concrete repair path.
-- API decision: Review structured row and KV write validation separately.
-  Compare admitting serializable nonconforming values with retaining typed
-  convenience methods and a raw-text path. Settle the caller contract before
-  changing it; retain refusals for lossy serialization and unsafe patching.
-- Evidence: Exercise failure after an earlier edit lands, malformed source,
-  missing references, and concurrent edits. Check retained source and drafts,
-  visible diagnostics, unaffected operations, and successful later repair.
-  Do not infer retained history from an automatic commit request.
+  Keep those that protect drafts or newer file bytes. Remove checks that only
+  prevent inconsistencies once their visibility and repair path are verified.
+- Evidence: Exercise interrupted workflows, malformed source, missing folders,
+  and concurrent edits. Verify accessible source, retained drafts, unaffected
+  work, and successful later repair. Retain current structured-write validation;
+  revisit it only for a concrete caller that needs a different contract.
 
 ## Build Whispering's recordings table with an optional detail pane
 

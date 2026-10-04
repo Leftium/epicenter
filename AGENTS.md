@@ -143,14 +143,12 @@ Load `writing-voice` for substantial prose or explicit tone/rewrite work.
 
 Be direct about flawed assumptions, weak designs, and regressions. Do not agree just to be agreeable.
 
-For file-authoritative data, judge failures by whether a human or coding agent
-has enough information to understand and repair them. Prefer best-effort edits
-with visible diagnostics over machinery that prevents repairable intermediate
-states. Preserve source, unrelated content, and unsaved input; retain protections
-against information loss. Before adding a refusal, transaction, or recovery
-mechanism, name the information it protects and the concrete repair path without
-it. See [the repairability decision](docs/adr/0503-file-authoritative-workflows-preserve-information-and-tolerate-repairable-states.md)
-for the rationale and proposed applications.
+For file-authoritative data, prefer best-effort edits when a human or coding
+agent can inspect and repair the resulting state. Keep problems visible and
+source accessible; protect unrelated content and unsaved input from accidental
+loss. Before adding a refusal, transaction, or recovery mechanism, name the
+information it protects and the repair path without it. Remove an existing check
+only once that visibility and repair path are established. See [the repairability decision](docs/adr/0503-file-authoritative-workflows-preserve-information-and-tolerate-repairable-states.md).
 
 ## Agent collaboration
 

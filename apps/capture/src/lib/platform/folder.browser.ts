@@ -13,7 +13,7 @@ import { CAPTURE_FOLDER_ID, type OpenCaptureHost } from './types.js';
 
 /** Called from a mounted component; importing this module opens nothing. */
 export const openCaptureHost: OpenCaptureHost = async () => {
-	const opened = await openFolder({
+	const { data: folder, error } = await openFolder({
 		id: CAPTURE_FOLDER_ID,
 		definition: captureDefinition,
 		// History stays in this browser: a local author, a commit after each
@@ -23,9 +23,7 @@ export const openCaptureHost: OpenCaptureHost = async () => {
 			commitOnEdit: true,
 		},
 	});
-	if (opened.error)
-		throw new Error(opened.error.message, { cause: opened.error });
-	const folder = opened.data;
+	if (error) throw new Error(error.message, { cause: error });
 	return {
 		folder,
 		location: folder.location,

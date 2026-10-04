@@ -18,10 +18,10 @@ export const openTodosFolder: OpenTodosFolder = async () => {
 	});
 	if (opened.error) return opened;
 	const folder = opened.data;
-	const directory = await folder.files.mkdir('todos');
-	if (directory.error) {
+	const { error: directoryError } = await folder.files.mkdir('todos');
+	if (directoryError) {
 		await folder.close();
-		return OpenFolderError.Unavailable({ cause: directory.error });
+		return OpenFolderError.Unavailable({ cause: directoryError });
 	}
 	return opened;
 };

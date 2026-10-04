@@ -29,13 +29,11 @@ const tauriPort: ShellPort = {
 
 /** Called from a mounted component; importing this module opens nothing. */
 export const openCaptureHost: OpenCaptureHost = async () => {
-	const opened = await openFolder({
+	const { data: folder, error } = await openFolder({
 		id: CAPTURE_FOLDER_ID,
 		definition: captureDefinition,
 	});
-	if (opened.error)
-		throw new Error(opened.error.message, { cause: opened.error });
-	const folder = opened.data;
+	if (error) throw new Error(error.message, { cause: error });
 
 	let lifetime: ShellLifetime | undefined;
 	try {

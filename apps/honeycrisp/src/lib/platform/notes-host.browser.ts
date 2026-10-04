@@ -13,13 +13,12 @@ import {
 } from './types.js';
 
 async function acquire(): Promise<NotesHost> {
-	const opened = await openFolder({
+	const { data: folder, error } = await openFolder({
 		id: HONEYCRISP_FOLDER_ID,
 		definition: honeycrispDefinition,
 		browser: { author: { name: 'Honeycrisp', email: 'honeycrisp@localhost' } },
 	});
-	if (opened.error) throw new Error(opened.error.message);
-	const folder = opened.data;
+	if (error) throw new Error(error.message);
 	const terminal = folder.terminal();
 	return {
 		folder,

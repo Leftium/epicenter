@@ -33,21 +33,20 @@ export async function setUpFolder(
 	/** The declared table names; each is a directory of the folder. */
 	tables: readonly string[],
 ): Promise<void> {
-	const listing = await files.list();
-	if (listing.error) throw refused(listing.error);
+	const { data: listing, error: listError } = await files.list();
+	if (listError) throw refused(listError);
 	for (const table of tables) {
-		if (listing.data.directories.includes(table)) continue;
-		const made = await files.mkdir(table);
-		if (made.error) throw refused(made.error);
+		if (listing.directories.includes(table)) continue;
+		const { error: mkdirError } = await files.mkdir(table);
+		if (mkdirError) throw refused(mkdirError);
 	}
 
-	const current = await files.read(KV_PATH);
-	if (current.error === null) return;
+	const { error: readError } = await files.read(KV_PATH);
+	if (readError === null) return;
 	// Only a confirmed absence is a missing file. Any other failure to read
 	// might be a file that is there.
-	if (current.error.name !== 'NotFound') throw refused(current.error);
-	const created = await files.create(KV_PATH, '{}\n');
+	if (readError.name !== 'NotFound') throw refused(readError);
+	const { error: createError } = await files.create(KV_PATH, '{}\n');
 	// Another writer created it first: theirs stands.
-	if (created.error && created.error.name !== 'Exists')
-		throw refused(created.error);
+	if (createError && createError.name !== 'Exists') throw refused(createError);
 }

@@ -64,7 +64,7 @@ export function createPassRunner<TInput, T>({
 	let waiting = 0;
 	let fenced = false;
 	/** Settles when every pass and waiter so far is done. */
-	let tail = Promise.resolve();
+	let tail: Promise<unknown> = Promise.resolve();
 	/** The shared pass that has not started yet, if `follow` made one. */
 	let follower: Promise<T> | undefined;
 
@@ -90,7 +90,7 @@ export function createPassRunner<TInput, T>({
 			if (fenced) return closed();
 			return admit() ?? pass(input);
 		});
-		tail = result.then(() => {});
+		tail = result;
 		return result;
 	}
 

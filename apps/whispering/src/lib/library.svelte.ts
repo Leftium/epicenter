@@ -474,7 +474,7 @@ export function createLibrary(workspace: Workspace) {
 	const writesAt = (path: string) => () =>
 		!fenced.has(path) && !unresolvedMoves.has(path);
 	/** Each caller owns its result; this promise joins accepted file commands. */
-	let fileChanges: Promise<void> = Promise.resolve();
+	let fileChanges: Promise<unknown> = Promise.resolve();
 	function submitFileChange<TArgs extends unknown[]>(
 		work: (...args: TArgs) => Promise<string | undefined>,
 	) {
@@ -483,7 +483,7 @@ export function createLibrary(workspace: Workspace) {
 			if (!admitting) return Promise.resolve(LEAVING);
 			const submitted = structuredClone(args);
 			const running = work(...submitted);
-			fileChanges = Promise.allSettled([fileChanges, running]).then(() => {});
+			fileChanges = Promise.allSettled([fileChanges, running]);
 			return running;
 		};
 	}

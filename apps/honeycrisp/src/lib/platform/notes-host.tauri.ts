@@ -23,12 +23,11 @@ import {
 } from './types.js';
 
 async function acquire(): Promise<NotesHost> {
-	const opened = await openFolder({
+	const { data: folder, error } = await openFolder({
 		id: HONEYCRISP_FOLDER_ID,
 		definition: honeycrispDefinition,
 	});
-	if (opened.error) throw new Error(opened.error.message);
-	const folder = opened.data;
+	if (error) throw new Error(error.message);
 	try {
 		// The owner holds the directory now. An existing folder is left as it is.
 		await setUpFolder(folder.files, Object.keys(honeycrispDefinition.tables));

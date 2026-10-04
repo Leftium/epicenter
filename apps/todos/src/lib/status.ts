@@ -349,11 +349,12 @@ export function pushLine(git: GitSnapshot): StatusLine {
 }
 
 /** One pull attempt, as the last-pull line and the Pull toast report it. */
-export function pullOutcomeLine(
-	result: Result<PullOutcome, PullError | GitError>,
-): StatusLine {
-	if (result.error)
-		switch (result.error.name) {
+export function pullOutcomeLine({
+	data: outcome,
+	error,
+}: Result<PullOutcome, PullError | GitError>): StatusLine {
+	if (error)
+		switch (error.name) {
 			case 'Diverged':
 				return {
 					label: 'Pull stopped',
@@ -370,15 +371,15 @@ export function pullOutcomeLine(
 			default:
 				return {
 					label: 'Pull stopped',
-					detail: result.error.message,
+					detail: error.message,
 					tone: 'error',
 				};
 		}
-	switch (result.data.status) {
+	switch (outcome.status) {
 		case 'fastForwarded':
 			return {
-				label: `Pulled ${result.data.changedPaths.length} ${result.data.changedPaths.length === 1 ? 'file' : 'files'}`,
-				detail: `${short(result.data.from)} → ${short(result.data.to)}`,
+				label: `Pulled ${outcome.changedPaths.length} ${outcome.changedPaths.length === 1 ? 'file' : 'files'}`,
+				detail: `${short(outcome.from)} → ${short(outcome.to)}`,
 				tone: 'good',
 			};
 		case 'ahead':
@@ -427,11 +428,11 @@ function conflictText(conflict: MergeConflict): string {
 }
 
 /** One merge attempt, as the last-merge line and the Merge toast report it. */
-export function mergeOutcomeLine(
-	result: Result<MergeOutcome, MergeError | PullError | GitError>,
-): StatusLine {
-	if (result.error) {
-		const error = result.error;
+export function mergeOutcomeLine({
+	data: outcome,
+	error,
+}: Result<MergeOutcome, MergeError | PullError | GitError>): StatusLine {
+	if (error) {
 		switch (error.name) {
 			case 'Conflicted': {
 				const lines = error.conflicts.slice(0, 8).map(conflictText);
@@ -471,13 +472,13 @@ export function mergeOutcomeLine(
 				};
 		}
 	}
-	if (result.data.status === 'merged')
+	if (outcome.status === 'merged')
 		return {
-			label: `Merged ${result.data.changedPaths.length} ${result.data.changedPaths.length === 1 ? 'file' : 'files'}`,
-			detail: `${short(result.data.from)} + ${short(result.data.fetched)} → ${short(result.data.to)}\nNot pushed yet.`,
+			label: `Merged ${outcome.changedPaths.length} ${outcome.changedPaths.length === 1 ? 'file' : 'files'}`,
+			detail: `${short(outcome.from)} + ${short(outcome.fetched)} → ${short(outcome.to)}\nNot pushed yet.`,
 			tone: 'good',
 		};
-	return pullOutcomeLine(Ok(result.data));
+	return pullOutcomeLine(Ok(outcome));
 }
 
 /** The last explicit merge this session, or undefined before the first one. */
@@ -542,9 +543,11 @@ export function recoveryLine(attempt: RecoveryAttempt): StatusLine {
 		case 'ran':
 			break;
 	}
-	const { result } = attempt;
-	if (result.error === null)
-		switch (result.data.status) {
+	const {
+		result: { data: outcome, error },
+	} = attempt;
+	if (error === null)
+		switch (outcome.status) {
 			case 'none':
 				return { label: 'No incoming update was pending', tone: 'neutral' };
 			case 'admissionCleared':
@@ -563,12 +566,11 @@ export function recoveryLine(attempt: RecoveryAttempt): StatusLine {
 				};
 			case 'completed':
 				return {
-					label: `Incoming update finished: ${result.data.changedPaths.length} ${result.data.changedPaths.length === 1 ? 'file' : 'files'}`,
-					detail: result.data.changedPaths.join('\n') || undefined,
+					label: `Incoming update finished: ${outcome.changedPaths.length} ${outcome.changedPaths.length === 1 ? 'file' : 'files'}`,
+					detail: outcome.changedPaths.join('\n') || undefined,
 					tone: 'good',
 				};
 		}
-	const error = result.error;
 	switch (error.name) {
 		case 'RecoveryRefused':
 			return {

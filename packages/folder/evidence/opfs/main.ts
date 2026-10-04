@@ -519,7 +519,13 @@ async function twoContexts(id: string) {
 							round % 2 === 0 ? second : first,
 						),
 					);
-				const { seen = [], failures = 0 } = await reading;
+				const reply = await reading;
+				assert(reply.ok, `the peer reader failed: ${reply.error}`);
+				const { seen = [], failures = 0 } = reply;
+				assert(
+					seen.length > 0,
+					`the peer reader completed no successful read: ${failures} failed reads`,
+				);
 				assert(
 					seen.every((hash) => hashes.has(hash)),
 					`a read saw other bytes: ${seen}`,

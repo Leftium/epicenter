@@ -49,7 +49,14 @@ export function withPublication({
 				landed(changes.flatMap(stepPaths));
 			} else if (applyError?.name === 'Partial') {
 				history.noteEdit();
-				landed(applyError.applied.flatMap(stepPaths));
+				// An uncertain failed step may have landed too. A hint asks for a
+				// reread; it does not confirm publication or request a commit.
+				landed([
+					...applyError.applied.flatMap(stepPaths),
+					...(applyError.error.name === 'Unconfirmed'
+						? stepPaths(applyError.failed)
+						: []),
+				]);
 			} else if (applyError?.name === 'Unconfirmed') {
 				// The paths may have changed. Say so, but request no commit for an
 				// outcome nobody knows.

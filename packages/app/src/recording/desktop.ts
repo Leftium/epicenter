@@ -150,29 +150,30 @@ export function createDesktopRecording(
 						return RecorderError.NoActiveRecording();
 					resolving = true;
 					try {
-						const result = await call<RecorderStopResult>('stop_recording', {
-							sessionId,
-							audioBlobId: recording.id,
-						});
-						if (result.error) {
+						const { data: stopped, error: stopError } =
+							await call<RecorderStopResult>('stop_recording', {
+								sessionId,
+								audioBlobId: recording.id,
+							});
+						if (stopError !== null) {
 							if (
-								result.error.name === 'CaptureLost' ||
-								result.error.name === 'NoActiveRecording'
+								stopError.name === 'CaptureLost' ||
+								stopError.name === 'NoActiveRecording'
 							) {
 								held = null;
 								release();
 							}
-							return result;
+							return Err(stopError);
 						}
 						if (
-							!parseBlobId(result.data.blobId) ||
-							!result.data.blobId.endsWith('.wav') ||
-							result.data.blobId !== recording.id
+							!parseBlobId(stopped.blobId) ||
+							!stopped.blobId.endsWith('.wav') ||
+							stopped.blobId !== recording.id
 						)
 							return RecorderError.RecorderFailed({
 								cause: 'The host returned an invalid saved blob.',
 							});
-						finished = result.data;
+						finished = stopped;
 						held = null;
 						release();
 						return Ok(finished);
@@ -241,15 +242,13 @@ export function createDesktopRecording(
 					},
 					async () => {
 						if (closed || !active || held !== recording) return;
-						const result = await call<NativeRecording | null>(
-							'current_recording',
-							{ sessionId },
-						);
-						if (
-							result.data?.audioBlobId === recording.id &&
-							result.data.endedReason
-						)
-							announce(result.data.endedReason);
+						const { data: current, error: currentError } =
+							await call<NativeRecording | null>('current_recording', {
+								sessionId,
+							});
+						if (currentError !== null) return;
+						if (current?.audioBlobId === recording.id && current.endedReason)
+							announce(current.endedReason);
 					},
 				);
 				subscriptions.add(stop);
@@ -273,10 +272,13 @@ export function createDesktopRecording(
 			closing = (async () => {
 				while (operations.size) await Promise.allSettled(operations);
 				if (registrationAttempted) {
-					const result = await call<void>('close_recording_session', {
-						sessionId,
-					});
-					if (result.error) cleanupErrors.push(result.error);
+					const { error: closeError } = await call<void>(
+						'close_recording_session',
+						{
+							sessionId,
+						},
+					);
+					if (closeError !== null) cleanupErrors.push(closeError);
 				}
 				for (const pending of listeners) {
 					try {
@@ -298,25 +300,26 @@ export function createDesktopRecording(
 					if (!registered) return Ok(null);
 					const request = pendingRequest;
 					const observed = held;
-					const result = await call<NativeRecording | null>(
-						request ? 'resolve_recording_start' : 'current_recording',
-						request
-							? { sessionId, requestId: request.requestId }
-							: { sessionId },
-					);
+					const { data: current, error: currentError } =
+						await call<NativeRecording | null>(
+							request ? 'resolve_recording_start' : 'current_recording',
+							request
+								? { sessionId, requestId: request.requestId }
+								: { sessionId },
+						);
 					if (pendingRequest !== request || held !== observed) return Ok(held);
-					if (result.error)
+					if (currentError !== null)
 						return request
-							? RecorderError.StartUnconfirmed({ cause: result.error })
-							: result;
+							? RecorderError.StartUnconfirmed({ cause: currentError })
+							: Err(currentError);
 					if (request) {
-						if (result.data) held = wrap(result.data);
+						if (current) held = wrap(current);
 						request.resolved = held;
 						pendingRequest = undefined;
 					}
-					if (result.data && result.data.audioBlobId === held?.id)
-						reconcileHeld?.(result.data.endedReason);
-					if (result.data === null && uncertainCancel) {
+					if (current && current.audioBlobId === held?.id)
+						reconcileHeld?.(current.endedReason);
+					if (current === null && uncertainCancel) {
 						held = null;
 						releaseHeld?.();
 						uncertainCancel = false;
@@ -326,11 +329,13 @@ export function createDesktopRecording(
 			},
 			enumerateDevices() {
 				return run(async () => {
-					const result = await call<string[]>('enumerate_recording_devices');
-					return result.error
-						? Err(result.error)
+					const { data: devices, error } = await call<string[]>(
+						'enumerate_recording_devices',
+					);
+					return error !== null
+						? Err(error)
 						: Ok(
-								result.data.map((name) => ({
+								devices.map((name) => ({
 									id: asDeviceIdentifier(name),
 									label: name,
 								})),
@@ -343,15 +348,14 @@ export function createDesktopRecording(
 					starting = true;
 					try {
 						if (!registered) {
-							const generation = await call<number>(
-								'recording_document_generation',
-							);
-							if (generation.error) return generation;
+							const { data: generation, error: generationError } =
+								await call<number>('recording_document_generation');
+							if (generationError !== null) return Err(generationError);
 							if (closed) return RecorderError.NoActiveRecording();
 							registrationAttempted = true;
 							const result = await call<void>('register_recording_session', {
 								appId,
-								generation: generation.data,
+								generation,
 								sessionId,
 							});
 							if (result.error) return result;
@@ -359,14 +363,10 @@ export function createDesktopRecording(
 						}
 						if (closed) return RecorderError.NoActiveRecording();
 						if (!pendingRequest) {
-							const permission = await call<string>(
-								'request_microphone_permission',
-							);
-							if (permission.error) return permission;
-							if (
-								permission.data !== 'granted' &&
-								permission.data !== 'unknown'
-							)
+							const { data: permission, error: permissionError } =
+								await call<string>('request_microphone_permission');
+							if (permissionError !== null) return Err(permissionError);
+							if (permission !== 'granted' && permission !== 'unknown')
 								return RecorderError.MicrophonePermissionDenied();
 							if (closed) return RecorderError.NoActiveRecording();
 							pendingRequest = {

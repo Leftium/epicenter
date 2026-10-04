@@ -289,10 +289,10 @@ export function createSyncHub({
 
 		const { data: frame, error } = decodeFrame(message);
 		if (error !== null) return;
-		const admitted = admission();
-		if (admitted.error !== null) {
+		const { error: admissionError } = admission();
+		if (admissionError !== null) {
 			if (frame.kind === 'push')
-				refuse(connection, frame.submission, admitted.error.message);
+				refuse(connection, frame.submission, admissionError.message);
 			return;
 		}
 		if (frame.kind === 'offer') return takeOffer(connection, collector, frame);

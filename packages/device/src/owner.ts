@@ -252,13 +252,16 @@ export function createDeviceDispatcher(owner: DeviceSqliteOwner) {
 					controller,
 				});
 				try {
-					const result = await database.query(request.statement.sql, {
-						parameters: request.statement.parameters,
-						tables: request.tables,
-						signal: controller.signal,
-					});
-					if (result.error) throw result.error;
-					return { kind: request.kind, result: result.data };
+					const { data: query, error } = await database.query(
+						request.statement.sql,
+						{
+							parameters: request.statement.parameters,
+							tables: request.tables,
+							signal: controller.signal,
+						},
+					);
+					if (error) throw error;
+					return { kind: request.kind, result: query };
 				} finally {
 					queries.delete(request.queryId);
 				}
@@ -269,24 +272,24 @@ export function createDeviceDispatcher(owner: DeviceSqliteOwner) {
 				const database = owned.connections.get(request.connectionId)?.database;
 				if (!database) throw new Error('Unknown SQLite connection.');
 				if (request.kind === 'sqlite-run') {
-					const result = await database.run(
+					const { data: run, error } = await database.run(
 						request.statement.sql,
 						request.statement.parameters,
 					);
-					if (result.error) throw result.error;
-					return { kind: request.kind, changes: result.data.changes };
+					if (error) throw error;
+					return { kind: request.kind, changes: run.changes };
 				}
 				if (request.kind === 'sqlite-all') {
-					const result = await database.all(
+					const { data: rows, error } = await database.all(
 						request.statement.sql,
 						request.statement.parameters,
 					);
-					if (result.error) throw result.error;
-					return { kind: request.kind, rows: result.data };
+					if (error) throw error;
+					return { kind: request.kind, rows };
 				}
-				const result = await database.batch(request.statements);
-				if (result.error) throw result.error;
-				return { kind: request.kind, changes: result.data.changes };
+				const { data: batch, error } = await database.batch(request.statements);
+				if (error) throw error;
+				return { kind: request.kind, changes: batch.changes };
 			}
 		}
 	}
@@ -337,9 +340,13 @@ export function createTransportSqliteOwner(
 		message: AppSqliteRequest,
 		kind: TKind,
 	) {
-		const result = await unwrap(request(message), kind, (response) => response);
-		if (result.error) throw result.error;
-		return result.data;
+		const { data: response, error } = await unwrap(
+			request(message),
+			kind,
+			(response) => response,
+		);
+		if (error) throw error;
+		return response;
 	}
 	return {
 		async acquire(appId, account) {
@@ -378,9 +385,13 @@ export function createTransportSqliteOwner(
 				message: AppSqliteRequest,
 				kind: TKind,
 			) {
-				const result = await unwrap(admitted(message), kind, (value) => value);
-				if (result.error) throw result.error;
-				return result.data;
+				const { data: response, error } = await unwrap(
+					admitted(message),
+					kind,
+					(value) => value,
+				);
+				if (error) throw error;
+				return response;
 			}
 
 			return {

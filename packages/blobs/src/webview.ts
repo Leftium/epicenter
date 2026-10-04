@@ -104,58 +104,62 @@ export function createWebviewBlobs({
 			});
 		},
 		async put(id, blob) {
-			const response = await request(id, {
+			const { data: response, error: requestError } = await request(id, {
 				method: 'PUT',
 				headers: blob.type === '' ? undefined : { 'content-type': blob.type },
 				body: blob,
 			});
-			if (response.error !== null) return Err(response.error);
-			if (response.data.status === 409) {
+			if (requestError !== null) return Err(requestError);
+			if (response.status === 409) {
 				return BlobStoreError.BlobAlreadyExists({ id });
 			}
-			if (!response.data.ok) {
+			if (!response.ok) {
 				return BlobStoreError.BlobStoreFailed({
 					id,
-					cause: new Error(`Local blob PUT returned ${response.data.status}.`),
+					cause: new Error(`Local blob PUT returned ${response.status}.`),
 				});
 			}
 			return Ok(undefined);
 		},
 
 		async get(id) {
-			const response = await request(id, { method: 'GET' });
-			if (response.error !== null) return Err(response.error);
-			if (response.data.status === 404) {
+			const { data: response, error: requestError } = await request(id, {
+				method: 'GET',
+			});
+			if (requestError !== null) return Err(requestError);
+			if (response.status === 404) {
 				return BlobStoreError.BlobNotFound({ id });
 			}
-			if (!response.data.ok) {
+			if (!response.ok) {
 				return BlobStoreError.BlobStoreFailed({
 					id,
-					cause: new Error(`Local blob GET returned ${response.data.status}.`),
+					cause: new Error(`Local blob GET returned ${response.status}.`),
 				});
 			}
-			const blob = await tryAsync({
-				try: () => response.data.blob(),
+			const { data: blob, error: bodyError } = await tryAsync({
+				try: () => response.blob(),
 				catch: (cause) => BlobStoreError.BlobStoreFailed({ id, cause }),
 			});
-			if (blob.error !== null) return Err(blob.error);
-			return Ok(blob.data);
+			if (bodyError !== null) return Err(bodyError);
+			return Ok(blob);
 		},
 
 		async stat(id) {
-			const response = await request(id, { method: 'HEAD' });
-			if (response.error !== null) return Err(response.error);
-			if (response.data.status === 404) {
+			const { data: response, error: requestError } = await request(id, {
+				method: 'HEAD',
+			});
+			if (requestError !== null) return Err(requestError);
+			if (response.status === 404) {
 				return BlobStoreError.BlobNotFound({ id });
 			}
-			if (!response.data.ok) {
+			if (!response.ok) {
 				return BlobStoreError.BlobStoreFailed({
 					id,
-					cause: new Error(`Local blob HEAD returned ${response.data.status}.`),
+					cause: new Error(`Local blob HEAD returned ${response.status}.`),
 				});
 			}
-			const contentType = response.data.headers.get('content-type');
-			const contentLength = response.data.headers.get('content-length');
+			const contentType = response.headers.get('content-type');
+			const contentLength = response.headers.get('content-length');
 			const size = contentLength === null ? Number.NaN : Number(contentLength);
 			if (!isBlobMetadata({ contentType, size })) {
 				return BlobStoreError.BlobStoreFailed({
@@ -168,14 +172,14 @@ export function createWebviewBlobs({
 		},
 
 		async delete(id) {
-			const response = await request(id, { method: 'DELETE' });
-			if (response.error !== null) return Err(response.error);
-			if (!response.data.ok) {
+			const { data: response, error: requestError } = await request(id, {
+				method: 'DELETE',
+			});
+			if (requestError !== null) return Err(requestError);
+			if (!response.ok) {
 				return BlobStoreError.BlobStoreFailed({
 					id,
-					cause: new Error(
-						`Local blob DELETE returned ${response.data.status}.`,
-					),
+					cause: new Error(`Local blob DELETE returned ${response.status}.`),
 				});
 			}
 			return Ok(undefined);

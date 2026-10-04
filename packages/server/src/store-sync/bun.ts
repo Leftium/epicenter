@@ -108,14 +108,14 @@ export function openBunStoreSync(root: string) {
 		},
 		connect(socket: LiveSocket): void {
 			const { name, generation, cursor } = socket.data;
-			const result = partition(name).authority.createHub(generation);
-			if (result.error) {
-				if (result.error.name === 'GenerationUnavailable')
+			const { data: hub, error } =
+				partition(name).authority.createHub(generation);
+			if (error) {
+				if (error.name === 'GenerationUnavailable')
 					socket.send(encodeFrame({ kind: 'retired' }));
 				socket.close(1000, 'generation unavailable');
 				return;
 			}
-			const hub = result.data;
 			const connection: HubConnection = {
 				cursor,
 				send: (bytes) => {

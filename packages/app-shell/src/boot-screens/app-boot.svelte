@@ -93,8 +93,8 @@
 					location.assign(props.signInHref);
 				} else {
 					// OAuth cancellation keeps this working document alive.
-					const result = await props.auth!.startSignIn();
-					if (result.error) throw result.error;
+					const { error: signInError } = await props.auth!.startSignIn();
+					if (signInError) throw signInError;
 				}
 			} catch (cause) {
 				if (!destroyed && phase === 'open')
@@ -125,8 +125,8 @@
                 location.replace(destination);
                 return;
             }
-			const result = await props.auth!.signOut();
-			if (result.error) throw result.error;
+			const { error: signOutError } = await props.auth!.signOut();
+			if (signOutError) throw signOutError;
 
 		} finally {
 			changing = false;
@@ -143,8 +143,8 @@
         // revocation can settle even when the former working UI is gone.
         if (signingOut && props.auth && isCallbackAuthClient(props.auth)) {
             changing = true;
-            void props.auth.signOut().then((result) => {
-                if (result.error) throw result.error;
+            void props.auth.signOut().then(({ error: signOutError }) => {
+                if (signOutError) throw signOutError;
                 if (!destroyed) location.replace(props.signedOutHref);
             }).catch((cause) => {
                 error = cause instanceof Error ? cause.message : 'Could not sign out. Reload to retry.';

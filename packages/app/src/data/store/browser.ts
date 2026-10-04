@@ -9,7 +9,7 @@ import { deviceOwnerPath, type PrincipalId } from '@epicenter/principal';
 import { readCurrentDownload } from '@epicenter/sync/current-download';
 import { CURRENT_ROUTE } from '@epicenter/sync/generations-route';
 import * as Y from '@y/y';
-import { Ok, type Result, tryAsync } from 'wellcrafted/result';
+import { Err, Ok, type Result, tryAsync } from 'wellcrafted/result';
 import type { StoreOwner } from '../../store-runtime.js';
 import { openCurrentCache } from './current-cache.js';
 import { createDatabaseDocument } from './document.js';
@@ -59,12 +59,11 @@ export async function openIdbBacking(
 	address: string,
 	idb: IdbRealm,
 ): Promise<Result<BrowserBacking, StoreError>> {
-	const opened = await tryAsync({
+	const { data: durable, error: openError } = await tryAsync({
 		try: () => openIdbDatabase(address, [UPDATES_STORE], idb),
 		catch: (cause) => StoreError.StorageFailed({ cause }),
 	});
-	if (opened.error) return opened;
-	const durable = opened.data;
+	if (openError !== null) return Err(openError);
 	const result = await tryAsync({
 		try: async () => {
 			const read = durable.transaction(UPDATES_STORE, 'readonly');
@@ -126,9 +125,12 @@ async function acquireLocalData(
 			reason: `'${appId}' is not an application id`,
 		});
 	const address = `epicenter/${appId}/device/${deviceOwnerPath()}/data/${definition.id}/1`;
-	const opened = await openIdbBacking(address, idb);
-	if (opened.error) return opened;
-	let backing = opened.data;
+	const { data: acquiredBacking, error: openError } = await openIdbBacking(
+		address,
+		idb,
+	);
+	if (openError !== null) return Err(openError);
+	let backing = acquiredBacking;
 	if (backing.loaded.updates.length === 0) {
 		const seed = createDatabaseDocument();
 		const bytes = new Uint8Array(Y.encodeStateAsUpdateV2(seed));
@@ -141,9 +143,12 @@ async function acquireLocalData(
 		backing.close();
 		if (written.error) return written;
 		// Hydrate exactly what the next boot would read.
-		const reopened = await openIdbBacking(address, idb);
-		if (reopened.error) return reopened;
-		backing = reopened.data;
+		const { data: reopenedBacking, error: reopenError } = await openIdbBacking(
+			address,
+			idb,
+		);
+		if (reopenError !== null) return Err(reopenError);
+		backing = reopenedBacking;
 	}
 	const held = backing;
 	return Ok({ durable: held.port, loaded: held.loaded, dispose: held.close });
@@ -158,18 +163,20 @@ export async function acquireStoreData(
 	if (owner.kind === 'local')
 		return acquireLocalData(definition, definition.id, idb);
 	const account = owner.account;
-	const prefix = accountCachePrefix(
+	const { data: prefix, error: prefixError } = accountCachePrefix(
 		definition.id,
 		account.principalId,
 		definition.id,
 		account.authorityId,
 	);
-	if (prefix.error) return prefix;
+	if (prefixError !== null) return Err(prefixError);
 	// A stable name per actor and selected scope; generations live in its header.
-	const address = `${prefix.data}personal/current`;
-	const opened = await openCurrentCache(address, idb);
-	if (opened.error) return opened;
-	const cache = opened.data;
+	const address = `${prefix}personal/current`;
+	const { data: cache, error: cacheError } = await openCurrentCache(
+		address,
+		idb,
+	);
+	if (cacheError !== null) return Err(cacheError);
 	try {
 		let loaded = cache.loaded;
 		if (loaded === undefined) {

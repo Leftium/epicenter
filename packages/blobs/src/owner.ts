@@ -58,10 +58,8 @@ export function createLocalBlobAccess({
 							? blob
 							: blob.slice(0, blob.size, contentType);
 					try {
-						const result = await local.put(id, input);
-						return result.error === null
-							? Ok(id)
-							: Err({ ...result.error, id });
+						const { error } = await local.put(id, input);
+						return error === null ? Ok(id) : Err({ ...error, id });
 					} catch (cause) {
 						return Err({
 							...BlobStoreError.BlobStoreFailed({ id, cause }).error,

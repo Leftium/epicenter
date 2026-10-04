@@ -364,16 +364,16 @@ function bindLog({
 	function run<TValue>(
 		operation: () => Result<TValue, AuthorityError>,
 	): Result<TValue, AuthorityError> {
-		const result = trySync({
+		const { data: result, error } = trySync({
 			try: () =>
 				sqlite.transaction(() => {
-					const admitted = admission();
-					if (admitted.error !== null) return Err(admitted.error);
+					const { error: admissionError } = admission();
+					if (admissionError !== null) return Err(admissionError);
 					return operation();
 				}),
 			catch: (cause) => AuthorityError.StorageFailed({ cause }),
 		});
-		return result.error === null ? result.data : Err(result.error);
+		return error === null ? result : Err(error);
 	}
 	return Object.freeze({
 		admission: () => run(() => Ok(undefined)),
@@ -555,8 +555,8 @@ export function openCurrentAuthority({
 			{ batch }: { batch?: number } = {},
 		): Result<SyncHub, AuthorityError> {
 			const authority = bind(generation);
-			const admitted = authority.admission();
-			if (admitted.error !== null) return Err(admitted.error);
+			const { error: admissionError } = authority.admission();
+			if (admissionError !== null) return Err(admissionError);
 			if (currentHub?.generation === generation) return Ok(currentHub.hub);
 			currentHub?.hub.retire();
 			const hub = createSyncHub({ authority, batch });

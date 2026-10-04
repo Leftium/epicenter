@@ -488,19 +488,17 @@ async function createExclusive(
 	| { status: 'failed'; message: string }
 > {
 	try {
-		const written = await files.create(path, source);
-		if (written.error === null) return { status: 'created' };
-		if (written.error.name !== 'Exists')
-			return { status: 'failed', message: written.error.message };
-		const existing = await files.read(path);
-		if (existing.error !== null)
-			return { status: 'failed', message: existing.error.message };
+		const { error: writeError } = await files.create(path, source);
+		if (writeError === null) return { status: 'created' };
+		if (writeError.name !== 'Exists')
+			return { status: 'failed', message: writeError.message };
+		const { data: existing, error: readError } = await files.read(path);
+		if (readError !== null)
+			return { status: 'failed', message: readError.message };
 		try {
 			return {
 				status:
-					decoder.decode(existing.data.bytes) === source
-						? 'identical'
-						: 'differs',
+					decoder.decode(existing.bytes) === source ? 'identical' : 'differs',
 			};
 		} catch {
 			return { status: 'differs' };
@@ -527,13 +525,13 @@ async function readReceipt(
 	path: string,
 	account: LegacyAccount,
 ): Promise<ReceiptRead> {
-	const read = await files.read(path);
-	if (read.error !== null)
-		return read.error.name === 'NotFound'
+	const { data: file, error } = await files.read(path);
+	if (error !== null)
+		return error.name === 'NotFound'
 			? { ok: true, receipt: undefined, file: undefined }
-			: { ok: false, message: read.error.message };
+			: { ok: false, message: error.message };
 	try {
-		const value = JSON.parse(decoder.decode(read.data.bytes)) as ImportReceipt;
+		const value = JSON.parse(decoder.decode(file.bytes)) as ImportReceipt;
 		const imports = value?.imports;
 		if (
 			value?.format !== RECEIPT_FORMAT ||
@@ -561,7 +559,7 @@ async function readReceipt(
 		return {
 			ok: true,
 			receipt: value,
-			file: { path: read.data.path, sha256: read.data.sha256 },
+			file: { path: file.path, sha256: file.sha256 },
 		};
 	} catch (cause) {
 		return {
@@ -678,17 +676,17 @@ export async function runLegacyImport(
 					...recorded,
 				});
 				// Only over the receipt that was read, or where none was found.
-				const written =
+				const { error: writeError } =
 					current.file === undefined
 						? await files.create(receiptPath, next)
 						: await files.replace(current.file, next);
-				if (written.error === null) {
+				if (writeError === null) {
 					receipt = { status: 'written' };
 					break;
 				}
-				receipt = { status: 'failed', message: written.error.message };
+				receipt = { status: 'failed', message: writeError.message };
 				if (
-					written.error.name !==
+					writeError.name !==
 					(current.file === undefined ? 'Exists' : 'Conflict')
 				)
 					break;

@@ -70,14 +70,13 @@ export class StoreAuthority extends DurableObject {
 			socket.close(1008, 'missing generation');
 			return undefined;
 		}
-		const admitted = this.authority.createHub(attached.generation);
-		if (admitted.error) {
-			if (admitted.error.name === 'GenerationUnavailable')
+		const { data: hub, error } = this.authority.createHub(attached.generation);
+		if (error) {
+			if (error.name === 'GenerationUnavailable')
 				socket.send(encodeFrame({ kind: 'retired' }));
 			socket.close(1000, 'generation unavailable');
 			return undefined;
 		}
-		const hub = admitted.data;
 		let written = attached.cursor;
 		const connection: HubConnection = {
 			cursor: written,

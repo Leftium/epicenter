@@ -228,11 +228,11 @@ export function createConversation({
 		notify();
 		let failure: AgentMessageStoreError | null = null;
 		for (const message of [...unsaved]) {
-			const attempt = await tryAsync({
+			const { data: saved, error: writeError } = await tryAsync({
 				try: () => store.set(message.id, message),
 				catch: (cause) => AgentMessageStoreError.Threw({ cause }),
 			});
-			failure = attempt.error !== null ? attempt.error : attempt.data.error;
+			failure = writeError !== null ? writeError : saved.error;
 			if (failure !== null) break;
 			unsaved = unsaved.filter((pending) => pending.id !== message.id);
 			persisted = readAll();

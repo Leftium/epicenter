@@ -127,16 +127,20 @@ export async function acquireLocalBlobs({
 						return Ok(destinationId);
 					}
 					// A custom source still publishes through the native destination.
-					const snapshot = await origin.store.get(blobId);
-					if (snapshot.error) return snapshot;
+					const { data: snapshot, error: snapshotError } =
+						await origin.store.get(blobId);
+					if (snapshotError !== null) return Err(snapshotError);
 					signal.throwIfAborted();
-					const result = await bytes.local.put(destinationId, snapshot.data);
-					if (!result.error) return Ok(destinationId);
-					if (result.error.name === 'BlobAlreadyExists') return result;
+					const { error: putError } = await bytes.local.put(
+						destinationId,
+						snapshot,
+					);
+					if (putError === null) return Ok(destinationId);
+					if (putError.name === 'BlobAlreadyExists') return Err(putError);
 					return BlobStoreError.PublicationUnconfirmed({
 						id: destinationId,
 						namespace: id,
-						cause: result.error,
+						cause: putError,
 					});
 				} catch (cause) {
 					return BlobStoreError.PublicationUnconfirmed({
@@ -152,15 +156,15 @@ export async function acquireLocalBlobs({
 				transfers.delete(transfer);
 				origin.transfers.delete(transfer);
 			};
-			void transfer.then((result) => {
+			void transfer.then(({ error }) => {
 				if (
 					nativeDispatched &&
-					result.error &&
-					result.error.name !== 'BlobAlreadyExists'
+					error !== null &&
+					error.name !== 'BlobAlreadyExists'
 				) {
 					// A lost native acknowledgment cannot prove that host cleanup finished.
-					cleanupFailures.push(result.error);
-					origin.cleanupFailures.push(result.error);
+					cleanupFailures.push(error);
+					origin.cleanupFailures.push(error);
 				}
 				settled();
 			}, settled);

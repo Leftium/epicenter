@@ -2,7 +2,7 @@
  * Synchronized store cache at one stable IndexedDB address.
  * The caller owns the App claim until discard and App cleanup finish.
  */
-import { tryAsync } from 'wellcrafted/result';
+import { Err, tryAsync } from 'wellcrafted/result';
 import { StoreError } from './errors.js';
 import {
 	createIdbUpdates,
@@ -17,12 +17,11 @@ import type { DurableOp, DurableSnapshot } from './persistence.js';
 
 /** Open a cache without authorizing remote creation or selecting a generation. */
 export async function openCurrentCache(address: string, idb: IdbRealm) {
-	const opened = await tryAsync({
+	const { data: database, error: openError } = await tryAsync({
 		try: () => openIdbDatabase(address, ['updates', 'header'], idb),
 		catch: (cause) => StoreError.StorageFailed({ cause }),
 	});
-	if (opened.error) return opened;
-	const database = opened.data;
+	if (openError !== null) return Err(openError);
 	const result = await tryAsync({
 		try: async () => {
 			const read = database.transaction(['header', 'updates'], 'readonly');

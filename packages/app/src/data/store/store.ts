@@ -377,9 +377,8 @@ export async function openAccountStore<const TDatabase extends DataDefinition>(
 	const { store, close, view, ready } = createStoreOverPort(
 		overSqlite(options),
 	);
-	const opened = await ready;
-	if (isErr(opened))
-		throw new Error(opened.error.message, { cause: opened.error });
+	const { error } = await ready;
+	if (error !== null) throw new Error(error.message, { cause: error });
 	// The symbol is composed back on here and nowhere else. These constructors
 	// acquire one thing, so disposing the object frees everything it took, and a
 	// test's `await using` is exactly right. A replica acquires three (ADR-0340),

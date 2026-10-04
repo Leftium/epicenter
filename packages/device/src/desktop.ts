@@ -224,31 +224,31 @@ export function createDesktopSecrets(
 			put(label: SecretLabel, value: string) {
 				assertOpen();
 				return admitted(async () => {
-					const result = await request({
+					const { error } = await request({
 						kind: 'secret-put',
 						account,
 						appId,
 						label,
 						value,
 					});
-					return result.error === null
+					return error === null
 						? Ok(undefined)
-						: SecretError.StorageFailed({ cause: result.error });
+						: SecretError.StorageFailed({ cause: error });
 				});
 			},
 			get(label: SecretLabel) {
 				assertOpen();
 				return admitted(async () => {
-					const result = await request({
+					const { data: response, error } = await request({
 						kind: 'secret-get',
 						account,
 						appId,
 						label,
 					});
-					if (result.error !== null)
-						return SecretError.StorageFailed({ cause: result.error });
-					return result.data.kind === 'secret-get'
-						? Ok(result.data.value)
+					if (error !== null)
+						return SecretError.StorageFailed({ cause: error });
+					return response.kind === 'secret-get'
+						? Ok(response.value)
 						: SecretError.StorageFailed({
 								cause: DeviceError.InvalidResponse().error,
 							});
@@ -257,15 +257,15 @@ export function createDesktopSecrets(
 			delete(label: SecretLabel) {
 				assertOpen();
 				return admitted(async () => {
-					const result = await request({
+					const { error } = await request({
 						kind: 'secret-delete',
 						account,
 						appId,
 						label,
 					});
-					return result.error === null
+					return error === null
 						? Ok(undefined)
-						: SecretError.StorageFailed({ cause: result.error });
+						: SecretError.StorageFailed({ cause: error });
 				});
 			},
 		},

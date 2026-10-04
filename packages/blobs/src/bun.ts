@@ -273,16 +273,16 @@ export function createBunBlobStore({ directory }: { directory: string }) {
 		/** Borrow a descriptor-backed BunFile. The caller must close it. */
 		openFile,
 		async get(id): Promise<Result<Blob, BlobNotFound | BlobStoreFailed>> {
-			const opened = await openFile(id);
-			if (opened.error) return Err(opened.error);
+			const { data: opened, error } = await openFile(id);
+			if (error) return Err(error);
 			try {
-				const blob = new Blob([await opened.data.file.arrayBuffer()], {
-					type: opened.data.stat.contentType,
+				const blob = new Blob([await opened.file.arrayBuffer()], {
+					type: opened.stat.contentType,
 				});
-				await opened.data.close();
+				await opened.close();
 				return Ok(blob);
 			} catch (cause) {
-				await opened.data.close().catch(() => {});
+				await opened.close().catch(() => {});
 				return BlobStoreError.BlobStoreFailed({ id, cause });
 			}
 		},

@@ -245,7 +245,7 @@ export function createBrowserBlobStore(
 		},
 		get(id) {
 			return operate(id, async () => {
-				const result = await tryAsync({
+				const { data: blob, error } = await tryAsync({
 					try: async () => {
 						const { contentType } = blobKeyFormat(id);
 						const record: StoredBlob | undefined = await transact(
@@ -265,15 +265,15 @@ export function createBrowserBlobStore(
 					},
 					catch: (cause) => BlobStoreError.BlobStoreFailed({ id, cause }),
 				});
-				if (result.error !== null) return Err(result.error);
-				return result.data === undefined
+				if (error !== null) return Err(error);
+				return blob === undefined
 					? BlobStoreError.BlobNotFound({ id })
-					: Ok(result.data);
+					: Ok(blob);
 			});
 		},
 		stat(id) {
 			return operate(id, async () => {
-				const result = await tryAsync({
+				const { data: stat, error } = await tryAsync({
 					try: async () => {
 						blobKeyFormat(id);
 						return transact(
@@ -294,12 +294,11 @@ export function createBrowserBlobStore(
 					},
 					catch: (cause) => BlobStoreError.BlobStoreFailed({ id, cause }),
 				});
-				if (result.error !== null) return Err(result.error);
-				if (result.data === undefined)
-					return BlobStoreError.BlobNotFound({ id });
+				if (error !== null) return Err(error);
+				if (stat === undefined) return BlobStoreError.BlobNotFound({ id });
 				return Ok({
-					size: result.data.size,
-					contentType: result.data.contentType,
+					size: stat.size,
+					contentType: stat.contentType,
 				});
 			});
 		},

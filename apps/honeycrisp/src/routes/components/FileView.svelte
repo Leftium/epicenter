@@ -10,7 +10,7 @@
 	import TriangleAlertIcon from '@lucide/svelte/icons/triangle-alert';
 	import { inspectRow } from '@epicenter/folder';
 	import { honeycrispDefinition, instantNow, noteIdOf } from '$lib/data.js';
-	import { basename, dirname, withFileNewlines } from '$lib/files.js';
+	import { basename, dirname, withFileNewlines } from '@epicenter/folder/file-browser';
 	import { fieldDefaults, repairFields } from '$lib/note-source.js';
 	import type { Notes, OpenFile } from '$lib/notes.svelte.js';
 	import { confirmDelete, copyPath } from './file-actions.js';

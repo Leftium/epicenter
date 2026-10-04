@@ -7,7 +7,7 @@
 	import CopyIcon from '@lucide/svelte/icons/copy';
 	import FileIcon from '@lucide/svelte/icons/file';
 	import TriangleAlertIcon from '@lucide/svelte/icons/triangle-alert';
-	import { basename, dirname, withFileNewlines } from '$lib/files.js';
+	import { basename, dirname, withFileNewlines } from '@epicenter/folder/file-browser';
 	import type { OpenFile, Todos } from '$lib/todos.svelte.js';
 	import { confirmDelete, copyPath } from './file-actions.js';
 	import FileNameBar from './FileNameBar.svelte';

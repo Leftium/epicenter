@@ -40,6 +40,18 @@ export function ownCapture(
 }
 
 const encoder = new TextEncoder();
+const utf8 = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true });
+
+/**
+ * Encode text for a save. Encoding replaces an unpaired surrogate, so the
+ * saved text is decoded from the bytes, with the decoder that reads files,
+ * and never assumed to be the string that was typed. A byte order mark,
+ * CRLF, and paired surrogates come back as they went in.
+ */
+export function submittedText(text: string) {
+	const bytes = encoder.encode(text);
+	return { bytes, text: utf8.decode(bytes) };
+}
 
 /** Own content before awaiting anything. Strings encode as UTF-8 without normalization. */
 export function ownBytes(content: string | Uint8Array): Uint8Array {

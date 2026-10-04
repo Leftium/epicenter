@@ -4,7 +4,7 @@
 	import * as Dialog from '@epicenter/ui/dialog';
 	import { toast } from '@epicenter/ui/sonner';
 	import type { NoteFields } from '$lib/data.js';
-	import { basename } from '$lib/files.js';
+	import { basename } from '@epicenter/folder/file-browser';
 	import { diffLines } from '$lib/line-diff.js';
 	import type { NoteSession } from '$lib/notes.svelte.js';
 

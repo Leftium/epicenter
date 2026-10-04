@@ -38,6 +38,12 @@ import type {
 	TextCapture,
 } from '@epicenter/folder';
 import { GitError, MergeError, rowPath, rowStemOf } from '@epicenter/folder';
+import {
+	ancestorsOf,
+	basename,
+	dirname,
+	joinPath,
+} from '@epicenter/folder/file-browser';
 import { SvelteMap, SvelteSet } from 'svelte/reactivity';
 import { Err, Ok, type Result } from 'wellcrafted/result';
 import type { TodoFields } from './definition.js';
@@ -47,14 +53,7 @@ import {
 	type SavedText,
 	type TextFileEditor,
 } from './editor.svelte.js';
-import {
-	ancestorsOf,
-	basename,
-	dirname,
-	joinPath,
-	nameProblem,
-	readTextFile,
-} from './files.js';
+import { nameProblem, readTextFile } from './files.js';
 import type { TodosFolder } from './platform/types.js';
 import { createTerminalSession } from './terminal.svelte.js';
 import {

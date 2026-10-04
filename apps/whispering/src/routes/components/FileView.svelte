@@ -10,7 +10,7 @@
 	import TriangleAlertIcon from '@lucide/svelte/icons/triangle-alert';
 	import { audioMimeTypeOf } from '$lib/audio-format.js';
 	import type { TranscriptionFields } from '$lib/definition.js';
-	import { basename, dirname, withFileNewlines } from '$lib/files.js';
+	import { basename, dirname, withFileNewlines } from '@epicenter/folder/file-browser';
 	import type { Library, OpenFile, RowSlot } from '$lib/library.svelte.js';
 	import AudioPlayer from './AudioPlayer.svelte';
 	import { confirmDelete, copyPath } from './file-actions.js';

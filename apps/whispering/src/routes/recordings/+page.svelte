@@ -5,7 +5,7 @@
 	import ArrowLeftIcon from '@lucide/svelte/icons/arrow-left';
 	import { tick } from 'svelte';
 	import { MediaQuery } from 'svelte/reactivity';
-	import { basename } from '$lib/files.js';
+	import { basename } from '@epicenter/folder/file-browser';
 	import { getSession } from '$lib/session.svelte.js';
 	import FileView from '../components/FileView.svelte';
 	import RecordingDetail from '../components/RecordingDetail.svelte';

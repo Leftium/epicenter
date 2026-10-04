@@ -17,7 +17,7 @@
 	import NotebookTextIcon from '@lucide/svelte/icons/notebook-text';
 	import FolderSearchIcon from '@lucide/svelte/icons/folder-search';
 	import { tick } from 'svelte';
-	import { basename, dirname, joinPath, type TreeRow, visibleRows } from '$lib/files.js';
+	import { basename, dirname, joinPath, type TreeRow, visibleRows } from '@epicenter/folder/file-browser';
 	import type { Notes } from '$lib/notes.svelte.js';
 	import { confirmDelete, copyPath } from './file-actions.js';
 

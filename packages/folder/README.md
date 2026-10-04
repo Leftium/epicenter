@@ -34,6 +34,18 @@ else {
 await folder.close();                                  // closed either way
 ```
 
+## File-browser helpers
+
+`@epicenter/folder/file-browser` provides path helpers, visible tree rows,
+newline preservation, and `readTextFile(files, path, maxBytes)`. These helpers
+open no storage and change no files. Apps supply their editable-byte limit and
+keep their own file-name messages. Text classification preserves the file's
+byte-order mark; invalid UTF-8 and NUL bytes open as binary details.
+
+`submittedText(text)` from the main contract returns the bytes a save submits
+and the exact text of those bytes. Row writes and app text editors use the same
+encoding rule, including replacement of unpaired surrogates.
+
 ## Dataset names, definitions, and addresses
 
 A folder ID names a dataset relative to its owner. In the managed native layout,

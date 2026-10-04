@@ -10,7 +10,7 @@
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { whisperingDefinition } from '$lib/definition.js';
-	import { withFileNewlines } from '$lib/files.js';
+	import { withFileNewlines } from '@epicenter/folder/file-browser';
 	import type { Library, TranscriptionEntry } from '$lib/library.svelte.js';
 	import { transformationName } from '$lib/post-processing.js';
 	import { copyText, formatTime } from './file-actions.js';

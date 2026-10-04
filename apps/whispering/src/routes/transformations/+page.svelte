@@ -7,7 +7,7 @@
 	import { MediaQuery } from 'svelte/reactivity';
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
-	import { basename } from '$lib/files.js';
+	import { basename } from '@epicenter/folder/file-browser';
 	import { getSession } from '$lib/session.svelte.js';
 	import TransformationDetail from '../components/TransformationDetail.svelte';
 	import TransformationList from '../components/TransformationList.svelte';

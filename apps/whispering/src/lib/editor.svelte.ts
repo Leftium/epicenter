@@ -32,8 +32,9 @@
  * be opened as a row or the person asks to edit its source.
  */
 import type { FolderFiles, TextCapture } from '@epicenter/folder';
+import { submittedText } from '@epicenter/folder';
 import { Err, Ok, type Result } from 'wellcrafted/result';
-import { readTextFile, submittedText } from './files.js';
+import { readTextFile } from './files.js';
 
 /** One saved text file as its draft last accepted it. */
 export type SavedText = TextCapture;

@@ -26,10 +26,10 @@
  * a different save shape: see `todo-editor.svelte.ts`.
  */
 import type { FileTable, FolderFiles, TextCapture } from '@epicenter/folder';
-import { FileError, rowStemOf } from '@epicenter/folder';
+import { FileError, rowStemOf, submittedText } from '@epicenter/folder';
 import { Err, Ok, type Result } from 'wellcrafted/result';
 import type { TodoFields } from './definition.js';
-import { readTextFile, type SubmittedText, submittedText } from './files.js';
+import { readTextFile } from './files.js';
 
 /**
  * One saved text file as its draft last accepted it: the capture the next
@@ -64,7 +64,7 @@ type DraftStore = {
 	/** The accepted file's `text` is the text of the submitted bytes. */
 	write(
 		baseline: SavedText,
-		submitted: SubmittedText,
+		submitted: ReturnType<typeof submittedText>,
 	): Promise<
 		Result<SavedText, { readonly name: string; readonly message: string }>
 	>;

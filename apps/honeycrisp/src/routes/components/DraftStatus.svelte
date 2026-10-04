@@ -3,7 +3,7 @@
 	import * as Dialog from '@epicenter/ui/dialog';
 	import { toast } from '@epicenter/ui/sonner';
 	import type { External, FileSession } from '$lib/file-session.svelte.js';
-	import { basename } from '$lib/files.js';
+	import { basename } from '@epicenter/folder/file-browser';
 	import { diffLines } from '$lib/line-diff.js';
 
 	let {

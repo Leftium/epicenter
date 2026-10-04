@@ -7,7 +7,7 @@
 	import { inspectRow, rowStemOf } from '@epicenter/folder';
 	import { todosDefinition } from '$lib/definition.js';
 	import type { TextFileEditor } from '$lib/editor.svelte.js';
-	import { withFileNewlines } from '$lib/files.js';
+	import { withFileNewlines } from '@epicenter/folder/file-browser';
 	import type { Todos } from '$lib/todos.svelte.js';
 	import { confirmDelete } from './file-actions.js';
 	import FileNameBar from './FileNameBar.svelte';

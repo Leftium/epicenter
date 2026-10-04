@@ -18,7 +18,7 @@
 		type RecordingFields,
 		whisperingDefinition,
 	} from '$lib/definition.js';
-	import { withFileNewlines } from '$lib/files.js';
+	import { withFileNewlines } from '@epicenter/folder/file-browser';
 	import type { Library, RecordingEntry, RowSlot } from '$lib/library.svelte.js';
 	import { committedState } from '$lib/status.js';
 	import AudioPlayer from './AudioPlayer.svelte';

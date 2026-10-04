@@ -4,7 +4,7 @@
 	import { toast } from '@epicenter/ui/sonner';
 	import { tick } from 'svelte';
 	import { beforeNavigate } from '$app/navigation';
-	import { basename } from '$lib/files.js';
+	import { basename } from '@epicenter/folder/file-browser';
 	import type { Notes } from '$lib/notes.svelte.js';
 	import AppHeader from './AppHeader.svelte';
 	import FileBrowser from './FileBrowser.svelte';

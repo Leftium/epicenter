@@ -7,7 +7,7 @@
 	import HistoryIcon from '@lucide/svelte/icons/history';
 	import PinIcon from '@lucide/svelte/icons/pin';
 	import { folderLabel, type NoteFields } from '$lib/data.js';
-	import { withFileNewlines } from '$lib/files.js';
+	import { withFileNewlines } from '@epicenter/folder/file-browser';
 	import { noteBody } from '$lib/note-source.js';
 	import type { NoteSession, Notes } from '$lib/notes.svelte.js';
 	import { confirmDelete } from './file-actions.js';

@@ -99,6 +99,7 @@ test('a folder is opened only by the two workspaces, each through its own entry'
 	expect([...new Set(folderEntries)].sort()).toEqual([
 		'@epicenter/folder',
 		'@epicenter/folder/browser',
+		'@epicenter/folder/file-browser',
 		'@epicenter/folder/tauri',
 	]);
 	// The bare specifier is built against the browser entry. It is the exact

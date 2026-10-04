@@ -7,7 +7,7 @@
 	import { tick } from 'svelte';
 	import { MediaQuery } from 'svelte/reactivity';
 	import { beforeNavigate } from '$app/navigation';
-	import { basename } from '$lib/files.js';
+	import { basename } from '@epicenter/folder/file-browser';
 	import type { Todos } from '$lib/todos.svelte.js';
 	import AppHeader from './AppHeader.svelte';
 	import IncomingBanner from './IncomingBanner.svelte';

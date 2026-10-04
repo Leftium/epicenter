@@ -34,7 +34,7 @@ import type { FieldMap } from '@epicenter/definition';
 import { customAlphabet } from 'nanoid';
 import { Err, Ok, type Result } from 'wellcrafted/result';
 import type { FolderStorage } from './boundary.js';
-import { hashBytes } from './capture.js';
+import { hashBytes, submittedText } from './capture.js';
 import {
 	openRowEditor,
 	type RowEditor,
@@ -58,7 +58,6 @@ import { type DeepReadonly, ownSupplied } from './reading.js';
 import {
 	composeRowText,
 	readRowText,
-	submittedText,
 	type TableReading,
 	unrepresentable,
 } from './row-text.js';

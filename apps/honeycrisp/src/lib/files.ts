@@ -1,114 +1,10 @@
-/**
- * What the file browser shows of a folder listing, and how a raw file is read
- * for editing. Paths are the folder's literal paths; nothing here writes.
- */
+/** App-owned file-name messages and the maximum size of editable text. */
+import { type FolderFiles, pathProblem } from '@epicenter/folder';
 import {
-	type TextCapture,
-	type FileError,
-	type FileListing,
-	type FolderFiles,
-	pathProblem,
-} from '@epicenter/folder';
-import { Err, Ok, type Result } from 'wellcrafted/result';
+	joinPath,
+	readTextFile as readFolderTextFile,
+} from '@epicenter/folder/file-browser';
 
-export type TreeRow = {
-	readonly path: string;
-	readonly name: string;
-	readonly depth: number;
-} & (
-	| { readonly kind: 'directory'; readonly children: number }
-	| { readonly kind: 'file'; readonly size: number }
-);
-
-export function basename(path: string): string {
-	return path.slice(path.lastIndexOf('/') + 1);
-}
-
-export function dirname(path: string): string {
-	const slash = path.lastIndexOf('/');
-	return slash < 0 ? '' : path.slice(0, slash);
-}
-
-export function joinPath(directory: string, name: string): string {
-	return directory === '' ? name : `${directory}/${name}`;
-}
-
-/** Every proper ancestor directory of a path, outermost first. */
-export function ancestorsOf(path: string): string[] {
-	const parts = path.split('/');
-	return parts.slice(1).map((_, index) => parts.slice(0, index + 1).join('/'));
-}
-
-const byName = (a: string, b: string) =>
-	a.localeCompare(b, undefined, { sensitivity: 'base', numeric: true }) ||
-	(a < b ? -1 : a > b ? 1 : 0);
-
-/**
- * The rows a tree shows: folders before files at each level, descending only
- * into expanded folders. Private Git state is never listed as source.
- */
-export function visibleRows(
-	listing: FileListing,
-	expanded: ReadonlySet<string>,
-): TreeRow[] {
-	const directories = new Map<string, string[]>([['', []]]);
-	const files = new Map<string, number>();
-	const childrenOf = (directory: string) => {
-		let list = directories.get(directory);
-		if (list === undefined) {
-			list = [];
-			directories.set(directory, list);
-		}
-		return list;
-	};
-	const visible = (path: string) => path.split('/')[0] !== '.git';
-	for (const directory of listing.directories) {
-		if (!visible(directory)) continue;
-		childrenOf(directory);
-		childrenOf(dirname(directory)).push(directory);
-	}
-	for (const file of listing.files) {
-		if (!visible(file.path)) continue;
-		files.set(file.path, file.size);
-		childrenOf(dirname(file.path)).push(file.path);
-	}
-
-	const rows: TreeRow[] = [];
-	function walk(directory: string, depth: number) {
-		const children = [...new Set(directories.get(directory))];
-		const folders = children
-			.filter((path) => directories.has(path))
-			.sort((a, b) => byName(basename(a), basename(b)));
-		const leaves = children
-			.filter((path) => !directories.has(path))
-			.sort((a, b) => byName(basename(a), basename(b)));
-		for (const path of folders) {
-			rows.push({
-				kind: 'directory',
-				path,
-				name: basename(path),
-				depth,
-				children: new Set(directories.get(path)).size,
-			});
-			if (expanded.has(path)) walk(path, depth + 1);
-		}
-		for (const path of leaves)
-			rows.push({
-				kind: 'file',
-				path,
-				name: basename(path),
-				depth,
-				size: files.get(path) ?? 0,
-			});
-	}
-	walk('', 0);
-	return rows;
-}
-
-/**
- * Why `name` cannot name a file or folder inside `directory`, or undefined.
- * A name is one path segment; the folder's own path rules apply to the result.
- */
 export function nameProblem(
 	directory: string,
 	name: string,
@@ -124,63 +20,7 @@ export function nameProblem(
 /** Text larger than this opens as file details instead of in the editor. */
 export const EDITABLE_TEXT_LIMIT = 1024 * 1024;
 
-/**
- * One text file as it was read or written: the folder's capture of its path
- * and bytes, with the exact text those bytes are. It is the baseline a later
- * replace, move, or remove is conditional on.
- */
-export type Capture = TextCapture;
-
-export type OpenedFile =
-	| { readonly kind: 'text'; readonly file: Capture }
-	/** Not UTF-8 text, or text with NUL bytes: shown as details, never saved as text. */
-	| { readonly kind: 'binary'; readonly size: number }
-	| { readonly kind: 'tooLarge'; readonly size: number };
-
-const utf8 = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true });
-const encoder = new TextEncoder();
-
-/**
- * Encode text for a save: the exact bytes it submits, and the text those
- * bytes are. Encoding replaces an unpaired surrogate, so the saved text is
- * decoded from the bytes, with the decoder that reads files, and never
- * assumed to be the string that was typed. A byte order mark, CRLF, and
- * paired surrogates come back as they went in.
- */
-export function submittedText(text: string): {
-	readonly bytes: Uint8Array;
-	readonly text: string;
-} {
-	const bytes = encoder.encode(text);
-	return { bytes, text: utf8.decode(bytes) };
-}
-
-/**
- * Read a file for the editor. Only valid UTF-8 without NUL bytes opens as
- * text, and the decoded text keeps a byte order mark so a save writes the
- * same bytes back.
- */
-export async function readTextFile(
-	files: Pick<FolderFiles, 'read'>,
-	path: string,
-): Promise<Result<OpenedFile, FileError>> {
-	const { data: file, error } = await files.read(path);
-	if (error) return Err(error);
-	const { bytes, sha256 } = file;
-	if (bytes.byteLength > EDITABLE_TEXT_LIMIT)
-		return Ok({ kind: 'tooLarge', size: bytes.byteLength });
-	if (bytes.includes(0)) return Ok({ kind: 'binary', size: bytes.byteLength });
-	try {
-		return Ok({
-			kind: 'text',
-			file: { path, text: utf8.decode(bytes), sha256 },
-		});
-	} catch {
-		return Ok({ kind: 'binary', size: bytes.byteLength });
-	}
-}
-
-/** Textareas report LF; keep the file's CRLF line endings when it uses them. */
-export function withFileNewlines(text: string, reference: string): string {
-	return reference.includes('\r\n') ? text.replace(/\r?\n/g, '\r\n') : text;
+/** Read editable text using this app's size limit. */
+export function readTextFile(files: Pick<FolderFiles, 'read'>, path: string) {
+	return readFolderTextFile(files, path, EDITABLE_TEXT_LIMIT);
 }

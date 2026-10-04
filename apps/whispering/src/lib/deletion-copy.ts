@@ -4,8 +4,9 @@
  * Plain text over a captured deletion, with no UI imports, so the wording can
  * be checked against what `library.remove` does to the folder.
  */
+
+import { basename } from '@epicenter/folder/file-browser';
 import { audioPathIn } from './definition.js';
-import { basename } from './files.js';
 import type { Deletion, RecordingEntry } from './library.svelte.js';
 
 /** A recording's title, or its ID when the title is empty or did not validate. */

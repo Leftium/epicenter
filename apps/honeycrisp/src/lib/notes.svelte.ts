@@ -30,6 +30,7 @@
  * close settle or refuse instead of dropping input.
  */
 import {
+	type TextCapture as Capture,
 	type FileCapture,
 	type FileListing,
 	type GitSnapshot,
@@ -37,10 +38,17 @@ import {
 	type RowEditor,
 	rowPath,
 	rowStemOf,
+	submittedText,
 	type TableEditError,
 	type TableUpdateError,
 	type TableWriteOptions,
 } from '@epicenter/folder';
+import {
+	ancestorsOf,
+	basename,
+	dirname,
+	joinPath,
+} from '@epicenter/folder/file-browser';
 import { SvelteMap, SvelteSet } from 'svelte/reactivity';
 import { Err, Ok, type Result } from 'wellcrafted/result';
 import {
@@ -67,16 +75,7 @@ import {
 	removeDirectory,
 	removeFile,
 } from './file-session.svelte.js';
-import {
-	ancestorsOf,
-	basename,
-	type Capture,
-	dirname,
-	joinPath,
-	nameProblem,
-	readTextFile,
-	submittedText,
-} from './files.js';
+import { nameProblem, readTextFile } from './files.js';
 import { displayTitle } from './note-source.js';
 import type { NotesHost } from './platform/types.js';
 import { createRowSession, type RowSession } from './row-session.svelte.js';

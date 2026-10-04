@@ -18,7 +18,7 @@
 		type TransformationFields,
 		whisperingDefinition,
 	} from '$lib/definition.js';
-	import { withFileNewlines } from '$lib/files.js';
+	import { withFileNewlines } from '@epicenter/folder/file-browser';
 	import type { Library, RowSlot, TextRun, TransformationEntry } from '$lib/library.svelte.js';
 	import { recipeEndpoint } from '$lib/recipe.js';
 	import { committedState } from '$lib/status.js';

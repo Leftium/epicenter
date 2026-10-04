@@ -16,7 +16,7 @@
 	import FolderPlusIcon from '@lucide/svelte/icons/folder-plus';
 	import ListTodoIcon from '@lucide/svelte/icons/list-todo';
 	import { tick } from 'svelte';
-	import { basename, dirname, joinPath, type TreeRow, visibleRows } from '$lib/files.js';
+	import { basename, dirname, joinPath, type TreeRow, visibleRows } from '@epicenter/folder/file-browser';
 	import type { Todos } from '$lib/todos.svelte.js';
 	import { confirmDelete, copyPath } from './file-actions.js';
 

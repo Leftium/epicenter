@@ -59,8 +59,9 @@ import type {
 	FolderFiles,
 	MoveError,
 } from '@epicenter/folder';
+import { type TextCapture as Capture, submittedText } from '@epicenter/folder';
 import type { Result } from 'wellcrafted/result';
-import { type Capture, readTextFile, submittedText } from './files.js';
+import { readTextFile } from './files.js';
 
 // ============================================================================
 // The folder calls

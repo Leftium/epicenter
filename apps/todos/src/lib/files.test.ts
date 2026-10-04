@@ -12,9 +12,10 @@
  */
 import { expect, test } from 'bun:test';
 import { type FolderFiles, hashBytes } from '@epicenter/folder';
+import { visibleRows } from '@epicenter/folder/file-browser';
 import { Ok } from 'wellcrafted/result';
 import { expectOk } from 'wellcrafted/testing';
-import { EDITABLE_TEXT_LIMIT, readTextFile, visibleRows } from './files.js';
+import { EDITABLE_TEXT_LIMIT, readTextFile } from './files.js';
 
 const listing = {
 	files: [

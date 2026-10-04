@@ -18,7 +18,7 @@
 	import MicIcon from '@lucide/svelte/icons/mic';
 	import WandSparklesIcon from '@lucide/svelte/icons/wand-sparkles';
 	import { tick } from 'svelte';
-	import { basename, dirname, joinPath, type TreeRow, visibleRows } from '$lib/files.js';
+	import { basename, dirname, joinPath, type TreeRow, visibleRows } from '@epicenter/folder/file-browser';
 	import { audioMimeTypeOf } from '$lib/audio-format.js';
 	import type { Library } from '$lib/library.svelte.js';
 	import { confirmDelete, copyPath } from './file-actions.js';

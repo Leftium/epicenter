@@ -39,6 +39,12 @@ import type {
 	TableWriteError,
 } from '@epicenter/folder';
 import { inspectRow, rowPath, rowStemOf } from '@epicenter/folder';
+import {
+	ancestorsOf,
+	basename,
+	dirname,
+	joinPath,
+} from '@epicenter/folder/file-browser';
 import { customAlphabet } from 'nanoid';
 import { SvelteMap, SvelteSet } from 'svelte/reactivity';
 import { Err, Ok, type Result } from 'wellcrafted/result';
@@ -72,15 +78,13 @@ import {
 	type SavedText,
 	type TextFileEditor,
 } from './editor.svelte.js';
-import {
-	ancestorsOf,
-	basename,
-	dirname,
-	joinPath,
-	nameProblem,
-	readTextFile,
-} from './files.js';
+import { nameProblem, readTextFile } from './files.js';
 import { createMicrophoneInput } from './microphone-input.svelte.js';
+import {
+	type RecipeReading,
+	type ResolvedRecipe,
+	resolveRecipe,
+} from './recipe.js';
 import {
 	type InPlace,
 	isThisRecording,
@@ -88,11 +92,6 @@ import {
 	type PublishOutcome,
 	publishRecording,
 } from './recordings/publish.js';
-import {
-	type RecipeReading,
-	type ResolvedRecipe,
-	resolveRecipe,
-} from './recipe.js';
 import { createRowDraft, type RowDraft } from './row-draft.svelte.js';
 import { createTerminalSession } from './terminal.svelte.js';
 import type { Workspace } from './workspace/index.js';

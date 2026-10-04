@@ -2,10 +2,11 @@
  * Actions the screens share: copy a path or some text, and delete with a
  * confirmation that names what will be removed.
  */
+
+import { basename } from '@epicenter/folder/file-browser';
 import { confirmationDialog } from '@epicenter/ui/confirmation-dialog';
 import { toast } from '@epicenter/ui/sonner';
 import { describeDeletion } from '$lib/deletion-copy.js';
-import { basename } from '$lib/files.js';
 import type { Library } from '$lib/library.svelte.js';
 
 export { recordingTitle } from '$lib/deletion-copy.js';

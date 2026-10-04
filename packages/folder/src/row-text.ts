@@ -23,6 +23,7 @@ import {
 	isJsonSafe,
 } from '@epicenter/definition';
 import { Ok, type Result } from 'wellcrafted/result';
+import { submittedText } from './capture.js';
 import type { PreparedFolderTable } from './definition.js';
 import { TableError } from './errors.js';
 import { composeSource, parseSource, valueProblem } from './markdown.js';
@@ -62,9 +63,6 @@ export type RowDraft<TFields> = {
 	readonly fields: { readonly [K in keyof TFields & string]?: unknown };
 	readonly body?: string;
 };
-
-const encoder = new TextEncoder();
-const utf8 = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true });
 
 /**
  * Interpret row text against a table's prepared fields. Parsing comes first
@@ -155,20 +153,6 @@ export function composeRowText(
 			],
 		});
 	return Ok(submittedText(text).text);
-}
-
-/**
- * The bytes a save submits for `text` and the text those bytes are. Encoding
- * replaces an unpaired surrogate, so a receipt's text is the text of the
- * bytes, not a string assumed to equal them. The text is decoded with the
- * decoder that reads files: a byte-order mark stays in it.
- */
-export function submittedText(text: string): {
-	bytes: Uint8Array;
-	text: string;
-} {
-	const bytes = encoder.encode(text);
-	return { bytes, text: utf8.decode(bytes) };
 }
 
 /**

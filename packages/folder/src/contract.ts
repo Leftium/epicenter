@@ -34,6 +34,7 @@ export {
 	type CapturedFile,
 	type FileCapture,
 	hashBytes,
+	submittedText,
 	type TextCapture,
 } from './capture.js';
 export {

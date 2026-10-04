@@ -7,10 +7,9 @@
  */
 import { afterEach, describe, expect, test } from 'bun:test';
 import { rm } from 'node:fs/promises';
-import { IDBFactory, IDBKeyRange } from 'fake-indexeddb';
 import { expectOk } from 'wellcrafted/testing';
 import { openFolder as openBrowserFolder } from './browser.js';
-import { browserStorage } from './browser-storage.test-support.js';
+import { testBrowserStorage } from './browser-storage.test-support.js';
 import { openFolder as openDirectoryFolder } from './bun.js';
 import { defineFolder, type Folder } from './contract.js';
 import { scratch } from './git-http.test-support.js';
@@ -34,7 +33,7 @@ async function open(backend: 'browser' | 'directory') {
 				browser: {
 					author,
 					commitOnEdit: false,
-					...browserStorage({ indexedDB: new IDBFactory(), IDBKeyRange }),
+					...testBrowserStorage(),
 				},
 			}),
 		);

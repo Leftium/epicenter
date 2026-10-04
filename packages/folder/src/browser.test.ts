@@ -10,7 +10,6 @@
  */
 import { afterEach, describe, expect, test } from 'bun:test';
 import type { DataSchema } from '@epicenter/definition';
-import { IDBFactory, IDBKeyRange } from 'fake-indexeddb';
 import * as isogit from 'isomorphic-git';
 import { expectErr, expectOk } from 'wellcrafted/testing';
 import {
@@ -22,9 +21,11 @@ import {
 } from './browser.js';
 import {
 	browserStorage,
+	createTestStorage,
 	opfsOf,
 	rawBrowserFolder,
 	type TestStorage,
+	testBrowserStorage,
 } from './browser-storage.test-support.js';
 import { hashBytes } from './capture.js';
 import { createHistory } from './git/history.js';
@@ -45,7 +46,7 @@ let environment: TestStorage;
 const opened: Folder<typeof definition>[] = [];
 
 async function open(options: { commitOnEdit?: boolean; id?: string } = {}) {
-	environment ??= { indexedDB: new IDBFactory(), IDBKeyRange };
+	environment ??= createTestStorage();
 	const folder = expectOk(
 		await openFolder({
 			id: options.id ?? 'test',
@@ -63,7 +64,7 @@ async function open(options: { commitOnEdit?: boolean; id?: string } = {}) {
 
 afterEach(async () => {
 	for (const folder of opened.splice(0)) await folder.close();
-	environment = { indexedDB: new IDBFactory(), IDBKeyRange };
+	environment = createTestStorage();
 });
 
 /** Wait for background commit work to settle. */
@@ -79,7 +80,7 @@ async function settled(folder: Folder<typeof definition>) {
 
 describe('browser folder tables', () => {
 	test('a repository previously opened on another branch refuses a new main history', async () => {
-		environment = { indexedDB: new IDBFactory(), IDBKeyRange };
+		environment = createTestStorage();
 		const raw = await rawBrowserFolder({
 			id: 'legacy-branch',
 			storage: environment,
@@ -340,8 +341,7 @@ describe('browser folder tables', () => {
 				}),
 			},
 		};
-		const indexedDB = new IDBFactory();
-		const storage = { indexedDB, IDBKeyRange };
+		const storage = createTestStorage();
 		const refused = expectErr(
 			await openFolder({
 				id: 'codec',
@@ -352,7 +352,6 @@ describe('browser folder tables', () => {
 		expect(refused.name).toBe('InvalidDefinition');
 		expect(refused.message).toContain('body codec');
 		// Refused before any storage was acquired.
-		expect(await indexedDB.databases()).toEqual([]);
 		expect(opfsOf(storage).directories()).toEqual([]);
 		// The same definition is refused where it would be declared.
 		expect(() => defineFolder(withCodec as never)).toThrow('body codec');
@@ -375,7 +374,7 @@ describe('browser folder tables', () => {
 				browser: {
 					author,
 					commitOnEdit: false,
-					...browserStorage({ indexedDB: new IDBFactory(), IDBKeyRange }),
+					...testBrowserStorage(),
 				},
 			}),
 		);
@@ -472,7 +471,7 @@ describe('browser folder tables', () => {
 });
 
 describe('browser folder persistence and history', () => {
-	test('files, directories, and history survive reopening the database', async () => {
+	test('files, directories, and history survive reopening the folder', async () => {
 		const first = await open();
 		await first.tables.todos.create({
 			stem: 'kept',
@@ -608,7 +607,7 @@ describe('browser folder persistence and history', () => {
 			);
 		}) as typeof fetch;
 		try {
-			environment = { indexedDB: new IDBFactory(), IDBKeyRange };
+			environment = createTestStorage();
 			const folder = expectOk(
 				await openFolder({
 					id: 'stall',

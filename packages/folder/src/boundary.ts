@@ -12,8 +12,8 @@
  * entered: before it hashes, reads, or tells a listener anything. That is
  * the order the page asked for its saves in, whatever finishes first.
  *
- * Browser applications use one IndexedDB transaction. Native applications
- * use ordered filesystem steps and report completed steps on later failure.
+ * Browser OPFS and native applications both use ordered filesystem steps and
+ * report completed steps on later failure.
  */
 import type { Result } from 'wellcrafted/result';
 import type { ApplyError, FileError } from './errors.js';

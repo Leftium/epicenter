@@ -4,7 +4,7 @@
  *   bun run --cwd apps/capture smoke:browser
  *
  * Starts the Capture dev server on a free loopback port and drives two pages
- * of one browser profile, which share the IndexedDB folder: the second page
+ * of one browser profile, which share the OPFS folder: the second page
  * is the "other program" that edits a file behind the first. No account, no
  * server besides Vite, and no data outside the disposable profile.
  *
@@ -234,7 +234,7 @@ try {
 
 	// 7. A dirty draft is kept when the file changes, and nothing is overwritten.
 	// Playwright's clock is context-wide. Delay only this page's typing batch
-	// so the second page can still autosave into the shared IndexedDB folder.
+	// so the second page can still autosave into the shared OPFS folder.
 	await first.evaluate(() => {
 		const schedule = window.setTimeout.bind(window);
 		Object.defineProperty(window, 'setTimeout', {

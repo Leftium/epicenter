@@ -1,5 +1,9 @@
 # App migration cumulative review
 
+Historical record of the October 4, 2026 migration wave. Its Vocab legacy
+import and the browser opener's IndexedDB copy were later removed in a clean
+break; see [the Vocab clean-break review](../../vocab/evidence/opfs-clean-break-review.md).
+
 ## Files read before analysis
 
 ```text

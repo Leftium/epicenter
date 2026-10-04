@@ -110,19 +110,11 @@ account key is one directory name: `/`, `\`, `%`, and control characters are
 escaped, so distinct IDs stay distinct directories. Development and account
 scopes do not change private app SQL.
 
-A scoped folder that has nothing of its own yet (no earlier version saved
-it) starts only past a fence on the release Local folder of the same ID.
-Either this version's Local folder is ready, so Local data has been claimed,
-or the earlier builds' Local database is frozen the way a Local open freezes
-it and holds nothing then. Freezing it, absent or empty, means no earlier
-build can start a Local folder beside the scope afterward. If it holds
-anything, opening the scope returns `LegacyScopeUnassigned`, and
-`LegacyInUse` if an earlier build's tab will not let go of it; no folder is
-created either way. A frozen Local database whose copy never finished is not
-a claim. The package does not infer which account owns Local data, move it,
-or provide an assignment UI. Apps must choose their scope explicitly;
-existing callers are not automatically switched to development or account
-storage.
+A scoped folder starts beside the release Local folder of the same ID and
+never reads it. The package does not infer which account owns Local data,
+move it, or provide an assignment UI. Apps must choose their scope
+explicitly; existing callers are not automatically switched to development
+or account storage.
 
 A desktop page whose folder cannot be opened (no plugin, no permission, an
 unregistered ID, another protocol version, a folder another process holds)
@@ -139,9 +131,9 @@ still a change. `open(path)` returns a Blob of the bytes read, which keeps
 them after the path is replaced.
 
 Opening requires `navigator.storage.getDirectory`, writable file streams, and
-Web Locks; without one it returns `NoFileSystem` and never falls back. It also
-requires IndexedDB, to find a folder an earlier version saved there
-(`NoIndexedDb`). Folders are never kept in IndexedDB.
+Web Locks; without one it returns `NoFileSystem` and never falls back.
+IndexedDB is not required and is never read or written. A folder an earlier
+version kept in IndexedDB is not opened, copied, or removed.
 
 Every file mutation holds the folder's files Web Lock, so the conditions of
 `create`, `replace`, `remove`, and `move` are checked and published without
@@ -164,33 +156,25 @@ nothing and returns `Unconfirmed`; the later save's bytes stay. Other pages
 are ordered by the lock alone: whichever lands last stays. Git's own writes
 under `.git` take no place in that order.
 
-### Folders an earlier version saved in IndexedDB
+### Which directory is the folder
 
-Earlier versions kept a browser folder in one IndexedDB database per address.
-The first open of an address copies that database into the folder's
-directory, once, under an open Web Lock:
+A directory is a folder only while its ready marker,
+`.git/epicenter-folder.json`, names that folder's captured address. Opening
+decides this under the address's open Web Lock, so two tabs never decide it
+at once.
 
-1. Freeze. The database is opened at a version earlier builds cannot open.
-   Their connections close on `versionchange`, so none writes once the copy
-   begins. A connection that does not let go is `LegacyInUse`, and nothing is
-   copied. A new folder freezes the empty database it creates, so no earlier
-   build can start one beside it.
-2. Read the frozen database, not what was seen before freezing.
-3. Copy files, explicit directories, and `.git` files byte for byte. Nothing
-   is overwritten: equal bytes are kept, missing entries are written, and an
-   entry with other bytes, empty included, refuses the copy. Before a file is
-   created, a cursor naming it is committed to the frozen database's
-   `migration` store, and it is cleared once the file reads back. A later
-   attempt rewrites only an empty file its cursor names, the one a crash left
-   before its stream closed.
-4. Verify that the directory is exactly the database, then write the ready
-   marker `.git/epicenter-folder.json` naming the address, the same way.
+| The directory holds | Opening |
+| --- | --- |
+| A marker naming this address | Opens it. Other properties the marker records are kept and ignored. |
+| Nothing (or it does not exist), or only an empty `.git` with at most an empty marker | Writes the marker, then opens it. |
+| A marker naming another address, or one that names none | `Unavailable`. |
+| Anything else without a marker, or the path is not a directory | `Unavailable`. |
 
-A copy that stops or does not verify is `LegacyMigration`; opening again
-resumes it. The four data stores are never written and stay as the backup. A
-directory without a ready marker for its address is never opened as a folder.
-A tab of an earlier build that stays open keeps showing what it had read, and
-its later writes fail.
+Identity refusals write nothing, so no marker is replaced and no unknown file is
+adopted. A marker write that fails, or whose stream close is unconfirmed, is
+`Unavailable` too, and no folder is started. Opening again starts over only
+where the marker is absent or empty; a marker the close did publish opens,
+and one naming another address stays refused.
 
 ### Building for one environment
 
@@ -992,12 +976,11 @@ dangle.
 | --- | --- |
 | `src/contract.ts` | Everything an application names besides the opener. Every entry exports it unchanged. Loads no storage, Git implementation, or runtime module. |
 | `src/index.ts`, `browser.ts`, `tauri.ts`, `bun.ts` | The entries. |
-| `src/browser-adapter.ts`, `tauri-adapter.ts` | The adapters the automatic entry loads lazily. |
+| `src/browser-adapter.ts`, `tauri-adapter.ts` | The adapters the automatic entry loads lazily. The browser adapter also decides which OPFS directory is the folder. |
 | `src/folder.ts`, `table.ts`, `kv.ts`, `markdown.ts` | The handle and its interpretation of files, shared by every adapter. |
 | `src/editor.ts`, `canonical.ts` | The row editor `table.edit` opens, and the canonical document codec it holds and saves. |
 | `src/reading.ts` | The diagnostics a table and KV reading share: `ParseError`, `FieldIssue`, `DeepReadonly`, and the ownership every checked value has: parsed values frozen and supplied values copied before a field sees them. |
 | `src/opfs-store.ts`, `git/opfs-git.ts`, `git/browser-backend.ts` | OPFS storage, private `.git`, and isomorphic-git. |
-| `src/browser-migration.ts`, `browser-store.ts` | The one copy of a folder an earlier version saved in IndexedDB, and that database's format, read only. |
 | `src/native-store.ts`, `git/native-*.ts` | The directory entry's files and `git` program. "Native" here means an ordinary directory in Bun, not the desktop shell. |
 | `src/native/bindings.gen.ts` | Commands and events generated from the `tauri-plugin-epicenter-folder` crate. Internal. Do not edit. |
 | `evidence/` | Tests that build real bundles and read real import closures, and `evidence/opfs`, a page that runs the browser checks in a real browser. |
@@ -1013,11 +996,11 @@ bun evidence/opfs/serve.ts   # the OPFS page on 127.0.0.1:5181; --build only com
 ```
 
 The browser suites run on an in-memory OPFS stand-in
-(`src/opfs.test-support.ts`) with fake IndexedDB for earlier versions'
-databases. They show the folder's protocol, not that a browser's OPFS
-behaves like the stand-in; the evidence page checks that. Application tests
-get fresh browser storage from `testBrowserStorage()` in
-`src/browser-storage.test-support.ts`, imported by path.
+(`src/opfs.test-support.ts`). They show the folder's protocol, not that a
+browser's OPFS behaves like the stand-in; the evidence page checks that.
+Application tests import `src/browser-storage.test-support.ts` by path:
+`createTestStorage()` owns one fresh stand-in tree, `browserStorage(storage)`
+opens it, and `testBrowserStorage()` does both in one call.
 
 ## Limits
 
@@ -1032,7 +1015,7 @@ In a browser, OPFS quota exhaustion and eviction surface as the failing
 step's `Io` or `Unconfirmed`; nothing reserves space. Nothing abandons a
 pending incoming update: a record recovery refuses stays until the named
 paths are restored. Pages of other origins or browser profiles are outside
-what the Web Locks and the migration can see.
+what the Web Locks can see.
 
 
 ## Internal composition

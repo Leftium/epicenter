@@ -283,18 +283,19 @@ test('a host token does not make a browser tab the desktop app', async () => {
 	// never asked a shell for anything.
 	expect(refused.name).toBe('BrowserFolder');
 	if (refused.name === 'BrowserFolder')
-		expect(refused.refusal.name).toBe('NoIndexedDb');
+		expect(refused.refusal.name).toBe('NoFileSystem');
 	expect(calls).toEqual([]);
 });
 
 test('a browser folder that is refused is returned as that refusal', async () => {
-	// This process has no IndexedDB, as a server render has none.
+	// This process has no origin private file system, as a server render has none.
 	inShell = false;
 	const none = expectErr(await openBrowserWorkspace());
 	expect(none.name).toBe('BrowserFolder');
-	if (none.name === 'BrowserFolder')
-		expect(none.refusal.name).toBe('NoIndexedDb');
-	expect(none.message).toContain('cannot be opened');
+	if (none.name === 'BrowserFolder') {
+		expect(none.refusal.name).toBe('NoFileSystem');
+		expect(none.message).toBe(none.refusal.message);
+	}
 
 	// Inside a desktop app the browser opener refuses, even where storage exists.
 	inShell = true;

@@ -8,8 +8,8 @@
  *
  * Key behaviors:
  * - The host build reaches the desktop adapter and its generated bindings,
- *   and no IndexedDB storage, directory opener, or Git implementation
- * - The browser build reaches IndexedDB storage and isomorphic-git, and no
+ *   and no OPFS storage, directory opener, or Git implementation
+ * - The browser build reaches OPFS storage and isomorphic-git, and no
  *   desktop adapter or generated bindings
  * - Neither build reaches the automatic entry, which loads either adapter,
  *   or `@epicenter/app`
@@ -51,7 +51,7 @@ const folderModule = (name: string) => (path: string) =>
 const SHARED_FORBIDDEN = /packages\/folder\/src\/index\.ts$|packages\/app\//;
 
 describe('#platform/folder', () => {
-	test('the host build resolves the desktop adapter without IndexedDB, a directory opener, or a Git implementation', async () => {
+	test('the host build resolves the desktop adapter without OPFS storage, a directory opener, or a Git implementation', async () => {
 		const modules = await inputs(SEAM_ENTRY, 'epicenter-host');
 
 		expect(
@@ -66,14 +66,14 @@ describe('#platform/folder', () => {
 			modules.filter(
 				(path) =>
 					SHARED_FORBIDDEN.test(path) ||
-					/platform\/folder\.browser\.ts$|packages\/folder\/src\/(browser|browser-adapter|browser-store|buffer-global|bun|native-store)\.ts$|packages\/folder\/src\/git\/(browser-backend|browser-fs|http|history|native-backend|native-checkpoint|runner)\.ts$|isomorphic-git|fake-indexeddb|^node:|^bun:/.test(
+					/platform\/folder\.browser\.ts$|packages\/folder\/src\/(browser|browser-adapter|opfs-store|buffer-global|bun|native-store)\.ts$|packages\/folder\/src\/git\/(browser-backend|browser-fs|http|history|native-backend|native-checkpoint|runner)\.ts$|isomorphic-git|^node:|^bun:/.test(
 						path,
 					),
 			),
 		).toEqual([]);
 	});
 
-	test('the browser build resolves the IndexedDB adapter without the desktop adapter or its bindings', async () => {
+	test('the browser build resolves the OPFS adapter without the desktop adapter or its bindings', async () => {
 		const modules = await inputs(SEAM_ENTRY, 'browser');
 
 		expect(
@@ -81,8 +81,13 @@ describe('#platform/folder', () => {
 		).toBe(true);
 		expect(modules.some(folderModule('browser.ts'))).toBe(true);
 		expect(modules.some(folderModule('browser-adapter.ts'))).toBe(true);
-		expect(modules.some(folderModule('browser-store.ts'))).toBe(true);
+		expect(modules.some(folderModule('opfs-store.ts'))).toBe(true);
 		expect(modules.some((path) => path.includes('isomorphic-git'))).toBe(true);
+		expect(
+			modules.filter((path) =>
+				/folder\/src\/browser-(store|migration)\.ts$|fake-indexeddb/.test(path),
+			),
+		).toEqual([]);
 		expect(
 			modules.filter(
 				(path) =>

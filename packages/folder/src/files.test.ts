@@ -29,14 +29,13 @@ import {
 	expect,
 	test,
 } from 'bun:test';
-import { IDBFactory, IDBKeyRange } from 'fake-indexeddb';
 import { expectErr, expectOk } from 'wellcrafted/testing';
 import type { FileBoundary } from './boundary.js';
 import { openFolder as openBrowserFolder } from './browser.js';
 import {
-	browserStorage,
 	locationOf,
 	rawBrowserFolder,
+	testBrowserStorage,
 } from './browser-storage.test-support.js';
 import { hashBytes } from './capture.js';
 import {
@@ -94,7 +93,7 @@ const openers: Record<string, () => Promise<Opened>> = {
 				browser: {
 					author,
 					commitOnEdit: false,
-					...browserStorage({ indexedDB: new IDBFactory(), IDBKeyRange }),
+					...testBrowserStorage(),
 				},
 			}),
 		),

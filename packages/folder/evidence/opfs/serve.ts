@@ -6,10 +6,10 @@
  *     bun packages/folder/evidence/opfs/serve.ts --build    # compile check only
  *
  * The page opens folders through the production browser opener in this
- * origin's real OPFS and IndexedDB, under `Epicenter Dev/local/opfs-evidence-*`
- * and matching IndexedDB names, and removes them when it finishes. It uses
- * its own port, so no application origin's storage is touched. It needs local
- * port binding; `--build` does not.
+ * origin's real OPFS, under `Epicenter Dev/local/opfs-evidence-*`, and
+ * removes them when it finishes. It uses its own port, so no application
+ * origin's storage is touched. It needs local port binding; `--build` does
+ * not.
  */
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';

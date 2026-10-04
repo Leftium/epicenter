@@ -121,9 +121,8 @@ selects that at build time. `bun dev:todos` starts the browser demo instead,
 with the folder in the browser's origin private file system (OPFS) and a
 loopback Git backend. Neither needs the hosted API.
 
-A browser folder is one OPFS directory holding its files and `.git`. The first
-open of a folder an earlier build kept in IndexedDB copies it there once and
-leaves the database as a backup
+A browser folder is one OPFS directory holding its files and `.git`. Opening
+uses only OPFS; it does not read or migrate earlier IndexedDB databases
 ([ADR-0497](../docs/adr/0497-browser-folders-use-scoped-opfs-directories.md)).
 Capture, Honeycrisp, Todos, Vocab, and Whispering open release Local browser
 folders; none selects a development or account scope yet.

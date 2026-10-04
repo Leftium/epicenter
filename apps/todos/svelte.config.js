@@ -1,5 +1,5 @@
 // Every build is a client-only static SPA. The browser build writes `build/`
-// and keeps its folder in IndexedDB. Epicenter's build writes into the host's
+// and keeps its folder in OPFS. Epicenter's build writes into the host's
 // packaged asset tree, below the route the host serves it from, and reaches a
 // real directory through the host.
 import staticAdapter from '@sveltejs/adapter-static';

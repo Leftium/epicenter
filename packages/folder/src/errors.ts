@@ -265,10 +265,6 @@ export const OpenFolderError = defineErrors({
 		message: `Invalid browser folder scope: ${reason}`,
 		reason,
 	}),
-	LegacyScopeUnassigned: ({ database }: { database: string }) => ({
-		message: `The legacy folder '${database}' must be assigned explicitly before opening a new scoped replacement`,
-		database,
-	}),
 	/** The desktop adapter was asked to open outside the desktop shell. */
 	NotTauri: () => ({
 		message:
@@ -280,42 +276,12 @@ export const OpenFolderError = defineErrors({
 			'This page runs in the desktop app, whose folders are files on disk; browser storage is not opened there',
 	}),
 	/**
-	 * No IndexedDB here: a server render, a worker without it, or a blocked
-	 * origin. A browser folder reads it to find folders earlier versions saved.
+	 * The origin private file system, its writable streams, or Web Locks are
+	 * missing: a server render, a worker without them, or an insecure page.
 	 */
-	NoIndexedDb: () => ({
-		message:
-			'Browser folders need IndexedDB to find folders saved by earlier versions, and it is not available here',
-	}),
-	/** The origin private file system, its writable streams, or Web Locks are missing. */
 	NoFileSystem: ({ missing }: { missing: string }) => ({
 		message: `Browser folders are stored in the origin private file system, which is not usable here: ${missing}`,
 		missing,
-	}),
-	/**
-	 * A folder an earlier version saved in IndexedDB is still open in a tab
-	 * that does not let go of it. Nothing was copied; close that tab and open
-	 * again.
-	 */
-	LegacyInUse: ({ database }: { database: string }) => ({
-		message: `The folder saved by an earlier version in '${database}' is open in another tab; close it, then open this folder again`,
-		database,
-	}),
-	/**
-	 * Copying a folder an earlier version saved in IndexedDB did not finish or
-	 * did not verify. The IndexedDB database is kept unchanged, and opening
-	 * again copies it again.
-	 */
-	LegacyMigration: ({
-		database,
-		cause,
-	}: {
-		database: string;
-		cause: unknown;
-	}) => ({
-		message: `The folder saved by an earlier version in '${database}' could not be moved to this version's storage, and is kept as it was: ${describe(cause)}`,
-		database,
-		cause,
 	}),
 	/** A browser folder with a remote records pushed commits under a named author. */
 	AuthorRequired: () => ({
@@ -347,6 +313,11 @@ export const OpenFolderError = defineErrors({
 		message: `Another Epicenter is already using the folder at ${root}. Quit the other Epicenter, then open this one again.`,
 		root,
 	}),
+	/**
+	 * The folder's storage could not be reached or made ready. In a browser
+	 * this includes a directory that is not this folder's: marked for another
+	 * address, with a marker naming none, or holding entries without a marker.
+	 */
 	Unavailable: ({ cause }: { cause: unknown }) => ({
 		message: `The folder could not be opened: ${describe(cause)}`,
 		cause,

@@ -13,9 +13,8 @@ There are two builds of the same UI, and the build decides where the folder is:
 | Desktop, inside Epicenter | An ordinary directory, owned by the Epicenter desktop shell. | Real Git in that directory's `.git`, recorded by the shell. No remote. |
 | Browser | One directory in this browser's origin private file system (OPFS), `Epicenter/local/so.epicenter.capture`. | Git in that directory's `.git`, in OPFS beside the files. No remote. |
 
-A browser folder an earlier version kept in IndexedDB is copied into OPFS,
-files and history together, the first time this version opens it. The old
-database is only read and stays as a backup.
+The browser opens the OPFS directory alone. It does not read, copy, or delete
+a folder an earlier version kept in IndexedDB.
 
 Run the browser build with `bun dev:capture` (or `bun dev:capture:ui`) from
 the repository root. It starts the app and nothing else. Start `bun dev:api`

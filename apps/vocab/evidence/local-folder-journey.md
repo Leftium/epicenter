@@ -3,6 +3,8 @@
 This record covers the earlier IndexedDB implementation. Current OPFS and
 canonical-editor acceptance is recorded in
 [the folder acceptance report](../../../packages/folder/evidence/opfs/ACCEPTANCE.md).
+The legacy-account import it describes was removed in the OPFS clean break
+([review](opfs-clean-break-review.md)).
 
 The user explicitly requested `@epicenter/folder/browser`, local use before
 login, and optional login later. English vocabulary and English instruction

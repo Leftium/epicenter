@@ -29,7 +29,7 @@ The page calls `openFolder` from `@epicenter/folder/browser` (imported as
 `so.epicenter.evidence.canonical-editor`. The opener chooses this browser's
 default storage; the page shows `folder.location` as the opener reports it,
 and prints any location kind it does not know as JSON. Today that is an
-IndexedDB database. When the default backend changes, the page follows it
+OPFS directory. When the default backend changes, the page follows it
 without changes of its own.
 
 Storage belongs to the page's origin. Keep the same host and port to see the

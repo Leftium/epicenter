@@ -23,13 +23,14 @@
  * - `browser.test.ts` and `native.test.ts` for a refused body conversion
  */
 import { afterAll, afterEach, expect, test } from 'bun:test';
-import { IDBFactory, IDBKeyRange } from 'fake-indexeddb';
 import { expectErr, expectOk } from 'wellcrafted/testing';
 import { openFolder } from './browser.js';
 import {
 	browserStorage,
+	createTestStorage,
 	locationOf,
 	opfsOf,
+	type TestStorage,
 } from './browser-storage.test-support.js';
 import { defineFolder, defineTable, field } from './contract.js';
 import { prepareFolderDefinition } from './definition.js';
@@ -48,8 +49,8 @@ async function open<
 	definition: TDefinition,
 	{
 		id = 'so.epicenter.definitiontest',
-		indexedDB = new IDBFactory(),
-	}: { id?: string; indexedDB?: IDBFactory } = {},
+		storage = createTestStorage(),
+	}: { id?: string; storage?: TestStorage } = {},
 ) {
 	const folder = expectOk(
 		await openFolder({
@@ -58,7 +59,7 @@ async function open<
 			browser: {
 				author: { name: 'Definition', email: 'definition@example.test' },
 				commitOnEdit: false,
-				...browserStorage({ indexedDB, IDBKeyRange }),
+				...browserStorage(storage),
 			},
 		}),
 	);
@@ -126,17 +127,16 @@ test('a definition names no folder: an id is refused where it is written and whe
 		).reason,
 	).toContain('declares an id');
 
-	const indexedDB = new IDBFactory();
+	const storage = createTestStorage();
 	const refused = expectErr(
 		await openFolder({
 			id: 'so.epicenter.named',
 			definition: { ...declared, id: 'so.epicenter.named' } as never,
-			browser: browserStorage({ indexedDB, IDBKeyRange }),
+			browser: browserStorage(storage),
 		}),
 	);
 	expect(refused.name).toBe('InvalidDefinition');
-	expect(await indexedDB.databases()).toEqual([]);
-	expect(opfsOf({ indexedDB, IDBKeyRange }).directories()).toEqual([]);
+	expect(opfsOf(storage).directories()).toEqual([]);
 });
 
 test('one prepared definition opens two folders that stay apart, and another definition keeps what it does not declare', async () => {
@@ -148,14 +148,14 @@ test('one prepared definition opens two folders that stay apart, and another def
 			}),
 		},
 	});
-	const indexedDB = new IDBFactory();
+	const storage = createTestStorage();
 	const personal = await open(definition, {
 		id: 'so.epicenter.todos',
-		indexedDB,
+		storage,
 	});
 	const work = await open(definition, {
 		id: 'so.epicenter.todos.work',
-		indexedDB,
+		storage,
 	});
 	expect(personal.location).toEqual(locationOf('so.epicenter.todos'));
 	expect(work.location).toEqual(locationOf('so.epicenter.todos.work'));
@@ -184,7 +184,7 @@ test('one prepared definition opens two folders that stay apart, and another def
 		kv: {},
 		tables: { todos: defineTable({ fields: { title: field.string() } }) },
 	});
-	const reopened = await open(titles, { id: 'so.epicenter.todos', indexedDB });
+	const reopened = await open(titles, { id: 'so.epicenter.todos', storage });
 	expect(expectOk(await reopened.tables.todos.get('milk'))?.fields).toEqual({
 		title: 'Milk',
 	});

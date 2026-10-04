@@ -31,7 +31,6 @@
 		"@sveltejs/vite-plugin-svelte": "catalog:",
 		"@tailwindcss/vite": "catalog:",
 		"@types/bun": "catalog:",
-		"fake-indexeddb": "^6.2.5",
 		"mode-watcher": "catalog:",
 		"svelte": "catalog:",
 		"svelte-check": "catalog:",

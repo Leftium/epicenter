@@ -7,8 +7,7 @@
  * this origin.
  *
  * The opener is the browser one, named explicitly. It refuses inside a
- * desktop app or when browser storage cannot be opened. IndexedDB is needed
- * only to check for files saved by an earlier version. Any refusal is what
+ * desktop app or when browser storage cannot be opened. Any refusal is what
  * the person is shown: nothing else is opened in its place.
  */
 import { openFolder } from '@epicenter/folder/browser';

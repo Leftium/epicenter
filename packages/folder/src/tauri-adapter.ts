@@ -46,7 +46,7 @@
  * `recoverIncoming()` is the only way it is resumed, and the owner decides
  * from what the folder holds then.
  *
- * This module loads no Git implementation and no IndexedDB store.
+ * This module loads no Git implementation and no browser storage.
  */
 
 import { isTauri } from '@tauri-apps/api/core';

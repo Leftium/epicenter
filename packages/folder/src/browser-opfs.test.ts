@@ -1,6 +1,6 @@
 /**
  * Browser folders in the origin private file system, through the production
- * opener, over an in-memory OPFS (`opfs.test-support.ts`) and fake IndexedDB.
+ * opener, over an in-memory OPFS (`opfs.test-support.ts`).
  *
  * Two handles on one environment stand in for two tabs: they share the
  * directory and the Web Locks. These tests show the folder's protocol; they
@@ -23,7 +23,6 @@
  */
 import { afterEach, describe, expect, spyOn, test } from 'bun:test';
 import { asPrincipalId } from '@epicenter/principal';
-import { IDBFactory, IDBKeyRange } from 'fake-indexeddb';
 import { expectErr, expectOk } from 'wellcrafted/testing';
 import {
 	defineFolder,
@@ -55,12 +54,10 @@ const decoder = new TextDecoder();
 const ROOT = 'Epicenter/local/test';
 
 let opfs: MemoryOpfs;
-let indexedDb: { indexedDB: IDBFactory; IDBKeyRange: typeof IDBKeyRange };
 const opened: Folder<typeof definition>[] = [];
 
 function fresh() {
 	opfs = memoryOpfs();
-	indexedDb = { indexedDB: new IDBFactory(), IDBKeyRange };
 }
 fresh();
 
@@ -84,7 +81,7 @@ async function open(
 				author,
 				commitOnEdit: options.commitOnEdit ?? false,
 				scope: options.scope,
-				opfs: opfsEnvironment(opfs, indexedDb, {
+				opfs: opfsEnvironment(opfs, {
 					BroadcastChannel: options.hints ? BroadcastChannel : undefined,
 				}),
 			},

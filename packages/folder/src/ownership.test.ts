@@ -19,7 +19,6 @@
  * - `files.test.ts` for captures and the file verbs
  */
 import { afterEach, describe, expect, test } from 'bun:test';
-import { IDBFactory, IDBKeyRange } from 'fake-indexeddb';
 import { expectOk } from 'wellcrafted/testing';
 import {
 	defineFolder,
@@ -28,7 +27,7 @@ import {
 	field,
 	openFolder,
 } from './browser.js';
-import { browserStorage } from './browser-storage.test-support.js';
+import { testBrowserStorage } from './browser-storage.test-support.js';
 import { hashBytes } from './capture.js';
 
 const definition = defineFolder({
@@ -50,7 +49,7 @@ async function open() {
 			browser: {
 				author: { name: 'Owner', email: 'owner@example.test' },
 				commitOnEdit: false,
-				...browserStorage({ indexedDB: new IDBFactory(), IDBKeyRange }),
+				...testBrowserStorage(),
 			},
 		}),
 	);

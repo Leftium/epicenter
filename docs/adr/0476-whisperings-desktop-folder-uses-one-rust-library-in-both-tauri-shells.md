@@ -10,7 +10,7 @@ Whispering keeps its standalone desktop data in ordinary files through
 `tauri-plugin-epicenter-folder`. The page attaches through
 `@epicenter/folder/tauri`; Rust owns the folder. A Bun sidecar still serves the
 page and supplies the terminal, provider requests, device settings, reveal,
-debug fixtures, and close relay. Browser Whispering uses OPFS; first open migrates its earlier IndexedDB folder.
+debug fixtures, and close relay. Browser Whispering opens its OPFS directory directly.
 
 Epicenter already grants trusted loopback-served pages focused Tauri commands.
 Serving the SPA from Bun does not require Bun to open its data folder. A native

@@ -53,9 +53,7 @@ export const WorkspaceError = defineErrors({
 		message:
 			refusal.name === 'InsideTauri'
 				? 'This window is inside a desktop app. Browser storage is not used inside a desktop app, so there is no folder to open here.'
-				: refusal.name === 'NoIndexedDb'
-					? 'Whispering cannot check files saved by an earlier version because IndexedDB is unavailable here, so the folder cannot be opened.'
-					: refusal.message,
+				: refusal.message,
 		refusal,
 	}),
 	/**

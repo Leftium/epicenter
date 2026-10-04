@@ -36,7 +36,6 @@ import type {
 	FileListing,
 	FileRead,
 } from './boundary.js';
-import type { IndexedDbEnvironment } from './browser-store.js';
 import { hashBytes } from './capture.js';
 import {
 	ApplyError,
@@ -99,13 +98,11 @@ export type OpfsEnvironment = {
 	readonly locks: OpfsLocks;
 	/** Carries file-change hints between tabs. Omitted: none are heard. */
 	readonly BroadcastChannel?: typeof BroadcastChannel;
-	/** Where folders that earlier versions saved are found and copied from. */
-	readonly indexedDb: IndexedDbEnvironment;
 };
 
 /** The folder's private Git directory. `pathProblem` refuses it as a path. */
 export const PRIVATE_DIRECTORY = '.git';
-/** Written last when a folder's directory becomes its authority. */
+/** Inside `.git`: the record naming the address whose folder the directory is. */
 export const READY_MARKER = 'epicenter-folder.json';
 
 /** The name a DOM exception or a thrown error-like object carries. */

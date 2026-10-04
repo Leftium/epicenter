@@ -393,7 +393,7 @@ test('a word another tab removed, with no hint yet read here, is saved again ins
 	await using context = await setup();
 	const { browser, folder, entries } = context;
 	expectOk(await entries.add('resilient'));
-	// A word whose file is not named by its text, as an imported one is.
+	// A word whose file is not named by its text, as one written elsewhere may be.
 	expectOk(
 		await folder.tables.entries.create({
 			stem: 'earlier-id',

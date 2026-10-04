@@ -9,10 +9,9 @@
  * shell owns.
  *
  * The captured address (channel, owner, folder ID) names the directory, the
- * Web Locks, and the hint channel. The first open of an address copies the
- * folder an earlier version saved in IndexedDB for the same address, then
- * never reads IndexedDB for it again (`browser-migration.ts`). Folders are
- * never kept in IndexedDB, and nothing falls back to it.
+ * Web Locks, and the hint channel. The directory is the folder only while its
+ * ready marker names that address (`claimDirectory`). IndexedDB is never
+ * required, read, or written.
  *
  * This module exports the opener alone. `browser.ts` is the public entry; the
  * automatic entry loads this module directly, so choosing an adapter at run
@@ -24,8 +23,6 @@
 import { accountKey } from '@epicenter/principal/account-key';
 import { isTauri } from '@tauri-apps/api/core';
 import { Ok, type Result } from 'wellcrafted/result';
-import { prepareFolderDirectory } from './browser-migration.js';
-import type { IndexedDbEnvironment } from './browser-store.js';
 import { ensureBufferGlobal } from './buffer-global.js';
 import type { OpenFolder } from './contract.js';
 import {
@@ -42,10 +39,16 @@ import { createOpfsGitStore } from './git/opfs-git.js';
 import { callObserver } from './observer.js';
 import {
 	createOpfsFileBoundary,
+	ensureDirectory,
 	holding,
+	lookup,
 	type OpfsDirectoryHandle,
 	type OpfsEnvironment,
 	type OpfsLocks,
+	PRIVATE_DIRECTORY,
+	READY_MARKER,
+	readHandle,
+	writePrivateFile,
 } from './opfs-store.js';
 import { withPublication } from './storage.js';
 
@@ -54,13 +57,11 @@ const LOCAL_AUTHOR: Author = { name: 'Local', email: 'local@localhost' };
 
 /** The browser's own storage, or the refusal naming what is missing. */
 function globalEnvironment(): Result<OpfsEnvironment, OpenFolderError> {
-	const scope = globalThis as Partial<IndexedDbEnvironment> & {
+	const scope = globalThis as {
 		navigator?: Navigator;
 		FileSystemFileHandle?: { prototype: object };
 		BroadcastChannel?: typeof BroadcastChannel;
 	};
-	if (scope.indexedDB === undefined || scope.IDBKeyRange === undefined)
-		return OpenFolderError.NoIndexedDb();
 	const storage = scope.navigator?.storage;
 	if (typeof storage?.getDirectory !== 'function')
 		return OpenFolderError.NoFileSystem({
@@ -78,7 +79,6 @@ function globalEnvironment(): Result<OpfsEnvironment, OpenFolderError> {
 			storage.getDirectory() as unknown as Promise<OpfsDirectoryHandle>,
 		locks: locks as unknown as OpfsLocks,
 		BroadcastChannel: scope.BroadcastChannel,
-		indexedDb: { indexedDB: scope.indexedDB, IDBKeyRange: scope.IDBKeyRange },
 	});
 }
 
@@ -120,11 +120,102 @@ function folderAddress(
 	};
 }
 
+const MARKER_PATH = `${PRIVATE_DIRECTORY}/${READY_MARKER}`;
+
+/** The address a ready marker names, or `undefined` when it names none. */
+function markedAddress(bytes: Uint8Array): string | undefined {
+	try {
+		const marker: unknown = JSON.parse(
+			new TextDecoder('utf-8', { fatal: true }).decode(bytes),
+		);
+		// Extra record properties do not affect directory identity.
+		if (
+			typeof marker === 'object' &&
+			marker !== null &&
+			'address' in marker &&
+			typeof marker.address === 'string'
+		)
+			return marker.address;
+	} catch {
+		// Not JSON text: it names no address.
+	}
+	return undefined;
+}
+
+/**
+ * The first entry of an unmarked folder directory that is not what an
+ * interrupted first open leaves: `.git` holding at most an empty marker.
+ */
+async function occupant(
+	directory: OpfsDirectoryHandle,
+): Promise<string | undefined> {
+	for await (const entry of directory.values()) {
+		if (entry.name !== PRIVATE_DIRECTORY || entry.kind !== 'directory')
+			return entry.name;
+		for await (const inner of entry.values()) {
+			const path = `${PRIVATE_DIRECTORY}/${inner.name}`;
+			if (inner.kind !== 'file' || inner.name !== READY_MARKER) return path;
+			if ((await readHandle(inner)).byteLength > 0) return path;
+		}
+	}
+	return undefined;
+}
+
+/**
+ * Make `directory` the folder at `address`, under the folder's open lock. A
+ * directory whose ready marker names `address` is the folder. One whose
+ * marker names another address, or names none, is refused, and so is one
+ * that holds anything without a marker: nothing there is overwritten or
+ * adopted. A missing or empty directory becomes the folder once its marker
+ * is written; a marker write that fails, or whose close is unconfirmed,
+ * throws, and the open is refused. An empty marker publishes nothing, so a
+ * directory holding only one is still empty.
+ */
+async function claimDirectory(
+	origin: OpfsDirectoryHandle,
+	directory: string,
+	address: string,
+): Promise<Result<OpfsDirectoryHandle, OpenFolderError>> {
+	const refused = (reason: string) =>
+		OpenFolderError.Unavailable({
+			cause: new Error(
+				`The directory '${directory}' ${reason}; it was left unchanged`,
+			),
+		});
+	const found = await lookup(origin, directory);
+	if (found.kind === 'file' || found.kind === 'underFile')
+		return refused('is not a directory');
+	if (found.kind === 'directory') {
+		const marker = await lookup(found.handle, MARKER_PATH);
+		const bytes =
+			marker.kind === 'file' ? await readHandle(marker.handle) : undefined;
+		if (bytes !== undefined && bytes.byteLength > 0) {
+			const marked = markedAddress(bytes);
+			if (marked === undefined)
+				return refused('has a ready marker that names no address');
+			if (marked !== address)
+				return refused(`is marked for ${marked}, not ${address}`);
+			return Ok(found.handle);
+		}
+		const held = await occupant(found.handle);
+		if (held !== undefined)
+			return refused(`holds '${held}' but no ready marker for ${address}`);
+	}
+	const made = await ensureDirectory(origin, directory);
+	if (made.error) return OpenFolderError.Unavailable({ cause: made.error });
+	await writePrivateFile(
+		made.data,
+		READY_MARKER,
+		new TextEncoder().encode(JSON.stringify({ address })),
+	);
+	return Ok(made.data);
+}
+
 /**
  * Open the browser folder named `id`. Refusals are returned, not thrown: a
  * definition a folder cannot keep, a page inside the desktop app, a missing
- * ID, missing browser storage, a remote without an author, or a folder an
- * earlier version saved that cannot be copied safely.
+ * ID, missing browser storage, a remote without an author, or a directory
+ * that is not this folder's.
  */
 export const openFolder: OpenFolder = async ({
 	definition,
@@ -192,33 +283,17 @@ async function openOpfsFolder<TDefinition extends FolderDefinition>(
 ): Promise<Result<Folder<TDefinition>, OpenFolderError>> {
 	const { id, channel: deployment, owner, author } = captured;
 	const { address, directory } = folderAddress(deployment, owner, id);
-	// Release Local used the folder ID alone for its earlier database.
-	const scoped = deployment !== 'release' || owner !== null;
 	const { locks } = environment;
 	const filesLock = `epicenter-folder-opfs-files:${address}`;
 	const gitLock = `epicenter-folder-opfs-git:${address}`;
 	const openLock = `epicenter-folder-opfs-open:${address}`;
 	// One open at a time decides whether the directory is the folder yet, and
-	// makes it so: copied from an earlier version's database, or new.
+	// makes a new one so.
 	let ready: Result<OpfsDirectoryHandle, OpenFolderError>;
 	try {
 		const origin = await environment.getDirectory();
 		ready = await holding(locks, openLock, () =>
-			prepareFolderDirectory({
-				origin,
-				directory,
-				address,
-				environment: environment.indexedDb,
-				legacy: scoped
-					? `epicenter-folder-scoped:${address}`
-					: `epicenter-folder:${id}`,
-				local: scoped
-					? {
-							database: `epicenter-folder:${id}`,
-							...folderAddress('release', null, id),
-						}
-					: undefined,
-			}),
+			claimDirectory(origin, directory, address),
 		);
 	} catch (cause) {
 		return OpenFolderError.Unavailable({ cause });

@@ -25,7 +25,6 @@ export {
 	type KvOf,
 } from '@epicenter/definition';
 export type { FileListing } from './boundary.js';
-export type { IndexedDbEnvironment } from './browser-store.js';
 export type {
 	CanonicalDocument,
 	CanonicalRefusal,
@@ -147,11 +146,9 @@ export type BrowserFolderOptions = {
 	/**
 	 * Captured storage ownership, independent of login changes after opening.
 	 * Omitted: release Local. Each channel, owner, and folder ID is its own
-	 * origin private file system directory, Web Locks, and hint channel. The
-	 * first open copies the folder an earlier version saved in IndexedDB for
-	 * the same scope; a scoped folder refuses to start empty beside an
-	 * earlier version's Local folder that no Local open has claimed. This
-	 * option does not change private application SQL.
+	 * origin private file system directory, Web Locks, and hint channel. A
+	 * scoped folder never reads the Local folder of the same ID. This option
+	 * does not change private application SQL.
 	 */
 	readonly scope?: {
 		channel: 'release' | 'development';
@@ -171,9 +168,8 @@ export type BrowserFolderOptions = {
 	 */
 	readonly commitOnEdit?: boolean;
 	/**
-	 * Injected origin private file system, Web Locks, and the IndexedDB that
-	 * earlier versions saved folders in; for tests. Defaults to the browser
-	 * globals.
+	 * Injected origin private file system, Web Locks, and hint channel; for
+	 * tests. Defaults to the browser globals.
 	 */
 	readonly opfs?: OpfsEnvironment;
 };
@@ -184,7 +180,7 @@ export type OpenFolderOptions<TDefinition extends FolderDefinition> = {
 	/**
 	 * Which folder to open: its dataset name relative to the owner, such as
 	 * `so.epicenter.todos`. Required, and never a path. A browser names its
-	 * database after it; the desktop shell maps it to a directory it
+	 * directory after it; the desktop shell maps it to a directory it
 	 * registered.
 	 */
 	readonly id: string;

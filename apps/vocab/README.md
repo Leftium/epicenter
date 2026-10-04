@@ -41,9 +41,9 @@ openFolder({ id, definition: vocabFolder }) One folder in this browser (OPFS), I
 
 `src/lib/data.ts` declares how the folder's files read and `src/lib/folder.ts` opens it as `VOCAB_FOLDER_ID` through `@epicenter/folder/browser`. The folder is one directory in this browser's origin private file system, `Epicenter/local/so.epicenter.vocab`, holding the files and their Git history. It is not a directory on disk: Vocab has no desktop build, and inside the desktop app the opener refuses instead of opening browser storage. No row has an account in it.
 
-A folder an earlier version of Vocab kept in IndexedDB is copied into that directory, files and history together, the first time this version opens it. The old database is only read and stays as a backup. A tab of the earlier version that is still open keeps what it showed, and its saves fail.
+This version is a clean break from earlier ones. Vocab does not read, copy, or delete what an earlier version saved in IndexedDB, in an account's Personal store, or in a device chat store; it starts from the OPFS directory alone.
 
-A new word's file is named by the SHA-256 of its exact UTF-8 text and created exclusively. Adding one text twice, from one tab or two, or again after an answer that never arrived, reaches the same file: one add creates it and the others find it, with its note and stage as they are. A different file at that name is refused and left alone. An imported word keeps its earlier ID as its file name, so the list is also checked for the text.
+A new word's file is named by the SHA-256 of its exact UTF-8 text and created exclusively. Adding one text twice, from one tab or two, or again after an answer that never arrived, reaches the same file: one add creates it and the others find it, with its note and stage as they are. A different file at that name is refused and left alone. A word file under another name, such as one written outside Vocab, is found by its text in the list.
 
 A chat's ID is the `chat` field of its messages. A focus item holds the original text and its entry's ID. Messages whose chat has no `chats` file are an earlier message-only chat and are listed without a focus.
 
@@ -58,19 +58,6 @@ A save is confirmed by the folder's receipt for that file, and nothing is shown 
 - A failed save has its own notice and its own "Save again", which writes the same file again and never asks the tutor. Tutor failures keep their separate retry. Leaving a chat that holds an unsaved message asks first. The inference picker saves one workflow choice in this browser; an unavailable model leaves Words and history usable.
 
 A message's file is named by its ID and created exclusively, so saving it again adds no second file and a different message at that name is refused.
-
-## Words and chats from earlier Vocab
-
-Earlier versions saved words to the signed-in account's Personal store and chats to a device store whose rows carried an account key. This version opens neither on its own, and nothing is promoted automatically: words and chats from before do not appear until they are imported.
-
-Words has an "Import from earlier Vocab" panel. Signed in, it copies what this browser holds of that account's words and that account's chats into the folder. Each old row becomes the file named by its old row ID, so a focus still names its word, two old words with the same text stay two words with their own notes and stages, and importing again creates nothing and leaves notes and stages edited since as they are. A file already at an old row's name counts as its copy only if it reads as that row; any other file there is left alone and the row is reported as not copied. Vocab writes no row to the earlier stores and deletes nothing from them. Opening them is the ordinary open, so the Personal store connects to the account and its own sync may update this browser's copy. Chats saved under another account in this browser are counted and left where they are.
-
-`src/lib/legacy-import.ts` holds the earlier declarations and the copy; `src/lib/legacy-source.ts` opens the earlier stores and is loaded only when the import is requested.
-
-An ID collision also refuses dependent rows: a chat cannot control a different
-word at a focus ID, and its messages cannot join a different chat at its ID.
-Refused rows remain in the earlier storage and can be imported again after the
-conflict is resolved.
 
 ## Development
 

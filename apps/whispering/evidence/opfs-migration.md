@@ -6,6 +6,13 @@ The candidate started from branch commit `401708bb48` with only the Vocab and
 Whispering migration paths and Vocab workspace lock entry. Chrome exercised
 Whispering at `http://localhost:5235` from the clean candidate checkout.
 
+Clean break, recorded after this run: the browser opener no longer copies a
+folder an earlier build kept in IndexedDB, and Whispering no longer has an
+IndexedDB-specific refusal. Earlier IndexedDB folders are not read. This
+record does not say whether its fixture first reached OPFS through that copy,
+and the clean break has not been exercised in a browser. Device settings in
+`localStorage` and an earlier build's key are unaffected.
+
 Notes autosaved, settled to Saved, and survived reload. Exact source editing
 saved an invalid duration value and visibly showed Needs repair. Correcting
 the duration to 1000 restored structured fields while preserving the fixture's

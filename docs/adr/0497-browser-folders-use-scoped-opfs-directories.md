@@ -2,6 +2,7 @@
 
 - **Status:** Accepted
 - **Date:** 2026-10-03
+- **Amended:** 2026-10-04: OPFS opens directly; IndexedDB migration and legacy admission are removed.
 - **Relates:** [ADR-0461](0461-portable-data-folders-live-under-local-and-derived-account-scopes.md) defines authored owners; [ADR-0496](0496-native-app-runtime-storage-is-independent-of-the-shell.md) defines private native runtime ownership; [ADR-0494](0494-file-folders-reserve-epicenter-for-rebuildable-caches.md) defines transient query sessions.
 - **Unbuilt:** application selection of development and account scopes, and private SQL channel and account ownership in the `so.epicenter/<app-id>/<owner-path>/` namespace.
 
@@ -16,8 +17,10 @@ transaction.
 The replacement stores literal files and Git together in OPFS. Individual saves
 need no generic multi-file transaction. Incoming Git adoption needs its own
 interruption recovery because it changes the working tree, staging index and
-branch together. Existing databases hold user files and history that must reach
-the new layout intact, while a tab of an earlier build may still have one open.
+branch together. The initial cutover copied earlier databases. The user subsequently chose a
+clean break: unmigrated IndexedDB files have no recovery promise. Keeping the
+reader, freeze protocol and copy cursor would make every new OPFS folder pay
+for a retired storage format.
 
 ## Decision
 
@@ -49,9 +52,8 @@ directories. Repository state stays outside portable source enumeration,
 capture, transfer and file-change hints.
 
 Opening requires `navigator.storage.getDirectory`, writable file streams and Web
-Locks, and returns `NoFileSystem` without them. It also requires IndexedDB to
-find a folder an earlier version saved (`NoIndexedDb`). No browser folder is
-kept in IndexedDB, and opening never falls back to another store.
+Locks, and returns `NoFileSystem` without them. Opening requires no IndexedDB
+API, database lookup or legacy admission. It never falls back to another store.
 
 **Capture the address before acquiring resources.**
 Channel means release or development. Owner means Local or a specific account
@@ -69,39 +71,19 @@ writable stream closes. A stream whose close throws is `Unconfirmed`, whatever
 the path holds afterward. Git incoming adoption retains a separate recovery
 record under ADR-0474.
 
-**The IndexedDB adapter is retired; an earlier database is a read-only migration source.**
-The first open of an address copies its database into the directory once,
-under an open Web Lock:
+**Opening uses only the captured OPFS directory.**
+The opener finds or creates that directory under its open Web Lock. It checks
+`.git/epicenter-folder.json` against the captured address before returning a
+handle. A marker for another address, an unreadable marker, or a populated
+directory without a marker refuses opening. An interrupted initial marker
+creation can be retried only while the directory contains no other files.
+Initialization does not read or freeze another storage system.
 
-1. Freeze. Open the database at a version earlier builds cannot open. Their
-   connections close on `versionchange`; one that does not let go is
-   `LegacyInUse`, and nothing is copied.
-2. Read the frozen database, not an observation taken before freezing.
-3. Copy files, explicit directories and `.git` files byte for byte. Equal bytes
-   are kept and missing entries written; an entry with other bytes, empty
-   included, refuses the copy. Before creating a file, commit a cursor naming it
-   to the frozen database's `migration` store, and clear it once the file reads
-   back. A resumed copy rewrites only an empty file its cursor names.
-4. Verify that the directory topology is exactly the database: every file, every
-   explicit directory and every ancestor directory its files imply. Then write
-   the ready marker `.git/epicenter-folder.json` naming the address.
-
-A copy that stops or does not verify is `LegacyMigration`, and opening again
-resumes it. The `contents`, `inventory`, `directories` and `git` stores are
-never written and remain the backup. A directory without a ready marker for its
-address is never opened as a folder. A tab of an earlier build keeps showing
-what it read, and its later writes fail.
-
-**A scoped folder opens only past a fence on release Local.**
-A development or account folder with nothing of its own starts only when the
-release Local folder of the same ID is ready, or when the earlier builds' Local
-database is frozen and holds nothing. Freezing applies even to an absent
-database, so no earlier build can start a Local folder beside the scope
-afterward. A Local database that holds data refuses the scope with
-`LegacyScopeUnassigned`; an earlier tab that holds it refuses with
-`LegacyInUse`. Neither creates a folder. A frozen Local database whose copy
-never finished is not a claim. Opening never assigns Local data to the current
-login and never opens an empty replacement for it.
+Release, development, Local and account directories remain independent. A new
+account folder does not inspect Local storage or assign Local data to the
+current login. Existing OPFS files and Git history reopen in place. IndexedDB
+readers, migration cursors, legacy scope fences and their errors are removed.
+No runtime recovery tool or automatic database deletion replaces them.
 
 **Private application SQLite retains independent channel, app and account ownership.**
 Its OPFS namespace is `so.epicenter/<app-id>/<owner-path>/` for release and
@@ -131,23 +113,26 @@ exhaustion and eviction surface as the failing step's `Io` or `Unconfirmed`.
 A tree is neither a backup nor cross-origin sharing. The adapter makes no
 power-loss or flush-to-disk promise, and OPFS offers no compare-and-swap:
 cooperating tabs rely on the files Web Lock. Pages of other origins or browser
-profiles are outside what the locks and the migration can see.
+profiles are outside what the locks can see.
 
-Every earlier database stays on disk after migration, so its bytes count
-against quota until site data is cleared.
+An unmigrated IndexedDB folder no longer appears automatically. Its database
+may remain on disk until deliberate cleanup; the app never reads or deletes it.
 
 ## Verification
 
-The browser production opener passes its OPFS checks in Chrome, and a reloaded
-page reads what it saved. Each browser application opened in Chrome over data
-an earlier build saved in IndexedDB, with its files and Git history preserved
-and ordinary saves surviving reload. The package suites run on an in-memory
-OPFS stand-in with fake IndexedDB; they establish the protocol, not that every
-browser's OPFS behaves like the stand-in.
+The clean-break Folder suite passes 676 tests, with 18 skips. Its identity
+checks open fresh directories and reopen saved bytes and Git history while
+IndexedDB globals are absent or throw. Scope tests cover release/development,
+Local and two accounts. Browser bundles contain no IndexedDB globals. The live
+package typecheck and OPFS evidence build pass.
 
-Still to verify: quota failure in a real browser, restart during migration in a
-real browser, and release/development and Local/two-account isolation once
-applications select those scopes.
+These are stand-in and build checks. The earlier cutover also exercised saves
+and reload in Chrome over previously migrated OPFS data. Final app browser
+observations are recorded separately from the automated clean-break checks in
+[the coordinator review](../../packages/folder/evidence/opfs/coordinator-clean-break-review.md).
+
+Still to verify: quota failure in a real browser, and release/development and
+Local/two-account isolation once applications select those scopes.
 
 ## Considered alternatives
 

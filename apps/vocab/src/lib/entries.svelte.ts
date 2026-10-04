@@ -190,10 +190,10 @@ export function createEntriesState({
 			// The text a file can hold: saving replaces an unpaired surrogate.
 			const exact = text.trim().toWellFormed();
 			if (exact === '') return EntryError.Empty();
-			// The list catches a word whose file has another name, such as an
-			// imported one. It is only what was last read, so each match is read
-			// from the folder before it is called present: a word another tab
-			// removed is dropped from the list here and saved again below.
+			// The list catches a word whose file has another name, such as one
+			// written outside Vocab. It is only what was last read, so each match
+			// is read from the folder before it is called present: a word another
+			// tab removed is dropped from the list here and saved again below.
 			for (const listed of rows.filter((entry) => entry.text === exact)) {
 				const current = await table.get(listed.id);
 				if (current.error !== null)

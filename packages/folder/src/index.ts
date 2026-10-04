@@ -3,8 +3,8 @@
  * is running.
  *
  * A folder's current files are its saved data: Markdown rows, `kv.json`, and
- * any other file. In a browser tab they live in IndexedDB. In the desktop app
- * they are files in a directory the shell owns.
+ * any other file. In a browser tab they are files in the origin private file
+ * system. In the desktop app they are files in a directory the shell owns.
  *
  * `openFolder` decides which when it is called, not when this module is
  * imported, and loads only the adapter it chose. Importing this module opens

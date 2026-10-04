@@ -2,10 +2,10 @@
  * EVIDENCE: browser-folder acceptance checks in a real browser.
  *
  * Every check opens folders through the production browser opener, in this
- * origin's real OPFS, Web Locks, BroadcastChannel, and IndexedDB, under fresh
- * disposable `development` scope IDs. A same-origin iframe (`peer.ts`) is a
- * second browsing context on the same folder. The run removes its OPFS
- * directories and IndexedDB databases when it finishes.
+ * origin's real OPFS, Web Locks, and BroadcastChannel, under fresh disposable
+ * `development` scope IDs. A same-origin iframe (`peer.ts`) is a second
+ * browsing context on the same folder. The run removes its OPFS directories
+ * when it finishes.
  *
  * Every outcome is visible on the page: one list item per check whose
  * `.status` reads PASS, FAIL, or NOTE with its detail, `#state` with
@@ -23,9 +23,9 @@
  * with the browser's own OPFS API, then use only `git.recoverIncoming()` and
  * the folder's public methods. No remote is reached.
  *
- * The migration check writes an earlier version's IndexedDB database with
- * raw IndexedDB, holding real history made in a scratch folder, then opens
- * the folder. The editor check drives the public row editor.
+ * The identity check writes a stray file into an unmarked directory, and a
+ * ready marker naming another address into another, with the browser's own
+ * OPFS API, and opens each. The editor check drives the public row editor.
  *
  * Not covered here: quota exhaustion, eviction, and a real crash during a
  * stream close. The Bun suites cover interruption at each step over an
@@ -40,10 +40,6 @@ import {
 	hashBytes,
 	openFolder,
 } from '../../src/browser.js';
-import {
-	type LegacyContents,
-	seedLegacyFolder,
-} from '../../src/legacy.test-support.js';
 import type { PeerReply, PeerRequest } from './peer.js';
 
 type Status = 'pass' | 'fail' | 'note';
@@ -131,15 +127,15 @@ function randomBytes(size: number) {
 }
 
 /** The folder's directory, read with the browser's own OPFS API. */
-async function rawDirectory(id: string) {
+async function rawDirectory(id: string, create = false) {
 	const origin = await navigator.storage.getDirectory();
-	const channel = await origin.getDirectoryHandle('Epicenter Dev');
-	const local = await channel.getDirectoryHandle('local');
-	return local.getDirectoryHandle(id);
+	const channel = await origin.getDirectoryHandle('Epicenter Dev', { create });
+	const local = await channel.getDirectoryHandle('local', { create });
+	return local.getDirectoryHandle(id, { create });
 }
 
 async function rawParent(id: string, path: string, create = false) {
-	let directory = await rawDirectory(id);
+	let directory = await rawDirectory(id, create);
 	const parts = path.split('/');
 	for (const part of parts.slice(0, -1))
 		directory = await directory.getDirectoryHandle(part, { create });
@@ -233,10 +229,6 @@ async function peer() {
 	};
 }
 
-/** The IndexedDB database an earlier version kept this scoped folder in. */
-const legacyName = (id: string) =>
-	`epicenter-folder-scoped:${JSON.stringify(['development', 'local', null, id])}`;
-
 async function cleanup() {
 	await closeAll();
 	const origin = await navigator.storage.getDirectory();
@@ -249,12 +241,6 @@ async function cleanup() {
 		} catch {
 			// Already gone.
 		}
-		await new Promise<void>((resolve) => {
-			const deleting = indexedDB.deleteDatabase(legacyName(id));
-			deleting.onsuccess = () => resolve();
-			deleting.onerror = () => resolve();
-			deleting.onblocked = () => resolve();
-		});
 	}
 	used.clear();
 }
@@ -779,80 +765,57 @@ async function recovery(id: string) {
 	);
 }
 
-async function migration(id: string) {
+async function identity(id: string) {
+	/** Open `folderId`, expecting a refusal; a folder that opens anyway is closed with the run. */
+	async function refusal(folderId: string) {
+		used.add(folderId);
+		const result = await openFolder({
+			id: folderId,
+			definition,
+			browser: { scope, author, commitOnEdit: false },
+		});
+		if (result.data) opened.push(result.data);
+		return result.error;
+	}
+
 	await check(
-		'a folder an earlier version saved in IndexedDB is copied with its history',
+		"a directory that is not this folder's is refused and left as it is",
 		async () => {
-			// An earlier version kept a folder's files, directories, and Git
-			// files in one IndexedDB database. Make real history in a scratch
-			// folder, then write it into such a database with raw IndexedDB.
-			const sourceId = `${id}-legacy-source`;
-			const legacyId = `${id}-legacy`;
-			used.add(legacyId);
-			const source = await open(sourceId);
-			ok(await source.files.create('bytes.bin', allBytes));
-			ok(await source.files.mkdir('kept/empty'));
-			const commit = await source.git.commit();
-			assert(commit.status === 'committed', `source commit ${commit.status}`);
-			await closeAll();
-			const contents = await rawContents(sourceId);
-			await seedLegacyFolder(
-				{ indexedDB, IDBKeyRange },
-				legacyName(legacyId),
-				contents,
+			const unmarked = `${id}-unmarked`;
+			await rawWrite(unmarked, 'found.txt', encoder.encode('found'));
+			const stray = await refusal(unmarked);
+			assert(
+				stray?.name === 'Unavailable',
+				`unmarked: ${stray?.name ?? 'opened'}`,
+			);
+			assert(
+				decoder.decode(await rawRead(unmarked, 'found.txt')) === 'found',
+				'found.txt changed',
+			);
+			assert(
+				!(await rawExists(unmarked, '.git/epicenter-folder.json')),
+				'a marker was written beside found.txt',
 			);
 
-			const folder = await open(legacyId);
+			const marked = `${id}-marked`;
+			const marker = encoder.encode(
+				JSON.stringify({
+					address: JSON.stringify(['release', 'local', null, marked]),
+				}),
+			);
+			await rawWrite(marked, '.git/epicenter-folder.json', marker);
+			const foreign = await refusal(marked);
 			assert(
-				sameBytes(ok(await folder.files.read('bytes.bin')).bytes, allBytes),
-				'bytes',
+				foreign?.name === 'Unavailable',
+				`marked: ${foreign?.name ?? 'opened'}`,
 			);
 			assert(
-				ok(await folder.files.list()).directories.includes('kept/empty'),
-				'empty directory',
+				sameBytes(await rawRead(marked, '.git/epicenter-folder.json'), marker),
+				'the other address marker was rewritten',
 			);
-			const [head] = ok(await folder.git.log(1));
-			assert(head?.oid === commit.oid, 'history');
-			// The database is kept as a backup, frozen at a version an earlier
-			// build cannot open, so it cannot write there again.
-			const earlier = await new Promise<string>((resolve) => {
-				const opening = indexedDB.open(legacyName(legacyId), 1);
-				opening.onsuccess = () => {
-					opening.result.close();
-					resolve('opened');
-				};
-				opening.onerror = () => resolve(opening.error?.name ?? 'error');
-			});
-			assert(earlier === 'VersionError', `earlier build's open: ${earlier}`);
-			return `${contents.git.size} Git files and history ${commit.oid.slice(0, 12)} copied; the kept database refuses an earlier build (${earlier})`;
+			return `${stray.message}; ${foreign.message}`;
 		},
 	);
-}
-
-/** A folder's stored entries, read with the browser's own OPFS API, as an earlier version's database holds them. */
-async function rawContents(id: string): Promise<LegacyContents> {
-	const files = new Map<string, Uint8Array>();
-	const git = new Map<string, Uint8Array>();
-	const directories: string[] = [];
-	async function visit(directory: FileSystemDirectoryHandle, prefix: string) {
-		const entries = await rawEntries(directory);
-		if (entries.length === 0 && prefix !== '' && !prefix.startsWith('.git'))
-			directories.push(prefix);
-		for (const entry of entries) {
-			const path = prefix === '' ? entry.name : `${prefix}/${entry.name}`;
-			if (entry.kind === 'directory') {
-				await visit(await directory.getDirectoryHandle(entry.name), path);
-				continue;
-			}
-			const file = await (await directory.getFileHandle(entry.name)).getFile();
-			const bytes = new Uint8Array(await file.arrayBuffer());
-			if (path === '.git/epicenter-folder.json') continue;
-			if (path.startsWith('.git/')) git.set(path.slice(5), bytes);
-			else files.set(path, bytes);
-		}
-	}
-	await visit(await rawDirectory(id), '');
-	return { files, directories, git };
 }
 
 async function editing(id: string) {
@@ -1002,7 +965,7 @@ async function main() {
 			await twoContexts(runId);
 			await history(runId);
 			await recovery(runId);
-			await migration(runId);
+			await identity(runId);
 			await editing(`${runId}-editor`);
 			await closing(runId);
 		}

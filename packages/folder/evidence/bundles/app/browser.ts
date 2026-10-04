@@ -2,9 +2,9 @@
 import { defineFolder, openFolder } from '@epicenter/folder/browser';
 
 const definition = defineFolder({
-	id: 'so.epicenter.bundlefixture',
 	kv: {},
 	tables: {},
 });
 
-export const start = () => openFolder({ definition });
+export const start = () =>
+	openFolder({ id: 'so.epicenter.bundlefixture', definition });

@@ -3,7 +3,7 @@
 - **Status:** Accepted
 - **Date:** 2026-10-03
 - **Supersedes:** [ADR-0445](0445-vocab-saves-local-chats-and-syncs-saved-entries.md)
-- **Unbuilt:** Native Vocab distribution, physical local directory placement, and configured remote synchronization. Real legacy-account import has not been exercised in the browser.
+- **Unbuilt:** Native Vocab distribution, physical local directory placement, and configured remote synchronization.
 
 ## Context
 
@@ -17,8 +17,8 @@ English learning workflow that can run entirely on this device.
 Vocab opens one account-independent folder for expressions, learner notes and
 stages, chat focus, and finished messages. The mounted page opens the folder
 before sign-in. The browser adapter stores one portable file per literal path in the release
-Local OPFS directory for `so.epicenter.vocab`. Its first open copies any earlier
-IndexedDB folder at that address, including its local history.
+Local OPFS directory for `so.epicenter.vocab`. Opening reads only that directory
+and does not inspect earlier IndexedDB stores.
 
 Each saved file's receipt is the publication boundary. The tutor receives
 saved history; partial responses remain transient, and retrying a failed save
@@ -29,10 +29,10 @@ Optional sign-in adds hosted inference and transcription to the same folder.
 It does not select another set of words or chats. Synchronization requires a
 separately configured remote and is outside this migration.
 
-Earlier account stores remain intact. An explicit import copies the signed-in
-account's rows held by this browser, preserving IDs and references. Conflicts
-refuse the affected rows and dependents; import never overwrites unrelated
-folder files or deletes earlier data.
+The clean break retires the earlier-account IndexedDB import screen and its
+reader. Vocab neither recovers nor deletes those stores. Explicit imports of
+supplied files remain ordinary file operations; they do not activate an old
+database persistence path.
 
 ## Consequences
 

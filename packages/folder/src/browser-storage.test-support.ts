@@ -1,12 +1,11 @@
 /**
  * Test helper: the browser storage browser suites run on, which is what a
  * browser opens: the origin private file system, here the in-memory
- * stand-in (`opfs.test-support.ts`), with a fake IndexedDB for the earlier
- * folders a first open looks for.
+ * stand-in (`opfs.test-support.ts`).
  *
- * Suites open browser folders with `browserStorage(storage)` or build raw
- * storage with `rawBrowserFolder`. One IndexedDB factory always reaches one
- * stand-in tree, so a suite that reopens with the same storage reopens the
+ * `createTestStorage()` owns one fresh stand-in tree. Suites open browser
+ * folders with `browserStorage(storage)` or build raw storage with
+ * `rawBrowserFolder`. A suite that reopens with the same storage reopens the
  * same folder, and a raw folder built for an ID is the folder the opener
  * opens for that ID. Where the shared `navigator.locks` stand-in is not
  * installed, a private one is used: browser folders require Web Locks.
@@ -15,9 +14,7 @@
  * gives them fresh storage in one call.
  */
 import { createHash } from 'node:crypto';
-import { IDBFactory, IDBKeyRange } from 'fake-indexeddb';
 import type { FileBoundary } from './boundary.js';
-import type { IndexedDbEnvironment } from './browser-store.js';
 import type { BrowserFolderOptions } from './contract.js';
 import type { FolderLocation } from './folder.js';
 import type { GitBackend, GitRemote } from './git/backend.js';
@@ -33,12 +30,19 @@ import {
 } from './opfs-store.js';
 import { createWebLocks } from './web-locks.test-support.js';
 
-/** A test's IndexedDB, and optionally the channel its handles relay hints on. */
-export type TestStorage = IndexedDbEnvironment & {
+/** A test's stand-in tree, and optionally the channel its handles relay hints on. */
+export type TestStorage = {
+	readonly opfs: MemoryOpfs;
 	readonly BroadcastChannel?: typeof BroadcastChannel;
 };
 
-const trees = new WeakMap<IDBFactory, MemoryOpfs>();
+/** Fresh, empty storage. */
+export function createTestStorage(
+	options: { BroadcastChannel?: typeof BroadcastChannel } = {},
+): TestStorage {
+	return { opfs: memoryOpfs(), BroadcastChannel: options.BroadcastChannel };
+}
+
 const fallback = createWebLocks() as unknown as OpfsLocks;
 
 /** `navigator.locks` when a test installed it, otherwise a private stand-in. */
@@ -51,28 +55,18 @@ export const testLocks: OpfsLocks = {
 };
 
 /** The stand-in tree behind `storage`. */
-export function opfsOf(storage: IndexedDbEnvironment): MemoryOpfs {
-	let tree = trees.get(storage.indexedDB as IDBFactory);
-	if (tree === undefined) {
-		tree = memoryOpfs();
-		trees.set(storage.indexedDB as IDBFactory, tree);
-	}
-	return tree;
+export function opfsOf(storage: TestStorage): MemoryOpfs {
+	return storage.opfs;
 }
 
 /** `browser` options that open the stand-in tree behind `storage`. */
 export function browserStorage(
 	storage: TestStorage,
 ): Pick<BrowserFolderOptions, 'opfs'> {
-	const tree = opfsOf(storage);
 	return {
 		opfs: {
-			getDirectory: () => tree.getDirectory(),
+			getDirectory: () => storage.opfs.getDirectory(),
 			locks: testLocks,
-			indexedDb: {
-				indexedDB: storage.indexedDB,
-				IDBKeyRange: storage.IDBKeyRange,
-			},
 			BroadcastChannel: storage.BroadcastChannel,
 		},
 	};
@@ -82,11 +76,7 @@ export function browserStorage(
 export function testBrowserStorage(
 	options: { BroadcastChannel?: typeof BroadcastChannel } = {},
 ): Pick<BrowserFolderOptions, 'opfs'> {
-	return browserStorage({
-		indexedDB: new IDBFactory(),
-		IDBKeyRange,
-		BroadcastChannel: options.BroadcastChannel,
-	});
+	return browserStorage(createTestStorage(options));
 }
 
 /** Where the opener keeps release Local folder `id`. */
@@ -121,12 +111,12 @@ const skipObjects = (key: string) => key.startsWith('/git/objects/');
  * writing the folder: by default Git objects.
  */
 export async function dumpStorage(
-	storage: IndexedDbEnvironment,
+	storage: TestStorage,
 	id: string,
 	skip: (key: string) => boolean = skipObjects,
 ): Promise<Record<string, string>> {
 	const result: Record<string, string> = {};
-	const tree = opfsOf(storage);
+	const tree = storage.opfs;
 	const directory = `Epicenter/local/${id}`;
 	for (const [path, bytes] of tree.files(directory)) {
 		const [kind, key] = path.startsWith('.git/')
@@ -148,13 +138,13 @@ export async function dumpStorage(
  */
 export async function rawBrowserFolder({
 	id,
-	storage = { indexedDB: new IDBFactory(), IDBKeyRange },
+	storage = createTestStorage(),
 }: {
 	id: string;
-	storage?: IndexedDbEnvironment;
+	storage?: TestStorage;
 }): Promise<RawBrowserFolder> {
 	const address = JSON.stringify(['release', 'local', null, id]);
-	const tree = opfsOf(storage);
+	const tree = storage.opfs;
 	const directory = `Epicenter/local/${id}`;
 	const made = await ensureDirectory(await tree.getDirectory(), directory);
 	if (made.error) throw new Error(made.error.message);
@@ -162,7 +152,7 @@ export async function rawBrowserFolder({
 	await writePrivateFile(
 		root,
 		READY_MARKER,
-		new TextEncoder().encode(JSON.stringify({ address, migratedFrom: null })),
+		new TextEncoder().encode(JSON.stringify({ address })),
 	);
 	const filesLock = `epicenter-folder-opfs-files:${address}`;
 	return {

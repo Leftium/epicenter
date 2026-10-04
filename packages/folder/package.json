@@ -32,7 +32,6 @@
 	},
 	"devDependencies": {
 		"@types/bun": "catalog:",
-		"fake-indexeddb": "^6.2.5",
 		"typescript": "catalog:",
 		"vite": "catalog:"
 	},

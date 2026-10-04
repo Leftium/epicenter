@@ -35,8 +35,10 @@
  * - `tauri-native.test.ts` for the same adapter against the real Rust owner
  */
 import { afterEach, expect, mock, spyOn, test } from 'bun:test';
-import { IDBFactory, IDBKeyRange } from 'fake-indexeddb';
-import { browserStorage } from './browser-storage.test-support.js';
+import {
+	browserStorage,
+	createTestStorage,
+} from './browser-storage.test-support.js';
 import type { RecordedIncoming } from './git/backend.js';
 import { expectErr, expectOk } from 'wellcrafted/testing';
 import { hashBytes } from './capture.js';
@@ -183,7 +185,7 @@ test('the folder opened is the scope the opener names', async () => {
 });
 
 test('a refusal inside the shell is returned; browser storage is never opened instead', async () => {
-	const indexedDB = new IDBFactory();
+	const storage = createTestStorage();
 	for (const refusal of [
 		{ name: 'UnknownScope', scope: 'notes' },
 		{ name: 'WindowNotPermitted', scope: 'notes', window: 'main' },
@@ -194,14 +196,14 @@ test('a refusal inside the shell is returned; browser storage is never opened in
 			await openFolder({
 				id: 'notes',
 				definition,
-				browser: browserStorage({ indexedDB, IDBKeyRange }),
+				browser: browserStorage(storage),
 			}),
 		);
 		expect<string>(refused.name).toBe(
 			typeof refusal === 'string' ? 'Unavailable' : refusal.name,
 		);
 	}
-	expect(await indexedDB.databases()).toEqual([]);
+	expect(storage.opfs.directories()).toEqual([]);
 });
 
 test('outside the desktop shell, opening is refused and nothing is invoked', async () => {

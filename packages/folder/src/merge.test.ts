@@ -33,12 +33,12 @@ import {
 } from 'bun:test';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { IDBFactory, IDBKeyRange } from 'fake-indexeddb';
 import * as isogit from 'isomorphic-git';
 import { expectErr, expectOk } from 'wellcrafted/testing';
 import { openFolder as openBrowserFolder } from './browser.js';
 import {
 	browserStorage,
+	createTestStorage,
 	rawBrowserFolder,
 	type TestStorage,
 } from './browser-storage.test-support.js';
@@ -139,7 +139,7 @@ async function setup(
 		);
 	}
 	/**
-	 * Every key and value of the live stores, hashed. Objects are left out:
+	 * Every live file and directory of the folder, hashed. Objects are left out:
 	 * a refused merge may leave unreachable ones, which change nothing a
 	 * person or Git reads.
 	 */
@@ -317,9 +317,7 @@ describe('root kv.json', () => {
 		expect((await deleted.history.paths()).data).toEqual([]);
 		expect(expectOk(await deleted.history.status()).changes).toEqual([]);
 		expect(decoder.decode(await deleted.read('b.md'))).toBe('b\n');
-		expect(Object.keys(await deleted.dump())).not.toContain(
-			'inventory:kv.json',
-		);
+		expect(Object.keys(await deleted.dump())).not.toContain('contents:kv.json');
 
 		const competing = await folder();
 		const sides = await competing.diverge({
@@ -663,7 +661,7 @@ describe('the browser journey', () => {
 		const root = await scratch('merge-journey-');
 		const bare = await createBareRemote(root);
 		globalThis.fetch = await gitHttpFetch(root);
-		const environment = { indexedDB: new IDBFactory(), IDBKeyRange };
+		const environment = createTestStorage();
 		let folder = await open(environment);
 		try {
 			expectOk(await folder.kv.create({ theme: 'light', lang: 'en' }));

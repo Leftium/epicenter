@@ -1,9 +1,10 @@
 /**
  * Experiment: one ordinary directory shared by two applications and an agent.
  *
- * Two definitions with the same folder ID and the same `todos` table name,
- * but different declared fields and different KV keys, are opened one after
- * the other over one real temporary directory through the directory entry.
+ * Two definitions with the same `todos` table name, but different declared
+ * fields and different KV keys, are opened one after the other over one real
+ * temporary directory through the directory entry. Neither names the folder:
+ * the directory entry is given its root.
  * An "agent" is plain `node:fs` writes into the same directory: it never goes
  * through a folder handle.
  *
@@ -29,9 +30,9 @@ import {
 import { tmpdir } from 'node:os';
 import { join, sep } from 'node:path';
 import {
-	type DataDefinition,
 	defineFolder,
 	defineTable,
+	type FolderDefinition,
 	field,
 	hashBytes,
 	openFolder,
@@ -51,11 +52,8 @@ Object.assign(process.env, {
 // The two applications
 // ---------------------------------------------------------------------------
 
-const FOLDER_ID = 'so.epicenter.todos';
-
 /** App A: a checklist. It knows `title` and `done`. */
 const appA = defineFolder({
-	id: FOLDER_ID,
 	kv: {
 		theme: field.string(),
 		sortBy: field.string(),
@@ -71,7 +69,6 @@ const A_KV_DEFAULTS = { theme: 'light', sortBy: 'created', pageSize: 20 };
 
 /** App B: a planner. It knows `title` and `priority`, and nothing of `done`. */
 const appB = defineFolder({
-	id: FOLDER_ID,
 	// `pageSize` is declared by both, with different types: a deliberate collision.
 	kv: {
 		density: field.string(),
@@ -145,7 +142,7 @@ const PREFIX = 'epicenter-shared-folder-workflow-';
 const root = await realpath(await mkdtemp(join(tmpdir(), PREFIX)));
 
 /** Open the shared directory as one application. History stays manual: no commit is part of this experiment. */
-async function open<const TDefinition extends DataDefinition>(
+async function open<const TDefinition extends FolderDefinition>(
 	definition: TDefinition,
 ) {
 	return ok(

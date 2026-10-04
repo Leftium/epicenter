@@ -2,12 +2,12 @@
  * Platform Selection Tests
  *
  * A dropped seam leaf fails no build: resolution falls back to `default` and
- * the desktop page quietly opens a browser folder in IndexedDB. These tests
+ * the desktop page quietly opens a browser folder in OPFS. These tests
  * bundle through the app's Vite resolution config and name what broke.
  *
  * Key behaviors:
  * - The host leaf opens through the desktop folder adapter only: the browser
- *   leaf, the browser adapter and its IndexedDB store, any Git implementation,
+ *   leaf, the browser adapter and its OPFS store, any Git implementation,
  *   the directory opener, and every Node module are absent from its bundle
  * - The browser leaf carries the browser adapter and no desktop adapter, no
  *   generated native bindings, and no shell quit protocol
@@ -55,7 +55,7 @@ describe('#platform/folder', () => {
 			expect(modules.filter((path) => path.endsWith(required))).toHaveLength(1);
 		expect(
 			modules.filter((path) =>
-				/platform\/folder\.browser\.ts$|folder\/src\/(browser|browser-adapter|browser-store|bun|native-store)\.ts$|folder\/src\/git\/(browser|native)-|isomorphic-git|^node:|^bun:/.test(
+				/platform\/folder\.browser\.ts$|folder\/src\/(browser|browser-adapter|opfs-store|bun|native-store)\.ts$|folder\/src\/git\/(browser|native)-|isomorphic-git|^node:|^bun:/.test(
 					path,
 				),
 			),
@@ -71,9 +71,14 @@ describe('#platform/folder', () => {
 			'platform/folder.browser.ts',
 			'folder/src/browser.ts',
 			'folder/src/browser-adapter.ts',
-			'folder/src/browser-store.ts',
+			'folder/src/opfs-store.ts',
 		])
 			expect(modules.filter((path) => path.endsWith(required))).toHaveLength(1);
+		expect(
+			modules.filter((path) =>
+				/folder\/src\/browser-(store|migration)\.ts$|fake-indexeddb/.test(path),
+			),
+		).toEqual([]);
 		expect(
 			modules.filter((path) =>
 				// The browser adapter asks `isTauri()` so it can refuse there; that one

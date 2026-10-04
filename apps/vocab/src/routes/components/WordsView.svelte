@@ -5,18 +5,16 @@
 	import { Label } from '@epicenter/ui/label';
 	import { toast } from '@epicenter/ui/sonner';
 	import { Textarea } from '@epicenter/ui/textarea';
-	import type { Snippet } from 'svelte';
 	import { type Entry, type FocusItem, STAGE_LABELS, STAGES, type Stage } from '$lib/data.js';
 	import type { EntriesState } from '$lib/entries.svelte.js';
 	import { reviewImport, STARTER_LIST } from '$lib/import.js';
 	import EntryCard from './EntryCard.svelte';
-	let { entries, starting, onStart, children }: {
+	let { entries, starting, onStart }: {
 		entries: EntriesState;
 		/** A chat is being saved; another cannot be started yet. */
 		starting: boolean;
 		/** Answers whether the chat started; the selection is kept when it did not. */
 		onStart: (focus: FocusItem[]) => Promise<boolean>;
-		children?: Snippet;
 	} = $props();
 	let search = $state('');
 	let stage = $state<'all' | Stage>('all');
@@ -72,7 +70,8 @@
 	}
 </script>
 
-<div class="mx-auto flex h-full w-full max-w-5xl flex-col gap-6 overflow-y-auto px-4 py-6 md:px-8">
+<!-- The bottom padding keeps the last word clear of the floating start button. -->
+<div class="mx-auto flex h-full w-full max-w-5xl flex-col gap-6 overflow-y-auto px-4 pt-6 pb-24 md:px-8">
 	<div>
 		<h2 class="text-2xl font-semibold">Words</h2>
 		<p class="text-sm text-muted-foreground">Save expressions, write your own notes, and choose up to three for a tutor-led chat. Everything is saved in this browser; no sign-in is needed.</p>
@@ -116,7 +115,6 @@
 			{/each}
 		</div>
 	{/if}
-	<div class="pb-24">{@render children?.()}</div>
 </div>
 {#if selectedFocus.length}
 	<div class="fixed bottom-4 left-1/2 z-20 -translate-x-1/2 rounded-lg border bg-background p-2 shadow-lg"><Button disabled={starting} onclick={start}>{starting ? 'Saving the chat…' : `Start chat with ${selectedFocus.length} ${selectedFocus.length === 1 ? 'word' : 'words'}`}</Button></div>

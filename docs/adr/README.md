@@ -748,6 +748,6 @@ When you add an ADR, add its row here.
 | [0495](0495-the-ark-community-profiles-use-at-handle-paths.md) | The Ark community profiles use at-handle paths | Proposed (community routing and stable profile identity unbuilt; custom domains open) |
 | [0496](0496-native-app-runtime-storage-is-independent-of-the-shell.md) | Native app runtime storage is independent of the shell | Proposed (shared root, cross-process admission, credentials, and migration unbuilt) |
 | [0497](0497-browser-folders-use-scoped-opfs-directories.md) | Browser folders use scoped OPFS directories | Accepted (app selection of development and account scopes and private SQL channel ownership unbuilt) |
-| [0498](0498-vocab-opens-one-local-folder-before-sign-in.md) | Vocab opens one local folder before sign-in | Accepted (native distribution, configured synchronization, and real legacy-account import unbuilt) |
+| [0498](0498-vocab-opens-one-local-folder-before-sign-in.md) | Vocab opens one local folder before sign-in | Accepted (native distribution and configured synchronization unbuilt) |
 | [0501](0501-store-checkout-push-pull-and-its-baseline-are-removed.md) | Store checkout Pull/Push and its baseline are removed | Proposed (checkout removed; generic folder queries unbuilt; no replacement checkout or SQL export planned) |
 | [0502](0502-whispering-connections-own-request-destinations-and-credentials.md) | Whispering connections own request destinations and credentials | Accepted (cross-application execution and folder-independent credential storage unbuilt) |

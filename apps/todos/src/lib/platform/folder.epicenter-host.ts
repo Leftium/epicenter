@@ -4,7 +4,7 @@
  * A page opens the folder the shell registered under `TODOS_FOLDER_ID`;
  * closing it detaches this page. The shell keeps the directory, the author,
  * the remote, and the history policy. Imports acquire nothing, and a folder
- * that cannot be opened is a refusal, never IndexedDB.
+ * that cannot be opened is a refusal; browser storage is not opened.
  */
 import { OpenFolderError, openFolder } from '@epicenter/folder/tauri';
 import { todosDefinition } from '../definition.js';

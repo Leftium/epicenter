@@ -37,7 +37,6 @@
 		"@tauri-apps/cli": "catalog:",
 		"@types/bun": "catalog:",
 		"@types/markdown-it": "^14.0.0",
-		"fake-indexeddb": "^6.2.5",
 		"mode-watcher": "catalog:",
 		"svelte": "catalog:",
 		"svelte-check": "catalog:",

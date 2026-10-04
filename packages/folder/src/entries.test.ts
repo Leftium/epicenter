@@ -11,7 +11,8 @@
  * - Every entry exports the same names besides its opener
  * - The automatic entry asks whether this is the desktop app when it is
  *   called, not when it is imported, and loads only the adapter it chose
- * - On a server, or anywhere without IndexedDB, opening is a returned refusal
+ * - On a server, or anywhere without the origin private file system, opening
+ *   is a returned refusal
  * - The browser entry refuses inside the desktop app, even with storage
  *   handed to it; the desktop entry refuses outside it; neither falls back
  * - A browser folder has a local author by default and needs an explicit one
@@ -23,9 +24,12 @@
  * - `evidence/bundles/bundles.test.ts` for what a build emits per entry
  */
 import { afterEach, expect, mock, test } from 'bun:test';
-import { IDBFactory, IDBKeyRange } from 'fake-indexeddb';
 import { expectErr, expectOk } from 'wellcrafted/testing';
-import { browserStorage, locationOf } from './browser-storage.test-support.js';
+import {
+	browserStorage,
+	createTestStorage,
+	locationOf,
+} from './browser-storage.test-support.js';
 import { useWebLocks } from './web-locks.test-support.js';
 
 let inShell = false;
@@ -78,8 +82,10 @@ test('importing every entry opens nothing and adds no global', () => {
 		),
 	).toEqual([]);
 	expect((globalThis as { Buffer?: unknown }).Buffer).toBe(bufferBefore);
-	// This process has no IndexedDB, as a server render has none.
-	expect((globalThis as { indexedDB?: unknown }).indexedDB).toBeUndefined();
+	// This process has no origin private file system, as a server render has none.
+	expect(
+		(globalThis as { navigator?: { storage?: unknown } }).navigator?.storage,
+	).toBeUndefined();
 });
 
 test('every entry exports the same contract beside its opener', () => {
@@ -109,12 +115,10 @@ test('every entry exports the same contract beside its opener', () => {
 });
 
 test('on a server the automatic entry refuses, and so does each explicit entry', async () => {
-	expect(expectErr(await root.openFolder({ id, definition })).name).toBe(
-		'NoIndexedDb',
-	);
-	expect(expectErr(await browser.openFolder({ id, definition })).name).toBe(
-		'NoIndexedDb',
-	);
+	for (const entry of [root, browser])
+		expect(expectErr(await entry.openFolder({ id, definition }))).toMatchObject(
+			{ name: 'NoFileSystem', missing: 'navigator.storage.getDirectory' },
+		);
 	expect(expectErr(await tauri.openFolder({ id, definition })).name).toBe(
 		'NotTauri',
 	);
@@ -123,14 +127,14 @@ test('on a server the automatic entry refuses, and so does each explicit entry',
 });
 
 test('every opener refuses a missing folder ID before it acquires anything, even from an untyped caller', async () => {
-	const indexedDB = new IDBFactory();
+	const storage = createTestStorage();
 	const untyped = {
 		definition,
-		browser: { author, ...browserStorage({ indexedDB, IDBKeyRange }) },
+		browser: { author, ...browserStorage(storage) },
 	} as never;
 	expect(expectErr(await browser.openFolder(untyped)).name).toBe('InvalidId');
 	expect(expectErr(await root.openFolder(untyped)).name).toBe('InvalidId');
-	expect(await indexedDB.databases()).toEqual([]);
+	expect(storage.opfs.directories()).toEqual([]);
 
 	inShell = true;
 	expect(expectErr(await tauri.openFolder(untyped)).name).toBe('InvalidId');
@@ -140,11 +144,11 @@ test('every opener refuses a missing folder ID before it acquires anything, even
 });
 
 test('the automatic entry decides when it is called: the desktop adapter in the shell, and no browser storage when that fails', async () => {
-	const indexedDB = new IDBFactory();
+	const storage = createTestStorage();
 	const options = {
 		id,
 		definition,
-		browser: { author, ...browserStorage({ indexedDB, IDBKeyRange }) },
+		browser: { author, ...browserStorage(storage) },
 	};
 
 	// The same imported function, first outside the shell, then inside it.
@@ -152,44 +156,44 @@ test('the automatic entry decides when it is called: the desktop adapter in the 
 	expect(inBrowser.location).toEqual(locationOf('so.epicenter.entriestest'));
 	await inBrowser.close();
 	expect(invoked).toEqual([]);
-	const databases = await indexedDB.databases();
-	expect(databases).toHaveLength(1);
+	expect(storage.opfs.directories()).toContain(
+		'Epicenter/local/so.epicenter.entriestest',
+	);
 
 	inShell = true;
-	const other = new IDBFactory();
+	const other = createTestStorage();
 	const refused = expectErr(
 		await root.openFolder({
 			definition,
 			id: 'another.folder',
-			browser: { author, ...browserStorage({ indexedDB: other, IDBKeyRange }) },
+			browser: { author, ...browserStorage(other) },
 		}),
 	);
 	// The shell has no plugin. That is reported; it is not papered over with
-	// an IndexedDB folder in another place.
+	// a browser folder in another place.
 	expect(refused.name).toBe('Unavailable');
 	expect(refused.message).toContain('plugin epicenter-folder not found');
 	expect(invoked).toEqual(['plugin:epicenter-folder|attach']);
-	expect(await other.databases()).toEqual([]);
+	expect(other.opfs.directories()).toEqual([]);
 });
 
 test('the browser entry refuses inside the desktop app even when handed storage', async () => {
 	inShell = true;
-	const indexedDB = new IDBFactory();
+	const storage = createTestStorage();
 	const refused = expectErr(
 		await browser.openFolder({
 			id,
 			definition,
-			browser: { author, ...browserStorage({ indexedDB, IDBKeyRange }) },
+			browser: { author, ...browserStorage(storage) },
 		}),
 	);
 	expect(refused.name).toBe('InsideTauri');
-	expect(await indexedDB.databases()).toEqual([]);
+	expect(storage.opfs.directories()).toEqual([]);
 	expect(invoked).toEqual([]);
 });
 
 test('a browser folder defaults to a local author and local automatic history; a remote needs an explicit author', async () => {
-	const indexedDB = new IDBFactory();
-	const environment = { indexedDB, IDBKeyRange };
+	const environment = createTestStorage();
 	const withoutAuthor = expectErr(
 		await browser.openFolder({
 			id,
@@ -204,7 +208,7 @@ test('a browser folder defaults to a local author and local automatic history; a
 	expect(
 		expectErr(await browser.openFolder({ definition, id: ' ' })).name,
 	).toBe('InvalidId');
-	expect(await indexedDB.databases()).toEqual([]);
+	expect(environment.opfs.directories()).toEqual([]);
 
 	const folder = expectOk(
 		await browser.openFolder({
@@ -234,11 +238,7 @@ test('a browser folder defaults to a local author and local automatic history; a
 });
 
 test('handles sharing browser storage hear each other, when the storage carries a channel', async () => {
-	const environment = {
-		indexedDB: new IDBFactory(),
-		IDBKeyRange,
-		BroadcastChannel,
-	};
+	const environment = createTestStorage({ BroadcastChannel });
 	const open = async () =>
 		expectOk(
 			await browser.openFolder({

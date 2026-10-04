@@ -12,8 +12,8 @@
  * - A listener that closes the folder, or stops another listener, fences the
  *   listeners after it within the same dispatch
  * - A browser relay that throws does not change a save's result
- * - A browser channel that cannot start is a returned `Unavailable`, and the
- *   database opened before it is released
+ * - A browser channel that cannot start is a returned `Unavailable`; a
+ *   channel it constructed is closed, and no lock stays held
  *
  * See also:
  * - `tauri.test.ts` for the same rules on events from the desktop owner
@@ -27,11 +27,13 @@ import {
 	expect,
 	test,
 } from 'bun:test';
-import { IDBFactory, IDBKeyRange } from 'fake-indexeddb';
 import { expectErr, expectOk } from 'wellcrafted/testing';
 import { openFolder as openBrowserFolder } from './browser.js';
-import type { TestStorage } from './browser-storage.test-support.js';
-import { browserStorage } from './browser-storage.test-support.js';
+import {
+	browserStorage,
+	createTestStorage,
+	testBrowserStorage,
+} from './browser-storage.test-support.js';
 import { hashBytes } from './capture.js';
 import { defineFolder, defineTable, type Folder, field } from './contract.js';
 import { openNativeFolder } from './directory.test-support.js';
@@ -83,7 +85,7 @@ describe.each(['browser', 'directory'])('%s folder observers', (kind) => {
 							definition,
 							browser: {
 								author,
-								...browserStorage({ indexedDB: new IDBFactory(), IDBKeyRange }),
+								...testBrowserStorage(),
 							},
 						}),
 					)
@@ -244,38 +246,13 @@ describe('browser channel', () => {
 		return { Channel: Channel as unknown as typeof BroadcastChannel, log };
 	}
 
-	/** IndexedDB that records when the database a folder opened is closed. */
-	function watchedIndexedDb() {
-		const indexedDB = new IDBFactory();
-		const state = { opened: 0, closed: 0 };
-		const open = indexedDB.open.bind(indexedDB);
-		indexedDB.open = (...args: Parameters<typeof open>) => {
-			const request = open(...args);
-			request.addEventListener('success', () => {
-				state.opened++;
-				const close = request.result.close.bind(request.result);
-				request.result.close = () => {
-					state.closed++;
-					close();
-				};
-			});
-			return request;
-		};
-		return { indexedDB, state };
-	}
-
 	test.each([
 		'construct',
 		'unref',
 		'listen',
 	] as const)('a channel that fails to %s is a returned Unavailable, and what was opened is released', async (fail) => {
-		const { indexedDB, state } = watchedIndexedDb();
 		const { Channel, log } = channelClass(fail);
-		const environment: TestStorage = {
-			indexedDB,
-			IDBKeyRange,
-			BroadcastChannel: Channel,
-		};
+		const environment = createTestStorage({ BroadcastChannel: Channel });
 
 		const refused = expectErr(
 			await openBrowserFolder({
@@ -293,23 +270,21 @@ describe('browser channel', () => {
 					? 'unref refused'
 					: 'listener refused',
 		);
-		// The database was opened once and given back; a channel that was
-		// constructed was closed. Nothing is left held by a failed open.
-		expect(state).toEqual({ opened: 1, closed: 1 });
+		// A channel that was constructed was closed. Nothing is left held by a
+		// failed open.
 		expect(log.includes('closed')).toBe(fail !== 'construct');
 		// The same storage opens normally afterward: nothing was left locked.
 		const reopened = expectOk(
 			await openBrowserFolder({
 				id: 'so.epicenter.observerstest',
 				definition,
-				browser: browserStorage({ indexedDB, IDBKeyRange }),
+				browser: browserStorage({ opfs: environment.opfs }),
 			}),
 		);
 		await reopened.close();
 	});
 
 	test('a relay that throws does not change a save, its listeners, or its commit', async () => {
-		const { indexedDB, state } = watchedIndexedDb();
 		const { Channel } = channelClass('post');
 		const folder = expectOk(
 			await openBrowserFolder({
@@ -317,11 +292,7 @@ describe('browser channel', () => {
 				definition,
 				browser: {
 					author,
-					...browserStorage({
-						indexedDB,
-						IDBKeyRange,
-						BroadcastChannel: Channel,
-					}),
+					...testBrowserStorage({ BroadcastChannel: Channel }),
 				},
 			}),
 		);
@@ -337,11 +308,9 @@ describe('browser channel', () => {
 		expect(expectOk(await folder.git.log(10)).length).toBeGreaterThan(0);
 		expect(expectOk(await folder.git.status()).changes).toEqual([]);
 		await folder.close();
-		expect(state).toEqual({ opened: 1, closed: 1 });
 	});
 
-	test('a channel that will not close still releases the database, and close resolves', async () => {
-		const { indexedDB, state } = watchedIndexedDb();
+	test('a channel that will not close is closed once, and close resolves', async () => {
 		const { Channel, log } = channelClass('close');
 		const folder = expectOk(
 			await openBrowserFolder({
@@ -350,26 +319,17 @@ describe('browser channel', () => {
 				browser: {
 					author,
 					commitOnEdit: false,
-					...browserStorage({
-						indexedDB,
-						IDBKeyRange,
-						BroadcastChannel: Channel,
-					}),
+					...testBrowserStorage({ BroadcastChannel: Channel }),
 				},
 			}),
 		);
 		expectOk(await folder.files.create('note.txt', 'submitted'));
 		await folder.close();
 		expect(log.filter((entry) => entry === 'closed')).toHaveLength(1);
-		expect(state).toEqual({ opened: 1, closed: 1 });
 	});
 
 	test('a hint from another handle that arrives after close reaches no listener', async () => {
-		const environment = {
-			indexedDB: new IDBFactory(),
-			IDBKeyRange,
-			BroadcastChannel,
-		};
+		const environment = createTestStorage({ BroadcastChannel });
 		const open = async () =>
 			expectOk(
 				await openBrowserFolder({
@@ -400,11 +360,7 @@ describe('browser channel', () => {
 });
 
 test('a cross-tab file hint marks history stale without requesting an automatic commit', async () => {
-	const environment = {
-		indexedDB: new IDBFactory(),
-		IDBKeyRange,
-		BroadcastChannel,
-	};
+	const environment = createTestStorage({ BroadcastChannel });
 	const open = async (commitOnEdit: boolean) =>
 		expectOk(
 			await openBrowserFolder({

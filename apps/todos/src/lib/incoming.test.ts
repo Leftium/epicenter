@@ -28,10 +28,10 @@ import { afterAll, afterEach, beforeAll, expect, test } from 'bun:test';
 import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { openFolder } from '@epicenter/folder/browser';
-import { IDBFactory, IDBKeyRange } from 'fake-indexeddb';
 import { expectErr, expectOk } from 'wellcrafted/testing';
 import {
 	browserStorage,
+	createTestStorage,
 	opfsOf,
 } from '../../../../packages/folder/src/browser-storage.test-support.js';
 import {
@@ -113,7 +113,7 @@ async function openDemo(
 	const handle = await createGitHandler(session);
 	globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) =>
 		handle(new Request(input, init))) as typeof fetch;
-	const storage = { indexedDB: new IDBFactory(), IDBKeyRange };
+	const storage = createTestStorage();
 	const id = `incoming-${count++}`;
 	const openTodos = async () => {
 		const folder = expectOk(

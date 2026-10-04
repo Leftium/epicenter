@@ -69,7 +69,7 @@ describe('bundles', () => {
 		// No second store, and no Git implementation in the page.
 		expect(
 			modules.filter((path) =>
-				/folder\/src\/(browser-adapter|browser-store)\.ts$|folder\/src\/git\/(history|browser-backend)\.ts$/.test(
+				/folder\/src\/(browser-adapter|opfs-store)\.ts$|folder\/src\/git\/(history|browser-backend)\.ts$/.test(
 					path,
 				),
 			),
@@ -87,8 +87,13 @@ describe('bundles', () => {
 		expect(modules.filter((path) => FORBIDDEN.test(path))).toEqual([]);
 		expect(modules.filter((path) => NODE.test(path))).toEqual([]);
 		expect(
-			modules.some((path) => path.endsWith('folder/src/browser-store.ts')),
+			modules.some((path) => path.endsWith('folder/src/opfs-store.ts')),
 		).toBe(true);
+		expect(
+			modules.filter((path) =>
+				/folder\/src\/browser-(store|migration)\.ts$|fake-indexeddb/.test(path),
+			),
+		).toEqual([]);
 		// No desktop adapter, no bindings, and none of the shell's commands.
 		expect(
 			modules.filter((path) =>

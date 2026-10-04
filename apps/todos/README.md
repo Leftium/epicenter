@@ -180,12 +180,8 @@ ordinary native checkout pulls from and pushes to. The browser commits as
 `Todos <todos@localhost>`. Another tab of the same origin edits the same
 folder, and each tab rereads when the other saves.
 
-A folder an earlier version of the demo kept in IndexedDB is copied into that
-directory, files and history together, the first time this version opens it.
-The old database is only read and stays as a backup. A tab of the earlier
-version that is still open keeps what it showed, and its saves fail. While
-such a tab holds the old database, opening refuses and says the folder is
-open in another tab; close that tab and open the folder again.
+A folder an earlier version of the demo kept in IndexedDB is not read, copied,
+or deleted; this version starts from the OPFS directory alone.
 
 From the repository root:
 

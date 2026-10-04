@@ -16,7 +16,6 @@
 	import AccountMenu from './AccountMenu.svelte';
 	import ConversationView from './ConversationView.svelte';
 	import FocusWords from './FocusWords.svelte';
-	import LegacyImport from './LegacyImport.svelte';
 	import WordsView from './WordsView.svelte';
 
 	let { vocab }: { vocab: { folder: VocabFolder; entries: EntriesState; chats: ChatsState } } = $props();
@@ -138,7 +137,7 @@
 			</div>
 		</div>
 	{/if}
-	<div class="min-h-0 flex-1" class:hidden={view !== 'words'}><WordsView {entries} {starting} onStart={begin}><LegacyImport tables={folder.tables} /></WordsView></div>
+	<div class="min-h-0 flex-1" class:hidden={view !== 'words'}><WordsView {entries} {starting} onStart={begin} /></div>
 	<div class="flex min-h-0 flex-1" class:hidden={view !== 'chat'}>
 		<aside class="hidden w-56 shrink-0 overflow-y-auto border-r p-3 md:block" aria-label="Chat history">
 			<h2 class="mb-2 text-sm font-semibold">Chats in this browser</h2>

@@ -30,7 +30,6 @@
  *   repository whose creation stopped before `HEAD` keep working
  */
 import { afterEach, expect, test } from 'bun:test';
-import { IDBFactory, IDBKeyRange } from 'fake-indexeddb';
 import * as isogit from 'isomorphic-git';
 import { expectErr, expectOk } from 'wellcrafted/testing';
 import { defineFolder, type Folder, openFolder } from '../browser.js';
@@ -76,17 +75,14 @@ afterEach(async () => {
 
 /** A raw folder where the opener looks for it, with history over it. */
 async function folderAt(opfs = memoryOpfs()) {
-	const environment = opfsEnvironment(opfs, {
-		indexedDB: new IDBFactory(),
-		IDBKeyRange,
-	});
+	const environment = opfsEnvironment(opfs);
 	const root = expectOk(
 		await ensureDirectory(await environment.getDirectory(), ROOT),
 	);
 	await writePrivateFile(
 		root,
 		READY_MARKER,
-		encoder.encode(JSON.stringify({ address, migratedFrom: null })),
+		encoder.encode(JSON.stringify({ address })),
 	);
 	const backend = await createStoredGitBackend({
 		store: createOpfsGitStore({
@@ -231,10 +227,7 @@ async function reopen(
 				author,
 				remote,
 				commitOnEdit: options.commitOnEdit ?? false,
-				opfs: opfsEnvironment(opfs, {
-					indexedDB: new IDBFactory(),
-					IDBKeyRange,
-				}),
+				opfs: opfsEnvironment(opfs),
 			},
 		}),
 	);

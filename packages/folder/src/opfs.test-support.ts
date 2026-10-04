@@ -9,7 +9,6 @@
  * browser behaves this way; `evidence/opfs` runs the same checks in one.
  */
 
-import type { IndexedDbEnvironment } from './browser-store.js';
 import type {
 	OpfsDirectoryHandle,
 	OpfsEnvironment,
@@ -292,12 +291,11 @@ export function memoryOpfs(): MemoryOpfs {
 }
 
 /**
- * An environment over `opfs` and `indexedDb` whose locks are whatever
- * `navigator.locks` is when a lock is asked for. Use with `useWebLocks()`.
+ * An environment over `opfs` whose locks are whatever `navigator.locks` is
+ * when a lock is asked for. Use with `useWebLocks()`.
  */
 export function opfsEnvironment(
 	opfs: MemoryOpfs,
-	indexedDb: IndexedDbEnvironment,
 	options: { BroadcastChannel?: typeof BroadcastChannel } = {},
 ): OpfsEnvironment {
 	const locks: OpfsLocks = {
@@ -311,7 +309,6 @@ export function opfsEnvironment(
 	return {
 		getDirectory: () => opfs.getDirectory(),
 		locks,
-		indexedDb,
 		BroadcastChannel: options.BroadcastChannel,
 	};
 }

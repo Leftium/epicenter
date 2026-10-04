@@ -249,8 +249,8 @@ The page chooses where its folder lives at build time through
 `openFolder` from `@epicenter/folder/tauri`; the browser leaf opens one OPFS
 directory, `Epicenter/local/so.epicenter.honeycrisp`, holding the notes and
 their `.git`, with `openFolder` from `@epicenter/folder/browser`. A browser
-folder an earlier version kept in IndexedDB is copied there once, and the old
-database stays as a backup. Shared code
+folder an earlier version kept in IndexedDB is not read, copied, or deleted;
+the browser opens the OPFS directory alone. Shared code
 imports the folder contract from the bare `@epicenter/folder`, which
 `vite.config.ts` aliases to the build's one entry. A desktop folder that
 cannot be opened is an error on screen, never a fallback to browser storage.

@@ -10,12 +10,12 @@
  * - Git work and reentrant close retain their resource lifetime guarantees
  */
 import { afterAll, beforeAll, expect, test } from 'bun:test';
-import { IDBFactory, IDBKeyRange } from 'fake-indexeddb';
 import { expectErr, expectOk } from 'wellcrafted/testing';
 import type { FileBoundary } from './boundary.js';
 import { openFolder as openBrowserFolder } from './browser.js';
 import {
 	browserStorage,
+	createTestStorage,
 	locationOf,
 	rawBrowserFolder,
 } from './browser-storage.test-support.js';
@@ -48,7 +48,7 @@ afterAll(() => {
 });
 
 test('browser helpers still preparing when close starts are refused without writing', async () => {
-	const environment = { indexedDB: new IDBFactory(), IDBKeyRange };
+	const environment = createTestStorage();
 	const open = async () =>
 		expectOk(
 			await openBrowserFolder({

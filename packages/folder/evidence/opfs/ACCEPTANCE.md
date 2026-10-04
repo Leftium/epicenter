@@ -2,6 +2,8 @@
 
 Verified on 2026-10-04 against the integrated OPFS and native protocol 5 source. Browser evidence uses Chrome 142 on macOS, secure localhost origins, and the production browser opener. Browser persistence permission was not granted (`persisted: false`).
 
+> Historical record. This describes that run and the source it ran against. Later, browser folders stopped reading IndexedDB at all (see `../opfs-clean-break-review.md`): the "legacy IndexedDB migration" check below was removed from the page, and an identity check that refuses foreign and unmarked directories replaced it. The page has not been rerun in a browser since that change, and the counts below are not current.
+
 ## Working demos
 
 From the repository root:

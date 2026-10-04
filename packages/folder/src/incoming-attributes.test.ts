@@ -33,10 +33,13 @@ import {
 import { createHash } from 'node:crypto';
 import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { IDBFactory, IDBKeyRange } from 'fake-indexeddb';
 import { expectErr, expectOk } from 'wellcrafted/testing';
 import { openFolder as openBrowserFolder } from './browser.js';
-import { browserStorage, dumpStorage } from './browser-storage.test-support.js';
+import {
+	browserStorage,
+	createTestStorage,
+	dumpStorage,
+} from './browser-storage.test-support.js';
 import { defineFolder, type Folder } from './contract.js';
 import { openNativeFolder } from './directory.test-support.js';
 import {
@@ -128,7 +131,7 @@ async function incoming(kind: 'browser' | 'directory') {
 	let untouched: () => Promise<Record<string, string>>;
 	if (kind === 'browser') {
 		globalThis.fetch = await gitHttpFetch(root);
-		const environment = { indexedDB: new IDBFactory(), IDBKeyRange };
+		const environment = createTestStorage();
 		folder = expectOk(
 			await openBrowserFolder({
 				id: 'so.epicenter.incomingtest',

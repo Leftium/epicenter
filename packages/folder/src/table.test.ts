@@ -1,7 +1,8 @@
 /**
  * File Table Tests
  *
- * Exercises real IndexedDB publication with competing writes at the boundary.
+ * Exercises browser OPFS publication, over the in-memory stand-in, with
+ * competing writes at the boundary.
  * A table captures a row file first and interprets its text second, so these
  * tests keep three things apart: whether a file was read, whether its text
  * parses, and whether its fields conform.

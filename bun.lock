@@ -189,7 +189,6 @@
         "@tauri-apps/cli": "catalog:",
         "@types/bun": "catalog:",
         "@types/markdown-it": "^14.0.0",
-        "fake-indexeddb": "^6.2.5",
         "mode-watcher": "catalog:",
         "svelte": "catalog:",
         "svelte-check": "catalog:",
@@ -479,7 +478,6 @@
         "@sveltejs/vite-plugin-svelte": "catalog:",
         "@tailwindcss/vite": "catalog:",
         "@types/bun": "catalog:",
-        "fake-indexeddb": "^6.2.5",
         "mode-watcher": "catalog:",
         "svelte": "catalog:",
         "svelte-check": "catalog:",
@@ -794,7 +792,6 @@
       },
       "devDependencies": {
         "@types/bun": "catalog:",
-        "fake-indexeddb": "^6.2.5",
         "typescript": "catalog:",
         "vite": "catalog:",
       },

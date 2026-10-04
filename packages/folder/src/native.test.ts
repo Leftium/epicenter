@@ -6,12 +6,13 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { readdir, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { DataSchema } from '@epicenter/definition';
-import { IDBFactory, IDBKeyRange } from 'fake-indexeddb';
 import { expectErr, expectOk } from 'wellcrafted/testing';
 import { openFolder as openBrowserFolder } from './browser.js';
 import {
 	browserStorage,
+	createTestStorage,
 	rawBrowserFolder,
+	testBrowserStorage,
 } from './browser-storage.test-support.js';
 import {
 	type DirectoryFolderOptions,
@@ -444,7 +445,7 @@ describe('browser and native exchange through a real bare repository', () => {
 		const root = await scratch('exchange-other-branch-');
 		const bare = await createBareRemote(root);
 		globalThis.fetch = await gitHttpFetch(root);
-		const environment = { indexedDB: new IDBFactory(), IDBKeyRange };
+		const environment = createTestStorage();
 		const local = expectOk(
 			await openBrowserFolder({
 				id: 'attach-backup',
@@ -562,7 +563,7 @@ describe('browser and native exchange through a real bare repository', () => {
 		globalThis.fetch = await gitHttpFetch(root);
 		const browserRemote = { url: 'http://git.test/remote.git', branch: 'main' };
 
-		const environment = { indexedDB: new IDBFactory(), IDBKeyRange };
+		const environment = createTestStorage();
 		const browser = expectOk(
 			await openBrowserFolder({
 				id: 'exchange',
@@ -678,7 +679,7 @@ describe('browser and native exchange through a real bare repository', () => {
 				browser: {
 					author,
 					remote: { url: 'http://127.0.0.1:9/offline.git', branch: 'main' },
-					...browserStorage({ indexedDB: new IDBFactory(), IDBKeyRange }),
+					...testBrowserStorage(),
 				},
 			}),
 		);

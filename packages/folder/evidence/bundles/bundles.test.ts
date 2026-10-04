@@ -9,8 +9,9 @@
  * - The automatic entry puts neither adapter in the code that loads first.
  *   Both adapters are separate chunks, loaded only when a folder is opened
  * - Aliasing the exact bare specifier to `/browser` emits no desktop adapter
- *   anywhere; aliasing it to `/tauri` emits no browser storage and no Git
- *   implementation anywhere. The application source is the same file
+ *   and no IndexedDB access anywhere; aliasing it to `/tauri` emits no
+ *   browser storage and no Git implementation anywhere. The application
+ *   source is the same file
  * - Importing an explicit entry directly gives the same output as the alias
  * - The desktop adapter's own chunks never include isomorphic-git
  * - The shell is a separate chunk in every build
@@ -148,6 +149,9 @@ describe('what a Vite build of the same application emits', () => {
 		expect(built.everything).toContain(GIT);
 		expect(built.everything).not.toContain(DESKTOP);
 		expect(built.everything).not.toContain('plugin:epicenter-folder|');
+		// Browser folders are OPFS only: nothing emitted reaches IndexedDB.
+		expect(built.everything).not.toContain('indexedDB');
+		expect(built.everything).not.toContain('IDBKeyRange');
 		// With one adapter there is nothing to choose, so it loads with the page.
 		expect(built.initial).toContain(BROWSER);
 		expect(built.lazy.some((code) => code.includes(SHELL))).toBe(true);
@@ -161,8 +165,9 @@ describe('what a Vite build of the same application emits', () => {
 		expect(built.everything).not.toContain(BROWSER);
 		expect(built.everything).not.toContain(GIT);
 		expect(built.everything).not.toContain('isomorphic-git');
-		expect(built.everything).not.toContain('epicenter-folder-files:');
+		expect(built.everything).not.toContain('epicenter-folder-opfs-files:');
 		expect(built.everything).not.toContain('indexedDB');
+		expect(built.everything).not.toContain('IDBKeyRange');
 		expect(built.initial).toContain(DESKTOP);
 		expect(built.lazy.some((code) => code.includes(SHELL))).toBe(true);
 		expect(built.initial).not.toContain(SHELL);

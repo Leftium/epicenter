@@ -29,9 +29,9 @@
 import { afterAll, beforeAll, expect, test } from 'bun:test';
 import { readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { IDBFactory, IDBKeyRange } from 'fake-indexeddb';
 import { expectOk } from 'wellcrafted/testing';
 import {
+	createTestStorage,
 	rawBrowserFolder,
 	type TestStorage,
 } from '../browser-storage.test-support.js';
@@ -230,8 +230,6 @@ async function tab(
 	};
 }
 
-const freshEnvironment = () => ({ indexedDB: new IDBFactory(), IDBKeyRange });
-
 // Automatic commits need the shared lock; this runtime has none of its own.
 useWebLocks();
 
@@ -241,7 +239,7 @@ useWebLocks();
 
 test('a published save makes one attempt that commits the folder with a subject from the committed tree', async () => {
 	const { history, probe, save, idle, committed } = await tab(
-		freshEnvironment(),
+		createTestStorage(),
 		'one-attempt',
 	);
 	await save('a.txt', 'one');
@@ -267,7 +265,7 @@ test('a published save makes one attempt that commits the folder with a subject 
 });
 
 test('with commitOnEdit off, a save makes no attempt', async () => {
-	const { history, probe, save } = await tab(freshEnvironment(), 'off', {
+	const { history, probe, save } = await tab(createTestStorage(), 'off', {
 		commitOnEdit: false,
 	});
 	await save('a.txt', 'one');
@@ -278,7 +276,7 @@ test('with commitOnEdit off, a save makes no attempt', async () => {
 });
 
 test('a write this handle did not publish, and a noted edit alone, make no attempt', async () => {
-	const environment = freshEnvironment();
+	const environment = createTestStorage();
 	const mine = await tab(environment, 'external');
 	const other = await tab(environment, 'external', { commitOnEdit: false });
 	// Another tab writes to the shared store; this handle only hears a hint.
@@ -308,7 +306,7 @@ test('a write this handle did not publish, and a noted edit alone, make no attem
 
 test("a save during this handle's held commit is kept, makes no commit when that one finishes, and the next save captures it", async () => {
 	const { history, probe, save, idle, committed, saved } = await tab(
-		freshEnvironment(),
+		createTestStorage(),
 		'held-own',
 	);
 	const held = gate();
@@ -348,7 +346,7 @@ test("a save during this handle's held commit is kept, makes no commit when that
 test('while another tab holds the Web Lock, a save is kept, records nothing, and is not committed when the lock frees', async () => {
 	const restore = installWebLocks();
 	try {
-		const environment = freshEnvironment();
+		const environment = createTestStorage();
 		const a = await tab(environment, 'locked-tabs');
 		const b = await tab(environment, 'locked-tabs');
 		const held = gate();
@@ -390,7 +388,7 @@ test("a save during this handle's held pull or path listing makes no commit, the
 	const restore = installWebLocks();
 	try {
 		const { history, probe, holds, entered, save, idle, committed } = await tab(
-			freshEnvironment(),
+			createTestStorage(),
 			'own-lock',
 		);
 
@@ -439,7 +437,7 @@ test("a save during this handle's held pull or path listing makes no commit, the
 
 test('an explicit commit during a held attempt waits and captures a save made while it waited', async () => {
 	const { history, probe, save, committed } = await tab(
-		freshEnvironment(),
+		createTestStorage(),
 		'explicit-waits',
 	);
 	probe.offline = true;
@@ -477,7 +475,7 @@ test('an explicit commit during a held attempt waits and captures a save made wh
 
 test('a failed explicit push is not retried by a save; another explicit push uploads the new history', async () => {
 	const { history, probe, save, idle } = await tab(
-		freshEnvironment(),
+		createTestStorage(),
 		'push-again',
 	);
 	probe.offline = true;
@@ -507,7 +505,7 @@ test('a failed explicit push is not retried by a save; another explicit push upl
 
 test('explicit commit is local; commitAndPush pushes', async () => {
 	const { history, probe, land } = await tab(
-		freshEnvironment(),
+		createTestStorage(),
 		'explicit-local',
 		{ commitOnEdit: false },
 	);
@@ -527,7 +525,7 @@ test('explicit commit is local; commitAndPush pushes', async () => {
 
 test('a caller that stops waiting on commitAndPush leaves its commit to finish and starts no push later', async () => {
 	const { history, probe, land, committed } = await tab(
-		freshEnvironment(),
+		createTestStorage(),
 		'abandoned',
 		{ commitOnEdit: false },
 	);
@@ -564,7 +562,7 @@ test('a caller that stops waiting on commitAndPush leaves its commit to finish a
 test("closing refuses an explicit commit still waiting on another tab's Web Lock, resolves without it, and the branch is not moved by it", async () => {
 	const restore = installWebLocks();
 	try {
-		const environment = freshEnvironment();
+		const environment = createTestStorage();
 		const a = await tab(environment, 'close-waiting');
 		const b = await tab(environment, 'close-waiting', { commitOnEdit: false });
 		const held = gate();
@@ -602,7 +600,7 @@ test('closing waits for an attempt already inside the protection, refuses a comm
 	const restore = installWebLocks();
 	try {
 		const { history, probe, save, committed, saved } = await tab(
-			freshEnvironment(),
+			createTestStorage(),
 			'close-admitted',
 		);
 		const held = gate();
@@ -664,7 +662,7 @@ test('closing waits for an attempt already inside the protection, refuses a comm
 
 test('status requests during a held scan share one following scan, which reads the last saved edit; nothing is committed or pushed', async () => {
 	const { history, probe, holds, land } = await tab(
-		freshEnvironment(),
+		createTestStorage(),
 		'scan-burst',
 	);
 	await land('a.txt', 'one');
@@ -716,7 +714,7 @@ test('status requests during a held scan share one following scan, which reads t
 
 test('closing waits for the running scan and refuses the scan waiting behind it', async () => {
 	const { history, probe, holds, land } = await tab(
-		freshEnvironment(),
+		createTestStorage(),
 		'scan-close',
 	);
 	await land('a.txt', 'one');
@@ -746,7 +744,7 @@ test('closing waits for the running scan and refuses the scan waiting behind it'
 
 test('a push whose caller leaves while it is queued behind a held push starts no transport when the holder finishes', async () => {
 	const { history, probe, holds, land } = await tab(
-		freshEnvironment(),
+		createTestStorage(),
 		'push-queued',
 		{ commitOnEdit: false },
 	);
@@ -776,7 +774,7 @@ test('a push whose caller leaves while it is queued behind a held push starts no
 
 test('a push asked for with an already aborted signal starts no transport', async () => {
 	const { history, probe, land } = await tab(
-		freshEnvironment(),
+		createTestStorage(),
 		'push-aborted',
 		{ commitOnEdit: false },
 	);
@@ -798,7 +796,7 @@ test('a push asked for with an already aborted signal starts no transport', asyn
 
 test('a caller that leaves commitAndPush while its push is queued keeps its commit and starts no transport', async () => {
 	const { history, probe, holds, land } = await tab(
-		freshEnvironment(),
+		createTestStorage(),
 		'both-queued',
 		{ commitOnEdit: false },
 	);
@@ -834,7 +832,7 @@ test('a caller that leaves commitAndPush while its push is queued keeps its comm
 
 test('a caller that leaves after its push started is told so; the transport finishes and close waits for one that has not', async () => {
 	const { history, probe, holds, land } = await tab(
-		freshEnvironment(),
+		createTestStorage(),
 		'push-admitted',
 		{ commitOnEdit: false },
 	);
@@ -864,7 +862,7 @@ test('a caller that leaves after its push started is told so; the transport fini
 
 test('a fetch whose caller leaves while it is queued, or before it asks, starts no transport', async () => {
 	const { history, probe, holds } = await tab(
-		freshEnvironment(),
+		createTestStorage(),
 		'fetch-queued',
 		{ commitOnEdit: false },
 	);
@@ -1063,7 +1061,7 @@ test('the subject and count describe the committed tree, not the files on disk',
 });
 
 test('close from a commit activity observer refuses unadmitted work or waits for the admitted attempt', async () => {
-	const mine = await tab(freshEnvironment(), 'close-from-activity');
+	const mine = await tab(createTestStorage(), 'close-from-activity');
 	const hold = gate();
 	mine.probe.hold = hold;
 	let initiated = false;

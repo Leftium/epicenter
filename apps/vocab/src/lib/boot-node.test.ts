@@ -1,8 +1,8 @@
 /**
  * Vocab acquisition boundary tests.
  * The working page opens the folder with no sign-in in front of it; callback
- * pages and ancestor layouts open nothing; and the earlier account-based
- * stores are reachable only from the import a person asks for.
+ * pages and ancestor layouts open nothing; and no shipped source opens an
+ * account-based or device store from `@epicenter/app`.
  */
 import { describe, expect, test } from 'bun:test';
 import { existsSync } from 'node:fs';
@@ -87,7 +87,7 @@ describe('the working page needs no account', () => {
 		expect(shell).toContain("createBrowserInferenceSelections('vocab')");
 	});
 
-	test('the earlier stores are opened only by the import, which is loaded only on request', async () => {
+	test('no shipped source opens a store: the folder is the only saved data', async () => {
 		const files = await shippedSources();
 		const openers = files
 			.filter(({ text }) =>
@@ -96,18 +96,6 @@ describe('the working page needs no account', () => {
 				),
 			)
 			.map(({ path }) => path);
-		expect(openers).toEqual(['lib/legacy-source.ts']);
-
-		const importers = files
-			.filter(({ text }) => /legacy-source/.test(text))
-			.map(({ path, text }) => ({
-				path,
-				dynamicOnly:
-					/import\('\$lib\/legacy-source\.js'\)/.test(text) &&
-					!/from '[^']*legacy-source/.test(text),
-			}));
-		expect(importers).toEqual([
-			{ path: 'routes/components/LegacyImport.svelte', dynamicOnly: true },
-		]);
+		expect(openers).toEqual([]);
 	});
 });

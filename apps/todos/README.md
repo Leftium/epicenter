@@ -323,9 +323,10 @@ without the push.
    `done: true`, and the keys `owner` and `labels`, which Todos does not
    declare, then commits and pushes with ordinary Git. Press **Pull** in the
    browser: the todo shows the new title, an open todo with no unsaved input
-   follows it, and the file keeps the comment and keys byte for byte. Saving
-   the todo afterwards writes its standard form, which keeps `owner` and
-   `labels`.
+   follows it, and the file keeps the comment and keys byte for byte.
+   Checking the todo off in the list while it is not open changes only its
+   `done` value and keeps every other byte. Saving it from its open editor
+   writes its standard form, which keeps `owner` and `labels`.
 7. `bun apps/todos/scripts/native.ts <checkout> status` prints the native
    folder's JSON status through `openFolder` from `@epicenter/folder/bun`.
    `create "<title>"`, `complete <stem>`, `commit-and-push`, `fetch`, and

@@ -132,21 +132,21 @@ try {
 		case 'complete': {
 			const stem = args[0];
 			if (stem === undefined) throw new Error('complete needs a stem');
-			const entry = await folder.tables.todos.get(stem);
-			if (entry.error || entry.data === undefined) {
-				exitCode = 1;
-				print({ error: entry.error?.message ?? `No todo named ${stem}` });
-				break;
-			}
 			// Marked done whatever the row holds now; nothing here was reviewed.
+			// The update reads the row itself, and says when it is not there.
 			const updated = await folder.tables.todos.update(
-				entry.data.stem,
+				stem,
 				{ fields: { done: true } },
 				{},
 			);
 			if (updated.error) {
 				exitCode = 1;
-				print({ error: updated.error.message });
+				print({
+					error:
+						updated.error.name === 'NotFound'
+							? `No todo named ${stem}`
+							: updated.error.message,
+				});
 				break;
 			}
 			print({

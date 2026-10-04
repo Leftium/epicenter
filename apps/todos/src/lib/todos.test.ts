@@ -15,7 +15,9 @@
  * - Whichever editor is open on a row settles before its table rename or delete
  * - An open todo's controls and a toggle from the list share its one draft,
  *   and its save writes the whole draft over whatever the file holds; a
- *   toggle with no editor open changes the row as it is now
+ *   toggle with no editor open assigns `done` in the row as it is now and
+ *   keeps every other byte, and a write that lands between its read and
+ *   its save refuses it
  * - A row the todo editor refuses opens in its source editor with the reason,
  *   and returns to fields once repaired; a valid row can switch to its source
  * - A row whose filename breaks the naming rules, or is empty, is addressed
@@ -68,7 +70,17 @@ import {
 } from '@epicenter/folder/browser';
 import { type Err, Ok } from 'wellcrafted/result';
 import { expectOk } from 'wellcrafted/testing';
-import { testBrowserStorage } from '../../../../packages/folder/src/browser-storage.test-support.js';
+import {
+	browserStorage,
+	createTestStorage,
+	opfsOf,
+	testBrowserStorage,
+	testLocks,
+} from '../../../../packages/folder/src/browser-storage.test-support.js';
+import type {
+	OpfsDirectoryHandle,
+	OpfsFileHandle,
+} from '../../../../packages/folder/src/opfs-store.js';
 import { todosDefinition } from './definition.js';
 import type { TodosFolder } from './platform/types.js';
 import type { Todos } from './todos.svelte.js';
@@ -516,26 +528,206 @@ test('a toggle on an open todo saves its whole draft, and is refused while a cha
 	expect(editor.state.document.body).toBe('mine again\n');
 });
 
-test('a toggle with no editor open changes the row as it is now, not as it was listed', async () => {
+test('a toggle with no editor open changes the row as it is now, not as it was listed, and keeps every other byte', async () => {
 	const todos = await open(withoutHints);
 	expectOk(await todos.folder.files.create('todos/milk.md', ROW));
 	await todos.refresh();
 	const listed = todos.entries[0]!;
-	expectOk(
-		await todos.folder.files.overwrite(
-			'todos/milk.md',
-			'---\ntitle: Oat milk\ndone: false\nowner: sam\n---\nNotes\n',
-		),
-	);
+	const theirs =
+		"---\n# kept by sam\ntitle: 'Oat milk'\ndone: false # flip me\nowner: sam\n---\nNotes\n";
+	expectOk(await todos.folder.files.overwrite('todos/milk.md', theirs));
 
 	expect(await todos.toggle(listed)).toBeUndefined();
-	const toggled = await reading(todos, 'todos/milk.md');
-	expect(toggled.fields).toEqual({ title: 'Oat milk', done: true });
-	expect(toggled.body).toBe('Notes\n');
-	expect(await text(todos, 'todos/milk.md')).toContain('"owner": "sam"');
+	// Only `done` changed: the other writer's title, comments, quoting,
+	// unknown metadata, and notes are the bytes they wrote.
+	expect(await text(todos, 'todos/milk.md')).toBe(
+		theirs.replace('done: false', 'done: true'),
+	);
 	// The toggle opened no editor of its own, and nothing stays open.
 	expect(todos.selection).toBeUndefined();
 	expect(todos.unsaved).toBe(false);
+	expect(todos.entries[0]!.fields.done).toBe(true);
+});
+
+test('a toggle with no editor open needs only a readable done: a row with another field issue, or text with no canonical form, toggles in place', async () => {
+	const todos = await open(withoutHints);
+	const titled = '---\ntitle: 12\ndone: false\n---\nNotes\n';
+	const big = '---\ntitle: Big\ndone: false\nsize: 9007199254740993\n---\n';
+	expectOk(await todos.folder.files.create('todos/titled.md', titled));
+	expectOk(await todos.folder.files.create('todos/big.md', big));
+	await todos.refresh();
+	const entry = (path: string) =>
+		todos.entries.find((listed) => listed.path === path)!;
+
+	expect(entry('todos/titled.md').issues.map((issue) => issue.field)).toEqual([
+		'title',
+	]);
+	expect(await todos.toggle(entry('todos/titled.md'))).toBeUndefined();
+	expect(await text(todos, 'todos/titled.md')).toBe(
+		titled.replace('done: false', 'done: true'),
+	);
+	expect(await todos.toggle(entry('todos/big.md'))).toBeUndefined();
+	expect(await text(todos, 'todos/big.md')).toBe(
+		big.replace('done: false', 'done: true'),
+	);
+	expect(todos.unsaved).toBe(false);
+});
+
+test('a toggle with no editor open refuses text that no longer parses, and a row that is gone, writing nothing', async () => {
+	const todos = await open(withoutHints);
+	expectOk(await todos.folder.files.create('todos/milk.md', ROW));
+	await todos.refresh();
+	const listed = todos.entries[0]!;
+	const broken = '---\ntitle: [unclosed\ndone: false\n---\n';
+	expectOk(await todos.folder.files.overwrite('todos/milk.md', broken));
+
+	expect(await todos.toggle(listed)).toContain('no longer reads as a todo');
+	expect(await text(todos, 'todos/milk.md')).toBe(broken);
+
+	await removeNow(todos, 'todos/milk.md');
+	expect(await todos.toggle(listed)).toBe(
+		'This todo is no longer in the folder.',
+	);
+	// The toggle never writes the row back.
+	expect(await text(todos, 'todos/milk.md')).toBeUndefined();
+});
+
+/**
+ * OPFS handles that call `afterRead` with a file's own handle once a read of
+ * its bytes has finished, before the reader gets them: the window between a
+ * structured update's read and its publication.
+ */
+function watchReads(
+	directory: OpfsDirectoryHandle,
+	afterRead: (file: OpfsFileHandle) => Promise<void>,
+): OpfsDirectoryHandle {
+	const watchFile = (file: OpfsFileHandle): OpfsFileHandle => ({
+		kind: 'file',
+		name: file.name,
+		createWritable: (options) => file.createWritable(options),
+		async getFile() {
+			const read = await file.getFile();
+			return {
+				size: read.size,
+				async arrayBuffer() {
+					const buffer = await read.arrayBuffer();
+					await afterRead(file);
+					return buffer;
+				},
+			};
+		},
+	});
+	return {
+		kind: 'directory',
+		name: directory.name,
+		getDirectoryHandle: async (name, options) =>
+			watchReads(await directory.getDirectoryHandle(name, options), afterRead),
+		getFileHandle: async (name, options) =>
+			watchFile(await directory.getFileHandle(name, options)),
+		removeEntry: (name, options) => directory.removeEntry(name, options),
+		async *values() {
+			for await (const entry of directory.values())
+				yield entry.kind === 'file'
+					? watchFile(entry)
+					: watchReads(entry, afterRead);
+		},
+	};
+}
+
+test('a toggle with no editor open is refused when another writer lands between its read and its save, and keeps their bytes', async () => {
+	let race: ((file: OpfsFileHandle) => Promise<void>) | undefined;
+	const storage = createTestStorage();
+	const folder = expectOk(
+		await openFolder({
+			id: `todos-test-${count++}`,
+			definition: todosDefinition,
+			browser: {
+				author: { name: 'Test', email: 'test@example.test' },
+				commitOnEdit: false,
+				opfs: {
+					locks: testLocks,
+					getDirectory: async () =>
+						watchReads(await storage.opfs.getDirectory(), async (file) => {
+							if (file.name !== 'milk.md') return;
+							const act = race;
+							race = undefined;
+							await act?.(file);
+						}),
+				},
+			},
+		}),
+	);
+	const todos = createTodos(withoutHints(folder));
+	opened.push(todos);
+	expectOk(await todos.folder.files.create('todos/milk.md', ROW));
+	await todos.refresh();
+	const theirs = '---\ntitle: Theirs\ndone: false\n---\n';
+	let raced = 0;
+	race = async (file) => {
+		raced++;
+		const writable = await file.createWritable();
+		await writable.write(new TextEncoder().encode(theirs));
+		await writable.close();
+	};
+
+	expect(await todos.toggle(todos.entries[0]!)).toBe(
+		'The file has different content now. Nothing was changed. Check it and try again.',
+	);
+	expect(raced).toBe(1);
+	// One attempt, no retry: the other writer's bytes stay, and the list shows them.
+	expect(await text(todos, 'todos/milk.md')).toBe(theirs);
+	expect(todos.entries[0]!.fields).toEqual({ title: 'Theirs', done: false });
+});
+
+test('a toggle with no editor open whose reply was lost says so, even when a reread finds its bytes', async () => {
+	const storage = createTestStorage();
+	const folder = expectOk(
+		await openFolder({
+			id: `todos-test-${count++}`,
+			definition: todosDefinition,
+			browser: {
+				author: { name: 'Test', email: 'test@example.test' },
+				commitOnEdit: false,
+				...browserStorage(storage),
+			},
+		}),
+	);
+	const todos = createTodos(withoutHints(folder));
+	opened.push(todos);
+	expectOk(await todos.folder.files.create('todos/milk.md', ROW));
+	await todos.refresh();
+	const { faults } = opfsOf(storage);
+	faults.close = (path) => {
+		if (!path.endsWith('todos/milk.md')) return undefined;
+		faults.close = undefined;
+		return 'lost';
+	};
+
+	expect(await todos.toggle(todos.entries[0]!)).toContain('reply was lost');
+	// The reread finds the toggled bytes; that is not an answer to the toggle.
+	expect(await text(todos, 'todos/milk.md')).toBe(
+		ROW.replace('done: false', 'done: true'),
+	);
+	expect(todos.entries[0]!.fields.done).toBe(true);
+	expect(todos.unsaved).toBe(false);
+});
+
+test('a toggle is refused while a clean open todo shows a change made elsewhere that its draft would write over', async () => {
+	const todos = await open(withoutHints);
+	await todos.create('Milk');
+	const path = todos.selectedPath!;
+	const editor = todoEditor(todos);
+	// Another writer's title no longer conforms; `done` still reads.
+	const theirs = '---\ntitle: 12\ndone: false\n---\n';
+	expectOk(await todos.folder.files.overwrite(path, theirs));
+	await todos.refresh();
+	expect(editor.state.isDirty).toBe(false);
+	expect(editor.externalChange?.kind).toBe('invalid');
+	expect(typeof todos.entries[0]!.fields.done).toBe('boolean');
+
+	expect(await todos.toggle(todos.entries[0]!)).toContain('changed elsewhere');
+	expect(await text(todos, path)).toBe(theirs);
+	expect(editor.state.isDirty).toBe(false);
 });
 
 for (const [stem, repaired] of [

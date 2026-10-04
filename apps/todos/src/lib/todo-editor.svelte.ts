@@ -127,7 +127,7 @@ export function describeEditError(error: TableEditError): string {
 }
 
 /** What a person is told when a save did not happen or may not have. */
-export function describeSaveError(error: RowSaveError): string {
+function describeSaveError(error: RowSaveError): string {
 	switch (error.name) {
 		case 'InvalidDocument':
 			return 'Some fields need fixing, so this todo was not saved.';

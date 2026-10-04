@@ -33,6 +33,7 @@ import type {
 	RecoverOutcome,
 	TableEditError,
 	TableSnapshot,
+	TableUpdateError,
 	TableWriteError,
 	TextCapture,
 } from '@epicenter/folder';
@@ -59,7 +60,6 @@ import { createTerminalSession } from './terminal.svelte.js';
 import {
 	createTodoEditor,
 	describeEditError,
-	describeSaveError,
 	type TodoEditor,
 } from './todo-editor.svelte.js';
 
@@ -181,6 +181,20 @@ function describeWriteError(
 			return 'The change was sent, but its reply was lost, so it may or may not have happened. Check the file browser before trying again.';
 		default:
 			return error.message;
+	}
+}
+
+/** Why a toggle with no editor open changed nothing, or may not have. */
+function describeUpdateError(error: TableUpdateError): string {
+	switch (error.name) {
+		case 'NotFound':
+			return 'This todo is no longer in the folder.';
+		case 'Unparsed':
+			return 'This todo no longer reads as a todo, so nothing was changed. Open it and fix its source.';
+		case 'UnsupportedSource':
+			return `This todo's done value cannot be changed here: ${error.reason}. Change it in its source.`;
+		default:
+			return describeWriteError(error);
 	}
 }
 
@@ -635,9 +649,11 @@ export function createTodos(folder: TodosFolder) {
 		/**
 		 * Toggle completion, to the opposite of what the list showed. An open
 		 * todo editor takes it as a change to its draft and saves the whole
-		 * draft. Otherwise a row editor opens on the row as it is now, changes
-		 * `done`, saves, and is disposed. A row that cannot be edited as fields
-		 * is refused; its source editor is how it is fixed.
+		 * draft. Otherwise `done` is assigned in the row's text as it is now,
+		 * and every other byte stays: other fields, unknown metadata, comments,
+		 * quoting, and the notes. A `done` the list could not read is refused;
+		 * so is text that no longer parses, or that cannot take the change
+		 * without altering what it did not name. The source editor fixes those.
 		 */
 		async toggle(entry: TodoEntry): Promise<string | undefined> {
 			if (closing !== undefined) return CLOSING;
@@ -647,12 +663,22 @@ export function createTodos(folder: TodosFolder) {
 			const release = reserve(entry.path);
 			if (release === undefined) return BUSY;
 			const done = !current;
+			let updated: Result<unknown, TableUpdateError>;
 			try {
 				const item = retained.get(entry.path);
 				// A toggle is not the person's choice about a change made elsewhere,
 				// or about a save, rename, or delete that failed or went unanswered.
-				if (item?.kind === 'todo' && item.editor.isAwaitingReview)
-					return 'This todo changed elsewhere. Choose whether to keep your edits in its editor first.';
+				// The draft's save would write over what the editor shows: a valid
+				// change under input, or, clean or not, a removal or text that no
+				// longer reads as a todo.
+				const external =
+					item?.kind === 'todo' ? item.editor.externalChange : undefined;
+				if (
+					item?.kind === 'todo' &&
+					(item.editor.isAwaitingReview ||
+						(external !== undefined && external.kind !== 'present'))
+				)
+					return 'This todo changed elsewhere. Choose what to do in its editor first.';
 				if (item?.kind === 'todo' && item.editor.halt !== undefined)
 					return 'This todo has a change that is not settled. Choose what to do in its editor first.';
 				if (item?.kind === 'todo')
@@ -662,23 +688,17 @@ export function createTodos(folder: TodosFolder) {
 					);
 				if (item?.kind === 'source' || item?.kind === 'text')
 					return 'This todo is open in its source editor. Change it there.';
-				const opened = await table.edit(entry.stem);
-				if (opened.error !== null) return describeEditError(opened.error);
-				const editor = opened.data;
-				try {
-					const changed = editor.change({ fields: { done } });
-					if (changed.error !== null) return changed.error.message;
-					const saved = await editor.save();
-					return saved.error === null
-						? undefined
-						: describeSaveError(saved.error);
-				} finally {
-					await editor.dispose();
-					await refresh();
-				}
+				// The new value depends on nothing else in the row, so it is
+				// assigned to whatever the row holds now; the publication is still
+				// conditional on the bytes this call read.
+				updated = await table.update(entry.stem, { fields: { done } }, {});
 			} finally {
 				release();
 			}
+			await refresh();
+			return updated.error === null
+				? undefined
+				: describeUpdateError(updated.error);
 		},
 		/**
 		 * Rename a file within its folder. A todo row renames through its table,

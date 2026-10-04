@@ -1,7 +1,7 @@
 import type { Static, TSchema } from 'typebox';
 import { Value } from 'typebox/value';
 import { defineErrors, type InferErrors } from 'wellcrafted/error';
-import { Ok, type Result } from 'wellcrafted/result';
+import { Err, Ok, type Result } from 'wellcrafted/result';
 import type { MailConfig } from './config.ts';
 import {
 	type GmailLabel,
@@ -170,15 +170,16 @@ export function createGmailClient(deps: {
 		let refreshed = false;
 
 		while (true) {
-			const token = await tokens.getValidAccessToken();
-			if (token.error) return token;
+			const { data: token, error: tokenError } =
+				await tokens.getValidAccessToken();
+			if (tokenError) return Err(tokenError);
 
 			let response: Response;
 			try {
 				response = await fetch(url.toString(), {
 					method,
 					headers: {
-						Authorization: `Bearer ${token.data}`,
+						Authorization: `Bearer ${token}`,
 						Accept: 'application/json',
 						...(requestBody === undefined
 							? {}
@@ -208,8 +209,8 @@ export function createGmailClient(deps: {
 
 			if (response.status === 401 && !refreshed) {
 				refreshed = true;
-				const forced = await tokens.forceRefresh();
-				if (forced.error) return forced;
+				const { error: refreshError } = await tokens.forceRefresh();
+				if (refreshError) return Err(refreshError);
 				continue;
 			}
 

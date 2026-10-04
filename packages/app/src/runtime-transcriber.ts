@@ -1,6 +1,6 @@
 import { invoke } from '@tauri-apps/api/core';
 import { defineErrors, type InferErrors } from 'wellcrafted/error';
-import { Ok, type Result } from 'wellcrafted/result';
+import { Err, Ok, type Result } from 'wellcrafted/result';
 
 export const RuntimeTranscriptionError = defineErrors({
 	Cancelled: () => ({ message: 'Native transcription was cancelled.' }),
@@ -74,9 +74,12 @@ export function createRuntimeTranscriber(
 		/** IDs come from the host catalog; an empty list means no models are installed. */
 		listModels({ signal }: { signal?: AbortSignal } = {}) {
 			return run<RuntimeModel[]>(signal, async (signal) => {
-				const result = await call('list_inference_models', undefined, signal);
-				if (result.error) return result;
-				const models = result.data;
+				const { data: models, error } = await call(
+					'list_inference_models',
+					undefined,
+					signal,
+				);
+				if (error) return Err(error);
 				if (
 					!Array.isArray(models) ||
 					!models.every(
@@ -118,7 +121,7 @@ export function createRuntimeTranscriber(
 				);
 			return run<RuntimeTranscript>(signal, async (signal) => {
 				const bytes = Array.from(new Uint8Array(await audio.arrayBuffer()));
-				const result = await call(
+				const { data: value, error } = await call(
 					'transcribe_audio_bytes',
 					{
 						modelId: model,
@@ -130,8 +133,7 @@ export function createRuntimeTranscriber(
 					},
 					signal,
 				);
-				if (result.error) return result;
-				const value = result.data;
+				if (error) return Err(error);
 				if (
 					typeof value !== 'object' ||
 					value === null ||

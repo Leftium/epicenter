@@ -15,7 +15,7 @@
 
 import type { SecretError, SecretLabel, SecretStore } from '@epicenter/device';
 import { defineErrors, type InferErrors } from 'wellcrafted/error';
-import { Ok, type Result } from 'wellcrafted/result';
+import { Err, Ok, type Result } from 'wellcrafted/result';
 import type { GmailClientIdentity, MailConfig } from './config.js';
 import {
 	type RefreshAccessError,
@@ -75,8 +75,8 @@ export function createTokenManager({
 		access = null;
 		if (grant.refreshToken !== previousRefreshToken) {
 			pending = { previousRefreshToken, grant };
-			const kept = await secrets.put(label, grant.refreshToken);
-			if (kept.error !== null) return kept;
+			const { error } = await secrets.put(label, grant.refreshToken);
+			if (error !== null) return Err(error);
 		}
 		pending = null;
 		access = grant;
@@ -86,16 +86,16 @@ export function createTokenManager({
 	async function refreshOnce(
 		force: boolean,
 	): Promise<Result<string, TokenManagerError>> {
-		const stored = await secrets.get(label);
-		if (stored.error !== null) return stored;
+		const { data: storedToken, error: readError } = await secrets.get(label);
+		if (readError !== null) return Err(readError);
 		// A browser reload keeps the account record but clears its in-memory
 		// credential. No request to Google has been made in this case.
-		if (stored.data === null) {
+		if (storedToken === null) {
 			pending = null;
 			access = null;
 			return TokenError.CredentialMissing();
 		}
-		let refreshToken = stored.data;
+		let refreshToken = storedToken;
 		if (pending !== null) {
 			const { grant, previousRefreshToken } = pending;
 			// Reconnecting or removing the account supersedes an unsaved grant.
@@ -114,14 +114,14 @@ export function createTokenManager({
 			}
 		}
 		access = null;
-		const refreshed = await refreshAccess({
+		const { data: grant, error: refreshError } = await refreshAccess({
 			config,
 			identity,
 			refreshToken,
 			now,
 		});
-		if (refreshed.error !== null) return refreshed;
-		return keepGrant(refreshed.data, refreshToken);
+		if (refreshError !== null) return Err(refreshError);
+		return keepGrant(grant, refreshToken);
 	}
 
 	function refresh(force: boolean): Promise<Result<string, TokenManagerError>> {

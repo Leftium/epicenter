@@ -189,17 +189,17 @@ function createBearerAuth(
 		owner: Attachment,
 		credential: Attachment['credential'],
 	) {
-		const result = await readApiSession({
+		const { data: session, error } = await readApiSession({
 			baseURL,
 			token: credential.value.token,
 			fetch: fetchImpl,
 		});
 		if (attachment !== owner || owner.credential !== credential) return;
-		if (result.error) {
-			if (result.error.name === 'Rejected') pause(owner, credential);
+		if (error) {
+			if (error.name === 'Rejected') pause(owner, credential);
 			return;
 		}
-		if (result.data.principalId !== owner.account.principalId) {
+		if (session.principalId !== owner.account.principalId) {
 			await enqueue(async () => {
 				if (attachment !== owner || owner.credential !== credential) return;
 				persisted = null;
@@ -348,15 +348,15 @@ function createBearerAuth(
 		let revocation: Promise<void> | undefined;
 		try {
 			signal.throwIfAborted();
-			const result = await whileActive(
+			const { data: session, error } = await whileActive(
 				readApiSession({ baseURL, token, fetch: fetchImpl }),
 				signal,
 			);
 			signal.throwIfAborted();
-			if (result.error) throw result.error;
+			if (error) throw error;
 			const next: PersistedAuth = {
 				token,
-				principalId: result.data.principalId,
+				principalId: session.principalId,
 			};
 			await enqueue(async () => {
 				signal.throwIfAborted();

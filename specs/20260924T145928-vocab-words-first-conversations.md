@@ -4,6 +4,18 @@
 - **Status:** In Progress
 - **Owner:** Vocab
 
+## Current continuation: 2026-10-04
+
+The mobile navigation wave is committed as `57ad84a3c4`; the subsequent OPFS and Result work has landed. Current application and storage behavior is described in `apps/vocab/README.md`. The older implementation narrative below is historical context, not a request to restore its former stores or repeat completed UI work.
+
+Browser access is now available. The stable-preview navigation, selected-action clearance, chat draft preservation, and bulk-review checks passed at 320, 390, 767, and 768px. See [mobile navigation evidence](../apps/vocab/evidence/mobile-navigation/README.md). No demonstrated UI failure remains from that wave.
+
+- [ ] Verify composer and navigation with a physical phone keyboard opening and closing.
+- [ ] Verify physical touch controls and phrase selection on a device.
+- [ ] Verify device safe-area clearance in portrait and landscape.
+
+Record the actual device, OS, browser, steps, and observations before marking these checks passed. Viewport resizing and synthetic events do not establish hardware acceptance. Resume UI implementation only for a demonstrated failure or a new user request. OPFS and the specific Zhongwen uncertain-save duplication remain owned by chat `01a102b9-d664-7ee1-8b4b-38fac6ca3d6b`; coordinate there rather than making concurrent storage or learner edits.
+
 ## One Sentence
 
 Vocab lets learners collect English expressions in Words, start tutor-led device-local chats from a few saved entries, and update those entries themselves.

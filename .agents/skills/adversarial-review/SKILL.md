@@ -192,6 +192,10 @@ coordination, read [references/deletion-prizes.md](references/deletion-prizes.md
 
 Use focused skills for deeper decisions, without copying their procedures:
 
+- [Repairability](../rethink/references/repairability.md) when file-authoritative
+  workflows coordinate to prevent inconsistencies. Identify what information
+  the machinery protects and show the proposed repair path. Verification is
+  required before removing protections.
 - [Rethink's radical-options reference](../rethink/references/radical-options.md)
   when local fixes preserve a bad abstraction and the better design may sit one
   level above it.

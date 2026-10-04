@@ -19,6 +19,7 @@ Load on demand:
 - Before any edit, read [references/never-touch.md](references/never-touch.md). It names the durable strings, schemas, and shapes you must not change without surfacing first, plus the pause list.
 - For the grep cookbook with calibrated patterns, read [references/smell-catalog.md](references/smell-catalog.md).
 - For the operating principle that decides hard cases, read [references/library-refusal.md](references/library-refusal.md).
+- When consistency checks or recovery machinery drive complexity in file-authoritative workflows, read [repairability](../rethink/references/repairability.md). Establish a visible repair path before removing protections.
 - For the per-checkpoint surface format and the stop-time final report shape, read [references/report-format.md](references/report-format.md).
 - For a thin `/goal` template that invokes this skill, read [references/goal-template.md](references/goal-template.md).
 - For Epicenter's repeatable monorepo maintenance pass, read [references/periodic-monorepo-pass.md](references/periodic-monorepo-pass.md).

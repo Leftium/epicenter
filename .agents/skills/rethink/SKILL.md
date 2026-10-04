@@ -37,6 +37,10 @@ it need not define the destination before we have seen it.
 that whole out of reach. Use these references as the question calls for them.
 Neither is a requirement to produce a fixed number of alternatives.
 
+When a promise of consistent file data drives coordination, use
+[repairability](references/repairability.md) to distinguish information
+protection from inconsistencies a human or agent could inspect and repair.
+
 Develop the vision through dialectic: articulate what the system could become,
 show how someone would use it, and let reactions to both deepen or revise the
 proposal. Concrete expression makes ambition inspectable. Follow a caller,

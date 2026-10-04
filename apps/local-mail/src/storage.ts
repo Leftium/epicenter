@@ -102,8 +102,10 @@ export async function openLocalMailStorage(app: {
 			const inflight = mailboxes.get(sub);
 			mailboxes.delete(sub);
 			await inflight?.catch(() => undefined);
-			const gone = await app.sqlite.delete(requireAccountFiling(sub).database);
-			if (gone.error !== null) throw gone.error;
+			const { error } = await app.sqlite.delete(
+				requireAccountFiling(sub).database,
+			);
+			if (error !== null) throw error;
 		},
 	};
 }
@@ -112,9 +114,9 @@ async function open(
 	app: { sqlite: ScopedSqlite },
 	name: string,
 ): Promise<AppSqliteDatabase> {
-	const opened = await app.sqlite.open(name);
-	if (opened.error !== null) throw opened.error;
-	return opened.data;
+	const { data: database, error } = await app.sqlite.open(name);
+	if (error !== null) throw error;
+	return database;
 }
 
 /**
@@ -249,8 +251,8 @@ async function openBorrowed(
 		return opened;
 	}
 
-	const gone = await app.sqlite.delete(name);
-	if (gone.error !== null) throw gone.error;
+	const { error: deleteError } = await app.sqlite.delete(name);
+	if (deleteError !== null) throw deleteError;
 	const fresh = await open(app, name);
 	await applyMailSchema(sqliteHandle(fresh));
 	return fresh;

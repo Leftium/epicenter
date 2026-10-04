@@ -167,12 +167,12 @@ export function queryAccount(
 	return withAccount(app, sub, async () => {
 		await requireConnectedAccount(app, sub);
 		const database = await app.storage.mail(sub);
-		const result = await database.query(sql, {
+		const { data: query, error } = await database.query(sql, {
 			tables: ['messages', 'labels'],
 			signal,
 		});
-		if (result.error !== null) throw new Error(result.error.message);
-		return result.data;
+		if (error !== null) throw new Error(error.message);
+		return query;
 	});
 }
 

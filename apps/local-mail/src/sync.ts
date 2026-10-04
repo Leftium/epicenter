@@ -91,22 +91,21 @@ async function fullPull(
 	let page = 0;
 	if (resuming && pageToken === undefined) return { upserted, failure: null };
 
-	const labels = await client.listLabels();
-	if (labels.error) return { upserted, failure: labels.error };
-	await mailbox.ingestLabels(labels.data);
+	const { data: labels, error: labelsError } = await client.listLabels();
+	if (labelsError) return { upserted, failure: labelsError };
+	await mailbox.ingestLabels(labels);
 
 	while (true) {
 		page += 1;
-		const listed = await client.listMessageIds(pageToken);
-		if (listed.error) {
+		const { data: messagePage, error: listError } =
+			await client.listMessageIds(pageToken);
+		if (listError) {
 			// A bad request with a continuation may be a stale page token. Restart
 			// once at the caller; a first-page failure is never swallowed.
 			return {
 				upserted,
-				failure: listed.error,
-				...(pageToken &&
-				listed.error.name === 'Http' &&
-				listed.error.status === 400
+				failure: listError,
+				...(pageToken && listError.name === 'Http' && listError.status === 400
 					? { rejectedPageToken: true as const }
 					: {}),
 			};
@@ -115,30 +114,29 @@ async function fullPull(
 		const messages: GmailMessage[] = [];
 		for (
 			let start = 0;
-			start < listed.data.ids.length;
+			start < messagePage.ids.length;
 			start += FULL_PULL_GET_CHUNK_SIZE
 		) {
-			const chunk = listed.data.ids.slice(
+			const chunk = messagePage.ids.slice(
 				start,
 				start + FULL_PULL_GET_CHUNK_SIZE,
 			);
 			const fetched = await Promise.all(
 				chunk.map((id) => client.getMessage(id)),
 			);
-			for (const result of fetched) {
-				if (result.error) {
-					if (result.error.name === 'Http' && result.error.status === 404)
-						continue;
-					return { upserted, failure: result.error };
+			for (const { data: message, error } of fetched) {
+				if (error) {
+					if (error.name === 'Http' && error.status === 404) continue;
+					return { upserted, failure: error };
 				}
-				messages.push(result.data);
+				messages.push(message);
 			}
 		}
 
 		try {
 			await mailbox.ingestFullPullPage(messages, {
 				...checkpoint,
-				nextPageToken: listed.data.nextPageToken ?? null,
+				nextPageToken: messagePage.nextPageToken ?? null,
 			});
 		} catch (cause) {
 			if (!isSqliteBusy(cause)) throw cause;
@@ -149,8 +147,8 @@ async function fullPull(
 			`full pull: page ${page}, ${messages.length} messages (${upserted} total)`,
 		);
 
-		if (!listed.data.nextPageToken) break;
-		pageToken = listed.data.nextPageToken;
+		if (!messagePage.nextPageToken) break;
+		pageToken = messagePage.nextPageToken;
 	}
 
 	return { upserted, failure: null };
@@ -220,19 +218,22 @@ async function incrementalPoll(
 	let pageToken: string | undefined;
 
 	while (true) {
-		const page = await client.listHistory(cursorBefore, pageToken);
-		if (page.error) {
+		const { data: historyPage, error: historyError } = await client.listHistory(
+			cursorBefore,
+			pageToken,
+		);
+		if (historyError) {
 			const reason =
-				page.error.name === 'HistoryExpired'
+				historyError.name === 'HistoryExpired'
 					? 'historyId expired (404); caller should retry as FULL'
 					: 'history.list failed';
-			return failedOutcome('INCREMENTAL', reason, cursorBefore, page.error);
+			return failedOutcome('INCREMENTAL', reason, cursorBefore, historyError);
 		}
-		newHistoryId = page.data.historyId;
+		newHistoryId = historyPage.historyId;
 		// A no-change response has no `history` key at all (not `.length === 0`).
-		if (page.data.history) records.push(...page.data.history);
-		if (!page.data.nextPageToken) break;
-		pageToken = page.data.nextPageToken;
+		if (historyPage.history) records.push(...historyPage.history);
+		if (!historyPage.nextPageToken) break;
+		pageToken = historyPage.nextPageToken;
 	}
 
 	const actions = foldHistoryRecords(records);
@@ -253,9 +254,9 @@ async function incrementalPoll(
 			continue;
 		}
 		// A new or missing row needs its full resource before deltas can apply.
-		const fetched = await client.getMessage(id);
-		if (fetched.error) {
-			if (fetched.error.name === 'Http' && fetched.error.status === 404) {
+		const { data: message, error: fetchError } = await client.getMessage(id);
+		if (fetchError) {
+			if (fetchError.name === 'Http' && fetchError.status === 404) {
 				messagesToDelete.push(id);
 				continue;
 			}
@@ -263,19 +264,19 @@ async function incrementalPoll(
 				'INCREMENTAL',
 				'messages.get failed while resolving an added message',
 				cursorBefore,
-				fetched.error,
+				fetchError,
 			);
 		}
-		messagesToUpsert.push(fetched.data);
+		messagesToUpsert.push(message);
 	}
 
-	const labels = await client.listLabels();
-	if (labels.error) {
+	const { data: labels, error: labelsError } = await client.listLabels();
+	if (labelsError) {
 		log(
-			`labels.list failed during incremental refresh: ${labels.error.message}`,
+			`labels.list failed during incremental refresh: ${labelsError.message}`,
 		);
 	} else {
-		await mailbox.ingestLabels(labels.data);
+		await mailbox.ingestLabels(labels);
 	}
 
 	const { labelsChanged } = await mailbox.applyHistoryBatch({
@@ -324,17 +325,18 @@ export async function syncMailbox(deps: SyncDeps): Promise<SyncOutcome> {
 			const resuming = checkpoint !== null;
 			if (!checkpoint) {
 				// Capture before enumeration so changes during the download replay.
-				const profile = await deps.client.getProfile();
-				if (profile.error)
+				const { data: profile, error: profileError } =
+					await deps.client.getProfile();
+				if (profileError)
 					return failedOutcome(
 						mode,
 						reason,
 						cursorBefore,
-						profile.error,
+						profileError,
 						upserted,
 					);
 				checkpoint = {
-					historyId: profile.data.historyId,
+					historyId: profile.historyId,
 					scanId: crypto.randomUUID(),
 					syncedAt,
 					nextPageToken: null,

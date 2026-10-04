@@ -41,20 +41,20 @@ export function sqliteHandle(database: AppSqliteDatabase): SqliteHandle {
 			sql: string,
 			parameters: readonly Binding[] = [],
 		) {
-			const rows = await database.all(sql, parameters);
-			if (rows.error !== null) throw rows.error;
-			return rows.data as unknown as TRow[];
+			const { data: rows, error } = await database.all(sql, parameters);
+			if (error !== null) throw error;
+			return rows as unknown as TRow[];
 		},
 		async run(sql, parameters = []) {
-			const result = await database.run(sql, parameters);
-			if (result.error !== null) throw result.error;
-			return result.data.changes;
+			const { data: result, error } = await database.run(sql, parameters);
+			if (error !== null) throw error;
+			return result.changes;
 		},
 		async batch(statements) {
 			if (statements.length === 0) return [];
-			const result = await database.batch(statements);
-			if (result.error !== null) throw result.error;
-			return result.data.changes;
+			const { data: result, error } = await database.batch(statements);
+			if (error !== null) throw error;
+			return result.changes;
 		},
 	};
 }

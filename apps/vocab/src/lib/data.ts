@@ -1,22 +1,22 @@
+import type { AgentMessage } from '@epicenter/agent';
+import { jsonValue } from '@epicenter/app/field';
 import {
-	defineStore,
+	defineFolder,
 	defineTable,
+	type Folder,
 	field,
-	jsonValue,
-	type RowOf,
-} from '@epicenter/app';
-import type { DeclaredData } from '@epicenter/app/store';
-import { APPS } from '@epicenter/constants/apps';
+	type TableListing,
+	type TableSnapshot,
+} from '@epicenter/folder';
 import { Type } from 'typebox';
 /**
- * Vocab's inert local and personal store declarations. Isomorphic: no IndexedDB,
- * WebSockets, Svelte state, or browser APIs.
+ * Vocab's folder declaration and how its row files read. Isomorphic and inert:
+ * importing it opens nothing.
  *
- * The app imports it as `$lib/data`, which is the one specifier there is for
- * it. The declarations here are Vocab's storage contract.
- *
- * `AppBoot` captures the Account and opens both stores only after the primary
- * route mounts.
+ * One local folder holds everything Vocab saves: the learner's words, each
+ * chat's fixed focus, and every finished message. A saved thing is one
+ * Markdown file, and a save is confirmed by the folder's receipt for that
+ * file. Nothing here has an account in it.
  */
 
 import type { ServableModel } from '@epicenter/constants/ai-providers';
@@ -48,6 +48,16 @@ export function tutorPrompt(
 	return `${VOCAB_SYSTEM_PROMPT}\n\nThis chat focuses on these expressions: ${focus.map((item) => item.text).join(', ')}. ${opening ? 'Open the conversation yourself. Use them naturally and invite the learner to respond.' : 'Keep the focus in mind as you answer the learner.'} Do not ask for a definition quiz.`;
 }
 
+export const STAGES = ['new', 'recognized', 'understood', 'usable'] as const;
+export type Stage = (typeof STAGES)[number];
+/** What the learner reads for each stage. Only the learner sets one. */
+export const STAGE_LABELS: Record<Stage, string> = {
+	new: 'New',
+	recognized: 'Recognize',
+	understood: 'Understand',
+	usable: 'Use',
+};
+
 /**
  * Learner-selected English expressions and their self-reported ability stage.
  * Notes and stages have one owner: the learner.
@@ -56,26 +66,14 @@ const entriesTable = defineTable({
 	fields: {
 		text: field.string(),
 		note: field.string(),
-		stage: field.select(['new', 'recognized', 'understood', 'usable']),
-		// Validation-only rather than `string.date.parse`: a parsing form would hand
-		// back a `Date` that could not round-trip through the projection.
+		stage: field.select(STAGES),
 		createdAt: field.instant(),
 	},
 });
 
-/** One finished tutor message in an account's device-local conversation. */
-const chatMessagesTable = defineTable({
-	fields: {
-		accountKey: field.string(),
-		conversationId: field.string(),
-		messageId: field.string(),
-		message: field.json(jsonValue),
-	},
-});
-
+/** A chat is its creation time and the focus the learner chose for it. */
 const chatsTable = defineTable({
 	fields: {
-		accountKey: field.string(),
 		createdAt: field.instant(),
 		focus: field.json(
 			Type.Array(Type.Object({ entryId: Type.String(), text: Type.String() }), {
@@ -86,32 +84,157 @@ const chatsTable = defineTable({
 	},
 });
 
-/** Device-local chats own chosen focus; messages own finished turns. */
-export const chatHistoryDefinition = defineStore({
-	id: APPS.VOCAB.id,
-	title: 'Vocab chats on this device',
-	kv: {},
-	tables: {
-		messages: chatMessagesTable,
-		chats: chatsTable,
+/** One finished message, whole, and the stem of the chat it belongs to. */
+const messagesTable = defineTable({
+	fields: {
+		chat: field.string(),
+		message: field.json(
+			Type.Object({
+				id: Type.String(),
+				role: Type.Union([Type.Literal('user'), Type.Literal('assistant')]),
+				createdAt: Type.Number(),
+				parts: Type.Array(
+					Type.Union([
+						Type.Object({ type: Type.Literal('text'), text: Type.String() }),
+						Type.Object({
+							type: Type.Literal('tool-call'),
+							toolCallId: Type.String(),
+							toolName: Type.String(),
+							input: jsonValue,
+						}),
+						Type.Object({
+							type: Type.Literal('tool-result'),
+							toolCallId: Type.String(),
+							toolName: Type.String(),
+							content: Type.String(),
+							details: Type.Optional(jsonValue),
+							isError: Type.Boolean(),
+						}),
+					]),
+				),
+			}),
+		),
 	},
 });
 
-/** Account-backed vocabulary entries follow the learner across devices. */
-export const vocabDefinition = defineStore({
-	id: APPS.VOCAB.id,
+export const vocabFolder = defineFolder({
 	title: 'Vocab',
 	kv: {},
 	tables: {
 		entries: entriesTable,
+		chats: chatsTable,
+		messages: messagesTable,
 	},
 });
 
-/** The typed view of Vocab's account-backed entries. */
-export type VocabData = DeclaredData<typeof vocabDefinition>;
+export type VocabFolder = Folder<typeof vocabFolder>;
+export type VocabTables = VocabFolder['tables'];
 
-/** The typed view of this device's chat history. */
-export type ChatHistoryData = DeclaredData<typeof chatHistoryDefinition>;
+type SnapshotOf<TName extends keyof VocabTables> = NonNullable<
+	Awaited<ReturnType<VocabTables[TName]['get']>>['data']
+>;
 
-/** One entry row. Row ids are runtime-minted, so the runtime owns `id`. */
-export type Entry = RowOf<typeof entriesTable>;
+/**
+ * One saved word. `id` is the file stem; `file` is the capture deletion is made
+ * against, so deleting a word that changed since it was read is refused.
+ * Structured edits use the canonical row editor and save the whole word.
+ */
+export type Entry = {
+	id: string;
+	text: string;
+	note: string;
+	stage: Stage;
+	createdAt: string;
+	file: SnapshotOf<'entries'>;
+};
+
+export type FocusItem = { entryId: string; text: string };
+export type Chat = { id: string; createdAt: string; focus: FocusItem[] };
+export type ChatMessage = { stem: string; chat: string; message: AgentMessage };
+
+/**
+ * The saved word a focus item's stage control acts on, if there is one. A
+ * focus keeps the word's ID and its text, and a word's text never changes,
+ * so a word at that ID with another text is a different word and is not it.
+ */
+export function focusWord(
+	entries: readonly Entry[],
+	item: FocusItem,
+): Entry | undefined {
+	return entries.find(
+		(entry) => entry.id === item.entryId && entry.text === item.text,
+	);
+}
+
+/** A row file Vocab cannot show as a row, and why. It is never dropped silently. */
+export type UnreadableFile = { path: string; reason: string };
+
+export function readEntry(file: SnapshotOf<'entries'>): Entry | undefined {
+	const { text, note, stage, createdAt } = file.fields;
+	if (
+		text === undefined ||
+		note === undefined ||
+		stage === undefined ||
+		createdAt === undefined
+	)
+		return undefined;
+	return { id: file.stem, text, note, stage, createdAt, file };
+}
+
+export function readChat(file: SnapshotOf<'chats'>): Chat | undefined {
+	const { createdAt, focus } = file.fields;
+	if (createdAt === undefined || focus === undefined) return undefined;
+	return {
+		id: file.stem,
+		createdAt,
+		focus: focus.map(({ entryId, text }) => ({ entryId, text })),
+	};
+}
+
+export function readMessage(
+	file: SnapshotOf<'messages'>,
+): ChatMessage | undefined {
+	const { chat, message } = file.fields;
+	if (chat === undefined || message === undefined) return undefined;
+	// The reading is frozen and already checked against the message schema;
+	// the tutor loop owns a plain copy of it.
+	return {
+		stem: file.stem,
+		chat,
+		message: structuredClone(message) as AgentMessage,
+	};
+}
+
+/**
+ * Split a table listing into the rows Vocab can show and the files it cannot.
+ * A file that could not be read, whose text does not parse, or that lacks a
+ * field the row needs is reported with its path, never left out.
+ */
+export function readRows<TFields, TRow>(
+	listing: TableListing<TFields>,
+	read: (file: TableSnapshot<TFields>) => TRow | undefined,
+): { rows: TRow[]; unreadable: UnreadableFile[] } {
+	const rows: TRow[] = [];
+	const unreadable: UnreadableFile[] = [];
+	for (const { path, result } of listing) {
+		if (result.error !== null) {
+			// A file removed between enumeration and its read is simply gone.
+			if (result.error.name !== 'NotFound')
+				unreadable.push({ path, reason: result.error.message });
+			continue;
+		}
+		const row = read(result.data);
+		if (row !== undefined) {
+			rows.push(row);
+			continue;
+		}
+		unreadable.push({
+			path,
+			reason:
+				result.data.parseError?.message ??
+				(result.data.issues.map((issue) => issue.message).join('; ') ||
+					'A required field is missing.'),
+		});
+	}
+	return { rows, unreadable };
+}

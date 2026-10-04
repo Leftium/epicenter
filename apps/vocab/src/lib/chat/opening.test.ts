@@ -1,59 +1,74 @@
 /**
  * Tutor opening tests.
- * Real conversations add a transient opening prompt without a saved learner turn,
- * avoid repeating on remount, and discard stopped partial openings before retry.
+ * Real conversations over Vocab's real browser folder add a transient opening
+ * prompt without saving a learner turn, do not repeat on remount, and discard
+ * a stopped partial opening before retry.
  */
 import { expect, test } from 'bun:test';
 import { type AgentEngineRequest, createConversation } from '@epicenter/agent';
-import { openMemory } from '@epicenter/app/memory';
-import { chatHistoryDefinition } from '../data.js';
+import { expectOk } from 'wellcrafted/testing';
+import type { VocabFolder } from '../data.js';
+import { createBrowser, tableFiles } from '../folder.test-support.js';
 import { createChatMessageStore } from './messages.js';
 import { withTutorOpening } from './opening.js';
 
-test('empty tutor opening supplies model content without storing a learner message or restarting on remount', async () => {
-	await using db = await openMemory(chatHistoryDefinition);
-	const requests: AgentEngineRequest[] = [];
-	const engine = withTutorOpening(async function* (request) {
-		requests.push(request);
-		yield { type: 'text-delta', delta: 'Welcome!' };
-	});
-	const options = () => ({
-		store: createChatMessageStore(
-			db.tables.messages,
-			db.persistence,
-			'account-a',
-			'chat-a',
-		),
-		engine,
+/** A conversation over the chat's saved transcript, as a mounted view has it. */
+async function open(
+	folder: VocabFolder,
+	engine: Parameters<typeof withTutorOpening>[0],
+) {
+	const store = createChatMessageStore(folder.tables.messages, 'chat-a');
+	expectOk(await store.load());
+	return createConversation({
+		store,
+		engine: withTutorOpening(engine),
 		generateId: () => crypto.randomUUID(),
 	});
-	const chat = createConversation(options());
+}
+
+test('empty tutor opening supplies model content without storing a learner message or restarting on remount', async () => {
+	await using browser = createBrowser();
+	const folder = await browser.open();
+	const requests: AgentEngineRequest[] = [];
+	const engine: Parameters<typeof withTutorOpening>[0] = async function* (
+		request,
+	) {
+		requests.push(request);
+		yield { type: 'text-delta', delta: 'Welcome!' };
+	};
+	const chat = await open(folder, engine);
 	chat.retry();
 	await Bun.sleep(10);
 	expect(requests).toHaveLength(1);
 	expect(requests[0]?.messages).toEqual([
 		{ role: 'user', content: 'Begin our conversation.' },
 	]);
-	expect(
-		db.tables.messages.rows.map(
-			(row) => (row.message as { role: string }).role,
-		),
-	).toEqual(['assistant']);
+	expect(chat.snapshot().messages.map((message) => message.role)).toEqual([
+		'assistant',
+	]);
+	expect(await tableFiles(folder, 'messages')).toHaveLength(1);
 	chat[Symbol.dispose]();
-	const reopened = createConversation(options());
+	const reopened = await open(folder, engine);
 	await Bun.sleep(10);
 	expect(requests).toHaveLength(1);
+	expect(reopened.snapshot().messages.map((message) => message.role)).toEqual([
+		'assistant',
+	]);
 	reopened[Symbol.dispose]();
 });
 
 test('stopped opening saves no partial answer and retries from empty history', async () => {
-	await using db = await openMemory(chatHistoryDefinition);
+	await using browser = createBrowser();
+	const folder = await browser.open();
 	let release!: () => void;
 	const blocked = new Promise<void>((resolve) => {
 		release = resolve;
 	});
 	let calls = 0;
-	const engine = withTutorOpening(async function* (_request, signal) {
+	const engine: Parameters<typeof withTutorOpening>[0] = async function* (
+		_request,
+		signal,
+	) {
 		calls++;
 		if (calls === 1) {
 			yield { type: 'text-delta', delta: 'Partial' };
@@ -62,28 +77,18 @@ test('stopped opening saves no partial answer and retries from empty history', a
 		} else {
 			yield { type: 'text-delta', delta: 'Welcome!' };
 		}
-	});
-	const options = () => ({
-		store: createChatMessageStore(
-			db.tables.messages,
-			db.persistence,
-			'account-a',
-			'chat-a',
-		),
-		engine,
-		generateId: () => crypto.randomUUID(),
-	});
-	const first = createConversation(options());
+	};
+	const first = await open(folder, engine);
 	first.retry();
 	await Bun.sleep(0);
 	first.stop();
 	release();
-	await Bun.sleep(0);
-	expect(db.tables.messages.rows).toEqual([]);
+	await Bun.sleep(10);
+	expect(await tableFiles(folder, 'messages')).toEqual([]);
 	first[Symbol.dispose]();
-	const reopened = createConversation(options());
+	const reopened = await open(folder, engine);
 	reopened.retry();
-	await Bun.sleep(0);
+	await Bun.sleep(10);
 	expect(calls).toBe(2);
 	expect(reopened.snapshot().messages.map((message) => message.role)).toEqual([
 		'assistant',

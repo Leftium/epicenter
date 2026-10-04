@@ -1,5 +1,9 @@
 # Reading and phrase capture verification (historical milestone)
 
+Current local-folder browser acceptance is recorded in
+[local-folder-journey.md](local-folder-journey.md). The observations below belong
+to earlier implementations.
+
 **Scope correction, 2026-10-03.** Vocab is for English vocabulary practice,
 including SAT words, with all instructions in English. The pinyin features this
 record describes have been removed: the header switch, the stored reading
@@ -21,6 +25,38 @@ stages. Browser automation timed out on three recovery attempts before the
 corrected interface could be observed. Post-removal visual, pointer, keyboard,
 and native-copy acceptance remains pending. These results do not replace live
 provider, touch, or second-device acceptance.
+
+### Real-app startup follow-up, 2026-10-03
+
+`bun dev:vocab` started Vocab at `http://localhost:8888/`, which returned HTTP
+200. The API dashboard built, but API startup exited because Infisical was not
+logged in. Browser tab inventory and creation also timed out before any current
+Vocab UI could be observed. The task-owned development processes were stopped.
+This establishes frontend startup only. Real sign-in, tutor responses, phrase
+capture, reload persistence, and account synchronization remain unverified.
+
+The next attempt exercised the actual app at source baseline
+`3fe5cc56b560c848c4ff445e68c37d5413fed877`. Chrome control still timed out, but
+the Codex in-app browser opened the current Vocab sign-in screen. Pressing
+Sign in attempted the local API at port 8787 and reached a connection-refused
+error because the API was not running. Infisical's session check still failed.
+No account, vocabulary entry, or tutor response was simulated or created.
+The frontend remains running at port 8888 with a fresh tab retained for resume.
+Sign-in screenshot: `/private/tmp/vocab-real-sign-in-20261003.jpg`.
+
+After the user authenticated Infisical, `bun dev:api` reached Ready on port
+8787. In the real Vocab tab, Sign in opened Epicenter's provider choices, and
+Continue with Google reached the user's Google passkey challenge. User
+authentication is pending there; no words or tutor responses have been created.
+Both local development servers remain running for resume. Screenshot:
+`/private/tmp/vocab-google-passkey-20261003.jpg`.
+
+Read-only Opus 5.5 consultation confirmed that `AppBoot`, `openLocal`, local
+connection catalogs, and inference selections already support no account.
+Vocab's route adds the mandatory sign-in gate. Personal remains an account
+replica, so local-first use needs device entries plus an explicit transfer to
+Personal, rather than attaching sync to the existing device document. This is
+a proposed design, with no local-first implementation or acceptance yet.
 
 ## Historical record
 

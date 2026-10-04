@@ -4,7 +4,7 @@
 	import { Label } from '@epicenter/ui/label';
 	import * as Popover from '@epicenter/ui/popover';
 	import { tick, untrack } from 'svelte';
-	import type { createEntriesState } from '$lib/entries.svelte.js';
+	import type { EntriesState } from '$lib/entries.svelte.js';
 	import { capturePhrase, sourceHoldsPhrase } from '$lib/phrase-capture.js';
 
 	// Saving a phrase from one saved tutor message. The conversation binds
@@ -17,17 +17,10 @@
 	let {
 		root,
 		entries,
-		historyStored,
 		resetKey,
 	}: {
 		root: HTMLElement | null | undefined;
-		entries: ReturnType<typeof createEntriesState>;
-		/**
-		 * Whether this device's storage holds the chat history. A message read
-		 * from history that storage has not taken is not a phrase source, and
-		 * this is asked again when a phrase is accepted.
-		 */
-		historyStored: boolean;
+		entries: EntriesState;
 		/** Changes when the conversation moves on; the open candidate is dropped. */
 		resetKey: unknown;
 	} = $props();
@@ -54,6 +47,8 @@
 	let open = $state(false);
 	let pending = $state(false);
 	let added = $state('');
+	// The phrase the folder answered was already a saved word.
+	let already = $state('');
 	let problem = $state('');
 	let content = $state<HTMLElement | null>(null);
 	// Counts candidates, so an answer to an earlier one is not shown for this one.
@@ -67,11 +62,10 @@
 			phrase !== '' &&
 			(!typed || sourceHoldsPhrase(candidate.message, phrase)),
 	);
-	const present = $derived(valid && entries.has(phrase));
-	// An entry on screen that storage has not taken can still be lost, so it is
-	// offered for saving again rather than called a duplicate.
-	const duplicate = $derived(present && entries.isStored);
-	const blocked = $derived(!valid || duplicate || pending);
+	// The list on screen never decides that a phrase is already saved: another
+	// tab may have removed the word since it was read. Saving asks the folder,
+	// which answers that the word is there or saves it.
+	const blocked = $derived(!valid || pending);
 
 	function focusInside() {
 		if (content?.contains(document.activeElement)) return;
@@ -94,6 +88,7 @@
 		if (!same) {
 			text = selected;
 			added = '';
+			already = '';
 			problem = '';
 			ticket++;
 		}
@@ -113,23 +108,23 @@
 		problem = '';
 		// The candidate was read earlier. Its message may since have left the
 		// page, been rebuilt, or stopped being a saved source.
-		if (!historyStored || !sourceHoldsPhrase(candidate.message, submitted)) {
+		if (!sourceHoldsPhrase(candidate.message, submitted)) {
 			problem =
 				'That text is no longer in a saved message. Select it again from the conversation.';
 			return;
 		}
 		pending = true;
-		const { data: outcome, error } = await entries.savePhrase(submitted);
+		const { data: outcome, error } = await entries.add(submitted);
 		pending = false;
-		// A newer candidate owns the popover now. The entry list and its storage
-		// state still say what happened to this one when it is selected again.
+		// A newer candidate owns the popover now. The entry list still says what
+		// happened to this one when it is selected again.
 		if (current !== ticket) return;
 		if (error !== null) {
-			problem =
-				'Not saved on this device yet, so it can be lost if Vocab closes.';
+			problem = 'This phrase was not saved. Nothing was added to your words.';
 			return;
 		}
 		if (outcome === 'added') added = submitted;
+		else already = submitted;
 	}
 
 	// The conversation moved on: an answer stopped or arrived. A candidate from
@@ -160,7 +155,7 @@
 			// A selection inside the popover, such as text in its field, is not a phrase.
 			if (content && selection.anchorNode && content.contains(selection.anchorNode))
 				return;
-			const captured = historyStored ? capturePhrase(selection) : undefined;
+			const captured = capturePhrase(selection);
 			if (captured && element.contains(captured.message)) {
 				const { range, message, messageId } = captured;
 				show(
@@ -327,13 +322,9 @@
 		{/if}
 		{#if problem}
 			<p role="alert" class="text-sm text-destructive">{problem}</p>
-		{:else if present && !duplicate && !pending}
-			<p role="alert" class="text-sm text-destructive">
-				This phrase is in your words, but this device has not saved it yet.
-			</p>
 		{/if}
 		<p role="status" class="text-sm text-muted-foreground empty:hidden">
-			{#if added !== '' && added === phrase}Saved to your words.{/if}
+			{#if added !== '' && added === phrase}Saved to your words.{:else if already !== '' && already === phrase}Already in your words. Its note and stage are unchanged.{/if}
 		</p>
 		<div class="flex flex-wrap items-center gap-2">
 			<!-- Kept focusable while it cannot be pressed: a disabled button would
@@ -344,13 +335,7 @@
 				class="aria-disabled:cursor-not-allowed aria-disabled:opacity-50"
 				onclick={add}
 			>
-				{pending
-					? 'Saving...'
-					: duplicate
-						? 'Already in your words'
-						: present
-							? 'Save again'
-							: 'Save to words'}
+				{pending ? 'Saving...' : problem ? 'Save again' : 'Save to words'}
 			</Button>
 			<Button size="sm" variant="ghost" onclick={close}>Close</Button>
 		</div>

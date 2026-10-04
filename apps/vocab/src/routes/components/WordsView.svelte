@@ -3,19 +3,25 @@
 	import { Checkbox } from '@epicenter/ui/checkbox';
 	import { Input } from '@epicenter/ui/input';
 	import { Label } from '@epicenter/ui/label';
+	import { toast } from '@epicenter/ui/sonner';
 	import { Textarea } from '@epicenter/ui/textarea';
+	import type { Snippet } from 'svelte';
+	import { type Entry, type FocusItem, STAGE_LABELS, STAGES, type Stage } from '$lib/data.js';
+	import type { EntriesState } from '$lib/entries.svelte.js';
 	import { reviewImport, STARTER_LIST } from '$lib/import.js';
-	import type { Entry } from '$lib/data.js';
-	import type { createEntriesState } from '$lib/entries.svelte.js';
-	let { entries, onStart }: {
-		entries: ReturnType<typeof createEntriesState>;
-		onStart: (focus: { entryId: string; text: string }[]) => void;
+	import EntryCard from './EntryCard.svelte';
+	let { entries, starting, onStart, children }: {
+		entries: EntriesState;
+		/** A chat is being saved; another cannot be started yet. */
+		starting: boolean;
+		/** Answers whether the chat started; the selection is kept when it did not. */
+		onStart: (focus: FocusItem[]) => Promise<boolean>;
+		children?: Snippet;
 	} = $props();
-	const stages = ['new', 'recognized', 'understood', 'usable'] as const;
-	const labels: Record<Entry['stage'], string> = { new: 'New', recognized: 'Recognize', understood: 'Understand', usable: 'Use' };
 	let search = $state('');
-	let stage = $state<'all' | Entry['stage']>('all');
+	let stage = $state<'all' | Stage>('all');
 	let single = $state('');
+	let adding = $state(false);
 	let paste = $state('');
 	let review = $state<ReturnType<typeof reviewImport> | null>(null);
 	let selected = $state<string[]>([]);
@@ -28,28 +34,53 @@
 		review = reviewImport(raw, new Set(entries.entries.map((entry) => entry.text)));
 		selected = [...review.eligible];
 	}
-	function confirmImport() {
-		for (const text of selected) entries.save(text);
-		review = null;
+	/** Save each addition, and clear the field or the review only for what the folder took. */
+	async function add(texts: string[]): Promise<string[]> {
+		adding = true;
+		const failed: string[] = [];
+		let reason = '';
+		for (const text of texts) {
+			const { error } = await entries.add(text);
+			if (error !== null && error.name !== 'Empty') {
+				failed.push(text);
+				reason = error.message;
+			}
+		}
+		adding = false;
+		if (failed.length) toast.error(failed.length === 1 ? 'An expression was not saved' : `${failed.length} expressions were not saved`, { description: reason });
+		return failed;
+	}
+	async function addSingle() {
+		const submitted = single;
+		if (!submitted.trim() || adding) return;
+		const failed = await add([submitted]);
+		if (failed.length === 0 && single === submitted) single = '';
+	}
+	async function confirmImport() {
+		if (adding) return;
+		const failed = await add(selected);
+		// What was not saved stays selected for another try.
+		if (failed.length === 0) review = null;
+		else selected = failed;
 	}
 	function toggleFocus(id: string) {
 		focusIds = focusIds.includes(id) ? focusIds.filter((value) => value !== id) : selectedFocus.length < 3 ? [...selectedFocus.map((entry) => entry.id), id] : focusIds;
 	}
-	function start() {
+	async function start() {
 		const focus = selectedFocus.map(({ id, text }) => ({ entryId: id, text }));
-		if (focus.length) { onStart(focus); focusIds = []; }
+		if (focus.length && (await onStart(focus))) focusIds = [];
 	}
 </script>
 
 <div class="mx-auto flex h-full w-full max-w-5xl flex-col gap-6 overflow-y-auto px-4 py-6 md:px-8">
 	<div>
 		<h2 class="text-2xl font-semibold">Words</h2>
-		<p class="text-sm text-muted-foreground">Save expressions, write your own notes, and choose up to three for a tutor-led chat.</p>
+		<p class="text-sm text-muted-foreground">Save expressions, write your own notes, and choose up to three for a tutor-led chat. Everything is saved in this browser; no sign-in is needed.</p>
 	</div>
 	<div class="flex flex-wrap items-end gap-2">
-		<form class="flex flex-1 gap-2" onsubmit={(event) => { event.preventDefault(); if (entries.save(single)) single = ''; }}>
+		<form class="flex flex-1 gap-2" onsubmit={(event) => { event.preventDefault(); void addSingle(); }}>
 			<Input aria-label="New expression" placeholder="Add an expression" bind:value={single} />
-			<Button type="submit">Add</Button>
+			<Button type="submit" disabled={adding}>Add</Button>
 		</form>
 		<Button variant="outline" onclick={() => openReview(STARTER_LIST)}>Browse starter list</Button>
 	</div>
@@ -65,13 +96,13 @@
 			{#each review.eligible as text (text)}
 				<Label class="min-h-11 leading-normal font-normal select-text"><Checkbox checked={selected.includes(text)} onCheckedChange={(checked) => selected = checked ? [...selected, text] : selected.filter((item) => item !== text)} />{text}</Label>
 			{/each}
-			<div class="flex gap-2"><Button disabled={!selected.length} onclick={confirmImport}>Add selected</Button><Button variant="ghost" onclick={() => review = null}>Cancel</Button></div>
+			<div class="flex gap-2"><Button disabled={!selected.length || adding} onclick={confirmImport}>{adding ? 'Saving…' : 'Add selected'}</Button><Button variant="ghost" onclick={() => review = null}>Cancel</Button></div>
 		</section>
 	{/if}
 	<div class="flex flex-wrap items-center gap-2">
 		<Input aria-label="Search words" placeholder="Search words" class="max-w-xs" bind:value={search} />
-		{#each ['all', ...stages] as option}
-			<Button size="sm" variant={stage === option ? 'default' : 'outline'} onclick={() => stage = option as typeof stage}>{option === 'all' ? 'All' : labels[option as Entry['stage']]}</Button>
+		{#each ['all', ...STAGES] as const as option}
+			<Button size="sm" variant={stage === option ? 'default' : 'outline'} onclick={() => stage = option}>{option === 'all' ? 'All' : STAGE_LABELS[option]}</Button>
 		{/each}
 	</div>
 	{#if entries.entries.length === 0}
@@ -79,22 +110,14 @@
 	{:else if shown.length === 0}
 		<p class="py-8 text-center text-muted-foreground">No expressions match this search and stage.</p>
 	{:else}
-		<div class="space-y-3 pb-24">
+		<div class="space-y-3">
 			{#each shown as entry (entry.id)}
-				<article class="rounded-lg border p-4">
-					<div class="flex items-center justify-between gap-2">
-						<Label class="min-h-11 text-base leading-normal select-text"><Checkbox aria-label="Choose {entry.text} for chat" checked={focusIds.includes(entry.id)} disabled={!focusIds.includes(entry.id) && selectedFocus.length >= 3} onCheckedChange={() => toggleFocus(entry.id)} />{entry.text}</Label>
-						<Button size="sm" variant="ghost" onclick={() => entries.remove(entry.id)}>Delete</Button>
-					</div>
-					<Textarea class="min-h-20" aria-label="Your note for {entry.text}" placeholder="Your note" value={entry.note} onblur={(event) => { if (event.currentTarget.value !== entry.note) entries.setNote(entry.id, event.currentTarget.value); }} />
-					<div class="mt-2 flex flex-wrap gap-1" aria-label="Your stage for {entry.text}">
-						{#each stages as option}<Button size="sm" variant={entry.stage === option ? 'default' : 'outline'} aria-pressed={entry.stage === option} onclick={() => entries.setStage(entry.id, option)}>{labels[option]}</Button>{/each}
-					</div>
-				</article>
+				<EntryCard {entry} {entries} chosen={focusIds.includes(entry.id)} canChoose={focusIds.includes(entry.id) || selectedFocus.length < 3} onToggle={() => toggleFocus(entry.id)} />
 			{/each}
 		</div>
 	{/if}
+	<div class="pb-24">{@render children?.()}</div>
 </div>
 {#if selectedFocus.length}
-	<div class="fixed bottom-4 left-1/2 z-20 -translate-x-1/2 rounded-lg border bg-background p-2 shadow-lg"><Button onclick={start}>Start chat with {selectedFocus.length} {selectedFocus.length === 1 ? 'word' : 'words'}</Button></div>
+	<div class="fixed bottom-4 left-1/2 z-20 -translate-x-1/2 rounded-lg border bg-background p-2 shadow-lg"><Button disabled={starting} onclick={start}>{starting ? 'Saving the chat…' : `Start chat with ${selectedFocus.length} ${selectedFocus.length === 1 ? 'word' : 'words'}`}</Button></div>
 {/if}

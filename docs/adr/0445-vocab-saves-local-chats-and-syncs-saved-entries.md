@@ -1,6 +1,7 @@
 # 0445. Vocab saves local chats and syncs saved entries
 
-- **Status:** Accepted
+- **Status:** Superseded
+- **Superseded by:** [ADR-0498](0498-vocab-opens-one-local-folder-before-sign-in.md)
 - **Date:** 2026-09-24
 - **Amended by:** [ADR-0452](0452-vocab-chats-persist-chosen-expressions-before-the-tutor-speaks.md) (Words starts tutor-first chats and retains the selected chat during navigation)
 - **Relates:** [ADR-0046](0046-a-capability-free-agent-persists-finished-messages-not-live-doc-streams.md) (finished turns), [ADR-0444](0444-vocab-stores-finished-chat-messages-as-local-rows.md) (message rows)

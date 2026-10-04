@@ -1,5 +1,4 @@
 import { createConversation } from '@epicenter/agent';
-import type { PersistenceCapability } from '@epicenter/app/store';
 import type {
 	InferenceCatalog,
 	InferenceTarget,
@@ -11,30 +10,27 @@ import {
 } from '@epicenter/client';
 import { bindAgentConversation } from '@epicenter/svelte';
 import { createSubscriber } from 'svelte/reactivity';
-import type { ChatHistoryData } from '../data.js';
-import { tutorPrompt, VOCAB_MODEL, VOCAB_SYSTEM_PROMPT } from '../data.js';
 import {
-	type ChatHistoryError,
-	createChatMessageStore,
-	saveChatHistory,
-} from './messages.js';
+	tutorPrompt,
+	type UnreadableFile,
+	VOCAB_MODEL,
+	VOCAB_SYSTEM_PROMPT,
+	type VocabTables,
+} from '../data.js';
+import { type ChatHistoryError, createChatMessageStore } from './messages.js';
 import { withTutorOpening } from './opening.js';
 
 /** One active tutor conversation for the lifetime of its keyed view. */
 export function createVocabChat({
 	messages,
-	persistence,
-	accountKey,
-	conversationId,
+	chatId,
 	focus,
 	catalog,
 	selections,
 }: {
-	messages: ChatHistoryData['tables']['messages'];
-	/** The storage behind `messages`: a message is saved once this confirms it. */
-	persistence: PersistenceCapability;
-	accountKey: string;
-	conversationId: string;
+	/** The folder table that holds every chat's finished messages. */
+	messages: VocabTables['messages'];
+	chatId: string;
 	focus: readonly { text: string }[];
 	catalog: InferenceCatalog;
 	selections: InferenceSelections;
@@ -50,19 +46,39 @@ export function createVocabChat({
 	let disposed = false;
 	// A tutor request being prepared: reserved when asked, before any await, so
 	// a second click finds it. Stop and disposal abort it, and an aborted
-	// request never reaches the tutor however late its storage check settles.
+	// request never reaches the tutor however late its folder read settles.
 	let asking = $state<AbortController | null>(null);
-	// Storage refused the chat history itself (a new chat's focus, or rows from
-	// before a remount), with no message of this session waiting to be saved.
-	let historyError = $state<ChatHistoryError | null>(null);
-	let isSavingHistory = $state(false);
+	// The folder could not list this chat's messages, so its transcript is
+	// unknown and the tutor is not asked over it.
+	let readError = $state<ChatHistoryError | null>(null);
+	let isReading = $state(false);
+	let hasRead = $state(false);
+	let unreadable = $state.raw<UnreadableFile[]>([]);
+
+	const store = createChatMessageStore(messages, chatId);
+	let reading: Promise<ChatHistoryError | null> | undefined;
+	/** Read the transcript from the folder; overlapping callers share one read. */
+	function read(): Promise<ChatHistoryError | null> {
+		reading ??= (async () => {
+			isReading = true;
+			const { error } = await store.load();
+			reading = undefined;
+			isReading = false;
+			readError = error;
+			if (error === null) {
+				hasRead = true;
+				unreadable = store.unreadable;
+			}
+			return error;
+		})();
+		return reading;
+	}
 
 	/**
-	 * A message write confirmed: storage holds the whole history. Clear the
-	 * submitted text, unless the learner has typed since.
+	 * A message's file receipt arrived. Clear the submitted text, unless the
+	 * learner has typed since.
 	 */
 	function releaseSubmittedDraft() {
-		historyError = null;
 		if (draft === submittedDraft) draft = '';
 		submittedDraft = null;
 	}
@@ -103,12 +119,7 @@ export function createVocabChat({
 	});
 	const loop = bindAgentConversation(
 		createConversation({
-			store: createChatMessageStore(
-				messages,
-				persistence,
-				accountKey,
-				conversationId,
-			),
+			store,
 			engine: withTutorOpening(provider),
 			generateId: () => crypto.randomUUID(),
 		}),
@@ -116,7 +127,6 @@ export function createVocabChat({
 	// Saving and unsaved messages hold the conversation as a live turn does.
 	const isBusy = () =>
 		asking !== null ||
-		isSavingHistory ||
 		loop.isGenerating ||
 		loop.isSaving ||
 		loop.unsaved.length > 0;
@@ -125,6 +135,9 @@ export function createVocabChat({
 		loop.messages.length === 0
 			? focus.length === 0
 			: loop.messages.at(-1)?.role !== 'user';
+	// What is on screen is the folder's transcript, not the empty first render.
+	const isReadable = () => hasRead && !isReading && readError === null;
+	void read();
 
 	return {
 		get messages() {
@@ -133,7 +146,7 @@ export function createVocabChat({
 		get streaming() {
 			return loop.streaming;
 		},
-		/** True from the moment the tutor is asked, so Stop covers the storage check too. */
+		/** True from the moment the tutor is asked, so Stop covers the folder read too. */
 		get isGenerating() {
 			return asking !== null || loop.isGenerating;
 		},
@@ -148,20 +161,31 @@ export function createVocabChat({
 				? loop.error
 				: null;
 		},
-		/** Whole messages this device's storage has not confirmed. */
+		/** Whole messages the folder has not confirmed as files. */
 		get unsaved() {
 			return loop.unsaved;
 		},
 		get isSaving() {
-			return loop.isSaving || isSavingHistory;
+			return loop.isSaving;
 		},
 		/**
-		 * Why storage is behind: an unsaved message, or with `unsaved` empty, the
-		 * chat history itself. Set until `saveAgain` succeeds. Never a tutor
-		 * failure; those are `error`.
+		 * Why a message in `unsaved` has no file. Set until `saveAgain` succeeds.
+		 * Never a tutor failure; those are `error`.
 		 */
 		get saveError() {
-			return loop.saveError ?? historyError;
+			return loop.saveError;
+		},
+		/** The transcript is being read from the folder. */
+		get isReading() {
+			return isReading;
+		},
+		/** Why the transcript could not be read. Set until `readAgain` succeeds. */
+		get readError() {
+			return readError;
+		},
+		/** Message files of this chat that are not shown and not sent to the tutor. */
+		get unreadable() {
+			return unreadable;
 		},
 		get target() {
 			return target();
@@ -170,14 +194,14 @@ export function createVocabChat({
 			const resolved = catalog.resolve(target());
 			return resolved !== null && resolved.source !== 'runtime';
 		},
-		/** Whether `retry` would ask the tutor now. A storage failure is cleared by `saveAgain` first. */
+		/** Whether `retry` would ask the tutor now. A failed read is cleared by `readAgain` first. */
 		get canAsk() {
 			const resolved = catalog.resolve(target());
 			return (
 				resolved !== null &&
 				resolved.source !== 'runtime' &&
 				!isBusy() &&
-				historyError === null &&
+				isReadable() &&
 				!hasNothingToAsk()
 			);
 		},
@@ -193,6 +217,7 @@ export function createVocabChat({
 				resolved !== null &&
 				resolved.source !== 'runtime' &&
 				!isBusy() &&
+				isReadable() &&
 				loop.messages.length > 0 &&
 				draft.trim().length > 0
 			);
@@ -207,7 +232,13 @@ export function createVocabChat({
 		async sendMessage() {
 			const submitted = draft;
 			const text = submitted.trim();
-			if (!text || loop.messages.length === 0 || isBusy() || !captureTarget())
+			if (
+				!text ||
+				loop.messages.length === 0 ||
+				isBusy() ||
+				!isReadable() ||
+				!captureTarget()
+			)
 				return;
 			const { error } = await loop.send(text);
 			if (error?.name === 'NotAdmitted') return;
@@ -216,43 +247,34 @@ export function createVocabChat({
 			if (error === null) releaseSubmittedDraft();
 		},
 		/**
-		 * Ask storage again for whatever `saveError` reports: the unsaved
-		 * messages, or the chat history. Never asks the tutor; that stays the
-		 * learner's separate step.
+		 * Save the messages in `unsaved` again, under the same files. Never asks
+		 * the tutor; that stays the learner's separate step.
 		 */
 		async saveAgain() {
-			if (loop.unsaved.length > 0) {
-				const { error } = await loop.save();
-				if (error === null) releaseSubmittedDraft();
-				return;
-			}
-			if (historyError === null || isBusy() || disposed) return;
-			isSavingHistory = true;
-			const { error } = await saveChatHistory(persistence);
-			isSavingHistory = false;
-			historyError = error;
+			if (loop.unsaved.length === 0) return;
+			const { error } = await loop.save();
+			if (error === null) releaseSubmittedDraft();
+		},
+		/** Read the transcript again after a failed read. Never asks the tutor. */
+		async readAgain() {
+			if (readError === null || isBusy() || disposed) return;
+			await read();
 		},
 		/**
 		 * Ask the tutor for the opening, or for the answer to the last learner
-		 * message. Asks nothing until storage has taken the history: the
-		 * transcript is read from the live document, which can hold a new chat's
-		 * focus or a learner message from a chat that was left unsaved. A refusal
-		 * lands in `saveError` and asks nothing.
+		 * message. The transcript is read from the folder first, so the tutor is
+		 * asked over what is saved now. A closed or unreadable folder asks
+		 * nothing and lands in `readError`.
 		 */
 		async retry() {
-			if (disposed || isBusy() || historyError !== null || hasNothingToAsk())
-				return;
+			if (disposed || isBusy() || readError !== null) return;
 			const admitted = new AbortController();
 			asking = admitted;
 			try {
 				await catalog.ready;
 				if (admitted.signal.aborted) return;
-				const { error } = await saveChatHistory(persistence);
-				if (admitted.signal.aborted) return;
-				if (error !== null) {
-					historyError = error;
-					return;
-				}
+				const error = await read();
+				if (admitted.signal.aborted || error !== null) return;
 				if (hasNothingToAsk() || !captureTarget()) return;
 				dismissedError = null;
 				// Hand the admission to the loop, which reserves its own at once.

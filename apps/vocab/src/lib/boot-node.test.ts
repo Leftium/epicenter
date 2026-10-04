@@ -1,15 +1,18 @@
 /**
  * Vocab acquisition boundary tests.
- * Callback pages and ancestor layouts acquire no resources; the working page
- * opens resources and passes them to the shell, which consumes the opened data.
+ * The working page opens the folder with no sign-in in front of it; callback
+ * pages and ancestor layouts open nothing; and the earlier account-based
+ * stores are reachable only from the import a person asks for.
  */
 import { describe, expect, test } from 'bun:test';
 import { existsSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { readdir } from 'node:fs/promises';
+import { dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const appRoot = fileURLToPath(new URL('../..', import.meta.url));
-const routes = join(appRoot, 'src/routes');
+const source = join(appRoot, 'src');
+const routes = join(source, 'routes');
 const callback = join(routes, 'auth/callback/+page.svelte');
 
 function ancestorLayouts(page: string): string[] {
@@ -25,44 +28,86 @@ function ancestorLayouts(page: string): string[] {
 	return found;
 }
 
+/** Every shipped source file: no tests and no test support. */
+async function shippedSources(): Promise<{ path: string; text: string }[]> {
+	const names = await readdir(source, { recursive: true });
+	const files = names.filter(
+		(name) =>
+			/\.(ts|svelte)$/.test(name) && !/\.(test|test-support)\.ts$/.test(name),
+	);
+	return Promise.all(
+		files.map(async (name) => ({
+			path: relative(source, join(source, name)),
+			text: await Bun.file(join(source, name)).text(),
+		})),
+	);
+}
+
 describe('the callback opens nothing', () => {
 	test('the callback page exists and has at least one ancestor layout', () => {
 		expect(existsSync(callback)).toBe(true);
 		expect(ancestorLayouts(callback).length).toBeGreaterThan(0);
 	});
 
-	test('callback and ancestor layouts never import the bootstrap or open a library', async () => {
+	test('callback and ancestor layouts never open the folder or mount the shell', async () => {
 		for (const file of [callback, ...ancestorLayouts(callback)]) {
-			const source = await Bun.file(file).text();
-			expect(source).not.toMatch(
-				/(?:\$lib\/|\.\/|\.\.\/)(?:application|bootstrap)(?:\.js)?['"]/,
-			);
-			expect(source).not.toMatch(/openApplication\s*\(|<AppBoot\b/);
-			expect(source).not.toMatch(/\bopenApp\s*\(/);
-			expect(source).not.toContain('VocabShell.svelte');
+			const text = await Bun.file(file).text();
+			expect(text).not.toMatch(/openVocabFolder|openFolder\s*\(/);
+			expect(text).not.toMatch(/@epicenter\/folder/);
+			expect(text).not.toContain('VocabShell.svelte');
 		}
 	});
+});
 
-	test('the working page opens resources and passes them to its shell', async () => {
-		const bootNode = join(routes, '+page.svelte');
-		const source = await Bun.file(bootNode).text();
-		expect(source).toContain('openVocabResources(account, signal)');
-		expect(source).toContain('<VocabShell ');
-		expect(source).not.toMatch(/openApplication|createDeparture|attachUi/);
-		expect(source).not.toContain('showing');
-		expect(ancestorLayouts(callback)).not.toContain(bootNode);
+describe('the working page needs no account', () => {
+	test('the page opens the folder and mounts the shell with no sign-in gate', async () => {
+		const page = await Bun.file(join(routes, '+page.svelte')).text();
+		expect(page).toContain('openVocabFolder()');
+		expect(page).toContain('<VocabShell ');
+		expect(page).not.toMatch(/AppBoot|SignInScreen|\$lib\/auth/);
 	});
 
-	test('the shell consumes the opened library without importing its bootstrap', async () => {
-		const source = await Bun.file(
+	test('the folder opens through the browser entry, with no account in its declaration', async () => {
+		const opener = await Bun.file(join(source, 'lib/folder.ts')).text();
+		expect(opener).toContain("from '@epicenter/folder/browser'");
+		const declaration = await Bun.file(join(source, 'lib/data.ts')).text();
+		expect(declaration).not.toMatch(/accountKey|@epicenter\/auth/);
+	});
+
+	test('connected endpoints and the chosen model are kept for the device, never for an account', async () => {
+		const files = await shippedSources();
+		expect(
+			files
+				.filter(({ text }) => /openAccountConnectionCatalog/.test(text))
+				.map(({ path }) => path),
+		).toEqual([]);
+		const shell = await Bun.file(
 			join(routes, 'components/VocabShell.svelte'),
 		).text();
-		expect(source).not.toMatch(
-			/(?:\$lib\/|\.\/|\.\.\/)(?:application|bootstrap)(?:\.js)?['"]/,
-		);
-		expect(source).not.toMatch(/openApplication\s*\(|<AppBoot\b/);
-		expect(source).not.toMatch(/\bopenApp\s*\(/);
-		expect(source).toContain('= $props()');
-		expect(source).toContain('fromData(opened.personal)');
+		expect(shell).toContain("createBrowserInferenceSelections('vocab')");
+	});
+
+	test('the earlier stores are opened only by the import, which is loaded only on request', async () => {
+		const files = await shippedSources();
+		const openers = files
+			.filter(({ text }) =>
+				/@epicenter\/app\/(open|store|memory)|\bopenLocal\b|\bopenPersonal\b|PersistenceNotice|fromData\b/.test(
+					text,
+				),
+			)
+			.map(({ path }) => path);
+		expect(openers).toEqual(['lib/legacy-source.ts']);
+
+		const importers = files
+			.filter(({ text }) => /legacy-source/.test(text))
+			.map(({ path, text }) => ({
+				path,
+				dynamicOnly:
+					/import\('\$lib\/legacy-source\.js'\)/.test(text) &&
+					!/from '[^']*legacy-source/.test(text),
+			}));
+		expect(importers).toEqual([
+			{ path: 'routes/components/LegacyImport.svelte', dynamicOnly: true },
+		]);
 	});
 });

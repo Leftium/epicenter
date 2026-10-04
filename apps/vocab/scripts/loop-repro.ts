@@ -2,7 +2,7 @@
  * Headless reproduction of the vocab chat over the REAL agent loop
  * (`createConversation`), with an in-memory store, against local Ollama. It logs
  * the exact prompt the engine receives on each step and the messages the loop
- * persists, so a multi-turn rendering bug can be seen without the auth-gated UI.
+ * persists, so a multi-turn rendering bug can be seen without the UI.
  *
  *   bun run apps/vocab/scripts/loop-repro.ts qwen3:30b-a3b-instruct-2507-q4_K_M
  */

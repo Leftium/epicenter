@@ -93,8 +93,9 @@ export function createRowSession<TFields>(
 	/**
 	 * What the person has to choose about before anything is saved by itself:
 	 *
-	 * - `failed`: a save failed, or storage threw.
-	 * - `unconfirmed`: a save got no reply.
+	 * - `failed`: a save failed.
+	 * - `unconfirmed`: a save got no reply, or storage threw during the save
+	 *   or the read after it, so whether it landed is unknown.
 	 * - `detached`: the person stopped tracking a rename or delete whose
 	 *   outcome is not known, so this editor's file is not known to be the
 	 *   note's any more.
@@ -112,6 +113,8 @@ export function createRowSession<TFields>(
 	let settling = $state(false);
 	let timer: ReturnType<typeof setTimeout> | undefined;
 	let tail: Promise<unknown> = Promise.resolve();
+	/** Saves, moves, and removals admitted to `exclusive` and not yet settled. */
+	let queued = $state(0);
 
 	/**
 	 * What the latest read found that the editor has not followed: changed
@@ -152,9 +155,15 @@ export function createRowSession<TFields>(
 		timer = setTimeout(() => void flush(), TYPING_BATCH_MS);
 	}
 
-	/** One save, move, or removal at a time, in the order asked. */
+	/**
+	 * One save, move, or removal at a time, in the order asked. It counts as
+	 * queued from the call, before its turn comes.
+	 */
 	function exclusive<T>(work: () => Promise<T>): Promise<T> {
-		const result = tail.then(work);
+		queued += 1;
+		const result = tail.then(work).finally(() => {
+			queued -= 1;
+		});
 		tail = result.catch(() => {});
 		return result;
 	}
@@ -168,9 +177,10 @@ export function createRowSession<TFields>(
 			({ error } = await editor.save());
 			await editor.refresh();
 		} catch (cause) {
-			// Storage that throws is a bug in it. Nothing is known to be saved.
+			// Storage that throws is a bug in it. The save may have landed before
+			// the save or the read after it threw: the outcome is unknown.
 			hold = {
-				kind: 'failed',
+				kind: 'unconfirmed',
 				message: cause instanceof Error ? cause.message : String(cause),
 			};
 			return undefined;
@@ -242,6 +252,19 @@ export function createRowSession<TFields>(
 		get hold() {
 			return hold;
 		},
+		/**
+		 * Whether a save, rename, or delete is queued, admitted, or awaiting the
+		 * read after it. What it comes to is not known yet, so a command that
+		 * would save after it is not taken.
+		 */
+		get busy() {
+			return (
+				queued > 0 ||
+				settling ||
+				state.saving !== undefined ||
+				pathChange !== undefined
+			);
+		},
 		/** Whether autosave waits for the person's choice. */
 		get paused() {
 			return hold !== undefined;
@@ -295,8 +318,10 @@ export function createRowSession<TFields>(
 				if (pathChange !== undefined)
 					return 'A rename or delete of this note is not finished.';
 				const error = await submit();
-				if (error === undefined || error.name === 'InvalidDocument')
-					return notice;
+				// Storage that threw leaves an unconfirmed hold and no error: the
+				// outcome is unknown, so this does not report it saved.
+				if (error === undefined) return hold?.message;
+				if (error.name === 'InvalidDocument') return notice;
 				return error.message;
 			});
 		},

@@ -67,14 +67,23 @@ exactly. Opening a note that is spelled differently writes nothing. To keep a
 file's exact text, or to change a key Honeycrisp does not show, use **Edit as
 file**.
 
+An action from the note list or the folder list on a note or folder that is
+not open (pin, move to a folder, move to Recently Deleted, restore, rename a
+folder) changes that one field in the file's text and keeps every other byte,
+comments and quoting included. It writes even when the field already has that
+value. A note that is open takes the action in its draft, which saves in the
+standard form.
+
 A note file starts with a `---` line, its fields, and a closing `---` line.
 A file in `notes/` whose text does not read that way, including plain
 Markdown with no `---` lines, is still listed and still opens: it is marked
 "Needs repair", its fields and rich-text view are unavailable, and you fix it
 in Source. Saving it while it is still malformed works. A note that reads but
 has a bad field, such as `pinned: maybe`, is marked the same way and keeps its
-other controls and its rich-text view. The messages describe the text on
-screen, saved or not.
+other controls and its rich-text view. Its list actions stay available when
+the fields they need read: it can be moved to a folder or to Recently Deleted,
+but not pinned or unpinned while `pinned` is bad. The messages describe the
+text on screen, saved or not.
 
 Any file name works, for notes and for folders, including a leading dot, a
 trailing space, and `notes/.md` itself. A folder's id is its file stem.
@@ -82,7 +91,18 @@ trailing space, and `notes/.md` itself. A folder's id is its file stem.
 Deleting a folder first moves its notes out. It is refused while any note
 cannot say which folder it is in: a note that does not read, a `folderId` that
 is not valid, or a file that cannot be read as text. Repair or remove those
-first.
+first. It is also refused before any note moves while an open note's unsaved
+draft would put a note in the folder or take one out of it, while a change to
+a note is still running, or while an unconfirmed change could put a note in
+it. A note whose other fields need repair is moved out with the rest of its
+text kept. A note that changed since the list was read stops the delete, so a
+move made elsewhere is not undone. After the notes move, the folder is read
+again and the same checks run before its file goes.
+
+This covers the notes the app knows of, and it is not one atomic step: a note
+already moved out stays moved out if the delete stops, and another program can
+still put a note in the folder after the last read. A note whose folder is
+gone shows under All Notes.
 
 ## Editing
 
@@ -141,10 +161,11 @@ For a note:
 | You typed while a save was running | The newer typing stays a draft and saves next. |
 | Fields need fixing | The note is not saved, and the fields are named. Your input stays on screen. |
 | A save failed | Your draft is kept, with **Try again**, and nothing more is saved until you choose. |
-| A save got no reply | It is shown as not confirmed: the file may or may not have it. Nothing more is saved until you choose **Save again** or **Keep the file as it is**. A read that finds your draft in the file says what the file holds, not which save put it there, so the save stays not confirmed. |
+| A save got no reply, or the folder threw an error during the save or the read after it | It is shown as not confirmed: the file may or may not have it. Nothing more is saved until you choose **Save again** or **Keep the file as it is**. A read that finds your draft in the file says what the file holds, not which save put it there, so the save stays not confirmed. |
 | The file was deleted, can no longer be read, or changed into text the note editor cannot hold | Your draft is kept, with **Copy draft**, **Save draft as a note** or **Save my draft over the file**, and **Discard draft** (or **Discard draft and repair the file**, which opens it as text). |
 | A rename or delete got no reply, or a rename created the new file without removing the old one | The editor stays where it was, keeps what you type, and saves nothing more. **Copy draft** keeps your text, and **Stop tracking this rename** (or **delete**) keeps the draft without concluding where the file is; nothing saves by itself after that until you choose. |
 | You rename or delete a note | It applies to the version the editor holds. If another program changed the file since, nothing is renamed or deleted, and the editor shows that change. A confirmed rename opens the note at its new name with everything you typed. |
+| You move an open note to Recently Deleted or restore it, or pin or move it from the note list, while it waits for one of the choices above or a save, rename, or delete of it is still running | Refused, and the draft is unchanged. Nothing is saved again for you. |
 | You open another note | Each note keeps its draft. |
 
 A text session keeps these apart: the saved file it last agreed with, your
@@ -162,14 +183,19 @@ A change to a file that is not open and got no reply (a new note, a pin, a
 rename or delete from Files) is listed under **Not confirmed** in the status
 menu, never as failed. Nothing else is changed at that file from the app, and
 a second new note is not made under another name. A new file or a field change
-clears when the folder shows exactly what was asked for, and can be sent again
-exactly. A rename or delete stays listed for as long as the app runs;
+is marked when the folder shows exactly what was asked for, and stays listed
+until you dismiss it or send it again and that is confirmed. A field change is
+sent again under its first condition: one that moved a note out of a folder
+being deleted applies only while the note is still the version that was
+listed. A rename or delete stays listed for as long as the app runs;
 restarting stops listing it and does not show that it did or did not happen.
 Closing waits for a change that is still being sent, and asks before leaving
 one that was never confirmed.
 
 A note's save is not conditional: a write by another program that lands
-between the editor's last read and the save is replaced. A text session's save
+between the editor's last read and the save is replaced. A list action on a
+note that is not open reads the file and writes only over what it read; a
+write in between refuses it. A text session's save
 checks the file just before it replaces it, and on a real directory that check
 is not atomic either: another program can still write in the instant between
 the check and the replacement. A refused save means staleness was detected; it
@@ -258,9 +284,12 @@ cannot be opened is an error on screen, never a fallback to browser storage.
 browser store and no Git implementation, that neither bundle holds a Yjs or
 Node module, and that the browser bundle holds no desktop adapter.
 
-A note's fields and body are saved by its row editor
-(`folder.tables.notes.edit`), which writes the whole note; a new note or
-folder is `tables.<name>.create`. Every other change names a capture:
+An open note's fields and body are saved by its row editor
+(`folder.tables.notes.edit`), which writes the whole note. A field change to a
+note or folder with no editor is `tables.<name>.update`, which assigns those
+fields in the current text and publishes only over the bytes it read, under
+`{}` or the listed `expectedSha256`. A new note or folder is
+`tables.<name>.create`. Every other change names a capture:
 `files.create` for a file that must not exist, and `files.replace`,
 `files.move`, and `files.remove` on the capture the session holds.
 `folder.onFilesChanged` is a hint to read again.

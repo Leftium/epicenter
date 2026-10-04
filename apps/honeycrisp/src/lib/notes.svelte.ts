@@ -17,10 +17,11 @@
  *   raw `FileSession` over the file's exact text. A note is repaired there
  *   and opened as a note again when its text is clean.
  *
- * A structured change to a row with no session (a pin from the list, a
- * folder's name, a new note or folder) opens that table's row editor or
- * creates the row, once. A change to any other file with no session (a
- * rename or delete from the file browser) is one call on a capture. When the
+ * A field change to a row with no session (a pin from the list, a folder's
+ * name) assigns those fields in the row's current text with the table's
+ * `update`, once; a new note or folder is created by its table. A change to
+ * any other file with no session (a rename or delete from the file browser)
+ * is one call on a capture. When the
  * folder cannot say whether it happened, it is kept in `pending`. It is never
  * reported as failed, never sent again by itself, and never replaced by a new
  * one with a fresh name.
@@ -31,14 +32,14 @@
 import {
 	type FileCapture,
 	type FileListing,
-	type FileTable,
 	type GitSnapshot,
 	inspectRow,
-	type RowChange,
 	type RowEditor,
 	rowPath,
 	rowStemOf,
 	type TableEditError,
+	type TableUpdateError,
+	type TableWriteOptions,
 } from '@epicenter/folder';
 import { SvelteMap, SvelteSet } from 'svelte/reactivity';
 import { Err, Ok, type Result } from 'wellcrafted/result';
@@ -53,7 +54,6 @@ import {
 	noteIdOf,
 	notePath,
 	instantNow as now,
-	repairReason,
 } from './data.js';
 import {
 	ask,
@@ -146,12 +146,17 @@ type SentChange =
 			readonly fields: NoteFields | FolderFields;
 	  }
 	| {
-			/** Fields of a row with no open session, saved by a row editor opened for it. */
+			/** Fields of a row with no open session, assigned in its current text. */
 			readonly kind: 'changeRow';
 			readonly table: Table;
 			readonly path: string;
 			readonly stem: string;
 			readonly fields: Partial<NoteFields> | Partial<FolderFields>;
+			/**
+			 * `{}` when the values stand on their own; `{ expectedSha256 }` when
+			 * they were derived from a listed snapshot. A resend keeps it.
+			 */
+			readonly options: TableWriteOptions;
 	  }
 	| { readonly kind: 'move'; readonly from: FileCapture; readonly to: string }
 	| { readonly kind: 'remove'; readonly from: FileCapture }
@@ -250,14 +255,33 @@ function repairOf(error: TableEditError): string | undefined {
 	}
 }
 
-/** Why a row editor could not be opened, in words a person can act on. */
-function editProblem(error: TableEditError): string {
-	const repair = repairOf(error);
-	if (repair !== undefined)
-		return `This file needs repair before it can be changed here (${repair}). Open it to repair it as text.`;
-	return error.name === 'NotFound'
-		? 'This file is no longer in the folder.'
-		: error.message;
+/**
+ * A field change's refusal in words a person can act on. A conflict and a
+ * reply that never came keep their names, so `ask` reads them as before.
+ */
+function updateError(error: TableUpdateError): {
+	readonly name: string;
+	readonly message: string;
+} {
+	switch (error.name) {
+		case 'NotFound':
+			return {
+				name: error.name,
+				message: 'This file is no longer in the folder.',
+			};
+		case 'Unparsed':
+			return {
+				name: error.name,
+				message: `This file needs repair before it can be changed here (${error.error.message}). Open it to repair it as text.`,
+			};
+		case 'UnsupportedSource':
+			return {
+				name: error.name,
+				message: `This change would rewrite other text in the file (${error.reason}). Open it to change it as text.`,
+			};
+		default:
+			return error;
+	}
 }
 
 /** Why a save that was asked for did not end saved, or undefined when it did. */
@@ -507,7 +531,12 @@ export function createNotes(host: NotesHost) {
 			if (outcome.kind === 'unconfirmed' || outcome.kind === 'sourceNotRemoved')
 				pending = [
 					...pending,
-					{ ...change, state: outcome.kind, problem: outcome.message },
+					// History: nothing changes a record once it is kept.
+					Object.freeze({
+						...change,
+						state: outcome.kind,
+						problem: outcome.message,
+					}),
 				];
 		};
 
@@ -522,62 +551,31 @@ export function createNotes(host: NotesHost) {
 	}
 
 	/**
-	 * Change fields of a row that has no open session: open its table's row
-	 * editor, change the fields, and save the complete document once. Nothing
-	 * is saved when the fields already hold those values. The fence is checked
-	 * again where the save would be admitted.
+	 * Assign fields in the current text of a row that has no open session.
+	 * Every other byte stays: other fields, valid or not, unknown keys,
+	 * comments, quoting, and the body. The table publishes once, only over
+	 * the bytes it read, and under the change's own condition. It publishes
+	 * even when the fields already hold those values.
 	 */
-	async function changeRowFile<TFields>(
-		table: Pick<FileTable<TFields>, 'edit'>,
-		stem: string,
-		fields: RowChange<TFields>['fields'],
+	function changeRow(
+		change: Extract<SentChange, { kind: 'changeRow' }>,
 	): Promise<FileOutcome<unknown>> {
-		let opened: Awaited<ReturnType<typeof table.edit>>;
-		try {
-			opened = await table.edit(stem);
-		} catch (cause) {
-			return {
-				kind: 'failed',
-				name: 'Thrown',
-				message: cause instanceof Error ? cause.message : String(cause),
-			};
-		}
-		if (opened.error !== null)
-			return {
-				kind: 'failed',
-				name: opened.error.name,
-				message: editProblem(opened.error),
-			};
-		const editor = opened.data;
-		try {
-			const changed = editor.change({ fields });
-			if (changed.error !== null)
-				return {
-					kind: 'failed',
-					name: changed.error.name,
-					message: changed.error.message,
-				};
-			if (!editor.get().isDirty) return { kind: 'done', value: undefined };
-			if (fenced) return { kind: 'failed', name: 'Closing', message: CLOSING };
-			return await ask(() => editor.save());
-		} finally {
-			// Settles after the save; a storage bug already reached `save`.
-			await editor.dispose().catch(() => {});
-		}
-	}
-
-	function changeRow(change: Extract<SentChange, { kind: 'changeRow' }>) {
-		return change.table === 'notes'
-			? changeRowFile(
-					folder.tables.notes,
-					change.stem,
-					change.fields as Partial<NoteFields>,
-				)
-			: changeRowFile(
-					folder.tables.folders,
-					change.stem,
-					change.fields as Partial<FolderFields>,
-				);
+		const { stem, options } = change;
+		return ask(async () => {
+			const updated =
+				change.table === 'notes'
+					? await folder.tables.notes.update(
+							stem,
+							{ fields: change.fields as Partial<NoteFields> },
+							options,
+						)
+					: await folder.tables.folders.update(
+							stem,
+							{ fields: change.fields as Partial<FolderFields> },
+							options,
+						);
+			return updated.error === null ? updated : Err(updateError(updated.error));
+		});
 	}
 
 	function createRowFile(
@@ -887,25 +885,56 @@ export function createNotes(host: NotesHost) {
 
 	/**
 	 * Change a row's fields. An open note takes the change in its document, so
-	 * it joins whatever is being typed instead of racing it. A row with no
-	 * session is changed by a row editor opened for it, once. A file open as
-	 * text with unsaved edits is not changed from here.
+	 * it joins whatever is being typed instead of racing it; its save writes
+	 * the whole document unconditionally. A row with no session has the fields
+	 * assigned in its current text, once (`changeRow`). A file open as text is
+	 * not changed from here.
+	 *
+	 * `expectedSha256` names the listed bytes the values were derived from. A
+	 * row with no session is then changed only while it holds them; an open
+	 * note only while its editor's baseline is them. Neither is rebased.
 	 */
 	async function changeFields(
 		table: Table,
 		path: string,
 		fields: Partial<NoteFields> | Partial<FolderFields>,
-		{ save = 'now' }: { save?: 'now' | 'later' } = {},
+		{
+			save = 'now',
+			expectedSha256,
+		}: { save?: 'now' | 'later'; expectedSha256?: string } = {},
 	): Promise<string | undefined> {
+		// Owned before anything waits: what is sent, kept pending, and sent
+		// again is what was asked for now, whatever the caller's object becomes.
+		const owned = Object.freeze({ ...fields });
 		const blocked = held(path);
 		if (blocked !== undefined) return blocked;
 		const session = noteAt(path);
 		if (session !== undefined) {
-			if (!session.change({ fields: fields as Partial<NoteFields> }))
+			// An action that saves now is not the person's choice about a change
+			// made elsewhere, or about a save, rename, or delete that is still
+			// running or stopped short: queued behind one, its save would end an
+			// unknown outcome as if the person had asked to save again. It is
+			// refused before it touches the draft.
+			if (save === 'now') {
+				if (
+					session.hold !== undefined ||
+					(session.pathChange !== undefined &&
+						session.pathChange.state !== 'sent')
+				)
+					return 'This note has a change that is not settled. Choose what to do in the note first.';
+				if (session.busy)
+					return 'A save, rename, or delete of this note is still running. Try again when it finishes.';
+				if (session.external !== undefined)
+					return 'The file changed elsewhere. Open the note to choose which version to keep.';
+				const { reading, baseline } = session.state;
+				if (reading.parseError !== undefined || reading.issues.length > 0)
+					return 'This note has a field that needs fixing. Fix it in the note first.';
+				if (expectedSha256 !== undefined && baseline.sha256 !== expectedSha256)
+					return 'The file changed after it was read, so nothing was changed. Check it and try again.';
+			}
+			if (!session.change({ fields: owned as Partial<NoteFields> }))
 				return session.admitting ? session.refusal : CLOSING;
 			if (save === 'later') return undefined;
-			if (session.external !== undefined)
-				return 'The file changed elsewhere. Open the note to choose which version to keep.';
 			return session.saveNow();
 		}
 		// A file open as text is that session's: a second editor would race its
@@ -919,7 +948,10 @@ export function createNotes(host: NotesHost) {
 			table,
 			path,
 			stem,
-			fields,
+			fields: owned,
+			options: Object.freeze(
+				expectedSha256 === undefined ? {} : { expectedSha256 },
+			),
 			label: `Change to "${basename(path)}"`,
 		} as const;
 		const outcome = await send(
@@ -944,7 +976,7 @@ export function createNotes(host: NotesHost) {
 			table,
 			path,
 			stem,
-			fields,
+			fields: Object.freeze({ ...fields }),
 			label,
 		} as const;
 		const created = await send(
@@ -1006,6 +1038,133 @@ export function createNotes(host: NotesHost) {
 			void session.dispose();
 			return moved;
 		});
+	}
+
+	/** Up to three file names, for a message. */
+	function named(items: readonly { path: string }[]): string {
+		const names = items.slice(0, 3).map((item) => basename(item.path));
+		if (items.length > names.length) names.push('and more');
+		return names.join(', ');
+	}
+
+	/** Whether a pending change could put a note in folder `id`, as far as is known. */
+	function mayFile(change: PendingChange, id: string): boolean {
+		switch (change.kind) {
+			case 'createRow':
+			case 'changeRow':
+				return (
+					change.table === 'notes' &&
+					(change.fields as Partial<NoteFields>).folderId === id
+				);
+			case 'create': {
+				if (noteIdOf(change.path) === undefined) return false;
+				const { fields } = inspectRow(
+					honeycrispDefinition.tables.notes,
+					change.source,
+				);
+				return !Object.hasOwn(fields, 'folderId') || fields.folderId === id;
+			}
+			case 'move':
+				// What it moved is not known from here.
+				return noteIdOf(change.to) !== undefined;
+			default:
+				return false;
+		}
+	}
+
+	/**
+	 * Why an open note stops folder `id` from being deleted, or undefined.
+	 * One whose draft and file both leave the folder alone does not, nor one
+	 * whose draft and file both name it with nothing outstanding; its body
+	 * typing is moved out with it.
+	 */
+	function openNoteProblem(
+		path: string,
+		session: NoteSession,
+		id: string,
+	): string | undefined {
+		const name = basename(path);
+		const { reading, baseline } = session.state;
+		if (!Object.hasOwn(reading.fields, 'folderId'))
+			return `The folder in the open note "${name}" cannot be read. Fix it in the note first.`;
+		const listed = notes.find((note) => note.path === path);
+		const draftIn = reading.fields.folderId === id;
+		const fileIn = listed?.fields.folderId === id;
+		if (!draftIn && !fileIn) return undefined;
+		if (listed !== undefined && baseline.sha256 !== listed.sha256)
+			return `The file changed after it was read, so nothing was changed ("${name}"). Check it and try again.`;
+		if (draftIn !== fileIn)
+			return draftIn
+				? `The open note "${name}" has a draft in this folder that is not saved. Save or discard it first.`
+				: `The open note "${name}" has a draft that moves it to another folder, not saved yet. Save or discard it first.`;
+		const unsettled = `The open note "${name}" has a change that is not settled. Choose what to do in the note first.`;
+		if (
+			session.hold !== undefined ||
+			(session.pathChange !== undefined && session.pathChange.state !== 'sent')
+		)
+			return unsettled;
+		if (session.busy)
+			return `A save, rename, or delete of the open note "${name}" is still running. Try again when it finishes.`;
+		if (
+			session.external !== undefined ||
+			reading.parseError !== undefined ||
+			reading.issues.length > 0
+		)
+			return unsettled;
+		return undefined;
+	}
+
+	/**
+	 * Why the notes in folder `id` cannot all be found and moved out now, or
+	 * undefined. It looks at what this page knows: the last listing, open
+	 * notes and files, and changes still running or not confirmed. Another
+	 * program can still put a note in the folder after that.
+	 */
+	function folderDeletionProblem(id: string): string | undefined {
+		if (listError !== undefined)
+			return `The notes could not be listed, so it is not known which are in this folder: ${listError}`;
+		const unknown = [
+			...notes.filter((note) => !Object.hasOwn(note.fields, 'folderId')),
+			...unreadable,
+		];
+		if (unknown.length > 0)
+			return `Some notes cannot be read well enough to tell which folder they are in (${named(unknown)}). Repair or remove them first, so no note is left pointing at a folder that is gone.`;
+		const members = notes.filter((item) => item.fields.folderId === id);
+		const asText = members.filter((note) => sessionAt(note.path) !== undefined);
+		if (asText.length > 0)
+			return `Some notes in this folder are open as text (${named(asText)}). Open them as notes first.`;
+		// A change still running may put a note anywhere.
+		const running = [...working.values()]
+			.flat()
+			.filter((path) => noteIdOf(path) !== undefined);
+		if (running.length > 0)
+			return `A change to a note is still running (${named(running.map((path) => ({ path })))}). Wait for it to finish first.`;
+		const unconfirmed = pending.find((change) => mayFile(change, id));
+		if (unconfirmed !== undefined)
+			return `An earlier change that may put a note in this folder was not confirmed (${unconfirmed.label}). Dismiss it or send it again from the status menu first.`;
+		const stuck = members.filter(
+			(note) => pathProblem(note.path) !== undefined,
+		);
+		if (stuck.length > 0)
+			return `Some notes in this folder have a change that is not confirmed (${named(stuck)}). See the status menu.`;
+		for (const [path, file] of openFiles) {
+			if (file.kind === 'note') {
+				const problem = openNoteProblem(path, file.session, id);
+				if (problem !== undefined) return problem;
+			} else if (
+				file.kind === 'text' &&
+				noteIdOf(path) !== undefined &&
+				file.session.unsettled
+			) {
+				const { fields } = inspectRow(
+					honeycrispDefinition.tables.notes,
+					file.session.buffer,
+				);
+				if (!Object.hasOwn(fields, 'folderId') || fields.folderId === id)
+					return `"${basename(path)}" is open as text with edits that may put it in this folder. Save or discard them first.`;
+			}
+		}
+		return undefined;
 	}
 
 	return {
@@ -1130,10 +1289,12 @@ export function createNotes(host: NotesHost) {
 		/**
 		 * Ask for a pending change again, as a new attempt. A new file and a new
 		 * directory are asked for again; a new row is created again under the
-		 * same name; a row's fields are changed again on the file as it is now.
-		 * Only a confirmed reply ends the record. A refusal leaves it as it was:
-		 * finding the result there does not say which attempt made it. A rename,
-		 * a delete, and a removed directory cannot be sent again.
+		 * same name; a row's fields are assigned again under the same condition:
+		 * on the row as it is now, or only while it holds the bytes the values
+		 * were derived from. Only a confirmed reply ends the record. A refusal
+		 * leaves it as it was: finding the result there does not say which
+		 * attempt made it. A rename, a delete, and a removed directory cannot be
+		 * sent again.
 		 */
 		async retryPending(change: PendingChange): Promise<string | undefined> {
 			if (fenced) return CLOSING;
@@ -1208,53 +1369,49 @@ export function createNotes(host: NotesHost) {
 		/**
 		 * Delete a folder after moving its notes out. A note that cannot be
 		 * moved stops the operation before the folder goes, so it can be retried
-		 * without leaving a note pointing at a folder that no longer exists.
-		 * The folder's file is removed only as it was listed when this was asked.
+		 * without leaving a note this page knows of pointing at a folder that no
+		 * longer exists (see the limits below). The folder's file is removed only
+		 * as it was listed when this was asked.
 		 *
-		 * Moving every note out needs every note's folder to be known, and each
-		 * note in the folder to be one the row editor can save. A note whose
-		 * text does not parse, whose `folderId` did not validate, or whose file
-		 * could not be read might be in this folder, and a note in it with a
-		 * field that needs repair cannot be saved as a note. The folder is not
-		 * deleted until those are repaired. Not knowing is not the same as no.
+		 * The members are the notes this page knows of: what was last listed,
+		 * the open notes' drafts, files open as text, and changes still running
+		 * or not confirmed (`folderDeletionProblem`). Everything is checked
+		 * before any note moves. Not knowing is not the same as no, so a note
+		 * whose folder cannot be read stops it; a note's other fields do not
+		 * matter. After the notes move, the folder is read again and checked
+		 * the same way before its file goes.
+		 *
+		 * This is best effort, not one atomic step. A listed note is moved out
+		 * only while it holds the bytes listed; an open note only while its
+		 * editor's baseline is them, but that save is unconditional, so a write
+		 * its editor has not read is replaced. Another program can still put a
+		 * note in the folder after the last read.
 		 */
 		async deleteFolder(entry: FolderEntry): Promise<string | undefined> {
 			const blocked = held(entry.path);
 			if (blocked !== undefined) return blocked;
-			if (listError !== undefined)
-				return `The notes could not be listed, so it is not known which are in this folder: ${listError}`;
 			// A folder's id is its literal file stem, whatever that name is.
 			const id = entry.stem;
-			const named = (items: readonly { path: string }[]) => {
-				const names = items.slice(0, 3).map((note) => basename(note.path));
-				if (items.length > names.length) names.push('and more');
-				return names.join(', ');
-			};
-			const unknown = [
-				...notes.filter((note) => !Object.hasOwn(note.fields, 'folderId')),
-				...unreadable,
-			];
-			if (unknown.length > 0)
-				return `Some notes cannot be read well enough to tell which folder they are in (${named(unknown)}). Repair or remove them first, so no note is left pointing at a folder that is gone.`;
+			const before = folderDeletionProblem(id);
+			if (before !== undefined) return before;
 			const members = notes.filter((item) => item.fields.folderId === id);
-			const needRepair = members.filter(
-				(note) => repairReason(note) !== undefined,
-			);
-			if (needRepair.length > 0)
-				return `Some notes in this folder need repair before they can be moved out (${named(needRepair)}). Repair them first.`;
-			// Refused before any note moves, so no note is left half moved out.
-			const asText = members.filter(
-				(note) => sessionAt(note.path) !== undefined,
-			);
-			if (asText.length > 0)
-				return `Some notes in this folder are open as text (${named(asText)}). Open them as notes first.`;
 			for (const note of members) {
-				const problem = await changeFields('notes', note.path, {
-					folderId: null,
-				});
+				const problem = await changeFields(
+					'notes',
+					note.path,
+					{ folderId: null },
+					{ expectedSha256: note.sha256 },
+				);
 				if (problem !== undefined)
 					return `A note could not be moved out of the folder: ${problem}`;
 			}
+			// What moved, and anything put in the folder meanwhile, as read now.
+			await refresh();
+			const after = folderDeletionProblem(id);
+			if (after !== undefined) return after;
+			const remaining = notes.filter((item) => item.fields.folderId === id);
+			if (remaining.length > 0)
+				return `Some notes were put in this folder while it was being deleted (${named(remaining)}). Delete it again to move them out.`;
 			const from: FileCapture = { path: entry.path, sha256: entry.sha256 };
 			const change = {
 				kind: 'remove',

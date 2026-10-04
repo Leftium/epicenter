@@ -24,6 +24,12 @@
 	const isPinned = (note: NoteEntry) => note.fields.pinned === true;
 	/** A note whose text does not parse, or with a field that needs fixing. */
 	const needsRepair = (note: NoteEntry) => repairReason(note) !== undefined;
+	/**
+	 * Whether `field` read as valid. A list action needs the fields it reads
+	 * and text that parses, not a note free of every issue.
+	 */
+	const reads = (note: NoteEntry, field: keyof NoteEntry['fields']) =>
+		note.parseError === undefined && Object.hasOwn(note.fields, field);
 
 	/** What the row shows: the open draft when there is one, else the saved file. */
 	function shown(note: NoteEntry) {
@@ -157,51 +163,63 @@
 						{#if notes.fenced}
 							<!-- An open menu is outside the app's inert root. -->
 							<ContextMenu.Item disabled>The app is closing</ContextMenu.Item>
-						{:else if needsRepair(note)}
-							<ContextMenu.Item onSelect={() => void notes.open(note.path)}>Open to repair</ContextMenu.Item>
-							<ContextMenu.Item variant="destructive" onSelect={() => void confirmDelete(notes, note.path)}>
-								Delete file…
-							</ContextMenu.Item>
-						{:else if isDeleted(note)}
-							<ContextMenu.Item onSelect={() => void report('restore the note', notes.restoreNote(note.path))}>
-								Restore
-							</ContextMenu.Item>
-							<ContextMenu.Item variant="destructive" onSelect={() => void confirmDelete(notes, note.path)}>
-								Delete permanently…
-							</ContextMenu.Item>
 						{:else}
-							<ContextMenu.Item
-								onSelect={() =>
-									void report('pin the note', notes.patchNote(note.path, { pinned: !isPinned(note) }))}
-							>
-								{isPinned(note) ? 'Unpin' : 'Pin'}
-							</ContextMenu.Item>
-							<ContextMenu.Sub>
-								<ContextMenu.SubTrigger>Move to folder</ContextMenu.SubTrigger>
-								<ContextMenu.SubContent class="w-48">
+							{#if needsRepair(note)}
+								<ContextMenu.Item onSelect={() => void notes.open(note.path)}>Open to repair</ContextMenu.Item>
+							{/if}
+							<!-- Each action needs text that parses and the fields it reads. -->
+							{#if isDeleted(note)}
+								<ContextMenu.Item onSelect={() => void report('restore the note', notes.restoreNote(note.path))}>
+									Restore
+								</ContextMenu.Item>
+							{:else if note.parseError === undefined}
+								{#if reads(note, 'pinned')}
 									<ContextMenu.Item
-										onSelect={() => void report('move the note', notes.patchNote(note.path, { folderId: null }))}
+										onSelect={() =>
+											void report('pin the note', notes.patchNote(note.path, { pinned: !isPinned(note) }))}
 									>
-										No folder
+										{isPinned(note) ? 'Unpin' : 'Pin'}
 									</ContextMenu.Item>
-									<ContextMenu.Separator />
-									{#each notes.folders as folder (folder.path)}
+								{/if}
+								<ContextMenu.Sub>
+									<ContextMenu.SubTrigger>Move to folder</ContextMenu.SubTrigger>
+									<ContextMenu.SubContent class="w-48">
 										<ContextMenu.Item
-											onSelect={() =>
-												void report('move the note', notes.patchNote(note.path, { folderId: folder.stem }))}
+											onSelect={() => void report('move the note', notes.patchNote(note.path, { folderId: null }))}
 										>
-											{folderLabel(folder)}
+											No folder
 										</ContextMenu.Item>
-									{/each}
-								</ContextMenu.SubContent>
-							</ContextMenu.Sub>
-							<ContextMenu.Separator />
-							<ContextMenu.Item
-								variant="destructive"
-								onSelect={() => void report('delete the note', notes.trashNote(note.path))}
-							>
-								Move to Recently Deleted
-							</ContextMenu.Item>
+										<ContextMenu.Separator />
+										{#each notes.folders as folder (folder.path)}
+											<ContextMenu.Item
+												onSelect={() =>
+													void report('move the note', notes.patchNote(note.path, { folderId: folder.stem }))}
+											>
+												{folderLabel(folder)}
+											</ContextMenu.Item>
+										{/each}
+									</ContextMenu.SubContent>
+								</ContextMenu.Sub>
+								<!-- Not known to be outside Recently Deleted unless deletedAt validated. -->
+								{#if reads(note, 'deletedAt')}
+									<ContextMenu.Separator />
+									<ContextMenu.Item
+										variant="destructive"
+										onSelect={() => void report('delete the note', notes.trashNote(note.path))}
+									>
+										Move to Recently Deleted
+									</ContextMenu.Item>
+								{/if}
+							{/if}
+							{#if isDeleted(note)}
+								<ContextMenu.Item variant="destructive" onSelect={() => void confirmDelete(notes, note.path)}>
+									Delete permanently…
+								</ContextMenu.Item>
+							{:else if needsRepair(note)}
+								<ContextMenu.Item variant="destructive" onSelect={() => void confirmDelete(notes, note.path)}>
+									Delete file…
+								</ContextMenu.Item>
+							{/if}
 						{/if}
 					</ContextMenu.Content>
 				</ContextMenu.Root>

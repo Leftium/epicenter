@@ -28,12 +28,23 @@ against the code. The constraints below apply to every edit here.
   only when a read confirmed it absent and only if it is still absent, and
   never retry an outcome that is unknown. Table directories come from the
   declaration; do not list them a second time in Rust.
-- Structured rows use `folder.tables.<name>.edit(stem)`. Retain one editor
-  per open row and share it across rich-body, body-text and metadata controls.
-  Do not add another app-owned save or observation engine for those rows.
-- A structured save writes the complete canonical document through `overwrite`.
+- An open structured row uses `folder.tables.<name>.edit(stem)`. Retain one
+  editor per open row and share it across rich-body, body-text and metadata
+  controls. Do not add another app-owned save or observation engine for those
+  rows, and do not open a temporary editor for a one-off change.
+- An editor save writes the complete canonical document through `overwrite`.
   Unknown metadata values remain; YAML comments, quoting and prior key order
   are rewritten. Opening and listing do not rewrite a file.
+- A field command on a row with no open editor (pin, trash, restore, folder
+  assignment, folder name) uses `folder.tables.<name>.update`, which keeps
+  every other byte and publishes even when the values already match. Pass
+  `{}` when the value stands on its own and `{ expectedSha256 }` when it was
+  derived from a listed snapshot; keep that condition in the pending record
+  so a resend is never rebased. On an open row the same command goes through
+  its editor and is refused, before it changes the draft, while the editor
+  awaits review or has a save, rename, or delete queued, running, or
+  unsettled: queued behind an unknown outcome, its save would act as an
+  explicit save again. Typing and `save: 'later'` input stay accepted.
 - Unsupported or invalid source uses a separate raw repair workflow. Raw file
   access must remain available even when a table editor cannot open the file.
 - A file whose text does not parse stays listed and opens for source repair.

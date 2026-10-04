@@ -106,11 +106,12 @@ async function product() {
 				list: notes.list,
 				create: notes.create,
 				edit: notes.edit,
+				update: notes.update,
 			},
 			folders: {
 				list: folders.list,
 				create: folders.create,
-				edit: folders.edit,
+				update: folders.update,
 			},
 		},
 		files: { ...handle.files },
@@ -224,7 +225,13 @@ const draftsLineOf = (state: State) =>
 		unsettled: state.unsettled,
 	});
 
-type ChangingVerb = 'create' | 'replace' | 'move' | 'remove' | 'mkdir';
+type ChangingVerb =
+	| 'create'
+	| 'update'
+	| 'replace'
+	| 'move'
+	| 'remove'
+	| 'mkdir';
 type Reply = Promise<
 	| { data: unknown; error: null }
 	| { data: null; error: { name: string; message: string } }
@@ -485,10 +492,10 @@ describe('notes are files', () => {
 		const moved = state.notes.find((entry) => entry.path === note.path);
 		expect(moved && moved.fields.folderId).toBe(made.stem);
 		expect(state.notes).toHaveLength(1);
-		// A folder's name is a structured change too.
+		// A folder's name is a field change too; the rest of its text stays.
 		expect(await state.patchFolder(made, { name: 'Projects' })).toBeUndefined();
 		expect(await readFile(join(root, made.path), 'utf8')).toBe(
-			'---\n"name": "Projects"\n"icon": null\n---\n',
+			'---\nname: Projects\nicon: null\n---\n',
 		);
 		const renamed = state.folders.find((entry) => entry.path === made.path);
 		if (renamed === undefined) throw new Error('The folder is not listed');
@@ -496,11 +503,7 @@ describe('notes are files', () => {
 		expect(state.folders).toEqual([]);
 		expect(state.notes[0] && state.notes[0].fields.folderId).toBeNull();
 		await expect(stat(join(root, made.path))).rejects.toThrow();
-		const saved = await readFile(join(root, note.path), 'utf8');
-		expect(saved).toContain('"folderId": null');
-		expect(
-			inspectRow(honeycrispDefinition.tables.notes, saved).fields.title,
-		).toBe('First');
+		expect(await readFile(join(root, note.path), 'utf8')).toBe(note.text);
 	});
 
 	test('a folder with an unusual or empty file name is an ordinary folder: its stem is its id, and it deletes like any other', async () => {
@@ -535,7 +538,7 @@ describe('notes are files', () => {
 		expect(folderOf(inOdd.path)).toBe('bad ');
 		expect(folderOf(inEmpty.path)).toBe('');
 		expect(await readFile(join(root, inEmpty.path), 'utf8')).toContain(
-			'"folderId": ""',
+			'folderId: ""',
 		);
 
 		// Deleting the empty-stem folder moves out its note, and only its note.
@@ -549,7 +552,7 @@ describe('notes are files', () => {
 		expect(folderOf(inOdd.path)).toBeNull();
 	});
 
-	test('a folder is not deleted while a note cannot say which folder it is in, or cannot be saved out of it', async () => {
+	test('a folder is not deleted while a note cannot say which folder it is in; other fields do not matter', async () => {
 		const { state, root, seedNote } = await product();
 		const member = await seedNote('Member');
 		expect(await state.createFolder('Work')).toBeUndefined();
@@ -584,19 +587,10 @@ describe('notes are files', () => {
 			await rm(join(root, 'notes', name));
 		}
 
-		// A note in the folder with another field to repair cannot be saved as a note.
-		await writeFile(
-			join(root, 'notes', 'inside.md'),
-			`---\nfolderId: ${work.stem}\ntitle: 12\n---\n`,
-		);
-		await state.refresh();
-		const refusal = await state.deleteFolder(work);
-		expect(refusal).toContain('need repair');
-		expect(refusal).toContain('inside.md');
-		await untouched();
-		await rm(join(root, 'notes', 'inside.md'));
-
-		// A note with issues in other fields still says where it is: that is enough.
+		// A note with issues in other fields still says where it is: that is
+		// enough to leave it alone, or to move it out with its other text kept.
+		const inside = `---\nfolderId: "${work.stem}" # filed\ntitle: 12\nowner: 'sam'\n---\nBody\n`;
+		await writeFile(join(root, 'notes', 'inside.md'), inside);
 		await writeFile(
 			join(root, 'notes', 'elsewhere.md'),
 			'---\nfolderId: null\ntitle: 12\n---\n',
@@ -604,8 +598,11 @@ describe('notes are files', () => {
 		await state.refresh();
 		expect(await state.deleteFolder(work)).toBeUndefined();
 		await expect(stat(join(root, work.path))).rejects.toThrow();
-		expect(await readFile(join(root, member.path), 'utf8')).toContain(
-			'"folderId": null',
+		expect(await readFile(join(root, member.path), 'utf8')).toBe(
+			memberSource.replace(/^folderId: .*$/m, 'folderId: null'),
+		);
+		expect(await readFile(join(root, 'notes', 'inside.md'), 'utf8')).toBe(
+			inside.replace(`folderId: "${work.stem}"`, 'folderId: null'),
 		);
 	});
 
@@ -1133,19 +1130,54 @@ describe('kept sessions', () => {
 		expect(state.noteAt(note.path)).toBe(session);
 	});
 
-	test('an unopened metadata action saves through a row editor and keeps no session', async () => {
+	test('an unopened metadata action assigns its field in the text, keeps every other byte, and keeps no session', async () => {
 		const { state, root, seedNote } = await product();
 		const note = await seedNote();
+		const source = note.text.replace(
+			'title: First',
+			"title: 'First' # quoted\nowner: sam",
+		);
+		await writeFile(join(root, note.path), source);
 		await state.refresh();
 		expect(await state.patchNote(note.path, { pinned: true })).toBeUndefined();
 		expect(state.noteAt(note.path)).toBeUndefined();
 		expect(state.selectedPath).toBeUndefined();
 		expect(state.pending).toEqual([]);
-		const saved = await readFile(join(root, note.path), 'utf8');
-		expect(saved).toContain('"pinned": true');
-		expect(inspectRow(honeycrispDefinition.tables.notes, saved).body).toBe(
-			'Hello\n',
+		expect(await readFile(join(root, note.path), 'utf8')).toBe(
+			source.replace('pinned: false', 'pinned: true'),
 		);
+	});
+
+	test('an unopened note with another field to fix is pinned, trashed, and restored; text that does not parse is refused', async () => {
+		const { state, root, seedNote } = await product();
+		const note = await seedNote();
+		const source = note.text.replace('title: First', 'title: 12');
+		await writeFile(join(root, note.path), source);
+		await state.refresh();
+		const listed = state.notes.find((entry) => entry.path === note.path);
+		expect(listed && repairReason(listed)).toBeDefined();
+		expect(await state.patchNote(note.path, { pinned: true })).toBeUndefined();
+		expect(await state.trashNote(note.path)).toBeUndefined();
+		const trashed = await readFile(join(root, note.path), 'utf8');
+		expect(trashed).toContain('title: 12');
+		expect(trashed).toContain('pinned: true');
+		expect(trashed).not.toContain('deletedAt: null');
+		expect(await state.restoreNote(note.path)).toBeUndefined();
+		expect(await readFile(join(root, note.path), 'utf8')).toBe(
+			source.replace('pinned: false', 'pinned: true'),
+		);
+		// Restoring a restored note publishes the same bytes: done, and unchanged.
+		expect(await state.restoreNote(note.path)).toBeUndefined();
+		expect(await readFile(join(root, note.path), 'utf8')).toBe(
+			source.replace('pinned: false', 'pinned: true'),
+		);
+		await writeFile(join(root, note.path), '---\ntitle: [open\n---\n');
+		await state.refresh();
+		expect(await state.trashNote(note.path)).toContain('needs repair');
+		expect(await readFile(join(root, note.path), 'utf8')).toBe(
+			'---\ntitle: [open\n---\n',
+		);
+		expect(state.pending).toEqual([]);
 	});
 
 	test('an unopened metadata action applies to the note as it is read now', async () => {
@@ -2023,15 +2055,17 @@ describe('a change with no open file whose reply is lost', () => {
 	});
 
 	test('a field change is kept, blocks another change to that file, and stays after the file holds what it asked for until dismissed', async () => {
-		const { state, folder, handle, root, seedNote } = await product();
+		const { state, folder, root, seedNote } = await product();
 		const note = await seedNote();
 		const other = await seedNote('Other');
 		await state.refresh();
-		const lost = loseNextSave(
-			folder,
-			(path, source) => handle.files.overwrite(path, source),
-			{ landed: false },
-		);
+		const update = folder.tables.notes.update;
+		let updates = 0;
+		folder.tables.notes.update = (...args) => {
+			if (args[0] === note.stem) updates += 1;
+			return update(...args);
+		};
+		const land = loseNext(folder.tables.notes, 'update', { landed: false });
 		expect(await state.patchNote(note.path, { pinned: true })).toContain(
 			'not confirmed',
 		);
@@ -2041,6 +2075,7 @@ describe('a change with no open file whose reply is lost', () => {
 				table: 'notes',
 				path: note.path,
 				fields: { pinned: true },
+				options: {},
 				state: 'unconfirmed',
 			},
 		]);
@@ -2067,15 +2102,16 @@ describe('a change with no open file whose reply is lost', () => {
 		const [change] = state.pending;
 		if (change === undefined) throw new Error('Nothing is pending');
 		expect(state.found(change)).toBe(false);
-		// The one save that was sent lands. The file holds what was asked for;
-		// the record stays until the person dismisses it.
-		expectOk(await lost.land());
+		// The one change that was sent lands, on the file as it is then. The
+		// file holds what was asked for; the record stays until the person
+		// dismisses it.
+		expectOk(await land());
 		await state.refresh();
 		expect(state.pending).toEqual([change]);
 		expect(state.found(change)).toBe(true);
 		await state.open(note.path);
 		expect(state.noteAt(note.path)).toBeUndefined();
-		expect(lost.saves).toBe(1);
+		expect(updates).toBe(1);
 		state.dismissPending(change);
 		// Accounted for by the person: the note opens and changes again.
 		const session = await openedNote(state, note.path);
@@ -2083,17 +2119,11 @@ describe('a change with no open file whose reply is lost', () => {
 		expect(await state.trashNote(note.path)).toBeUndefined();
 	});
 
-	test('asking for a lost field change again is a new save of the note as it is now', async () => {
-		const { state, folder, handle, root, seedNote } = await product();
+	test('asking for a lost field change again assigns it in the note as it is now', async () => {
+		const { state, folder, root, seedNote } = await product();
 		const note = await seedNote();
 		await state.refresh();
-		loseNextSave(
-			folder,
-			(path, source) => handle.files.overwrite(path, source),
-			{
-				landed: false,
-			},
-		);
+		loseNext(folder.tables.notes, 'update', { landed: false });
 		await state.patchNote(note.path, { pinned: true });
 		const [change] = state.pending;
 		if (change === undefined) throw new Error('Nothing is pending');
@@ -2288,25 +2318,20 @@ describe('a change with no open file whose reply is lost', () => {
 
 // A pending file mutation blocks acquiring a competing editor.
 test('opening a note during a change with no editor refuses an editor before the reply is lost', async () => {
-	const { state, folder, handle, seedNote } = await product();
+	const { state, folder, seedNote } = await product();
 	const note = await seedNote();
 	await state.refresh();
-	const reply = Promise.withResolvers<void>();
-	const lost = loseNextSave(
-		folder,
-		(path, source) => handle.files.overwrite(path, source),
-		{ landed: false, held: reply.promise },
-	);
+	loseNext(folder.tables.notes, 'update', { landed: false });
+	const reply = holdNext(folder.tables.notes, 'update');
 	const changing = state.patchNote(note.path, { pinned: true });
-	await lost.asked;
+	await reply.asked;
 	await state.open(note.path);
 	expect(state.noteAt(note.path)).toBeUndefined();
 	expect(state.sessionAt(note.path)).toBeUndefined();
-	reply.resolve();
+	reply.release();
 	expect(await changing).toContain('not confirmed');
 	await state.open(note.path);
 	expect(state.noteAt(note.path)).toBeUndefined();
-	expect(lost.saves).toBe(1);
 });
 
 test('an uncertain recovery destination remains owned by the original draft', async () => {
@@ -2532,6 +2557,415 @@ describe('what a note session holds until the person chooses', () => {
 	});
 });
 
+describe('field actions and what they were derived from', () => {
+	/** A note in a new folder `Work`, a second folder `Home`, and the note's text moved to `Home`. */
+	async function filed() {
+		const made = await product();
+		const { state, root, seedNote } = made;
+		const note = await seedNote();
+		expect(await state.createFolder('Work')).toBeUndefined();
+		expect(await state.createFolder('Home')).toBeUndefined();
+		const work = state.folders.find((entry) => entry.fields.name === 'Work');
+		const home = state.folders.find((entry) => entry.fields.name === 'Home');
+		if (work === undefined || home === undefined)
+			throw new Error('The folders are not listed');
+		expect(
+			await state.patchNote(note.path, { folderId: work.stem }),
+		).toBeUndefined();
+		const inWork = await readFile(join(root, note.path), 'utf8');
+		const inHome = inWork.replace(
+			/^folderId: .*$/m,
+			`folderId: "${home.stem}"`,
+		);
+		expect(inHome).not.toBe(inWork);
+		return { ...made, note, work, home, inWork, inHome };
+	}
+
+	test('deleting a folder does not undo a move another program made after the list was read', async () => {
+		const { state, root, note, work, inHome } = await filed();
+		// This folder hints at its own writes only, so the list still says Work.
+		await writeFile(join(root, note.path), inHome);
+		expect(await state.deleteFolder(work)).toContain(
+			'changed after it was read',
+		);
+		expect(await readFile(join(root, note.path), 'utf8')).toBe(inHome);
+		expect(await readFile(join(root, work.path), 'utf8')).toContain('Work');
+		expect(state.pending).toEqual([]);
+		// Read again, Work holds nothing, and it goes.
+		await state.refresh();
+		expect(await state.deleteFolder(work)).toBeUndefined();
+		await expect(stat(join(root, work.path))).rejects.toThrow();
+		expect(await readFile(join(root, note.path), 'utf8')).toBe(inHome);
+	});
+
+	test('a lost move out of a folder being deleted is sent again only onto the bytes it was derived from', async () => {
+		const { state, folder, root, note, work, inWork, inHome } = await filed();
+		const listed = state.notes.find((entry) => entry.path === note.path);
+		if (listed === undefined) throw new Error('The note is not listed');
+		const land = loseNext(folder.tables.notes, 'update', { landed: false });
+		expect(await state.deleteFolder(work)).toContain('not confirmed');
+		const [change] = state.pending;
+		expect(change).toMatchObject({
+			kind: 'changeRow',
+			path: note.path,
+			fields: { folderId: null },
+			options: { expectedSha256: listed.sha256 },
+			state: 'unconfirmed',
+		});
+		if (change === undefined) throw new Error('Nothing is pending');
+		expect(await readFile(join(root, work.path), 'utf8')).toContain('Work');
+		// Nothing more is sent for that note while the record stands.
+		expect(await state.deleteFolder(work)).toContain('not confirmed');
+		expect(await readFile(join(root, note.path), 'utf8')).toBe(inWork);
+		// Another program moves the note. Asking again does not rebase onto it.
+		await writeFile(join(root, note.path), inHome);
+		expect(await state.retryPending(change)).toContain(
+			'changed after it was read',
+		);
+		expect(state.pending).toEqual([change]);
+		expect(await readFile(join(root, note.path), 'utf8')).toBe(inHome);
+		// The lost request arriving late is refused the same way.
+		expect((await land()).error?.name).toBe('Conflict');
+		expect(await readFile(join(root, note.path), 'utf8')).toBe(inHome);
+	});
+
+	test('an open member is moved out only while its editor holds the bytes listed', async () => {
+		const { state, root, note, work, inHome } = await filed();
+		const session = await openedNote(state, note.path);
+		await writeFile(join(root, note.path), inHome);
+		// The clean editor follows the file; the list was read before it.
+		await session.refresh();
+		expect(session.state.document.fields.folderId).not.toBe(work.stem);
+		expect(await state.deleteFolder(work)).toContain(
+			'changed after it was read',
+		);
+		expect(await readFile(join(root, note.path), 'utf8')).toBe(inHome);
+		expect(await readFile(join(root, work.path), 'utf8')).toContain('Work');
+		expect(session.dirty).toBe(false);
+	});
+
+	test('an open member with typing is moved out through its draft, typing included', async () => {
+		const { state, root, note, work } = await filed();
+		const session = await openedNote(state, note.path);
+		typeBody(session, 'typed in the member\n');
+		expect(await state.deleteFolder(work)).toBeUndefined();
+		await expect(stat(join(root, work.path))).rejects.toThrow();
+		const saved = inspectRow(
+			honeycrispDefinition.tables.notes,
+			await readFile(join(root, note.path), 'utf8'),
+		);
+		expect(saved.fields.folderId).toBeNull();
+		expect(saved.body).toBe('typed in the member\n');
+		expect(state.noteAt(note.path)).toBe(session);
+	});
+
+	test('an action on an open note whose file changed under its draft is refused before the draft changes', async () => {
+		const { state, root, seedNote } = await product();
+		const note = await seedNote();
+		const session = await openedNote(state, note.path);
+		typeBody(session, 'my unsaved text\n');
+		await writeFile(join(root, note.path), OUTSIDE);
+		await state.refresh();
+		expect(session.external?.kind).toBe('present');
+		expect(await state.trashNote(note.path)).toContain('changed elsewhere');
+		expect(await state.patchNote(note.path, { pinned: true })).toContain(
+			'changed elsewhere',
+		);
+		expect(session.state.document.fields).toMatchObject({
+			deletedAt: null,
+			pinned: false,
+		});
+		expect(session.state.document.body).toBe('my unsaved text\n');
+		expect(await readFile(join(root, note.path), 'utf8')).toBe(OUTSIDE);
+		// Typing into the draft is still the person's to do.
+		expect(
+			await state.patchNote(note.path, { title: 'Mine' }, { save: 'later' }),
+		).toBeUndefined();
+		expect(session.state.document.fields.title).toBe('Mine');
+	});
+
+	test('an action on an open note whose save got no reply is refused, and the save is not sent again', async () => {
+		const { state, folder, handle, root, seedNote } = await product();
+		const note = await seedNote();
+		const lost = loseNextSave(
+			folder,
+			(path, source) => handle.files.overwrite(path, source),
+			{ landed: false },
+		);
+		const session = await openedNote(state, note.path);
+		typeBody(session, 'typed before the lost save\n');
+		expect(await session.saveNow()).toBeDefined();
+		expect(session.hold?.kind).toBe('unconfirmed');
+		for (const act of [
+			() => state.trashNote(note.path),
+			() => state.patchNote(note.path, { pinned: true }),
+		])
+			expect(await act()).toContain('not settled');
+		expect(lost.saves).toBe(1);
+		expect(session.state.document.fields).toMatchObject({
+			deletedAt: null,
+			pinned: false,
+		});
+		expect(session.state.document.body).toBe('typed before the lost save\n');
+		expect(await readFile(join(root, note.path), 'utf8')).toBe(note.text);
+	});
+
+	test('an action while an open note has a save queued or running is refused, and a lost reply stays unknown', async () => {
+		const { state, folder, handle, root, seedNote } = await product();
+		const note = await seedNote();
+		const reply = Promise.withResolvers<void>();
+		const lost = loseNextSave(
+			folder,
+			(path, source) => handle.files.overwrite(path, source),
+			{ landed: false, held: reply.promise },
+		);
+		const session = await openedNote(state, note.path);
+		typeBody(session, 'typed\n');
+		const saving = session.saveNow();
+		// The same turn: the save is queued and has not reached the editor.
+		const sameTurn = state.patchNote(note.path, { pinned: true });
+		expect(session.state.saving).toBeUndefined();
+		expect(await sameTurn).toContain('still running');
+		await lost.asked;
+		expect(await state.trashNote(note.path)).toContain('still running');
+		reply.resolve();
+		expect(await saving).toBeDefined();
+		// No second save ended the unknown outcome, and no refused value is in the draft.
+		expect(session.hold?.kind).toBe('unconfirmed');
+		expect(lost.saves).toBe(1);
+		expect(session.state.document.fields).toMatchObject({
+			pinned: false,
+			deletedAt: null,
+		});
+		expect(session.state.document.body).toBe('typed\n');
+		expect(await readFile(join(root, note.path), 'utf8')).toBe(note.text);
+		// Input into the draft is still taken; it saves nothing by itself.
+		expect(
+			await state.patchNote(note.path, { title: 'Mine' }, { save: 'later' }),
+		).toBeUndefined();
+		expect(session.state.document.fields.title).toBe('Mine');
+		await new Promise((resolve) => setTimeout(resolve, 700));
+		expect(lost.saves).toBe(1);
+	});
+
+	test('a folder is not deleted while an open member has an unsaved draft in another folder', async () => {
+		const { state, root, note, work, home, inWork } = await filed();
+		const session = await openedNote(state, note.path);
+		expect(
+			await state.patchNote(
+				note.path,
+				{ folderId: home.stem },
+				{ save: 'later' },
+			),
+		).toBeUndefined();
+		expect(await state.deleteFolder(work)).toContain(
+			'moves it to another folder',
+		);
+		expect(session.state.document.fields.folderId).toBe(home.stem);
+		expect(await readFile(join(root, note.path), 'utf8')).toBe(inWork);
+		expect(await readFile(join(root, work.path), 'utf8')).toContain('Work');
+	});
+
+	test('a folder is not deleted while an open note outside it has an unsaved draft in it, and no member moves first', async () => {
+		const { state, root, note, work, inWork, seedNote } = await filed();
+		const other = await seedNote('Other');
+		const session = await openedNote(state, other.path);
+		expect(
+			await state.patchNote(
+				other.path,
+				{ folderId: work.stem },
+				{ save: 'later' },
+			),
+		).toBeUndefined();
+		expect(await state.deleteFolder(work)).toContain('draft in this folder');
+		expect(session.state.document.fields.folderId).toBe(work.stem);
+		expect(await readFile(join(root, note.path), 'utf8')).toBe(inWork);
+		expect(await readFile(join(root, work.path), 'utf8')).toContain('Work');
+	});
+
+	test('a folder is not deleted while a note change that names it was not confirmed', async () => {
+		const { state, folder, root, note, work, inWork, seedNote } = await filed();
+		const other = await seedNote('Other');
+		await state.refresh();
+		loseNext(folder.tables.notes, 'update', { landed: false });
+		expect(
+			await state.patchNote(other.path, { folderId: work.stem }),
+		).toContain('not confirmed');
+		expect(await state.deleteFolder(work)).toContain('not confirmed');
+		const [change] = state.pending;
+		if (change === undefined) throw new Error('Nothing is pending');
+		state.dismissPending(change);
+		loseNext(folder.tables.notes, 'create', { landed: false });
+		state.showFolder(work.stem);
+		expect(await state.createNote()).toContain('not confirmed');
+		expect(await state.deleteFolder(work)).toContain('New note');
+		expect(await readFile(join(root, note.path), 'utf8')).toBe(inWork);
+		expect(await readFile(join(root, work.path), 'utf8')).toContain('Work');
+	});
+
+	test('a folder is not deleted while a change to any note is still running', async () => {
+		const { state, folder, root, note, work, inWork, seedNote } = await filed();
+		const other = await seedNote('Other');
+		await state.refresh();
+		const held = holdNext(folder.tables.notes, 'update');
+		const pinning = state.patchNote(other.path, { pinned: true });
+		await held.asked;
+		expect(await state.deleteFolder(work)).toContain('still running');
+		expect(await readFile(join(root, note.path), 'utf8')).toBe(inWork);
+		held.release();
+		expect(await pinning).toBeUndefined();
+		expect(await state.deleteFolder(work)).toBeUndefined();
+		await expect(stat(join(root, work.path))).rejects.toThrow();
+	});
+
+	test('storage that throws while an open member is moved out keeps the folder and an unknown outcome', async () => {
+		const { state, folder, root, note, work, inWork } = await filed();
+		const edit = folder.tables.notes.edit;
+		folder.tables.notes.edit = async (stem, options) => {
+			const opened = await edit(stem, options);
+			if (opened.error !== null) return opened;
+			return Ok({
+				...opened.data,
+				save: async () => {
+					throw new Error('storage broke');
+				},
+			});
+		};
+		const session = await openedNote(state, note.path);
+		expect(await state.deleteFolder(work)).toContain('storage broke');
+		// A throw says nothing about whether the bytes landed.
+		expect(session.hold?.kind).toBe('unconfirmed');
+		expect(session.status).toBe('unconfirmed');
+		expect(await readFile(join(root, note.path), 'utf8')).toBe(inWork);
+		expect(await readFile(join(root, work.path), 'utf8')).toContain('Work');
+	});
+
+	test('a member save that lands before the read after it throws is not called failed, and the folder stays', async () => {
+		const { state, folder, root, note, work } = await filed();
+		const edit = folder.tables.notes.edit;
+		folder.tables.notes.edit = async (stem, options) => {
+			const opened = await edit(stem, options);
+			if (opened.error !== null) return opened;
+			const editor = opened.data;
+			let saved = false;
+			return Ok({
+				...editor,
+				async save() {
+					const reply = await editor.save();
+					saved = reply.error === null;
+					return reply;
+				},
+				async refresh() {
+					if (saved) {
+						saved = false;
+						throw new Error('read broke');
+					}
+					return editor.refresh();
+				},
+			});
+		};
+		const session = await openedNote(state, note.path);
+		expect(await state.deleteFolder(work)).toContain('read broke');
+		expect(session.hold?.kind).toBe('unconfirmed');
+		// The save did land; the session does not claim either way.
+		const saved = inspectRow(
+			honeycrispDefinition.tables.notes,
+			await readFile(join(root, note.path), 'utf8'),
+		);
+		expect(saved.fields.folderId).toBeNull();
+		expect(await readFile(join(root, work.path), 'utf8')).toContain('Work');
+	});
+
+	test('a pending field change keeps the values asked for, whatever the caller does with its object', async () => {
+		const { state, folder, root } = await product();
+		expect(await state.createFolder('Before')).toBeUndefined();
+		const [entry] = state.folders;
+		if (entry === undefined) throw new Error('The folder is not listed');
+		loseNext(folder.tables.folders, 'update', { landed: false });
+		const fields = { name: 'Original request' };
+		const asking = state.patchFolder(entry, fields);
+		// Before the first send: the change has not reached the folder yet.
+		fields.name = 'Mutated in the same turn';
+		expect(await asking).toContain('not confirmed');
+		fields.name = 'Mutated later';
+		const [change] = state.pending;
+		if (change?.kind !== 'changeRow') throw new Error('No change is pending');
+		expect(change.fields).not.toBe(fields);
+		expect(change.fields).toEqual({ name: 'Original request' });
+		expect(Object.isFrozen(change.fields)).toBe(true);
+		expect(Object.isFrozen(change)).toBe(true);
+		expect(Object.isFrozen(fields)).toBe(false);
+		expect(() => {
+			(change.fields as { name: string }).name = 'Through the record';
+		}).toThrow();
+		expect(await state.retryPending(change)).toBeUndefined();
+		expect(await readFile(join(root, entry.path), 'utf8')).toBe(
+			'---\nname: Original request\nicon: null\n---\n',
+		);
+	});
+
+	test('a folder delete reads the relation a pending change was asked with, not its caller object now', async () => {
+		const { state, folder, root, note, work, inWork, seedNote } = await filed();
+		const other = await seedNote('Other');
+		await state.refresh();
+		loseNext(folder.tables.notes, 'update', { landed: false });
+		const fields: { folderId: string | null } = { folderId: work.stem };
+		expect(await state.patchNote(other.path, fields)).toContain(
+			'not confirmed',
+		);
+		fields.folderId = null;
+		expect(await state.deleteFolder(work)).toContain('not confirmed');
+		expect(await readFile(join(root, note.path), 'utf8')).toBe(inWork);
+		expect(await readFile(join(root, work.path), 'utf8')).toContain('Work');
+	});
+
+	test('a note put in the folder while its notes move out keeps the folder', async () => {
+		const { state, folder, root, note, work, seedNote } = await filed();
+		const other = await seedNote('Other');
+		await state.refresh();
+		const update = folder.tables.notes.update;
+		folder.tables.notes.update = async (...args) => {
+			folder.tables.notes.update = update;
+			const text = await readFile(join(root, other.path), 'utf8');
+			await writeFile(
+				join(root, other.path),
+				text.replace(/^folderId: .*$/m, `folderId: "${work.stem}"`),
+			);
+			return update(...args);
+		};
+		expect(await state.deleteFolder(work)).toContain('put in this folder');
+		expect(await readFile(join(root, work.path), 'utf8')).toContain('Work');
+		const folderOf = (path: string) =>
+			state.notes.find((entry) => entry.path === path)?.fields.folderId;
+		expect(folderOf(note.path)).toBeNull();
+		expect(folderOf(other.path)).toBe(work.stem);
+		// Asked again, the note that arrived moves out too.
+		expect(await state.deleteFolder(work)).toBeUndefined();
+		await expect(stat(join(root, work.path))).rejects.toThrow();
+		expect(folderOf(other.path)).toBeNull();
+	});
+
+	test('a folder whose stem reads as a number is named as a string', async () => {
+		const { state, root, seedNote } = await product();
+		const note = await seedNote();
+		await writeFile(
+			join(root, 'folders', '1e5.md'),
+			'---\nname: Numeric\nicon: null\n---\n',
+		);
+		await state.refresh();
+		const numeric = state.folders.find((entry) => entry.stem === '1e5');
+		if (numeric === undefined) throw new Error('The folder is not listed');
+		expect(
+			await state.patchNote(note.path, { folderId: '1e5' }),
+		).toBeUndefined();
+		expect(await readFile(join(root, note.path), 'utf8')).toBe(
+			note.text.replace('folderId: null', 'folderId: "1e5"'),
+		);
+		expect(await state.deleteFolder(numeric)).toBeUndefined();
+		expect(await readFile(join(root, note.path), 'utf8')).toBe(note.text);
+	});
+});
+
 describe('one owner per path', () => {
 	test('a note open as text owns its file: field changes are refused, and its typing is kept', async () => {
 		const { state, root, seedNote } = await product();
@@ -2546,6 +2980,7 @@ describe('one owner per path', () => {
 		expect(await state.editAsFile(note.path)).toBeUndefined();
 		const raw = state.sessionAt(note.path);
 		if (raw === undefined) throw new Error('The note did not open as text');
+		const filed = await readFile(join(root, note.path), 'utf8');
 		raw.input(raw.buffer.replace('Hello', 'Typed as text'));
 		for (const ask of [
 			() => state.patchNote(note.path, { pinned: true }),
@@ -2560,10 +2995,12 @@ describe('one owner per path', () => {
 		expect(state.noteAt(note.path)).toBeUndefined();
 		// The typing is the text session's to save.
 		expect(await raw.settle()).toBe(true);
+		// Exactly the text session's bytes: nothing else rewrote the file.
 		const saved = await readFile(join(root, note.path), 'utf8');
-		expect(saved).toContain('Typed as text');
-		expect(saved).toContain(`"folderId": "${work.stem}"`);
-		expect(saved).toContain('"pinned": false');
+		expect(saved).toBe(filed.replace('Hello', 'Typed as text'));
+		expect(
+			inspectRow(honeycrispDefinition.tables.notes, saved).fields,
+		).toMatchObject({ folderId: work.stem, pinned: false });
 	});
 
 	test('opening as a note keeps the text when another program wrote the file before a hint arrived', async () => {

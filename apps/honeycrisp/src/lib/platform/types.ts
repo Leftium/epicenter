@@ -22,22 +22,23 @@ export const HONEYCRISP_FOLDER_ID = APPS.HONEYCRISP.id;
 
 /**
  * The folder surface the notes UI uses. Tables are read as listings and
- * create new rows; a structured change to a row goes through that table's
- * row editor (`edit`), which saves the complete canonical document. A file
- * being repaired is read with `inspectRow` and the definition, not through
- * the folder. Every other change to a file goes through `files`, on a
- * capture. The folder says when files changed, as a hint to read again.
+ * create new rows. An open note is changed through its table's row editor
+ * (`edit`), which saves the complete canonical document; a field change to
+ * a row with no editor assigns those fields in its current text (`update`).
+ * A file being repaired is read with `inspectRow` and the definition, not
+ * through the folder. Every other change to a file goes through `files`, on
+ * a capture. The folder says when files changed, as a hint to read again.
  * Remotes are outside this app.
  */
 export type NotesFolder = {
 	tables: {
 		notes: Pick<
 			Folder<Definition>['tables']['notes'],
-			'list' | 'create' | 'edit'
+			'list' | 'create' | 'edit' | 'update'
 		>;
 		folders: Pick<
 			Folder<Definition>['tables']['folders'],
-			'list' | 'create' | 'edit'
+			'list' | 'create' | 'update'
 		>;
 	};
 	files: Pick<

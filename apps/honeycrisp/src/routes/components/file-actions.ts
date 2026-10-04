@@ -40,14 +40,13 @@ function describe(deletion: Deletion) {
  * the deletion applies only to that captured version.
  */
 export async function confirmDelete(notes: Notes, path: string) {
-	const captured = await notes.deletionFor(path);
-	if (captured.error !== null) {
+	const { data: deletion, error: captureError } = await notes.deletionFor(path);
+	if (captureError !== null) {
 		toast.error(`Could not delete ${basename(path)}`, {
-			description: captured.error,
+			description: captureError,
 		});
 		return;
 	}
-	const deletion = captured.data;
 	confirmationDialog.open({
 		...describe(deletion),
 		confirm: { text: 'Delete', variant: 'destructive' },

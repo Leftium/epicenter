@@ -399,8 +399,8 @@ export function createHomeServer({
 	});
 
 	app.post(ACCOUNT_CANCEL_CONNECTION_ROUTE.pattern, async (c) => {
-		const result = await desktopAuth.cancelConnection();
-		if (result.error)
+		const { error } = await desktopAuth.cancelConnection();
+		if (error)
 			return c.text(
 				'Could not cancel sign-in. Restart Epicenter to continue.',
 				500,
@@ -416,16 +416,16 @@ export function createHomeServer({
 			('reauthenticate' in body && typeof body.reauthenticate !== 'boolean')
 		)
 			return c.text('Invalid sign-in options.', 400);
-		const result = await desktopAuth.startSignIn({
+		const { error } = await desktopAuth.startSignIn({
 			reauthenticate:
 				'reauthenticate' in body ? (body.reauthenticate as boolean) : undefined,
 		});
-		if (result.error) return c.text('Sign-in failed', 502);
+		if (error) return c.text('Sign-in failed', 502);
 		return c.body(null, 202);
 	});
 	app.post(ACCOUNT_SIGN_OUT_ROUTE.pattern, async (c) => {
-		const result = await desktopAuth.signOut();
-		if (result.error) return c.text('Sign-out failed', 500);
+		const { error } = await desktopAuth.signOut();
+		if (error) return c.text('Sign-out failed', 500);
 		return c.body(null, 202);
 	});
 
@@ -676,11 +676,11 @@ export function createHomeServer({
 			return c.text('Invalid blob list options', 400);
 		const limit = query.get('limit');
 		const cursor = query.get('cursor');
-		const result = await blobs(c.var.appId, c.var.owner).list({
+		const { data: listed, error } = await blobs(c.var.appId, c.var.owner).list({
 			...(limit === null ? {} : { limit: Number(limit) }),
 			...(cursor === null ? {} : { cursor }),
 		});
-		return result.error ? c.text('Blob list failed', 400) : c.json(result.data);
+		return error ? c.text('Blob list failed', 400) : c.json(listed);
 	});
 	blobApi.put('/:blobId', async (c) => {
 		const sourceAppId = c.req.header('x-epicenter-copy-source-app');
@@ -696,34 +696,31 @@ export function createHomeServer({
 				c.req.raw.body
 			)
 				return c.text('Invalid native copy', 400);
-			const source = await blobs(sourceAppId, deviceOwnerPath()).openFile(
-				parseBlobId(sourceId!)!,
-			);
-			if (source.error)
+			const { data: source, error: sourceError } = await blobs(
+				sourceAppId,
+				deviceOwnerPath(),
+			).openFile(parseBlobId(sourceId!)!);
+			if (sourceError)
 				return c.text(
 					'Source unavailable',
-					source.error.name === 'BlobNotFound' ? 404 : 500,
+					sourceError.name === 'BlobNotFound' ? 404 : 500,
 				);
-			const body = ownedFileBody(
-				source.data.file,
-				source.data.close,
-				source.data.stat.size,
-			);
+			const body = ownedFileBody(source.file, source.close, source.stat.size);
 			try {
 				const response = new Response(
 					body.stream.pipeThrough(new TransformStream(), {
 						signal: c.req.raw.signal,
 					}),
-					{ headers: { 'content-type': source.data.stat.contentType } },
+					{ headers: { 'content-type': source.stat.contentType } },
 				);
-				const result = await blobs(c.var.appId, c.var.owner).putResponse(
+				const { error } = await blobs(c.var.appId, c.var.owner).putResponse(
 					c.var.id,
 					response,
 				);
-				return result.error
+				return error
 					? c.text(
 							'Copy publication failed',
-							result.error.name === 'BlobAlreadyExists' ? 409 : 500,
+							error.name === 'BlobAlreadyExists' ? 409 : 500,
 						)
 					: c.body(null, 204);
 			} finally {
@@ -731,40 +728,45 @@ export function createHomeServer({
 			}
 		}
 
-		const result = await blobs(c.var.appId, c.var.owner).putRequest(
+		const { error } = await blobs(c.var.appId, c.var.owner).putRequest(
 			c.var.id,
 			c.req.raw,
 		);
-		if (!result.error) return c.body(null, 201);
+		if (!error) return c.body(null, 201);
 		return c.text(
 			'Blob publication failed',
-			result.error.name === 'BlobAlreadyExists' ? 409 : 500,
+			error.name === 'BlobAlreadyExists' ? 409 : 500,
 		);
 	});
 	// Hono derives HEAD from GET; intercept it before file-body acquisition.
 	blobApi.use('/:blobId', async (c, next) => {
 		if (c.req.method !== 'HEAD') return next();
-		const result = await blobs(c.var.appId, c.var.owner).stat(c.var.id);
-		if (result.error)
+		const { data: stat, error } = await blobs(c.var.appId, c.var.owner).stat(
+			c.var.id,
+		);
+		if (error)
 			return c.text(
 				'Blob unavailable',
-				result.error.name === 'BlobNotFound' ? 404 : 500,
+				error.name === 'BlobNotFound' ? 404 : 500,
 			);
 		return new Response(null, {
 			headers: {
-				...blobResponseHeaders(result.data.contentType),
-				'content-length': String(result.data.size),
+				...blobResponseHeaders(stat.contentType),
+				'content-length': String(stat.size),
 			},
 		});
 	});
 	blobApi.get('/:blobId', async (c) => {
-		const result = await blobs(c.var.appId, c.var.owner).openFile(c.var.id);
-		if (result.error)
+		const { data: opened, error } = await blobs(
+			c.var.appId,
+			c.var.owner,
+		).openFile(c.var.id);
+		if (error)
 			return c.text(
 				'Blob unavailable',
-				result.error.name === 'BlobNotFound' ? 404 : 500,
+				error.name === 'BlobNotFound' ? 404 : 500,
 			);
-		const { file, stat, close } = result.data;
+		const { file, stat, close } = opened;
 		const headers = {
 			...blobResponseHeaders(stat.contentType),
 			'content-length': String(stat.size),
@@ -803,10 +805,8 @@ export function createHomeServer({
 		);
 	});
 	blobApi.delete('/:blobId', async (c) => {
-		const result = await blobs(c.var.appId, c.var.owner).delete(c.var.id);
-		return result.error
-			? c.text('Blob deletion failed', 500)
-			: c.body(null, 204);
+		const { error } = await blobs(c.var.appId, c.var.owner).delete(c.var.id);
+		return error ? c.text('Blob deletion failed', 500) : c.body(null, 204);
 	});
 	app.route('/api/apps/:appId/blobs', blobApi);
 	app.get(

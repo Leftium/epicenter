@@ -20,9 +20,9 @@
  const session = createQuery(() => ({
   queryKey: ['hosted-login'],
   queryFn: async () => {
-   const result = await authClient.getSession({query:{disableCookieCache:true}});
-   if(result.error) throw new Error(result.error.message ?? 'Could not read browser sign-in.');
-   return result.data;
+   const { data: session, error } = await authClient.getSession({query:{disableCookieCache:true}});
+   if(error) throw new Error(error.message ?? 'Could not read browser sign-in.');
+   return session;
   },
   retry: false,
  }), () => queries);
@@ -53,16 +53,16 @@
    const callback = new URL(window.location.href);
    callback.searchParams.delete('reauth');
    // A completed provider sign-in creates a new session even with silent SSO.
-   const result = await authClient.signIn.social({provider,callbackURL:callback.href});
-   if(result.error) throw new Error(result.error.message ?? 'Could not start sign-in.');
+   const { error } = await authClient.signIn.social({provider,callbackURL:callback.href});
+   if(error) throw new Error(error.message ?? 'Could not start sign-in.');
   },
  }), () => queries);
 
  const passkeySignIn = createMutation(() => ({
   mutationFn: async () => {
-   const result = await authClient.signIn.passkey();
-   if(isPasskeyCancellation(result.error)) return;
-   if(result.error) throw new Error(result.error.message ?? 'Passkey sign-in failed.');
+   const { error } = await authClient.signIn.passkey();
+   if(isPasskeyCancellation(error)) return;
+   if(error) throw new Error(error.message ?? 'Passkey sign-in failed.');
    const callback = new URL(window.location.href);
    callback.searchParams.delete('reauth');
    window.location.replace(callback.href);
@@ -71,8 +71,8 @@
 
  const signOut = createMutation(() => ({
   mutationFn: async () => {
-   const result = await authClient.signOut();
-   if(result.error) throw new Error(result.error.message ?? 'Could not sign out.');
+   const { error } = await authClient.signOut();
+   if(error) throw new Error(error.message ?? 'Could not sign out.');
    await queries.invalidateQueries({queryKey:['hosted-login']});
   },
  }), () => queries);

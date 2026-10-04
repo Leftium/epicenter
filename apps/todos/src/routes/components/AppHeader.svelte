@@ -127,10 +127,10 @@
 	async function fetchRemote() {
 		working = 'fetch';
 		try {
-			const fetched = await todos.folder.git.fetch();
-			if (fetched.error) toast.error('Fetch failed', { description: fetched.error.message });
-			else if (fetched.data.oid === undefined) toast.info('The remote has no commits yet.');
-			else toast.success(`Fetched ${fetched.data.oid.slice(0, 7)}.`);
+			const { data: fetched, error: fetchError } = await todos.folder.git.fetch();
+			if (fetchError) toast.error('Fetch failed', { description: fetchError.message });
+			else if (fetched.oid === undefined) toast.info('The remote has no commits yet.');
+			else toast.success(`Fetched ${fetched.oid.slice(0, 7)}.`);
 		} finally {
 			working = undefined;
 		}

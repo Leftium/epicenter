@@ -65,9 +65,9 @@
 		notes.git.lastCommit;
 		const signal = getAbortSignal();
 		void notes.host.folder.git.log(8).then(
-			(result) => {
+			({ data: commits, error: historyError }) => {
 				if (signal.aborted) return;
-				log = result.error ? result.error.message : result.data;
+				log = historyError ? historyError.message : commits;
 			},
 			(cause) => {
 				if (signal.aborted) return;

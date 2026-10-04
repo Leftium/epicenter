@@ -18,8 +18,8 @@
 		signingIn = true;
 		signInError = null;
 		try {
-			const result = await startDashboardSignIn(mismatched ? { reauthenticate: true } : undefined);
-			if (result.error) signInError = result.error.message;
+			const { error } = await startDashboardSignIn(mismatched ? { reauthenticate: true } : undefined);
+			if (error) signInError = error.message;
 		} finally {
 			signingIn = false;
 		}

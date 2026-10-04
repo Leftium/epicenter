@@ -252,14 +252,14 @@ export function createDesktopAuthAuthority({
 					const signal = pending.controller.signal;
 					token = await launch(signal, reauthenticate);
 					signal.throwIfAborted();
-					const verified = await readApiSession({
+					const { data: session, error: sessionError } = await readApiSession({
 						baseURL,
 						token,
 						fetch,
 						signal,
 					});
 					signal.throwIfAborted();
-					if (verified.error) throw verified.error;
+					if (sessionError) throw sessionError;
 					if (disposed || attempt !== pending)
 						throw new Error('Sign-in was superseded.');
 					// Detach before disposal so cancellation cannot override an accepted result.
@@ -267,7 +267,7 @@ export function createDesktopAuthAuthority({
 					accepted = true;
 					await replaceProcess({
 						token,
-						principalId: verified.data.principalId,
+						principalId: session.principalId,
 					});
 					pending.resolve(Ok(undefined));
 				} catch (cause) {

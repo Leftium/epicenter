@@ -127,12 +127,15 @@ export const mail = {
 			request: AuthorizationRequest,
 			callbackUrl: URL,
 		): Promise<ConnectedAccount> => {
-			const connected = await finishConnect(await workflow(), {
-				request,
-				callbackUrl,
-			});
-			if (connected.error !== null) throw new Error(connected.error.message);
-			return connected.data;
+			const { data: connected, error: connectError } = await finishConnect(
+				await workflow(),
+				{
+					request,
+					callbackUrl,
+				},
+			);
+			if (connectError !== null) throw new Error(connectError.message);
+			return connected;
 		},
 	),
 
@@ -153,12 +156,12 @@ export const mail = {
 		async (
 			sub: string,
 		): Promise<{ removed: true } | { removed: false; pending: number }> => {
-			const gone = await removeAccount(await workflow(), sub);
-			if (gone.error === null) return { removed: true };
-			if (gone.error.name === 'OwesWork') {
-				return { removed: false, pending: gone.error.pending };
+			const { error: removeError } = await removeAccount(await workflow(), sub);
+			if (removeError === null) return { removed: true };
+			if (removeError.name === 'OwesWork') {
+				return { removed: false, pending: removeError.pending };
 			}
-			throw new Error(gone.error.message);
+			throw new Error(removeError.message);
 		},
 	),
 

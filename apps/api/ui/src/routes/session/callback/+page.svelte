@@ -6,8 +6,8 @@
 	const destination = readDashboardReturnPath(
 			window.sessionStorage.getItem(dashboardReturnKey), window.location.origin,
 		);
-	const completion = authClient.completeSignIn().then((result) => {
-		if (result.error) throw new Error(result.error.message);
+	const completion = authClient.completeSignIn().then(({ error }) => {
+		if (error) throw new Error(error.message);
 		window.sessionStorage.removeItem(dashboardReturnKey);
 		window.location.replace(destination);
 	});

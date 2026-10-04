@@ -114,12 +114,12 @@ async function fullPullEach(
 	for (const name of names) {
 		const def = entityDef(name);
 		if (backfilled) log(`${name}: backfill`);
-		const pulled = await client.queryAll(name);
-		if (pulled.error) {
-			failures.push({ entity: name, error: pulled.error });
+		const { data: objects, error: pullError } = await client.queryAll(name);
+		if (pullError) {
+			failures.push({ entity: name, error: pullError });
 			continue;
 		}
-		const counts = db.ingest([{ def, objects: pulled.data }], { syncedAt });
+		const counts = db.ingest([{ def, objects }], { syncedAt });
 		const { upserted, deleted } = counts[name] ?? { upserted: 0, deleted: 0 };
 		entities.push({ entity: name, upserted, deleted, backfilled });
 	}
@@ -219,11 +219,14 @@ export async function syncRealm(
 
 	let changes: Record<string, QbObject[]> = {};
 	if (cdcNames.length > 0) {
-		const changed = await client.cdc(cdcNames, cursorBefore as string);
-		if (changed.error) {
-			failures.push({ entity: '(cdc)', error: changed.error });
+		const { data: changed, error: changeError } = await client.cdc(
+			cdcNames,
+			cursorBefore as string,
+		);
+		if (changeError) {
+			failures.push({ entity: '(cdc)', error: changeError });
 		} else {
-			changes = changed.data.changes;
+			changes = changed.changes;
 		}
 	}
 

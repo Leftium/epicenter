@@ -212,9 +212,9 @@ export async function* renderArtifact(
 	data: RenderableData,
 	definition: DataDefinition,
 ): AsyncGenerator<Result<RenderedRow, RenderError>> {
-	const prepared = prepareData(definition);
-	if (prepared.error !== null) {
-		yield RenderError.MalformedDefinition({ reason: prepared.error.message });
+	const { data: prepared, error: prepareError } = prepareData(definition);
+	if (prepareError !== null) {
+		yield RenderError.MalformedDefinition({ reason: prepareError.message });
 		return;
 	}
 	// One faithful read for the whole pass, so every file describes one instant.
@@ -226,7 +226,7 @@ export async function* renderArtifact(
 	});
 	for (const [table, rows] of state.tables) {
 		for (const rowId of rows.keys()) {
-			yield await renderRow(data, prepared.data, table, rowId);
+			yield await renderRow(data, prepared, table, rowId);
 		}
 	}
 }

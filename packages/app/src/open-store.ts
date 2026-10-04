@@ -77,9 +77,10 @@ async function openStore<
 		throw new Error(`The store definition ID '${definition.id}' is not valid.`);
 	// A `defineStore` result is already prepared and comes back as itself. Any
 	// other declaration is prepared here, and the store reads the snapshot.
-	const prepared = prepareData<DataDefinition>(definition);
-	if (prepared.error)
-		throw new Error(prepared.error.message, { cause: prepared.error });
+	const { data: prepared, error: prepareError } =
+		prepareData<DataDefinition>(definition);
+	if (prepareError)
+		throw new Error(prepareError.message, { cause: prepareError });
 	const ownership = await runtime.claim(
 		appClaimAddress(
 			definition.id,
@@ -90,11 +91,11 @@ async function openStore<
 	const claim = ownership.data;
 	const acquisitionFailures: unknown[] = [];
 	const document = createStoreOverPort({
-		definition: prepared.data,
+		definition: prepared,
 		local: owner.kind === 'local',
 		async acquire() {
 			try {
-				return await runtime.data(prepared.data, owner);
+				return await runtime.data(prepared, owner);
 			} catch (cause) {
 				acquisitionFailures.push(cause);
 				throw cause;
@@ -211,12 +212,12 @@ async function openStore<
 	);
 	try {
 		const [, acquired, sql] = await Promise.all([
-			document.ready.then((ready) => {
-				if (ready.error) throw ready.error;
+			document.ready.then(({ error }) => {
+				if (error) throw error;
 			}),
-			blobAcquisition?.then((result) => {
-				if (result.error) throw result.error;
-				return result.data;
+			blobAcquisition?.then(({ data: acquired, error }) => {
+				if (error) throw error;
+				return acquired;
 			}),
 			sqlAcquisition,
 		]);

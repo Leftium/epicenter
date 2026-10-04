@@ -97,10 +97,8 @@ export function createBrowserRecording(
 			},
 			enumerateDevices() {
 				return run(async () => {
-					const result = await enumerateDevices();
-					return result.error
-						? acquisitionError(result.error)
-						: Ok(result.data);
+					const { data: devices, error } = await enumerateDevices();
+					return error ? acquisitionError(error) : Ok(devices);
 				});
 			},
 			start(params) {
@@ -109,11 +107,12 @@ export function createBrowserRecording(
 					pending = true;
 					let release: () => void | Promise<void> = () => {};
 					try {
-						const acquired = await getRecordingStream({
-							selectedDeviceId: params.selectedDeviceId ?? null,
-						});
-						if (acquired.error) return acquisitionError(acquired.error);
-						const { stream, deviceOutcome } = acquired.data;
+						const { data: acquired, error: acquireError } =
+							await getRecordingStream({
+								selectedDeviceId: params.selectedDeviceId ?? null,
+							});
+						if (acquireError) return acquisitionError(acquireError);
+						const { stream, deviceOutcome } = acquired;
 						release = () => {
 							for (const track of stream.getTracks()) {
 								try {
@@ -285,10 +284,10 @@ export function createBrowserRecording(
 											};
 										}
 										const { id: blobId, blob } = finalized;
-										const result = await write(blobId, blob);
-										if (result.error)
+										const { error: writeError } = await write(blobId, blob);
+										if (writeError)
 											return RecorderError.RecorderFailed({
-												cause: result.error,
+												cause: writeError,
 											});
 										saved = { blobId, durationMs, byteLength: blob.size };
 										await cleanup();

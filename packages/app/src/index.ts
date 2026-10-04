@@ -34,10 +34,9 @@ export function defineStore<const TDefinition extends DataDefinition>(
 		kv,
 		tables,
 	};
-	const prepared = prepareData(declaration);
-	if (prepared.error !== null)
-		throw new Error(prepared.error.message, { cause: prepared.error });
-	return prepared.data;
+	const { data: prepared, error } = prepareData(declaration);
+	if (error !== null) throw new Error(error.message, { cause: error });
+	return prepared;
 }
 
 export { plainText } from './data/definition/body.js';

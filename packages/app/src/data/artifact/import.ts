@@ -113,9 +113,9 @@ export function readArtifact(
 	files: ReadonlyMap<string, string>,
 	definition: DataDefinition,
 ): Result<Uint8Array, ImportError> {
-	const prepared = prepareData(definition);
-	if (prepared.error !== null) {
-		return ImportError.MalformedDefinition({ reason: prepared.error.message });
+	const { data: prepared, error: prepareError } = prepareData(definition);
+	if (prepareError !== null) {
+		return ImportError.MalformedDefinition({ reason: prepareError.message });
 	}
 
 	const database = createDatabaseDocument();
@@ -151,7 +151,7 @@ export function readArtifact(
 				database,
 				// The prepared record has no prototype: a path naming a table this
 				// definition does not declare finds no codec, whatever the name.
-				codec: prepared.data.tables[at.table]?.body,
+				codec: prepared.tables[at.table]?.body,
 				tableName: at.table,
 				rowId: at.rowId,
 				path,

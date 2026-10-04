@@ -22,7 +22,7 @@
 
 import { accountKey } from '@epicenter/principal/account-key';
 import { isTauri } from '@tauri-apps/api/core';
-import { Ok, type Result } from 'wellcrafted/result';
+import { Err, Ok, type Result } from 'wellcrafted/result';
 import { ensureBufferGlobal } from './buffer-global.js';
 import type { OpenFolder } from './contract.js';
 import {
@@ -201,14 +201,18 @@ async function claimDirectory(
 		if (held !== undefined)
 			return refused(`holds '${held}' but no ready marker for ${address}`);
 	}
-	const made = await ensureDirectory(origin, directory);
-	if (made.error) return OpenFolderError.Unavailable({ cause: made.error });
+	const { data: made, error: directoryError } = await ensureDirectory(
+		origin,
+		directory,
+	);
+	if (directoryError !== null)
+		return OpenFolderError.Unavailable({ cause: directoryError });
 	await writePrivateFile(
-		made.data,
+		made,
 		READY_MARKER,
 		new TextEncoder().encode(JSON.stringify({ address })),
 	);
-	return Ok(made.data);
+	return Ok(made);
 }
 
 /**
@@ -222,8 +226,10 @@ export const openFolder: OpenFolder = async ({
 	id,
 	browser = {},
 }) => {
-	const prepared = prepareFolderDefinition(definition);
-	if (prepared.error) return OpenFolderError.InvalidDefinition(prepared.error);
+	const { data: prepared, error: definitionError } =
+		prepareFolderDefinition(definition);
+	if (definitionError !== null)
+		return OpenFolderError.InvalidDefinition(definitionError);
 	if (isTauri()) return OpenFolderError.InsideTauri();
 	if (typeof id !== 'string' || id.trim() === '')
 		return OpenFolderError.InvalidId({ id: String(id) });
@@ -233,9 +239,9 @@ export const openFolder: OpenFolder = async ({
 	const author = browser.author ?? LOCAL_AUTHOR;
 	let environment = browser.opfs;
 	if (environment === undefined) {
-		const found = globalEnvironment();
-		if (found.error) return found;
-		environment = found.data;
+		const { data: found, error: environmentError } = globalEnvironment();
+		if (environmentError !== null) return Err(environmentError);
+		environment = found;
 	}
 
 	ensureBufferGlobal();
@@ -258,7 +264,7 @@ export const openFolder: OpenFolder = async ({
 				cause instanceof Error ? cause.message : 'invalid account identity',
 		});
 	}
-	return openOpfsFolder<typeof definition>(prepared.data, environment, {
+	return openOpfsFolder<typeof definition>(prepared, environment, {
 		id,
 		channel,
 		owner,
@@ -298,8 +304,8 @@ async function openOpfsFolder<TDefinition extends FolderDefinition>(
 	} catch (cause) {
 		return OpenFolderError.Unavailable({ cause });
 	}
-	if (ready.error) return ready;
-	const root = ready.data;
+	const { data: root, error: readyError } = ready;
+	if (readyError !== null) return Err(readyError);
 
 	let channel: BroadcastChannel | undefined;
 	let channelOpen = false;

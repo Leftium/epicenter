@@ -8,7 +8,7 @@
  * lets a player keep playing instead of restarting.
  */
 import { type FileError, type FolderFiles } from '@epicenter/folder';
-import { Ok, type Result } from 'wellcrafted/result';
+import { Err, Ok, type Result } from 'wellcrafted/result';
 import { audioMimeTypeOf } from './audio-format.js';
 
 export type LoadedAudio = {
@@ -26,19 +26,19 @@ export async function loadAudio(
 	path: string,
 	current: LoadedAudio | undefined,
 ): Promise<Result<LoadedAudio, FileError>> {
-	const read = await files.read(path);
-	if (read.error) return read;
+	const { data: file, error: readError } = await files.read(path);
+	if (readError !== null) return Err(readError);
 	if (
 		current !== undefined &&
 		current.path === path &&
-		current.sha256 === read.data.sha256
+		current.sha256 === file.sha256
 	)
 		return Ok(current);
 	return Ok({
 		path,
-		sha256: read.data.sha256,
+		sha256: file.sha256,
 		// The folder returns untyped bytes; a player needs the container's type.
-		blob: new Blob([read.data.bytes as Uint8Array<ArrayBuffer>], {
+		blob: new Blob([file.bytes as Uint8Array<ArrayBuffer>], {
 			type: audioMimeTypeOf(path) ?? '',
 		}),
 	});

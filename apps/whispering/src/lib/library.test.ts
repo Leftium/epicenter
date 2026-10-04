@@ -133,10 +133,11 @@ async function open({
 					});
 				}
 				const created = await transcriptions.create(input);
-				if (remainingLostReplies === 0 || created.error) return created;
+				const { data: row, error: createError } = created;
+				if (remainingLostReplies === 0 || createError !== null) return created;
 				remainingLostReplies -= 1;
 				return FileError.Unconfirmed({
-					path: created.data.path,
+					path: row.path,
 					operation: 'create',
 					cause: 'reply lost after the write',
 				});
@@ -230,7 +231,9 @@ function recordingSlot(library: Library) {
 const recordingEditor = (library: Library) => formOf(recordingSlot(library));
 
 test('the first launch creates no files or history, and saving a connection writes nothing to the folder', async () => {
-	const { library, root, device } = await open({ connections: { connections: {} } });
+	const { library, root, device } = await open({
+		connections: { connections: {} },
+	});
 	expect(await readdir(root)).not.toContain('kv.json');
 	expect(git(root, 'symbolic-ref', '--short', 'HEAD').trim()).toBe('main');
 	expect(await Bun.file(join(root, '.git/refs/heads/main')).exists()).toBe(
@@ -355,7 +358,9 @@ test('kv.json that does not parse, or holds a value that does not conform, is th
 	);
 	await library.refreshAll();
 	expect(library.settingsProblem).toContain('transcriptionModel');
-	expect(library.legacySettings).toEqual({ transcriptionBaseUrl: 'http://kept' });
+	expect(library.legacySettings).toEqual({
+		transcriptionBaseUrl: 'http://kept',
+	});
 
 	// Healthy text has no issues, and no issues is no problem at all.
 	await writeFile(join(root, 'kv.json'), '{"transcriptionModel": "kept"}\n');
@@ -560,15 +565,12 @@ test('a dirty editor keeps both versions when the file changes outside, until a 
 		`${editor.path} has edits held in a conflict.`,
 	]);
 
-	const kept = await library.keepDraftCopy(editor.path);
-	expectOk(kept);
+	const kept = expectOk(await library.keepDraftCopy(editor.path));
 	expect(editor.status.kind).toBe('saved');
 	expect(editor.state.baseline.source).toBe(outside);
 	expect(editor.state.document.fields.title).toBe('Theirs');
 	expect(await readFile(path, 'utf8')).toBe(outside);
-	expect(await readFile(join(root, kept.data!), 'utf8')).toContain(
-		'"title": "Mine"',
-	);
+	expect(await readFile(join(root, kept), 'utf8')).toContain('"title": "Mine"');
 });
 
 test('choosing mine saves the whole draft over the reviewed outside version', async () => {
@@ -785,16 +787,14 @@ test('a recording with an unusual file name is an ordinary recording: it is tran
 	expect(editor.status.kind).toBe('saved');
 	expect(await readFile(join(root, path), 'utf8')).toContain('"title": "Mine"');
 
-	const deletion = await library.deletionFor(path);
-	expect(deletion.data).toMatchObject({
+	const deletion = expectOk(await library.deletionFor(path));
+	expect(deletion).toMatchObject({
 		kind: 'recording',
 		entry: { path, stem: 'bad ' },
 	});
 	// Its result goes with it, found by the ID it names.
-	expect(
-		deletion.data?.kind === 'recording' && deletion.data.results,
-	).toHaveLength(1);
-	expect(await library.remove(deletion.data!)).toBeUndefined();
+	expect(deletion?.kind === 'recording' && deletion.results).toHaveLength(1);
+	expect(await library.remove(deletion!)).toBeUndefined();
 	expect(library.entries.map((item) => item.path)).toEqual([recorded.path]);
 	expect(library.transcriptions).toEqual([]);
 });
@@ -825,7 +825,7 @@ test('a recording is not deleted while a result cannot say which recording it be
 	for (const [path, content] of Object.entries(unknown)) {
 		await writeFile(join(root, path), content);
 		await library.refreshAll();
-		const refusal = (await library.deletionFor(entry.path)).error;
+		const { error: refusal } = await library.deletionFor(entry.path);
 		expect(refusal).toContain('cannot be told apart');
 		expect(refusal).toContain(path);
 		await untouched();
@@ -834,13 +834,13 @@ test('a recording is not deleted while a result cannot say which recording it be
 
 	// A deletion confirmed before such a file appeared is refused when it runs.
 	await library.refreshAll();
-	const confirmed = (await library.deletionFor(entry.path)).data!;
+	const confirmed = expectOk(await library.deletionFor(entry.path));
 	await writeFile(
 		join(root, 'transcriptions/late.md'),
 		unknown['transcriptions/unparsed.md']!,
 	);
 	await library.refreshAll();
-	expect(await library.remove(confirmed)).toContain('cannot be told apart');
+	expect(await library.remove(confirmed!)).toContain('cannot be told apart');
 	await untouched();
 	await rm(join(root, 'transcriptions/late.md'));
 
@@ -850,8 +850,8 @@ test('a recording is not deleted while a result cannot say which recording it be
 		'---\nrecordingId: someone-else\nmodel: 12\n---\ntext\n',
 	);
 	await library.refreshAll();
-	const deletion = (await library.deletionFor(entry.path)).data!;
-	expect(await library.remove(deletion)).toBeUndefined();
+	const deletion = expectOk(await library.deletionFor(entry.path));
+	expect(await library.remove(deletion!)).toBeUndefined();
 	expect(library.entries).toEqual([]);
 	expect(library.transcriptions.map((item) => item.path)).toEqual([
 		'transcriptions/other.md',
@@ -899,10 +899,10 @@ test('reopening the folder shows the same recording and result', async () => {
 	expect(second.library.resultsFor(entry.stem)[0]!.body).toBe(
 		'a steady tone\n',
 	);
-	const opened2 = await second.library.folder.files.open(
-		entry.fields.audioPath!,
+	const audio = expectOk(
+		await second.library.folder.files.open(entry.fields.audioPath!),
 	);
-	expect(new Uint8Array(await opened2.data!.arrayBuffer())).toEqual(
+	expect(new Uint8Array(await audio!.arrayBuffer())).toEqual(
 		new Uint8Array(toneWav()),
 	);
 	expect(git(first.root, 'status', '--porcelain').trim()).toBe('');
@@ -915,15 +915,14 @@ test('deleting a recording removes its row and results, keeps its audio, and say
 	const audioPath = entry.fields.audioPath!;
 	await library.transcribe(entry);
 
-	const deletion = await library.deletionFor(entry.path);
-	expectOk(deletion);
+	const deletion = expectOk(await library.deletionFor(entry.path));
 	// What the person is asked matches what the deletion does.
-	const asked = describeDeletion(deletion.data!, library.recordingNaming);
+	const asked = describeDeletion(deletion, library.recordingNaming);
 	expect(asked.description).toContain(
 		`This deletes ${entry.path}, 1 transcription result from the folder.`,
 	);
 	expect(asked.description).toContain(`Its audio ${audioPath} is not deleted`);
-	expect(await library.remove(deletion.data!)).toBeUndefined();
+	expect(await library.remove(deletion)).toBeUndefined();
 
 	expect(library.entries).toHaveLength(0);
 	expect(await readdir(join(root, 'transcriptions'))).toEqual([]);
@@ -937,9 +936,9 @@ test('deleting a recording removes its row and results, keeps its audio, and say
 
 	// The audio is deleted as the file it is, from Files, with its own question.
 	expect(library.recordingNaming(audioPath)).toBeUndefined();
-	const file = await library.deletionFor(audioPath);
-	expect(file.data).toMatchObject({ kind: 'file', path: audioPath });
-	expect(await library.remove(file.data!)).toBeUndefined();
+	const file = expectOk(await library.deletionFor(audioPath));
+	expect(file).toMatchObject({ kind: 'file', path: audioPath });
+	expect(await library.remove(file!)).toBeUndefined();
 	expect(await readdir(join(root, 'recordings'))).toEqual([]);
 });
 
@@ -953,17 +952,21 @@ test('deleting the audio a recording names keeps the recording, and the missing 
 		'names this audio file',
 	);
 
-	const deletion = await library.deletionFor(audioPath);
-	const asked = describeDeletion(deletion.data!, library.recordingNaming);
+	const deletion = expectOk(await library.deletionFor(audioPath));
+	const asked = describeDeletion(deletion!, library.recordingNaming);
 	expect(asked.description).toContain('names it as its audio and is kept');
-	expect(await library.remove(deletion.data!)).toBeUndefined();
+	expect(await library.remove(deletion!)).toBeUndefined();
 
 	expect(await readdir(join(root, 'recordings'))).toEqual([`${entry.stem}.md`]);
 	expect(library.entries).toHaveLength(1);
 	// The row still names the path; the missing file is reported, not hidden.
 	expect(library.entries[0]!.fields.audioPath).toBe(audioPath);
-	const loaded = await loadAudio(library.folder.files, audioPath, undefined);
-	expect(loaded.error?.name).toBe('NotFound');
+	const { error: loadError } = await loadAudio(
+		library.folder.files,
+		audioPath,
+		undefined,
+	);
+	expect(loadError?.name).toBe('NotFound');
 });
 
 test('a row written before audioPath names no audio: it needs repair, and no same-stem file is used', async () => {
@@ -978,9 +981,7 @@ test('a row written before audioPath names no audio: it needs repair, and no sam
 
 	const entry = library.entries.find((item) => item.stem === 'old')!;
 	// The one field it lacks is the one issue; the others validated and are there.
-	expect(entry.issues.map((issue) => issue.field)).toEqual([
-		'audioPath',
-	]);
+	expect(entry.issues.map((issue) => issue.field)).toEqual(['audioPath']);
 	expect<object>(entry.fields).toEqual({
 		title: 'Old take',
 		recordedAt: '2026-01-02T03:04:05.000Z',
@@ -1004,7 +1005,10 @@ test('a row written before audioPath names no audio: it needs repair, and no sam
 	const editor = textOf(recordingSlot(library));
 	expect(editor.buffer).toBe(old);
 	editor.input(
-		old.replace('capture: fixture\n', 'capture: fixture\naudioPath: recordings/old.wav\n'),
+		old.replace(
+			'capture: fixture\n',
+			'capture: fixture\naudioPath: recordings/old.wav\n',
+		),
 	);
 	await editor.save();
 	await library.refresh();
@@ -1045,28 +1049,24 @@ test('a recording cannot be deleted while its transcription runs, including one 
 	await record(library);
 	const entry = library.entries[0]!;
 	// The person is asked, and agrees, before any request exists.
-	const confirmed = await library.deletionFor(entry.path);
-	expectOk(confirmed);
+	const confirmed = expectOk(await library.deletionFor(entry.path));
 
 	const transcribing = library.transcribe(entry);
 	expect(library.transcriptionRun(entry.stem)?.kind).toBe('running');
 
-	expect((await library.deletionFor(entry.path)).error).toContain(
-		'still running',
-	);
-	expect(await library.remove(confirmed.data!)).toContain('still running');
+	const { error: refusal } = await library.deletionFor(entry.path);
+	expect(refusal).toContain('still running');
+	expect(await library.remove(confirmed)).toContain('still running');
 	expect(await readdir(join(root, 'recordings'))).toHaveLength(2);
 
 	answer(Ok({ text: 'arrived late' }));
 	await transcribing;
 
 	// The transcript saved since was never named to the person, so they are asked again.
-	expect(await library.remove(confirmed.data!)).toContain(
-		'after you were asked',
-	);
+	expect(await library.remove(confirmed)).toContain('after you were asked');
 	expect(await readdir(join(root, 'transcriptions'))).toHaveLength(1);
-	const again = await library.deletionFor(entry.path);
-	expect(await library.remove(again.data!)).toBeUndefined();
+	const again = expectOk(await library.deletionFor(entry.path));
+	expect(await library.remove(again!)).toBeUndefined();
 	// The row is gone; the audio it named is not the table's to delete.
 	expect(await readdir(join(root, 'recordings'))).toEqual([
 		`${entry.stem}.wav`,
@@ -1081,16 +1081,16 @@ test('a recording cannot be deleted while a received transcript is unsaved; disc
 	await library.transcribe(entry);
 	expect(library.transcriptionRun(entry.stem)?.kind).toBe('unsaved');
 
-	const refused = await library.deletionFor(entry.path);
-	expect(refused.error).toContain('Save it again or discard it');
+	const { error: refusal } = await library.deletionFor(entry.path);
+	expect(refusal).toContain('Save it again or discard it');
 	expect(await readdir(join(root, 'recordings'))).toHaveLength(2);
 	const run = library.transcriptionRun(entry.stem);
 	if (run?.kind !== 'unsaved') throw new Error('expected the transcript held');
 	expect(run.text).toBe('a steady tone');
 
 	library.dismissRun(entry.stem);
-	const deletion = await library.deletionFor(entry.path);
-	expect(await library.remove(deletion.data!)).toBeUndefined();
+	const deletion = expectOk(await library.deletionFor(entry.path));
+	expect(await library.remove(deletion!)).toBeUndefined();
 
 	expect(await readdir(join(root, 'recordings'))).toEqual([
 		`${entry.stem}.wav`,
@@ -1118,15 +1118,16 @@ test('audio replaced by bytes of the same length is noticed by its content', asy
 	await record(library);
 	const entry = library.entries[0]!;
 	const path = entry.fields.audioPath!;
-	const first = await loadAudio(library.folder.files, path, undefined);
-	expectOk(first);
+	const first = expectOk(
+		await loadAudio(library.folder.files, path, undefined),
+	);
 
 	// Unchanged audio is the same object, so a player keeps what it has.
 	const before = library.generation;
 	await library.refreshAll();
 	expect(library.generation).toBeGreaterThan(before);
-	const again = await loadAudio(library.folder.files, path, first.data!);
-	expect(again.data).toBe(first.data!);
+	const again = expectOk(await loadAudio(library.folder.files, path, first));
+	expect(again).toBe(first);
 
 	const replaced = new Uint8Array(toneWav({ frequency: 880 }));
 	expect(replaced.length).toBe(toneWav().length);
@@ -1136,11 +1137,11 @@ test('audio replaced by bytes of the same length is noticed by its content', asy
 	await library.refreshAll();
 	expect(library.generation).toBeGreaterThan(generation);
 
-	const next = await loadAudio(library.folder.files, path, first.data!);
-	expect(next.data).not.toBe(first.data!);
-	expect(next.data!.blob.size).toBe(first.data!.blob.size);
-	expect(new Uint8Array(await next.data!.blob.arrayBuffer())).toEqual(replaced);
-	expect(next.data!.blob.type).toBe('audio/wav');
+	const next = expectOk(await loadAudio(library.folder.files, path, first));
+	expect(next).not.toBe(first);
+	expect(next!.blob.size).toBe(first.blob.size);
+	expect(new Uint8Array(await next!.blob.arrayBuffer())).toEqual(replaced);
+	expect(next!.blob.type).toBe('audio/wav');
 });
 
 test('a transcription transport that throws ends as a failure that can be retried', async () => {
@@ -1579,7 +1580,9 @@ test('two simultaneous saves of a held transcript write one file and leave nothi
 	expect(library.transcriptionRun(id)).toBeUndefined();
 	expect(library.unsavedResults).toBe(0);
 	expect(library.holdsUnsavedWork).toBe(false);
-	expect(library.resultsFor(id).map((row) => row.body)).toEqual(['a steady tone\n']);
+	expect(library.resultsFor(id).map((row) => row.body)).toEqual([
+		'a steady tone\n',
+	]);
 });
 
 test('another file at a held transcript’s path is left as it is, and the transcript stays held', async () => {
@@ -1709,10 +1712,12 @@ test('a save that lands after its transcript was discarded leaves a newer held t
 	expect((await transcripts(root)).sort()).toEqual(
 		[`${first.id}.md`, `${second.id}.md`].sort(),
 	);
-	expect(library.resultsFor(id).map((row) => row.body).sort()).toEqual([
-		'first answer\n',
-		'second answer\n',
-	]);
+	expect(
+		library
+			.resultsFor(id)
+			.map((row) => row.body)
+			.sort(),
+	).toEqual(['first answer\n', 'second answer\n']);
 });
 
 test('a transcript already in the folder is acknowledged as saved even when the folder cannot then be listed', async () => {
@@ -1771,9 +1776,8 @@ test('while a held transcript is being written its recording cannot be deleted a
 	await write.started;
 
 	expect(heldTranscript(library, id).saving).toBe(true);
-	expect((await library.deletionFor(entry.path)).error).toContain(
-		'Save it again or discard it',
-	);
+	const { error: heldRefusal } = await library.deletionFor(entry.path);
+	expect(heldRefusal).toContain('Save it again or discard it');
 	expect(library.unsavedWork).toEqual([
 		'1 transcript arrived but its file is not saved.',
 	]);
@@ -1782,20 +1786,19 @@ test('while a held transcript is being written its recording cannot be deleted a
 	// Discarding drops the text. The write already begun is still on its way to the folder.
 	library.dismissRun(id);
 	expect(library.holdsUnsavedWork).toBe(false);
-	expect((await library.deletionFor(entry.path)).error).toContain(
-		'still being written',
-	);
+	const { error: writingRefusal } = await library.deletionFor(entry.path);
+	expect(writingRefusal).toContain('still being written');
 	expect(await readdir(join(root, 'recordings'))).toHaveLength(2);
 
 	write.release('write');
 	await saving;
 
 	// The transcript that landed is named to the person before it is deleted.
-	const deletion = await library.deletionFor(entry.path);
-	if (deletion.data?.kind !== 'recording')
+	const deletion = expectOk(await library.deletionFor(entry.path));
+	if (deletion?.kind !== 'recording')
 		throw new Error('expected a recording deletion');
-	expect(deletion.data.results).toHaveLength(1);
-	expect(await library.remove(deletion.data)).toBeUndefined();
+	expect(deletion.results).toHaveLength(1);
+	expect(await library.remove(deletion)).toBeUndefined();
 	expect(await transcripts(root)).toEqual([]);
 });
 
@@ -1812,9 +1815,8 @@ test('the first write of a transcript keeps its run running: it cannot be dismis
 	library.dismissRun(id);
 	await library.transcribe(entry);
 	expect(library.transcriptionRun(id)?.kind).toBe('running');
-	expect((await library.deletionFor(entry.path)).error).toContain(
-		'still running',
-	);
+	const { error: refusal } = await library.deletionFor(entry.path);
+	expect(refusal).toContain('still running');
 	expect(library.holdsUnsavedWork).toBe(true);
 
 	write.release('refuse');
@@ -1860,10 +1862,10 @@ test('a transcript saved after a deletion was confirmed refuses that deletion be
 	const entry = library.entries[0]!;
 	const id = entry.stem;
 	// The person is asked, and agrees, while the recording has no results.
-	const confirmed = await library.deletionFor(entry.path);
-	if (confirmed.data?.kind !== 'recording')
+	const confirmed = expectOk(await library.deletionFor(entry.path));
+	if (confirmed?.kind !== 'recording')
 		throw new Error('expected a recording deletion');
-	expect(confirmed.data.results).toEqual([]);
+	expect(confirmed.results).toEqual([]);
 	const lists = holdResultLists(library);
 
 	const transcribing = library.transcribe(entry);
@@ -1876,9 +1878,7 @@ test('a transcript saved after a deletion was confirmed refuses that deletion be
 	const [name] = await transcripts(root);
 	const saved = await readFile(join(root, 'transcriptions', name!), 'utf8');
 
-	expect(await library.remove(confirmed.data)).toContain(
-		'after you were asked',
-	);
+	expect(await library.remove(confirmed)).toContain('after you were asked');
 
 	expect((await readdir(join(root, 'recordings'))).sort()).toEqual([
 		`${id}.md`,
@@ -1893,13 +1893,13 @@ test('a transcript saved after a deletion was confirmed refuses that deletion be
 	await transcribing;
 
 	// Asked again, the person is told about the transcript, and it goes with the recording.
-	const again = await library.deletionFor(entry.path);
-	if (again.data?.kind !== 'recording')
+	const again = expectOk(await library.deletionFor(entry.path));
+	if (again?.kind !== 'recording')
 		throw new Error('expected a recording deletion');
-	expect(again.data.results.map((result) => result.path)).toEqual([
+	expect(again.results.map((result) => result.path)).toEqual([
 		`transcriptions/${name}`,
 	]);
-	expect(await library.remove(again.data)).toBeUndefined();
+	expect(await library.remove(again)).toBeUndefined();
 	expect(await transcripts(root)).toEqual([]);
 	expect(await readdir(join(root, 'recordings'))).toEqual([`${id}.wav`]);
 	expect(
@@ -1912,8 +1912,8 @@ test('a transcript saved when the listing after it fails stays saved, and still 
 	await record(library);
 	const entry = library.entries[0]!;
 	const id = entry.stem;
-	const confirmed = await library.deletionFor(entry.path);
-	if (confirmed.data?.kind !== 'recording')
+	const confirmed = expectOk(await library.deletionFor(entry.path));
+	if (confirmed?.kind !== 'recording')
 		throw new Error('expected a recording deletion');
 	const table = library.folder.tables.transcriptions;
 	const list = table.list;
@@ -1938,20 +1938,18 @@ test('a transcript saved when the listing after it fails stays saved, and still 
 	expect(transcribed).toHaveLength(1);
 	expect(await transcripts(root)).toEqual([name!]);
 
-	expect(await library.remove(confirmed.data)).toContain(
-		'after you were asked',
-	);
+	expect(await library.remove(confirmed)).toContain('after you were asked');
 	expect(await readdir(join(root, 'recordings'))).toHaveLength(2);
 	expect(await transcripts(root)).toEqual([name!]);
 
 	// A new confirmation names the transcript from its publication, with the listing still failing.
-	const again = await library.deletionFor(entry.path);
-	if (again.data?.kind !== 'recording')
+	const again = expectOk(await library.deletionFor(entry.path));
+	if (again?.kind !== 'recording')
 		throw new Error('expected a recording deletion');
-	expect(again.data.results.map((result) => result.path)).toEqual([
+	expect(again.results.map((result) => result.path)).toEqual([
 		`transcriptions/${name}`,
 	]);
-	expect(await library.remove(again.data)).toBeUndefined();
+	expect(await library.remove(again)).toBeUndefined();
 	expect(await transcripts(root)).toEqual([]);
 	expect(await readdir(join(root, 'recordings'))).toEqual([`${id}.wav`]);
 
@@ -1982,7 +1980,8 @@ test('a text file whose save reply was lost holds the close, and a refresh, prep
 			const [file, content] = args;
 			sent.push(new TextDecoder().decode(content as Uint8Array));
 			const written = await replace(...args);
-			return written.error
+			const { error: replaceError } = written;
+			return replaceError !== null
 				? written
 				: FileError.Unconfirmed({
 						path: file.path,
@@ -2029,18 +2028,17 @@ test('a rename where the destination landed and the source could not be removed 
 		async move(...args: Parameters<typeof move>) {
 			const [file, destination] = args;
 			const copied = expectOk(await files.read(file.path));
-			const written = expectOk(
-				await files.create(destination, copied.bytes),
-			);
+			const written = expectOk(await files.create(destination, copied.bytes));
+			const { error: removeFailure } = FileError.Io({
+				path: file.path,
+				operation: 'remove',
+				cause: new Error('permission denied'),
+			});
 			return MoveError.SourceNotRemoved({
 				from: file.path,
 				to: destination,
 				moved: written,
-				cause: FileError.Io({
-					path: file.path,
-					operation: 'remove',
-					cause: new Error('permission denied'),
-				}).error,
+				cause: removeFailure,
 			});
 		},
 	});
@@ -2051,9 +2049,9 @@ test('a rename where the destination landed and the source could not be removed 
 		'"renamed.md" was written, but "notes.md" could not be removed, so both are in the folder now: ' +
 			"Could not remove 'notes.md': permission denied",
 	);
-	expect((await readdir(root)).filter((name) => name.endsWith('.md')).sort()).toEqual(
-		['notes.md', 'renamed.md'],
-	);
+	expect(
+		(await readdir(root)).filter((name) => name.endsWith('.md')).sort(),
+	).toEqual(['notes.md', 'renamed.md']);
 	// No draft was open, so there are no edits to hold.
 	expect(library.unresolvedMoves).toEqual([]);
 	expect(library.holdsUnsavedWork).toBe(false);
@@ -2077,15 +2075,16 @@ test('a rename that left the file at both paths holds the open draft’s typing 
 			editor.input('typed during the move\n');
 			const copied = expectOk(await files.read(file.path));
 			const written = expectOk(await files.create(destination, copied.bytes));
+			const { error: removeFailure } = FileError.Io({
+				path: file.path,
+				operation: 'remove',
+				cause: new Error('permission denied'),
+			});
 			return MoveError.SourceNotRemoved({
 				from: file.path,
 				to: destination,
 				moved: written,
-				cause: FileError.Io({
-					path: file.path,
-					operation: 'remove',
-					cause: new Error('permission denied'),
-				}).error,
+				cause: removeFailure,
 			});
 		},
 	});
@@ -2109,7 +2108,9 @@ test('a rename that left the file at both paths holds the open draft’s typing 
 	expect(await readFile(join(root, 'renamed.md'), 'utf8')).toBe('original\n');
 	expect(await library.prepareToLeave()).toBe(false);
 
-	expect(await library.resolveMove('notes.md', 'keepAtDestination')).toBeUndefined();
+	expect(
+		await library.resolveMove('notes.md', 'keepAtDestination'),
+	).toBeUndefined();
 	const moved = library.selection;
 	if (moved?.kind !== 'file' || moved.file.kind !== 'text')
 		throw new Error('expected renamed.md open as text');
@@ -2245,7 +2246,9 @@ test('a transcript renamed while the page decides to close carries its typing to
 
 	expect(said).toBeUndefined();
 	expect(leaving).toBe(true);
-	expect(await readFile(join(root, 'transcriptions', 'renamed.md'), 'utf8')).toContain(TYPED);
+	expect(
+		await readFile(join(root, 'transcriptions', 'renamed.md'), 'utf8'),
+	).toContain(TYPED);
 	expect(await Bun.file(join(root, transcript.path)).exists()).toBe(false);
 	expect(library.unsavedWork).toEqual([]);
 });
@@ -2329,7 +2332,8 @@ test('a rename whose reply is lost while the page decides to close holds the typ
 			await held.promise;
 			// It moves; the reply is lost.
 			const moved = await move(...args);
-			return moved.error
+			const { error: moveError } = moved;
+			return moveError !== null
 				? moved
 				: FileError.Unconfirmed({
 						path: args[0].path,
@@ -2353,7 +2357,9 @@ test('a rename whose reply is lost while the page decides to close holds the typ
 	expect(library.unsavedWork[0]).toContain('did not end as asked');
 	expect(draft.state.document.body).toBe(TYPED);
 	await Bun.sleep(600);
-	expect(await readFile(join(root, 'transcriptions', 'renamed.md'), 'utf8')).toBe(before);
+	expect(
+		await readFile(join(root, 'transcriptions', 'renamed.md'), 'utf8'),
+	).toBe(before);
 	expect(await Bun.file(join(root, transcript.path)).exists()).toBe(false);
 });
 
@@ -2371,7 +2377,8 @@ function lostReplyMove(library: Library) {
 			reached.resolve();
 			await held.promise;
 			const moved = await move(...args);
-			return moved.error
+			const { error: moveError } = moved;
+			return moveError !== null
 				? moved
 				: FileError.Unconfirmed({
 						path: args[0].path,
@@ -2406,12 +2413,14 @@ test('keeping held edits at a transcript whose own draft has typing is refused, 
 
 	await library.open(to);
 	const destination = formOf(library.transcriptAt(to));
-	expect(destination.change({ body: 'Typed at the destination.\n' })).toBe(true);
+	expect(destination.change({ body: 'Typed at the destination.\n' })).toBe(
+		true,
+	);
 	const before = await readFile(join(root, to), 'utf8');
 
-	expect(await library.resolveMove(transcript.path, 'keepAtDestination')).toContain(
-		'edits of its own',
-	);
+	expect(
+		await library.resolveMove(transcript.path, 'keepAtDestination'),
+	).toContain('edits of its own');
 
 	expect(destination.state.document.body).toBe('Typed at the destination.\n');
 	expect(draft.state.isDisposed).toBe(false);
@@ -2559,9 +2568,9 @@ test('keeping held edits at a transcript another program rewrote while its draft
 		},
 	});
 
-	expect(await library.resolveMove(transcript.path, 'keepAtDestination')).toContain(
-		'no longer holds the file as it was',
-	);
+	expect(
+		await library.resolveMove(transcript.path, 'keepAtDestination'),
+	).toContain('no longer holds the file as it was');
 
 	const destination = formOf(library.transcriptAt(to));
 	expect(destination.isDirty).toBe(false);
@@ -2628,7 +2637,9 @@ test('a file another program rewrites at the new name while a rename opens it th
 	]);
 	await Bun.sleep(600);
 	await library.refreshAll();
-	expect(await readFile(join(root, 'renamed.md'), 'utf8')).toBe('Someone else\n');
+	expect(await readFile(join(root, 'renamed.md'), 'utf8')).toBe(
+		'Someone else\n',
+	);
 	expect(await Bun.file(join(root, 'notes.md')).exists()).toBe(false);
 	expect(await library.resolveMove('notes.md', 'keepAtDestination')).toContain(
 		'does not hold the file as it was',
@@ -2637,7 +2648,9 @@ test('a file another program rewrites at the new name while a rename opens it th
 	// Discarding the held edits is the way out; the rewritten file stays as written.
 	expect(await library.resolveMove('notes.md', 'discard')).toBeUndefined();
 	expect(library.unresolvedMoves).toEqual([]);
-	expect(await readFile(join(root, 'renamed.md'), 'utf8')).toBe('Someone else\n');
+	expect(await readFile(join(root, 'renamed.md'), 'utf8')).toBe(
+		'Someone else\n',
+	);
 	expect(library.holdsUnsavedWork).toBe(false);
 });
 
@@ -2733,7 +2746,8 @@ test('a recording is not deleted while a draft of one of its results holds typin
 		async replace(...args: Parameters<typeof replace>) {
 			Object.assign(files, { replace });
 			const written = await replace(...args);
-			return written.error
+			const { error: replaceError } = written;
+			return replaceError !== null
 				? written
 				: FileError.Unconfirmed({
 						path: args[0].path,

@@ -16,12 +16,12 @@ const definition = defineFolder({
 });
 
 export async function start() {
-	const opened = await openFolder({
+	const { data: folder, error: openError } = await openFolder({
 		id: 'so.epicenter.bundlefixture',
 		definition,
 	});
-	if (opened.error) return opened.error.name;
-	const terminal = opened.data.terminal();
+	if (openError !== null) return openError.name;
+	const terminal = folder.terminal();
 	await terminal.exec('ls');
-	return opened.data.location.kind;
+	return folder.location.kind;
 }

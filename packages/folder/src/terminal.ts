@@ -111,10 +111,10 @@ export function createTerminal(
 	const observed = new Map<string, string>();
 
 	async function refresh() {
-		const listing = await storage.list();
-		if (listing.error) fail(listing.error);
-		files = new Map(listing.data.files.map((file) => [file.path, file.size]));
-		directories = new Set(['', ...listing.data.directories]);
+		const { data: listing, error: listError } = await storage.list();
+		if (listError !== null) fail(listError);
+		files = new Map(listing.files.map((file) => [file.path, file.size]));
+		directories = new Set(['', ...listing.directories]);
 	}
 
 	function resolvePath(base: string, path: string): string {
@@ -147,10 +147,10 @@ export function createTerminal(
 
 	async function readBytes(path: string): Promise<Uint8Array> {
 		const name = relative(path);
-		const read = await storage.read(name);
-		if (read.error) fail(read.error);
-		observed.set(name, read.data.sha256);
-		return read.data.bytes;
+		const { data: file, error: readError } = await storage.read(name);
+		if (readError !== null) fail(readError);
+		observed.set(name, file.sha256);
+		return file.bytes;
 	}
 
 	/**
@@ -163,12 +163,12 @@ export function createTerminal(
 		submission: Submission,
 	) {
 		if (changes.length === 0) return;
-		const result = await storage.apply(changes, submission);
+		const { error: applyError } = await storage.apply(changes, submission);
 		const applied =
-			result.error === null
+			applyError === null
 				? changes
-				: result.error.name === 'Partial'
-					? result.error.applied
+				: applyError.name === 'Partial'
+					? applyError.applied
 					: [];
 		for (const step of applied) {
 			if (step.kind === 'remove') observed.delete(step.path);
@@ -198,19 +198,19 @@ export function createTerminal(
 				else observed.set(step.path, sha256);
 			}
 		}
-		if (result.error) {
-			if (applied.length > 0 || result.error.name === 'Unconfirmed')
+		if (applyError !== null) {
+			if (applied.length > 0 || applyError.name === 'Unconfirmed')
 				await refresh().catch(() => {});
-			fail(result.error);
+			fail(applyError);
 		}
 		await refresh();
 	}
 
 	async function removeDirectories(paths: readonly string[]) {
 		for (const path of paths) {
-			const removed = await storage.rmdir(path);
-			if (removed.error && removed.error.name !== 'NotFound')
-				fail(removed.error);
+			const { error: removeError } = await storage.rmdir(path);
+			if (removeError !== null && removeError.name !== 'NotFound')
+				fail(removeError);
 			// Derived directories can disappear with their last file.
 			directories.delete(path);
 		}
@@ -271,9 +271,9 @@ export function createTerminal(
 					? Buffer.from(content, encoding ?? 'utf8')
 					: ownBytes(content);
 			const name = relative(path);
-			const read = await storage.read(name);
-			if (read.error) {
-				if (read.error.name !== 'NotFound') fail(read.error);
+			const { data: file, error: readError } = await storage.read(name);
+			if (readError !== null) {
+				if (readError.name !== 'NotFound') fail(readError);
 				await applyChanges(
 					[
 						{
@@ -287,11 +287,11 @@ export function createTerminal(
 				);
 				return;
 			}
-			observed.set(name, read.data.sha256);
+			observed.set(name, file.sha256);
 			if (addition.length === 0) return;
-			const next = new Uint8Array(read.data.bytes.length + addition.length);
-			next.set(read.data.bytes);
-			next.set(addition, read.data.bytes.length);
+			const next = new Uint8Array(file.bytes.length + addition.length);
+			next.set(file.bytes);
+			next.set(addition, file.bytes.length);
 			await writeBytes(path, next, submission);
 		},
 		exists: async (path) => isFile(path) || isDirectory(path),
@@ -326,8 +326,8 @@ export function createTerminal(
 				throw failure(`Not a directory: ${parent}`, 'ENOTDIR');
 			if (!options?.recursive && !isDirectory(parent))
 				throw failure(`No such file or directory: ${parent}`, 'ENOENT');
-			const made = await storage.mkdir(name);
-			if (made.error) fail(made.error);
+			const { error: mkdirError } = await storage.mkdir(name);
+			if (mkdirError !== null) fail(mkdirError);
 			await refresh();
 		},
 		async readdir(path) {
@@ -542,8 +542,8 @@ async function runGit(
 			);
 			if (unsupported.length > 0)
 				return error(`git status: unsupported option ${unsupported[0]}`, 129);
-			const paths = await git.paths();
-			if (paths.error) return error(paths.error.message);
+			const { data: paths, error: pathsError } = await git.paths();
+			if (pathsError !== null) return error(pathsError.message);
 			const snapshot = git.snapshot;
 			const sync =
 				snapshot.sync.state === 'observed' ? snapshot.sync.value : undefined;
@@ -556,7 +556,7 @@ async function runGit(
 				].filter(Boolean);
 				if (counts.length > 0) header += ` [${counts.join(', ')}]`;
 			}
-			const lines = paths.data.map((path) =>
+			const lines = paths.map((path) =>
 				path.index === '?' || path.worktree === '?'
 					? `?? ${path.path}`
 					: `${path.index}${path.worktree} ${path.path}`,
@@ -575,12 +575,12 @@ async function runGit(
 					return error(`git diff: unsupported option ${arg}`, 129);
 				else paths.push(toPath(arg));
 			}
-			const diff = await git.diff({
+			const { data: diff, error: diffError } = await git.diff({
 				staged,
 				paths: paths.map((path) => path || '.'),
 			});
-			if (diff.error) return error(diff.error.message);
-			return ok(diff.data);
+			if (diffError !== null) return error(diffError.message);
+			return ok(diff);
 		}
 		case 'log': {
 			let depth = 20;
@@ -597,16 +597,16 @@ async function runGit(
 			}
 			if (!Number.isInteger(depth) || depth < 1)
 				return error('git log: invalid count', 129);
-			const log = await git.log(depth);
-			if (log.error) return error(log.error.message);
-			if (log.data.length === 0)
+			const { data: commits, error: logError } = await git.log(depth);
+			if (logError !== null) return error(logError.message);
+			if (commits.length === 0)
 				return error(
 					`fatal: your current branch '${git.snapshot.branch}' does not have any commits yet`,
 					128,
 				);
 			if (oneline)
 				return ok(
-					log.data
+					commits
 						.map(
 							(commit) =>
 								`${short(commit.oid)} ${commit.message.split('\n')[0]}`,
@@ -614,7 +614,7 @@ async function runGit(
 						.join('\n') + '\n',
 				);
 			return ok(
-				log.data
+				commits
 					.map((commit) => {
 						const date = new Date(commit.author.timestamp * 1000).toISOString();
 						const body = commit.message
@@ -642,8 +642,9 @@ async function runGit(
 				else paths.push(toPath(arg));
 			}
 			const target = all || paths.includes('') ? 'all' : paths;
-			const staged = await git.stage(target);
-			if (staged.error) return error(`fatal: ${staged.error.message}`, 128);
+			const { error: stageError } = await git.stage(target);
+			if (stageError !== null)
+				return error(`fatal: ${stageError.message}`, 128);
 			return ok('');
 		}
 		case 'commit': {
@@ -670,15 +671,17 @@ async function runGit(
 					'git commit: a message is required: git commit -m <message>',
 					129,
 				);
-			const committed = await git.commitStaged(messages.join('\n\n'));
-			if (committed.error) {
-				if (committed.error.name === 'NothingToCommit')
+			const { data: committed, error: commitError } = await git.commitStaged(
+				messages.join('\n\n'),
+			);
+			if (commitError !== null) {
+				if (commitError.name === 'NothingToCommit')
 					return error('nothing added to commit', 1);
-				return error(committed.error.message);
+				return error(commitError.message);
 			}
 			const subject = messages[0]!.split('\n')[0];
 			return ok(
-				`[${git.snapshot.branch} ${short(committed.data.oid)}] ${subject}\n`,
+				`[${git.snapshot.branch} ${short(committed.oid)}] ${subject}\n`,
 			);
 		}
 		case 'push': {
@@ -718,13 +721,13 @@ async function runGit(
 					'git fetch: arguments are not supported; the folder fetches its configured remote branch',
 					129,
 				);
-			const fetched = await git.fetch();
-			if (fetched.error) return error(fetched.error.message);
+			const { data: fetched, error: fetchError } = await git.fetch();
+			if (fetchError !== null) return error(fetchError.message);
 			const remote = git.snapshot.remote;
-			if (fetched.data.oid === undefined)
+			if (fetched.oid === undefined)
 				return ok(`The remote has no ${remote?.branch} branch yet\n`);
 			return ok(
-				`From ${remote?.url}\n * ${remote?.branch} -> origin/${remote?.branch} (${short(fetched.data.oid)})\n`,
+				`From ${remote?.url}\n * ${remote?.branch} -> origin/${remote?.branch} (${short(fetched.oid)})\n`,
 			);
 		}
 		case 'pull': {
@@ -733,11 +736,11 @@ async function runGit(
 				rest.some((arg) => arg !== '--ff-only')
 			)
 				return error('git pull: only `git pull --ff-only` is supported', 129);
-			const fetched = await git.fetch();
-			if (fetched.error) return error(fetched.error.message);
-			const pulled = await git.pullFastForward();
-			if (pulled.error) return error(`fatal: ${pulled.error.message}`, 128);
-			switch (pulled.data.status) {
+			const { error: fetchError } = await git.fetch();
+			if (fetchError !== null) return error(fetchError.message);
+			const { data: pulled, error: pullError } = await git.pullFastForward();
+			if (pullError !== null) return error(`fatal: ${pullError.message}`, 128);
+			switch (pulled.status) {
 				case 'upToDate':
 					return ok('Already up to date.\n');
 				case 'ahead':
@@ -746,11 +749,9 @@ async function runGit(
 					);
 				case 'fastForwarded':
 					return ok(
-						`Updating ${short(pulled.data.from)}..${short(pulled.data.to)}\nFast-forward\n${pulled.data.changedPaths
+						`Updating ${short(pulled.from)}..${short(pulled.to)}\nFast-forward\n${pulled.changedPaths
 							.map((path) => ` ${path}`)
-							.join(
-								'\n',
-							)}\n ${pulled.data.changedPaths.length} files changed\n`,
+							.join('\n')}\n ${pulled.changedPaths.length} files changed\n`,
 					);
 			}
 			return error('pull did not complete');

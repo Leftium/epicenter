@@ -15,8 +15,8 @@
 	$effect(() => {
 		if (!open || auth.state.status === 'signed-out') return;
 		let current = true;
-		void auth.getProfile().then(({ data }) => {
-			if (current) email = data?.email ?? '';
+		void auth.getProfile().then(({ data: profile, error }) => {
+			if (current) email = error === null ? (profile.email ?? '') : '';
 		});
 		return () => {
 			current = false;
@@ -28,7 +28,7 @@
 		problem = '';
 		// A successful start leaves this page for the sign-in page.
 		const { error } = await auth.startSignIn();
-		if (error) {
+		if (error !== null) {
 			problem = error.message;
 			pending = false;
 		}
@@ -37,7 +37,7 @@
 		pending = true;
 		problem = '';
 		const { error } = await auth.signOut();
-		if (error) {
+		if (error !== null) {
 			problem = error.message;
 			pending = false;
 			return;

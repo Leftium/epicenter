@@ -309,7 +309,9 @@ export async function createNativeGitBackend({
 		},
 		async indexMatchesHead(captured) {
 			if (captured !== undefined)
-				return backend.withObjects((access) => capturedIndexMatchesHead(access, captured));
+				return backend.withObjects((access) =>
+					capturedIndexMatchesHead(access, captured),
+				);
 			const head = await resolve(branchRef);
 			const result = await run(
 				head === undefined
@@ -448,15 +450,15 @@ export async function createNativeGitBackend({
 		// The baseline is not checked here: each step carries its own file
 		// condition, and other programs are met only at Git's lock files.
 		async publishIncoming(plan): Promise<PublishResult> {
-			const applied = await boundary.apply(plan.changes);
-			if (applied.error) {
-				if (applied.error.name === 'Partial')
+			const { error: applyError } = await boundary.apply(plan.changes);
+			if (applyError !== null) {
+				if (applyError.name === 'Partial')
 					return {
 						status: 'partial',
-						applied: applied.error.applied,
-						error: applied.error.error,
+						applied: applyError.applied,
+						error: applyError.error,
 					};
-				return { status: 'refused', error: applied.error };
+				return { status: 'refused', error: applyError };
 			}
 			try {
 				await syncIndex(plan.nextHead, plan.paths);

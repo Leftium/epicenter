@@ -127,44 +127,46 @@ describe('browser folder tables', () => {
 
 	test('creates, lists, updates, completes, renames, and deletes plain Markdown rows', async () => {
 		const folder = await open({ commitOnEdit: false });
-		const created = await folder.tables.todos.create({
-			stem: 'milk',
-			fields: { title: 'Buy milk', done: false },
-			body: 'Two liters.\n',
-		});
-		expect(created.error).toBeNull();
-		expect(created.data!.path).toBe('todos/milk.md');
-		expect(created.data!.source).toBe(
+		const { data: created, error: createError } =
+			await folder.tables.todos.create({
+				stem: 'milk',
+				fields: { title: 'Buy milk', done: false },
+				body: 'Two liters.\n',
+			});
+		expect(createError).toBeNull();
+		expect(created!.path).toBe('todos/milk.md');
+		expect(created!.source).toBe(
 			'---\ntitle: Buy milk\ndone: false\n---\nTwo liters.\n',
 		);
-		const raw = await folder.files.read('todos/milk.md');
-		expect(new TextDecoder().decode(raw.data!.bytes)).toBe(
-			created.data!.source,
-		);
-		expect(raw.data!.sha256).toEqual(created.data!.sha256);
+		const { data: raw, error: rawError } =
+			await folder.files.read('todos/milk.md');
+		expect(rawError).toBeNull();
+		expect(new TextDecoder().decode(raw!.bytes)).toBe(created!.source);
+		expect(raw!.sha256).toEqual(created!.sha256);
 
-		const completed = await folder.tables.todos.update('milk', {
-			fields: { done: true },
-		});
-		expect(expectOk(completed)).toMatchObject({
+		const completed = expectOk(
+			await folder.tables.todos.update('milk', {
+				fields: { done: true },
+			}),
+		);
+		expect(completed).toMatchObject({
 			fields: { title: 'Buy milk', done: true },
 			body: 'Two liters.\n',
 			parseError: undefined,
 			issues: [],
 		});
 
-		const renamed = await folder.tables.todos.rename(
-			completed.data!,
-			'groceries',
-		);
-		expect(renamed.data!.path).toBe('todos/groceries.md');
+		const { data: renamed, error: renameError } =
+			await folder.tables.todos.rename(completed, 'groceries');
+		expect(renameError).toBeNull();
+		expect(renamed!.path).toBe('todos/groceries.md');
 		expect((await folder.tables.todos.get('milk')).data).toBeUndefined();
 		const listed = expectOk(await folder.tables.todos.list());
 		expect(listed.map((item) => expectOk(item.result).stem)).toEqual([
 			'groceries',
 		]);
 
-		expectOk(await folder.tables.todos.delete(renamed.data!));
+		expectOk(await folder.tables.todos.delete(renamed!));
 		expect(expectOk(await folder.tables.todos.list())).toEqual([]);
 	});
 
@@ -231,13 +233,15 @@ describe('browser folder tables', () => {
 		expect(odd.stem).toBe('odd');
 
 		// A typed update of the valid-in-isolation field replaces only that span.
-		const fixed = await folder.tables.todos.update('odd', {
-			fields: { done: true },
-		});
-		expect(fixed.data!.source).toBe(
-			source.replace('done: maybe', 'done: true'),
+		const { data: fixed, error: fixError } = await folder.tables.todos.update(
+			'odd',
+			{
+				fields: { done: true },
+			},
 		);
-		expect(fixed.data!.issues).toEqual([]);
+		expect(fixError).toBeNull();
+		expect(fixed!.source).toBe(source.replace('done: maybe', 'done: true'));
+		expect(fixed!.issues).toEqual([]);
 
 		const broken = expectOk(item('todos/broken.md'));
 		expect(broken.parseError).toBeDefined();
@@ -490,12 +494,14 @@ describe('browser folder persistence and history', () => {
 		expect((await second.files.children('empty')).data!.directories).toEqual([
 			'dir',
 		]);
-		const log = await second.git.log(10);
-		expect(log.data!.map((commit) => commit.message)).toEqual([
+		const { data: commits, error: logError } = await second.git.log(10);
+		expect(logError).toBeNull();
+		expect(commits!.map((commit) => commit.message)).toEqual([
 			'Add todos/kept.md\n',
 		]);
-		const status = await second.git.status();
-		expect(status.data!.changes).toEqual([]);
+		const { data: status, error: statusError } = await second.git.status();
+		expect(statusError).toBeNull();
+		expect(status!.changes).toEqual([]);
 	});
 
 	test('file create, move, and remove request automatic history', async () => {
@@ -630,11 +636,11 @@ describe('browser folder persistence and history', () => {
 				await Bun.sleep(5);
 			expect(folder.git.snapshot.activity.push.active).toBe(true);
 
-			const saved = await folder.tables.todos.create({
+			const { error: saveError } = await folder.tables.todos.create({
 				stem: 'b',
 				fields: { title: 'B', done: false },
 			});
-			expect(saved.error).toBeNull();
+			expect(saveError).toBeNull();
 			for (let index = 0; index < 200; index++) {
 				if (!folder.git.snapshot.activity.commit.active) break;
 				await Bun.sleep(5);
@@ -759,7 +765,7 @@ describe('browser terminal', () => {
 		expect(wrote.stdout.split('\n')).toContain('notes.txt');
 		expect(
 			new TextDecoder().decode(
-				(await folder.files.read('notes.txt')).data!.bytes,
+				expectOk(await folder.files.read('notes.txt')).bytes,
 			),
 		).toBe('shell note\n');
 		// This folder opted out of automatic commits for staged authoring.

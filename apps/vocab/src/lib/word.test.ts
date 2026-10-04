@@ -134,9 +134,7 @@ test('a delete fences every view of the word until it is answered, and nothing w
 	// The file is gone, and the delete's answer has not come back yet.
 	expect(await tableFiles(folder, 'entries')).toEqual([]);
 	// The focus list's stage control reaches the same word, and is refused.
-	expect(await entries.word(id).setStage('usable')).toContain(
-		'being deleted',
-	);
+	expect(await entries.word(id).setStage('usable')).toContain('being deleted');
 	// Nothing typed is taken while the word is being deleted.
 	word.inputNote('typed during the delete');
 	expect(word.note('')).toBe('');
@@ -334,7 +332,8 @@ for (const landed of [true, false])
 					async delete(capture) {
 						if (landed) {
 							const removed = await real.delete(capture);
-							if (removed.error !== null) return removed;
+							const { error: removeError } = removed;
+							if (removeError !== null) return removed;
 						}
 						return FileError.Unconfirmed({
 							path: capture.path,
@@ -359,9 +358,7 @@ for (const landed of [true, false])
 			// A read, present or gone, confirms nothing about the delete.
 			await entries.refresh();
 			expect(entries.entries.map((entry) => entry.id)).toEqual([id]);
-			expect(word.state?.observation.kind).toBe(
-				landed ? 'missing' : 'present',
-			);
+			expect(word.state?.observation.kind).toBe(landed ? 'missing' : 'present');
 			expect(word.outcome?.kind).toBe('deletion');
 			// Leaving the field and pressing a stage write nothing by themselves.
 			expect(await word.blur()).toBeNull();
@@ -400,7 +397,8 @@ for (const landed of [true, false])
 // An earlier save's outcome beside what the latest read found
 // ============================================================================
 
-const WORD = '---\ntext: lucid\nnote: ""\nstage: new\ncreatedAt: "2026-10-01T00:00:00.000Z"\n---\n';
+const WORD =
+	'---\ntext: lucid\nnote: ""\nstage: new\ncreatedAt: "2026-10-01T00:00:00.000Z"\n---\n';
 
 /**
  * A real word editor over storage this test scripts: what reads find, whether

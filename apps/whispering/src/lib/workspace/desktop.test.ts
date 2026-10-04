@@ -423,9 +423,8 @@ test('saves and history go to the shell’s owner and never to the host', async 
 	expectOk(await workspace.folder.files.create('recordings/a.wav', audio));
 	expectOk(await workspace.folder.files.create('notes.md', 'hello'));
 	expect((await workspace.folder.git.commit()).status).toBe('unchanged');
-	expect((await workspace.folder.files.read('notes.md')).error?.name).toBe(
-		'NotFound',
-	);
+	const { error: readError } = await workspace.folder.files.read('notes.md');
+	expect(readError?.name).toBe('NotFound');
 
 	expect(
 		sent('apply').map((call) =>
@@ -464,7 +463,10 @@ test('a row save whose reply the shell never sent stays unknown in the real row 
 		},
 		// The owner writes, and the reply never reaches the page.
 		apply: ({ args }: Call) => {
-			for (const change of args.changes as { path: string; bytes: number[] }[]) {
+			for (const change of args.changes as {
+				path: string;
+				bytes: number[];
+			}[]) {
 				disk.set(change.path, Uint8Array.from(change.bytes));
 				written.push(new TextDecoder().decode(Uint8Array.from(change.bytes)));
 			}
@@ -674,12 +676,12 @@ test('a host that stops answering does not close the folder: the page keeps savi
 	// The owner is the shell's, so a save still lands with the host gone.
 	expectOk(await workspace.folder.files.create('note.md', 'still saved'));
 	// What needs the host answers as unavailable, as a Result.
-	const transcribed = await workspace.transcribe({
+	const { error: transcribeError } = await workspace.transcribe({
 		audioPath: 'recordings/a.wav',
 		expectedBaseUrl: 'u',
 		model: 'm',
 	});
-	expect(transcribed.error?.name).toBe('HostUnavailable');
+	expect(transcribeError?.name).toBe('HostUnavailable');
 	// An answer that cannot be delivered rejects, so the guard can say so; the
 	// window stays open.
 	await expect(workspace.closing!.answer('proceed')).rejects.toThrow(
@@ -720,15 +722,16 @@ test('a failed transcription call is a Result, and the next call still works', a
 		model: 'm',
 	};
 
-	const unreachable = await workspace.transcribe(request);
-	expect(unreachable.error?.name).toBe('HostUnavailable');
-	expect(unreachable.error?.message).toContain('Load failed');
+	const { error: unreachable } = await workspace.transcribe(request);
+	expect(unreachable?.name).toBe('HostUnavailable');
+	expect(unreachable?.message).toContain('Load failed');
 
-	const faulted = await workspace.transcribe(request);
-	expect(faulted.error?.name).toBe('HostUnavailable');
-	expect(faulted.error?.message).toContain('host fault');
+	const { error: faulted } = await workspace.transcribe(request);
+	expect(faulted?.name).toBe('HostUnavailable');
+	expect(faulted?.message).toContain('host fault');
 
-	expect((await workspace.transcribe(request)).data).toEqual({ text: 'ok' });
+	const answered = expectOk(await workspace.transcribe(request));
+	expect(answered).toEqual({ text: 'ok' });
 	// The page sends the path the row names, and no audio: the host reads the
 	// file. It names the base URL it expects, and the host decides where to send.
 	expect(asked).toEqual(
@@ -770,15 +773,16 @@ test('a failed transformation call is a Result, and the next call still works', 
 		input: 'text',
 	};
 
-	const unreachable = await workspace.transform(request);
-	expect(unreachable.error?.name).toBe('HostUnavailable');
-	expect(unreachable.error?.message).toContain('Load failed');
+	const { error: unreachable } = await workspace.transform(request);
+	expect(unreachable?.name).toBe('HostUnavailable');
+	expect(unreachable?.message).toContain('Load failed');
 
-	const faulted = await workspace.transform(request);
-	expect(faulted.error?.name).toBe('HostUnavailable');
-	expect(faulted.error?.message).toContain('host fault');
+	const { error: faulted } = await workspace.transform(request);
+	expect(faulted?.name).toBe('HostUnavailable');
+	expect(faulted?.message).toContain('host fault');
 
-	expect((await workspace.transform(request)).data).toEqual({ text: 'ok' });
+	const answered = expectOk(await workspace.transform(request));
+	expect(answered).toEqual({ text: 'ok' });
 	// The page sends what to transform and never a key: the host adds it.
 	expect(asked).toEqual([request, request, request]);
 	await workspace.close();
@@ -1245,14 +1249,14 @@ test('a lost host reply after the endpoint was called is reported as unknown, ne
 
 	// The endpoint was called, once each, and the page was not told the answer.
 	expect(provider).toEqual({ transcriptions: 1, completions: 1 });
-	for (const lost of [transcribed, transformed]) {
-		expect(lost.data).toBeNull();
-		expect(lost.error?.name).toBe('HostUnavailable');
-		expect(lost.error?.message).toContain(
+	for (const { data: answer, error: lost } of [transcribed, transformed]) {
+		expect(answer).toBeNull();
+		expect(lost?.name).toBe('HostUnavailable');
+		expect(lost?.message).toContain(
 			'it is not known whether the request was sent',
 		);
-		expect(lost.error?.message).toContain('Load failed');
-		expect(lost.error?.message).not.toContain('nothing was sent');
+		expect(lost?.message).toContain('Load failed');
+		expect(lost?.message).not.toContain('nothing was sent');
 	}
 	// Nothing retried behind the page's back.
 	await settle(100);
@@ -1261,17 +1265,16 @@ test('a lost host reply after the endpoint was called is reported as unknown, ne
 	// Audio that cannot be read is the certain case: the host answers, says so,
 	// and the endpoint is not called, whether or not the reply then arrives.
 	losing = false;
-	const unreadable = await workspace.transcribe({
+	const { error: unreadable } = await workspace.transcribe({
 		...transcription,
 		audioPath: 'recordings/gone.wav',
 	});
-	expect(unreadable.error?.name).toBe('AudioUnreadable');
+	expect(unreadable?.name).toBe('AudioUnreadable');
 	expect(provider).toEqual({ transcriptions: 1, completions: 1 });
 
 	// Asking again is the person's choice, and it is one more request.
-	expect((await workspace.transcribe(transcription)).data).toEqual({
-		text: 'a steady tone',
-	});
+	const retried = expectOk(await workspace.transcribe(transcription));
+	expect(retried).toEqual({ text: 'a steady tone' });
 	expect(provider).toEqual({ transcriptions: 2, completions: 1 });
 	await workspace.close();
 });

@@ -85,23 +85,23 @@ export function createChatMessageStore(
 		async load() {
 			const mine = ++loads;
 			const receiptsBefore = receipts;
-			const listed = await table.list();
-			if (listed.error !== null)
-				return ChatHistoryError.NotRead({ cause: listed.error });
+			const { data: listed, error: listError } = await table.list();
+			if (listError !== null)
+				return ChatHistoryError.NotRead({ cause: listError });
 			// A later load was asked for; its listing is the one to show.
 			if (mine !== loads) return Ok(undefined);
 			const next = new Map<string, { stem: string; message: AgentMessage }>();
 			const problems: UnreadableFile[] = [];
-			for (const { path, result } of listed.data) {
+			for (const { path, result } of listed) {
+				const { data: file, error: readError } = result;
 				// A file that names no chat, because it could not be read or its
 				// text does not parse, is reported by the folder-wide list.
-				if (result.error !== null || result.data.fields.chat !== chatId)
-					continue;
-				const row = readMessage(result.data);
+				if (readError !== null || file.fields.chat !== chatId) continue;
+				const row = readMessage(file);
 				if (!row) {
 					problems.push({
 						path,
-						reason: result.data.issues.map((issue) => issue.message).join('; '),
+						reason: file.issues.map((issue) => issue.message).join('; '),
 					});
 					continue;
 				}
@@ -123,23 +123,25 @@ export function createChatMessageStore(
 		},
 		async set(key, value) {
 			const fields = { chat: chatId, message: value };
-			const created = await table.create({ stem: key, fields });
-			if (created.error !== null) {
-				if (created.error.name !== 'Exists')
-					return AgentMessageStoreError.WriteFailed({ cause: created.error });
+			const { error: createError } = await table.create({ stem: key, fields });
+			if (createError !== null) {
+				if (createError.name !== 'Exists')
+					return AgentMessageStoreError.WriteFailed({ cause: createError });
 				// An earlier attempt may have landed without its receipt.
-				const current = await table.get(key);
-				if (current.error !== null)
-					return AgentMessageStoreError.WriteFailed({ cause: current.error });
-				const held = current.data && readMessage(current.data);
+				const { data: current, error: readError } = await table.get(key);
+				if (readError !== null)
+					return AgentMessageStoreError.WriteFailed({ cause: readError });
+				const held = current && readMessage(current);
 				if (
 					!held ||
 					held.chat !== chatId ||
 					JSON.stringify(held.message) !== JSON.stringify(value)
-				)
-					return AgentMessageStoreError.WriteFailed({
-						cause: ChatHistoryError.Taken({ path: created.error.path }).error,
+				) {
+					const { error: taken } = ChatHistoryError.Taken({
+						path: createError.path,
 					});
+					return AgentMessageStoreError.WriteFailed({ cause: taken });
+				}
 			}
 			saved.set(key, value);
 			receivedAt.set(key, ++receipts);
@@ -177,10 +179,12 @@ export async function startChat(
 		createdAt: InstantString.now(),
 		focus: focus.map(({ entryId, text }) => ({ entryId, text })),
 	};
-	const created = await chats.create({ fields: chat });
-	if (created.error !== null)
-		return ChatHistoryError.NotSaved({ cause: created.error });
-	return Ok({ id: created.data.stem, ...chat });
+	const { data: created, error: createError } = await chats.create({
+		fields: chat,
+	});
+	if (createError !== null)
+		return ChatHistoryError.NotSaved({ cause: createError });
+	return Ok({ id: created.stem, ...chat });
 }
 
 /**

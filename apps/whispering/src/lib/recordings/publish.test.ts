@@ -178,9 +178,9 @@ test('a file that only shares the stem is not the recording’s and does not blo
 	expectOk(await folder.files.create(`recordings/${pending.id}.m4a`, sibling));
 	expectOk(await folder.files.create(`recordings/${pending.id}.txt`, 'note'));
 
-	expect(
-		(await publishRecording(folder, pending, { retry: false })).kind,
-	).toBe('published');
+	expect((await publishRecording(folder, pending, { retry: false })).kind).toBe(
+		'published',
+	);
 	// A retry reads only the two paths the capture names.
 	expect((await publishRecording(folder, pending, { retry: true })).kind).toBe(
 		'published',
@@ -316,9 +316,9 @@ test('audio that fails first leaves nothing in the folder and no row is attempte
 test('retrying a published capture writes nothing and reports both files as found', async () => {
 	const { root, folder } = await open();
 	const pending = capture();
-	expect(
-		(await publishRecording(folder, pending, { retry: false })).kind,
-	).toBe('published');
+	expect((await publishRecording(folder, pending, { retry: false })).kind).toBe(
+		'published',
+	);
 	const before = await readFile(
 		join(root, 'recordings', `${pending.id}.md`),
 		'utf8',
@@ -414,7 +414,8 @@ test('audio changed after a retry read it is not rewritten: independent writes c
 			create: (path, content) => folder.files.create(path, content),
 			async read(path) {
 				const read = await folder.files.read(path);
-				if (read.error === null)
+				const { error: readError } = read;
+				if (readError === null)
 					expectOk(await folder.files.overwrite(path, other));
 				return read;
 			},
@@ -550,7 +551,8 @@ function losing(target: PublishTarget, lose: 'audio' | 'row'): PublishTarget {
 			read: (path) => target.files.read(path),
 			async create(path, content) {
 				const created = await target.files.create(path, content);
-				return lose === 'audio' && created.error === null
+				const { error: createError } = created;
+				return lose === 'audio' && createError === null
 					? lost(path, 'create')
 					: created;
 			},
@@ -560,8 +562,9 @@ function losing(target: PublishTarget, lose: 'audio' | 'row'): PublishTarget {
 				get: (stem) => target.tables.recordings.get(stem),
 				async create(input) {
 					const created = await target.tables.recordings.create(input);
-					return lose === 'row' && created.error === null
-						? lost(created.data.path, 'create')
+					const { data: row, error: createError } = created;
+					return lose === 'row' && createError === null
+						? lost(row.path, 'create')
 						: created;
 				},
 			},
@@ -753,7 +756,10 @@ test('an occupied audio path that cannot then be read stays unknown, never calle
 
 	const outcome = await publishRecording(raced, pending, { retry: true });
 
-	expect(outcome).toMatchObject({ kind: 'audioNotSaved', certainty: 'unknown' });
+	expect(outcome).toMatchObject({
+		kind: 'audioNotSaved',
+		certainty: 'unknown',
+	});
 	if (outcome.kind === 'audioNotSaved')
 		expect(outcome.message).toContain('is not known');
 	// The audio that is there stays, and nothing else was written.
@@ -824,7 +830,11 @@ test('the hook surrounds each write that is made, and is not reached for a write
 
 	expect(seen).toEqual([
 		{
-			write: { step: 'audio', stem: pending.id, path: pending.fields.audioPath },
+			write: {
+				step: 'audio',
+				stem: pending.id,
+				path: pending.fields.audioPath,
+			},
 			rows: [],
 		},
 		{ write: { step: 'row', stem: pending.id }, rows: [] },

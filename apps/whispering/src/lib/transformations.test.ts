@@ -167,7 +167,9 @@ test('editing a transformation saves the whole row in one form and keeps fields 
 	const saved = await readFile(path, 'utf8');
 	// The save is the editor's whole document in its one form.
 	expect(saved).toBe(editor.state.source);
-	const row = expectOk(await library.folder.tables.transformations.get('mine'))!;
+	const row = expectOk(
+		await library.folder.tables.transformations.get('mine'),
+	)!;
 	expect(row.fields).toEqual({
 		title: 'Renamed',
 		model: 'chat-model',
@@ -255,13 +257,12 @@ test('a dirty transformation draft keeps both versions when the file changes out
 	await library.prepareToLeave();
 	expect(await readFile(path, 'utf8')).toBe(outside);
 
-	const kept = await library.keepDraftCopy(editor.path);
-	expectOk(kept);
+	const kept = expectOk(await library.keepDraftCopy(editor.path));
 	// The typing went to the copy; the draft took the version in the folder.
 	expect(editor.isDirty).toBe(false);
 	expect(editor.state.source).toBe(outside);
 	expect(await readFile(path, 'utf8')).toBe(outside);
-	expect(await readFile(join(root, kept.data!), 'utf8')).toContain('My prompt');
+	expect(await readFile(join(root, kept), 'utf8')).toContain('My prompt');
 });
 
 test('a clean transformation editor follows an outside edit', async () => {
@@ -398,9 +399,9 @@ test('a transcript edited outside is sent as the folder has it now, and is not r
 		.replace('---\n', '---\nreviewedBy: someone\n')
 		.replace(transcript.body!, 'A steady tone, corrected by hand.\n');
 	await writeFile(join(root, transcript.path), outside);
-	expect(
-		library.resultsFor(transcript.fields.recordingId!)[0]!.body,
-	).toBe('um so a steady tone\n');
+	expect(library.resultsFor(transcript.fields.recordingId!)[0]!.body).toBe(
+		'um so a steady tone\n',
+	);
 
 	expect(await library.transform(transcript.path, editor.path)).toBeUndefined();
 
@@ -408,9 +409,7 @@ test('a transcript edited outside is sent as the folder has it now, and is not r
 	expect(transformed[0]!.input).toBe('A steady tone, corrected by hand.\n');
 	const output = library.outputsFor(transcript.stem)[0]!;
 	expect(output.fields.input).toBe('A steady tone, corrected by hand.\n');
-	expect(output.body).toBe(
-		'Transformed: A steady tone, corrected by hand.\n',
-	);
+	expect(output.body).toBe('Transformed: A steady tone, corrected by hand.\n');
 	// The transcript is exactly what the other program wrote, unknown field included.
 	expect(await readFile(join(root, transcript.path), 'utf8')).toBe(outside);
 });
@@ -524,18 +523,16 @@ test('a recording cannot be deleted while a transformation of it runs, including
 	const { recording, transcript } = await transcribed(library, root);
 	const editor = await cleanupProfile(library);
 	// The person is asked, and agrees, before any request exists.
-	const confirmed = await library.deletionFor(recording.path);
-	expectOk(confirmed);
+	const confirmed = expectOk(await library.deletionFor(recording.path));
 
 	const running = library.transform(transcript.path, editor.path);
 	await started.promise;
 	expect(library.transformationRuns[0]!.state.kind).toBe('running');
 
 	// Asking now refuses, and so does the deletion already confirmed.
-	expect((await library.deletionFor(recording.path)).error).toContain(
-		'still running',
-	);
-	expect(await library.remove(confirmed.data!)).toContain('still running');
+	const { error: refusal } = await library.deletionFor(recording.path);
+	expect(refusal).toContain('still running');
+	expect(await library.remove(confirmed)).toContain('still running');
 	expect((await names(root, 'recordings')).sort()).toEqual([
 		`${recording.stem}.md`,
 		`${recording.stem}.wav`,
@@ -545,13 +542,11 @@ test('a recording cannot be deleted while a transformation of it runs, including
 	await running;
 
 	// The result saved since was never named to the person, so they are asked again.
-	expect(await library.remove(confirmed.data!)).toContain(
-		'after you were asked',
-	);
+	expect(await library.remove(confirmed)).toContain('after you were asked');
 	expect(await names(root, RUNS)).toHaveLength(1);
-	const again = await library.deletionFor(recording.path);
-	expect(again.data).toMatchObject({ kind: 'recording' });
-	expect(await library.remove(again.data!)).toBeUndefined();
+	const again = expectOk(await library.deletionFor(recording.path));
+	expect(again).toMatchObject({ kind: 'recording' });
+	expect(await library.remove(again!)).toBeUndefined();
 	// The row and the results are gone. The audio is an ordinary file and stays.
 	expect(await names(root, 'recordings')).toEqual([`${recording.stem}.wav`]);
 	expect(await names(root, RUNS)).toEqual([]);
@@ -561,14 +556,14 @@ test('a recording cannot be deleted while a received result for it is unsaved; d
 	const { library, root } = await open({ failRunWrites: 1 });
 	const { recording, transcript } = await transcribed(library, root);
 	const editor = await cleanupProfile(library);
-	const confirmed = await library.deletionFor(recording.path);
+	const confirmed = expectOk(await library.deletionFor(recording.path));
 	await library.transform(transcript.path, editor.path);
 	const held = library.transformationRuns[0]!;
 	expect(held.state.kind).toBe('unsaved');
 
-	const refused = await library.deletionFor(recording.path);
-	expect(refused.error).toContain('Save it again or discard it');
-	expect(await library.remove(confirmed.data!)).toContain(
+	const { error: refusal } = await library.deletionFor(recording.path);
+	expect(refusal).toContain('Save it again or discard it');
+	expect(await library.remove(confirmed!)).toContain(
 		'Save it again or discard it',
 	);
 	expect(await names(root, 'recordings')).toHaveLength(2);
@@ -576,7 +571,7 @@ test('a recording cannot be deleted while a received result for it is unsaved; d
 	expect(library.transformationRuns[0]!).toEqual(held);
 
 	library.discardTransformationRun(held.id);
-	expect(await library.remove(confirmed.data!)).toBeUndefined();
+	expect(await library.remove(confirmed!)).toBeUndefined();
 
 	expect(await names(root, 'recordings')).toEqual([`${recording.stem}.wav`]);
 	expect(await names(root, RUNS)).toEqual([]);
@@ -593,8 +588,8 @@ test('a failed run does not block deletion and is dropped with the recording', a
 	const failed = library.transformationRuns[0]!;
 	expect(failed.state.kind).toBe('failed');
 
-	const deletion = await library.deletionFor(recording.path);
-	expect(await library.remove(deletion.data!)).toBeUndefined();
+	const deletion = expectOk(await library.deletionFor(recording.path));
+	expect(await library.remove(deletion!)).toBeUndefined();
 
 	// Nothing is left that could be retried against the deleted recording.
 	expect(library.transformationRuns).toHaveLength(0);
@@ -645,9 +640,9 @@ test('a transformation asked for while its recording is being deleted sends noth
 	const { library, root, transformed } = await open();
 	const { recording, transcript } = await transcribed(library, root);
 	const editor = await cleanupProfile(library);
-	const deletion = await library.deletionFor(recording.path);
+	const deletion = expectOk(await library.deletionFor(recording.path));
 
-	const removing = library.remove(deletion.data!);
+	const removing = library.remove(deletion!);
 	const problem = await library.transform(transcript.path, editor.path);
 	expect(await removing).toBeUndefined();
 
@@ -671,9 +666,9 @@ test('a result outlives edits to its transformation and the transformation’s d
 	await library.refreshAll();
 	expect(await readFile(join(root, output.path), 'utf8')).toBe(saved);
 
-	const deletion = await library.deletionFor(editor.path);
-	expect(deletion.data).toMatchObject({ kind: 'transformation', results: 1 });
-	expect(await library.remove(deletion.data!)).toBeUndefined();
+	const deletion = expectOk(await library.deletionFor(editor.path));
+	expect(deletion).toMatchObject({ kind: 'transformation', results: 1 });
+	expect(await library.remove(deletion!)).toBeUndefined();
 
 	expect(library.transformations).toHaveLength(0);
 	expect(library.selectedTransformation).toBeUndefined();
@@ -691,9 +686,9 @@ test('deleting a recording removes the results made from its transcripts', async
 	await library.transform(transcript.path, editor.path);
 	expect(await names(root, RUNS)).toHaveLength(1);
 
-	const deletion = await library.deletionFor(recording.path);
-	expect(deletion.data).toMatchObject({ kind: 'recording' });
-	expect(await library.remove(deletion.data!)).toBeUndefined();
+	const deletion = expectOk(await library.deletionFor(recording.path));
+	expect(deletion).toMatchObject({ kind: 'recording' });
+	expect(await library.remove(deletion!)).toBeUndefined();
 
 	expect(await names(root, RUNS)).toEqual([]);
 	expect(await names(root, 'transcriptions')).toEqual([]);
@@ -949,18 +944,20 @@ for (const [field, value] of [
 
 test('this run’s exact row is recognized even with fields the app does not know', async () => {
 	const { library, root, table, held, text, transformed } = await heldRun();
-	const mine = await table.create({
-		stem: held.id,
-		fields: held.fields,
-		body: `${text}\n`,
-	});
-	expectOk(mine);
+	const mine = expectOk(
+		await table.create({
+			stem: held.id,
+			fields: held.fields,
+			body: `${text}\n`,
+		}),
+	);
 	// Another program annotates the row without touching what the run recorded.
-	const annotated = mine.data!.source.replace(
+	const annotated = mine.source.replace(
 		'---\n',
 		'---\n# reviewed\nreviewedBy: someone\n',
 	);
-	expect((await table.replace(mine.data!, annotated)).error).toBeNull();
+	const { error: replaceError } = await table.replace(mine, annotated);
+	expect(replaceError).toBeNull();
 
 	await library.retryTransformation(held.id);
 
@@ -1046,7 +1043,10 @@ test('two asks for the same transcript and transformation at once send one reque
 
 	expect(transformed).toHaveLength(2);
 	expect(transformed.map((request) => request.prompt).sort()).toEqual(
-		[STARTER_TRANSFORMATIONS[0]!.prompt, STARTER_TRANSFORMATIONS[1]!.prompt].sort(),
+		[
+			STARTER_TRANSFORMATIONS[0]!.prompt,
+			STARTER_TRANSFORMATIONS[1]!.prompt,
+		].sort(),
 	);
 	expect(await names(root, RUNS)).toHaveLength(2);
 	expect(library.transformationRuns).toEqual([]);
@@ -1230,9 +1230,8 @@ test('a result discarded while its row is being written is not restored when the
 	library.discardTransformationRun(held.id);
 	expect(library.transformationRuns).toEqual([]);
 	// The write already begun could still land a row naming the recording.
-	expect((await library.deletionFor(recording.path)).error).toContain(
-		'still being written',
-	);
+	const { error: refusal } = await library.deletionFor(recording.path);
+	expect(refusal).toContain('still being written');
 	expect(await library.remove(confirmed)).toContain('still being written');
 	writing.release();
 	await saving;

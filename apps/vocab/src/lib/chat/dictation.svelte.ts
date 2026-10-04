@@ -80,7 +80,7 @@ export function createDictation(
 			// destroy flushes the final phrase, but an already-running model frame
 			// can call back later. Only callbacks admitted before stop settled count.
 			callbackGeneration++;
-			if (error) return Err(error);
+			if (error !== null) return Err(error);
 			status = 'idle';
 			return Ok(undefined);
 		})();
@@ -178,7 +178,7 @@ export function createDictation(
 							});
 					},
 				});
-				if (startError) return Err(startError);
+				if (startError !== null) return Err(startError);
 
 				status = 'listening';
 				return Ok(undefined);
@@ -203,7 +203,7 @@ export function createDictation(
 			transcription.abort();
 			closing ??= (async () => {
 				const { error } = await stop();
-				if (error) throw error;
+				if (error !== null) throw error;
 			})();
 			return closing;
 		},

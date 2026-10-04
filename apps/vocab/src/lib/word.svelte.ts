@@ -160,7 +160,6 @@ const captureOf = ({ path, sha256, source }: TextCapture): TextCapture => ({
 
 const noop = () => {};
 
-
 export type WordDraft = ReturnType<typeof createWordDraft>;
 
 export function createWordDraft({
@@ -260,14 +259,17 @@ export function createWordDraft({
 			if (mode.kind === 'editing' && mode.editor === editor) state = next;
 		});
 		if (pendingNote !== undefined) {
-			const changed = editor.change({ fields: { note: pendingNote } });
-			if (changed.error === null) pendingNote = undefined;
+			const { error: changeError } = editor.change({
+				fields: { note: pendingNote },
+			});
+			if (changeError === null) pendingNote = undefined;
 		}
 	}
 
 	/** Hold a file that has no row form as repair text, keeping text typed here. */
 	function holdRepair(file: TextCapture, reason: string) {
-		const text = repairTyped() && mode.kind === 'repair' ? mode.text : file.source;
+		const text =
+			repairTyped() && mode.kind === 'repair' ? mode.text : file.source;
 		mode = {
 			kind: 'repair',
 			file: captureOf(file),
@@ -309,12 +311,13 @@ export function createWordDraft({
 			else mode = { kind: 'unavailable', message };
 			return;
 		}
+		const { data: editor, error: editError } = result;
 		if (retired || repairTyped()) {
-			if (result.error === null) await result.data.dispose();
+			if (editError === null) await editor.dispose();
 			return;
 		}
-		if (result.error !== null) opened(result.error);
-		else attach(result.data);
+		if (editError !== null) opened(editError);
+		else attach(editor);
 	}
 
 	/** Open the editor once; later calls join the work already pending. */
@@ -384,8 +387,8 @@ export function createWordDraft({
 		const { observation, lastSave } = state;
 		if (observation.kind !== 'present')
 			return 'This word could not be read just now, so there is no saved word to go back to.';
-		const adopted = mode.editor.adopt(observation.revision);
-		if (adopted.error !== null) return adopted.error.message;
+		const { error: adoptError } = mode.editor.adopt(observation.revision);
+		if (adoptError !== null) return adoptError.message;
 		acknowledged = lastSave;
 		thrown = undefined;
 		deletion = undefined;
@@ -484,8 +487,10 @@ export function createWordDraft({
 		inputNote(text: string) {
 			if (gated) return;
 			if (mode.kind === 'editing') {
-				const changed = mode.editor.change({ fields: { note: text } });
-				if (changed.error === null) {
+				const { error: changeError } = mode.editor.change({
+					fields: { note: text },
+				});
+				if (changeError === null) {
 					pendingNote = undefined;
 					return;
 				}
@@ -521,8 +526,8 @@ export function createWordDraft({
 			if (mode.kind !== 'editing') return unavailable();
 			const waiting = held();
 			if (waiting !== null) return waiting;
-			const changed = mode.editor.change({ fields: { stage } });
-			if (changed.error !== null) return changed.error.message;
+			const { error: changeError } = mode.editor.change({ fields: { stage } });
+			if (changeError !== null) return changeError.message;
 			thrown = undefined;
 			return save(mode.editor);
 		},
@@ -592,34 +597,37 @@ export function createWordDraft({
 				if (mode.kind !== 'repair') return;
 				const { file, text } = mode;
 				try {
-					const replaced = await table.replace(file, text);
-					if (replaced.error === null) {
-						const entry = readEntry(replaced.data);
+					const { data: replaced, error: replaceError } = await table.replace(
+						file,
+						text,
+					);
+					if (replaceError === null) {
+						const entry = readEntry(replaced);
 						if (entry !== undefined) onSaved(entry);
 						if (mode.kind !== 'repair') return;
-						mode = { ...mode, file: captureOf(replaced.data), problem: undefined };
+						mode = { ...mode, file: captureOf(replaced), problem: undefined };
 						if (mode.text === text && !retired) await acquire();
 						return;
 					}
-					if (replaced.error.name !== 'Conflict') {
+					if (replaceError.name !== 'Conflict') {
 						if (mode.kind === 'repair')
-							mode = { ...mode, problem: replaced.error.message };
+							mode = { ...mode, problem: replaceError.message };
 						return;
 					}
-					const current = await table.get(id);
+					const { data: current, error: readError } = await table.get(id);
 					if (mode.kind !== 'repair') return;
-					if (current.error !== null || current.data === undefined) {
+					if (readError !== null || current === undefined) {
 						mode = {
 							...mode,
 							problem:
-								current.error?.message ??
+								readError?.message ??
 								'This word was removed in another tab, so your text was not saved.',
 						};
 						return;
 					}
 					mode = {
 						...mode,
-						file: captureOf(current.data),
+						file: captureOf(current),
 						problem:
 							'The file changed in another tab, so your text was not saved. Saving again replaces the version shown now.',
 					};
@@ -640,7 +648,10 @@ export function createWordDraft({
 		 */
 		async remove<
 			T extends {
-				readonly error: { readonly name: string; readonly message: string } | null;
+				readonly error: {
+					readonly name: string;
+					readonly message: string;
+				} | null;
 			},
 		>(remove: () => Promise<T>): Promise<T> {
 			gated = true;
@@ -652,12 +663,13 @@ export function createWordDraft({
 				deletion = extractErrorMessage(cause);
 				throw cause;
 			}
-			if (removed.error === null) {
+			const { error: removeError } = removed;
+			if (removeError === null) {
 				await dispose();
 				return removed;
 			}
 			if (!retired) gated = false;
-			if (removed.error.name === 'Unconfirmed') deletion = removed.error.message;
+			if (removeError.name === 'Unconfirmed') deletion = removeError.message;
 			return removed;
 		},
 

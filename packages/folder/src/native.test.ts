@@ -114,13 +114,15 @@ describe('native folder', () => {
 			definition,
 			git: { author },
 		});
-		const created = await folder.tables.todos.create({
-			stem: 'walk',
-			fields: { title: 'Walk', done: false },
-			body: 'Around the block.\n',
-		});
+		const { data: created, error: createError } =
+			await folder.tables.todos.create({
+				stem: 'walk',
+				fields: { title: 'Walk', done: false },
+				body: 'Around the block.\n',
+			});
+		expect(createError).toBeNull();
 		expect(await readFile(join(root, 'todos/walk.md'), 'utf8')).toBe(
-			created.data!.source,
+			created!.source,
 		);
 		await settled(folder);
 		expect(await git(root, 'log', '--format=%s')).toBe('Add todos/walk.md');
@@ -129,15 +131,16 @@ describe('native folder', () => {
 		// An external edit is preserved when a command updates current content.
 		await writeFile(
 			join(root, 'todos/walk.md'),
-			created.data!.source.replace('Walk', 'Run'),
+			created!.source.replace('Walk', 'Run'),
 		);
-		const current = (await folder.tables.todos.get('walk')).data!;
+		const current = expectOk(await folder.tables.todos.get('walk'))!;
 		expect(current.fields.title).toBe('Run');
-		const done = await folder.tables.todos.update('walk', {
-			fields: { done: true },
-		});
-		expect(done.error).toBeNull();
-		expect(done.data!.fields).toEqual({
+		const { data: done, error: updateError } = await folder.tables.todos.update(
+			'walk',
+			{ fields: { done: true } },
+		);
+		expect(updateError).toBeNull();
+		expect(done!.fields).toEqual({
 			title: 'Run',
 			done: true,
 		});
@@ -428,8 +431,9 @@ describe('native folder', () => {
 			{ path: 'a.txt', index: 'A', worktree: ' ' },
 			{ path: 'b.txt', index: '?', worktree: '?' },
 		]);
-		const committed = await folder.git.commitStaged('Stage one file');
-		expect(committed.error).toBeNull();
+		const { error: commitError } =
+			await folder.git.commitStaged('Stage one file');
+		expect(commitError).toBeNull();
 		expect(await git(root, 'log', '--format=%s%n%an')).toBe(
 			'Stage one file\nApp',
 		);
@@ -599,10 +603,12 @@ describe('browser and native exchange through a real bare repository', () => {
 		expect((await native.git.fetch()).data?.oid).toBe(
 			await git(bare, 'rev-parse', 'main'),
 		);
-		const pulled = await native.git.pullFastForward();
-		expect(pulled.data?.status).toBe('fastForwarded');
+		const { data: pulled, error: pullError } =
+			await native.git.pullFastForward();
+		expect(pullError).toBeNull();
+		expect(pulled?.status).toBe('fastForwarded');
 		expect(await git(nativeRoot, 'status', '--porcelain')).toBe('');
-		const nativeEntry = (await native.tables.todos.get('first')).data!;
+		const nativeEntry = expectOk(await native.tables.todos.get('first'))!;
 		expect(nativeEntry.fields.title).toBe('First');
 
 		await native.tables.todos.update(nativeEntry.stem, {
@@ -616,9 +622,11 @@ describe('browser and native exchange through a real bare repository', () => {
 		);
 
 		expect((await browser.git.fetch()).error).toBeNull();
-		const incoming = await browser.git.pullFastForward();
-		expect(incoming.data?.status).toBe('fastForwarded');
-		const browserEntry = (await browser.tables.todos.get('first')).data!;
+		const { data: incoming, error: incomingError } =
+			await browser.git.pullFastForward();
+		expect(incomingError).toBeNull();
+		expect(incoming?.status).toBe('fastForwarded');
+		const browserEntry = expectOk(await browser.tables.todos.get('first'))!;
 		expect(browserEntry.fields.done).toBe(true);
 		expect((await browser.git.status()).data?.changes).toEqual([]);
 		expect((await browser.git.paths()).data).toEqual([]);
@@ -646,8 +654,8 @@ describe('browser and native exchange through a real bare repository', () => {
 			]),
 		);
 		await browser.git.fetch();
-		const dirty = await browser.git.pullFastForward();
-		expect(dirty.error?.name).toBe('Dirty');
+		const { error: dirtyError } = await browser.git.pullFastForward();
+		expect(dirtyError?.name).toBe('Dirty');
 		expect((await browser.tables.todos.get('first')).data!.fields.title).toBe(
 			'First',
 		);
@@ -660,8 +668,8 @@ describe('browser and native exchange through a real bare repository', () => {
 			expect(push.error).toBe(
 				"The remote branch 'main' cannot be updated by a fast-forward",
 			);
-		const diverged = await browser.git.pullFastForward();
-		expect(diverged.error?.name).toBe('Diverged');
+		const { error: divergedError } = await browser.git.pullFastForward();
+		expect(divergedError?.name).toBe('Diverged');
 		expect((await browser.tables.todos.get('first')).data!.fields.title).toBe(
 			'First',
 		);

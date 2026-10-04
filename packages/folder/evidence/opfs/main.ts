@@ -90,14 +90,14 @@ async function check(name: string, run: () => Promise<string>) {
 }
 
 function ok<T>(result: Result<T, { name: string; message: string }>): T {
-	if (result.error)
-		throw new Error(`${result.error.name}: ${result.error.message}`);
-	return result.data;
+	const { data: value, error } = result;
+	if (error !== null) throw new Error(`${error.name}: ${error.message}`);
+	return value;
 }
 
 async function open(id: string, options: { remote?: boolean } = {}) {
 	used.add(id);
-	const result = await openFolder({
+	const { data: folder, error: openError } = await openFolder({
 		id,
 		definition,
 		browser: {
@@ -107,9 +107,9 @@ async function open(id: string, options: { remote?: boolean } = {}) {
 			remote: options.remote ? remote : undefined,
 		},
 	});
-	if (result.error) throw new Error(`open refused: ${result.error.message}`);
-	opened.push(result.data);
-	return result.data;
+	if (openError !== null) throw new Error(`open refused: ${openError.message}`);
+	opened.push(folder);
+	return folder;
 }
 
 async function closeAll() {
@@ -443,12 +443,12 @@ async function twoContexts(id: string) {
 				const folder = await open(id);
 				for (let round = 0; round < 10; round++) {
 					const path = `race/create-${round}.md`;
-					const [mine, theirs] = await Promise.all([
+					const [{ error: mineError }, theirs] = await Promise.all([
 						folder.files.create(path, 'main'),
 						other.ask({ kind: 'create', path, content: 'peer' }),
 					]);
-					const winners = Number(mine.error === null) + Number(theirs.ok);
-					const loser = mine.error?.name ?? theirs.error;
+					const winners = Number(mineError === null) + Number(theirs.ok);
+					const loser = mineError?.name ?? theirs.error;
 					assert(
 						winners === 1 && loser === 'Exists',
 						`round ${round}: ${winners} winners, ${loser}`,
@@ -465,7 +465,7 @@ async function twoContexts(id: string) {
 				for (let round = 0; round < 10; round++) {
 					const path = `race/replace-${round}.md`;
 					const base = ok(await folder.files.create(path, 'base'));
-					const [mine, theirs] = await Promise.all([
+					const [{ error: mineError }, theirs] = await Promise.all([
 						folder.files.replace(base, 'main'),
 						other.ask({
 							kind: 'replace',
@@ -474,8 +474,8 @@ async function twoContexts(id: string) {
 							content: 'peer',
 						}),
 					]);
-					const winners = Number(mine.error === null) + Number(theirs.ok);
-					const loser = mine.error?.name ?? theirs.error;
+					const winners = Number(mineError === null) + Number(theirs.ok);
+					const loser = mineError?.name ?? theirs.error;
 					assert(
 						winners === 1 && loser === 'Conflict',
 						`round ${round}: ${winners} winners, ${loser}`,
@@ -614,10 +614,10 @@ async function recovery(id: string) {
 			);
 			const commit = await folder.git.commit();
 			assert(commit.status === 'blocked', `commit ${commit.status}`);
-			const merge = await folder.git.mergeIncoming();
+			const { error: mergeError } = await folder.git.mergeIncoming();
 			assert(
-				merge.error?.name === 'IncomingPending',
-				`merge ${merge.error?.name ?? 'ok'}`,
+				mergeError?.name === 'IncomingPending',
+				`merge ${mergeError?.name ?? 'ok'}`,
 			);
 			ok(await folder.files.create('notes.md', 'saved while pending'));
 			assert(
@@ -673,11 +673,10 @@ async function recovery(id: string) {
 			await waitForPending(folder);
 			const current = ok(await folder.files.read('a.md'));
 			const third = ok(await folder.files.replace(current, 'third'));
-			const refused = await folder.git.recoverIncoming();
+			const { error: refusal } = await folder.git.recoverIncoming();
 			assert(
-				refused.error?.name === 'RecoveryRefused' &&
-					refused.error.paths.join() === 'a.md',
-				`recovery ${refused.error?.name ?? 'ok'}`,
+				refusal?.name === 'RecoveryRefused' && refusal.paths.join() === 'a.md',
+				`recovery ${refusal?.name ?? 'ok'}`,
 			);
 			assert(
 				!(await rawExists(`${id}-third`, 'c.md')),
@@ -686,7 +685,7 @@ async function recovery(id: string) {
 			ok(await folder.files.replace(third, '1'));
 			const recovered = ok(await folder.git.recoverIncoming());
 			assert(recovered.status === 'completed', `recovery ${recovered.status}`);
-			return `refused naming a.md (${refused.error.message}); completed after a.md returned to its before bytes`;
+			return `refused naming a.md (${refusal.message}); completed after a.md returned to its before bytes`;
 		},
 	);
 
@@ -769,13 +768,13 @@ async function identity(id: string) {
 	/** Open `folderId`, expecting a refusal; a folder that opens anyway is closed with the run. */
 	async function refusal(folderId: string) {
 		used.add(folderId);
-		const result = await openFolder({
+		const { data: folder, error } = await openFolder({
 			id: folderId,
 			definition,
 			browser: { scope, author, commitOnEdit: false },
 		});
-		if (result.data) opened.push(result.data);
-		return result.error;
+		if (error === null) opened.push(folder);
+		return error;
 	}
 
 	await check(
@@ -895,10 +894,10 @@ async function closing(id: string) {
 	await check('closing refuses new saves', async () => {
 		const folder = await open(id);
 		await folder.close();
-		const late = await folder.files.create('late.md', 'x');
+		const { error: lateError } = await folder.files.create('late.md', 'x');
 		assert(
-			late.error?.name === 'Closed',
-			`late save: ${late.error?.name ?? 'ok'}`,
+			lateError?.name === 'Closed',
+			`late save: ${lateError?.name ?? 'ok'}`,
 		);
 		return 'Closed';
 	});

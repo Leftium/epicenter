@@ -103,8 +103,9 @@ describe('browser folder scope', () => {
 		expect((await folder.git.commit()).status).toBe('committed');
 
 		await writeLayout(folder);
-		const status = await folder.git.status();
-		expect(status.data?.changes.map((change) => change.path)).toEqual(SOURCE);
+		const { data: status, error: statusError } = await folder.git.status();
+		expect(statusError).toBeNull();
+		expect(status?.changes.map((change) => change.path)).toEqual(SOURCE);
 
 		await folder.files.overwrite('tracked.log', 'v2\n');
 		expect(
@@ -198,8 +199,8 @@ describe('native folder scope', () => {
 		await git(writerRoot, 'commit', '--quiet', '-m', 'Track shared.log');
 		expect((await writer.git.push()).status).toBe('pushed');
 		await reader.git.fetch();
-		const collided = await reader.git.pullFastForward();
-		expect(collided.error?.name).toBe('Collision');
+		const { error: collision } = await reader.git.pullFastForward();
+		expect(collision?.name).toBe('Collision');
 		expect(await readFile(join(readerRoot, 'shared.log'), 'utf8')).toBe(
 			'reader copy\n',
 		);

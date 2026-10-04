@@ -81,7 +81,12 @@ function createConnectionDraft(library: Library, operation: Operation) {
 			// Stands for the saved key, which the page never sees.
 			...(saved.keyPresent && { apiKey: 'saved' }),
 		};
-		return applyConnectionChange(operation, current, change).error ?? undefined;
+		const { error: changeError } = applyConnectionChange(
+			operation,
+			current,
+			change,
+		);
+		return changeError ?? undefined;
 	});
 
 	return {

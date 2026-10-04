@@ -60,12 +60,12 @@
 <Tooltip.Provider>
 	{#await opening}
 		<Loading class="h-dvh" label="Opening your recordings…" />
-	{:then opened}
+	{:then { data: session, error: openError }}
 		<!-- A refused folder is shown as refused. No other storage is opened in its place. -->
-		{#if opened.error}
-			{@render failed(opened.error.message)}
+		{#if openError !== null}
+			{@render failed(openError.message)}
 		{:else}
-			<AppShell session={opened.data}>{@render props.children?.()}</AppShell>
+			<AppShell {session}>{@render props.children?.()}</AppShell>
 		{/if}
 	{:catch error}
 		{@render failed(error instanceof Error ? error.message : String(error))}

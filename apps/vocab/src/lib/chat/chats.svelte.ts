@@ -36,21 +36,21 @@ export function createChatsState({
 
 	const refresh = createReread(async () => {
 		const before = receipts;
-		const [listedChats, listedMessages] = await Promise.all([
-			tables.chats.list(),
-			tables.messages.list(),
-		]);
+		const [
+			{ data: chatListing, error: chatListError },
+			{ data: messageListing, error: messageListError },
+		] = await Promise.all([tables.chats.list(), tables.messages.list()]);
 		if (before !== receipts) return false;
-		if (listedChats.error !== null) {
-			loadError = listedChats.error.message;
+		if (chatListError !== null) {
+			loadError = chatListError.message;
 			return true;
 		}
-		if (listedMessages.error !== null) {
-			loadError = listedMessages.error.message;
+		if (messageListError !== null) {
+			loadError = messageListError.message;
 			return true;
 		}
-		const readChats = readRows(listedChats.data, readChat);
-		const readMessages = readRows(listedMessages.data, readMessage);
+		const readChats = readRows(chatListing, readChat);
+		const readMessages = readRows(messageListing, readMessage);
 		chats = readChats.rows;
 		messages = readMessages.rows;
 		unreadable = [...readChats.unreadable, ...readMessages.unreadable];
@@ -77,9 +77,10 @@ export function createChatsState({
 			focus: readonly FocusItem[],
 		): Promise<Result<Chat, ChatHistoryError>> {
 			const started = await startChat(tables.chats, focus);
-			if (started.error === null) {
+			const { data: chat, error: startError } = started;
+			if (startError === null) {
 				receipts++;
-				chats = [...chats, started.data];
+				chats = [...chats, chat];
 			}
 			return started;
 		},

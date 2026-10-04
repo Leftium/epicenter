@@ -35,7 +35,10 @@ export function formatTime(value: unknown, style: 'short' | 'full' = 'full') {
 	const date = new Date(value);
 	if (Number.isNaN(date.getTime())) return value;
 	return style === 'short'
-		? date.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
+		? date.toLocaleString(undefined, {
+				dateStyle: 'medium',
+				timeStyle: 'short',
+			})
 		: date.toLocaleString();
 }
 
@@ -44,14 +47,13 @@ export function formatTime(value: unknown, style: 'short' | 'full' = 'full') {
  * the deletion applies only to that captured version.
  */
 export async function confirmDelete(library: Library, path: string) {
-	const captured = await library.deletionFor(path);
-	if (captured.error !== null) {
+	const { data: deletion, error: refusal } = await library.deletionFor(path);
+	if (refusal !== null) {
 		toast.error(`Could not delete ${basename(path)}`, {
-			description: captured.error,
+			description: refusal,
 		});
 		return;
 	}
-	const deletion = captured.data;
 	confirmationDialog.open({
 		...describeDeletion(deletion, library.recordingNaming),
 		confirm: { text: 'Delete', variant: 'destructive' },

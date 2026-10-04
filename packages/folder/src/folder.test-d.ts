@@ -105,9 +105,8 @@ async function nestedValues(
 	instant: InstantString,
 ) {
 	const { notes } = folder.tables;
-	const read = await notes.get('a');
-	if (read.error || read.data === undefined) return;
-	const snapshot = read.data;
+	const { data: snapshot, error: readError } = await notes.get('a');
+	if (readError !== null || snapshot === undefined) return;
 	const { tags, at, meta } = snapshot.fields;
 	// @ts-expect-error A snapshot's list cannot be changed in place.
 	snapshot.fields.tags?.push('later');
@@ -137,16 +136,14 @@ async function nestedValues(
 	// A draft's values are the same readonly types.
 	expectTypeOf(notes.inspect('').fields).toEqualTypeOf(snapshot.fields);
 
-	const kv = await folder.kv.get();
-	if (kv.error || kv.data === undefined) return;
-	expectTypeOf(kv.data.values.since).toEqualTypeOf<InstantString | undefined>();
-	expectTypeOf(kv.data.values.recent).toEqualTypeOf<
-		readonly string[] | undefined
-	>();
+	const { data: kv, error: kvError } = await folder.kv.get();
+	if (kvError !== null || kv === undefined) return;
+	expectTypeOf(kv.values.since).toEqualTypeOf<InstantString | undefined>();
+	expectTypeOf(kv.values.recent).toEqualTypeOf<readonly string[] | undefined>();
 	// @ts-expect-error Stored values cannot be changed in place.
-	kv.data.values.recent?.push('later');
-	folder.kv.update(kv.data.values);
-	folder.kv.create(kv.data.values);
+	kv.values.recent?.push('later');
+	folder.kv.update(kv.values);
+	folder.kv.create(kv.values);
 	folder.kv.update({ recent: ['a'], since: instant, layout: { panes: [1] } });
 	// @ts-expect-error An unvalidated string still does not carry the brand.
 	folder.kv.update({ since: '2026-10-01T00:00:00.000Z' });
@@ -181,9 +178,9 @@ expectTypeOf<
 
 async function tupleValues(folder: Folder<typeof tuples>) {
 	const { rows } = folder.tables;
-	const read = await rows.get('a');
-	if (read.error || read.data === undefined) return;
-	const { span } = read.data.fields;
+	const { data: snapshot, error: readError } = await rows.get('a');
+	if (readError !== null || snapshot === undefined) return;
+	const { span } = snapshot.fields;
 	expectTypeOf(span).toEqualTypeOf<
 		readonly [string, ...number[]] | undefined
 	>();
@@ -206,14 +203,14 @@ async function tupleValues(folder: Folder<typeof tuples>) {
 	// @ts-expect-error The rest are numbers.
 	rows.create({ fields: { span: ['a', 'b'] } });
 
-	const kv = await folder.kv.get();
-	if (kv.error || kv.data === undefined) return;
-	expectTypeOf(kv.data.values.span).toEqualTypeOf<
+	const { data: kv, error: kvError } = await folder.kv.get();
+	if (kvError !== null || kv === undefined) return;
+	expectTypeOf(kv.values.span).toEqualTypeOf<
 		readonly [string, ...number[]] | undefined
 	>();
 	// @ts-expect-error Stored values cannot be changed in place.
-	kv.data.values.span?.push(1);
-	folder.kv.update(kv.data.values);
+	kv.values.span?.push(1);
+	folder.kv.update(kv.values);
 	folder.kv.update({ span: ['a', 1] });
 	// @ts-expect-error The head is a string.
 	folder.kv.update({ span: [1, 'a'] });
@@ -331,25 +328,28 @@ async function typedValues(
 		KvReading<KvOf<typeof definition>>
 	>();
 	expectTypeOf(snapshot).toExtend<KvReading<KvOf<typeof definition>>>();
-	const assigned = await folder.kv.update({ theme: 'dark' });
-	if (assigned.error) {
-		expectTypeOf(assigned.error).toEqualTypeOf<KvWriteError>();
+	const { error: assignError } = await folder.kv.update({ theme: 'dark' });
+	if (assignError !== null) {
+		expectTypeOf(assignError).toEqualTypeOf<KvWriteError>();
 		// Unparsed current source and an unsafe patch are distinct names.
-		if (assigned.error.name === 'Unparsed')
-			expectTypeOf(assigned.error.error).toEqualTypeOf<ParseError>();
-		if (assigned.error.name === 'UnsupportedSource')
-			expectTypeOf(assigned.error.reason).toEqualTypeOf<string>();
+		if (assignError.name === 'Unparsed')
+			expectTypeOf(assignError.error).toEqualTypeOf<ParseError>();
+		if (assignError.name === 'UnsupportedSource')
+			expectTypeOf(assignError.reason).toEqualTypeOf<string>();
 	}
 	folder.files.replace(snapshot, '{}');
 
 	// Captures are plain values; a read also carries detached bytes.
-	const read = await folder.files.read('a.md');
-	if (read.error) return;
-	expectTypeOf(read.data).toEqualTypeOf<CapturedFile>();
-	const replaced = await folder.files.replace(read.data, 'next');
-	if (replaced.error) return;
-	expectTypeOf(replaced.data).toEqualTypeOf<FileCapture>();
-	expectTypeOf(await folder.files.remove(replaced.data)).toEqualTypeOf<
+	const { data: file, error: readError } = await folder.files.read('a.md');
+	if (readError !== null) return;
+	expectTypeOf(file).toEqualTypeOf<CapturedFile>();
+	const { data: replaced, error: replaceError } = await folder.files.replace(
+		file,
+		'next',
+	);
+	if (replaceError !== null) return;
+	expectTypeOf(replaced).toEqualTypeOf<FileCapture>();
+	expectTypeOf(await folder.files.remove(replaced)).toEqualTypeOf<
 		Awaited<ReturnType<Opened['files']['remove']>>
 	>();
 	// A table snapshot is a capture of its row file with its reading beside it.
@@ -406,39 +406,41 @@ async function typedValues(
 		listing.data.unreadable;
 	}
 	// Each save adds its preparation errors to the shared storage error family.
-	const saved = await folder.tables.todos.replace(replaced.data, '');
-	if (saved.error) {
-		expectTypeOf(saved.error).toEqualTypeOf<TableReplaceError>();
+	const { error: saveError } = await folder.tables.todos.replace(replaced, '');
+	if (saveError !== null) {
+		expectTypeOf(saveError).toEqualTypeOf<TableReplaceError>();
 		// @ts-expect-error Saving text that does not parse is not a failure.
-		saved.error.name === 'Unparsed';
+		saveError.name === 'Unparsed';
 		// @ts-expect-error A replacement supplies no field values.
-		saved.error.name === 'InvalidValues';
+		saveError.name === 'InvalidValues';
 	}
-	const updated = await folder.tables.todos.update('milk', { body: '' });
-	if (updated.error) {
-		expectTypeOf(updated.error).toEqualTypeOf<TableUpdateError>();
+	const { error: updateError } = await folder.tables.todos.update('milk', {
+		body: '',
+	});
+	if (updateError !== null) {
+		expectTypeOf(updateError).toEqualTypeOf<TableUpdateError>();
 		// The two preparation refusals are distinct names.
-		if (updated.error.name === 'Unparsed')
-			expectTypeOf(updated.error.error).toEqualTypeOf<ParseError>();
-		if (updated.error.name === 'UnsupportedSource')
-			expectTypeOf(updated.error.reason).toEqualTypeOf<string>();
+		if (updateError.name === 'Unparsed')
+			expectTypeOf(updateError.error).toEqualTypeOf<ParseError>();
+		if (updateError.name === 'UnsupportedSource')
+			expectTypeOf(updateError.reason).toEqualTypeOf<string>();
 	}
-	const made = await folder.tables.todos.create({
+	const { error: createError } = await folder.tables.todos.create({
 		fields: { title: 'Milk', due: null },
 	});
-	if (made.error) {
-		expectTypeOf(made.error).toEqualTypeOf<TableCreateError>();
+	if (createError !== null) {
+		expectTypeOf(createError).toEqualTypeOf<TableCreateError>();
 		// An occupied destination is the files' error, with the files' shape.
-		if (made.error.name === 'Exists')
-			expectTypeOf(made.error).toEqualTypeOf<
+		if (createError.name === 'Exists')
+			expectTypeOf(createError).toEqualTypeOf<
 				Extract<FileError, { name: 'Exists' }>
 			>();
 		// @ts-expect-error A table has no naming rule of its own.
-		made.error.name === 'InvalidStem';
+		createError.name === 'InvalidStem';
 		// @ts-expect-error Nor a collision rule.
-		made.error.name === 'Collision';
+		createError.name === 'Collision';
 		// @ts-expect-error Text is decoded only by reads.
-		made.error.name === 'InvalidUtf8';
+		createError.name === 'InvalidUtf8';
 	}
 	folder.tables.todos.update('milk', {
 		fields: { title: 'Next' },
@@ -456,8 +458,8 @@ async function typedValues(
 		// @ts-expect-error The old source-write spelling is removed.
 		folder.tables.todos.writeSource(entry.data, entry.data.source);
 	}
-	folder.tables.todos.replace(replaced.data, 'next');
-	folder.tables.todos.delete(replaced.data);
+	folder.tables.todos.replace(replaced, 'next');
+	folder.tables.todos.delete(replaced);
 	// @ts-expect-error A captured hash is required for removal.
 	folder.files.remove({ path: 'a.md' });
 	folder.files.replace(
@@ -472,11 +474,12 @@ async function typedValues(
 
 	// Each write is one file change: a failure is that file's, and only a
 	// move names the two paths it touched.
-	const created = await folder.files.create('a.md', 'a');
-	if (created.error) expectTypeOf(created.error).toEqualTypeOf<FileError>();
-	const moved = await folder.files.move(replaced.data, 'b.md');
-	if (moved.error)
-		expectTypeOf(moved.error).toEqualTypeOf<FileError | MoveError>();
+	const { error: fileCreateError } = await folder.files.create('a.md', 'a');
+	if (fileCreateError !== null)
+		expectTypeOf(fileCreateError).toEqualTypeOf<FileError>();
+	const { error: moveError } = await folder.files.move(replaced, 'b.md');
+	if (moveError !== null)
+		expectTypeOf(moveError).toEqualTypeOf<FileError | MoveError>();
 	expectTypeOf<TableRenameError>().toEqualTypeOf<FileError | MoveError>();
 	// @ts-expect-error Several changes are several calls; there is no batch.
 	folder.batch;

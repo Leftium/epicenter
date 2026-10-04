@@ -145,16 +145,16 @@ export async function requestTransformation({
 > {
 	if (baseUrl.trim() === '')
 		return TransformationError.NotConfigured({ missing: 'the endpoint URL' });
-	const base = canonicalBaseUrl(baseUrl);
-	if (base.error !== null)
-		return TransformationError.InvalidEndpoint({ reason: base.error });
+	const { data: base, error: urlError } = canonicalBaseUrl(baseUrl);
+	if (urlError !== null)
+		return TransformationError.InvalidEndpoint({ reason: urlError });
 	if (model.trim() === '')
 		return TransformationError.NotConfigured({ missing: 'the model' });
 	if (prompt.trim() === '')
 		return TransformationError.NotConfigured({ missing: 'the prompt' });
 	if (input.trim() === '')
 		return TransformationError.NotConfigured({ missing: 'the input text' });
-	const url = chatCompletionsUrl(base.data);
+	const url = chatCompletionsUrl(base);
 	const redact = (text: string) =>
 		apiKey === '' ? text : text.split(apiKey).join('[key removed]');
 

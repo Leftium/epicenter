@@ -61,12 +61,16 @@ function describeLocation(location: FolderLocation): string {
 	}
 }
 
-const opened = await openBrowserFolder({ id: DEMO_FOLDER_ID, definition });
-if (opened.error !== null) {
-	session.textContent = `The demo folder did not open: ${opened.error.message}`;
-	throw new Error(opened.error.message);
+const { data: opened, error: openError } = await openBrowserFolder({
+	id: DEMO_FOLDER_ID,
+	definition,
+});
+if (openError !== null) {
+	session.textContent = `The demo folder did not open: ${openError.message}`;
+	throw new Error(openError.message);
 }
-const folder = opened.data;
+// Hoisted functions below read this binding, so it carries the narrowed type.
+const folder = opened;
 slot('location').textContent =
 	`Folder "${DEMO_FOLDER_ID}" in ${describeLocation(folder.location)}. ` +
 	`Automatic commits: ${folder.git.snapshot.commitOnEdit ? 'on' : 'off'}.`;
@@ -79,13 +83,13 @@ log(`Opened the folder: ${describeLocation(folder.location)}`);
  * it stay.
  */
 async function seedEmptyFolder() {
-	const listed = await folder.tables.todos.list();
-	if (listed.error !== null) {
-		log(`Could not list todos: ${listed.error.message}`);
+	const { data: rows, error: listError } = await folder.tables.todos.list();
+	if (listError !== null) {
+		log(`Could not list todos: ${listError.message}`);
 		return;
 	}
-	if (listed.data.length > 0) {
-		log(`The folder has ${listed.data.length} todo rows; nothing seeded`);
+	if (rows.length > 0) {
+		log(`The folder has ${rows.length} todo rows; nothing seeded`);
 		return;
 	}
 	for (const [path, text] of Object.entries(SEED)) {
@@ -273,14 +277,14 @@ async function resetFiles() {
 		log(`Reset ${path} to its seed text`);
 	}
 	const path = todoPath('gone');
-	const gone = await folder.files.read(path);
-	if (gone.error !== null) {
-		if (gone.error.name === 'NotFound') log(`Reset: ${path} is already absent`);
-		else log(`Reset stopped at ${path}: ${gone.error.message}`);
+	const { data: gone, error: readError } = await folder.files.read(path);
+	if (readError !== null) {
+		if (readError.name === 'NotFound') log(`Reset: ${path} is already absent`);
+		else log(`Reset stopped at ${path}: ${readError.message}`);
 		return;
 	}
 	// Conditional on the bytes just read: a newer write there is not removed.
-	const { error } = await folder.files.remove(gone.data);
+	const { error } = await folder.files.remove(gone);
 	log(
 		error === null
 			? `Reset removed ${path}`

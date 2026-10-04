@@ -1,5 +1,5 @@
 /** Ordinary file methods over the folder's accounted storage. */
-import { Ok, type Result } from 'wellcrafted/result';
+import { Err, Ok, type Result } from 'wellcrafted/result';
 import type {
 	FileListing,
 	FileWriteIntent,
@@ -81,19 +81,21 @@ export function createFiles({
 		const submission = reserveSubmission();
 		const sha256 = await hashBytes(intent.bytes);
 		const applied = await applyOne(storage, { ...intent, sha256 }, submission);
-		return applied.error ? applied : Ok(fileCapture(intent.path, sha256));
+		return applied.error !== null
+			? applied
+			: Ok(fileCapture(intent.path, sha256));
 	}
 
 	return Object.freeze({
 		list: () => storage.list(),
 		children: (directory) => storage.children(directory),
 		async read(path) {
-			const read = await storage.read(path);
-			if (read.error) return read;
+			const { data: read, error: readError } = await storage.read(path);
+			if (readError !== null) return Err(readError);
 			return Ok(
 				Object.freeze({
-					...fileCapture(path, read.data.sha256),
-					bytes: read.data.bytes,
+					...fileCapture(path, read.sha256),
+					bytes: read.bytes,
 				}),
 			);
 		},
@@ -101,10 +103,10 @@ export function createFiles({
 		create: (path, content) =>
 			save({ kind: 'create', path, bytes: ownBytes(content) }),
 		replace: (file, content) => {
-			const captured = ownCapture(file);
-			if (captured.error) return Promise.resolve(captured);
+			const { data: captured, error: captureError } = ownCapture(file);
+			if (captureError !== null) return Promise.resolve(Err(captureError));
 			// The baseline is fixed here: the capture's own hash, copied.
-			const { path, sha256 } = captured.data;
+			const { path, sha256 } = captured;
 			return save({
 				kind: 'replace',
 				path,
@@ -113,9 +115,9 @@ export function createFiles({
 			});
 		},
 		remove: (file) => {
-			const captured = ownCapture(file);
-			if (captured.error) return Promise.resolve(captured);
-			const { path, sha256 } = captured.data;
+			const { data: captured, error: captureError } = ownCapture(file);
+			if (captureError !== null) return Promise.resolve(Err(captureError));
+			const { path, sha256 } = captured;
 			return applyOne(
 				storage,
 				{ kind: 'remove', path, expectedSha256: sha256 },
@@ -124,9 +126,9 @@ export function createFiles({
 		},
 		move: async (file, destination) => {
 			const submission = reserveSubmission();
-			const captured = ownCapture(file);
-			if (captured.error) return captured;
-			const { path, sha256 } = captured.data;
+			const { data: captured, error: captureError } = ownCapture(file);
+			if (captureError !== null) return Err(captureError);
+			const { path, sha256 } = captured;
 
 			const applied = await applyOne(
 				storage,
@@ -134,7 +136,9 @@ export function createFiles({
 				submission,
 			);
 			// A move carries the captured bytes, so their hash is the capture's.
-			return applied.error ? applied : Ok(fileCapture(destination, sha256));
+			return applied.error !== null
+				? applied
+				: Ok(fileCapture(destination, sha256));
 		},
 		overwrite: (path, content) =>
 			save({ kind: 'overwrite', path, bytes: ownBytes(content) }),

@@ -554,9 +554,9 @@ function createBoundary(session: number): FolderStorage {
 		async open(path) {
 			// The bytes are copied into memory, so replacing the path later does
 			// not change what the consumer receives (ADR-0466).
-			const found = await read(path);
-			if (found.error) return found;
-			return Ok(new Blob([found.data.bytes as Uint8Array<ArrayBuffer>]));
+			const { data: found, error: readError } = await read(path);
+			if (readError !== null) return Err(readError);
+			return Ok(new Blob([found.bytes as Uint8Array<ArrayBuffer>]));
 		},
 		async apply(changes, submission) {
 			const first = changes[0];
@@ -984,8 +984,10 @@ function createSnapshots(initial: GitSnapshot): Snapshots {
  * not use, a folder another process holds.
  */
 export const openFolder: OpenFolder = async ({ definition, id }) => {
-	const prepared = prepareFolderDefinition(definition);
-	if (prepared.error) return OpenFolderError.InvalidDefinition(prepared.error);
+	const { data: prepared, error: definitionError } =
+		prepareFolderDefinition(definition);
+	if (definitionError !== null)
+		return OpenFolderError.InvalidDefinition(definitionError);
 	if (!isTauri()) return OpenFolderError.NotTauri();
 	if (typeof id !== 'string' || id.trim() === '')
 		return OpenFolderError.InvalidId({ id: String(id) });
@@ -1067,7 +1069,7 @@ export const openFolder: OpenFolder = async ({ definition, id }) => {
 
 	return Ok(
 		assembleFolder<typeof definition>({
-			prepared: prepared.data,
+			prepared,
 			storage: createBoundary(session),
 			// Closing the folder fences `client` through this history: Git calls
 			// are refused, and running local ones are waited for, before

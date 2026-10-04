@@ -83,7 +83,9 @@ test('omitted scope and explicit release Local are one folder, with one hint cha
 			expectOk(await reopened.files.read('saved.txt')).bytes,
 		),
 	).toBe('local');
-	expect((await reopened.git.log(10)).data).toHaveLength(1);
+	const { data: history, error: historyError } = await reopened.git.log(10);
+	expect(historyError).toBeNull();
+	expect(history).toHaveLength(1);
 	expect(new Set(storage.names).size).toBe(1);
 });
 

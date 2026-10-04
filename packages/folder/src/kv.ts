@@ -150,19 +150,18 @@ function inspectSource<TValues>(
 	schemas: FieldMap,
 	source: string,
 ): KvReading<TValues> {
-	const object = parseObject(
+	const { data: object, error: objectError } = parseObject(
 		source.startsWith(BOM) ? source.slice(BOM.length) : source,
 	);
-	if (object.error !== null)
+	if (objectError !== null)
 		return Object.freeze({
 			values: Object.freeze({}) as DeepReadonly<Partial<TValues>>,
-			parseError: object.error,
+			parseError: objectError,
 			issues: freezeIssues([]),
 		});
 	const stored: Record<string, unknown> = {};
 	for (const key of Object.keys(schemas))
-		if (Object.hasOwn(object.data, key))
-			stored[key] = freezeDeep(object.data[key]);
+		if (Object.hasOwn(object, key)) stored[key] = freezeDeep(object[key]);
 	// Only stored declared keys are checked, so an absent key is never an issue.
 	const issues = inputIssues(schemas, stored, { complete: false });
 	for (const { field } of issues) delete stored[field];
@@ -255,9 +254,9 @@ function assignKeys(
 		TableError.UnsupportedSource({ path: KV_PATH, reason });
 	const prefix = source.startsWith(BOM) ? BOM : '';
 	const json = source.slice(prefix.length);
-	const current = parseObject(json);
-	if (current.error !== null)
-		return TableError.Unparsed({ path: KV_PATH, error: current.error });
+	const { error: currentError } = parseObject(json);
+	if (currentError !== null)
+		return TableError.Unparsed({ path: KV_PATH, error: currentError });
 
 	// JSON.parse says the text is strict JSON; the syntax tree says where each
 	// member is. Text the two disagree on is not patched.
@@ -339,14 +338,11 @@ function assignKeys(
 			patched.slice(0, edit.offset) + edit.text + patched.slice(edit.end);
 
 	// Publish only text that reads back as the supplied values.
-	const result = parseObject(patched);
-	if (result.error !== null)
-		return refuse(`the patched text does not parse: ${result.error.message}`);
+	const { data: reread, error: rereadError } = parseObject(patched);
+	if (rereadError !== null)
+		return refuse(`the patched text does not parse: ${rereadError.message}`);
 	for (const [key, text] of owned)
-		if (
-			!Object.hasOwn(result.data, key) ||
-			JSON.stringify(result.data[key]) !== text
-		)
+		if (!Object.hasOwn(reread, key) || JSON.stringify(reread[key]) !== text)
 			return refuse(`the key '${key}' could not be assigned`);
 	return Ok(prefix + patched);
 }
@@ -383,32 +379,35 @@ export function createKv<TValues>(
 		const sha256 = await hashBytes(bytes);
 		// Interpret before publication; returning the receipt needs no further validation.
 		const receipt = snapshotOf(source, sha256);
-		const applied = await applyOne(
+		const { error: applyError } = await applyOne(
 			storage,
 			{ ...condition, path: KV_PATH, bytes, sha256 },
 			submission,
 		);
-		if (applied.error) return Err(applied.error);
+		if (applyError !== null) return Err(applyError);
 		return Ok(receipt);
 	}
 
 	return {
 		inspect,
 		async get() {
-			const read = await storage.read(KV_PATH);
-			if (read.error)
-				return read.error.name === 'NotFound' ? Ok(undefined) : read;
-			const source = decode(read.data.bytes);
+			const { data: read, error: readError } = await storage.read(KV_PATH);
+			if (readError !== null)
+				return readError.name === 'NotFound' ? Ok(undefined) : Err(readError);
+			const source = decode(read.bytes);
 			if (source === undefined)
 				return TableError.InvalidUtf8({ path: KV_PATH });
-			return Ok(snapshotOf(source, read.data.sha256));
+			return Ok(snapshotOf(source, read.sha256));
 		},
 		async create(values) {
 			const submission = reserveSubmission();
-			const owned = ownValues(schemas, values as Record<string, unknown>);
-			if (owned.error) return owned;
+			const { data: owned, error: valuesError } = ownValues(
+				schemas,
+				values as Record<string, unknown>,
+			);
+			if (valuesError !== null) return Err(valuesError);
 			const object = Object.fromEntries(
-				[...owned.data].map(([key, json]) => [key, JSON.parse(json)]),
+				[...owned].map(([key, json]) => [key, JSON.parse(json)]),
 			);
 			return publish(submission, `${JSON.stringify(object, null, 2)}\n`, {
 				kind: 'create',
@@ -416,18 +415,21 @@ export function createKv<TValues>(
 		},
 		async update(values) {
 			const submission = reserveSubmission();
-			const owned = ownValues(schemas, values as Record<string, unknown>);
-			if (owned.error) return owned;
-			const read = await storage.read(KV_PATH);
-			if (read.error) return read;
-			const source = decode(read.data.bytes);
+			const { data: owned, error: valuesError } = ownValues(
+				schemas,
+				values as Record<string, unknown>,
+			);
+			if (valuesError !== null) return Err(valuesError);
+			const { data: read, error: readError } = await storage.read(KV_PATH);
+			if (readError !== null) return Err(readError);
+			const source = decode(read.bytes);
 			if (source === undefined)
 				return TableError.InvalidUtf8({ path: KV_PATH });
-			const patched = assignKeys(source, owned.data);
-			if (patched.error) return patched;
-			return publish(submission, patched.data, {
+			const { data: patched, error: patchError } = assignKeys(source, owned);
+			if (patchError !== null) return Err(patchError);
+			return publish(submission, patched, {
 				kind: 'replace',
-				expectedSha256: read.data.sha256,
+				expectedSha256: read.sha256,
 			});
 		},
 	};

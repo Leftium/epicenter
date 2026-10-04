@@ -55,10 +55,10 @@ async function setup() {
 	};
 	async function write(path: string, text: string) {
 		const bytes = new TextEncoder().encode(text);
-		const applied = await boundary.apply([
+		const { error: applyError } = await boundary.apply([
 			{ kind: 'overwrite', path, bytes, sha256: await hashBytes(bytes) },
 		]);
-		expect(applied.error).toBeNull();
+		expect(applyError).toBeNull();
 	}
 	return { boundary, backend, probe, write };
 }

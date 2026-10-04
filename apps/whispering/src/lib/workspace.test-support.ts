@@ -92,17 +92,25 @@ export function testConnections({
 		async set(operation, change) {
 			const reason = readOnly[operation];
 			if (reason !== undefined) return Err(reason);
-			const next = applyConnectionChange(operation, stored[operation], change);
-			if (next.error !== null) return next;
-			stored[operation] = next.data;
+			const { data: next, error: changeError } = applyConnectionChange(
+				operation,
+				stored[operation],
+				change,
+			);
+			if (changeError !== null) return Err(changeError);
+			stored[operation] = next;
 			return Ok(info());
 		},
 		async adoptLegacyKey(targets) {
-			const adopted = adoptLegacyKey(device.legacyKey, targets, readOnly);
-			if (adopted.error !== null) return adopted;
+			const { data: adopted, error: adoptError } = adoptLegacyKey(
+				device.legacyKey,
+				targets,
+				readOnly,
+			);
+			if (adoptError !== null) return Err(adoptError);
 			for (const operation of OPERATIONS)
-				if (adopted.data[operation] !== undefined)
-					stored[operation] = adopted.data[operation];
+				if (adopted[operation] !== undefined)
+					stored[operation] = adopted[operation];
 			device.legacyKey = '';
 			return Ok(info());
 		},
@@ -245,7 +253,8 @@ function withWriteFailures<
 				return refused(input.stem);
 			}
 			const created = await table.create(input);
-			if (counts.lose > 0 && created.error === null) {
+			const { error: createError } = created;
+			if (counts.lose > 0 && createError === null) {
 				counts.lose -= 1;
 				return refused(input.stem);
 			}

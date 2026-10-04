@@ -88,13 +88,12 @@ export async function openDesktopWorkspace(
 	} catch (cause) {
 		return WorkspaceError.HostUnreachable({ reason: describe(cause) });
 	}
-	const opened = await openFolder({
+	const { data: folder, error: openError } = await openFolder({
 		id: WHISPERING_FOLDER_ID,
 		definition: whisperingDefinition,
 	});
-	if (opened.error)
-		return WorkspaceError.DesktopFolder({ refusal: opened.error });
-	const folder = opened.data;
+	if (openError !== null)
+		return WorkspaceError.DesktopFolder({ refusal: openError });
 	// The shell gave one directory to both. Were they to differ, the terminal
 	// and transcription would use a directory the saves do not go to.
 	const root = folder.location.kind === 'directory' ? folder.location.root : '';

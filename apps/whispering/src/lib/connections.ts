@@ -106,11 +106,9 @@ export function canonicalBaseUrl(text: string): Result<string, string> {
 
 /** Whether two base URLs name the same endpoint; one that is not a URL names none. */
 export function sameBaseUrl(a: string, b: string): boolean {
-	const left = canonicalBaseUrl(a);
-	const right = canonicalBaseUrl(b);
-	return (
-		left.error === null && right.error === null && left.data === right.data
-	);
+	const { data: left, error: leftError } = canonicalBaseUrl(a);
+	const { data: right, error: rightError } = canonicalBaseUrl(b);
+	return leftError === null && rightError === null && left === right;
 }
 
 /** A stored connection from untrusted storage, or undefined when it does not read as one. */
@@ -122,8 +120,8 @@ export function readStoredConnection(
 	const { baseUrl, model, apiKey } = value as Record<string, unknown>;
 	if (typeof baseUrl !== 'string' || typeof model !== 'string')
 		return undefined;
-	const canonical = canonicalBaseUrl(baseUrl);
-	if (canonical.error !== null || canonical.data !== baseUrl) return undefined;
+	const { data: canonical, error: urlError } = canonicalBaseUrl(baseUrl);
+	if (urlError !== null || canonical !== baseUrl) return undefined;
 	if (apiKey !== undefined && (typeof apiKey !== 'string' || apiKey === ''))
 		return undefined;
 	return apiKey === undefined ? { baseUrl, model } : { baseUrl, model, apiKey };
@@ -151,8 +149,8 @@ export function applyConnectionChange(
 	current: StoredConnection | undefined,
 	change: ConnectionChange,
 ): Result<StoredConnection, string> {
-	const baseUrl = canonicalBaseUrl(change.baseUrl);
-	if (baseUrl.error !== null) return baseUrl;
+	const { data: baseUrl, error: urlError } = canonicalBaseUrl(change.baseUrl);
+	if (urlError !== null) return Err(urlError);
 	const model = change.model.trim();
 	if (model === '')
 		return Err(
@@ -172,16 +170,14 @@ export function applyConnectionChange(
 			break;
 		case 'keep':
 			apiKey = current?.apiKey;
-			if (apiKey !== undefined && current?.baseUrl !== baseUrl.data)
+			if (apiKey !== undefined && current?.baseUrl !== baseUrl)
 				return Err(
-					`The endpoint changed from ${current?.baseUrl} to ${baseUrl.data}, so the saved key is not sent there. Enter the key for the new endpoint, or remove the key.`,
+					`The endpoint changed from ${current?.baseUrl} to ${baseUrl}, so the saved key is not sent there. Enter the key for the new endpoint, or remove the key.`,
 				);
 			break;
 	}
 	return Ok(
-		apiKey === undefined
-			? { baseUrl: baseUrl.data, model }
-			: { baseUrl: baseUrl.data, model, apiKey },
+		apiKey === undefined ? { baseUrl, model } : { baseUrl, model, apiKey },
 	);
 }
 
@@ -210,13 +206,17 @@ export function adoptLegacyKey(
 		const reason = readOnly[operation];
 		if (reason !== undefined) return Err(reason);
 		const target = targets[operation]!;
-		const made = applyConnectionChange(operation, undefined, {
-			baseUrl: target.baseUrl,
-			model: target.model,
-			key: { action: 'replace', key },
-		});
-		if (made.error !== null) return made;
-		adopted[operation] = made.data;
+		const { data: made, error: changeError } = applyConnectionChange(
+			operation,
+			undefined,
+			{
+				baseUrl: target.baseUrl,
+				model: target.model,
+				key: { action: 'replace', key },
+			},
+		);
+		if (changeError !== null) return Err(changeError);
+		adopted[operation] = made;
 	}
 	return Ok(adopted);
 }
@@ -230,6 +230,6 @@ export function connectionTargets(
 	stored: StoredConnection,
 	expected: string,
 ): boolean {
-	const canonical = canonicalBaseUrl(expected);
-	return canonical.error === null && canonical.data === stored.baseUrl;
+	const { data: canonical, error: urlError } = canonicalBaseUrl(expected);
+	return urlError === null && canonical === stored.baseUrl;
 }

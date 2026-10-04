@@ -34,7 +34,7 @@
 <article class="rounded-lg border p-4">
 	<div class="flex items-center justify-between gap-2">
 		<Label class="min-h-11 text-base leading-normal select-text"><Checkbox aria-label="Choose {entry.text} for chat" checked={chosen} disabled={!canChoose} onCheckedChange={onToggle} />{entry.text}</Label>
-		<Button size="sm" variant="ghost" disabled={word.gated} onclick={async () => reportEntry((await entries.remove(entry.id)).error)}>Delete</Button>
+		<Button size="sm" variant="ghost" disabled={word.gated} onclick={async () => { const { error: removeError } = await entries.remove(entry.id); reportEntry(removeError); }}>Delete</Button>
 	</div>
 	{#if word.mode.kind === 'repair'}
 		<div role="alert" class="space-y-2 text-xs">

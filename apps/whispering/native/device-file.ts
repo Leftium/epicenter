@@ -171,15 +171,15 @@ export function createDeviceFile(path: string) {
 		 */
 		setConnection: (operation: Operation, change: ConnectionChange) =>
 			update((values) => {
-				const next = applyConnectionChange(
+				const { data: next, error: changeError } = applyConnectionChange(
 					operation,
 					connectionIn(values, operation),
 					change,
 				);
-				if (next.error !== null) throw new Error(next.error);
+				if (changeError !== null) throw new Error(changeError);
 				return {
-					change: { [CONNECTION_FIELDS[operation]]: next.data },
-					result: next.data,
+					change: { [CONNECTION_FIELDS[operation]]: next },
+					result: next,
 				};
 			}),
 		/**
@@ -192,13 +192,17 @@ export function createDeviceFile(path: string) {
 			readOnly: Partial<Record<Operation, string>>,
 		) =>
 			update((values) => {
-				const adopted = adoptLegacyKey(legacyKeyIn(values), targets, readOnly);
-				if (adopted.error !== null) throw new Error(adopted.error);
+				const { data: adopted, error: adoptError } = adoptLegacyKey(
+					legacyKeyIn(values),
+					targets,
+					readOnly,
+				);
+				if (adoptError !== null) throw new Error(adoptError);
 				const change: Record<string, unknown> = {
 					[LEGACY_KEY_FIELD]: undefined,
 				};
 				for (const operation of OPERATIONS) {
-					const connection = adopted.data[operation];
+					const connection = adopted[operation];
 					if (connection !== undefined) {
 						connectionIn(values, operation);
 						change[CONNECTION_FIELDS[operation]] = connection;

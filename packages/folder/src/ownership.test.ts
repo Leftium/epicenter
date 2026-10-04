@@ -155,12 +155,12 @@ describe('row files', () => {
 		);
 		expect(expectOk(await folder.tables.todos.list())).toEqual([]);
 
-		const real = (
+		const real = expectOk(
 			await folder.tables.todos.create({
 				stem: 'real',
 				fields: { title: 'Real', done: false },
-			})
-		).data!;
+			}),
+		);
 		const forged = { ...real, path: 'todos/a/b.md' };
 		expect((await folder.tables.todos.replace(forged, 'x')).error?.name).toBe(
 			'InvalidPath',

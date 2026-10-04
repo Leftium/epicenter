@@ -63,10 +63,15 @@ const readingOf = (document: Document): RowEditorState<Fields>['reading'] => {
 		fields: valid ? { title } : {},
 		body: document.body,
 		parseError: undefined,
-		issues: valid ? [] : [{ field: 'title', message: 'title must not be empty' }],
+		issues: valid
+			? []
+			: [{ field: 'title', message: 'title must not be empty' }],
 	};
 };
-const doc = (title: string, body = ''): Document => ({ fields: { title }, body });
+const doc = (title: string, body = ''): Document => ({
+	fields: { title },
+	body,
+});
 
 /**
  * The folder's file and the replies its saves get, as the test decides them.
@@ -194,18 +199,18 @@ function scriptedEditor(initial: Document) {
 						lastSave: outcome,
 					});
 				} else {
-					const error =
+					const { error } =
 						reply === 'unconfirmed'
 							? FileError.Unconfirmed({
 									path: PATH,
 									operation: 'overwrite',
 									cause: 'reply lost',
-								}).error
+								})
 							: FileError.Io({
 									path: PATH,
 									operation: 'overwrite',
 									cause: 'disk full',
-								}).error;
+								});
 					outcome = { kind: reply, attempt, error };
 					update({ saving: undefined, lastSave: outcome });
 				}
@@ -247,7 +252,10 @@ function scriptedEditor(initial: Document) {
 function setup({
 	initial = doc('One'),
 	autosave = { paused: false },
-}: { initial?: Document; autosave?: Autosave } = {}) {
+}: {
+	initial?: Document;
+	autosave?: Autosave;
+} = {}) {
 	const { editor, script } = scriptedEditor(initial);
 	const policy = { admitting: true, saved: 0, unfollowable: 0 };
 	const copies: { path: string; content: string }[] = [];
@@ -536,8 +544,10 @@ test('typing and choices are refused while new work is not admitted', async () =
 	await draft.saveNow();
 	expect(draft.isDirty).toBe(false);
 	expect(script.saves).toEqual([]);
-	expect(draft.takeCurrent().error).toContain('closing');
-	expect((await draft.keepCopy()).error).toContain('closing');
+	const { error: takeRefusal } = draft.takeCurrent();
+	expect(takeRefusal).toContain('closing');
+	const { error: copyRefusal } = await draft.keepCopy();
+	expect(copyRefusal).toContain('closing');
 });
 
 test('settling saves what can be saved even while autosave is paused', async () => {

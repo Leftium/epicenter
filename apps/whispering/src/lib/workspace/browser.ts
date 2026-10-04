@@ -130,16 +130,15 @@ function wantsToneFixture(): boolean {
 export async function openBrowserWorkspace(): Promise<
 	Result<Workspace, WorkspaceError>
 > {
-	const opened = await openFolder({
+	const { data: folder, error: openError } = await openFolder({
 		id: WHISPERING_FOLDER_ID,
 		definition: whisperingDefinition,
 		browser: {
 			author: { name: 'Whispering', email: 'whispering@localhost' },
 		},
 	});
-	if (opened.error)
-		return WorkspaceError.BrowserFolder({ refusal: opened.error });
-	const folder = opened.data;
+	if (openError !== null)
+		return WorkspaceError.BrowserFolder({ refusal: openError });
 
 	return Ok({
 		kind: 'browser',
@@ -163,11 +162,13 @@ export async function openBrowserWorkspace(): Promise<
 				async () => storedConnection('transcription'),
 				request,
 				async () => {
-					const read = await folder.files.read(request.audioPath);
-					if (read.error) return Err(read.error.message);
+					const { data: audio, error: readError } = await folder.files.read(
+						request.audioPath,
+					);
+					if (readError !== null) return Err(readError.message);
 					const { audioPath } = request;
 					return Ok({
-						bytes: read.data.bytes,
+						bytes: audio.bytes,
 						filename: audioPath.slice(audioPath.lastIndexOf('/') + 1),
 						mimeType: audioMimeTypeOf(audioPath) ?? 'application/octet-stream',
 					});
@@ -180,10 +181,11 @@ export async function openBrowserWorkspace(): Promise<
 			);
 			// A browser reports a refused cross-origin request only as a failed
 			// fetch, so say what a tab needs that the desktop app does not.
-			if (answered.error?.name === 'Unreachable')
+			const { error: transformError } = answered;
+			if (transformError?.name === 'Unreachable')
 				return TransformationError.Unreachable({
-					url: answered.error.url,
-					reason: `${answered.error.reason}. In a browser tab the endpoint must allow requests from ${location.origin} (CORS). The desktop app sends from Whispering’s host and has no such limit`,
+					url: transformError.url,
+					reason: `${transformError.reason}. In a browser tab the endpoint must allow requests from ${location.origin} (CORS). The desktop app sends from Whispering’s host and has no such limit`,
 				});
 			return answered;
 		},
@@ -201,15 +203,15 @@ export async function openBrowserWorkspace(): Promise<
 			async set(operation, change) {
 				try {
 					const stored = storedConnections();
-					const next = applyConnectionChange(
+					const { data: next, error: changeError } = applyConnectionChange(
 						operation,
 						storedConnection(operation),
 						change,
 					);
-					if (next.error !== null) return next;
+					if (changeError !== null) return Err(changeError);
 					localStorage.setItem(
 						CONNECTIONS_STORAGE,
-						JSON.stringify({ ...stored, [operation]: next.data }),
+						JSON.stringify({ ...stored, [operation]: next }),
 					);
 					return Ok(readConnections());
 				} catch (cause) {
@@ -219,17 +221,17 @@ export async function openBrowserWorkspace(): Promise<
 			async adoptLegacyKey(targets) {
 				try {
 					const stored = storedConnections();
-					const adopted = adoptLegacyKey(
+					const { data: adopted, error: adoptError } = adoptLegacyKey(
 						localStorage.getItem(LEGACY_KEY_STORAGE) ?? '',
 						targets,
 						{},
 					);
-					if (adopted.error !== null) return adopted;
+					if (adoptError !== null) return Err(adoptError);
 					const next = { ...stored };
 					for (const operation of OPERATIONS)
-						if (adopted.data[operation] !== undefined) {
+						if (adopted[operation] !== undefined) {
 							storedConnection(operation);
-							next[operation] = adopted.data[operation];
+							next[operation] = adopted[operation];
 						}
 					localStorage.setItem(CONNECTIONS_STORAGE, JSON.stringify(next));
 					localStorage.removeItem(LEGACY_KEY_STORAGE);

@@ -161,9 +161,8 @@ test('a browser keeps connections and keys in its own storage, tells the page no
 		legacyKey: true,
 	});
 	// Nothing is set up, so nothing is sent, and the earlier key is lent to nothing.
-	expect((await browser.transform(prepared(BASE_URL))).error?.name).toBe(
-		'ConnectionUnavailable',
-	);
+	const { error: unavailable } = await browser.transform(prepared(BASE_URL));
+	expect(unavailable?.name).toBe('ConnectionUnavailable');
 
 	const saved = expectOk(
 		await browser.connections.set('text', {
@@ -180,12 +179,13 @@ test('a browser keeps connections and keys in its own storage, tells the page no
 	for (const elsewhere of [
 		'http://127.0.0.1:18080/other/v1',
 		'https://api.openai.com/v1',
-	])
-		expect((await browser.transform(prepared(elsewhere))).error?.name).toBe(
-			'ConnectionChanged',
-		);
+	]) {
+		const { error: changed } = await browser.transform(prepared(elsewhere));
+		expect(changed?.name).toBe('ConnectionChanged');
+	}
 	expect(sent).toEqual([]);
-	expect((await browser.transform(prepared(BASE_URL))).data?.text).toBe('ok');
+	const answer = expectOk(await browser.transform(prepared(BASE_URL)));
+	expect(answer?.text).toBe('ok');
 	expect(sent).toMatchObject([
 		{
 			url: `${BASE_URL}/chat/completions`,
@@ -195,12 +195,12 @@ test('a browser keeps connections and keys in its own storage, tells the page no
 	]);
 
 	// A new endpoint cannot keep the key.
-	const refused = await browser.connections.set('text', {
+	const { error: refusal } = await browser.connections.set('text', {
 		baseUrl: 'http://127.0.0.1:18080/other/v1',
 		model: 'chat-model',
 		key: { action: 'keep' },
 	});
-	expect(refused.error).toContain('saved key is not sent there');
+	expect(refusal).toContain('saved key is not sent there');
 
 	// The earlier key moves into the chosen connection, at the URL shown, and is gone.
 	expectOk(
@@ -226,16 +226,15 @@ test('browser connections that do not read are reported, never taken for none, a
 	await expect(browser.connections.read()).rejects.toThrow(
 		'do not read as a JSON object',
 	);
-	const set = await browser.connections.set('text', {
+	const { error: refusal } = await browser.connections.set('text', {
 		baseUrl: BASE_URL,
 		model: 'chat-model',
 		key: { action: 'remove' },
 	});
-	expect(set.error).toContain('do not read as a JSON object');
+	expect(refusal).toContain('do not read as a JSON object');
 	expect(stored.get('whispering.connections')).toBe('{"text": ');
-	expect((await browser.transform(prepared(BASE_URL))).error?.name).toBe(
-		'ConnectionUnavailable',
-	);
+	const { error: unavailable } = await browser.transform(prepared(BASE_URL));
+	expect(unavailable?.name).toBe('ConnectionUnavailable');
 	expect(sent).toEqual([]);
 });
 
@@ -253,18 +252,18 @@ test('a malformed browser connection is never replaced by setup or legacy adopti
 		{ action: 'remove' },
 		{ action: 'replace', key: 'new-key' },
 	] as const) {
-		const result = await browser.connections.set('text', {
+		const { error: refusal } = await browser.connections.set('text', {
 			baseUrl: BASE_URL,
 			model: 'chat-model',
 			key,
 		});
-		expect(result.error).toContain('does not read as one');
+		expect(refusal).toContain('does not read as one');
 		expect(stored.get('whispering.connections')).toBe(original);
 	}
-	const adoption = await browser.connections.adoptLegacyKey({
+	const { error: adoptionRefusal } = await browser.connections.adoptLegacyKey({
 		text: { baseUrl: BASE_URL, model: 'chat-model' },
 	});
-	expect(adoption.error).toContain('does not read as one');
+	expect(adoptionRefusal).toContain('does not read as one');
 	expect(stored.get('whispering.connections')).toBe(original);
 	expect(stored.get('whispering.transcriptionApiKey')).toBe('earlier-key');
 	expect(sent).toEqual([]);

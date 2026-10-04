@@ -70,10 +70,10 @@ async function setup(
 	});
 	async function write(path: string, text: string) {
 		const bytes = encoder.encode(text);
-		const applied = await base.apply([
+		const { error: applyError } = await base.apply([
 			{ kind: 'overwrite', path, bytes, sha256: await hashBytes(bytes) },
 		]);
-		expect(applied.error).toBeNull();
+		expect(applyError).toBeNull();
 	}
 	/** A commit another owner writes: `files` on top of `parent`. */
 	function commitOf(parent: string | undefined, files: Record<string, string>) {
@@ -235,8 +235,8 @@ for (const status of ['partial', 'indexFailed', 'branchMoved'] as const) {
 			readRemoteTracking: async () => incoming,
 			// Files land, then the index or branch step fails.
 			async publishIncoming(plan): Promise<PublishResult> {
-				const applied = await landing.apply(plan.changes);
-				expect(applied.error).toBeNull();
+				const { error: applyError } = await landing.apply(plan.changes);
+				expect(applyError).toBeNull();
 				const error = FileError.Io({
 					path: '.git/index',
 					operation: 'lock',
@@ -265,11 +265,12 @@ for (const status of ['partial', 'indexFailed', 'branchMoved'] as const) {
 		await history.commit();
 		const head = await real.readBranch();
 		incoming = await commitOf(head, { 'a.txt': 'two' });
-		const before = await history.status();
-		expect(before.data?.changes).toEqual([]);
+		const { data: before, error: beforeError } = await history.status();
+		expect(beforeError).toBeNull();
+		expect(before?.changes).toEqual([]);
 
-		const pulled = await history.pullFastForward();
-		expect(pulled.error?.name).toBe(
+		const { error: pullError } = await history.pullFastForward();
+		expect(pullError?.name).toBe(
 			status === 'partial'
 				? 'Partial'
 				: status === 'indexFailed'
@@ -284,8 +285,9 @@ for (const status of ['partial', 'indexFailed', 'branchMoved'] as const) {
 		expect(freshClean).toBe(false);
 		// The branch did not move; the landed bytes are uncommitted changes.
 		expect(await real.readBranch()).toBe(head);
-		const after = await history.status();
-		expect(after.data?.changes).toEqual([{ path: 'a.txt', kind: 'modify' }]);
+		const { data: after, error: afterError } = await history.status();
+		expect(afterError).toBeNull();
+		expect(after?.changes).toEqual([{ path: 'a.txt', kind: 'modify' }]);
 		expect(history.snapshot.lastCommit?.status).toBe('committed');
 		await history.close();
 	});

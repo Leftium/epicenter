@@ -21,9 +21,9 @@
 	);
 
 	async function keepBoth() {
-		const kept = await library.keepDraftCopy(draft.path);
-		if (kept.error !== null) toast.error('Could not keep a copy', { description: kept.error });
-		else toast.success(`Your edits were saved to ${kept.data}`);
+		const { data: copyPath, error: keepError } = await library.keepDraftCopy(draft.path);
+		if (keepError !== null) toast.error('Could not keep a copy', { description: keepError });
+		else toast.success(`Your edits were saved to ${copyPath}`);
 	}
 
 	async function discard() {

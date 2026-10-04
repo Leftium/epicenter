@@ -82,8 +82,9 @@ function scripted(files: FolderFiles) {
 					cause: new Error('disk full'),
 				});
 			const result = await files.replace(file, content);
+			const { error: replaceError } = result;
 			await script.hold;
-			if (reply === 'lose' && result.error === null)
+			if (reply === 'lose' && replaceError === null)
 				return FileError.Unconfirmed({
 					path: file.path,
 					operation: 'replace',
@@ -429,8 +430,7 @@ test('a file changed elsewhere to exactly the typed text is still reviewed, not 
 
 // A byte order mark, CRLF, and a surrogate pair are saved as typed. An
 // unpaired surrogate cannot be: its bytes are the replacement character's.
-const typedOver = (source: string) =>
-	`﻿${source}lone \uD800 pair \u{1F600}\r\n`;
+const typedOver = (source: string) => `﻿${source}lone \uD800 pair \u{1F600}\r\n`;
 const storedFor = (typed: string) => typed.replace('\uD800', '�');
 
 test('a file saved with an unpaired surrogate settles on the text of the bytes sent and is not sent again', async () => {

@@ -177,10 +177,10 @@ async function tab(
 	const history = createHistory({ backend, boundary, author, commitOnEdit });
 	async function land(path: string, text: string) {
 		const bytes = encoder.encode(text);
-		const applied = await boundary.apply([
+		const { error: applyError } = await boundary.apply([
 			{ kind: 'overwrite', path, bytes, sha256: await hashBytes(bytes) },
 		]);
-		expect(applied.error).toBeNull();
+		expect(applyError).toBeNull();
 	}
 	/** A complete save as the folder publishes it: land, note, one attempt. */
 	async function save(path: string, text: string) {

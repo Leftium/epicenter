@@ -225,19 +225,22 @@ export async function writePrivateFile(
 	bytes: Uint8Array,
 ): Promise<void> {
 	const full = `${PRIVATE_DIRECTORY}/${path}`;
-	const directory = await ensureDirectory(root, parentOf(full));
-	if (directory.error) throw new Error(directory.error.message);
+	const { data: directory, error: directoryError } = await ensureDirectory(
+		root,
+		parentOf(full),
+	);
+	if (directoryError !== null) throw new Error(directoryError.message);
 	const name = basename(path);
 	const existed = (await lookup(root, full)).kind === 'file';
 	const failed = async (cause: unknown) => {
 		if (existed) return cause;
 		try {
-			await directory.data.removeEntry(name);
+			await directory.removeEntry(name);
 		} catch {
 			// Whether it went is asked next.
 		}
 		try {
-			await directory.data.getFileHandle(name);
+			await directory.getFileHandle(name);
 		} catch (missing) {
 			if (errorName(missing) === 'NotFoundError') return cause;
 		}
@@ -245,7 +248,7 @@ export async function writePrivateFile(
 	};
 	let writable: OpfsWritable;
 	try {
-		const handle = await directory.data.getFileHandle(name, { create: true });
+		const handle = await directory.getFileHandle(name, { create: true });
 		writable = await handle.createWritable({ keepExistingData: false });
 	} catch (cause) {
 		throw await failed(cause);
@@ -268,9 +271,12 @@ export async function removePrivateFile(
 	root: OpfsDirectoryHandle,
 	path: string,
 ): Promise<void> {
-	const removed = await removeFileAt(root, `${PRIVATE_DIRECTORY}/${path}`);
-	if (removed.error && removed.error.name !== 'NotFound')
-		throw new Error(removed.error.message);
+	const { error: removeError } = await removeFileAt(
+		root,
+		`${PRIVATE_DIRECTORY}/${path}`,
+	);
+	if (removeError !== null && removeError.name !== 'NotFound')
+		throw new Error(removeError.message);
 }
 
 /** Visit every entry below `directory`, leaving out the root's `.git`. */
@@ -512,12 +518,15 @@ export async function writeFileAt(
 	bytes: Uint8Array,
 	previous: Previous,
 ): Promise<Result<undefined, FileError>> {
-	const parent = await ensureDirectory(root, parentOf(path));
-	if (parent.error) return parent;
+	const { data: parent, error: parentError } = await ensureDirectory(
+		root,
+		parentOf(path),
+	);
+	if (parentError !== null) return Err(parentError);
 	const name = basename(path);
 	let handle: OpfsFileHandle;
 	try {
-		handle = await parent.data.getFileHandle(name, { create: true });
+		handle = await parent.getFileHandle(name, { create: true });
 	} catch (cause) {
 		if (errorName(cause) === 'TypeMismatchError')
 			return FileError.NotAFile({ path });
@@ -530,12 +539,12 @@ export async function writeFileAt(
 		if (previous.exists)
 			return FileError.Io({ path, operation: 'write', cause });
 		try {
-			await parent.data.removeEntry(name);
+			await parent.removeEntry(name);
 		} catch {
 			// Whether it went is asked next.
 		}
 		try {
-			await parent.data.getFileHandle(name);
+			await parent.getFileHandle(name);
 		} catch (missing) {
 			if (errorName(missing) === 'NotFoundError')
 				return FileError.Io({ path, operation: 'write', cause });
@@ -637,19 +646,20 @@ async function perform(
 				result = await removeFileAt(root, step.from);
 			}
 		}
-		if (result.error) {
+		const { error: stepError } = result;
+		if (stepError !== null) {
 			// An unknown outcome may have changed the path: say so.
-			if (result.error.name === 'Unconfirmed')
+			if (stepError.name === 'Unconfirmed')
 				landed(step.kind === 'move' ? [step.to] : [step.path]);
 			const all = [...applied, ...reached];
-			if (all.length === 0) return Err(result.error);
+			if (all.length === 0) return Err(stepError);
 			return ApplyError.Partial({
 				applied: all,
 				failed:
 					step.kind === 'move' && reached.length > 0
 						? { kind: 'remove', path: step.from }
 						: toStep(changes[index]!),
-				error: result.error,
+				error: stepError,
 				notAttempted: changes.slice(index + 1).map(toStep),
 			});
 		}
@@ -671,9 +681,9 @@ export async function applyChanges(
 	landed: (paths: readonly string[]) => void,
 	{ prune = false }: { prune?: boolean } = {},
 ): Promise<Result<undefined, FileError | ApplyError>> {
-	const planned = await plan(root, changes);
-	if (planned.error) return planned;
-	return perform(root, changes, planned.data, landed, prune);
+	const { data: planned, error: planError } = await plan(root, changes);
+	if (planError !== null) return Err(planError);
+	return perform(root, changes, planned, landed, prune);
 }
 
 const changePaths = (change: FileChange) =>
@@ -798,9 +808,9 @@ export function createOpfsFileBoundary({
 			// reading once the path is replaced, and this Blob must not.
 			const refused = invalid(path);
 			if (refused) return refused;
-			const read = await readOne(path);
-			if (read.error) return read;
-			return Ok(new Blob([read.data.bytes as Uint8Array<ArrayBuffer>]));
+			const { data: read, error: readError } = await readOne(path);
+			if (readError !== null) return Err(readError);
+			return Ok(new Blob([read.bytes as Uint8Array<ArrayBuffer>]));
 		},
 		async apply(changes, submission) {
 			const paths = changes.flatMap(changePaths);
@@ -839,7 +849,7 @@ export function createOpfsFileBoundary({
 			if (refused) return refused;
 			return mutate(async () => {
 				const made = await ensureDirectory(root, path);
-				return made.error ? made : Ok(undefined);
+				return made.error !== null ? made : Ok(undefined);
 			});
 		},
 		async rmdir(path) {

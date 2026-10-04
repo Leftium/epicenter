@@ -42,14 +42,15 @@ export function withPublication({
 		...storage,
 		async apply(changes, submission) {
 			const result = await storage.apply(changes, submission);
-			if (result.error === null && changes.length > 0) {
+			const { error: applyError } = result;
+			if (applyError === null && changes.length > 0) {
 				history.noteEdit();
 				history.requestAutomaticCommit();
 				landed(changes.flatMap(stepPaths));
-			} else if (result.error?.name === 'Partial') {
+			} else if (applyError?.name === 'Partial') {
 				history.noteEdit();
-				landed(result.error.applied.flatMap(stepPaths));
-			} else if (result.error?.name === 'Unconfirmed') {
+				landed(applyError.applied.flatMap(stepPaths));
+			} else if (applyError?.name === 'Unconfirmed') {
 				// The paths may have changed. Say so, but request no commit for an
 				// outcome nobody knows.
 				history.noteEdit();

@@ -37,41 +37,46 @@ const hints: string[] = [];
 
 async function handle(request: PeerRequest): Promise<PeerReply> {
 	if (request.kind === 'open') {
-		const opened = await openFolder({
+		const { data: opened, error: openError } = await openFolder({
 			id: request.id,
 			definition,
 			browser: { scope: { channel: 'development' }, commitOnEdit: false },
 		});
-		if (opened.error) return { ok: false, error: opened.error.message };
-		folder = opened.data;
+		if (openError !== null) return { ok: false, error: openError.message };
+		folder = opened;
 		folder.onFilesChanged((paths) => hints.push(...paths));
 		return { ok: true };
 	}
 	if (folder === undefined) return { ok: false, error: 'not open' };
 	switch (request.kind) {
 		case 'create': {
-			const saved = await folder.files.create(request.path, request.content);
-			return saved.error
-				? { ok: false, error: saved.error.name }
-				: { ok: true, sha256: saved.data.sha256 };
+			const { data: saved, error: saveError } = await folder.files.create(
+				request.path,
+				request.content,
+			);
+			return saveError !== null
+				? { ok: false, error: saveError.name }
+				: { ok: true, sha256: saved.sha256 };
 		}
 		case 'replace': {
-			const saved = await folder.files.replace(
+			const { data: saved, error: saveError } = await folder.files.replace(
 				{ path: request.path, sha256: request.sha256 },
 				request.content,
 			);
-			return saved.error
-				? { ok: false, error: saved.error.name }
-				: { ok: true, sha256: saved.data.sha256 };
+			return saveError !== null
+				? { ok: false, error: saveError.name }
+				: { ok: true, sha256: saved.sha256 };
 		}
 		case 'readFor': {
 			const seen = new Set<string>();
 			let failures = 0;
 			const end = performance.now() + request.ms;
 			while (performance.now() < end) {
-				const read = await folder.files.read(request.path);
-				if (read.error) failures++;
-				else seen.add(read.data.sha256);
+				const { data: file, error: readError } = await folder.files.read(
+					request.path,
+				);
+				if (readError !== null) failures++;
+				else seen.add(file.sha256);
 			}
 			return { ok: true, seen: [...seen], failures };
 		}

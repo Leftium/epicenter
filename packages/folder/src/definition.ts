@@ -40,15 +40,15 @@ export type FolderDefinition = DataSchema & { readonly id?: never };
 export function prepareFolderDefinition<TDefinition extends FolderDefinition>(
 	definition: TDefinition,
 ): Result<TDefinition, { readonly reason: string }> {
-	const prepared = prepareSchema(definition);
-	if (prepared.error !== null) return Err({ reason: prepared.error.message });
-	for (const [name, table] of Object.entries(prepared.data.tables)) {
+	const { data: prepared, error: schemaError } = prepareSchema(definition);
+	if (schemaError !== null) return Err({ reason: schemaError.message });
+	for (const [name, table] of Object.entries(prepared.tables)) {
 		if (table.body !== undefined)
 			return Err({
 				reason: `Table '${name}' declares a body codec. A file folder stores the body as Markdown text; remove the codec from this definition.`,
 			});
 	}
-	return Ok(prepared.data);
+	return Ok(prepared);
 }
 
 /**
@@ -85,7 +85,8 @@ export function defineFolder<const TDefinition extends DataSchema>(
 		kv,
 		tables,
 	};
-	const prepared = prepareFolderDefinition(declaration);
-	if (prepared.error !== null) throw new Error(prepared.error.reason);
-	return prepared.data;
+	const { data: prepared, error: definitionError } =
+		prepareFolderDefinition(declaration);
+	if (definitionError !== null) throw new Error(definitionError.reason);
+	return prepared;
 }

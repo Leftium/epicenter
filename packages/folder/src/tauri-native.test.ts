@@ -277,8 +277,10 @@ async function setup(options: { manual?: boolean; remote?: string } = {}) {
 				});
 		},
 		files: async () => {
-			const listed = await a(() => folder.files.children('todos'));
-			return listed.error ? [] : listed.data.files;
+			const { data: listed, error: listError } = await a(() =>
+				folder.files.children('todos'),
+			);
+			return listError !== null ? [] : listed.files;
 		},
 		/**
 		 * Return once no commit the owner admitted is still running. `paths`
@@ -452,8 +454,10 @@ describe.skipIf(!enabled)('tauri folder against the native owner', () => {
 		expect(folder.git.snapshot.activity.commit).toEqual({ active: false });
 
 		// A page built for the previous protocol is refused by the real owner.
-		const old = await a(() => commands.attach('notes', FOLDER_PROTOCOL - 1));
-		expect(old.error).toEqual({
+		const { error: refusal } = await a(() =>
+			commands.attach('notes', FOLDER_PROTOCOL - 1),
+		);
+		expect(refusal).toEqual({
 			name: 'Incompatible',
 			host: FOLDER_PROTOCOL,
 			page: FOLDER_PROTOCOL - 1,
@@ -790,8 +794,8 @@ describe.skipIf(!enabled)('tauri folder against the native owner', () => {
 		const saving = a(() => folder.files.create('late-reply.txt', 'landed'));
 		await reached.promise;
 		await a(() => folder.close());
-		const detached = await a(() => commands.list(1));
-		expect(detached.error?.name).toBe('Denied');
+		const { error: detached } = await a(() => commands.list(1));
+		expect(detached?.name).toBe('Denied');
 		release.resolve();
 		expectOk(await saving);
 		const current = expectOk(await b(() => other.files.read('late-reply.txt')));
@@ -978,8 +982,8 @@ describe.skipIf(!enabled)('tauri folder against the native owner', () => {
 			'Closed',
 		);
 		// The owner itself no longer knows window A's session.
-		const session = await a(() => commands.list(1));
-		expect(session.error?.name).toBe('Denied');
+		const { error: unknownSession } = await a(() => commands.list(1));
+		expect(unknownSession?.name).toBe('Denied');
 
 		// Window B waits on the owner's Git lock: the admitted commit finished
 		// without the page that saved. Closing committed nothing itself.

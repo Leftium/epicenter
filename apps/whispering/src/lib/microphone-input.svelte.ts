@@ -131,19 +131,19 @@ export function createMicrophoneInput({
 		unwatch ??= inputs.onChange(() => void refresh());
 		const sequence = ++listSequence;
 		listing = true;
-		const listed = await inputs.list();
+		const { data: listed, error: listError } = await inputs.list();
 		if (sequence !== listSequence || closed) return;
 		listing = false;
-		if (listed.error) {
+		if (listError !== null) {
 			list =
-				listed.error.name === 'Unavailable'
-					? { kind: 'unsupported', message: listed.error.message }
-					: { kind: 'failed', message: listed.error.message };
+				listError.name === 'Unavailable'
+					? { kind: 'unsupported', message: listError.message }
+					: { kind: 'failed', message: listError.message };
 			return;
 		}
-		list = { kind: 'listed', ...listed.data };
+		list = { kind: 'listed', ...listed };
 		// Names are listed, so access is allowed, whatever an earlier attempt said.
-		if (listed.data.devices.length > 0) denied = false;
+		if (listed.devices.length > 0) denied = false;
 	}
 
 	/**
@@ -242,11 +242,11 @@ export function createMicrophoneInput({
 			const attempt = new AbortController();
 			acquiring = attempt;
 			allowing = true;
-			const allowed = await inputs.allow(attempt.signal);
+			const { error: allowError } = await inputs.allow(attempt.signal);
 			// Released while the WebView was answering. Whatever it opened is not kept.
 			if (acquiring !== attempt) return;
 			release();
-			report(allowed.error);
+			report(allowError);
 			await refresh();
 		},
 		/**
@@ -271,20 +271,23 @@ export function createMicrophoneInput({
 			const attempt = new AbortController();
 			acquiring = attempt;
 			test = { phase: 'opening' };
-			const opened = await inputs.meter(choice, attempt.signal);
+			const { data: opened, error: meterError } = await inputs.meter(
+				choice,
+				attempt.signal,
+			);
 			// Released, or released and started again, while the WebView was answering.
 			if (acquiring !== attempt) {
-				opened.data?.stop();
+				if (meterError === null) opened.stop();
 				return;
 			}
-			if (opened.error) {
+			if (meterError !== null) {
 				release();
-				report(opened.error);
+				report(meterError);
 				return;
 			}
 			denied = false;
-			meter = opened.data;
-			test = { phase: 'running', label: opened.data.label };
+			meter = opened;
+			test = { phase: 'running', label: opened.label };
 			levelTimer = setInterval(() => {
 				level = meter?.level() ?? 0;
 			}, LEVEL_MS);

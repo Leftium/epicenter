@@ -14,7 +14,7 @@
  * Listing never asks for access. A WebView lists inputs by name only after
  * access was allowed, so `allow` is a separate action the person takes.
  */
-import { Ok, type Result } from 'wellcrafted/result';
+import { Err, Ok, type Result } from 'wellcrafted/result';
 import { resolveAudioFormat } from './audio-format.js';
 import {
 	type CaptureDevice,
@@ -173,9 +173,13 @@ function createInputs(environment: MicrophoneEnvironment): MicrophoneInputs {
 			});
 		},
 		async allow(signal) {
-			const opened = await open(mediaDevices, undefined, signal);
-			if (opened.error) return opened;
-			release(opened.data);
+			const { data: stream, error: openError } = await open(
+				mediaDevices,
+				undefined,
+				signal,
+			);
+			if (openError !== null) return Err(openError);
+			release(stream);
 			return Ok(undefined);
 		},
 		async meter(input, signal) {
@@ -183,9 +187,12 @@ function createInputs(environment: MicrophoneEnvironment): MicrophoneInputs {
 				return CaptureError.Unavailable({
 					reason: 'this window cannot measure audio',
 				});
-			const opened = await open(mediaDevices, input, signal);
-			if (opened.error) return opened;
-			const stream = opened.data;
+			const { data: stream, error: openError } = await open(
+				mediaDevices,
+				input,
+				signal,
+			);
+			if (openError !== null) return Err(openError);
 			let context: LevelContext | undefined;
 			let source: ReturnType<LevelContext['createMediaStreamSource']>;
 			let analyser: ReturnType<LevelContext['createAnalyser']>;
@@ -253,9 +260,12 @@ export function createMicrophoneDevice(
 				return CaptureError.Unavailable({
 					reason: 'this window cannot encode audio',
 				});
-			const opened = await open(environment.mediaDevices, input, signal);
-			if (opened.error) return opened;
-			const stream = opened.data;
+			const { data: stream, error: openError } = await open(
+				environment.mediaDevices,
+				input,
+				signal,
+			);
+			if (openError !== null) return Err(openError);
 			let recorder: MediaRecorder;
 			try {
 				const mimeType = PREFERRED_TYPES.find((type) =>

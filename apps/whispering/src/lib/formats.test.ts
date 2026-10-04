@@ -3,6 +3,7 @@
  * audio container check that names a recording's file, and the transcription
  * request.
  */
+import { expectOk } from 'wellcrafted/testing';
 import './svelte-modules.test-support.js';
 import { expect, test } from 'bun:test';
 import { FileError } from '@epicenter/folder/bun';
@@ -48,10 +49,10 @@ test('a failure keeps its name, fields, and the cause text', () => {
 		operation: 'read',
 		cause: new Error('disk gone'),
 	});
-	const back = roundTrip(failure) as typeof failure;
-	expect(back.error?.name).toBe('Io');
-	expect(back.error?.message).toContain('disk gone');
-	expect((back.error?.cause as Error).message).toBe('disk gone');
+	const { error: back } = roundTrip(failure) as typeof failure;
+	expect(back?.name).toBe('Io');
+	expect(back?.message).toContain('disk gone');
+	expect((back?.cause as Error).message).toBe('disk gone');
 });
 
 test('a data object that uses the tag key is not misread', () => {
@@ -100,18 +101,20 @@ test('recording ids encode capture time and conflict copies name their source', 
 test('a transcription request posts the audio and reads the text, refusing redirects and ambient credentials', async () => {
 	let seen: Request | undefined;
 	let given: RequestInit | undefined;
-	const result = await requestTranscription({
-		baseUrl: 'http://127.0.0.1:18080/v1',
-		model: 'verification-model',
-		apiKey: '',
-		audio: { bytes: toneWav(), filename: 'a.wav', mimeType: 'audio/wav' },
-		fetch: async (input, init) => {
-			given = init;
-			seen = new Request(input, init);
-			return Response.json({ text: 'hello' });
-		},
-	});
-	expect(result.data).toEqual({ text: 'hello' });
+	const transcribed = expectOk(
+		await requestTranscription({
+			baseUrl: 'http://127.0.0.1:18080/v1',
+			model: 'verification-model',
+			apiKey: '',
+			audio: { bytes: toneWav(), filename: 'a.wav', mimeType: 'audio/wav' },
+			fetch: async (input, init) => {
+				given = init;
+				seen = new Request(input, init);
+				return Response.json({ text: 'hello' });
+			},
+		}),
+	);
+	expect(transcribed).toEqual({ text: 'hello' });
 	expect(seen?.url).toBe('http://127.0.0.1:18080/v1/audio/transcriptions');
 	expect(seen?.headers.get('authorization')).toBeNull();
 	expect(given).toMatchObject({ redirect: 'error', credentials: 'omit' });
@@ -125,31 +128,27 @@ test('transcription failures say what happened', async () => {
 		apiKey: 'k',
 		audio,
 	};
-	expect(
-		(await requestTranscription({ ...base, model: ' ' })).error?.name,
-	).toBe('NotConfigured');
-	expect(
-		(
-			await requestTranscription({
-				...base,
-				fetch: async () => {
-					throw new Error('connection refused');
-				},
-			})
-		).error?.name,
-	).toBe('Unreachable');
-	const rejected = await requestTranscription({
+	const { error: unconfigured } = await requestTranscription({
+		...base,
+		model: ' ',
+	});
+	expect(unconfigured?.name).toBe('NotConfigured');
+	const { error: unreachable } = await requestTranscription({
+		...base,
+		fetch: async () => {
+			throw new Error('connection refused');
+		},
+	});
+	expect(unreachable?.name).toBe('Unreachable');
+	const { error: rejected } = await requestTranscription({
 		...base,
 		fetch: async () => new Response('bad key', { status: 401 }),
 	});
-	expect(rejected.error?.name).toBe('Rejected');
-	expect(rejected.error?.message).toContain('401');
-	expect(
-		(
-			await requestTranscription({
-				...base,
-				fetch: async () => new Response('<html>', { status: 200 }),
-			})
-		).error?.name,
-	).toBe('Malformed');
+	expect(rejected?.name).toBe('Rejected');
+	expect(rejected?.message).toContain('401');
+	const { error: malformed } = await requestTranscription({
+		...base,
+		fetch: async () => new Response('<html>', { status: 200 }),
+	});
+	expect(malformed?.name).toBe('Malformed');
 });

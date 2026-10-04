@@ -282,14 +282,15 @@ async function readRow<TFields>(
 			error: FileError.Io({ path, operation: 'read', cause }).error,
 		});
 	}
-	if (read.error) {
-		if (read.error.name === 'NotFound')
+	const { data: current, error: readError } = read;
+	if (readError !== null) {
+		if (readError.name === 'NotFound')
 			return Object.freeze({ kind: 'missing' });
-		return Object.freeze({ kind: 'unreadable', error: read.error });
+		return Object.freeze({ kind: 'unreadable', error: readError });
 	}
 	let source: string;
 	try {
-		source = utf8.decode(read.data.bytes);
+		source = utf8.decode(current.bytes);
 	} catch {
 		return Object.freeze({
 			kind: 'unreadable',
@@ -298,18 +299,21 @@ async function readRow<TFields>(
 	}
 	const file: TextCapture = Object.freeze({
 		path,
-		sha256: read.data.sha256,
+		sha256: current.sha256,
 		source,
 	});
-	const parsed = parseCanonicalDocument(source);
-	if (parsed.error)
-		return Object.freeze({ kind: 'unsupported', file, refusal: parsed.error });
-	const canonical = formatCanonicalDocument(parsed.data, row.declaredKeys);
-	if (canonical.error)
+	const { data: parsed, error: parseRefusal } = parseCanonicalDocument(source);
+	if (parseRefusal !== null)
+		return Object.freeze({ kind: 'unsupported', file, refusal: parseRefusal });
+	const { data: canonical, error: formatRefusal } = formatCanonicalDocument(
+		parsed,
+		row.declaredKeys,
+	);
+	if (formatRefusal !== null)
 		return Object.freeze({
 			kind: 'unsupported',
 			file,
-			refusal: canonical.error,
+			refusal: formatRefusal,
 		});
 	const reading = row.inspect(source);
 	if (reading.parseError !== undefined || reading.issues.length > 0)
@@ -318,8 +322,8 @@ async function readRow<TFields>(
 		kind: 'present',
 		revision: Object.freeze({
 			...file,
-			document: freezeDeep(parsed.data),
-			canonical: canonical.data,
+			document: freezeDeep(parsed),
+			canonical,
 		}),
 	});
 }
@@ -533,20 +537,24 @@ function createRowEditor<TFields>(
 			fields: fields as CanonicalDocument['fields'],
 			body: requested.body ?? state.document.body,
 		};
-		const formatted = formatCanonicalDocument(draft, row.declaredKeys);
-		if (formatted.error)
-			return RowEditorError.Unrepresentable({ path, refusal: formatted.error });
-		if (formatted.data === state.source) return Ok(undefined);
+		const { data: formatted, error: formatRefusal } = formatCanonicalDocument(
+			draft,
+			row.declaredKeys,
+		);
+		if (formatRefusal !== null)
+			return RowEditorError.Unrepresentable({ path, refusal: formatRefusal });
+		if (formatted === state.source) return Ok(undefined);
 		// Reading the canonical text back gives the editor its own frozen copy,
 		// exactly the document a save writes.
-		const owned = parseCanonicalDocument(formatted.data);
-		if (owned.error)
-			return RowEditorError.Unrepresentable({ path, refusal: owned.error });
+		const { data: owned, error: parseRefusal } =
+			parseCanonicalDocument(formatted);
+		if (parseRefusal !== null)
+			return RowEditorError.Unrepresentable({ path, refusal: parseRefusal });
 		update({
-			document: freezeDeep(owned.data),
-			source: formatted.data,
-			reading: row.inspect(formatted.data),
-			isDirty: formatted.data !== state.baseline.canonical,
+			document: freezeDeep(owned),
+			source: formatted,
+			reading: row.inspect(formatted),
+			isDirty: formatted !== state.baseline.canonical,
 		});
 		return Ok(undefined);
 	}
@@ -624,7 +632,8 @@ function createRowEditor<TFields>(
 		}
 		release(admission);
 		let outcome: RowSaveOutcome;
-		if (applied.error === null) {
+		const { error: applyError } = applied;
+		if (applyError === null) {
 			const receipt: RowRevision = Object.freeze({
 				...attempt,
 				sha256,
@@ -638,11 +647,10 @@ function createRowEditor<TFields>(
 				lastSave: outcome,
 			});
 		} else {
-			const { error } = applied;
 			outcome = Object.freeze(
-				error.name === 'Unconfirmed'
-					? { kind: 'unconfirmed', attempt, error }
-					: { kind: 'failed', attempt, error },
+				applyError.name === 'Unconfirmed'
+					? { kind: 'unconfirmed', attempt, error: applyError }
+					: { kind: 'failed', attempt, error: applyError },
 			);
 			update({ saving: undefined, lastSave: outcome });
 		}

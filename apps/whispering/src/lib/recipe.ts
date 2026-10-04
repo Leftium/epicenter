@@ -107,7 +107,8 @@ export function resolveRecipe(
 		};
 	const endpoint = recipeEndpoint(recipe.fields);
 	if (endpoint !== undefined) {
-		if (canonicalBaseUrl(endpoint).error !== null)
+		const { error: endpointError } = canonicalBaseUrl(endpoint);
+		if (endpointError !== null)
 			return {
 				kind: 'blocked',
 				fix: 'recipe',

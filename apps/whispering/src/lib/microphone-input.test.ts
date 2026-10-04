@@ -32,7 +32,7 @@ import './svelte-modules.test-support.js';
 import { afterEach, expect, test } from 'bun:test';
 import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { Ok, type Result } from 'wellcrafted/result';
+import { Err, Ok, type Result } from 'wellcrafted/result';
 import {
 	type ActiveCapture,
 	type CaptureDevice,
@@ -105,8 +105,8 @@ function scriptedMicrophone(
 				calls.allow += 1;
 				if (signal !== undefined) calls.allowSignals.push(signal);
 				// The default microphone opens and is released at once; a withdrawn request keeps nothing.
-				const opened = await opening(undefined, signal);
-				if (opened.error) return opened;
+				const { error: openError } = await opening(undefined, signal);
+				if (openError !== null) return Err(openError);
 				state.named = true;
 				return Ok(undefined);
 			},
@@ -115,8 +115,8 @@ function scriptedMicrophone(
 				signal,
 			): Promise<Result<MicrophoneMeter, CaptureError>> {
 				calls.meter.push(input);
-				const opened = await opening(input, signal);
-				if (opened.error) return opened;
+				const { error: openError } = await opening(input, signal);
+				if (openError !== null) return Err(openError);
 				open.meters += 1;
 				let stopped = false;
 				return Ok({
@@ -135,8 +135,8 @@ function scriptedMicrophone(
 		},
 		async start(options = {}): Promise<Result<ActiveCapture, CaptureError>> {
 			calls.start.push(options);
-			const opened = await opening(options.input, options.signal);
-			if (opened.error) return opened;
+			const { error: openError } = await opening(options.input, options.signal);
+			if (openError !== null) return Err(openError);
 			open.captures += 1;
 			let settled = false;
 			const release = () => {
@@ -649,7 +649,10 @@ function heldPreferences() {
 test('choices are saved one at a time in the order chosen, and an older save that fails does not speak for the newer choice', async () => {
 	const held = heldPreferences();
 	const { input } = await open({
-		device: { store: { saved: undefined, writes: 0 }, preferences: held.preferences },
+		device: {
+			store: { saved: undefined, writes: 0 },
+			preferences: held.preferences,
+		},
 	});
 
 	const older = input.select(USB);

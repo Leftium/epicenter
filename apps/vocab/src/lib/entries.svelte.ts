@@ -88,13 +88,13 @@ export function createEntriesState({
 
 	const refresh = createReread(async () => {
 		const before = receipts;
-		const listed = await table.list();
+		const { data: listing, error: listError } = await table.list();
 		if (before !== receipts) return false;
-		if (listed.error !== null) {
-			loadError = listed.error.message;
+		if (listError !== null) {
+			loadError = listError.message;
 			return true;
 		}
-		const read = readRows(listed.data, readEntry);
+		const read = readRows(listing, readEntry);
 		const ids = new Set(read.rows.map((entry) => entry.id));
 		// A word removed elsewhere stays listed while a note typed here for it
 		// is unsaved; the next save writes it back. Otherwise its editor goes.
@@ -140,20 +140,20 @@ export function createEntriesState({
 	): Promise<Result<undefined, EntryError>> {
 		const entry = rows.find((row) => row.id === id);
 		if (!entry) return EntryError.Gone();
-		const removed = await table.delete(entry.file);
+		const { error: deleteError } = await table.delete(entry.file);
 		// Already removed elsewhere: the word is gone, which is what was asked.
 		const gone =
-			removed.error?.name === 'NotFound' ||
-			(removed.error?.name === 'Conflict' &&
-				removed.error.actualSha256 === undefined);
-		if (removed.error === null || gone) return Ok(undefined);
-		switch (removed.error.name) {
+			deleteError?.name === 'NotFound' ||
+			(deleteError?.name === 'Conflict' &&
+				deleteError.actualSha256 === undefined);
+		if (deleteError === null || gone) return Ok(undefined);
+		switch (deleteError.name) {
 			case 'Conflict':
 				return EntryError.Changed();
 			case 'Unconfirmed':
-				return EntryError.Unconfirmed({ cause: removed.error });
+				return EntryError.Unconfirmed({ cause: deleteError });
 			default:
-				return EntryError.NotSaved({ cause: removed.error });
+				return EntryError.NotSaved({ cause: deleteError });
 		}
 	}
 
@@ -195,15 +195,15 @@ export function createEntriesState({
 			// is read from the folder before it is called present: a word another
 			// tab removed is dropped from the list here and saved again below.
 			for (const listed of rows.filter((entry) => entry.text === exact)) {
-				const current = await table.get(listed.id);
-				if (current.error !== null)
-					return EntryError.NotSaved({ cause: current.error });
-				const held = current.data && readEntry(current.data);
+				const { data: current, error: readError } = await table.get(listed.id);
+				if (readError !== null)
+					return EntryError.NotSaved({ cause: readError });
+				const held = current && readEntry(current);
 				receive(listed.id, held || undefined);
 				if (held?.text === exact) return Ok('present');
 			}
 			const stem = await hashBytes(new TextEncoder().encode(exact));
-			const created = await table.create({
+			const { data: created, error: createError } = await table.create({
 				stem,
 				fields: {
 					text: exact,
@@ -212,20 +212,19 @@ export function createEntriesState({
 					createdAt: InstantString.now(),
 				},
 			});
-			if (created.error === null) {
-				receive(stem, readEntry(created.data));
+			if (createError === null) {
+				receive(stem, readEntry(created));
 				return Ok('added');
 			}
-			if (created.error.name !== 'Exists')
-				return EntryError.NotSaved({ cause: created.error });
+			if (createError.name !== 'Exists')
+				return EntryError.NotSaved({ cause: createError });
 			// Another add, another tab, or an earlier attempt whose answer was
 			// lost made the file. It is this word only if it holds this text.
-			const current = await table.get(stem);
-			if (current.error !== null)
-				return EntryError.NotSaved({ cause: current.error });
-			const held = current.data && readEntry(current.data);
+			const { data: current, error: readError } = await table.get(stem);
+			if (readError !== null) return EntryError.NotSaved({ cause: readError });
+			const held = current && readEntry(current);
 			if (!held || held.text !== exact)
-				return EntryError.Taken({ path: created.error.path });
+				return EntryError.Taken({ path: createError.path });
 			receive(stem, held);
 			return Ok('present');
 		},
@@ -269,9 +268,10 @@ export function createEntriesState({
 					// The learner is told, and the word stays as it is shown.
 					return EntryError.Unconfirmed({ cause });
 				}
-				if (removed.error !== null) {
+				const { error: removeError } = removed;
+				if (removeError !== null) {
 					// The folder holds something other than what is shown: show that.
-					if (removed.error.name === 'Changed') await refresh();
+					if (removeError.name === 'Changed') await refresh();
 					return removed;
 				}
 				if (words.get(id) === word) words.delete(id);

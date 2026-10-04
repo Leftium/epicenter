@@ -116,10 +116,10 @@ export function createNativeFileBoundary(root: string): FileBoundary {
 	async function readCurrent(
 		path: string,
 	): Promise<Result<FileRead | undefined, FileError>> {
-		const kind = await verifyLiteral(path);
-		if (kind.error) return kind;
-		if (kind.data === 'absent') return Ok(undefined);
-		if (kind.data === 'directory') return FileError.NotAFile({ path });
+		const { data: kind, error: kindError } = await verifyLiteral(path);
+		if (kindError !== null) return Err(kindError);
+		if (kind === 'absent') return Ok(undefined);
+		if (kind === 'directory') return FileError.NotAFile({ path });
 		try {
 			const bytes = new Uint8Array(await readFile(absolute(path)));
 			return Ok({ bytes, sha256: await hashBytes(bytes) });
@@ -133,11 +133,10 @@ export function createNativeFileBoundary(root: string): FileBoundary {
 		path: string,
 	): Promise<Result<undefined, FileError>> {
 		for (const parent of ancestors(path)) {
-			const kind = await verifyLiteral(parent);
-			if (kind.error) return kind;
-			if (kind.data === 'file')
-				return FileError.NotADirectory({ path: parent });
-			if (kind.data === 'absent') {
+			const { data: kind, error: kindError } = await verifyLiteral(parent);
+			if (kindError !== null) return Err(kindError);
+			if (kind === 'file') return FileError.NotADirectory({ path: parent });
+			if (kind === 'absent') {
 				try {
 					await mkdir(absolute(parent));
 				} catch (cause) {
@@ -181,17 +180,19 @@ export function createNativeFileBoundary(root: string): FileBoundary {
 			change.kind === 'replace' ||
 			change.kind === 'overwrite'
 		) {
-			const found = await readCurrent(change.path);
-			if (found.error) return found;
-			if (change.kind === 'create' && found.data !== undefined)
+			const { data: current, error: readError } = await readCurrent(
+				change.path,
+			);
+			if (readError !== null) return Err(readError);
+			if (change.kind === 'create' && current !== undefined)
 				return FileError.Exists({ path: change.path });
 			if (
 				change.kind === 'replace' &&
-				found.data?.sha256 !== change.expectedSha256
+				current?.sha256 !== change.expectedSha256
 			)
-				return conflict(change.path, change.expectedSha256, found.data?.sha256);
+				return conflict(change.path, change.expectedSha256, current?.sha256);
 			const parent = await ensureParent(change.path);
-			if (parent.error) return parent;
+			if (parent.error !== null) return parent;
 			let temporary: string;
 			try {
 				temporary = await scratchFile(change.bytes);
@@ -206,14 +207,12 @@ export function createNativeFileBoundary(root: string): FileBoundary {
 				// Staging and parent creation took time. Check the sha256 again so
 				// the only unchecked window left is this read to the rename below.
 				if (change.kind === 'replace') {
-					const now = await readCurrent(change.path);
-					if (now.error) return now;
-					if (now.data?.sha256 !== change.expectedSha256)
-						return conflict(
-							change.path,
-							change.expectedSha256,
-							now.data?.sha256,
-						);
+					const { data: now, error: rereadError } = await readCurrent(
+						change.path,
+					);
+					if (rereadError !== null) return Err(rereadError);
+					if (now?.sha256 !== change.expectedSha256)
+						return conflict(change.path, change.expectedSha256, now?.sha256);
 				}
 				if (change.kind === 'create') {
 					// Exclusive creation: link fails instead of replacing a newcomer.
@@ -246,15 +245,17 @@ export function createNativeFileBoundary(root: string): FileBoundary {
 			return Ok(undefined);
 		}
 		if (change.kind === 'remove') {
-			const found = await readCurrent(change.path);
-			if (found.error) return found;
-			if (found.data === undefined)
+			const { data: current, error: readError } = await readCurrent(
+				change.path,
+			);
+			if (readError !== null) return Err(readError);
+			if (current === undefined)
 				return FileError.NotFound({ path: change.path });
 			if (
 				change.expectedSha256 !== undefined &&
-				found.data.sha256 !== change.expectedSha256
+				current.sha256 !== change.expectedSha256
 			)
-				return conflict(change.path, change.expectedSha256, found.data.sha256);
+				return conflict(change.path, change.expectedSha256, current.sha256);
 			try {
 				await unlink(absolute(change.path));
 			} catch (cause) {
@@ -264,30 +265,31 @@ export function createNativeFileBoundary(root: string): FileBoundary {
 			}
 			return Ok(undefined);
 		}
-		const found = await readCurrent(change.from);
-		if (found.error) return found;
-		if (found.data === undefined)
-			return FileError.NotFound({ path: change.from });
+		const { data: current, error: readError } = await readCurrent(change.from);
+		if (readError !== null) return Err(readError);
+		if (current === undefined) return FileError.NotFound({ path: change.from });
 		if (
 			change.expectedSha256 !== undefined &&
-			found.data.sha256 !== change.expectedSha256
+			current.sha256 !== change.expectedSha256
 		)
-			return conflict(change.from, change.expectedSha256, found.data.sha256);
-		const destination = await verifyLiteral(change.to);
-		if (destination.error) return destination;
-		if (destination.data === 'directory')
+			return conflict(change.from, change.expectedSha256, current.sha256);
+		const { data: destination, error: destinationError } = await verifyLiteral(
+			change.to,
+		);
+		if (destinationError !== null) return Err(destinationError);
+		if (destination === 'directory')
 			return FileError.NotAFile({ path: change.to });
-		if (destination.data === 'file') {
+		if (destination === 'file') {
 			return FileError.Exists({ path: change.to });
 		}
 		const parent = await ensureParent(change.to);
-		if (parent.error) return parent;
+		if (parent.error !== null) return parent;
 		if (change.expectedSha256 !== undefined) {
 			// The destination checks took time; the link must carry the bytes checked.
-			const now = await readCurrent(change.from);
-			if (now.error) return now;
-			if (now.data?.sha256 !== change.expectedSha256)
-				return conflict(change.from, change.expectedSha256, now.data?.sha256);
+			const { data: now, error: rereadError } = await readCurrent(change.from);
+			if (rereadError !== null) return Err(rereadError);
+			if (now?.sha256 !== change.expectedSha256)
+				return conflict(change.from, change.expectedSha256, now?.sha256);
 		}
 		try {
 			await link(absolute(change.from), absolute(change.to));
@@ -364,12 +366,10 @@ export function createNativeFileBoundary(root: string): FileBoundary {
 		if (directory !== '') {
 			const refused = invalid(directory);
 			if (refused) return refused;
-			const kind = await verifyLiteral(directory);
-			if (kind.error) return kind;
-			if (kind.data === 'absent')
-				return FileError.NotFound({ path: directory });
-			if (kind.data === 'file')
-				return FileError.NotADirectory({ path: directory });
+			const { data: kind, error: kindError } = await verifyLiteral(directory);
+			if (kindError !== null) return Err(kindError);
+			if (kind === 'absent') return FileError.NotFound({ path: directory });
+			if (kind === 'file') return FileError.NotADirectory({ path: directory });
 		}
 		try {
 			const entries = await readdir(
@@ -395,10 +395,10 @@ export function createNativeFileBoundary(root: string): FileBoundary {
 		async read(path) {
 			const refused = invalid(path);
 			if (refused) return refused;
-			const found = await readCurrent(path);
-			if (found.error) return found;
-			if (found.data === undefined) return FileError.NotFound({ path });
-			return Ok(found.data);
+			const { data: current, error: readError } = await readCurrent(path);
+			if (readError !== null) return Err(readError);
+			if (current === undefined) return FileError.NotFound({ path });
+			return Ok(current);
 		},
 		async readMany(paths) {
 			const results = new Map<string, Result<FileRead, FileError>>();
@@ -408,9 +408,9 @@ export function createNativeFileBoundary(root: string): FileBoundary {
 		async open(path) {
 			// The bytes are copied into memory, so replacing the path later does not
 			// change what the consumer receives (ADR-0466).
-			const read = await this.read(path);
-			if (read.error) return read;
-			return Ok(new Blob([read.data.bytes as Uint8Array<ArrayBuffer>]));
+			const { data: read, error: readError } = await this.read(path);
+			if (readError !== null) return Err(readError);
+			return Ok(new Blob([read.bytes as Uint8Array<ArrayBuffer>]));
 		},
 		async apply(changes) {
 			for (const change of changes) {
@@ -426,11 +426,11 @@ export function createNativeFileBoundary(root: string): FileBoundary {
 				for (let index = 0; index < changes.length; index++) {
 					const change = changes[index]!;
 					const landed: FileStep[] = [];
-					const result = await step(change, landed);
-					if (result.error) {
+					const { error: stepError } = await step(change, landed);
+					if (stepError !== null) {
 						const reached = [...applied, ...landed];
 						// A refusal before anything landed wrote nothing; report it directly.
-						if (reached.length === 0) return Err(result.error);
+						if (reached.length === 0) return Err(stepError);
 						return ApplyError.Partial({
 							applied: reached,
 							// A move whose destination landed failed at retiring its source.
@@ -438,7 +438,7 @@ export function createNativeFileBoundary(root: string): FileBoundary {
 								landed.length > 0 && change.kind === 'move'
 									? { kind: 'remove', path: change.from }
 									: toStep(change),
-							error: result.error,
+							error: stepError,
 							notAttempted: changes.slice(index + 1).map(toStep),
 						});
 					}
@@ -451,16 +451,16 @@ export function createNativeFileBoundary(root: string): FileBoundary {
 			const refused = invalid(path);
 			if (refused) return refused;
 			const parent = await ensureParent(`${path}/x`);
-			if (parent.error) return parent;
+			if (parent.error !== null) return parent;
 			return Ok(undefined);
 		},
 		async rmdir(path) {
 			const refused = invalid(path);
 			if (refused) return refused;
-			const kind = await verifyLiteral(path);
-			if (kind.error) return kind;
-			if (kind.data === 'absent') return FileError.NotFound({ path });
-			if (kind.data === 'file') return FileError.NotADirectory({ path });
+			const { data: kind, error: kindError } = await verifyLiteral(path);
+			if (kindError !== null) return Err(kindError);
+			if (kind === 'absent') return FileError.NotFound({ path });
+			if (kind === 'file') return FileError.NotADirectory({ path });
 			try {
 				await rmdir(absolute(path));
 				return Ok(undefined);
@@ -475,11 +475,11 @@ export function createNativeFileBoundary(root: string): FileBoundary {
 			// batches. A rename landing between the two would otherwise leave the
 			// old path unreadable and the new path never enumerated.
 			return inOrder(async () => {
-				const listing = await list();
-				if (listing.error) return listing;
+				const { data: listing, error: listError } = await list();
+				if (listError !== null) return Err(listError);
 				const files = new Map<string, Uint8Array>();
 				const unreadable: { path: string; error: FileError }[] = [];
-				for (const { path } of listing.data.files) {
+				for (const { path } of listing.files) {
 					if (!isPortablePath(path)) continue;
 					try {
 						files.set(path, new Uint8Array(await readFile(absolute(path))));

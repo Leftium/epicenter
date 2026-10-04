@@ -38,7 +38,7 @@
 	async function toggle() {
 		if (dictation.status !== 'idle') {
 			const { error: stopError } = await dictation.stop();
-			if (stopError) {
+			if (stopError !== null) {
 				toast.error('Could not stop dictation', {
 					description: extractErrorMessage(stopError),
 				});
@@ -48,7 +48,7 @@
 
 		const { error: startError } = await dictation.start({
 			onTranscript: ({ data: text, error: transcribeError }) => {
-				if (transcribeError) {
+				if (transcribeError !== null) {
 					toast.error('Could not transcribe that', {
 						description: extractErrorMessage(transcribeError),
 					});
@@ -57,7 +57,7 @@
 				if (text) onTranscript(text);
 			},
 		});
-		if (startError) {
+		if (startError !== null) {
 			toast.error('Could not start dictation', {
 				description: extractErrorMessage(startError),
 			});

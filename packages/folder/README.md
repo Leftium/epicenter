@@ -14,15 +14,22 @@ const definition = defineFolder({
   },
 });
 
-const opened = await openFolder({ id: 'so.epicenter.todos', definition });
-if (opened.error) return show(opened.error.message);
-const folder = opened.data;
+const { data: folder, error: openError } = await openFolder({ id: 'so.epicenter.todos', definition });
+if (openError !== null) return show(openError.message);
 
 const stop = folder.onFilesChanged(() => refresh());   // subscribe, then read
 const listed = await folder.tables.todos.list();       // one { path, result } per row file
-const created = await folder.tables.todos.create({ fields: { title: 'Milk', done: false } });
-await folder.tables.todos.update(created.data!.stem, { fields: { done: true } });
-await folder.close();
+const { data: created, error: createError } = await folder.tables.todos.create({
+  fields: { title: 'Milk', done: false },
+});
+if (createError !== null) show(createError.message);
+else {
+  const { error: updateError } = await folder.tables.todos.update(created.stem, {
+    fields: { done: true },
+  });
+  if (updateError !== null) show(updateError.message);
+}
+await folder.close();                                  // closed either way
 ```
 
 ## Dataset names, definitions, and addresses
@@ -228,12 +235,18 @@ is not the desktop adapter, and it does not watch the directory.
 ### Files
 
 ```ts
-const made = await folder.files.create('audio/take.webm', bytes);   // refused if anything is there
-const read = await folder.files.read('notes/a.md');                 // { path, sha256, bytes }
-const next = await folder.files.replace(read.data!, 'new text');    // refused if it changed since
-const moved = await folder.files.move(next.data!, 'notes/b.md');    // refused if either end changed
-await folder.files.remove(moved.data!);
-await folder.files.overwrite('settings.txt', 'on');                 // whatever is there
+const { error: createError } = await folder.files.create('audio/take.webm', bytes);
+if (createError !== null) return show(createError.message);         // refused if anything is there
+const { data: file, error: readError } = await folder.files.read('notes/a.md');
+if (readError !== null) return show(readError.message);             // file is { path, sha256, bytes }
+const { data: next, error: replaceError } = await folder.files.replace(file, 'new text');
+if (replaceError !== null) return show(replaceError.message);       // refused if it changed since
+const { data: moved, error: moveError } = await folder.files.move(next, 'notes/b.md');
+if (moveError !== null) return show(moveError.message);             // refused if either end changed
+const { error: removeError } = await folder.files.remove(moved);
+if (removeError !== null) return show(removeError.message);         // refused if it changed since
+const { error: overwriteError } = await folder.files.overwrite('settings.txt', 'on');
+if (overwriteError !== null) return show(overwriteError.message);   // whatever is there
 ```
 
 The verb states the condition. `replace`, `remove`, and `move` act on a
@@ -283,8 +296,8 @@ Reading a file and interpreting its text are separate, and so are a text that
 does not parse and a field that does not conform (ADR-0462).
 
 ```ts
-const { data: todo, error } = await folder.tables.todos.get(stem);
-if (error) return showReadFailure(error);              // the file could not be read as text
+const { data: todo, error: readError } = await folder.tables.todos.get(stem);
+if (readError !== null) return showReadFailure(readError); // the file could not be read as text
 if (todo === undefined) return showMissing();          // only absence
 
 showSource(todo.source);                               // the repair baseline, parsed or not
@@ -474,8 +487,10 @@ if (error !== null) {
 const { get, subscribe, change, save, refresh, adopt, dispose } = editor;
 
 const stop = subscribe((state) => render(state)); // the current state now, then changes
-change({ fields: { title: 'Plan B', priority: undefined } }); // `undefined` removes a field
-const { data: receipt, error: saveError } = await save();
+const { error: changeError } = change({ fields: { title: 'Plan B', priority: undefined } }); // `undefined` removes a field
+if (changeError !== null) return show(changeError.message);   // nothing changed, so nothing to save
+const { error: saveError } = await save();
+if (saveError !== null) return show(saveError.message);       // the draft is kept
 ```
 
 Every method closes over the editor and never reads `this`, so destructured
@@ -560,8 +575,8 @@ persisted browser folder; see `evidence/edit-handle/canonical-callers.md`.
 the same two diagnostics as a row (ADR-0487).
 
 ```ts
-const { data: snapshot, error } = await folder.kv.get();
-if (error) return showReadFailure(error);              // handle this before any default
+const { data: snapshot, error: readError } = await folder.kv.get();
+if (readError !== null) return showReadFailure(readError); // handle this before any default
 const kv = { ...KV_DEFAULTS, ...(snapshot?.values ?? {}) };
 showDiagnostics(snapshot?.parseError, snapshot?.issues ?? []);
 ```
@@ -798,8 +813,8 @@ cancels pushes and fetches. It does not await file helpers or publication
 replies. Await a save that must finish before closing:
 
 ```ts
-const saved = await folder.files.create('note.md', 'Saved before leaving');
-if (saved.error) return show(saved.error.message);
+const { error: saveError } = await folder.files.create('note.md', 'Saved before leaving');
+if (saveError !== null) return show(saveError.message);
 await folder.close();
 ```
 

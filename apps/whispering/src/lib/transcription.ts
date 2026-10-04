@@ -121,12 +121,12 @@ export async function requestTranscription({
 > {
 	if (baseUrl.trim() === '')
 		return TranscriptionError.NotConfigured({ missing: 'the endpoint URL' });
-	const base = canonicalBaseUrl(baseUrl);
-	if (base.error !== null)
-		return TranscriptionError.InvalidEndpoint({ reason: base.error });
+	const { data: base, error: urlError } = canonicalBaseUrl(baseUrl);
+	if (urlError !== null)
+		return TranscriptionError.InvalidEndpoint({ reason: urlError });
 	if (model.trim() === '')
 		return TranscriptionError.NotConfigured({ missing: 'the model' });
-	const url = transcriptionUrl(base.data);
+	const url = transcriptionUrl(base);
 	const form = new FormData();
 	form.append(
 		'file',
@@ -223,17 +223,17 @@ export async function transcribeOverConnection(
 			expected: request.expectedBaseUrl,
 			configured: stored.baseUrl,
 		});
-	const read = await audio();
-	if (read.error !== null)
+	const { data: upload, error: readError } = await audio();
+	if (readError !== null)
 		return TranscriptionError.AudioUnreadable({
 			path: request.audioPath,
-			reason: read.error,
+			reason: readError,
 		});
 	return requestTranscription({
 		baseUrl: stored.baseUrl,
 		apiKey: stored.apiKey ?? '',
 		model: request.model,
-		audio: read.data,
+		audio: upload,
 		fetch: send,
 	});
 }

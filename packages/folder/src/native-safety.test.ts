@@ -82,25 +82,25 @@ describe('native partial moves', () => {
 			await chmod(join(root, 'locked'), 0o555);
 			try {
 				const boundary = createNativeFileBoundary(root);
-				const applied = await boundary.apply([
+				const { error: applyError } = await boundary.apply([
 					await writeChange('x.txt', 'X'),
 					{ kind: 'move', from: 'locked/a.txt', to: 'open/a.txt' },
 					await writeChange('y.txt', 'Y'),
 				]);
-				expect(applied.error?.name).toBe('Partial');
-				if (applied.error?.name !== 'Partial') return;
-				expect(applied.error.applied).toEqual([
+				expect(applyError?.name).toBe('Partial');
+				if (applyError?.name !== 'Partial') return;
+				expect(applyError.applied).toEqual([
 					{ kind: 'write', path: 'x.txt' },
 					{ kind: 'write', path: 'open/a.txt' },
 				]);
-				expect(applied.error.failed).toEqual({
+				expect(applyError.failed).toEqual({
 					kind: 'remove',
 					path: 'locked/a.txt',
 				});
-				expect(applied.error.notAttempted).toEqual([
+				expect(applyError.notAttempted).toEqual([
 					{ kind: 'write', path: 'y.txt' },
 				]);
-				expect(applied.error.error.name).toBe('Io');
+				expect(applyError.error.name).toBe('Io');
 				// Nothing is rolled back: both copies hold the bytes.
 				expect(await readFile(join(root, 'locked/a.txt'), 'utf8')).toBe('A');
 				expect(await readFile(join(root, 'open/a.txt'), 'utf8')).toBe('A');
@@ -188,8 +188,8 @@ describe('native pull with a locked index', () => {
 		await writer.git.commitAndPush();
 		await reader.git.fetch();
 		await writeFile(join(readerRoot, '.git', 'index.lock'), '');
-		const pulled = await reader.git.pullFastForward();
-		expect(pulled.error?.name).toBe('IndexFailed');
+		const { error: pullError } = await reader.git.pullFastForward();
+		expect(pullError?.name).toBe('IndexFailed');
 		const files = reader.git.snapshot.files;
 		expect(
 			files.state === 'observed' &&

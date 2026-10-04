@@ -97,13 +97,13 @@ export function mountRawFiles(
 
 	async function remove() {
 		const path = target();
-		const read = await files.read(path);
-		if (read.error !== null) {
-			message.textContent = `Not removed: ${read.error.message}`;
+		const { data: file, error: readError } = await files.read(path);
+		if (readError !== null) {
+			message.textContent = `Not removed: ${readError.message}`;
 			return;
 		}
 		// The removal is conditional on the bytes just read.
-		const { error } = await files.remove(read.data);
+		const { error } = await files.remove(file);
 		message.textContent = error === null ? '' : `Not removed: ${error.message}`;
 		if (error === null) log(`Raw removal of ${path}`);
 	}

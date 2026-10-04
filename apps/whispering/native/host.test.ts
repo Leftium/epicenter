@@ -28,7 +28,7 @@ import {
 } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { expectErr } from 'wellcrafted/testing';
+import { expectErr, expectOk } from 'wellcrafted/testing';
 import { createHttpBridge } from '../src/lib/bridge/http.js';
 import { toneWav } from '../src/lib/capture.js';
 import type { RecordingFields } from '../src/lib/definition.js';
@@ -268,7 +268,9 @@ test('the host works beside a held folder lock and leaves the directory exactly 
 		'transcribe',
 		transcribeRequest('take.wav'),
 	);
-	expect(transcribed.data?.text).toBe('a steady tone');
+	const { data: transcription, error: transcriptionError } = transcribed;
+	expect(transcriptionError).toBeNull();
+	expect(transcription?.text).toBe('a steady tone');
 	const run = await bridge.app<ShellRun>('terminal', {
 		command: 'ls',
 		cwd: '',
@@ -392,12 +394,12 @@ test('an injected row failure leaves the audio saved, and retry completes one re
 		`${pending.id}.md`,
 		`${pending.id}.wav`,
 	]);
-	const listed = await folder.tables.recordings.list();
-	expect(listed.data).toHaveLength(1);
+	const listed = expectOk(await folder.tables.recordings.list());
+	expect(listed).toHaveLength(1);
 	// The one row was read, parses, and has no field issue.
-	const row = listed.data![0]!.result.data!;
-	expect(row.parseError).toBeUndefined();
-	expect(row.issues).toEqual([]);
+	const row = expectOk(listed![0]!.result);
+	expect(row!.parseError).toBeUndefined();
+	expect(row!.issues).toEqual([]);
 });
 
 test('an injected audio failure writes nothing, and retry saves', async () => {
@@ -542,7 +544,7 @@ test('a terminal edit is an outside write: the owner’s next read sees it, and 
 	const folder = await owner(root);
 	const pending = capture();
 	await publishRecording(folder, pending, { retry: false });
-	const entry = (await folder.tables.recordings.get(pending.id)).data!;
+	const entry = expectOk(await folder.tables.recordings.get(pending.id));
 	expect((await folder.git.commit()).status).toBe('committed');
 
 	// The real shell, as any other program: it edits the row and commits.
@@ -553,14 +555,14 @@ test('a terminal edit is an outside write: the owner’s next read sees it, and 
 	expect(run.exitCode).toBe(0);
 	expect(run.stdout).toContain(`recordings/${pending.id}.md`);
 
-	const reread = (await folder.tables.recordings.get(pending.id)).data!;
-	expect(reread.fields.title).toBe('Renamed in the shell');
+	const reread = expectOk(await folder.tables.recordings.get(pending.id));
+	expect(reread!.fields.title).toBe('Renamed in the shell');
 	// The page's older observation no longer matches: its save is refused, not applied.
-	const stale = await folder.tables.recordings.replace(
-		entry,
-		entry.source.replace('First take', 'Lost update'),
+	const { error: replaceError } = await folder.tables.recordings.replace(
+		entry!,
+		entry!.source.replace('First take', 'Lost update'),
 	);
-	expect(stale.error?.name).toBe('Conflict');
+	expect(replaceError?.name).toBe('Conflict');
 	expect(
 		await readFile(join(root, 'recordings', `${pending.id}.md`), 'utf8'),
 	).toContain('title: Renamed in the shell');
@@ -580,8 +582,9 @@ test('transcription reads the saved audio and sends it to the configured endpoin
 		transcribeRequest(`recordings/${pending.id}.wav`),
 	);
 
-	expect(result.error).toBeNull();
-	expect(result.data?.text).toBe('a steady tone');
+	const { data: transcription, error: transcribeError } = result;
+	expect(transcribeError).toBeNull();
+	expect(transcription?.text).toBe('a steady tone');
 	expect(stub.requests).toHaveLength(1);
 	expect(stub.requests[0]!.url).toBe(
 		'http://127.0.0.1:18080/v1/audio/transcriptions',
@@ -614,7 +617,9 @@ test('audio at a nested path the row names is sent once, under its own name and 
 		transcribeRequest('Imported/2026 takes/Voice Memo.m4a'),
 	);
 
-	expect(result.data?.text).toBe('a steady tone');
+	const { data: transcription, error: transcriptionError } = result;
+	expect(transcriptionError).toBeNull();
+	expect(transcription?.text).toBe('a steady tone');
 	expect(stub.requests).toHaveLength(1);
 	const file = stub.requests[0]!.form.get('file') as File;
 	expect(file.name).toBe('Voice Memo.m4a');
@@ -653,7 +658,9 @@ test('the bytes sent are the ones read: changing or removing the file during the
 	await rm(join(root, 'recordings', 'take.wav'));
 	release.resolve();
 
-	expect((await transcribing).data?.text).toBe('a steady tone');
+	const { data: transcription, error: transcriptionError } = await transcribing;
+	expect(transcriptionError).toBeNull();
+	expect(transcription?.text).toBe('a steady tone');
 	expect(sent).toEqual(new Uint8Array(original));
 });
 
@@ -708,8 +715,9 @@ test('a path that cannot be read as the folder’s own regular file sends nothin
 			'transcribe',
 			transcribeRequest(path),
 		);
-		expect(result.data).toBeNull();
-		expect(result.error?.name).toBe('AudioUnreadable');
+		const { data: transcription, error: transcribeError } = result;
+		expect(transcription).toBeNull();
+		expect(transcribeError?.name).toBe('AudioUnreadable');
 	}
 
 	expect(stub.requests).toEqual([]);
@@ -885,12 +893,13 @@ test('a connection’s key is kept out of the versioned folder and out of every 
 	);
 	expect(JSON.stringify(await bridge.app('info'))).not.toContain('secret-key');
 
-	const listing = await folder.files.list();
-	for (const file of listing.data!.files)
+	const listing = expectOk(await folder.files.list());
+	for (const file of listing!.files)
 		expect(
 			await readFile(join(root, file.path), 'utf8').catch(() => ''),
 		).not.toContain('secret-key');
-	expect((await folder.git.status()).data?.changes).toEqual([]);
+	const status = expectOk(await folder.git.status());
+	expect(status?.changes).toEqual([]);
 	expect(
 		await readFile(
 			join(root, '.git', 'epicenter', 'whispering', 'device.json'),
@@ -966,7 +975,8 @@ test('a key from the environment is a read-only transcription connection at its 
 		...transcribeRequest('take.wav'),
 		expectedBaseUrl: 'https://elsewhere.example/v1',
 	});
-	expect(elsewhere.error?.name).toBe('ConnectionChanged');
+	const { error: connectionError } = elsewhere;
+	expect(connectionError?.name).toBe('ConnectionChanged');
 	expect(stub.requests).toHaveLength(1);
 
 	// Text has no connection of its own, so nothing is sent with any key.
@@ -976,7 +986,8 @@ test('a key from the environment is a read-only transcription connection at its 
 		prompt: 'p',
 		input: 'i',
 	});
-	expect(text.error?.name).toBe('ConnectionUnavailable');
+	const { error: transformError } = text;
+	expect(transformError?.name).toBe('ConnectionUnavailable');
 	expect(stub.requests).toHaveLength(1);
 });
 
@@ -1002,7 +1013,9 @@ test('a nonempty environment key is sent only to transcription; a keyless text c
 		input: 'i',
 	});
 
-	expect(answered.data?.text).toBe('ok');
+	const { data: answer, error: answerError } = answered;
+	expect(answerError).toBeNull();
+	expect(answer?.text).toBe('ok');
 	expect(requests).toEqual([
 		{ url: `${BASE_URL}/chat/completions`, authorization: null },
 	]);
@@ -1050,7 +1063,8 @@ test('a request prepared for another endpoint is refused before anything is sent
 			'transform',
 			prepared(expected),
 		);
-		expect(refused.error?.name).toBe('ConnectionChanged');
+		const { error: connectionError } = refused;
+		expect(connectionError?.name).toBe('ConnectionChanged');
 	}
 	expect(stub.requests).toEqual([]);
 
@@ -1059,7 +1073,9 @@ test('a request prepared for another endpoint is refused before anything is sent
 		'transform',
 		prepared('HTTP://127.0.0.1:18080/v1//'),
 	);
-	expect(sent.data?.text).toBe('ok');
+	const { data: answer, error: answerError } = sent;
+	expect(answerError).toBeNull();
+	expect(answer?.text).toBe('ok');
 	expect(stub.requests).toEqual([
 		{ url: `${BASE_URL}/chat/completions`, authorization: 'Bearer text-key' },
 	]);
@@ -1093,7 +1109,9 @@ test('a connection saved while a request is out does not move it or change its k
 	});
 	release.resolve();
 
-	expect((await out).data?.text).toBe('ok');
+	const { data: answer, error: answerError } = await out;
+	expect(answerError).toBeNull();
+	expect(answer?.text).toBe('ok');
 	expect(requests).toEqual([
 		{ url: `${BASE_URL}/chat/completions`, authorization: 'Bearer first-key' },
 	]);
@@ -1101,7 +1119,8 @@ test('a connection saved while a request is out does not move it or change its k
 		'transform',
 		prepared(BASE_URL),
 	);
-	expect(retried.error).toMatchObject({
+	const { error: retryError } = retried;
+	expect(retryError).toMatchObject({
 		name: 'ConnectionChanged',
 		expected: BASE_URL,
 		configured: 'http://127.0.0.1:9999/v1',
@@ -1158,9 +1177,12 @@ test('an earlier build’s key is sent nowhere until moved, and moves only to th
 	await seedDevice(root, { transcriptionApiKey: 'earlier-key', kept: 7 });
 	// A keyless local endpoint set up on purpose: the earlier key is not lent to it.
 	await connect(bridge, 'text');
-	expect(
-		(await bridge.app<Transcribed>('transform', prepared(BASE_URL))).data?.text,
-	).toBe('ok');
+	const { data: answer, error: answerError } = await bridge.app<Transcribed>(
+		'transform',
+		prepared(BASE_URL),
+	);
+	expect(answerError).toBeNull();
+	expect(answer?.text).toBe('ok');
 	expect(stub.requests).toEqual([
 		{ url: `${BASE_URL}/chat/completions`, authorization: null },
 	]);
@@ -1247,7 +1269,8 @@ test('a redirect from the endpoint is not followed, so the key never reaches ano
 
 	const answered = await bridge.app<Transcribed>('transform', prepared(base));
 
-	expect(answered.error?.name).toBe('Unreachable');
+	const { error: transformError } = answered;
+	expect(transformError?.name).toBe('Unreachable');
 	expect(JSON.stringify(answered)).not.toContain('redirect-key');
 	expect(hits).toEqual([
 		{ path: '/v1/chat/completions', authorization: 'Bearer redirect-key' },

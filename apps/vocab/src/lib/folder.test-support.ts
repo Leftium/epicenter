@@ -66,8 +66,8 @@ export async function fileText(
 	folder: VocabFolder,
 	path: string,
 ): Promise<string | undefined> {
-	const read = await folder.files.read(path);
-	return read.data ? new TextDecoder().decode(read.data.bytes) : undefined;
+	const { data: file, error: readError } = await folder.files.read(path);
+	return readError === null ? new TextDecoder().decode(file.bytes) : undefined;
 }
 
 /** The paths of every file in one table's directory, sorted. */

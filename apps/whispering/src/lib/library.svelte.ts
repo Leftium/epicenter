@@ -342,9 +342,11 @@ const resultBody = (text: string) => (text.endsWith('\n') ? text : `${text}\n`);
 function splitListing<TFields>(listing: TableListing<TFields>) {
 	const entries: TableSnapshot<TFields>[] = [];
 	const failed: { path: string; message: string }[] = [];
-	for (const { path, result } of listing)
-		if (result.error === null) entries.push(result.data);
-		else failed.push({ path, message: result.error.message });
+	for (const { path, result } of listing) {
+		const { data: entry, error: readError } = result;
+		if (readError === null) entries.push(entry);
+		else failed.push({ path, message: readError.message });
+	}
 	return { entries, failed };
 }
 
@@ -654,7 +656,11 @@ export function createLibrary(workspace: Workspace) {
 		return file?.kind === 'text' ? file.editor : undefined;
 	}
 
-	const rowTables = [recordingRows, transcriptRows, transformationRows] as const;
+	const rowTables = [
+		recordingRows,
+		transcriptRows,
+		transformationRows,
+	] as const;
 
 	/** Run `act` on the row table a path is a row of, if it is one of the edited tables. */
 	function withRowTable<R>(
@@ -770,22 +776,24 @@ export function createLibrary(workspace: Workspace) {
 		const opening: RowSlot<TFields> = { kind: 'opening', done };
 		rows.set(path, opening);
 		try {
-			const edited = await rowTable.edit(stem, { signal: lifetime.signal });
+			const { data: editor, error: editError } = await rowTable.edit(stem, {
+				signal: lifetime.signal,
+			});
 			// Forgotten, or the library closed, while it was opening: it belongs to no view.
 			if (rows.get(path) !== opening || closing) {
-				if (edited.error === null) void edited.data.dispose();
+				if (editError === null) void editor.dispose();
 				if (rows.get(path) === opening) rows.delete(path);
 				return rows.get(path) ?? { kind: 'missing' };
 			}
-			if (edited.error === null) {
+			if (editError === null) {
 				const slot: RowSlot<TFields> = {
 					kind: 'form',
-					draft: draftOf(kind, path, edited.data),
+					draft: draftOf(kind, path, editor),
 				};
 				rows.set(path, slot);
 				return slot;
 			}
-			const refused = rowRefusal(edited.error);
+			const refused = rowRefusal(editError);
 			if (refused.kind === 'raw') {
 				const slot: RowSlot<TFields> = {
 					kind: 'raw',
@@ -919,9 +927,13 @@ export function createLibrary(workspace: Workspace) {
 				}
 				continue;
 			}
-			const read = await readTextFile(folder.files, path);
+			const { data: opened, error: readError } = await readTextFile(
+				folder.files,
+				path,
+			);
 			if (sequence !== refreshSequence) return;
-			if (read.data?.kind === 'text') editor.observe(read.data.file);
+			if (readError === null && opened.kind === 'text')
+				editor.observe(opened.file);
 		}
 	}
 
@@ -936,9 +948,9 @@ export function createLibrary(workspace: Workspace) {
 		listed: TableListing<TFields>,
 	): Promise<unknown> {
 		const versions = new Map(
-			listed.map(({ path, result }) => [
+			listed.map(({ path, result: { data: entry, error: readError } }) => [
 				path,
-				result.error === null ? result.data.sha256 : undefined,
+				readError === null ? entry.sha256 : undefined,
 			]),
 		);
 		const reads: Promise<void>[] = [];
@@ -991,80 +1003,88 @@ export function createLibrary(workspace: Workspace) {
 		// Published before this read began, so this read's listing accounts for them.
 		const published = new Map(unlistedResults);
 		const publishedOutputs = new Map(unlistedOutputs);
-		const [rows, found, files, kvRead, profileRows, outputRows, textRows] =
-			await Promise.all([
-				table.list(),
-				results.list(),
-				folder.files.list(),
-				folder.kv.get(),
-				profiles.list(),
-				outputs.list(),
-				textOutputs.list(),
-			]);
+		const [
+			{ data: recordingListing, error: recordingListError },
+			{ data: transcriptListing, error: transcriptListError },
+			{ data: fileListing, error: fileListError },
+			{ data: storedKv, error: kvError },
+			{ data: profileListing, error: profileListError },
+			{ data: outputListing, error: outputListError },
+			{ data: textOutputListing, error: textOutputListError },
+		] = await Promise.all([
+			table.list(),
+			results.list(),
+			folder.files.list(),
+			folder.kv.get(),
+			profiles.list(),
+			outputs.list(),
+			textOutputs.list(),
+		]);
 		if (sequence !== refreshSequence) return;
 		/** Row drafts reading their own files again; this refresh ends after them. */
 		const rowReads: Promise<unknown>[] = [];
 		// Results on pasted text name no recording, so a file here that cannot be
 		// read is reported where they are listed and never holds up a recording's
 		// deletion. A listing that failed keeps the last list and says so.
-		if (textRows.error) textResultsError = textRows.error.message;
+		if (textOutputListError !== null)
+			textResultsError = textOutputListError.message;
 		else {
 			textResultsError = undefined;
-			const read = splitListing(textRows.data);
+			const read = splitListing(textOutputListing);
 			textResults = read.entries;
 			unreadableTextResults = read.failed;
 		}
 		// A file that was read is a row to show and open, whether or not its text
 		// parses. A file that could not be read has no text and is listed apart.
-		if (profileRows.error) {
-			transformationsError = profileRows.error.message;
+		if (profileListError !== null) {
+			transformationsError = profileListError.message;
 		} else {
 			transformationsError = undefined;
-			const read = splitListing(profileRows.data);
+			const read = splitListing(profileListing);
 			transformations = sortTransformations(read.entries);
 			unreadableTransformations = read.failed;
-			rowReads.push(observeRowDrafts(transformationRows, profileRows.data));
+			rowReads.push(observeRowDrafts(transformationRows, profileListing));
 		}
 		// A listing that failed keeps the previous observation, as the lists do.
-		if (outputRows.error === null) {
-			const read = splitListing(outputRows.data);
+		if (outputListError === null) {
+			const read = splitListing(outputListing);
 			transformationResults = read.entries;
 			noteUnread(outputs.name, read.failed);
 			for (const [path, entry] of publishedOutputs)
 				if (unlistedOutputs.get(path) === entry) unlistedOutputs.delete(path);
 		}
-		if (rows.error) {
+		if (recordingListError !== null) {
 			// Keep the previous observation visible; never show an empty list for a failed read.
-			listError = rows.error.message;
+			listError = recordingListError.message;
 		} else {
 			listError = undefined;
-			const read = splitListing(rows.data);
+			const read = splitListing(recordingListing);
 			entries = sortEntries(read.entries);
 			unreadable = read.failed;
-			rowReads.push(observeRowDrafts(recordingRows, rows.data));
-			const present = new Set(rows.data.map((item) => item.path));
+			rowReads.push(observeRowDrafts(recordingRows, recordingListing));
+			const present = new Set(recordingListing.map((item) => item.path));
 			// Only a listing that was read says a file is gone; a failed one says nothing.
 			for (const listener of recordingsListed) listener(present);
 		}
-		if (found.error === null) {
-			const read = splitListing(found.data);
+		if (transcriptListError === null) {
+			const read = splitListing(transcriptListing);
 			transcriptions = read.entries;
 			noteUnread(results.name, read.failed);
 			for (const [path, entry] of published)
 				if (unlistedResults.get(path) === entry) unlistedResults.delete(path);
-			rowReads.push(observeRowDrafts(transcriptRows, found.data));
+			rowReads.push(observeRowDrafts(transcriptRows, transcriptListing));
 		}
-		if (kvRead.error) settingsError = kvRead.error.message;
+		if (kvError !== null) settingsError = kvError.message;
 		else {
 			settingsError = undefined;
-			kv = kvRead.data;
+			kv = storedKv;
 		}
-		if (files.error) {
-			listingError = files.error.message;
+		if (fileListError !== null) {
+			listingError = fileListError.message;
 		} else {
 			listingError = undefined;
-			listing = files.data;
-			await observeTextDrafts(files.data, sequence);
+			listing = fileListing;
+			await observeTextDrafts(fileListing, sequence);
 		}
 		await Promise.all(rowReads);
 		if (sequence === refreshSequence) generation += 1;
@@ -1078,7 +1098,9 @@ export function createLibrary(workspace: Workspace) {
 	const isSlot = <TFields>(
 		opened: Awaited<ReturnType<typeof openRow<TFields>>>,
 	): opened is RowSlot<TFields> =>
-		opened.kind === 'opening' || opened.kind === 'form' || opened.kind === 'raw';
+		opened.kind === 'opening' ||
+		opened.kind === 'form' ||
+		opened.kind === 'raw';
 
 	/**
 	 * Select a path: a recording, transcript, or transformation row opens its
@@ -1129,7 +1151,10 @@ export function createLibrary(workspace: Workspace) {
 	async function load(path: string) {
 		if (closing) return;
 		openFiles.set(path, { kind: 'loading' });
-		const read = await readTextFile(folder.files, path);
+		const { data: opened, error: readError } = await readTextFile(
+			folder.files,
+			path,
+		);
 		if (openFiles.get(path)?.kind !== 'loading') return;
 		if (closing) {
 			openFiles.delete(path);
@@ -1137,11 +1162,11 @@ export function createLibrary(workspace: Workspace) {
 		}
 		openFiles.set(
 			path,
-			read.error
-				? { kind: 'failed', message: read.error.message }
-				: read.data.kind === 'text'
-					? { kind: 'text', editor: rawEditorOf(read.data.file) }
-					: read.data,
+			readError !== null
+				? { kind: 'failed', message: readError.message }
+				: opened.kind === 'text'
+					? { kind: 'text', editor: rawEditorOf(opened.file) }
+					: opened,
 		);
 	}
 
@@ -1168,17 +1193,17 @@ export function createLibrary(workspace: Workspace) {
 	async function recordingForOperation(
 		path: string,
 	): Promise<Result<RecordingEntry, string>> {
-		const settled = await settleDraft(path);
-		if (settled.error !== null) return settled;
+		const { data: settledSha256, error: settleError } = await settleDraft(path);
+		if (settleError !== null) return Err(settleError);
 		const stem = rowStemOf(RECORDINGS, path);
 		if (stem === undefined) return Err(`${path} is not a recording.`);
-		const read = await table.get(stem);
-		if (read.error) return Err(read.error.message);
-		if (read.data === undefined)
+		const { data: recording, error: readError } = await table.get(stem);
+		if (readError !== null) return Err(readError.message);
+		if (recording === undefined)
 			return Err('This recording is no longer in the folder.');
-		if (settled.data !== undefined && read.data.sha256 !== settled.data)
+		if (settledSha256 !== undefined && recording.sha256 !== settledSha256)
 			return Err('The file changed after it was read. Check it and try again.');
-		return Ok(read.data);
+		return Ok(recording);
 	}
 
 	/**
@@ -1195,8 +1220,8 @@ export function createLibrary(workspace: Workspace) {
 		if (slot?.kind === 'form') {
 			const { review } = slot.draft;
 			if (review === undefined || review.kind === 'changed') {
-				const taken = slot.draft.takeCurrent();
-				return taken.error ?? undefined;
+				const { error: takeError } = slot.draft.takeCurrent();
+				return takeError ?? undefined;
 			}
 			await withRowTable(path, (kind) =>
 				reopenRow(kind, path, { chosen: true }),
@@ -1263,17 +1288,18 @@ export function createLibrary(workspace: Workspace) {
 			release(path);
 			throw cause;
 		}
-		if (removed.error === null || removed.error.name === 'Unconfirmed') {
+		const { error: removeError } = removed;
+		if (removeError === null || removeError.name === 'Unconfirmed') {
 			forget(path);
 			fenced.delete(path);
 			retiring.delete(path);
-			if (removed.error === null) return Ok(undefined);
+			if (removeError === null) return Ok(undefined);
 			return Err(
 				`The folder did not confirm the deletion of "${basename(path)}", so it may or may not be gone. Nothing else was deleted. Open it again to see what the folder holds.`,
 			);
 		}
 		release(path);
-		return Err(describeWriteError(removed.error));
+		return Err(describeWriteError(removeError));
 	}
 
 	/** Let the draft at `path` write again, and save what it held back meanwhile. */
@@ -1298,7 +1324,9 @@ export function createLibrary(workspace: Workspace) {
 				? { document: slot.draft.state.document, text: slot.draft.state.source }
 				: undefined;
 		const editor = textDraftAt(path);
-		return editor?.dirty ? { document: undefined, text: editor.buffer } : undefined;
+		return editor?.dirty
+			? { document: undefined, text: editor.buffer }
+			: undefined;
 	}
 
 	/**
@@ -1332,9 +1360,16 @@ export function createLibrary(workspace: Workspace) {
 			if (slot?.kind === 'form') await slot.draft.refresh();
 			else {
 				const editor = textDraftAt(to);
-				const read = await readTextFile(folder.files, to);
-				if (editor !== undefined && read.data?.kind === 'text')
-					editor.observe(read.data.file);
+				const { data: opened, error: readError } = await readTextFile(
+					folder.files,
+					to,
+				);
+				if (
+					editor !== undefined &&
+					readError === null &&
+					opened.kind === 'text'
+				)
+					editor.observe(opened.file);
 			}
 		}
 		// Nothing is awaited from here until the old draft is put down.
@@ -1365,7 +1400,8 @@ export function createLibrary(workspace: Workspace) {
 			for (const key of Object.keys(slot.draft.state.document.fields))
 				fields[key] = undefined;
 			Object.assign(fields, typed.document.fields);
-			if (!slot.draft.carry({ fields, body: typed.document.body })) return notCarried;
+			if (!slot.draft.carry({ fields, body: typed.document.body }))
+				return notCarried;
 			forget(from);
 			return undefined;
 		}
@@ -1401,13 +1437,13 @@ export function createLibrary(workspace: Workspace) {
 		from: string,
 		to: string,
 	): Promise<string | undefined> {
-		const settled = await settleDraft(from);
-		if (settled.error !== null) return settled.error;
-		let expected = settled.data;
+		const { data: settledSha256, error: settleError } = await settleDraft(from);
+		if (settleError !== null) return settleError;
+		let expected = settledSha256;
 		if (expected === undefined) {
-			const read = await folder.files.read(from);
-			if (read.error) return read.error.message;
-			expected = read.data.sha256;
+			const { data: file, error: readError } = await folder.files.read(from);
+			if (readError !== null) return readError.message;
+			expected = file.sha256;
 		}
 		// A draft at the new name that holds edits is someone's work: nothing
 		// moves onto it. Nothing is awaited from this check to the move.
@@ -1422,6 +1458,7 @@ export function createLibrary(workspace: Workspace) {
 			release(from);
 			throw cause;
 		}
+		const { error: moveError } = moved;
 		/**
 		 * Follow the file to `to`, then show it there. When the edits cannot
 		 * follow, as when a draft at `to` took typing of its own meanwhile, the
@@ -1448,15 +1485,15 @@ export function createLibrary(workspace: Workspace) {
 			await refreshAll();
 			return message;
 		};
-		if (moved.error === null) return follow();
+		if (moveError === null) return follow();
 		// A refusal changed nothing: the old draft goes on at its file.
 		if (
-			moved.error.name !== 'Unconfirmed' &&
-			moved.error.name !== 'SourceNotRemoved'
+			moveError.name !== 'Unconfirmed' &&
+			moveError.name !== 'SourceNotRemoved'
 		) {
 			release(from);
 			await refreshAll();
-			return describeWriteError(moved.error);
+			return describeWriteError(moveError);
 		}
 		// No reply, or a move that left the file at both paths: the rename did
 		// not end as asked, and only the person says where the draft goes. Until
@@ -1464,9 +1501,9 @@ export function createLibrary(workspace: Workspace) {
 		// path is found to hold: a matching file says what is there now, not
 		// what this move did.
 		const message =
-			moved.error.name === 'Unconfirmed'
+			moveError.name === 'Unconfirmed'
 				? `The folder did not confirm the rename of "${basename(from)}" to "${basename(to)}", so it may or may not have happened.`
-				: describeWriteError(moved.error);
+				: describeWriteError(moveError);
 		// With no draft open there are no edits to hold: the message is all.
 		if (slotAt(from) === undefined && textDraftAt(from) === undefined) {
 			fenced.delete(from);
@@ -1487,10 +1524,10 @@ export function createLibrary(workspace: Workspace) {
 
 	/** What one path holds, against the file as it was before a move. */
 	async function pathState(path: string, expected: string): Promise<PathState> {
-		const read = await folder.files.read(path);
-		if (read.error)
-			return read.error.name === 'NotFound' ? 'missing' : 'unreadable';
-		return read.data.sha256 === expected ? 'matches' : 'different';
+		const { data: file, error: readError } = await folder.files.read(path);
+		if (readError !== null)
+			return readError.name === 'NotFound' ? 'missing' : 'unreadable';
+		return file.sha256 === expected ? 'matches' : 'different';
 	}
 
 	async function inspectMove(from: string, to: string, expected: string) {
@@ -1546,8 +1583,12 @@ export function createLibrary(workspace: Workspace) {
 				const slot = slotAt(from);
 				if (slot?.kind === 'form') await slot.draft.refresh();
 				else {
-					const read = await readTextFile(folder.files, from);
-					if (read.data?.kind === 'text') textDraftAt(from)?.observe(read.data.file);
+					const { data: opened, error: readError } = await readTextFile(
+						folder.files,
+						from,
+					);
+					if (readError === null && opened.kind === 'text')
+						textDraftAt(from)?.observe(opened.file);
 				}
 				release(from);
 				await refreshAll();
@@ -1604,8 +1645,8 @@ export function createLibrary(workspace: Workspace) {
 		if (held === undefined || text === undefined)
 			return Err('There is no rename to finish.');
 		const copy = conflictCopyPath(from);
-		const written = await folder.files.create(copy, text);
-		if (written.error) return Err(describeWriteError(written.error));
+		const { error: createError } = await folder.files.create(copy, text);
+		if (createError !== null) return Err(describeWriteError(createError));
 		if (unresolvedMoves.get(from) === held) {
 			forget(from);
 			unresolvedMoves.delete(from);
@@ -1707,9 +1748,7 @@ export function createLibrary(workspace: Workspace) {
 	 * reads. "This recording" is judged on the file as read, never on what the
 	 * receipts say was written.
 	 */
-	async function observeRecording(
-		capture: PendingCapture,
-	): Promise<
+	async function observeRecording(capture: PendingCapture): Promise<
 		| { readonly status: 'present' }
 		| {
 				readonly status: 'unreadable' | 'missing' | 'foreign';
@@ -1752,15 +1791,18 @@ export function createLibrary(workspace: Workspace) {
 				break;
 			}
 			case 'raw': {
-				const read = await readTextFile(folder.files, path);
-				if (read.error)
-					return read.error.name === 'NotFound'
+				const { data: opened, error: readError } = await readTextFile(
+					folder.files,
+					path,
+				);
+				if (readError !== null)
+					return readError.name === 'NotFound'
 						? missing
-						: unreadable(read.error.message);
-				if (read.data.kind !== 'text')
+						: unreadable(readError.message);
+				if (opened.kind !== 'text')
 					return unreadable('it is not text the app can read');
-				slot.editor.observe(read.data.file);
-				source = read.data.file.source;
+				slot.editor.observe(opened.file);
+				source = opened.file.source;
 				break;
 			}
 			default:
@@ -1919,26 +1961,32 @@ export function createLibrary(workspace: Workspace) {
 		writingResults.set(id, recording);
 		// A read or write that throws (the folder host went away) must not lose the text.
 		try {
-			const existing = await results.get(id);
-			if (existing.error) published = Err(existing.error.message);
-			else if (existing.data === undefined) {
-				const created = await results.create({ stem: id, fields, body });
-				published = created.error
-					? Err(describeWriteError(created.error))
-					: Ok(created.data);
+			const { data: existing, error: readError } = await results.get(id);
+			if (readError !== null) published = Err(readError.message);
+			else if (existing === undefined) {
+				const { data: created, error: createError } = await results.create({
+					stem: id,
+					fields,
+					body,
+				});
+				published =
+					createError !== null
+						? Err(describeWriteError(createError))
+						: Ok(created);
 			} else
-				published = isThisResult(existing.data, fields, body)
-					? Ok(existing.data)
+				published = isThisResult(existing, fields, body)
+					? Ok(existing)
 					: Err(
-							`${existing.data.path} already exists and is not this transcript. Nothing was overwritten.`,
+							`${existing.path} already exists and is not this transcript. Nothing was overwritten.`,
 						);
 		} catch (cause) {
 			published = Err(describe(cause));
 		} finally {
 			writingResults.delete(id);
 		}
+		const { data: saved, error: publishError } = published;
 		const stands = runs.get(recording) === admitted;
-		if (published.error !== null) {
+		if (publishError !== null) {
 			if (stands)
 				runs.set(recording, {
 					kind: 'unsaved',
@@ -1946,7 +1994,7 @@ export function createLibrary(workspace: Workspace) {
 					fields,
 					text,
 					body,
-					message: published.error,
+					message: publishError,
 					saving: false,
 				});
 			return;
@@ -1954,7 +2002,7 @@ export function createLibrary(workspace: Workspace) {
 		// Saved, whatever the listing below reports. There is no await between
 		// the write ending and this, so the recording is never without a run, a
 		// write, or this row standing in the way of a deletion confirmed earlier.
-		unlistedResults.set(published.data.path, published.data);
+		unlistedResults.set(saved.path, saved);
 		if (stands) runs.delete(recording);
 		await refreshAll();
 	}
@@ -1990,13 +2038,13 @@ export function createLibrary(workspace: Workspace) {
 			run.destination === 'transcript' ? run.fields.recordingId : undefined,
 		);
 		try {
-			const existing =
+			const { data: existing, error: readError } =
 				run.destination === 'transcript'
 					? await outputs.get(run.id)
 					: await textOutputs.get(run.id);
-			if (existing.error) published = Err(existing.error.message);
-			else if (existing.data === undefined) {
-				const created =
+			if (readError !== null) published = Err(readError.message);
+			else if (existing === undefined) {
+				const { data: created, error: createError } =
 					run.destination === 'transcript'
 						? await outputs.create({ stem: run.id, fields: run.fields, body })
 						: await textOutputs.create({
@@ -2004,26 +2052,28 @@ export function createLibrary(workspace: Workspace) {
 								fields: run.fields,
 								body,
 							});
-				published = created.error
-					? Err(describeWriteError(created.error))
-					: Ok(created.data);
+				published =
+					createError !== null
+						? Err(describeWriteError(createError))
+						: Ok(created);
 			} else
-				published = isThisResult(existing.data, run.fields, body)
-					? Ok(existing.data)
+				published = isThisResult(existing, run.fields, body)
+					? Ok(existing)
 					: Err(
-							`${existing.data.path} already exists and is not this result. Nothing was overwritten.`,
+							`${existing.path} already exists and is not this result. Nothing was overwritten.`,
 						);
 		} catch (cause) {
 			published = Err(describe(cause));
 		} finally {
 			writingRuns.delete(run.id);
 		}
+		const { data: saved, error: publishError } = published;
 		const stands = recipeRuns.get(run.id) === admitted;
-		if (published.error !== null) {
+		if (publishError !== null) {
 			if (stands)
 				recipeRuns.set(
 					run.id,
-					withState(run, { kind: 'unsaved', message: published.error, text }),
+					withState(run, { kind: 'unsaved', message: publishError, text }),
 				);
 			return;
 		}
@@ -2032,10 +2082,7 @@ export function createLibrary(workspace: Workspace) {
 		// finds the run, the write, or this row in its way.
 		if (run.destination === 'transcript')
 			// Read or created in `transformation_runs/` just above.
-			unlistedOutputs.set(
-				published.data.path,
-				published.data as TransformationRunEntry,
-			);
+			unlistedOutputs.set(saved.path, saved as TransformationRunEntry);
 		if (stands) recipeRuns.delete(run.id);
 		await refreshAll();
 	}
@@ -2117,14 +2164,14 @@ export function createLibrary(workspace: Workspace) {
 		const transcriptionId = rowStemOf(TRANSCRIPTIONS, transcriptionPath);
 		if (transcriptionId === undefined)
 			return Err(`${transcriptionPath} is not a transcript.`);
-		const settled = await settleDraft(transcriptionPath);
-		if (settled.error !== null)
+		const { error: settleError } = await settleDraft(transcriptionPath);
+		if (settleError !== null)
 			return Err(
 				`${transcriptionPath} has edits that are not saved. Resolve them in its file, then run this again.`,
 			);
-		const read = await results.get(transcriptionId);
-		if (read.error) return Err(read.error.message);
-		const transcription = read.data;
+		const { data: transcription, error: readError } =
+			await results.get(transcriptionId);
+		if (readError !== null) return Err(readError.message);
 		if (transcription === undefined)
 			return Err('This transcript is no longer in the folder.');
 		// What a transformation needs from the transcript is its text and the
@@ -2137,9 +2184,10 @@ export function createLibrary(workspace: Workspace) {
 			);
 		if (input.trim() === '')
 			return Err('This transcript has no text to transform.');
-		const recording = await table.get(recordingId);
-		if (recording.error) return Err(recording.error.message);
-		if (recording.data === undefined)
+		const { data: recording, error: recordingError } =
+			await table.get(recordingId);
+		if (recordingError !== null) return Err(recordingError.message);
+		if (recording === undefined)
 			return Err(
 				'The recording this transcript was made from is no longer in the folder.',
 			);
@@ -2178,12 +2226,13 @@ export function createLibrary(workspace: Workspace) {
 			);
 			return;
 		}
-		if (answered.error) {
-			failed(answered.error.message);
+		const { data: answer, error: transformError } = answered;
+		if (transformError !== null) {
+			failed(transformError.message);
 			return;
 		}
 		if (run.destination === 'transcript') {
-			await saveRun(run, answered.data.text, running);
+			await saveRun(run, answer.text, running);
 			return;
 		}
 		if (recipeRuns.get(run.id) === running)
@@ -2192,7 +2241,7 @@ export function createLibrary(workspace: Workspace) {
 				withState(run, {
 					kind: 'unsaved',
 					message: undefined,
-					text: answered.data.text,
+					text: answer.text,
 				}),
 			);
 	}
@@ -2241,16 +2290,16 @@ export function createLibrary(workspace: Workspace) {
 				await sendRun(run);
 				return;
 			}
-			const source = await transformationSource(
+			const { data: source, error: sourceError } = await transformationSource(
 				rowPath(TRANSCRIPTIONS, run.fields.transcriptionId),
 			);
-			if (source.error !== null) {
-				refuse(`${source.error} Dismiss this run.`);
+			if (sourceError !== null) {
+				refuse(`${sourceError} Dismiss this run.`);
 				return;
 			}
 			if (
-				source.data.input !== run.fields.input ||
-				source.data.recordingId !== run.fields.recordingId
+				source.input !== run.fields.input ||
+				source.recordingId !== run.fields.recordingId
 			) {
 				refuse(
 					'The transcript changed after this run started, so the same request was not sent again. Dismiss this run and run the transformation again.',
@@ -2260,7 +2309,7 @@ export function createLibrary(workspace: Workspace) {
 			// From these checks to the run being listed as running there is no
 			// await, so a discard or a deletion either is seen here or sees it.
 			if (!stands()) return;
-			if (deleting.has(source.data.recordingId)) {
+			if (deleting.has(source.recordingId)) {
 				refuse(BEING_DELETED);
 				return;
 			}
@@ -2276,17 +2325,17 @@ export function createLibrary(workspace: Workspace) {
 	async function transformationForOperation(
 		path: string,
 	): Promise<Result<TransformationEntry, string>> {
-		const settled = await settleDraft(path);
-		if (settled.error !== null) return settled;
+		const { data: settledSha256, error: settleError } = await settleDraft(path);
+		if (settleError !== null) return Err(settleError);
 		const stem = rowStemOf(TRANSFORMATIONS, path);
 		if (stem === undefined) return Err(`${path} is not a transformation.`);
-		const read = await profiles.get(stem);
-		if (read.error) return Err(read.error.message);
-		if (read.data === undefined)
+		const { data: transformation, error: readError } = await profiles.get(stem);
+		if (readError !== null) return Err(readError.message);
+		if (transformation === undefined)
 			return Err('This transformation is no longer in the folder.');
-		if (settled.data !== undefined && read.data.sha256 !== settled.data)
+		if (settledSha256 !== undefined && transformation.sha256 !== settledSha256)
 			return Err('The file changed after it was read. Check it and try again.');
-		return Ok(read.data);
+		return Ok(transformation);
 	}
 
 	/** Newest first; a row whose time did not validate sorts last. */
@@ -2457,9 +2506,7 @@ export function createLibrary(workspace: Workspace) {
 			return unreadableTransformations;
 		},
 		isTransformation(path: string) {
-			return (
-				transformationPaths.has(path) || transformationRows.rows.has(path)
-			);
+			return transformationPaths.has(path) || transformationRows.rows.has(path);
 		},
 		get selectedTransformationPath() {
 			return selectedTransformationPath;
@@ -2653,11 +2700,12 @@ export function createLibrary(workspace: Workspace) {
 			const slot = slotAt(path);
 			if (slot?.kind !== 'form') return Err('There is no draft to copy.');
 			const copied = await slot.draft.keepCopy();
-			if (copied.error !== null) return copied;
+			const { data: copyPath, error: copyError } = copied;
+			if (copyError !== null) return copied;
 			const discarded = await discardDraft(path);
 			if (discarded !== undefined)
 				return Err(
-					`Your edits were saved to ${copied.data}, and kept here: ${discarded}`,
+					`Your edits were saved to ${copyPath}, and kept here: ${discarded}`,
 				);
 			return copied;
 		},
@@ -2670,19 +2718,21 @@ export function createLibrary(workspace: Workspace) {
 			const switched = await withRowTable(path, async (kind) => {
 				const slot = kind.rows.get(path);
 				if (slot?.kind !== 'form') return undefined;
-				const free = () =>
-					!draftHolds(path) && slot.draft.review === undefined;
+				const free = () => !draftHolds(path) && slot.draft.review === undefined;
 				if (!free()) return UNSETTLED;
-				const read = await readTextFile(folder.files, path);
-				if (read.error) return read.error.message;
-				if (read.data.kind !== 'text')
+				const { data: opened, error: readError } = await readTextFile(
+					folder.files,
+					path,
+				);
+				if (readError !== null) return readError.message;
+				if (opened.kind !== 'text')
 					return 'This file is not text that can be edited here.';
 				// Typing or a reopening while it was read keeps the draft as it is.
 				if (kind.rows.get(path) !== slot || !free() || closing)
 					return UNSETTLED;
 				kind.rows.set(path, {
 					kind: 'raw',
-					editor: rawEditorOf(read.data.file),
+					editor: rawEditorOf(opened.file),
 					reason: undefined,
 				});
 				await disposeSlot(slot as RowSlot<unknown>);
@@ -2715,24 +2765,25 @@ export function createLibrary(workspace: Workspace) {
 			input.release();
 			const attempt = new AbortController();
 			starting = attempt;
-			const started = await workspace.capture.start({
-				input: input.choice,
-				signal: attempt.signal,
-			});
+			const { data: recording, error: startError } =
+				await workspace.capture.start({
+					input: input.choice,
+					signal: attempt.signal,
+				});
 			// Cancelled or closed while the microphone was opening: it is not kept.
 			if (starting !== attempt) {
-				started.data?.cancel();
+				if (startError === null) recording.cancel();
 				return;
 			}
 			starting = undefined;
-			if (started.error) {
+			if (startError !== null) {
 				recorder = { phase: 'idle' };
-				recorderError = started.error.message;
-				input.noteRecordingError(started.error);
+				recorderError = startError.message;
+				input.noteRecordingError(startError);
 				return;
 			}
-			active = started.data;
-			recorder = { phase: 'recording', startedAt: started.data.startedAt };
+			active = recording;
+			recorder = { phase: 'recording', startedAt: recording.startedAt };
 		},
 		/**
 		 * Stop, keep the audio in this window, and publish it to the folder.
@@ -2745,13 +2796,13 @@ export function createLibrary(workspace: Workspace) {
 			const capture = active;
 			active = undefined;
 			recorder = { phase: 'stopping' };
-			const stopped = await capture.stop();
+			const { data: captured, error: stopError } = await capture.stop();
 			recorder = { phase: 'idle' };
-			if (stopped.error) {
-				recorderError = stopped.error.message;
+			if (stopError !== null) {
+				recorderError = stopError.message;
 				return;
 			}
-			await publish(accept(stopped.data, new Date()));
+			await publish(accept(captured, new Date()));
 		},
 		cancelRecording() {
 			starting?.abort();
@@ -2845,8 +2896,9 @@ export function createLibrary(workspace: Workspace) {
 				});
 				return;
 			}
-			if (answered.error) {
-				runs.set(id, { kind: 'failed', message: answered.error.message });
+			const { data: answer, error: transcribeError } = answered;
+			if (transcribeError !== null) {
+				runs.set(id, { kind: 'failed', message: transcribeError.message });
 				return;
 			}
 			// Fixed here, once: every save of this answer writes this stem, these
@@ -2862,8 +2914,8 @@ export function createLibrary(workspace: Workspace) {
 						model: used.model,
 						endpoint: used.baseUrl,
 					} as TranscriptionFields,
-					text: answered.data.text,
-					body: resultBody(answered.data.text),
+					text: answer.text,
+					body: resultBody(answer.text),
 				},
 				running,
 			);
@@ -2903,14 +2955,14 @@ export function createLibrary(workspace: Workspace) {
 				title: string;
 				prompt: string;
 			}): Promise<string | undefined> => {
-				const created = await profiles.create({
+				const { data: created, error: createError } = await profiles.create({
 					fields: { title, model: null, endpoint: null },
 					body: prompt,
 				});
-				if (created.error) return describeWriteError(created.error);
+				if (createError !== null) return describeWriteError(createError);
 				await refreshAll();
-				await openRow(transformationRows, created.data.path);
-				selectedTransformationPath = created.data.path;
+				await openRow(transformationRows, created.path);
+				selectedTransformationPath = created.path;
 				return undefined;
 			},
 		),
@@ -2932,33 +2984,34 @@ export function createLibrary(workspace: Workspace) {
 				return 'This transformation is already running on this transcript. Run it again when it has finished.';
 			applying.add(pair);
 			try {
-				const read = await transformationForOperation(transformationPath);
-				if (read.error !== null) return read.error;
-				const profile = read.data;
+				const { data: profile, error: readError } =
+					await transformationForOperation(transformationPath);
+				if (readError !== null) return readError;
 				// The saved file, against the text connection: what is sent.
 				const resolved = resolve(profile);
 				if (resolved.kind !== 'ready') return resolved.reason;
-				const source = await transformationSource(transcriptionPath);
-				if (source.error !== null) return source.error;
+				const { data: source, error: sourceError } =
+					await transformationSource(transcriptionPath);
+				if (sourceError !== null) return sourceError;
 				// From this check to the run being listed there is no await, so a
 				// deletion either sees this run or is seen here. The reads above
 				// were held as running; a close asked meanwhile stops the send.
-				if (deleting.has(source.data.recordingId)) return BEING_DELETED;
+				if (deleting.has(source.recordingId)) return BEING_DELETED;
 				if (!admitting) return LEAVING;
 				const at = new Date();
 				await sendRun({
 					id: recordingId(at),
 					destination: 'transcript',
 					fields: {
-						recordingId: source.data.recordingId,
-						transcriptionId: source.data.transcriptionId,
+						recordingId: source.recordingId,
+						transcriptionId: source.transcriptionId,
 						transformationId: profile.stem,
 						transformationTitle: resolved.title,
 						createdAt: at.toISOString(),
 						model: resolved.model,
 						endpoint: resolved.endpoint,
 						prompt: resolved.prompt,
-						input: source.data.input,
+						input: source.input,
 					} as TransformationRunFields,
 					state: { kind: 'running' },
 				});
@@ -2988,7 +3041,8 @@ export function createLibrary(workspace: Workspace) {
 			if (!admitting) return LEAVING;
 			if (input.trim() === '') return 'Paste some text to run this on.';
 			const stem = rowStemOf(TRANSFORMATIONS, transformationPath);
-			if (stem === undefined) return `${transformationPath} is not a transformation.`;
+			if (stem === undefined)
+				return `${transformationPath} is not a transformation.`;
 			const key = JSON.stringify(['text', transformationPath]);
 			const held = textRuns().find(
 				(run) =>
@@ -3000,9 +3054,9 @@ export function createLibrary(workspace: Workspace) {
 				return 'A result of this transformation on pasted text is waiting. Save or discard it first, so it is not replaced.';
 			applying.add(key);
 			try {
-				const read = await transformationForOperation(transformationPath);
-				if (read.error !== null) return read.error;
-				const profile = read.data;
+				const { data: profile, error: readError } =
+					await transformationForOperation(transformationPath);
+				if (readError !== null) return readError;
 				const resolved = resolve(profile);
 				if (resolved.kind !== 'ready') return resolved.reason;
 				// The read above was held as running; a close asked meanwhile stops the send.
@@ -3010,7 +3064,10 @@ export function createLibrary(workspace: Workspace) {
 				// A failed run of this recipe on pasted text held nothing; the new
 				// run takes its place.
 				for (const run of textRuns())
-					if (run.fields.transformationId === stem && run.state.kind === 'failed')
+					if (
+						run.fields.transformationId === stem &&
+						run.state.kind === 'failed'
+					)
 						recipeRuns.delete(run.id);
 				const at = new Date();
 				await sendRun({
@@ -3069,17 +3126,21 @@ export function createLibrary(workspace: Workspace) {
 		},
 		deleteTransformationResult: submitFileChange(
 			async (entry: TransformationRunEntry): Promise<string | undefined> => {
-				const removed = await outputs.delete(entry);
-				if (removed.error === null) unlistedOutputs.delete(entry.path);
+				const { error: deleteError } = await outputs.delete(entry);
+				if (deleteError === null) unlistedOutputs.delete(entry.path);
 				await refreshAll();
-				return removed.error ? describeWriteError(removed.error) : undefined;
+				return deleteError !== null
+					? describeWriteError(deleteError)
+					: undefined;
 			},
 		),
 		deleteTextResult: submitFileChange(
 			async (entry: TextRunEntry): Promise<string | undefined> => {
-				const removed = await textOutputs.delete(entry);
+				const { error: deleteError } = await textOutputs.delete(entry);
 				await refreshAll();
-				return removed.error ? describeWriteError(removed.error) : undefined;
+				return deleteError !== null
+					? describeWriteError(deleteError)
+					: undefined;
 			},
 		),
 
@@ -3093,9 +3154,12 @@ export function createLibrary(workspace: Workspace) {
 			change: ConnectionChange,
 		): Promise<string | undefined> {
 			if (!admitting) return LEAVING;
-			const saved = await workspace.connections.set(operation, change);
-			if (saved.error !== null) return saved.error;
-			connections = saved.data;
+			const { data: saved, error: saveError } = await workspace.connections.set(
+				operation,
+				change,
+			);
+			if (saveError !== null) return saveError;
+			connections = saved;
 			connectionsError = undefined;
 			return undefined;
 		},
@@ -3107,9 +3171,10 @@ export function createLibrary(workspace: Workspace) {
 			targets: LegacyKeyTargets,
 		): Promise<string | undefined> {
 			if (!admitting) return LEAVING;
-			const adopted = await workspace.connections.adoptLegacyKey(targets);
-			if (adopted.error !== null) return adopted.error;
-			connections = adopted.data;
+			const { data: adopted, error: adoptError } =
+				await workspace.connections.adoptLegacyKey(targets);
+			if (adoptError !== null) return adoptError;
+			connections = adopted;
 			connectionsError = undefined;
 			return undefined;
 		},
@@ -3130,10 +3195,7 @@ export function createLibrary(workspace: Workspace) {
 				if (to === path) return undefined;
 				if (rowPaths.has(path) || recordingRows.rows.has(path))
 					return RECORDING_NAME;
-				if (
-					transformationPaths.has(path) ||
-					transformationRows.rows.has(path)
-				)
+				if (transformationPaths.has(path) || transformationRows.rows.has(path))
 					return TRANSFORMATION_NAME;
 				// Nothing repairs a row's `audioPath` when the file it names moves.
 				if (entries.some((entry) => audioPathIn(entry.fields) === path))
@@ -3151,8 +3213,8 @@ export function createLibrary(workspace: Workspace) {
 				const path = joinPath(directory, name);
 				if (listing?.directories.includes(path))
 					return `"${name}" already exists here.`;
-				const written = await folder.files.create(path, '');
-				if (written.error) return describeWriteError(written.error);
+				const { error: createError } = await folder.files.create(path, '');
+				if (createError !== null) return describeWriteError(createError);
 				await refreshAll();
 				await open(path);
 				return undefined;
@@ -3168,8 +3230,8 @@ export function createLibrary(workspace: Workspace) {
 					listing?.files.some((file) => file.path === path)
 				)
 					return `"${name}" already exists here.`;
-				const made = await folder.files.mkdir(path);
-				if (made.error) return describeWriteError(made.error);
+				const { error: mkdirError } = await folder.files.mkdir(path);
+				if (mkdirError !== null) return describeWriteError(mkdirError);
 				if (directory !== '') expanded.add(directory);
 				await refresh();
 				return undefined;
@@ -3193,9 +3255,10 @@ export function createLibrary(workspace: Workspace) {
 				return Ok({ kind: 'folder', path });
 			}
 			if (recordingRows.rows.has(path) || rowPaths.has(path)) {
-				const entry = await recordingForOperation(path);
-				if (entry.error !== null) return entry;
-				const id = entry.data.stem;
+				const { data: entry, error: entryError } =
+					await recordingForOperation(path);
+				if (entryError !== null) return Err(entryError);
+				const id = entry.stem;
 				const busy = recordingBusy(id);
 				if (busy !== undefined) return Err(busy);
 				// The person is told every result that goes with the recording, so
@@ -3210,7 +3273,7 @@ export function createLibrary(workspace: Workspace) {
 				);
 				return Ok({
 					kind: 'recording',
-					entry: entry.data,
+					entry,
 					results: [
 						...transcriptions,
 						...[...unlistedResults.values()].filter(
@@ -3226,12 +3289,13 @@ export function createLibrary(workspace: Workspace) {
 				});
 			}
 			if (transformationRows.rows.has(path) || transformationPaths.has(path)) {
-				const entry = await transformationForOperation(path);
-				if (entry.error !== null) return entry;
-				const id = entry.data.stem;
+				const { data: entry, error: entryError } =
+					await transformationForOperation(path);
+				if (entryError !== null) return Err(entryError);
+				const id = entry.stem;
 				return Ok({
 					kind: 'transformation',
-					entry: entry.data,
+					entry,
 					results:
 						transformationResults.filter(
 							(result) => result.fields.transformationId === id,
@@ -3241,21 +3305,24 @@ export function createLibrary(workspace: Workspace) {
 						).length,
 				});
 			}
-			const settled = await settleDraft(path);
-			if (settled.error !== null) return settled;
-			if (settled.data !== undefined)
-				return Ok({ kind: 'file', path, sha256: settled.data });
-			const read = await folder.files.read(path);
-			if (read.error) return Err(read.error.message);
-			return Ok({ kind: 'file', path, sha256: read.data.sha256 });
+			const { data: settledSha256, error: settleError } =
+				await settleDraft(path);
+			if (settleError !== null) return Err(settleError);
+			if (settledSha256 !== undefined)
+				return Ok({ kind: 'file', path, sha256: settledSha256 });
+			const { data: file, error: readError } = await folder.files.read(path);
+			if (readError !== null) return Err(readError.message);
+			return Ok({ kind: 'file', path, sha256: file.sha256 });
 		},
 		/** Delete exactly what was confirmed; a file that changed since is refused. */
 		remove: submitFileChange(
 			async (deletion: Deletion): Promise<string | undefined> => {
 				if (deletion.kind === 'folder') {
-					const removed = await folder.files.rmdir(deletion.path);
+					const { error: rmdirError } = await folder.files.rmdir(deletion.path);
 					await refresh();
-					return removed.error ? describeWriteError(removed.error) : undefined;
+					return rmdirError !== null
+						? describeWriteError(rmdirError)
+						: undefined;
 				}
 				const path =
 					deletion.kind === 'file' ? deletion.path : deletion.entry.path;
@@ -3264,13 +3331,13 @@ export function createLibrary(workspace: Workspace) {
 				if (deletion.kind !== 'recording')
 					return owning([path], async () => {
 						// A transformation's saved results are separate files and stay.
-						const removed = await deleteRetired(path, () =>
+						const { error: deleteError } = await deleteRetired(path, () =>
 							deletion.kind === 'transformation'
 								? profiles.delete(deletion.entry)
 								: folder.files.remove({ path, sha256: deletion.sha256 }),
 						);
 						await refreshAll();
-						return removed.error ?? undefined;
+						return deleteError ?? undefined;
 					});
 
 				// Work may have started or finished since the person was asked. A
@@ -3315,12 +3382,12 @@ export function createLibrary(workspace: Workspace) {
 					try {
 						// The table removes the row file and nothing else. The audio the row
 						// names is an ordinary file; it stays, and Files can delete it.
-						const removed = await deleteRetired(path, () =>
+						const { error: deleteError } = await deleteRetired(path, () =>
 							table.delete(deletion.entry),
 						);
-						if (removed.error !== null) {
+						if (deleteError !== null) {
 							await refreshAll();
-							return removed.error;
+							return deleteError;
 						}
 						// What failed for this recording held nothing, and has nothing left to retry against.
 						if (runs.get(id)?.kind === 'failed') runs.delete(id);
@@ -3332,18 +3399,20 @@ export function createLibrary(workspace: Workspace) {
 						const leftovers: string[] = [];
 						for (const result of deletion.results) {
 							waiting.delete(result.path);
-							const gone = await deleteRetired(result.path, () =>
-								results.delete(result),
+							const { error: deleteError } = await deleteRetired(
+								result.path,
+								() => results.delete(result),
 							);
-							if (gone.error !== null) leftovers.push(result.path);
+							if (deleteError !== null) leftovers.push(result.path);
 							else unlistedResults.delete(result.path);
 						}
 						for (const output of deletion.outputs) {
 							waiting.delete(output.path);
-							const gone = await deleteRetired(output.path, () =>
-								outputs.delete(output),
+							const { error: deleteError } = await deleteRetired(
+								output.path,
+								() => outputs.delete(output),
 							);
-							if (gone.error !== null) leftovers.push(output.path);
+							if (deleteError !== null) leftovers.push(output.path);
 							else unlistedOutputs.delete(output.path);
 						}
 						await refreshAll();

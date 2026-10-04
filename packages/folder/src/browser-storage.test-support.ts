@@ -146,9 +146,11 @@ export async function rawBrowserFolder({
 	const address = JSON.stringify(['release', 'local', null, id]);
 	const tree = storage.opfs;
 	const directory = `Epicenter/local/${id}`;
-	const made = await ensureDirectory(await tree.getDirectory(), directory);
-	if (made.error) throw new Error(made.error.message);
-	const root = made.data;
+	const { data: root, error: directoryError } = await ensureDirectory(
+		await tree.getDirectory(),
+		directory,
+	);
+	if (directoryError !== null) throw new Error(directoryError.message);
 	await writePrivateFile(
 		root,
 		READY_MARKER,

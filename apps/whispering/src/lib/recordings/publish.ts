@@ -98,7 +98,11 @@ export type PublishOutcome =
 	 * this recording's, or this recording's row without its audio. Nothing
 	 * was written.
 	 */
-	| { readonly kind: 'refused'; readonly path: string; readonly message: string }
+	| {
+			readonly kind: 'refused';
+			readonly path: string;
+			readonly message: string;
+	  }
 	/** A retry could not read what the folder has, so it wrote nothing. */
 	| { readonly kind: 'unchecked'; readonly message: string };
 
@@ -177,28 +181,31 @@ async function inspect(
 	const { audioPath } = capture.fields;
 	const row = rowPath(RECORDINGS, capture.id);
 
-	const existing = await target.tables.recordings.get(capture.id);
-	if (existing.error)
+	const { data: existing, error: rowReadError } =
+		await target.tables.recordings.get(capture.id);
+	if (rowReadError !== null)
 		return {
 			kind: 'unchecked',
-			message: `${row} could not be read, so nothing was written: ${existing.error.message}`,
+			message: `${row} could not be read, so nothing was written: ${rowReadError.message}`,
 		};
-	if (existing.data !== undefined && !isThisRecording(existing.data, capture))
+	if (existing !== undefined && !isThisRecording(existing, capture))
 		return occupied(row);
 
-	const audio = await target.files.read(audioPath);
-	if (audio.error && audio.error.name !== 'NotFound')
+	const { data: audio, error: audioReadError } =
+		await target.files.read(audioPath);
+	if (audioReadError !== null && audioReadError.name !== 'NotFound')
 		return {
 			kind: 'unchecked',
-			message: `${audioPath} could not be read, so nothing was written: ${audio.error.message}`,
+			message: `${audioPath} could not be read, so nothing was written: ${audioReadError.message}`,
 		};
-	const found = audio.error
-		? undefined
-		: { path: audio.data.path, sha256: audio.data.sha256 };
+	const found =
+		audioReadError !== null
+			? undefined
+			: { path: audio.path, sha256: audio.sha256 };
 	if (found !== undefined && found.sha256 !== (await hashBytes(capture.bytes)))
 		return occupied(audioPath);
 
-	if (existing.data === undefined)
+	if (existing === undefined)
 		return {
 			kind: 'clear',
 			audio: found && { by: 'found', file: found },
@@ -215,7 +222,7 @@ async function inspect(
 		audio: { by: 'found', file: found },
 		row: {
 			by: 'found',
-			file: { path: existing.data.path, sha256: existing.data.sha256 },
+			file: { path: existing.path, sha256: existing.sha256 },
 		},
 	};
 }
@@ -251,32 +258,37 @@ export async function publishRecording(
 			() => target.files.create(audioPath, capture.bytes),
 		);
 		if ('thrown' in created)
-			return { kind: 'audioNotSaved', certainty: 'unknown', message: created.thrown };
-		const { answer } = created;
-		if (answer.error?.name === 'Exists') {
+			return {
+				kind: 'audioNotSaved',
+				certainty: 'unknown',
+				message: created.thrown,
+			};
+		const { data: written, error: writeError } = created.answer;
+		if (writeError?.name === 'Exists') {
 			// Something is there now. An earlier write of this capture whose
 			// reply was lost may have landed since the attempt last looked, so
 			// what is there is read before it is called anything.
-			const there = await target.files.read(audioPath);
-			if (there.error)
+			const { data: there, error: readError } =
+				await target.files.read(audioPath);
+			if (readError !== null)
 				return {
 					kind: 'audioNotSaved',
 					certainty: 'unknown',
-					message: `${audioPath} was occupied when this recording's audio was written, and could not then be read, so whether it is this recording's audio is not known: ${there.error.message}`,
+					message: `${audioPath} was occupied when this recording's audio was written, and could not then be read, so whether it is this recording's audio is not known: ${readError.message}`,
 				};
-			if (there.data.sha256 !== (await hashBytes(capture.bytes)))
+			if (there.sha256 !== (await hashBytes(capture.bytes)))
 				return occupied(audioPath);
 			audio = {
 				by: 'found',
-				file: { path: there.data.path, sha256: there.data.sha256 },
+				file: { path: there.path, sha256: there.sha256 },
 			};
-		} else if (answer.error) {
+		} else if (writeError !== null) {
 			return {
 				kind: 'audioNotSaved',
-				certainty: certaintyOf(answer.error),
-				message: answer.error.message,
+				certainty: certaintyOf(writeError),
+				message: writeError.message,
 			};
-		} else audio = { by: 'receipt', file: answer.data };
+		} else audio = { by: 'receipt', file: written };
 	}
 
 	const created = await write(around, { step: 'row', stem: capture.id }, () =>
@@ -293,18 +305,19 @@ export async function publishRecording(
 			audio,
 			message: created.thrown,
 		};
-	const { answer } = created;
-	if (answer.error?.name === 'Exists') {
+	const { data: written, error: writeError } = created.answer;
+	if (writeError?.name === 'Exists') {
 		// As for the audio: the row there may be this capture's own, landed late.
-		const there = await target.tables.recordings.get(capture.id);
-		if (there.error || there.data === undefined)
+		const { data: there, error: readError } =
+			await target.tables.recordings.get(capture.id);
+		if (readError !== null || there === undefined)
 			return {
 				kind: 'rowNotSaved',
 				certainty: 'unknown',
 				audio,
-				message: `${row} was occupied when this recording's row was written, and could not then be read, so whether it is this recording's row is not known${there.error ? `: ${there.error.message}` : '.'}`,
+				message: `${row} was occupied when this recording's row was written, and could not then be read, so whether it is this recording's row is not known${readError !== null ? `: ${readError.message}` : '.'}`,
 			};
-		if (!isThisRecording(there.data, capture))
+		if (!isThisRecording(there, capture))
 			return {
 				kind: 'rowNotSaved',
 				certainty: 'failed',
@@ -316,23 +329,23 @@ export async function publishRecording(
 			audio,
 			row: {
 				by: 'found',
-				file: { path: there.data.path, sha256: there.data.sha256 },
+				file: { path: there.path, sha256: there.sha256 },
 			},
 		};
 	}
-	if (answer.error)
+	if (writeError !== null)
 		return {
 			kind: 'rowNotSaved',
-			certainty: certaintyOf(answer.error),
+			certainty: certaintyOf(writeError),
 			audio,
-			message: answer.error.message,
+			message: writeError.message,
 		};
 	return {
 		kind: 'published',
 		audio,
 		row: {
 			by: 'receipt',
-			file: { path: answer.data.path, sha256: answer.data.sha256 },
+			file: { path: written.path, sha256: written.sha256 },
 		},
 	};
 }

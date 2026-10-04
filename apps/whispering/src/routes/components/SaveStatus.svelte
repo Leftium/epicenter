@@ -13,9 +13,9 @@
 	let showSaved = $state(false);
 
 	async function keepBoth() {
-		const kept = await editor.keepBoth();
-		if (kept.error !== null) toast.error('Could not keep a copy', { description: kept.error });
-		else toast.success(`Your edits were saved to ${kept.data}`);
+		const { data: copyPath, error: keepError } = await editor.keepBoth();
+		if (keepError !== null) toast.error('Could not keep a copy', { description: keepError });
+		else toast.success(`Your edits were saved to ${copyPath}`);
 	}
 </script>
 

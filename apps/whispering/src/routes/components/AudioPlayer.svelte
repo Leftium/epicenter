@@ -47,16 +47,16 @@
 		if (loaded !== undefined && loaded.path !== path) url = undefined;
 		let cancelled = false;
 		void (async () => {
-			const next = await loadAudio(files, path, loaded);
+			const { data: audio, error: loadError } = await loadAudio(files, path, loaded);
 			if (cancelled) return;
-			if (next.error) {
-				problem = next.error.message;
+			if (loadError !== null) {
+				problem = loadError.message;
 				return;
 			}
 			problem = undefined;
-			if (next.data === loaded) return;
-			loaded = next.data;
-			show(next.data.blob);
+			if (audio === loaded) return;
+			loaded = audio;
+			show(audio.blob);
 		})();
 		return () => {
 			cancelled = true;

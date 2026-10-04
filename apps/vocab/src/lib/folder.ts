@@ -15,14 +15,14 @@ export const VOCAB_FOLDER_ID = APPS.VOCAB.id;
 
 /** Called from the mounted page; importing this module opens nothing. */
 export async function openVocabFolder(): Promise<VocabFolder> {
-	const opened = await openFolder({
+	const { data: folder, error: openError } = await openFolder({
 		id: VOCAB_FOLDER_ID,
 		definition: vocabFolder,
 		// History stays in this browser: a local author and no remote. Nothing
 		// leaves this device until a remote is configured separately.
 		browser: { author: { name: 'Vocab', email: 'vocab@localhost' } },
 	});
-	if (opened.error)
-		throw new Error(opened.error.message, { cause: opened.error });
-	return opened.data;
+	if (openError !== null)
+		throw new Error(openError.message, { cause: openError });
+	return folder;
 }

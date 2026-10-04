@@ -217,13 +217,14 @@ export function readRows<TFields, TRow>(
 	const rows: TRow[] = [];
 	const unreadable: UnreadableFile[] = [];
 	for (const { path, result } of listing) {
-		if (result.error !== null) {
+		const { data: file, error: readError } = result;
+		if (readError !== null) {
 			// A file removed between enumeration and its read is simply gone.
-			if (result.error.name !== 'NotFound')
-				unreadable.push({ path, reason: result.error.message });
+			if (readError.name !== 'NotFound')
+				unreadable.push({ path, reason: readError.message });
 			continue;
 		}
-		const row = read(result.data);
+		const row = read(file);
 		if (row !== undefined) {
 			rows.push(row);
 			continue;
@@ -231,8 +232,8 @@ export function readRows<TFields, TRow>(
 		unreadable.push({
 			path,
 			reason:
-				result.data.parseError?.message ??
-				(result.data.issues.map((issue) => issue.message).join('; ') ||
+				file.parseError?.message ??
+				(file.issues.map((issue) => issue.message).join('; ') ||
 					'A required field is missing.'),
 		});
 	}

@@ -63,8 +63,10 @@ export async function openFolder<const TDefinition extends FolderDefinition>({
 }: DirectoryFolderOptions<TDefinition>): Promise<
 	Result<Folder<TDefinition>, OpenFolderError>
 > {
-	const prepared = prepareFolderDefinition(definition);
-	if (prepared.error) return OpenFolderError.InvalidDefinition(prepared.error);
+	const { data: prepared, error: definitionError } =
+		prepareFolderDefinition(definition);
+	if (definitionError !== null)
+		return OpenFolderError.InvalidDefinition(definitionError);
 	let resolved: string;
 	try {
 		resolved = await resolveNativeRoot(root);
@@ -90,7 +92,7 @@ export async function openFolder<const TDefinition extends FolderDefinition>({
 		});
 		return Ok(
 			assembleFolder<TDefinition>({
-				prepared: prepared.data,
+				prepared,
 				storage: withPublication({
 					storage: boundary,
 					history,

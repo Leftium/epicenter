@@ -13,7 +13,7 @@
  * terminal exactly as they were. Only leaving the app is guarded.
  */
 import { createContext } from 'svelte';
-import { Ok, type Result } from 'wellcrafted/result';
+import { Err, Ok, type Result } from 'wellcrafted/result';
 import { createLeaveGuard } from './leave.svelte.js';
 import { createLibrary } from './library.svelte.js';
 import { DEFAULT_SORT, type RecordingSort } from './recording-collection.js';
@@ -138,7 +138,11 @@ export async function createSession(
 		 * Held here so a page change neither hides it nor lets a second start.
 		 */
 		recordingBulk: undefined as
-			| { readonly label: string; readonly done: number; readonly total: number }
+			| {
+					readonly label: string;
+					readonly done: number;
+					readonly total: number;
+			  }
 			| undefined,
 		/**
 		 * Whether a recording's details are showing: beside the table on a wide
@@ -222,11 +226,11 @@ export async function openSession(
 	open: () => Promise<Result<Workspace, WorkspaceError>> = openWorkspace,
 	released?: AbortSignal,
 ): Promise<Result<Session, WorkspaceError>> {
-	const opened = await open();
-	if (opened.error) return opened;
+	const { data: workspace, error: openError } = await open();
+	if (openError !== null) return Err(openError);
 	if (released?.aborted)
-		return failOpening(new Error(RELEASED), () => opened.data.close());
-	return Ok(await createSession(opened.data, released));
+		return failOpening(new Error(RELEASED), () => workspace.close());
+	return Ok(await createSession(workspace, released));
 }
 
 /**
@@ -275,8 +279,8 @@ export function mountSession(
 		if (!releasing.signal.aborted) stopAnswering = answerClose();
 	};
 	void opening.then(
-		(opened) => {
-			if (!opened.error) return;
+		({ error }) => {
+			if (error === null) return;
 			openingFailed = true;
 			failed();
 		},
@@ -299,7 +303,11 @@ export function mountSession(
 			if (releasing.signal.aborted) return;
 			releasing.abort();
 			stopAnswering?.();
-			void opening.then((opened) => opened.data?.close()).catch(() => {});
+			void opening
+				.then(({ data: session, error }) =>
+					error === null ? session.close() : undefined,
+				)
+				.catch(() => {});
 		},
 	};
 }

@@ -119,9 +119,8 @@ test('a workspace that cannot be opened is returned as the refusal, and no sessi
 	const refused = expectErr(
 		await openSession(async () => {
 			opens += 1;
-			return WorkspaceError.BrowserFolder({
-				refusal: OpenFolderError.InsideTauri().error,
-			});
+			const { error: insideTauri } = OpenFolderError.InsideTauri();
+			return WorkspaceError.BrowserFolder({ refusal: insideTauri });
 		}),
 	);
 
@@ -149,13 +148,13 @@ function closeAnswerer() {
 	};
 }
 
-const refusal = () =>
-	WorkspaceError.DesktopFolder({
-		refusal: OpenFolderError.WindowNotPermitted({
-			scope: 'so.epicenter.whispering',
-			window: 'main',
-		}).error,
+const refusal = () => {
+	const { error: notPermitted } = OpenFolderError.WindowNotPermitted({
+		scope: 'so.epicenter.whispering',
+		window: 'main',
 	});
+	return WorkspaceError.DesktopFolder({ refusal: notPermitted });
+};
 
 test('while a session exists, only its guard answers a close: nothing answers for it unseen', async () => {
 	const test = await openTestWorkspace({ failAudioWrites: 1 });

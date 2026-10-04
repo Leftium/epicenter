@@ -69,9 +69,9 @@
 	}
 
 	async function copyToFile(move: UnresolvedMove) {
-		const copied = await library.copyHeldEdits(move.from);
-		if (copied.error !== null) toast.error('The edits were not saved', { description: copied.error });
-		else toast.success(`Your edits were saved to ${copied.data}`);
+		const { data: copyPath, error: copyError } = await library.copyHeldEdits(move.from);
+		if (copyError !== null) toast.error('The edits were not saved', { description: copyError });
+		else toast.success(`Your edits were saved to ${copyPath}`);
 	}
 
 	function discardMove(move: UnresolvedMove) {

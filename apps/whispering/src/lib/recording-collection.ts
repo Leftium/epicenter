@@ -390,11 +390,9 @@ export async function captureDeletions(
 	for (const path of paths) {
 		const entry = library.entries.find((item) => item.path === path);
 		const title = entry ? recordingTitle(entry) : path;
-		const deletion = await library.deletionFor(path);
-		if (deletion.error !== null)
-			captured.refused.push({ title, reason: deletion.error });
-		else if (deletion.data.kind === 'recording')
-			captured.deletions.push(deletion.data);
+		const { data: deletion, error: refusal } = await library.deletionFor(path);
+		if (refusal !== null) captured.refused.push({ title, reason: refusal });
+		else if (deletion.kind === 'recording') captured.deletions.push(deletion);
 		else captured.refused.push({ title, reason: 'It is not a recording.' });
 	}
 	return captured;

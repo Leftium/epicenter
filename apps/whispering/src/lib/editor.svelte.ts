@@ -131,12 +131,16 @@ export function createTextFileEditor(
 	async function current(): Promise<
 		Result<SavedText | undefined, { readonly message: string }>
 	> {
-		const read = await readTextFile(files, baseline.path);
-		if (read.error) return read.error.name === 'NotFound' ? Ok(undefined) : read;
-		if (read.data.kind === 'text') return Ok(read.data.file);
+		const { data: opened, error: readError } = await readTextFile(
+			files,
+			baseline.path,
+		);
+		if (readError !== null)
+			return readError.name === 'NotFound' ? Ok(undefined) : Err(readError);
+		if (opened.kind === 'text') return Ok(opened.file);
 		return Err({
 			message:
-				read.data.kind === 'binary'
+				opened.kind === 'binary'
 					? 'the saved file is not text'
 					: 'the saved file is larger than 1 MB',
 		});
@@ -166,11 +170,12 @@ export function createTextFileEditor(
 			};
 			return;
 		}
-		if (written.error === null) {
+		const { data: replaced, error } = written;
+		if (error === null) {
 			baseline = {
 				path: observed.path,
 				source: submitted.source,
-				sha256: written.data.sha256,
+				sha256: replaced.sha256,
 			};
 			// Newer typing is a later generation and stays as typed.
 			if (buffer === captured) buffer = submitted.source;
@@ -179,20 +184,20 @@ export function createTextFileEditor(
 			onSaved();
 			return;
 		}
-		const { error } = written;
 		switch (error.name) {
 			case 'Unconfirmed':
 				saveState = { kind: 'unconfirmed', message: error.message };
 				unknown = error.message;
 				return;
 			case 'Conflict': {
-				const now = await current();
-				saveState = now.error
-					? {
-							kind: 'failed',
-							message: `This file changed elsewhere, and the saved version cannot be shown: ${now.error.message}`,
-						}
-					: { kind: 'conflict', message: error.message, current: now.data };
+				const { data: savedText, error: readError } = await current();
+				saveState =
+					readError !== null
+						? {
+								kind: 'failed',
+								message: `This file changed elsewhere, and the saved version cannot be shown: ${readError.message}`,
+							}
+						: { kind: 'conflict', message: error.message, current: savedText };
 				return;
 			}
 			default:
@@ -347,8 +352,8 @@ export function createTextFileEditor(
 			if (saveState.kind !== 'conflict')
 				return Err('There is no conflict to resolve.');
 			const copy = conflictCopyPath(baseline.path);
-			const written = await files.create(copy, buffer);
-			if (written.error) return Err(written.error.message);
+			const { error: createError } = await files.create(copy, buffer);
+			if (createError !== null) return Err(createError.message);
 			if (saveState.kind === 'conflict' && saveState.current !== undefined) {
 				baseline = saveState.current;
 				buffer = saveState.current.source;

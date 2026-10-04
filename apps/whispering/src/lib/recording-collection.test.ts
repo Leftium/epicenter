@@ -818,7 +818,8 @@ test('a transcript opening that answers after the session closed makes no draft,
 						reads.push(stem);
 						// The row is read while the folder is open; the answer is held past its closing.
 						const edited = await transcriptions.edit(stem, options);
-						if (edited.error === null) opened.push(edited.data);
+						const { data: editor, error: editError } = edited;
+						if (editError === null) opened.push(editor);
 						if (stem === 'standup-t1') {
 							read.resolve();
 							await answer.promise;

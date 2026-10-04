@@ -233,25 +233,25 @@ export function inspectSource<TFields>(
 	schemas: FieldMap,
 	source: string,
 ): TableReading<TFields> {
-	const read = parseSource(source);
-	if (read.error)
+	const { data: parsed, error: parseError } = parseSource(source);
+	if (parseError !== null)
 		return Object.freeze({
 			fields: Object.freeze({}) as DeepReadonly<Partial<TFields>>,
 			body: undefined,
-			parseError: read.error,
+			parseError,
 			issues: freezeIssues([]),
 		});
 	const declared: Record<string, unknown> = {};
 	for (const key of Object.keys(schemas)) {
-		if (!Object.hasOwn(read.data.values, key)) continue;
-		const value = read.data.values[key];
+		if (!Object.hasOwn(parsed.values, key)) continue;
+		const value = parsed.values[key];
 		declared[key] = isJsonSafe(value) ? freezeDeep(value) : value;
 	}
 	const { conforming, issues } = conformance(schemas, declared);
 	return Object.freeze({
 		// Every value is frozen already; only the map that holds them is new.
 		fields: Object.freeze(conforming) as DeepReadonly<Partial<TFields>>,
-		body: read.data.body,
+		body: parsed.body,
 		parseError: undefined,
 		issues: freezeIssues(issues),
 	});
@@ -327,23 +327,30 @@ function prepareRow(
 	PreparedRow,
 	Extract<TableCreateError, { name: 'InvalidPath' | 'InvalidValues' }>
 > {
-	const address = rowAddress(name, input.stem);
-	if (address.error) return address;
-	const values = ownValues(schemas, input.fields, true);
-	if (values.error) return values;
+	const { data: path, error: addressError } = rowAddress(name, input.stem);
+	if (addressError !== null) return Err(addressError);
+	const { data: values, error: valuesError } = ownValues(
+		schemas,
+		input.fields,
+		true,
+	);
+	if (valuesError !== null) return Err(valuesError);
 	const ordered: Record<string, unknown> = {};
-	for (const key of Object.keys(schemas)) ordered[key] = values.data[key];
-	const composed = composeSource(ordered, input.body ?? '');
-	if (composed.error)
+	for (const key of Object.keys(schemas)) ordered[key] = values[key];
+	const { data: source, error: composeError } = composeSource(
+		ordered,
+		input.body ?? '',
+	);
+	if (composeError !== null)
 		return TableError.InvalidValues({
 			issues: [
 				{
-					field: composed.error.field,
-					message: `${composed.error.field} cannot be saved: ${composed.error.reason}`,
+					field: composeError.field,
+					message: `${composeError.field} cannot be saved: ${composeError.reason}`,
 				},
 			],
 		});
-	return Ok({ path: address.data, ...submitted(composed.data) });
+	return Ok({ path, ...submitted(source) });
 }
 
 /** The filenames directly in a table's directory; none when it does not exist yet. */
@@ -351,12 +358,13 @@ async function tableFilenames(
 	storage: Pick<FolderStorage, 'children'>,
 	table: string,
 ): Promise<Result<string[], TableEnumerationError>> {
-	const children = await storage.children(table);
-	if (children.error) {
-		if (children.error.name === 'NotFound') return Ok([]);
-		return Err(children.error);
+	const { data: children, error: childrenError } =
+		await storage.children(table);
+	if (childrenError !== null) {
+		if (childrenError.name === 'NotFound') return Ok([]);
+		return Err(childrenError);
 	}
-	return Ok(children.data.files);
+	return Ok(children.files);
 }
 
 /**
@@ -424,9 +432,12 @@ export function createTable<TFields>(
 			TableEnumerationError | Extract<FileError, { name: 'Exists' }>
 		>
 	> {
-		const found = await tableFilenames(storage, name);
-		if (found.error) return found;
-		if (found.data.includes(path.slice(name.length + 1)))
+		const { data: filenames, error: listError } = await tableFilenames(
+			storage,
+			name,
+		);
+		if (listError !== null) return Err(listError);
+		if (filenames.includes(path.slice(name.length + 1)))
 			return FileError.Exists({ path });
 		return Ok(undefined);
 	}
@@ -438,34 +449,37 @@ export function createTable<TFields>(
 	function captureRow(
 		capture: FileCapture,
 	): Result<FileCapture, Extract<FileError, { name: 'InvalidPath' }>> {
-		const own = ownCapture(capture);
-		if (own.error) return own;
-		if (rowStemOf(name, own.data.path) === undefined)
+		const { data: own, error: captureError } = ownCapture(capture);
+		if (captureError !== null) return Err(captureError);
+		if (rowStemOf(name, own.path) === undefined)
 			return FileError.InvalidPath({
-				path: own.data.path,
+				path: own.path,
 				reason: `the capture is not a row of '${name}'`,
 			});
-		return own;
+		return Ok(own);
 	}
 
 	return {
 		name,
 		inspect,
 		async list() {
-			const found = await tableFilenames(storage, name);
-			if (found.error) return found;
+			const { data: filenames, error: listError } = await tableFilenames(
+				storage,
+				name,
+			);
+			if (listError !== null) return Err(listError);
 			// Only the exact lowercase extension is a row; `a.MD` is an ordinary file.
-			const rows = found.data.filter((file) => file.endsWith(ROW_EXTENSION));
-			const reads = await storage.readMany(
+			const rows = filenames.filter((file) => file.endsWith(ROW_EXTENSION));
+			const { data: reads, error: readsError } = await storage.readMany(
 				rows.map((file) => `${name}/${file}`),
 			);
-			if (reads.error) return Err(reads.error);
+			if (readsError !== null) return Err(readsError);
 			return Ok(
 				Object.freeze(
 					rows.map((file) => {
 						const path = `${name}/${file}`;
-						const read = reads.data.get(path);
-						if (read === undefined)
+						const outcome = reads.get(path);
+						if (outcome === undefined)
 							return Object.freeze({
 								path,
 								result: FileError.Io({
@@ -474,65 +488,74 @@ export function createTable<TFields>(
 									cause: 'The storage response omitted this requested file',
 								}),
 							});
+						const { data: read, error: readError } = outcome;
 						return Object.freeze({
 							path,
-							result: read.error
-								? Err(read.error)
-								: readSnapshot(path, read.data),
+							result:
+								readError !== null ? Err(readError) : readSnapshot(path, read),
 						});
 					}),
 				),
 			);
 		},
 		async get(stem) {
-			const address = rowAddress(name, stem);
-			if (address.error) return address;
-			const read = await storage.read(address.data);
-			if (read.error) {
-				if (read.error.name === 'NotFound') return Ok(undefined);
-				return Err(read.error);
+			const { data: path, error: addressError } = rowAddress(name, stem);
+			if (addressError !== null) return Err(addressError);
+			const { data: read, error: readError } = await storage.read(path);
+			if (readError !== null) {
+				if (readError.name === 'NotFound') return Ok(undefined);
+				return Err(readError);
 			}
-			return readSnapshot(address.data, read.data);
+			return readSnapshot(path, read);
 		},
 		async create(input) {
 			// Every save reserves its place first, before its reads and hash.
 			const submission = reserveSubmission();
-			const prepared = prepareRow(name, schemas, {
-				stem: input.stem ?? generateStem(),
-				fields: input.fields,
-				body: input.body,
-			});
-			if (prepared.error) return prepared;
-			const { path, source, bytes } = prepared.data;
+			const { data: prepared, error: prepareError } = prepareRow(
+				name,
+				schemas,
+				{
+					stem: input.stem ?? generateStem(),
+					fields: input.fields,
+					body: input.body,
+				},
+			);
+			if (prepareError !== null) return Err(prepareError);
+			const { path, source, bytes } = prepared;
 			const vacancy = await vacant(path);
-			if (vacancy.error) return vacancy;
+			if (vacancy.error !== null) return vacancy;
 			const sha256 = await hashBytes(bytes);
 			// The receipt is prepared before anything is published and never after.
 			const receipt = snapshotOf(path, sha256, source);
-			const applied = await applyOne(
+			const { error: applyError } = await applyOne(
 				storage,
 				{ kind: 'create', path, bytes, sha256 },
 				submission,
 			);
-			if (applied.error) return Err(applied.error);
+			if (applyError !== null) return Err(applyError);
 			return Ok(receipt);
 		},
 		async update(stem, change) {
 			const submission = reserveSubmission();
-			const address = rowAddress(name, stem);
-			if (address.error) return address;
-			const path = address.data;
+			const { data: path, error: addressError } = rowAddress(name, stem);
+			if (addressError !== null) return Err(addressError);
 			// Own the supplied values and body before the first asynchronous read.
-			const values = ownValues(schemas, change.fields, false);
-			if (values.error) return values;
+			const { data: values, error: valuesError } = ownValues(
+				schemas,
+				change.fields,
+				false,
+			);
+			if (valuesError !== null) return Err(valuesError);
 			const body = change.body;
-			const read = await storage.read(path);
-			if (read.error) return Err(read.error);
-			const source = decode(read.data.bytes);
+			const { data: read, error: readError } = await storage.read(path);
+			if (readError !== null) return Err(readError);
+			const source = decode(read.bytes);
 			if (source === undefined) return TableError.InvalidUtf8({ path });
-			const patched = patchSource(source, { fields: values.data, body });
-			if (patched.error) {
-				const refusal = patched.error;
+			const { data: patched, error: refusal } = patchSource(source, {
+				fields: values,
+				body,
+			});
+			if (refusal !== null) {
 				if (refusal.kind === 'unparsed')
 					return TableError.Unparsed({ path, error: refusal.error });
 				if (refusal.kind === 'unsafe')
@@ -546,48 +569,47 @@ export function createTable<TFields>(
 					],
 				});
 			}
-			const next = submitted(patched.data);
+			const next = submitted(patched);
 			const { bytes } = next;
 			const sha256 = await hashBytes(bytes);
 			const receipt = snapshotOf(path, sha256, next.source);
-			const applied = await applyOne(
+			const { error: applyError } = await applyOne(
 				storage,
 				{
 					kind: 'replace',
 					path,
 					bytes,
 					sha256,
-					expectedSha256: read.data.sha256,
+					expectedSha256: read.sha256,
 				},
 				submission,
 			);
-			if (applied.error) return Err(applied.error);
+			if (applyError !== null) return Err(applyError);
 			return Ok(receipt);
 		},
 		async replace(capture, source) {
 			const submission = reserveSubmission();
-			const owned = captureRow(capture);
-			if (owned.error) return owned;
-			const { path, sha256: expectedSha256 } = owned.data;
+			const { data: captured, error: captureError } = captureRow(capture);
+			if (captureError !== null) return Err(captureError);
+			const { path, sha256: expectedSha256 } = captured;
 			const next = submitted(source);
 			const { bytes } = next;
 			const sha256 = await hashBytes(bytes);
 			// The receipt is the submitted text and its hash, never a reread. It is
 			// prepared before publication, so returning it needs no further validation.
 			const receipt = snapshotOf(path, sha256, next.source);
-			const applied = await applyOne(
+			const { error: applyError } = await applyOne(
 				storage,
 				{ kind: 'replace', path, bytes, sha256, expectedSha256 },
 				submission,
 			);
-			if (applied.error) return Err(applied.error);
+			if (applyError !== null) return Err(applyError);
 			return Ok(receipt);
 		},
 		async rename(capture, nextStem) {
 			const submission = reserveSubmission();
-			const owned = captureRow(capture);
-			if (owned.error) return owned;
-			const captured = owned.data;
+			const { data: captured, error: captureError } = captureRow(capture);
+			if (captureError !== null) return Err(captureError);
 			// Own the source before the first await, like the path and the hash.
 			const supplied: unknown = (capture as Partial<TextCapture>).source;
 			if (typeof supplied !== 'string')
@@ -595,9 +617,8 @@ export function createTable<TFields>(
 					path: captured.path,
 					reason: 'the capture has no source',
 				});
-			const address = rowAddress(name, nextStem);
-			if (address.error) return address;
-			const path = address.data;
+			const { data: path, error: addressError } = rowAddress(name, nextStem);
+			if (addressError !== null) return Err(addressError);
 			// The receipt reads this source under this hash, so the two must be one
 			// capture: the bytes of the source have the captured hash.
 			const { bytes, source } = submitted(supplied);
@@ -611,8 +632,8 @@ export function createTable<TFields>(
 			// asked of storage.
 			if (path === captured.path) return Ok(receipt);
 			const vacancy = await vacant(path);
-			if (vacancy.error) return vacancy;
-			const applied = await applyOne(
+			if (vacancy.error !== null) return vacancy;
+			const { error: applyError } = await applyOne(
 				storage,
 				{
 					kind: 'move',
@@ -622,15 +643,14 @@ export function createTable<TFields>(
 				},
 				submission,
 			);
-			if (applied.error) return Err(applied.error);
+			if (applyError !== null) return Err(applyError);
 			return Ok(receipt);
 		},
 		async delete(capture) {
 			const submission = reserveSubmission();
-			const owned = captureRow(capture);
-			if (owned.error) return owned;
-			const captured = owned.data;
-			const applied = await applyOne(
+			const { data: captured, error: captureError } = captureRow(capture);
+			if (captureError !== null) return Err(captureError);
+			const { error: applyError } = await applyOne(
 				storage,
 				{
 					kind: 'remove',
@@ -639,15 +659,15 @@ export function createTable<TFields>(
 				},
 				submission,
 			);
-			if (applied.error) return Err(applied.error);
+			if (applyError !== null) return Err(applyError);
 			return Ok(undefined);
 		},
 		async edit(stem, options) {
-			const address = rowAddress(name, stem);
-			if (address.error) return address;
+			const { data: path, error: addressError } = rowAddress(name, stem);
+			if (addressError !== null) return Err(addressError);
 			return openRowEditor<TFields>(
 				{
-					path: address.data,
+					path,
 					storage,
 					onFilesChanged,
 					declaredKeys,

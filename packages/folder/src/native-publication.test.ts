@@ -128,13 +128,13 @@ test('a writer that lands while the bytes are staged is a conflict', async () =>
 	const boundary = createNativeFileBoundary(folder);
 	afterStage = () => writeFile(join(folder, 'note.md'), 'external');
 
-	const applied = await boundary.apply([
+	const { error: applyError } = await boundary.apply([
 		await replace('note.md', 'read', 'mine'),
 	]);
 
-	expect(applied.error?.name).toBe('Conflict');
-	if (applied.error?.name !== 'Conflict') return;
-	expect(applied.error.actualSha256).toEqual(
+	expect(applyError?.name).toBe('Conflict');
+	if (applyError?.name !== 'Conflict') return;
+	expect(applyError.actualSha256).toEqual(
 		await hashBytes(encoder.encode('external')),
 	);
 	expect(await readFile(join(folder, 'note.md'), 'utf8')).toBe('external');
@@ -147,13 +147,13 @@ test('a file removed while the bytes are staged is a conflict, not a creation', 
 	const boundary = createNativeFileBoundary(folder);
 	afterStage = () => rm(join(folder, 'note.md'));
 
-	const applied = await boundary.apply([
+	const { error: applyError } = await boundary.apply([
 		await replace('note.md', 'read', 'mine'),
 	]);
 
-	expect(applied.error?.name).toBe('Conflict');
-	if (applied.error?.name !== 'Conflict') return;
-	expect(applied.error.actualSha256).toBeUndefined();
+	expect(applyError?.name).toBe('Conflict');
+	if (applyError?.name !== 'Conflict') return;
+	expect(applyError.actualSha256).toBeUndefined();
 	expect(
 		await stat(join(folder, 'note.md')).then(
 			() => true,
@@ -172,14 +172,14 @@ test('a writer between the final check and the rename is still overwritten', asy
 		landed = true;
 	};
 
-	const applied = await boundary.apply([
+	const { error: applyError } = await boundary.apply([
 		await replace('note.md', 'read', 'mine'),
 	]);
 
 	expect(landed).toBe(true);
 	// The remaining race: the check is not an OS-wide compare-and-swap, and
 	// nothing here merges. The write reports success and the other bytes are gone.
-	expect(applied.error).toBeNull();
+	expect(applyError).toBeNull();
 	expect(await readFile(join(folder, 'note.md'), 'utf8')).toBe('mine');
 });
 
@@ -189,11 +189,11 @@ test('an exclusive creation never replaces a file that appeared while staging', 
 	afterStage = () => writeFile(join(folder, 'note.md'), 'external');
 	const bytes = encoder.encode('mine');
 
-	const applied = await boundary.apply([
+	const { error: applyError } = await boundary.apply([
 		{ kind: 'create', path: 'note.md', bytes, sha256: await hashBytes(bytes) },
 	]);
 
-	expect(applied.error?.name).toBe('Exists');
+	expect(applyError?.name).toBe('Exists');
 	expect(await readFile(join(folder, 'note.md'), 'utf8')).toBe('external');
 });
 
@@ -209,7 +209,7 @@ test('a move rechecks its source after preparing the destination', async () => {
 		await writeFile(join(folder, 'a.md'), 'external');
 	};
 
-	const applied = await boundary.apply([
+	const { error: applyError } = await boundary.apply([
 		{
 			kind: 'move',
 			from: 'a.md',
@@ -219,7 +219,7 @@ test('a move rechecks its source after preparing the destination', async () => {
 	]);
 
 	expect(edited).toBe(true);
-	expect(applied.error?.name).toBe('Conflict');
+	expect(applyError?.name).toBe('Conflict');
 	expect(await readFile(join(folder, 'a.md'), 'utf8')).toBe('external');
 	expect(
 		await stat(join(folder, 'moved/b.md')).then(
@@ -293,11 +293,11 @@ test('inherited GIT_DIR, GIT_WORK_TREE, and GIT_INDEX_FILE do not redirect the f
 		git: { author, commitOnEdit: false },
 	});
 	try {
-		const created = await opened.tables.todos.create({
+		const { error: createError } = await opened.tables.todos.create({
 			stem: 'one',
 			fields: { title: 'One', done: false },
 		});
-		expect(created.error).toBeNull();
+		expect(createError).toBeNull();
 		expect((await opened.git.commit()).status).toBe('committed');
 		expect((await opened.git.stage('all')).error).toBeNull();
 		expect((await opened.git.paths()).data).toEqual([]);

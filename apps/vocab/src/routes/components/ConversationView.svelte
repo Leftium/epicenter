@@ -28,7 +28,7 @@
 	/** A successful start leaves this page for the sign-in page. */
 	async function signIn() {
 		const { error } = await auth.startSignIn();
-		if (error) toast.error('Could not sign in', { description: error.message });
+		if (error !== null) toast.error('Could not sign in', { description: error.message });
 	}
 
 	let {

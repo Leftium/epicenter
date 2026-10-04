@@ -99,7 +99,7 @@ const decoder = new TextDecoder();
 const encoder = new TextEncoder();
 const INDEX = `${GITDIR}/index`;
 /** The pending incoming update's record, inside `.git`. */
-export const INCOMING_RECORD = 'epicenter-incoming.json';
+const INCOMING_RECORD = 'epicenter-incoming.json';
 /** Refs that keep both commits of a pending update reachable. */
 const PIN_EXPECTED = 'refs/epicenter/incoming/expected';
 const PIN_NEXT = 'refs/epicenter/incoming/next';
@@ -728,20 +728,22 @@ export function createOpfsGitStore({
 					return { status: 'failed', applied, error, unknown: undefined };
 			}
 			if (group.length === 0) continue;
-			const result = await applyChanges(root, group, landed, { prune: true });
-			if (result.error === null) {
+			const { error: applyError } = await applyChanges(root, group, landed, {
+				prune: true,
+			});
+			if (applyError === null) {
 				applied.push(...group.map(stepOf));
 				continue;
 			}
-			if (result.error.name === 'Partial') {
-				applied.push(...result.error.applied);
-				const failed = result.error.failed;
+			if (applyError.name === 'Partial') {
+				applied.push(...applyError.applied);
+				const failed = applyError.failed;
 				return {
 					status: 'failed',
 					applied,
-					error: result.error.error,
+					error: applyError.error,
 					unknown:
-						result.error.error.name === 'Unconfirmed' && failed.kind !== 'move'
+						applyError.error.name === 'Unconfirmed' && failed.kind !== 'move'
 							? failed.path
 							: undefined,
 				};
@@ -749,9 +751,9 @@ export function createOpfsGitStore({
 			return {
 				status: 'failed',
 				applied,
-				error: result.error,
+				error: applyError,
 				unknown:
-					result.error.name === 'Unconfirmed' ? result.error.path : undefined,
+					applyError.name === 'Unconfirmed' ? applyError.path : undefined,
 			};
 		}
 		return { status: 'applied', applied };

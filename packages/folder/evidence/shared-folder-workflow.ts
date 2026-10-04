@@ -120,16 +120,16 @@ function check(label: string, condition: boolean, detail?: unknown) {
 	if (detail !== undefined) console.log(`      got: ${JSON.stringify(detail)}`);
 }
 
-function ok<T, E>(result: Result<T, E>): T {
-	if (result.error !== null)
-		throw new Error(`Expected Ok, got ${JSON.stringify(result.error)}`);
-	return result.data as T;
+function ok<T, E>({ data, error }: Result<T, E>): T {
+	if (error !== null)
+		throw new Error(`Expected Ok, got ${JSON.stringify(error)}`);
+	return data as T;
 }
 
-function refusal<T, E>(result: Result<T, E>): E {
-	if (result.error === null)
-		throw new Error(`Expected a refusal, got ${JSON.stringify(result.data)}`);
-	return result.error;
+function refusal<T, E>({ data, error }: Result<T, E>): E {
+	if (error === null)
+		throw new Error(`Expected a refusal, got ${JSON.stringify(data)}`);
+	return error;
 }
 
 // ---------------------------------------------------------------------------
@@ -876,8 +876,8 @@ try {
 		const a = await open(appA);
 		const listed = ok(await a.tables.todos.list());
 		const stems = listed
-			.map((item) =>
-				item.result.error === null ? item.result.data.stem : '<error>',
+			.map(({ result: { data: row, error } }) =>
+				error === null ? row.stem : '<error>',
 			)
 			.sort();
 		check(

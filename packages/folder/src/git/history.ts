@@ -36,7 +36,7 @@
  * scan is the only work here that waits on behalf of several callers, and it
  * never commits or pushes.
  */
-import { Ok, type Result } from 'wellcrafted/result';
+import { Err, Ok, type Result } from 'wellcrafted/result';
 import type { FileBoundary, FileChange } from '../boundary.js';
 import { hashBytes } from '../capture.js';
 import { describe, UnconfirmedWrite } from '../errors.js';
@@ -398,15 +398,15 @@ export function createHistory({
 	}
 
 	async function capture() {
-		const captured = await boundary.capture();
-		if (captured.error) throw new Error(captured.error.message);
-		if (captured.data.unreadable.length > 0)
+		const { data: captured, error: captureError } = await boundary.capture();
+		if (captureError !== null) throw new Error(captureError.message);
+		if (captured.unreadable.length > 0)
 			throw new Error(
-				`${captured.data.unreadable.length} files could not be read: ${captured.data.unreadable
+				`${captured.unreadable.length} files could not be read: ${captured.unreadable
 					.map((item) => item.path)
 					.join(', ')}`,
 			);
-		return captured.data.files;
+		return captured.files;
 	}
 
 	/** Captured files that are history source under the shared scope rule. */
@@ -960,24 +960,24 @@ export function createHistory({
 		head: string | undefined,
 		fetched: string,
 	): Promise<Result<PullOutcome, PullError>> {
-		const clean = await cleanFolder(head);
-		if (clean.error) return clean;
+		const { data: clean, error: cleanError } = await cleanFolder(head);
+		if (cleanError !== null) return Err(cleanError);
 		const incoming = await headFiles(fetched);
 		const refused = await representable(fetched, incoming);
-		if (refused.error) return refused;
-		const published = await publishIncoming({
+		if (refused.error !== null) return refused;
+		const { data: changedPaths, error: publishError } = await publishIncoming({
 			capturedAt,
 			head,
 			nextHead: fetched,
 			target: incoming,
-			clean: clean.data,
+			clean,
 		});
-		if (published.error) return published;
+		if (publishError !== null) return Err(publishError);
 		return Ok({
 			status: 'fastForwarded',
 			from: head,
 			to: fetched,
-			changedPaths: published.data,
+			changedPaths,
 		});
 	}
 
@@ -985,9 +985,8 @@ export function createHistory({
 		if (backend.remote === undefined) return GitError.NoRemote();
 		return exclusive(async () => {
 			const capturedAt = ++clock;
-			const pinned = await pinIncoming();
-			if (pinned.error) return pinned;
-			const incoming = pinned.data;
+			const { data: incoming, error: pinError } = await pinIncoming();
+			if (pinError !== null) return Err(pinError);
 			switch (incoming.relation) {
 				case 'upToDate':
 					return Ok({ status: 'upToDate', head: incoming.head });
@@ -1022,9 +1021,8 @@ export function createHistory({
 				Result<MergeOutcome, MergeError | PullError | GitError>
 			> => {
 				const capturedAt = ++clock;
-				const pinned = await pinIncoming();
-				if (pinned.error) return pinned;
-				const incoming = pinned.data;
+				const { data: incoming, error: pinError } = await pinIncoming();
+				if (pinError !== null) return Err(pinError);
 				if (incoming.relation === 'upToDate')
 					return Ok({ status: 'upToDate', head: incoming.head });
 				if (incoming.relation === 'ahead')
@@ -1032,10 +1030,10 @@ export function createHistory({
 				if (incoming.relation === 'fastForward')
 					return fastForward(capturedAt, incoming.head, incoming.fetched);
 				const { head, fetched } = incoming;
-				const clean = await cleanFolder(head);
-				if (clean.error) return clean;
+				const { data: clean, error: cleanError } = await cleanFolder(head);
+				if (cleanError !== null) return Err(cleanError);
 				const refused = await representable(fetched, await headFiles(fetched));
-				if (refused.error) return refused;
+				if (refused.error !== null) return refused;
 				const bases = await backend.withObjects((access) =>
 					mergeBases(access, head, fetched),
 				);
@@ -1062,21 +1060,22 @@ export function createHistory({
 						reason: prepared.reason,
 					});
 				const merged = await representable(prepared.commit, prepared.files);
-				if (merged.error) return merged;
-				const published = await publishIncoming({
-					capturedAt,
-					head,
-					nextHead: prepared.commit,
-					target: prepared.files,
-					clean: clean.data,
-				});
-				if (published.error) return published;
+				if (merged.error !== null) return merged;
+				const { data: changedPaths, error: publishError } =
+					await publishIncoming({
+						capturedAt,
+						head,
+						nextHead: prepared.commit,
+						target: prepared.files,
+						clean,
+					});
+				if (publishError !== null) return Err(publishError);
 				return Ok({
 					status: 'merged',
 					from: head,
 					to: prepared.commit,
 					fetched,
-					changedPaths: published.data,
+					changedPaths,
 				});
 			},
 		);
@@ -1100,7 +1099,8 @@ export function createHistory({
 				if (refusedByClose(cause)) return GitError.Closed();
 				result = thrown(kind, cause);
 			}
-			if (result.error === null || result.error.name !== 'Failed')
+			const { error: incomingError } = result;
+			if (incomingError === null || incomingError.name !== 'Failed')
 				await refreshSync();
 			else await refreshPending();
 			record({ result, at: Date.now() });

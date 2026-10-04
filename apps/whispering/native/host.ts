@@ -111,17 +111,15 @@ function environmentConnection(
 	const raw =
 		env.WHISPERING_TRANSCRIPTION_BASE_URL ??
 		DEFAULT_TRANSCRIPTION_CONNECTION.baseUrl;
-	const baseUrl = canonicalBaseUrl(raw);
-	if (baseUrl.error !== null)
+	const { data: baseUrl, error: urlError } = canonicalBaseUrl(raw);
+	if (urlError !== null)
 		throw new Error(
-			`WHISPERING_TRANSCRIPTION_BASE_URL is not a base URL this host can send to: ${baseUrl.error}`,
+			`WHISPERING_TRANSCRIPTION_BASE_URL is not a base URL this host can send to: ${urlError}`,
 		);
 	const model =
 		env.WHISPERING_TRANSCRIPTION_MODEL ??
 		DEFAULT_TRANSCRIPTION_CONNECTION.model;
-	return key === ''
-		? { baseUrl: baseUrl.data, model }
-		: { baseUrl: baseUrl.data, model, apiKey: key };
+	return key === '' ? { baseUrl, model } : { baseUrl, model, apiKey: key };
 }
 
 function readOperation(value: unknown): Operation {
@@ -419,10 +417,10 @@ export async function createHost(options: HostOptions) {
 				model: String(payload.model ?? ''),
 			},
 			async () => {
-				const read = await readAudio(root, path);
-				if (read.error) return Err(read.error.message);
+				const { data: bytes, error: readError } = await readAudio(root, path);
+				if (readError !== null) return Err(readError.message);
 				return Ok({
-					bytes: read.data,
+					bytes,
 					filename: basename(path),
 					mimeType: audioMimeTypeOf(path) ?? 'application/octet-stream',
 				});

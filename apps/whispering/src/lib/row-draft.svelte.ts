@@ -231,8 +231,8 @@ export function createRowDraft<TFields>(
 		const run = (async () => {
 			thrown = undefined;
 			try {
-				const saved = await editor.save();
-				if (saved.error === null) onSaved();
+				const { error: saveError } = await editor.save();
+				if (saveError === null) onSaved();
 			} catch (cause) {
 				thrown = cause instanceof Error ? cause.message : String(cause);
 			}
@@ -288,14 +288,19 @@ export function createRowDraft<TFields>(
 			if (thrown !== undefined)
 				return { kind: 'failed', message: thrown, inFile: !state.isDirty };
 			const last = state.lastSave;
-			if (last !== undefined && last.kind !== 'saved' && last !== settledOutcome)
+			if (
+				last !== undefined &&
+				last.kind !== 'saved' &&
+				last !== settledOutcome
+			)
 				return {
 					kind: last.kind,
 					message: last.error.message,
 					inFile: !state.isDirty,
 				};
 			if (!state.isDirty) return { kind: 'saved' };
-			if (!isValid()) return { kind: 'invalid', message: describeIssues(state.reading) };
+			if (!isValid())
+				return { kind: 'invalid', message: describeIssues(state.reading) };
 			return { kind: 'unsaved' };
 		},
 		/**
@@ -316,9 +321,9 @@ export function createRowDraft<TFields>(
 		 */
 		change(next: RowChange<TFields>): boolean {
 			if (!admits()) return false;
-			const changed = editor.change(next);
-			if (changed.error !== null) {
-				refusal = changed.error.message;
+			const { error: changeError } = editor.change(next);
+			if (changeError !== null) {
+				refusal = changeError.message;
 				return false;
 			}
 			refusal = undefined;
@@ -332,9 +337,9 @@ export function createRowDraft<TFields>(
 		 * taken before must not be dropped on its way to the new path.
 		 */
 		carry(next: RowChange<TFields>): boolean {
-			const changed = editor.change(next);
-			if (changed.error !== null) {
-				refusal = changed.error.message;
+			const { error: changeError } = editor.change(next);
+			if (changeError !== null) {
+				refusal = changeError.message;
 				return false;
 			}
 			schedule();
@@ -354,7 +359,8 @@ export function createRowDraft<TFields>(
 		 * draft; the last save's own outcome stays what it was.
 		 */
 		takeCurrent(): Result<undefined, string> {
-			if (!admits()) return Err('Whispering is closing, so nothing was changed.');
+			if (!admits())
+				return Err('Whispering is closing, so nothing was changed.');
 			const held = review();
 			const { observation } = state;
 			const current =
@@ -365,8 +371,8 @@ export function createRowDraft<TFields>(
 						: undefined;
 			if (current === undefined)
 				return Err('There is no version of this file to take.');
-			const adopted = editor.adopt(current);
-			if (adopted.error !== null) return Err(adopted.error.message);
+			const { error: adoptError } = editor.adopt(current);
+			if (adoptError !== null) return Err(adoptError.message);
 			settleOutcome();
 			return Ok(undefined);
 		},
@@ -379,10 +385,11 @@ export function createRowDraft<TFields>(
 		 * Returns the copy's path. The draft itself is unchanged.
 		 */
 		async keepCopy(): Promise<Result<string, string>> {
-			if (!admits()) return Err('Whispering is closing, so nothing was written.');
+			if (!admits())
+				return Err('Whispering is closing, so nothing was written.');
 			const copy = conflictCopyPath(state.path);
-			const written = await files.create(copy, state.source);
-			if (written.error) return Err(written.error.message);
+			const { error: createError } = await files.create(copy, state.source);
+			if (createError !== null) return Err(createError.message);
 			return Ok(copy);
 		},
 		/**

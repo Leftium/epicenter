@@ -144,9 +144,9 @@ function parse(source: string): Result<Parsed, ParseError> {
 					? [`Line ${lineOf(pair.key.range[0])}: The key is not a string`]
 					: undefined,
 			);
-	const converted = convertFrontmatter(document);
-	if (converted.error !== null) return parseFailure(converted.error);
-	return Ok({ frame, document, values: converted.data, body });
+	const { data: values, error: conversionError } = convertFrontmatter(document);
+	if (conversionError !== null) return parseFailure(conversionError);
+	return Ok({ frame, document, values, body });
 }
 
 /**
@@ -160,9 +160,9 @@ export function parseSource(source: string): Result<
 	},
 	ParseError
 > {
-	const parsed = parse(source);
-	if (parsed.error) return parsed;
-	return Ok({ values: parsed.data.values, body: parsed.data.body });
+	const { data: parsed, error: sourceError } = parse(source);
+	if (sourceError !== null) return Err(sourceError);
+	return Ok({ values: parsed.values, body: parsed.body });
 }
 
 /** Bounded alias expansion; larger expansions are refused, not evaluated. */
@@ -240,20 +240,21 @@ export function patchSource(
 	source: string,
 	change: SourceChange,
 ): Result<string, PatchRefusal> {
-	const parsed = parse(source);
-	if (parsed.error) return Err({ kind: 'unparsed', error: parsed.error });
-	const { frame, document, values } = parsed.data;
-	const patched = patchYaml(
+	const { data: parsed, error: sourceError } = parse(source);
+	if (sourceError !== null)
+		return Err({ kind: 'unparsed', error: sourceError });
+	const { frame, document, values } = parsed;
+	const { data: patchedYaml, error: patchError } = patchYaml(
 		source.slice(frame.yamlStart, frame.yamlEnd),
 		document,
 		values,
 		change.fields ?? {},
 		frame.newline,
 	);
-	if (patched.error) return patched;
+	if (patchError !== null) return Err(patchError);
 	return Ok(
 		source.slice(0, frame.yamlStart) +
-			patched.data +
+			patchedYaml +
 			source.slice(frame.yamlEnd, frame.bodyStart) +
 			(change.body ?? source.slice(frame.bodyStart)),
 	);
@@ -275,13 +276,13 @@ function patchYaml(
 	const edits: Edit[] = [];
 	const appended: string[] = [];
 	for (const [key, value] of entries) {
-		const serialized = valueText(key, value);
-		if (serialized.error) return serialized;
+		const { data: serialized, error: valueError } = valueText(key, value);
+		if (valueError !== null) return Err(valueError);
 		const pair = contents?.items.find(
 			(item) => isScalar(item.key) && item.key.value === key,
 		);
 		if (pair === undefined) {
-			appended.push(`${yamlKey(key)}: ${serialized.data}${newline}`);
+			appended.push(`${yamlKey(key)}: ${serialized}${newline}`);
 			continue;
 		}
 		const node = pair.value;
@@ -293,7 +294,7 @@ function patchYaml(
 		const old = yaml.slice(start, end);
 		const trailing = old.match(/(?:\r?\n[ \t]*)+$/)?.[0] ?? '';
 		const lead = start > 0 && yaml[start - 1] === ':' ? ' ' : '';
-		edits.push({ start, end, text: `${lead}${serialized.data}${trailing}` });
+		edits.push({ start, end, text: `${lead}${serialized}${trailing}` });
 	}
 	edits.sort((a, b) => b.start - a.start);
 	let next = yaml;
@@ -309,12 +310,12 @@ function patchYaml(
 	const reread = parseFrontmatter(next);
 	if (reread.errors.length > 0)
 		return unsafe('the patched frontmatter is not valid YAML');
-	const after = convertFrontmatter(reread);
-	if (after.error !== null) return unsafe(after.error);
+	const { data: after, error: conversionError } = convertFrontmatter(reread);
+	if (conversionError !== null) return unsafe(conversionError);
 	const expected: Record<string, unknown> = { ...before, ...fields };
-	const keys = new Set([...Object.keys(expected), ...Object.keys(after.data)]);
+	const keys = new Set([...Object.keys(expected), ...Object.keys(after)]);
 	for (const key of keys)
-		if (!deepEqual(expected[key], after.data[key]))
+		if (!deepEqual(expected[key], after[key]))
 			return unsafe(`the patch would not preserve the value of '${key}'`);
 	return Ok(next);
 }
@@ -368,20 +369,21 @@ function valueText(
 ): Result<string, ValueRefusal> {
 	const refuse = (reason: string): Result<never, ValueRefusal> =>
 		Err({ kind: 'value', field, reason });
-	const text = serializeValue(value);
-	if (text.error) return refuse(text.error.reason);
-	const document = parseFrontmatter(`value: ${text.data}\n`);
+	const { data: text, error: serializeError } = serializeValue(value);
+	if (serializeError !== null) return refuse(serializeError.reason);
+	const document = parseFrontmatter(`value: ${text}\n`);
 	if (
 		document.errors.length > 0 ||
 		!deepEqual((document.toJS() as { value?: unknown } | null)?.value, value)
 	)
 		return refuse('the value does not read back from YAML as it was supplied');
-	return Ok(text.data);
+	return Ok(text);
 }
 
 /** Why a supplied value cannot be saved in frontmatter, or `undefined` when it can. */
 export function valueProblem(value: unknown): string | undefined {
-	return valueText('', value).error?.reason;
+	const { error: refusal } = valueText('', value);
+	return refusal?.reason;
 }
 
 function deepEqual(left: unknown, right: unknown): boolean {
@@ -417,9 +419,9 @@ export function composeSource(
 	const newline = body.includes('\r\n') ? '\r\n' : '\n';
 	let yaml = '';
 	for (const [key, value] of Object.entries(fields)) {
-		const text = valueText(key, value);
-		if (text.error) return text;
-		yaml += `${yamlKey(key)}: ${text.data}${newline}`;
+		const { data: text, error: valueError } = valueText(key, value);
+		if (valueError !== null) return Err(valueError);
+		yaml += `${yamlKey(key)}: ${text}${newline}`;
 	}
 	return Ok(`---${newline}${yaml}---${newline}${body}`);
 }

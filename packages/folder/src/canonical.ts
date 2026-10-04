@@ -99,15 +99,15 @@ export function parseCanonicalDocument(
 	if (document.contents === null) return Ok({ fields: {}, body });
 	if (!isMap(document.contents))
 		return refuse('The frontmatter is not a mapping');
-	const fields = convert(document.contents, [], {
+	const { data: fields, error: fieldsError } = convert(document.contents, [], {
 		document,
 		converting: new Set(),
 		aliases: 0,
 		nodes: 0,
 	});
-	if (fields.error) return fields;
+	if (fieldsError !== null) return Err(fieldsError);
 	return Ok({
-		fields: fields.data as CanonicalDocument['fields'],
+		fields: fields as CanonicalDocument['fields'],
 		body,
 	});
 }
@@ -159,9 +159,13 @@ function convert(
 				return refuse(`The tag ${node.tag} is not supported`, path);
 			const items: CanonicalValue[] = [];
 			for (const [index, item] of node.items.entries()) {
-				const value = convert(item, [...path, index], walk);
-				if (value.error) return value;
-				items.push(value.data);
+				const { data: value, error: valueError } = convert(
+					item,
+					[...path, index],
+					walk,
+				);
+				if (valueError !== null) return Err(valueError);
+				items.push(value);
 			}
 			return Ok(items);
 		}
@@ -179,9 +183,13 @@ function convert(
 					return refuse('A mapping key is not a string', path);
 				if (!key.value.isWellFormed())
 					return refuse('A mapping key contains a lone surrogate', path);
-				const value = convert(pair.value, [...path, key.value], walk);
-				if (value.error) return value;
-				defineOwn(record, key.value, value.data);
+				const { data: value, error: valueError } = convert(
+					pair.value,
+					[...path, key.value],
+					walk,
+				);
+				if (valueError !== null) return Err(valueError);
+				defineOwn(record, key.value, value);
 			}
 			return Ok(record);
 		}
@@ -242,20 +250,21 @@ export function formatCanonicalDocument(
 	];
 	let header = '';
 	for (const key of keys) {
-		const text = flow(fields[key], [key], new Set());
-		if (text.error) return text;
-		const quoted = quote(key, [key]);
-		if (quoted.error) return quoted;
-		header += `${quoted.data}: ${text.data}\n`;
+		const { data: text, error: textError } = flow(
+			fields[key],
+			[key],
+			new Set(),
+		);
+		if (textError !== null) return Err(textError);
+		const { data: quoted, error: quoteError } = quote(key, [key]);
+		if (quoteError !== null) return Err(quoteError);
+		header += `${quoted}: ${text}\n`;
 	}
 	const text = `---\n${header}---\n${document.body}`;
-	const reread = parseCanonicalDocument(text);
-	if (reread.error)
-		return refuse(`The canonical text does not parse: ${reread.error.reason}`);
-	if (
-		reread.data.body !== document.body ||
-		!sameValue(reread.data.fields, fields)
-	)
+	const { data: reread, error: parseError } = parseCanonicalDocument(text);
+	if (parseError !== null)
+		return refuse(`The canonical text does not parse: ${parseError.reason}`);
+	if (reread.body !== document.body || !sameValue(reread.fields, fields))
 		return refuse('The canonical text does not read back as the document');
 	return Ok(text);
 }
@@ -269,7 +278,7 @@ function flow(
 	if (typeof value === 'boolean') return Ok(String(value));
 	if (typeof value === 'number') {
 		const number = numberValue(value, path);
-		if (number.error) return number;
+		if (number.error !== null) return number;
 		return Ok(Object.is(value, -0) ? '-0' : String(value));
 	}
 	if (typeof value === 'string') return quote(value, path);
@@ -284,9 +293,13 @@ function flow(
 				return refuse('An array has holes or extra properties', path);
 			const items: string[] = [];
 			for (const [index, item] of value.entries()) {
-				const text = flow(item, [...path, index], ancestors);
-				if (text.error) return text;
-				items.push(text.data);
+				const { data: text, error: textError } = flow(
+					item,
+					[...path, index],
+					ancestors,
+				);
+				if (textError !== null) return Err(textError);
+				items.push(text);
 			}
 			return Ok(`[${items.join(', ')}]`);
 		}
@@ -294,11 +307,15 @@ function flow(
 			return refuse('An object is not a plain JSON object', path);
 		const entries: string[] = [];
 		for (const key of Object.keys(value).sort(compareKeys)) {
-			const quoted = quote(key, [...path, key]);
-			if (quoted.error) return quoted;
-			const text = flow(value[key], [...path, key], ancestors);
-			if (text.error) return text;
-			entries.push(`${quoted.data}: ${text.data}`);
+			const { data: quoted, error: quoteError } = quote(key, [...path, key]);
+			if (quoteError !== null) return Err(quoteError);
+			const { data: text, error: textError } = flow(
+				value[key],
+				[...path, key],
+				ancestors,
+			);
+			if (textError !== null) return Err(textError);
+			entries.push(`${quoted}: ${text}`);
 		}
 		return Ok(`{${entries.join(', ')}}`);
 	} finally {

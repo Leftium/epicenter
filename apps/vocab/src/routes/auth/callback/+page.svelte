@@ -16,7 +16,7 @@
 				return;
 			}
 			const { error } = await auth.completeSignIn();
-			if (error) {
+			if (error !== null) {
 				errorMessage = error.message;
 				return;
 			}

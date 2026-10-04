@@ -126,8 +126,8 @@ export async function ask<T>(
 			message: cause instanceof Error ? cause.message : String(cause),
 		};
 	}
-	if (result.error === null) return { kind: 'done', value: result.data as T };
-	const { error } = result;
+	const { data, error } = result;
+	if (error === null) return { kind: 'done', value: data as T };
 	if ('moved' in error && error.name === 'SourceNotRemoved')
 		return {
 			kind: 'sourceNotRemoved',
@@ -382,13 +382,16 @@ export function createFileSession(
 
 	async function read(path: string): Promise<Observed> {
 		try {
-			const found = await readTextFile(files, path);
-			if (found.error)
-				return found.error.name === 'NotFound'
+			const { data: found, error: foundError } = await readTextFile(
+				files,
+				path,
+			);
+			if (foundError)
+				return foundError.name === 'NotFound'
 					? { kind: 'removed' }
-					: { kind: 'unreadable', message: found.error.message };
-			return found.data.kind === 'text'
-				? { kind: 'present', file: found.data.file }
+					: { kind: 'unreadable', message: foundError.message };
+			return found.kind === 'text'
+				? { kind: 'present', file: found.file }
 				: { kind: 'unreadable', message: 'The file is no longer text.' };
 		} catch (cause) {
 			return {

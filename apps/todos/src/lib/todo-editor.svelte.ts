@@ -366,11 +366,11 @@ export function createTodoEditor(
 		 * then is not saved, and keeps the input. Answers why a change was refused.
 		 */
 		change(requested: RowChange<TodoFields>): string | undefined {
-			const changed = row.change(requested);
-			if (changed.error !== null) {
+			const { error: changedError } = row.change(requested);
+			if (changedError !== null) {
 				refusal =
-					changed.error.name === 'Unrepresentable'
-						? `This value cannot be saved: ${changed.error.refusal.reason}.`
+					changedError.name === 'Unrepresentable'
+						? `This value cannot be saved: ${changedError.refusal.reason}.`
 						: 'This todo is closed, so the change was not applied.';
 				return refusal;
 			}
@@ -403,11 +403,11 @@ export function createTodoEditor(
 			const latest = state.observation;
 			if (latest.kind !== 'present')
 				return 'There is no saved version to load.';
-			const adopted = row.adopt(latest.revision);
-			if (adopted.error !== null)
-				return adopted.error.name === 'Stale'
+			const { error: adoptedError } = row.adopt(latest.revision);
+			if (adoptedError !== null)
+				return adoptedError.name === 'Stale'
 					? 'The file changed again. Review it and try again.'
-					: describeSaveError(adopted.error);
+					: describeSaveError(adoptedError);
 			clearTimeout(timer);
 			// A read of the row cannot answer what a delete did; only an
 			// explicit save or discard ends that halt.
@@ -478,24 +478,25 @@ export function createTodoEditor(
 					sha256: baseline.sha256,
 					text: baseline.text,
 				});
-				const reopened = await table.edit(nextStem);
+				const { data: reopened, error: reopenedError } =
+					await table.edit(nextStem);
 				// The retired editor's draft, with every change made during the move.
 				const typed = state;
 				const retired = row;
-				if (reopened.error !== null) {
+				if (reopenedError !== null) {
 					await retired.dispose();
 					return Ok({
 						row: destination,
 						unopened: {
-							error: reopened.error,
+							error: reopenedError,
 							typed: typed.isDirty ? typed.text : undefined,
 						},
 					});
 				}
-				bind(reopened.data);
+				bind(reopened);
 				if (typed.isDirty) {
 					const { title, done } = typed.document.fields;
-					reopened.data.change({
+					reopened.change({
 						fields: { title, done },
 						body: typed.document.body,
 					});

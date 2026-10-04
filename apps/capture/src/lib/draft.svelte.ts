@@ -479,17 +479,18 @@ export function createDraft(
 				};
 			return;
 		}
+		const { data: editor, error } = result;
 		if (opening === controller) opening = undefined;
 		if (
 			retired ||
 			controller.signal.aborted ||
 			(mode.kind === 'raw' && rawTyped())
 		) {
-			if (result.error === null) await result.data.dispose();
+			if (error === null) await editor.dispose();
 			return;
 		}
-		if (result.error !== null) opened(result.error);
-		else attach(result.data);
+		if (error !== null) opened(error);
+		else attach(editor);
 	}
 
 	/** Let the editor go now: it stops following the file at once. */
@@ -538,28 +539,27 @@ export function createDraft(
 			if (mode.kind !== 'raw' || mode.over === 'settling') return;
 			const { text, over } = mode;
 			try {
-				const written =
+				const { data: written, error } =
 					over === 'absent'
 						? await store.create(text)
 						: await store.replace(over, text);
-				if (written.error === null) {
-					hooks.onSaved(written.data);
+				if (error === null) {
+					hooks.onSaved(written);
 					// The person chose to write the file; an unanswered delete is answered.
 					deletion = undefined;
 					if (mode.kind !== 'raw') return;
 					if (mode.text !== text) {
 						mode = {
 							...mode,
-							over: captureOf(written.data),
+							over: captureOf(written),
 							problem: undefined,
 						};
 						return;
 					}
-					mode = { ...mode, over: captureOf(written.data), problem: undefined };
+					mode = { ...mode, over: captureOf(written), problem: undefined };
 					if (!retired) await acquire();
 					return;
 				}
-				const { error } = written;
 				if (
 					error.name !== 'Conflict' &&
 					error.name !== 'Exists' &&
@@ -608,11 +608,11 @@ export function createDraft(
 			refusal = 'The edited capture has no frontmatter.';
 			return false;
 		}
-		const changed = mode.editor.change({
+		const { error: changedError } = mode.editor.change({
 			body: edit.source.slice(frame.bodyStart),
 		});
-		if (changed.error !== null) {
-			refusal = changed.error.message;
+		if (changedError !== null) {
+			refusal = changedError.message;
 			return false;
 		}
 		refusal = undefined;
@@ -629,9 +629,9 @@ export function createDraft(
 				'The file could not be read as a capture just now, so there is nothing to go back to. Check again first.';
 			return false;
 		}
-		const adopted = mode.editor.adopt(observation.revision);
-		if (adopted.error !== null) {
-			refusal = adopted.error.message;
+		const { error: adoptedError } = mode.editor.adopt(observation.revision);
+		if (adoptedError !== null) {
+			refusal = adoptedError.message;
 			return false;
 		}
 		acknowledged = lastSave;
@@ -763,14 +763,14 @@ export function createDraft(
 				frame.kind === 'frontmatter' &&
 				next.slice(0, frame.bodyStart) === current.slice(0, head.bodyStart)
 			) {
-				const changed = mode.editor.change({
+				const { error: changedError } = mode.editor.change({
 					body: next.slice(frame.bodyStart),
 				});
-				if (changed.error === null) {
+				if (changedError === null) {
 					schedule();
 					return;
 				}
-				refusal = changed.error.message;
+				refusal = changedError.message;
 			}
 			enterRaw(mode.editor, next);
 		},

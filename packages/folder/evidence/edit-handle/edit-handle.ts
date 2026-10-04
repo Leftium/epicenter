@@ -375,10 +375,9 @@ export function createEditHandle<TSnapshot extends TextCapture, TReading>(
 
 	function settle(
 		attempt: SaveAttempt,
-		result: Result<TSnapshot, TableReplaceError>,
+		{ data: receipt, error }: Result<TSnapshot, TableReplaceError>,
 	): SaveOutcome<TSnapshot> {
-		if (result.error === null) {
-			const receipt = result.data;
+		if (error === null) {
 			const outcome = { kind: 'saved', receipt } as const;
 			update({
 				baseline: receipt,
@@ -389,7 +388,6 @@ export function createEditHandle<TSnapshot extends TextCapture, TReading>(
 			});
 			return outcome;
 		}
-		const error = result.error;
 		const outcome: SaveOutcome<TSnapshot> =
 			error.name === 'Conflict'
 				? { kind: 'conflict', attempt, error }

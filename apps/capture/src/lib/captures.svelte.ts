@@ -156,11 +156,11 @@ export function createCaptures(
 	}
 
 	async function read(stem: string): Promise<Current> {
-		const found = await table.get(stem);
-		if (found.error !== null)
-			return { kind: 'unreadable', message: found.error.message };
-		if (found.data === undefined) return { kind: 'removed' };
-		return { kind: 'present', entry: found.data };
+		const { data: found, error: foundError } = await table.get(stem);
+		if (foundError !== null)
+			return { kind: 'unreadable', message: foundError.message };
+		if (found === undefined) return { kind: 'removed' };
+		return { kind: 'present', entry: found };
 	}
 
 	/**
@@ -177,12 +177,12 @@ export function createCaptures(
 		const bytes = encoder.encode(source);
 		const text = utf8.decode(bytes);
 		const reading = inspect(text);
-		const written = await writing(() =>
+		const { data: written, error: writtenError } = await writing(() =>
 			folder.files.create(pathOf(stem), bytes),
 		);
-		if (written.error !== null)
-			return { data: null, error: written.error } as const;
-		const { path, sha256 } = written.data;
+		if (writtenError !== null)
+			return { data: null, error: writtenError } as const;
+		const { path, sha256 } = written;
 		const entry: CaptureEntry = Object.freeze({
 			path,
 			stem,
@@ -202,12 +202,12 @@ export function createCaptures(
 		edit: (signal) => table.edit(stem, { signal }),
 		read: () => read(stem),
 		async replace(file, source) {
-			const written = await writing(() =>
+			const { data: written, error: writtenError } = await writing(() =>
 				table.replace(stem, source, { expectedSha256: file.sha256 }),
 			);
-			if (written.error !== null)
-				return { data: null, error: written.error } as const;
-			return { data: entryOf(written.data), error: null } as const;
+			if (writtenError !== null)
+				return { data: null, error: writtenError } as const;
+			return { data: entryOf(written), error: null } as const;
 		},
 		create: (source) => createExact(stem, source),
 		writing,
@@ -251,17 +251,18 @@ export function createCaptures(
 			}
 			// A write of ours overlapped this listing, so it may predate it.
 			if (writes !== started && attempt < 5) continue;
-			if (listed.error !== null) {
-				listProblem = listed.error.message;
+			const { data: listedEntries, error: listError } = listed;
+			if (listError !== null) {
+				listProblem = listError.message;
 				return;
 			}
 			listProblem = undefined;
 			loaded = true;
 			// A file that was read is a capture to open, whether or not its text
 			// parses. A file that could not be read has no text and is listed apart.
-			entries = listed.data.flatMap(({ result }) => result.data ?? []);
-			unreadable = listed.data.flatMap(({ path, result }) =>
-				result.error ? { path, message: result.error.message } : [],
+			entries = listedEntries.flatMap(({ result: { data } }) => data ?? []);
+			unreadable = listedEntries.flatMap(({ path, result: { error } }) =>
+				error ? { path, message: error.message } : [],
 			);
 			// A change hint may never have reached an editor; each reads its
 			// own file again. One whose file is gone and that holds nothing goes.
@@ -482,7 +483,7 @@ export function createCaptures(
 				const { body } = composeBody(text);
 				try {
 					for (let attempt = 0; ; attempt++) {
-						const created = await writing(() =>
+						const { data: created, error: createdError } = await writing(() =>
 							table.create({
 								stem: newStem(now),
 								fields: {
@@ -491,15 +492,15 @@ export function createCaptures(
 								body,
 							}),
 						);
-						if (created.error === null) {
-							noteSaved(entryOf(created.data));
+						if (createdError === null) {
+							noteSaved(entryOf(created));
 							if (newCapture === text) newCapture = '';
-							return { ok: true, stem: created.data.stem };
+							return { ok: true, stem: created.stem };
 						}
 						// Another capture took this name: a new one is tried.
-						const taken = created.error.name === 'Exists';
+						const taken = createdError.name === 'Exists';
 						if (!taken || attempt >= 3)
-							return { ok: false, message: created.error.message };
+							return { ok: false, message: createdError.message };
 					}
 				} catch (cause) {
 					return { ok: false, message: describe(cause) };
@@ -544,11 +545,14 @@ export function createCaptures(
 				const { source } = draft;
 				try {
 					const stem = `${newStem(new Date())}-copy`;
-					const created = await createExact(stem, source);
-					if (created.error !== null)
-						return { ok: false, message: created.error.message };
+					const { data: created, error: createdError } = await createExact(
+						stem,
+						source,
+					);
+					if (createdError !== null)
+						return { ok: false, message: createdError.message };
 					// Listed as it was written; the refresh below says what is there now.
-					noteSaved(created.data);
+					noteSaved(created);
 					// Another draft may have been opened at the path since; it is not this one.
 					if (
 						drafts.get(draft.path) === draft &&
@@ -631,12 +635,14 @@ export function createCaptures(
 						table.delete(reviewed.stem, { expectedSha256: reviewed.sha256 }),
 					);
 				try {
-					const removed = await (draft ? draft.remove(deleting) : deleting());
-					if (removed.error !== null)
+					const { error: removedError } = await (draft
+						? draft.remove(deleting)
+						: deleting());
+					if (removedError !== null)
 						return {
 							ok: false,
-							changed: removed.error.name === 'Conflict',
-							message: removed.error.message,
+							changed: removedError.name === 'Conflict',
+							message: removedError.message,
 						};
 					if (drafts.get(reviewed.path) === draft) await drop(reviewed.path);
 					entries = entries.filter((entry) => entry.path !== reviewed.path);

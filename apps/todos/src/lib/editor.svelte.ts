@@ -141,40 +141,41 @@ function createDraft(
 			};
 			return;
 		}
-		if (result.error === null) {
-			baseline = result.data;
+		const { data: receipt, error: writeError } = result;
+		if (writeError === null) {
+			baseline = receipt;
 			// The same text unless encoding replaced an unpaired surrogate.
 			// Newer typing is a later generation and stays as typed.
-			if (buffer === captured) buffer = result.data.text;
+			if (buffer === captured) buffer = receipt.text;
 			saveState = { kind: 'saved' };
 			onSaved();
 			return;
 		}
-		if (result.error.name === 'Unconfirmed') {
+		if (writeError.name === 'Unconfirmed') {
 			// The baseline stays, so a retry is checked against the file as
 			// it was: bytes that did land read as a change to review.
 			saveState = { kind: 'unknown', operation: 'save' };
 			return;
 		}
-		if (result.error.name !== 'Conflict') {
-			saveState = { kind: 'failed', message: result.error.message };
+		if (writeError.name !== 'Conflict') {
+			saveState = { kind: 'failed', message: writeError.message };
 			return;
 		}
 		// The conflict wrote nothing; a read that throws only hides the file.
-		const current = await store
+		const { data: current, error: currentError } = await store
 			.read(observed)
 			.catch((cause: unknown) => Err({ message: messageOf(cause) }));
 		// Without the saved file there is nothing to review or replace. The
 		// baseline stays, so a retry repeats this save and this read.
-		saveState = current.error
+		saveState = currentError
 			? {
 					kind: 'failed',
-					message: `This file changed elsewhere, and the saved version cannot be shown: ${current.error.message}`,
+					message: `This file changed elsewhere, and the saved version cannot be shown: ${currentError.message}`,
 				}
 			: {
 					kind: 'conflict',
-					message: result.error.message,
-					current: current.data,
+					message: writeError.message,
+					current,
 				};
 	}
 
@@ -426,18 +427,21 @@ export function createTextFileEditor(
 	return createDraft(
 		{
 			async write(baseline, { bytes, text }) {
-				const replaced = await files.replace(baseline, bytes);
-				if (replaced.error) return Err(replaced.error);
-				return Ok({ ...replaced.data, text });
+				const { data: replaced, error: replacedError } = await files.replace(
+					baseline,
+					bytes,
+				);
+				if (replacedError) return Err(replacedError);
+				return Ok({ ...replaced, text });
 			},
 			async read(baseline) {
-				const read = await readTextFile(files, baseline.path);
-				if (read.error)
-					return read.error.name === 'NotFound' ? Ok(undefined) : read;
-				if (read.data.kind === 'text') return Ok(read.data.file);
+				const { data: read, error } = await readTextFile(files, baseline.path);
+				if (error)
+					return error.name === 'NotFound' ? Ok(undefined) : Err(error);
+				if (read.kind === 'text') return Ok(read.file);
 				return Err({
 					message:
-						read.data.kind === 'binary'
+						read.kind === 'binary'
 							? 'the saved file is not text'
 							: 'the saved file is larger than 1 MB',
 				});

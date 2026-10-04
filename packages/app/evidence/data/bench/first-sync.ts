@@ -222,23 +222,25 @@ async function build(
 		await store.persistence.flush();
 		const owed = syncEngineOf(store).coalesce();
 		if (owed === undefined) return;
-		const position = authority.append(owed.bytes);
-		if (position.error !== null) throw position.error;
-		syncEngineOf(store).acknowledge(owed.id, position.data);
+		const { data: position, error: positionError } = authority.append(
+			owed.bytes,
+		);
+		if (positionError !== null) throw positionError;
+		syncEngineOf(store).acknowledge(owed.id, position);
 		if (mode === 'log') return;
 		// The snapshot half. The resident replica is at the head by construction,
 		// which is the condition the hub checks on a real connection before it asks
 		// anyone for a snapshot.
-		const wanted = authority.shouldSnapshot();
-		if (wanted.error !== null) throw wanted.error;
-		if (!wanted.data) return;
-		const head = authority.head();
-		if (head.error !== null) throw head.error;
-		const replaced = authority.replaceSnapshot(
-			head.data,
+		const { data: wanted, error: wantedError } = authority.shouldSnapshot();
+		if (wantedError !== null) throw wantedError;
+		if (!wanted) return;
+		const { data: head, error: headError } = authority.head();
+		if (headError !== null) throw headError;
+		const { error: replacedError } = authority.replaceSnapshot(
+			head,
 			syncEngineOf(store).encodeSnapshot(),
 		);
-		if (replaced.error !== null) throw replaced.error;
+		if (replacedError !== null) throw replacedError;
 	};
 	const transaction = async (run: () => void) => {
 		run();
@@ -280,10 +282,10 @@ async function build(
 		for (let edit = 0; edit < DAY.fieldEdits; edit += 1) {
 			const id = alive[(day * 7 + edit) % alive.length] as string;
 			await transaction(() => {
-				const edited = db.tables.notes.update(id, {
+				const { error: editedError } = db.tables.notes.update(id, {
 					title: `edited on day ${day}`,
 				});
-				if (edited.error !== null) throw edited.error;
+				if (editedError !== null) throw editedError;
 			});
 		}
 		for (let keystroke = 0; keystroke < DAY.charsTyped; keystroke += 1) {
@@ -315,23 +317,26 @@ async function build(
 	// What the hub puts on the wire for a connection at cursor zero: the snapshot
 	// first if there is one, then every entry after the position it covers. This
 	// mirrors `deliver` in `sync/hub.ts` rather than restating a policy.
-	const snapshot = authority.snapshot();
-	if (snapshot.error !== null) throw snapshot.error;
-	const from = snapshot.data?.position ?? 0;
-	const tail = authority.since(from, Number.MAX_SAFE_INTEGER);
-	if (tail.error !== null) throw tail.error;
-	const stored = authority.storedBytes();
-	if (stored.error !== null) throw stored.error;
-	const head = authority.head();
-	if (head.error !== null) throw head.error;
+	const { data: snapshot, error: snapshotError } = authority.snapshot();
+	if (snapshotError !== null) throw snapshotError;
+	const from = snapshot?.position ?? 0;
+	const { data: tail, error: tailError } = authority.since(
+		from,
+		Number.MAX_SAFE_INTEGER,
+	);
+	if (tailError !== null) throw tailError;
+	const { data: stored, error: storedError } = authority.storedBytes();
+	if (storedError !== null) throw storedError;
+	const { data: head, error: headError } = authority.head();
+	if (headError !== null) throw headError;
 
 	const payload = [
-		...(snapshot.data === undefined ? [] : [snapshot.data.bytes]),
-		...tail.data.map((entry) => entry.bytes),
+		...(snapshot === undefined ? [] : [snapshot.bytes]),
+		...tail.map((entry) => entry.bytes),
 	];
-	const snapshotBytes = snapshot.data?.bytes.length ?? 0;
+	const snapshotBytes = snapshot?.bytes.length ?? 0;
 	let tailBytes = 0;
-	for (const entry of tail.data) tailBytes += entry.bytes.length;
+	for (const entry of tail) tailBytes += entry.bytes.length;
 
 	const ids = db.tables.notes.ids();
 	const canary = db.tables.notes.get(canaryId);
@@ -347,10 +352,10 @@ async function build(
 			entries: payload.length,
 			snapshotBytes,
 			tailBytes,
-			tailEntries: tail.data.length,
-			storedBytes: stored.data,
-			head: head.data,
-			snapshotPosition: snapshot.data?.position ?? 0,
+			tailEntries: tail.length,
+			storedBytes: stored,
+			head: head,
+			snapshotPosition: snapshot?.position ?? 0,
 			liveRows: ids.length,
 			canaryTitle: canary.title ?? '',
 			canaryText,
@@ -415,8 +420,10 @@ async function apply(
 	for (const update of updates) {
 		// `applyRemote` commits what it received, which is what a real replica does
 		// and is part of what the arriving device actually waits on.
-		const applied = syncEngineOf(store).applyRemote(new Uint8Array(update));
-		if (applied.error !== null) throw applied.error;
+		const { error: appliedError } = syncEngineOf(store).applyRemote(
+			new Uint8Array(update),
+		);
+		if (appliedError !== null) throw appliedError;
 		appliedBytes += update.length;
 	}
 	await store.persistence.flush();

@@ -100,9 +100,10 @@ export function createHttpFolder({
 					cause,
 				});
 			}
-			if (got.error) return Err(got.error as TableGetError);
+			const { data: snapshot, error } = got;
+			if (error) return Err(error as TableGetError);
 			// Absence travels as an explicit `null`, never as a missing key.
-			return Ok(got.data === null ? undefined : snapshotOf(got.data));
+			return Ok(snapshot === null ? undefined : snapshotOf(snapshot));
 		},
 		async list() {
 			let listed: WireResult<
@@ -113,13 +114,12 @@ export function createHttpFolder({
 			} catch (cause) {
 				return FileError.Io({ path: 'todos', operation: 'list', cause });
 			}
-			if (listed.error) return Err(listed.error as FileError);
+			const { data: entries, error } = listed;
+			if (error) return Err(error as FileError);
 			return Ok(
-				listed.data.map(({ path, result }) => ({
+				entries.map(({ path, result: { data, error } }) => ({
 					path,
-					result: result.error
-						? Err(result.error as TableReadError)
-						: Ok(snapshotOf(result.data)),
+					result: error ? Err(error as TableReadError) : Ok(snapshotOf(data)),
 				})),
 			);
 		},
@@ -169,14 +169,15 @@ export function createHttpFolder({
 					cause,
 				});
 			}
-			if (saved.error) return Err(saved.error as TableReplaceError);
+			const { data: receipt, error } = saved;
+			if (error) return Err(error as TableReplaceError);
 			// The receipt is the submitted bytes' address, text, and hash.
-			const { sha256 } = saved.data;
+			const { sha256 } = receipt;
 			return Ok(
 				Object.freeze({
 					stem,
-					path: saved.data.path,
-					text: saved.data.text,
+					path: receipt.path,
+					text: receipt.text,
 					sha256,
 				}),
 			);
@@ -191,11 +192,12 @@ export function createHttpFolder({
 			} catch (cause) {
 				return FileError.Io({ path, operation: 'read', cause });
 			}
-			if (read.error) return Err(read.error as FileError);
+			const { data: capture, error } = read;
+			if (error) return Err(error as FileError);
 			const file: CapturedFile = Object.freeze({
 				path,
-				sha256: read.data.sha256,
-				bytes: fromBase64(read.data.base64),
+				sha256: capture.sha256,
+				bytes: fromBase64(capture.base64),
 			});
 			return Ok(file);
 		},
@@ -215,8 +217,9 @@ export function createHttpFolder({
 					cause,
 				});
 			}
-			if (saved.error) return Err(saved.error as FileError);
-			return Ok(Object.freeze({ ...saved.data }));
+			const { data: receipt, error } = saved;
+			if (error) return Err(error as FileError);
+			return Ok(Object.freeze({ ...receipt }));
 		},
 	};
 
@@ -275,8 +278,10 @@ export function connectDemoFolder() {
 				headers: { 'content-type': 'application/json' },
 				body: JSON.stringify(request),
 			});
-			const answer = (await response.json()) as { error?: string };
-			return answer.error;
+			const { error: answerError } = (await response.json()) as {
+				error?: string;
+			};
+			return answerError;
 		},
 		/** The text of one demo source file, for the caller snippets. */
 		async source(name: string): Promise<string> {

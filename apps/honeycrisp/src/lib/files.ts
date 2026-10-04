@@ -9,7 +9,7 @@ import {
 	type FolderFiles,
 	pathProblem,
 } from '@epicenter/folder';
-import { Ok, type Result } from 'wellcrafted/result';
+import { Err, Ok, type Result } from 'wellcrafted/result';
 
 export type TreeRow = {
 	readonly path: string;
@@ -164,9 +164,9 @@ export async function readTextFile(
 	files: Pick<FolderFiles, 'read'>,
 	path: string,
 ): Promise<Result<OpenedFile, FileError>> {
-	const read = await files.read(path);
-	if (read.error) return read;
-	const { bytes, sha256 } = read.data;
+	const { data: file, error } = await files.read(path);
+	if (error) return Err(error);
+	const { bytes, sha256 } = file;
 	if (bytes.byteLength > EDITABLE_TEXT_LIMIT)
 		return Ok({ kind: 'tooLarge', size: bytes.byteLength });
 	if (bytes.includes(0)) return Ok({ kind: 'binary', size: bytes.byteLength });

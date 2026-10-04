@@ -110,8 +110,11 @@ export async function importSkillsFromDisk({
 		const existing = skillsBySourceId.get(sourceId);
 		let skill: Skill;
 		if (existing) {
-			const written = data.tables.skills.update(existing.id, input);
-			if (written.error !== null) throw written.error;
+			const { error: writtenError } = data.tables.skills.update(
+				existing.id,
+				input,
+			);
+			if (writtenError !== null) throw writtenError;
 			// The write reports only that it landed; the repaired row is `get`'s
 			// answer. The import wrote every declared field, so a row that still
 			// does not read means the repair did not take, which is worth failing
@@ -161,11 +164,11 @@ export async function importSkillsFromDisk({
 				};
 				let referenceId: string;
 				if (existingReference) {
-					const written = data.tables.skillReferences.update(
+					const { error: writtenError } = data.tables.skillReferences.update(
 						existingReference.id,
 						fields,
 					);
-					if (written.error !== null) throw written.error;
+					if (writtenError !== null) throw writtenError;
 					referenceId = existingReference.id;
 				} else {
 					referenceId = data.tables.skillReferences.create(fields).id;

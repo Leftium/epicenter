@@ -11,15 +11,15 @@ export async function mountNotes(
 	root: HTMLElement,
 	{ folder, edits }: { folder: DemoFolder; edits: TodoEdits },
 ) {
-	const read = await folder.files.read(NOTES_PATH);
-	if (read.error) {
-		root.replaceChildren(h('p', { className: 'warn' }, read.error.message));
+	const { data: read, error: readError } = await folder.files.read(NOTES_PATH);
+	if (readError) {
+		root.replaceChildren(h('p', { className: 'warn' }, readError.message));
 		return () => {};
 	}
 	const edit = edits.files.edit({
 		path: NOTES_PATH,
-		sha256: read.data.sha256,
-		text: new TextDecoder().decode(read.data.bytes),
+		sha256: read.sha256,
+		text: new TextDecoder().decode(read.bytes),
 	});
 	const text = h('textarea', {
 		rows: 3,

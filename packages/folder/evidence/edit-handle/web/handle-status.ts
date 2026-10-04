@@ -62,9 +62,9 @@ export function mountHandleStatus(root: HTMLElement, edit: TodoEdit) {
 				'button',
 				{
 					onclick: () => {
-						const discarded = edit.discard();
+						const { error: discardedError } = edit.discard();
 						refusal.textContent =
-							discarded.error?.reason === 'saving'
+							discardedError?.reason === 'saving'
 								? 'Not discarded: a save is in flight, and discarding cannot cancel it.'
 								: '';
 					},

@@ -42,10 +42,10 @@
 
 	function fillDefaults() {
 		if (file.kind !== 'text' || defaults === undefined) return;
-		const repaired = repairFields(file.session.buffer, defaults);
-		if (repaired.error !== null)
-			return void toast.error('Could not set the fields', { description: repaired.error });
-		file.session.input(repaired.data);
+		const { data: repaired, error: repairedError } = repairFields(file.session.buffer, defaults);
+		if (repairedError !== null)
+			return void toast.error('Could not set the fields', { description: repairedError });
+		file.session.input(repaired);
 	}
 
 	async function openAsNote() {

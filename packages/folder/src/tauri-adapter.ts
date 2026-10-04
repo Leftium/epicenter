@@ -115,21 +115,21 @@ async function call<W extends Wire<unknown, unknown>>(
 	Reply<Extract<W, { error: null }>['data'], NonNullable<W['error']>>
 > {
 	try {
-		const reply = await request;
+		const { data: reply, error: replyError } = await request;
 		// Tauri also rejects with strings for missing commands or permissions.
 		// Generated bindings cast every non-Error rejection to the Rust error
 		// type; a primitive is not an acknowledged domain refusal.
 		if (
-			reply.error !== null &&
-			(typeof reply.error !== 'object' || !('name' in reply.error))
+			replyError !== null &&
+			(typeof replyError !== 'object' || !('name' in replyError))
 		)
-			return { sent: false, cause: reply.error };
-		return reply.error === null
-			? { sent: true, settled: 'done', data: reply.data }
+			return { sent: false, cause: replyError };
+		return replyError === null
+			? { sent: true, settled: 'done', data: reply }
 			: {
 					sent: true,
 					settled: 'refused',
-					error: reply.error as NonNullable<W['error']>,
+					error: replyError as NonNullable<W['error']>,
 				};
 	} catch (cause) {
 		return { sent: false, cause };

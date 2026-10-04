@@ -360,34 +360,36 @@ export function createTodos(folder: TodosFolder) {
 		const sequence = ++refreshSequence;
 		const stale = () => closing !== undefined || sequence !== refreshSequence;
 		const requested = new Map(retained);
-		const [rows, files] = await Promise.all([
-			table.list(),
-			folder.files.list(),
-		]);
+		const [
+			{ data: rows, error: rowsError },
+			{ data: files, error: filesError },
+		] = await Promise.all([table.list(), folder.files.list()]);
 		if (stale()) return;
 		// Every row file that was read is a todo to select, whether or not its
 		// text parses. A file that could not be read has no text to show.
 		const read: TodoEntry[] = [];
 		const failed: { path: string; message: string }[] = [];
-		for (const item of rows.data ?? [])
-			if (item.result.error === null) read.push(item.result.data);
-			else failed.push({ path: item.path, message: item.result.error.message });
-		if (rows.error) {
+		for (const {
+			path,
+			result: { data, error },
+		} of rows ?? [])
+			if (error === null) read.push(data);
+			else failed.push({ path, message: error.message });
+		if (rowsError) {
 			// Keep the previous observation visible; never show an empty list for a failed read.
-			listError = rows.error.message;
+			listError = rowsError.message;
 		} else {
 			listError = undefined;
 			entries = sortEntries(read);
 			unreadable = failed;
 		}
-		if (files.error) listingError = files.error.message;
+		if (filesError) listingError = filesError.message;
 		else {
 			listingError = undefined;
-			listing = files.data;
+			listing = files;
 		}
 		const listed = new Map(read.map((entry) => [entry.path, entry]));
-		const present =
-			files.data && new Set(files.data.files.map((file) => file.path));
+		const present = files && new Set(files.files.map((file) => file.path));
 		const current = (path: string, item: Retained) =>
 			retained.get(path) === item && !reserved.has(path);
 		for (const [path, item] of requested) {
@@ -410,10 +412,10 @@ export function createTodos(folder: TodosFolder) {
 				continue;
 			}
 			if (item.kind !== 'text' || !present) continue;
-			const text = await readTextFile(folder.files, path);
+			const { data: text } = await readTextFile(folder.files, path);
 			if (stale()) return;
-			if (text.data?.kind === 'text' && current(path, item))
-				item.editor.observe(text.data.file);
+			if (text?.kind === 'text' && current(path, item))
+				item.editor.observe(text.file);
 		}
 	}
 
@@ -472,19 +474,18 @@ export function createTodos(folder: TodosFolder) {
 		};
 		const stem = rowStemOf(table.name, path);
 		if (stem !== undefined) {
-			const opened = await table.edit(stem);
+			const { data: opened, error } = await table.edit(stem);
 			if (!claimed()) {
-				if (opened.error === null) void opened.data.dispose();
+				if (error === null) void opened.dispose();
 				return;
 			}
-			if (opened.error === null) {
+			if (error === null) {
 				retained.set(path, {
 					kind: 'todo',
-					editor: createTodoEditor(table, opened.data, onSaved),
+					editor: createTodoEditor(table, opened, onSaved),
 				});
 				return;
 			}
-			const { error } = opened;
 			if (error.name === 'NoCanonicalForm' || error.name === 'InvalidSource') {
 				retained.set(
 					path,
@@ -494,22 +495,21 @@ export function createTodos(folder: TodosFolder) {
 			}
 			// Absent, unreadable, or not text: the raw read below says which.
 		}
-		const read = await readTextFile(folder.files, path);
+		const { data: read, error: readError } = await readTextFile(
+			folder.files,
+			path,
+		);
 		if (!claimed()) return;
 		retained.set(
 			path,
-			read.error
-				? { kind: 'failed', message: read.error.message }
-				: read.data.kind === 'text'
+			readError
+				? { kind: 'failed', message: readError.message }
+				: read.kind === 'text'
 					? {
 							kind: 'text',
-							editor: createTextFileEditor(
-								folder.files,
-								read.data.file,
-								onSaved,
-							),
+							editor: createTextFileEditor(folder.files, read.file, onSaved),
 						}
-					: read.data,
+					: read,
 		);
 	}
 
@@ -533,13 +533,12 @@ export function createTodos(folder: TodosFolder) {
 		stem: string,
 		settled: string | undefined,
 	): Promise<Result<TodoEntry, string>> {
-		const read = await table.get(stem);
-		if (read.error) return Err(read.error.message);
-		if (read.data === undefined)
-			return Err('This todo is no longer in the folder.');
-		if (settled !== undefined && read.data.sha256 !== settled)
+		const { data: read, error: readError } = await table.get(stem);
+		if (readError) return Err(readError.message);
+		if (read === undefined) return Err('This todo is no longer in the folder.');
+		if (settled !== undefined && read.sha256 !== settled)
 			return Err('The file changed after it was read. Check it and try again.');
-		return Ok(read.data);
+		return Ok(read);
 	}
 
 	/**
@@ -552,9 +551,9 @@ export function createTodos(folder: TodosFolder) {
 	): Promise<Result<FileCapture, string>> {
 		let captured: FileCapture;
 		if (typeof from === 'string') {
-			const read = await folder.files.read(from);
-			if (read.error) return Err(read.error.message);
-			captured = read.data;
+			const { data: read, error: readError } = await folder.files.read(from);
+			if (readError) return Err(readError.message);
+			captured = read;
 		} else captured = from;
 		const moved = await folder.files.move(captured, to);
 		return moved.error ? Err(describeWriteError(moved.error)) : moved;
@@ -633,18 +632,18 @@ export function createTodos(folder: TodosFolder) {
 			const stem = crypto.randomUUID();
 			const release = reserve(rowPath(table.name, stem));
 			if (release === undefined) return BUSY;
-			const created = await table
+			const { data: created, error: createdError } = await table
 				.create({
 					stem,
 					fields: { title, done: false },
 					body: '',
 				})
 				.finally(release);
-			if (created.error) return describeWriteError(created.error);
+			if (createdError) return describeWriteError(createdError);
 			await refresh();
 			// The row was written; a closing app opens no editor for it.
 			if (closing !== undefined) return undefined;
-			await open(created.data.path);
+			await open(created.path);
 			return undefined;
 		},
 		/**
@@ -751,11 +750,11 @@ export function createTodos(folder: TodosFolder) {
 					// the destination: a native folder checks the guard only as well
 					// as other programs allow.
 					const renameRow = async (capture: TextCapture) => {
-						const renamed = await table.rename(stem, nextStem, {
+						const { error: renamedError } = await table.rename(stem, nextStem, {
 							expectedSha256: capture.sha256,
 						});
-						return renamed.error
-							? Err(describeWriteError(renamed.error))
+						return renamedError
+							? Err(describeWriteError(renamedError))
 							: Ok({
 									path: to,
 									sha256: capture.sha256,
@@ -833,8 +832,11 @@ export function createTodos(folder: TodosFolder) {
 			if (release === undefined) return BUSY;
 			try {
 				if (!(await item.editor.settle())) return UNSETTLED;
-				const row = await currentRow(stem, undefined);
-				if (row.error !== null) return row.error;
+				const { data: row, error: rowError } = await currentRow(
+					stem,
+					undefined,
+				);
+				if (rowError !== null) return rowError;
 				// Input typed while the row was read refuses the switch and stays.
 				if (!item.editor.isIdle) return UNSETTLED;
 				if (retained.get(path) !== item || closing !== undefined)
@@ -842,7 +844,7 @@ export function createTodos(folder: TodosFolder) {
 				const disposing = item.editor.dispose();
 				retained.set(
 					path,
-					rowSource(createRowSourceEditor(table, row.data, onSaved), undefined),
+					rowSource(createRowSourceEditor(table, row, onSaved), undefined),
 				);
 				await disposing;
 				return undefined;
@@ -864,11 +866,11 @@ export function createTodos(folder: TodosFolder) {
 			if (release === undefined) return BUSY;
 			try {
 				if (!(await item.editor.settle())) return UNSETTLED;
-				const opened = await table.edit(stem);
-				if (opened.error !== null) {
+				const { data: opened, error: openedError } = await table.edit(stem);
+				if (openedError !== null) {
 					if (retained.get(path) === item)
-						retained.set(path, rowSource(item.editor, opened.error));
-					return describeEditError(opened.error);
+						retained.set(path, rowSource(item.editor, openedError));
+					return describeEditError(openedError);
 				}
 				// Typing while the row opened keeps the source editor.
 				if (
@@ -876,13 +878,13 @@ export function createTodos(folder: TodosFolder) {
 					!item.editor.isIdle ||
 					closing !== undefined
 				) {
-					void opened.data.dispose();
+					void opened.dispose();
 					return item.editor.isIdle ? undefined : UNSETTLED;
 				}
 				item.editor.dispose();
 				retained.set(path, {
 					kind: 'todo',
-					editor: createTodoEditor(table, opened.data, onSaved),
+					editor: createTodoEditor(table, opened, onSaved),
 				});
 				return undefined;
 			} finally {
@@ -902,8 +904,10 @@ export function createTodos(folder: TodosFolder) {
 				return `"${name}" already exists here.`;
 			const release = reserve(path);
 			if (release === undefined) return BUSY;
-			const created = await folder.files.create(path, '').finally(release);
-			if (created.error) return describeWriteError(created.error);
+			const { error: createdError } = await folder.files
+				.create(path, '')
+				.finally(release);
+			if (createdError) return describeWriteError(createdError);
 			await refreshAll();
 			await open(path);
 			return undefined;
@@ -923,8 +927,10 @@ export function createTodos(folder: TodosFolder) {
 				return `"${name}" already exists here.`;
 			const release = reserve(path);
 			if (release === undefined) return BUSY;
-			const made = await folder.files.mkdir(path).finally(release);
-			if (made.error) return describeWriteError(made.error);
+			const { error: madeError } = await folder.files
+				.mkdir(path)
+				.finally(release);
+			if (madeError) return describeWriteError(madeError);
 			if (directory !== '' && closing === undefined) expanded.add(directory);
 			await refresh();
 			return undefined;
@@ -969,9 +975,9 @@ export function createTodos(folder: TodosFolder) {
 				}
 				if (draft !== undefined)
 					return Ok({ kind: 'file', path, sha256: draft.sha256 });
-				const read = await folder.files.read(path);
-				if (read.error) return Err(read.error.message);
-				return Ok({ kind: 'file', path, sha256: read.data.sha256 });
+				const { data: read, error: readError } = await folder.files.read(path);
+				if (readError) return Err(readError.message);
+				return Ok({ kind: 'file', path, sha256: read.sha256 });
 			} finally {
 				release();
 			}
@@ -982,11 +988,11 @@ export function createTodos(folder: TodosFolder) {
 			if (deletion.kind === 'folder') {
 				const release = reserve(deletion.path);
 				if (release === undefined) return BUSY;
-				const removed = await folder.files
+				const { error: removedError } = await folder.files
 					.rmdir(deletion.path)
 					.finally(release);
 				await refresh();
-				return removed.error ? describeWriteError(removed.error) : undefined;
+				return removedError ? describeWriteError(removedError) : undefined;
 			}
 			const path =
 				deletion.kind === 'todo' ? deletion.entry.path : deletion.path;
@@ -1030,8 +1036,8 @@ export function createTodos(folder: TodosFolder) {
 		/** Fetch, then apply the remote only as a clean fast-forward. Never runs on its own. */
 		async pull(): Promise<Result<PullOutcome, PullError | GitError>> {
 			if (closing !== undefined) return GitError.Closed();
-			const fetched = await folder.git.fetch();
-			if (fetched.error) return Err(fetched.error);
+			const { error: fetchedError } = await folder.git.fetch();
+			if (fetchedError) return Err(fetchedError);
 			// A fetch that answers after close began applies nothing.
 			if (closing !== undefined) return GitError.Closed();
 			const pulled = await folder.git.pullFastForward();
@@ -1051,8 +1057,8 @@ export function createTodos(folder: TodosFolder) {
 			const unsupported = folder.git.mergeUnsupported;
 			if (unsupported !== undefined)
 				return MergeError.Unsupported({ reason: unsupported });
-			const fetched = await folder.git.fetch();
-			if (fetched.error) return Err(fetched.error);
+			const { error: fetchedError } = await folder.git.fetch();
+			if (fetchedError) return Err(fetchedError);
 			// A fetch that answers after close began merges nothing.
 			if (closing !== undefined) return GitError.Closed();
 			const merged = await folder.git.mergeIncoming();

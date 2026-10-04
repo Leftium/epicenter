@@ -119,7 +119,7 @@ export async function createDemoServer() {
 
 	async function open() {
 		const root = await mkdtemp(join(tempBase, PREFIX));
-		const opened = await openFolder({
+		const { data: opened, error: openedError } = await openFolder({
 			root,
 			definition,
 			git: {
@@ -127,11 +127,11 @@ export async function createDemoServer() {
 				commitOnEdit: false,
 			},
 		});
-		if (opened.error) throw new Error(opened.error.message);
-		const folder: DemoFolder = opened.data;
+		if (openedError) throw new Error(openedError.message);
+		const folder: DemoFolder = opened;
 		for (const [path, text] of Object.entries(SEED)) {
-			const created = await folder.files.create(path, text);
-			if (created.error) throw new Error(created.error.message);
+			const { error: createdError } = await folder.files.create(path, text);
+			if (createdError) throw new Error(createdError.message);
 		}
 		folder.onFilesChanged((paths) => {
 			broadcast({ type: 'hint', paths, origin: 'folder' });

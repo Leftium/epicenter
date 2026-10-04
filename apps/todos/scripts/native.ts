@@ -40,7 +40,7 @@ async function output(checkout: string, ...gitArgs: string[]) {
 }
 
 const remoteUrl = await output(root, 'remote', 'get-url', 'origin');
-const opened = await openFolder({
+const { data: openedFolder, error: openedError } = await openFolder({
 	root,
 	definition: todosDefinition,
 	git: {
@@ -53,11 +53,12 @@ const opened = await openFolder({
 		commitOnEdit: false,
 	},
 });
-if (opened.error) {
-	print({ error: opened.error.message });
+if (openedError) {
+	print({ error: openedError.message });
 	process.exit(1);
 }
-const folder = opened.data;
+
+const folder = openedFolder;
 
 function print(value: unknown) {
 	console.log(
@@ -71,14 +72,14 @@ function print(value: unknown) {
 }
 
 async function summary() {
-	const listed = await folder.tables.todos.list();
-	if (listed.error) return { error: listed.error.message };
+	const { data: listed, error: listedError } = await folder.tables.todos.list();
+	if (listedError) return { error: listedError.message };
 	// One line per row file. A file that was read is a todo even when its text
 	// does not parse; `parseError` then stands where its fields would be.
 	return {
-		todos: listed.data.flatMap(({ result }) => {
-			if (result.error) return [];
-			const { path, stem, parseError, fields, issues } = result.data;
+		todos: listed.flatMap(({ result: { data, error } }) => {
+			if (error) return [];
+			const { path, stem, parseError, fields, issues } = data;
 			return parseError
 				? { path, stem, parseError }
 				: {
@@ -89,8 +90,8 @@ async function summary() {
 						issues: issues.length > 0 ? issues : undefined,
 					};
 		}),
-		unreadable: listed.data.flatMap(({ path, result }) =>
-			result.error ? { path, error: result.error.message } : [],
+		unreadable: listed.flatMap(({ path, result: { error } }) =>
+			error ? { path, error: error.message } : [],
 		),
 	};
 }
@@ -134,23 +135,20 @@ try {
 			if (stem === undefined) throw new Error('complete needs a stem');
 			// Marked done whatever the row holds now; nothing here was reviewed.
 			// The update reads the row itself, and says when it is not there.
-			const updated = await folder.tables.todos.update(
-				stem,
-				{ fields: { done: true } },
-				{},
-			);
-			if (updated.error) {
+			const { data: updated, error: updatedError } =
+				await folder.tables.todos.update(stem, { fields: { done: true } }, {});
+			if (updatedError) {
 				exitCode = 1;
 				print({
 					error:
-						updated.error.name === 'NotFound'
+						updatedError.name === 'NotFound'
 							? `No todo named ${stem}`
-							: updated.error.message,
+							: updatedError.message,
 				});
 				break;
 			}
 			print({
-				updated: updated.data.path,
+				updated: updated.path,
 				history: await folder.git.commitAndPush(),
 			});
 			break;

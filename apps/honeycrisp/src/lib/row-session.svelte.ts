@@ -292,9 +292,9 @@ export function createRowSession<TFields>(
 		 */
 		change(change: RowChange<TFields>): boolean {
 			if (!admits()) return false;
-			const changed = editor.change(change);
-			if (changed.error !== null) {
-				refusal = changed.error.message;
+			const { error: changedError } = editor.change(change);
+			if (changedError !== null) {
+				refusal = changedError.message;
 				return false;
 			}
 			refusal = undefined;
@@ -428,11 +428,11 @@ export function createRowSession<TFields>(
 			for (const key of Object.keys(state.document.fields))
 				fields[key] = undefined;
 			Object.assign(fields, from.fields);
-			const changed = editor.change({
+			const { error: changedError } = editor.change({
 				fields: fields as RowChange<TFields>['fields'],
 				body: from.body,
 			});
-			if (changed.error !== null) return false;
+			if (changedError !== null) return false;
 			schedule();
 			return true;
 		},

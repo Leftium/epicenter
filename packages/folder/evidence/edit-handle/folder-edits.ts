@@ -151,9 +151,12 @@ export function createFolderEdits<
 						path: displayed.path,
 						reason: `the snapshot is not a row of '${name}'`,
 					});
-				const prepared = prepare(displayed.text, change);
-				if (prepared.error) return refusalError(displayed.path, prepared.error);
-				return replaceUnder(displayed, prepared.data);
+				const { data: prepared, error: preparedError } = prepare(
+					displayed.text,
+					change,
+				);
+				if (preparedError) return refusalError(displayed.path, preparedError);
+				return replaceUnder(displayed, prepared);
 			},
 			/** Open a fresh handle on the row the caller displays. */
 			edit(displayed: Snapshot) {
@@ -165,10 +168,12 @@ export function createFolderEdits<
 					path: displayed.path,
 					interpret: (source) => table.inspect(source) as Reading,
 					async read(): Promise<Observation<Snapshot>> {
-						const got = await table.get(displayed.stem);
-						if (got.error) return { kind: 'unreadable', error: got.error };
-						if (got.data === undefined) return { kind: 'missing' };
-						return { kind: 'present', snapshot: got.data as Snapshot };
+						const { data: got, error: gotError } = await table.get(
+							displayed.stem,
+						);
+						if (gotError) return { kind: 'unreadable', error: gotError };
+						if (got === undefined) return { kind: 'missing' };
+						return { kind: 'present', snapshot: got as Snapshot };
 					},
 					save: replaceUnder,
 					watch: watchPath(displayed.path),
@@ -215,20 +220,21 @@ export function createFolderEdits<
 					path,
 					interpret: () => undefined,
 					async read() {
-						const read = await folder.files.read(path);
-						if (read.error) {
-							if (read.error.name === 'NotFound') return { kind: 'missing' };
-							return { kind: 'unreadable', error: read.error };
+						const { data: read, error: readError } =
+							await folder.files.read(path);
+						if (readError) {
+							if (readError.name === 'NotFound') return { kind: 'missing' };
+							return { kind: 'unreadable', error: readError };
 						}
 						let text: string;
 						try {
-							text = utf8.decode(read.data.bytes);
+							text = utf8.decode(read.bytes);
 						} catch {
 							return {
 								kind: 'unreadable',
 								error: TableError.InvalidUtf8({
 									path,
-									sha256: read.data.sha256,
+									sha256: read.sha256,
 								}).error,
 							};
 						}
@@ -236,7 +242,7 @@ export function createFolderEdits<
 							kind: 'present',
 							snapshot: Object.freeze({
 								path,
-								sha256: read.data.sha256,
+								sha256: read.sha256,
 								text,
 							}),
 						};

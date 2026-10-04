@@ -107,9 +107,9 @@ export function repairFields(
 	source: string,
 	fields: Partial<NoteFields>,
 ): Result<string, string> {
-	const patched = patchRowText(source, { fields });
-	if (patched.error === null) return Ok(patched.data);
-	const refusal = patched.error;
+	const { data: patched, error: refusal } = patchRowText(source, { fields });
+	if (refusal === null) return Ok(patched);
+
 	return Err(
 		refusal.kind === 'unparsed' ? refusal.error.message : refusal.reason,
 	);

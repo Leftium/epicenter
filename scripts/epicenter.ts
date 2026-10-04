@@ -65,9 +65,10 @@ async function validateFolder(path: string) {
 	// Read first to reject invalid UTF-8 even if the runtime replaces bad bytes.
 	await read(configPath);
 	const module = await import(pathToFileURL(configPath).href);
-	const prepared = prepareData<DataDefinition>(module.default);
-	if (prepared.error) throw new Error(prepared.error.message);
-	const definition = prepared.data;
+	const { data: definition, error: preparedError } =
+		prepareData<DataDefinition>(module.default);
+	if (preparedError) throw new Error(preparedError.message);
+
 	const kvPath = join(root, 'kv.json');
 	try {
 		const values: unknown = JSON.parse(await read(kvPath));

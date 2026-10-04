@@ -694,35 +694,38 @@ export function createNotes(host: NotesHost) {
 			listError = cause instanceof Error ? cause.message : String(cause);
 			return;
 		}
-		if (rows.error) {
+		const { data: rowEntries, error: rowsError } = rows;
+		const { data: folderEntries, error: foldersError } = folderRows;
+		const { data: fileEntries, error: filesError } = files;
+		if (rowsError) {
 			// Never show an empty list for a failed read.
-			listError = rows.error.message;
+			listError = rowsError.message;
 		} else {
 			listError = undefined;
 			// A file that was read is a note to select, whether or not its text
 			// parses. A file that could not be read has no text to open.
-			notes = rows.data.flatMap(({ result }) => result.data ?? []);
-			unreadable = rows.data.flatMap(({ path, result }) =>
-				result.error ? { path, message: result.error.message } : [],
+			notes = rowEntries.flatMap(({ result: { data } }) => data ?? []);
+			unreadable = rowEntries.flatMap(({ path, result: { error } }) =>
+				error ? { path, message: error.message } : [],
 			);
 		}
-		if (!folderRows.error) {
-			folders = folderRows.data.flatMap(({ result }) => result.data ?? []);
-			unreadableFolders = folderRows.data.flatMap(({ path, result }) =>
-				result.error ? { path, message: result.error.message } : [],
+		if (!foldersError) {
+			folders = folderEntries.flatMap(({ result: { data } }) => data ?? []);
+			unreadableFolders = folderEntries.flatMap(
+				({ path, result: { error } }) =>
+					error ? { path, message: error.message } : [],
 			);
 		}
-		if (files.error) {
-			listingError = files.error.message;
+		if (filesError) {
+			listingError = filesError.message;
 		} else {
 			listingError = undefined;
-			listing = files.data;
+			listing = fileEntries;
 		}
-		if (!rows.error && !folderRows.error && !files.error)
-			await observePending();
+		if (!rowsError && !foldersError && !filesError) await observePending();
 		const present = new Map(notes.map((entry) => [entry.path, entry]));
 		const broken = new Map(unreadable.map((item) => [item.path, item]));
-		const paths = new Set(files.data?.files.map((file) => file.path));
+		const paths = new Set(fileEntries?.files.map((file) => file.path));
 		const following: Promise<void>[] = [];
 		for (const { path, file, saved } of opened) {
 			if (openFiles.get(path) !== file) continue;
@@ -733,7 +736,7 @@ export function createNotes(host: NotesHost) {
 				continue;
 			}
 			if (file.kind !== 'text') {
-				if (!files.error && !paths.has(path)) openFiles.delete(path);
+				if (!filesError && !paths.has(path)) openFiles.delete(path);
 				continue;
 			}
 			// A save, a rename, or an adopted file since the listing began makes
@@ -741,7 +744,7 @@ export function createNotes(host: NotesHost) {
 			if (file.session.saved !== saved) continue;
 			let outcome: ReturnType<FileSession['observe']>;
 			if (noteIdOf(path) !== undefined) {
-				if (rows.error) continue;
+				if (rowsError) continue;
 				const entry = present.get(path);
 				const failed = broken.get(path);
 				const observed: Observed =
@@ -752,7 +755,7 @@ export function createNotes(host: NotesHost) {
 							: { kind: 'removed' };
 				outcome = file.session.observe(observed);
 			} else {
-				if (files.error) continue;
+				if (filesError) continue;
 				outcome = paths.has(path)
 					? await file.session.reread()
 					: file.session.observe({ kind: 'removed' });
@@ -850,15 +853,16 @@ export function createNotes(host: NotesHost) {
 			if (edited?.error.name === 'NoCanonicalForm')
 				refusal = edited.error.refusal.reason;
 		}
-		const read = await readTextFile(folder.files, path).catch(
-			(cause: unknown) => ({
-				data: null,
-				error: {
-					name: 'Thrown',
-					message: cause instanceof Error ? cause.message : String(cause),
-				},
-			}),
-		);
+		const { data: read, error: readError } = await readTextFile(
+			folder.files,
+			path,
+		).catch((cause: unknown) => ({
+			data: null,
+			error: {
+				name: 'Thrown',
+				message: cause instanceof Error ? cause.message : String(cause),
+			},
+		}));
 		if (closing !== undefined) {
 			if (openFiles.get(path) === loading) openFiles.delete(path);
 			return;
@@ -869,18 +873,18 @@ export function createNotes(host: NotesHost) {
 			openFiles.set(path, { kind: 'failed', message: nowBlocked });
 			return;
 		}
-		if (read.error)
+		if (readError)
 			openFiles.set(path, {
 				kind: 'failed',
 				message:
-					read.error.name === 'NotFound'
+					readError.name === 'NotFound'
 						? 'This file is no longer in the folder.'
-						: read.error.message,
+						: readError.message,
 			});
-		else if (read.data.kind === 'text') {
+		else if (read.kind === 'text') {
 			openFiles.delete(path);
-			sessionFor(read.data.file, refusal);
-		} else openFiles.set(path, read.data);
+			sessionFor(read.file, refusal);
+		} else openFiles.set(path, read);
 	}
 
 	/**
@@ -1006,31 +1010,32 @@ export function createNotes(host: NotesHost) {
 				(from) => moveFile(folder.files, from, to),
 			);
 			if (moved.kind !== 'done' || stem === undefined) return moved;
-			const edited = await folder.tables.notes.edit(stem).catch(
-				(cause: unknown) =>
-					({
-						data: null,
-						error: {
-							name: 'Thrown',
-							message: cause instanceof Error ? cause.message : String(cause),
-						},
-					}) as const,
-			);
+			const { data: edited, error: editedError } = await folder.tables.notes
+				.edit(stem)
+				.catch(
+					(cause: unknown) =>
+						({
+							data: null,
+							error: {
+								name: 'Thrown',
+								message: cause instanceof Error ? cause.message : String(cause),
+							},
+						}) as const,
+				);
 			const file = openFiles.get(path);
 			if (file?.kind !== 'note' || file.session !== session) {
-				void edited.data?.dispose();
+				void edited?.dispose();
 				return moved;
 			}
-			if (edited.error !== null) {
+			if (editedError !== null) {
 				session.strand(
-					(edited.error.name === 'Thrown'
-						? undefined
-						: repairOf(edited.error)) ?? edited.error.message,
+					(editedError.name === 'Thrown' ? undefined : repairOf(editedError)) ??
+						editedError.message,
 				);
 				return moved;
 			}
 			// One step, so no keystroke falls between the two editors.
-			const next = noteSession(edited.data);
+			const next = noteSession(edited);
 			next.carry(session.state.document);
 			openFiles.delete(path);
 			openFiles.set(to, { kind: 'note', session: next, key: file.key });
@@ -1328,7 +1333,7 @@ export function createNotes(host: NotesHost) {
 			if (pending.some((item) => item.label === NEW_NOTE))
 				return 'An earlier new note was not confirmed. Send it again or dismiss it from the status menu before making another.';
 			const at = now();
-			const created = await createRow(
+			const { data: created, error: createdError } = await createRow(
 				'notes',
 				{
 					folderId: view.deleted ? null : view.folderId,
@@ -1340,9 +1345,9 @@ export function createNotes(host: NotesHost) {
 				},
 				NEW_NOTE,
 			);
-			if (created.error !== null) return created.error;
+			if (createdError !== null) return createdError;
 			await refresh();
-			await open(created.data);
+			await open(created);
 			return undefined;
 		},
 		patchNote: (
@@ -1360,9 +1365,13 @@ export function createNotes(host: NotesHost) {
 			const label = `New folder "${name}"`;
 			if (pending.some((item) => item.label === label))
 				return 'This folder was already asked for and not confirmed. Send it again or dismiss it from the status menu.';
-			const created = await createRow('folders', { name, icon: null }, label);
+			const { error: createdError } = await createRow(
+				'folders',
+				{ name, icon: null },
+				label,
+			);
 			await refresh();
-			return created.error ?? undefined;
+			return createdError ?? undefined;
 		},
 		patchFolder: (entry: FolderEntry, fields: Partial<FolderFields>) =>
 			changeFields('folders', entry.path, fields),
@@ -1589,43 +1598,46 @@ export function createNotes(host: NotesHost) {
 			if (session === undefined || stem === undefined) return undefined;
 			if (!(await session.settle())) return UNSETTLED;
 			return reserve([path], async () => {
-				const edited = await folder.tables.notes.edit(stem).catch(
-					(cause: unknown) =>
-						({
-							data: null,
-							error: {
-								name: 'Thrown',
-								message: cause instanceof Error ? cause.message : String(cause),
-							},
-						}) as const,
-				);
-				if (edited.error !== null) {
+				const { data: edited, error: editedError } = await folder.tables.notes
+					.edit(stem)
+					.catch(
+						(cause: unknown) =>
+							({
+								data: null,
+								error: {
+									name: 'Thrown',
+									message:
+										cause instanceof Error ? cause.message : String(cause),
+								},
+							}) as const,
+					);
+				if (editedError !== null) {
 					const repair =
-						edited.error.name === 'Thrown' ? undefined : repairOf(edited.error);
+						editedError.name === 'Thrown' ? undefined : repairOf(editedError);
 					return repair === undefined
-						? edited.error.message
+						? editedError.message
 						: `This file cannot be opened as a note yet (${repair}).`;
 				}
 				if (fenced) {
-					void edited.data.dispose();
+					void edited.dispose();
 					return CLOSING;
 				}
 				if (sessionAt(path) !== session || session.unsettled) {
-					void edited.data.dispose();
+					void edited.dispose();
 					return UNSETTLED;
 				}
 				// The editor read the file again. Unless it read exactly the bytes
 				// the text draft agrees with, another program wrote in between, and
 				// a change hint is no promise to arrive in time: the text stays.
-				if (edited.data.get().baseline.sha256 !== session.saved.sha256) {
-					void edited.data.dispose();
+				if (edited.get().baseline.sha256 !== session.saved.sha256) {
+					void edited.dispose();
 					void refresh();
 					return 'The file changed while it was being opened as a note, so it stays open as text. Check it and try again.';
 				}
 				session.dispose();
 				openFiles.set(path, {
 					kind: 'note',
-					session: noteSession(edited.data),
+					session: noteSession(edited),
 					key: {},
 				});
 				return undefined;
@@ -1667,9 +1679,9 @@ export function createNotes(host: NotesHost) {
 			}
 			let reopen = false;
 			const reply = await reserve([path, to], async () => {
-				const read = await folder.files.read(path);
-				if (read.error) return read.error.message;
-				const from: FileCapture = { path, sha256: read.data.sha256 };
+				const { data: read, error: readError } = await folder.files.read(path);
+				if (readError) return readError.message;
+				const from: FileCapture = { path, sha256: read.sha256 };
 				const change = {
 					kind: 'move',
 					from,
@@ -1798,9 +1810,10 @@ export function createNotes(host: NotesHost) {
 				const listed = notes.find((entry) => entry.path === path);
 				if (listed !== undefined) captured = listed;
 				else {
-					const read = await folder.files.read(path);
-					if (read.error) return Err(read.error.message);
-					captured = { ...read.data, text: undefined };
+					const { data: read, error: readError } =
+						await folder.files.read(path);
+					if (readError) return Err(readError.message);
+					captured = { ...read, text: undefined };
 				}
 			}
 			let title: string | undefined;

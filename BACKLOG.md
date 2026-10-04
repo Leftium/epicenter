@@ -34,6 +34,31 @@ instruction to execute every item in file order.
 Use one session per outcome. Recheck current source and dirty work before
 starting: a prior session may already have completed it.
 
+## Apply repairability to file-authoritative workflows
+
+- Desired result: Best-effort edits preserve information, expose repairable
+  inconsistencies, and allow unaffected work. A human or coding agent can
+  inspect current files and correct them without reconstructing erased intent.
+- Grounding: The 2026-10-04 discussion selected repairability as the design
+  criterion. [The decision draft](docs/adr/0503-file-authoritative-workflows-preserve-information-and-tolerate-repairable-states.md)
+  records its boundaries. This item proposes implementation slices; it does
+  not establish changed runtime behavior.
+- First slice: In Honeycrisp, display notes with missing folders and provide
+  reassignment. Verify visibility after reopen and a later repair. Then
+  simplify folder deletion so failed reassignments can leave visible dangling
+  references; preserve draft retention and per-file overwrite protections.
+- Next slice: Review Todos and Honeycrisp refusals for unsettled operations.
+  For each, name the information it protects or the repairable state it merely
+  prevents. Remove the latter only with diagnostics and a concrete repair path.
+- API decision: Review structured row and KV write validation separately.
+  Compare admitting serializable nonconforming values with retaining typed
+  convenience methods and a raw-text path. Settle the caller contract before
+  changing it; retain refusals for lossy serialization and unsafe patching.
+- Evidence: Exercise failure after an earlier edit lands, malformed source,
+  missing references, and concurrent edits. Check retained source and drafts,
+  visible diagnostics, unaffected operations, and successful later repair.
+  Do not infer retained history from an automatic commit request.
+
 ## Build Whispering's recordings table with an optional detail pane
 
 - Desired result: Keep recordings manageable as a collection with search,

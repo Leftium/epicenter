@@ -30,7 +30,7 @@
  */
 import './svelte-modules.test-support.js';
 import { afterEach, expect, test } from 'bun:test';
-import { readFile } from 'node:fs/promises';
+import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { Ok, type Result } from 'wellcrafted/result';
 import {
@@ -215,8 +215,11 @@ test('opening a session reads the saved choice and opens, lists, and asks for no
 test('a choice is saved on this device, not in the folder, and a new session starts with it', async () => {
 	const device = devicePreferences();
 	const first = await open({ device });
-	// Start with saved folder settings so the device choice can be checked against them.
-	await first.library.saveSettings({ ...first.library.settings });
+	// Start with folder settings an earlier build saved, so the device choice can be checked against them.
+	await writeFile(
+		join(first.root, 'kv.json'),
+		'{"transcriptionModel": "verification-model"}\n',
+	);
 	await first.input.refresh();
 
 	await first.input.select(USB);

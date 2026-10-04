@@ -9,11 +9,13 @@
 	import FileIcon from '@lucide/svelte/icons/file';
 	import TriangleAlertIcon from '@lucide/svelte/icons/triangle-alert';
 	import { audioMimeTypeOf } from '$lib/audio-format.js';
+	import type { TranscriptionFields } from '$lib/definition.js';
 	import { basename, dirname, withFileNewlines } from '$lib/files.js';
-	import type { Library, OpenFile } from '$lib/library.svelte.js';
+	import type { Library, OpenFile, RowSlot } from '$lib/library.svelte.js';
 	import AudioPlayer from './AudioPlayer.svelte';
 	import { confirmDelete, copyPath } from './file-actions.js';
 	import FileNameBar from './FileNameBar.svelte';
+	import RowSaveStatus from './RowSaveStatus.svelte';
 	import SaveStatus from './SaveStatus.svelte';
 
 	let {
@@ -24,10 +26,21 @@
 	}: {
 		library: Library;
 		path: string;
-		file: OpenFile;
+		/**
+		 * The file, or the one draft kept for a transcript's file: the same
+		 * draft the transcript is edited through beside its recording.
+		 */
+		file: OpenFile | { readonly kind: 'row'; readonly slot: RowSlot<TranscriptionFields> };
 		/** Shown on narrow windows, where the list and the editor take turns. */
 		onBack?: () => void;
 	} = $props();
+
+	/** A transcript's text edited as its text: to repair it, or by choice. */
+	const text = $derived(
+		file.kind === 'text' ? { editor: file.editor, reason: undefined } : file.kind === 'row' && file.slot.kind === 'raw' ? file.slot : undefined,
+	);
+	/** A transcript edited as a row: its body, through the folder's row editor. */
+	const form = $derived(file.kind === 'row' && file.slot.kind === 'form' ? file.slot.draft : undefined);
 
 	const name = $derived(basename(path));
 	const directory = $derived(dirname(path));
@@ -65,7 +78,7 @@
 		</Button>
 	</div>
 
-	{#if file.kind === 'loading'}
+	{#if file.kind === 'loading' || (file.kind === 'row' && file.slot.kind === 'opening')}
 		<Loading class="flex-1" label="Opening {name}…" />
 	{:else if file.kind === 'failed'}
 		<Empty.Root class="flex-1">
@@ -74,10 +87,31 @@
 			<Empty.Description>{file.message}</Empty.Description>
 			<Button variant="outline" size="sm" onclick={() => void library.open(path)}>Try again</Button>
 		</Empty.Root>
-	{:else if file.kind === 'text'}
-		{@const editor = file.editor}
-		<SaveStatus {editor} autosavePaused={library.autosave.paused} onDiscardRemoved={() => library.discardRemoved(editor.path)} />
-		<div class="flex min-h-0 flex-1 flex-col px-3 py-3 sm:px-4">
+	{:else if form}
+		{@const body = form.state.document.body}
+		<RowSaveStatus {library} draft={form} />
+		<div class="flex min-h-0 flex-1 flex-col gap-2 px-3 py-3 sm:px-4">
+			<p class="text-xs text-muted-foreground">
+				The transcript’s text, the body of its file. Its fields are kept as they are.
+				<Button size="xs" variant="outline" class="ml-1" onclick={() => void library.editSource(path)}>Edit the whole file</Button>
+			</p>
+			<Textarea
+				class="min-h-40 flex-1 resize-none font-sans"
+				value={body}
+				aria-label="Contents of {name}"
+				oninput={(event) => form.change({ body: withFileNewlines(event.currentTarget.value, body) })}
+			/>
+		</div>
+	{:else if text}
+		{@const editor = text.editor}
+		<SaveStatus {editor} autosavePaused={library.autosave.paused} onDiscardRemoved={() => void library.discardDraft(editor.path)} />
+		<div class="flex min-h-0 flex-1 flex-col gap-2 px-3 py-3 sm:px-4">
+			{#if file.kind === 'row'}
+				<p class="text-xs text-muted-foreground" data-testid="needs-repair">
+					{text.reason ?? 'The whole file, as its text.'} It saves as typed, readable or not.
+					<Button size="xs" variant="outline" class="ml-1" onclick={() => void library.useForm(path)}>Edit the text only</Button>
+				</p>
+			{/if}
 			<Textarea
 				class="min-h-40 flex-1 resize-none font-mono text-xs"
 				value={editor.buffer}
@@ -104,7 +138,7 @@
 				</dd>
 			</dl>
 		</div>
-	{:else}
+	{:else if file.kind === 'binary' || file.kind === 'tooLarge'}
 		<Empty.Root class="flex-1">
 			<Empty.Media><FileIcon class="size-8 text-muted-foreground" /></Empty.Media>
 			<Empty.Title>{details(file.size)}</Empty.Title>

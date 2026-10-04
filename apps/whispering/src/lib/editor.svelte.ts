@@ -1,14 +1,23 @@
 /**
- * Editors over saved text files.
+ * Drafts of ordinary text files, and the policy every draft in a workspace
+ * shares.
  *
- * A draft's `buffer` is the text on screen, including unsaved typing.
- * `baseline` is the saved file the next conditional save is checked against. A
- * save captures one generation of the buffer; success advances the baseline to
- * the accepted file and leaves newer typing dirty. The accepted file holds the
- * text of the bytes that were sent, which differs from the typed string where
- * encoding replaced an unpaired surrogate; a buffer still at the generation
- * that was sent becomes that text, so the draft settles. Git outcomes never
- * affect this state.
+ * A text draft's `buffer` is the text on screen, including unsaved typing.
+ * `baseline` is the saved file the next conditional save is checked against.
+ * A save captures one generation of the buffer; its own receipt advances the
+ * baseline to the bytes it sent and leaves newer typing dirty. Those bytes'
+ * text differs from the typed string where encoding replaced an unpaired
+ * surrogate; a buffer still at the generation that was sent becomes that
+ * text, so the draft settles. Git outcomes never affect this state.
+ *
+ * Only a save's own receipt says it landed. A save the folder refused, one
+ * that threw, and one whose reply never arrived each stop saving on its own:
+ * typing stays in the buffer, nothing is written by a timer, by settling, or
+ * by closing, and the baseline stays the file the draft was made on. A read
+ * that finds the file holding the draft's text says what the file holds now,
+ * not which write put it there, so it never turns an unknown save into a
+ * saved one. The person tries again, which is one more conditional save
+ * against that same baseline, or reviews the file as it is now.
  *
  * Another writer can change the file while a draft is dirty: the terminal, an
  * editor outside the app, or Git. The draft learns of it either from a folder
@@ -17,58 +26,32 @@
  * kept beside it for review. Nothing is overwritten until the person chooses
  * to keep theirs, take the saved one, or keep both.
  *
- * A row's details and its Source view are two views of one draft, so an edit
- * in either is the same unsaved text. Recordings and transformations both edit
- * this way.
+ * Rows of the recordings, transcriptions, and transformations tables are not
+ * edited here: the folder's row editor holds them (`row-draft.svelte.ts`). A
+ * text draft edits any other file, and a row file as raw text when it cannot
+ * be opened as a row or the person asks to edit its source.
  */
-import {
-	type FileTable,
-	type FolderFiles,
-	patchSource,
-	type SourceChange,
-	type TableSnapshot,
-	type TextCapture,
-} from '@epicenter/folder';
+import type { FolderFiles, TextCapture } from '@epicenter/folder';
 import { Err, Ok, type Result } from 'wellcrafted/result';
-import {
-	type RecordingFields,
-	type TransformationFields,
-} from './definition.js';
-import { readTextFile, type SubmittedText, submittedText } from './files.js';
-
-export type RecordingEntry = TableSnapshot<RecordingFields>;
+import { readTextFile, submittedText } from './files.js';
 
 /** One saved text file as its draft last accepted it. */
 export type SavedText = TextCapture;
 
-export type SaveState<T> =
+/** Where a draft's saving stands. Every kind but `saved` and `saving` waits for the person. */
+type SaveState =
 	| { readonly kind: 'saved' }
 	| { readonly kind: 'saving' }
+	/** The folder refused the save, or the save threw. No save receipt was received. */
 	| { readonly kind: 'failed'; readonly message: string }
+	/** The save's reply never arrived. It may or may not have landed. */
+	| { readonly kind: 'unconfirmed'; readonly message: string }
 	| {
 			readonly kind: 'conflict';
 			readonly message: string;
 			/** The saved file now, or undefined when it was removed. */
-			readonly current: T | undefined;
+			readonly current: SavedText | undefined;
 	  };
-
-/** Where a draft saves: one conditional write, and a fresh read for conflict review. */
-type DraftStore<T extends SavedText> = {
-	/** The accepted file's `source` is the text of the submitted bytes. */
-	write(
-		baseline: T,
-		submitted: SubmittedText,
-	): Promise<Result<T, { readonly name: string; readonly message: string }>>;
-	/**
-	 * The saved file the baseline names, now: a row by its stem, a raw file by
-	 * its path. Undefined means absent; an unreadable saved file remains a failure.
-	 */
-	read(
-		baseline: T,
-	): Promise<Result<T | undefined, { readonly message: string }>>;
-	/** Save text as a new file beside the conflict; returns the path it wrote. */
-	keepCopy(path: string, source: string): Promise<Result<string, string>>;
-};
 
 /** Shared by every draft of one workspace. Pausing leaves typing unsaved until asked. */
 export type Autosave = { paused: boolean };
@@ -81,238 +64,9 @@ export type Autosave = { paused: boolean };
 export type Admits = () => boolean;
 
 /** Typing batches for this long before a save; the folder adds no Git delay. */
-const TYPING_BATCH_MS = 400;
+export const TYPING_BATCH_MS = 400;
 
 const CLOSING = 'Whispering is closing, so nothing was written.';
-
-export type Draft<T extends SavedText> = ReturnType<typeof createDraft<T>>;
-export type RowEditor<TFields> = Draft<TableSnapshot<TFields>>;
-export type RecordingEditor = RowEditor<RecordingFields>;
-export type TransformationEditor = RowEditor<TransformationFields>;
-export type TextFileEditor = Draft<SavedText>;
-
-function createDraft<T extends SavedText>(
-	store: DraftStore<T>,
-	initial: T,
-	autosave: Autosave,
-	onSaved: () => void,
-	admits: Admits,
-) {
-	let baseline = $state.raw<T>(initial);
-	let buffer = $state(initial.source);
-	let saveState = $state.raw<SaveState<T>>({ kind: 'saved' });
-	let refusal = $state<string | undefined>();
-	let timer: ReturnType<typeof setTimeout> | undefined;
-	let saving: Promise<void> | undefined;
-
-	const dirty = () => buffer !== baseline.source;
-
-	function schedule() {
-		clearTimeout(timer);
-		if (saveState.kind === 'conflict' || autosave.paused) return;
-		timer = setTimeout(() => void save(), TYPING_BATCH_MS);
-	}
-
-	function input(text: string) {
-		if (!admits()) return;
-		buffer = text;
-		refusal = undefined;
-		schedule();
-	}
-
-	async function saveOnce() {
-		const captured = buffer;
-		const submitted = submittedText(captured);
-		const observed = baseline;
-		/**
-		 * The file holds the text of the submitted bytes. That is the captured
-		 * text unless encoding replaced an unpaired surrogate. Newer typing is
-		 * a later generation and stays as typed.
-		 */
-		const accept = (saved: T) => {
-			baseline = saved;
-			if (buffer === captured) buffer = saved.source;
-			saveState = { kind: 'saved' };
-			onSaved();
-		};
-		saveState = { kind: 'saving' };
-		try {
-			const result = await store.write(observed, submitted);
-			if (result.error === null) return accept(result.data);
-			if (
-				result.error.name === 'Conflict' ||
-				result.error.name === 'Unconfirmed'
-			) {
-				const current = await store.read(observed);
-				// The file holding exactly the submitted text is this save, landed.
-				if (
-					current.error === null &&
-					current.data?.source === submitted.source
-				)
-					return accept(current.data);
-				if (result.error.name === 'Conflict') {
-					saveState = current.error
-						? {
-								kind: 'failed',
-								message: `This file changed elsewhere, and the saved version cannot be shown: ${current.error.message}`,
-							}
-						: {
-								kind: 'conflict',
-								message: result.error.message,
-								current: current.data,
-							};
-					return;
-				}
-			}
-			saveState = { kind: 'failed', message: result.error.message };
-		} catch (cause) {
-			saveState = {
-				kind: 'failed',
-				message: cause instanceof Error ? cause.message : String(cause),
-			};
-		}
-	}
-
-	/** Save the current generation now. Resolves when no save is running. */
-	async function save(): Promise<void> {
-		clearTimeout(timer);
-		if (saveState.kind === 'conflict') return;
-		if (saving) {
-			await saving;
-			return dirty() ? save() : undefined;
-		}
-		if (!dirty()) return;
-		saving = saveOnce();
-		try {
-			await saving;
-		} finally {
-			saving = undefined;
-		}
-		// Typing that arrived during the save is still dirty; batch it again.
-		if (dirty() && saveState.kind === 'saved') schedule();
-	}
-
-	return {
-		get baseline() {
-			return baseline;
-		},
-		get buffer() {
-			return buffer;
-		},
-		get saveState() {
-			return saveState;
-		},
-		/** Why the last structured change was refused; typing clears it. */
-		get refusal() {
-			return refusal;
-		},
-		get dirty() {
-			return dirty();
-		},
-		get path() {
-			return baseline.path;
-		},
-		/** Replace the whole buffer, as a source editor does. */
-		input,
-		/** Record that a requested change could not be applied; the buffer is unchanged. */
-		refuse(reason: string) {
-			refusal = reason;
-		},
-		save,
-		/**
-		 * A fresh observation of the saved file. The same bytes only refresh
-		 * metadata. Changed bytes are adopted by a clean, idle draft. A dirty
-		 * draft never adopts them: it stops saving and holds both versions.
-		 */
-		observe(next: T) {
-			if (next.path !== baseline.path) return;
-			if (next.sha256 === baseline.sha256) {
-				baseline = next;
-				return;
-			}
-			if (saveState.kind === 'conflict') {
-				saveState = { ...saveState, current: next };
-				return;
-			}
-			if (saving) return;
-			if (dirty() || saveState.kind === 'failed') {
-				clearTimeout(timer);
-				saveState = {
-					kind: 'conflict',
-					message: `The file at '${next.path}' changed after it was read`,
-					current: next,
-				};
-				return;
-			}
-			baseline = next;
-			buffer = next.source;
-		},
-		/** The saved file is gone. A dirty draft keeps its text as a conflict. */
-		observeRemoved() {
-			if (saving) return;
-			if (saveState.kind === 'conflict') {
-				saveState = { ...saveState, current: undefined };
-				return;
-			}
-			if (!dirty() && saveState.kind === 'saved') return;
-			clearTimeout(timer);
-			saveState = {
-				kind: 'conflict',
-				message: `The file at '${baseline.path}' was removed after it was read`,
-				current: undefined,
-			};
-		},
-		/** Conflict choice: discard my input and load the saved file. */
-		loadSaved() {
-			if (!admits()) return;
-			if (saveState.kind !== 'conflict' || saveState.current === undefined)
-				return;
-			baseline = saveState.current;
-			buffer = saveState.current.source;
-			saveState = { kind: 'saved' };
-		},
-		/** Conflict choice: keep my input and save it over the version I reviewed. */
-		async keepMine() {
-			if (!admits()) return;
-			if (saveState.kind !== 'conflict' || saveState.current === undefined)
-				return;
-			baseline = saveState.current;
-			saveState = { kind: 'saved' };
-			await save();
-		},
-		/**
-		 * Conflict choice: write my input to a new file, then load the saved one.
-		 * Returns the copy's path, or the reason it could not be written; on a
-		 * failure the conflict and my input stay as they were.
-		 */
-		async keepBoth(): Promise<Result<string, string>> {
-			if (!admits()) return Err(CLOSING);
-			if (saveState.kind !== 'conflict')
-				return Err('There is no conflict to resolve.');
-			const copied = await store.keepCopy(baseline.path, buffer);
-			if (copied.error !== null) return copied;
-			if (saveState.kind === 'conflict' && saveState.current !== undefined) {
-				baseline = saveState.current;
-				buffer = saveState.current.source;
-				saveState = { kind: 'saved' };
-			}
-			return copied;
-		},
-		async retry() {
-			if (!admits()) return;
-			if (saveState.kind === 'failed') saveState = { kind: 'saved' };
-			await save();
-		},
-		/** Settle pending input before the file is renamed, deleted, or closed. */
-		async settle(): Promise<boolean> {
-			await save();
-			return !dirty() && saveState.kind === 'saved';
-		},
-		dispose() {
-			clearTimeout(timer);
-		},
-	};
-}
 
 /** `notes.md` becomes `conflicts/notes-20260102-030405.md`; the folder decides if it is free. */
 export function conflictCopyPath(path: string, now = new Date()): string {
@@ -328,101 +82,312 @@ export function conflictCopyPath(path: string, now = new Date()): string {
 	return `conflicts/${stem}-${stamp}${extension}`;
 }
 
-function copyKeeper(files: FolderFiles): DraftStore<SavedText>['keepCopy'] {
-	return async (path, source) => {
-		const copy = conflictCopyPath(path);
-		const written = await files.create(copy, source);
-		return written.error ? Err(written.error.message) : Ok(copy);
-	};
-}
-
 /**
- * An editor over one table row's Markdown source: a recording or a
- * transformation. Saves are conditional writes of the whole source through the
- * row's table, so fields the app does not know are kept as written.
+ * A draft of one text file whose saves are conditional on the file it was
+ * made on, through the folder's own `files.replace`.
  */
-export function createRowEditor<TFields>(
-	table: FileTable<TFields>,
-	files: FolderFiles,
-	entry: TableSnapshot<TFields>,
-	autosave: Autosave,
-	onSaved: () => void,
-	admits: Admits = () => true,
-): RowEditor<TFields> {
-	return createDraft<TableSnapshot<TFields>>(
-		{
-			write: (baseline, { source }) => table.replace(baseline, source),
-			read: (baseline) => table.get(baseline.stem),
-			keepCopy: copyKeeper(files),
-		},
-		entry,
-		autosave,
-		onSaved,
-		admits,
-	);
-}
-
-/** A text file editor whose conditional saves follow the folder's history policy. */
 export function createTextFileEditor(
 	files: FolderFiles,
 	file: SavedText,
 	autosave: Autosave,
 	onSaved: () => void,
 	admits: Admits = () => true,
-): TextFileEditor {
-	return createDraft<SavedText>(
-		{
-			async write(baseline, { bytes, source }) {
-				const written = await files.replace(
-					{ path: baseline.path, sha256: baseline.sha256 },
-					bytes,
-				);
-				if (written.error) return Err(written.error);
-				return Ok({
-					path: baseline.path,
-					source,
-					sha256: written.data.sha256,
-				});
-			},
-			async read(baseline) {
-				const read = await readTextFile(files, baseline.path);
-				if (read.error)
-					return read.error.name === 'NotFound' ? Ok(undefined) : read;
-				if (read.data.kind === 'text') return Ok(read.data.file);
-				return Err({
-					message:
-						read.data.kind === 'binary'
-							? 'the saved file is not text'
-							: 'the saved file is larger than 1 MB',
-				});
-			},
-			keepCopy: copyKeeper(files),
+	/**
+	 * Whether this draft may write its file now. False while the file is
+	 * being moved or deleted: nothing is saved, by a timer, by settling, or by
+	 * the person, until it is true again and `resume` is called.
+	 */
+	writes: () => boolean = () => true,
+) {
+	let baseline = $state.raw<SavedText>(file);
+	let buffer = $state(file.source);
+	let saveState = $state.raw<SaveState>({ kind: 'saved' });
+	/**
+	 * Why an earlier save is not known to have landed, kept after the person
+	 * took the file as it is now, until a save of this draft is confirmed.
+	 */
+	let unknown = $state<string | undefined>();
+	let timer: ReturnType<typeof setTimeout> | undefined;
+	let saving: Promise<void> | undefined;
+	let disposed = false;
+
+	const dirty = () => buffer !== baseline.source;
+	/** Whether saving goes on without the person: nothing failed, is unknown, or is in review. */
+	const proceeds = () => saveState.kind === 'saved' && !disposed;
+	/** Whether a save may be sent now, by a timer or by the person. */
+	const sendable = () => !disposed && writes();
+
+	function schedule() {
+		clearTimeout(timer);
+		timer = undefined;
+		if (!proceeds() || !sendable() || autosave.paused) return;
+		timer = setTimeout(() => {
+			timer = undefined;
+			void save();
+		}, TYPING_BATCH_MS);
+	}
+
+	/** The file at the baseline's path now, for review. Undefined means absent. */
+	async function current(): Promise<
+		Result<SavedText | undefined, { readonly message: string }>
+	> {
+		const read = await readTextFile(files, baseline.path);
+		if (read.error) return read.error.name === 'NotFound' ? Ok(undefined) : read;
+		if (read.data.kind === 'text') return Ok(read.data.file);
+		return Err({
+			message:
+				read.data.kind === 'binary'
+					? 'the saved file is not text'
+					: 'the saved file is larger than 1 MB',
+		});
+	}
+
+	/**
+	 * Send the buffer once, conditional on the baseline. Only the folder's
+	 * receipt advances the baseline. A refusal because the file changed is
+	 * read for review; any other outcome is kept as it is, and nothing is
+	 * concluded from what the file holds.
+	 */
+	async function saveOnce() {
+		const captured = buffer;
+		const submitted = submittedText(captured);
+		const observed = baseline;
+		saveState = { kind: 'saving' };
+		let written: Awaited<ReturnType<FolderFiles['replace']>>;
+		try {
+			written = await files.replace(
+				{ path: observed.path, sha256: observed.sha256 },
+				submitted.bytes,
+			);
+		} catch (cause) {
+			saveState = {
+				kind: 'failed',
+				message: cause instanceof Error ? cause.message : String(cause),
+			};
+			return;
+		}
+		if (written.error === null) {
+			baseline = {
+				path: observed.path,
+				source: submitted.source,
+				sha256: written.data.sha256,
+			};
+			// Newer typing is a later generation and stays as typed.
+			if (buffer === captured) buffer = submitted.source;
+			saveState = { kind: 'saved' };
+			unknown = undefined;
+			onSaved();
+			return;
+		}
+		const { error } = written;
+		switch (error.name) {
+			case 'Unconfirmed':
+				saveState = { kind: 'unconfirmed', message: error.message };
+				unknown = error.message;
+				return;
+			case 'Conflict': {
+				const now = await current();
+				saveState = now.error
+					? {
+							kind: 'failed',
+							message: `This file changed elsewhere, and the saved version cannot be shown: ${now.error.message}`,
+						}
+					: { kind: 'conflict', message: error.message, current: now.data };
+				return;
+			}
+			default:
+				saveState = { kind: 'failed', message: error.message };
+		}
+	}
+
+	/** Run one save, so that only one is ever out. */
+	async function run() {
+		const once = saveOnce();
+		saving = once;
+		try {
+			await once;
+		} finally {
+			saving = undefined;
+		}
+		// Typing that arrived during the save is still dirty; batch it again.
+		if (dirty()) schedule();
+	}
+
+	/**
+	 * Save the current generation now, while saving goes on by itself.
+	 * Resolves when no save is running. After a failure, an unknown reply, or
+	 * a change in review, this writes nothing.
+	 */
+	async function save(): Promise<void> {
+		clearTimeout(timer);
+		timer = undefined;
+		if (saving) {
+			await saving;
+			return proceeds() && sendable() && dirty() ? save() : undefined;
+		}
+		if (!proceeds() || !sendable() || !dirty()) return;
+		await run();
+	}
+
+	return {
+		get baseline() {
+			return baseline;
 		},
-		file,
-		autosave,
-		onSaved,
-		admits,
-	);
+		get buffer() {
+			return buffer;
+		},
+		get saveState() {
+			return saveState;
+		},
+		/**
+		 * Why an earlier save of this draft is not known to have landed, while
+		 * no later save has been confirmed. A file that holds the same text
+		 * does not answer it.
+		 */
+		get unknown() {
+			return unknown;
+		},
+		get dirty() {
+			return dirty();
+		},
+		get path() {
+			return baseline.path;
+		},
+		/** Replace the whole buffer, as a source editor does. */
+		input(text: string) {
+			if (!admits() || disposed) return;
+			buffer = text;
+			schedule();
+		},
+		/**
+		 * Take text the draft of this file at its old path already accepted,
+		 * when the file moved here. It is not new input, so admission does not
+		 * gate it. False once this draft is put down.
+		 */
+		carry(text: string): boolean {
+			if (disposed) return false;
+			buffer = text;
+			schedule();
+			return true;
+		},
+		save,
+		/**
+		 * A fresh observation of the saved file. The same bytes only refresh
+		 * metadata. Changed bytes are adopted by a clean draft whose saving
+		 * goes on by itself. Any other draft never adopts them: it holds both
+		 * versions for review, even when the file holds its own text.
+		 */
+		observe(next: SavedText) {
+			if (next.path !== baseline.path) return;
+			if (next.sha256 === baseline.sha256) {
+				baseline = next;
+				return;
+			}
+			if (saveState.kind === 'conflict') {
+				saveState = { ...saveState, current: next };
+				return;
+			}
+			if (saving) return;
+			if (dirty() || !proceeds()) {
+				clearTimeout(timer);
+				timer = undefined;
+				saveState = {
+					kind: 'conflict',
+					message: `The file at '${next.path}' changed after it was read`,
+					current: next,
+				};
+				return;
+			}
+			baseline = next;
+			buffer = next.source;
+		},
+		/** The saved file is gone. A draft that holds anything keeps its text as a conflict. */
+		observeRemoved() {
+			if (saving) return;
+			if (saveState.kind === 'conflict') {
+				saveState = { ...saveState, current: undefined };
+				return;
+			}
+			if (!dirty() && proceeds()) return;
+			clearTimeout(timer);
+			timer = undefined;
+			saveState = {
+				kind: 'conflict',
+				message: `The file at '${baseline.path}' was removed after it was read`,
+				current: undefined,
+			};
+		},
+		/**
+		 * Conflict choice: discard my input and take the file as it is now. An
+		 * earlier save whose reply was lost stays unknown.
+		 */
+		loadSaved() {
+			if (!admits() || disposed) return;
+			if (saveState.kind !== 'conflict' || saveState.current === undefined)
+				return;
+			baseline = saveState.current;
+			buffer = saveState.current.source;
+			saveState = { kind: 'saved' };
+		},
+		/** Conflict choice: save my input over the version I reviewed, once. */
+		async keepMine() {
+			if (!admits() || !sendable() || saving) return;
+			if (saveState.kind !== 'conflict' || saveState.current === undefined)
+				return;
+			baseline = saveState.current;
+			await run();
+		},
+		/**
+		 * Conflict choice: write my input to a new file, then take the saved one.
+		 * Returns the copy's path, or the reason it could not be written; on a
+		 * failure the conflict and my input stay as they were.
+		 */
+		async keepBoth(): Promise<Result<string, string>> {
+			if (!admits() || disposed) return Err(CLOSING);
+			if (saveState.kind !== 'conflict')
+				return Err('There is no conflict to resolve.');
+			const copy = conflictCopyPath(baseline.path);
+			const written = await files.create(copy, buffer);
+			if (written.error) return Err(written.error.message);
+			if (saveState.kind === 'conflict' && saveState.current !== undefined) {
+				baseline = saveState.current;
+				buffer = saveState.current.source;
+				saveState = { kind: 'saved' };
+			}
+			return Ok(copy);
+		},
+		/**
+		 * After a failed or unknown save, as the person asked: one more
+		 * conditional save of the buffer against the baseline the draft was
+		 * made on. A file that changed since, this draft's earlier bytes
+		 * included, is shown for review instead of being written over.
+		 */
+		async retry() {
+			if (!admits() || !sendable() || saving) return;
+			if (saveState.kind !== 'failed' && saveState.kind !== 'unconfirmed')
+				return;
+			await run();
+		},
+		/**
+		 * Save pending input that can be saved by itself, before the file is
+		 * renamed, deleted, or closed. True when the file holds the draft and
+		 * nothing waits for the person.
+		 */
+		async settle(): Promise<boolean> {
+			await save();
+			return !dirty() && proceeds();
+		},
+		/** Saving may go on again after writes were held: batch held typing. */
+		resume() {
+			if (timer === undefined && !saving && dirty()) schedule();
+		},
+		/** Write nothing more and take no typing. A save already out still settles. */
+		dispose() {
+			disposed = true;
+			clearTimeout(timer);
+			timer = undefined;
+		},
+	};
 }
 
-/**
- * Change frontmatter fields or the body with the preparation table updates
- * use. A buffer that does not parse, or that the preparation cannot change
- * safely, is refused and kept as typed: the Source view is how it is fixed.
- */
-export function patchRow(
-	editor: Pick<TextFileEditor, 'buffer' | 'input' | 'refuse'>,
-	change: SourceChange,
-): boolean {
-	const patched = patchSource(editor.buffer, change);
-	if (patched.error) {
-		editor.refuse(
-			patched.error.kind === 'unparsed'
-				? patched.error.error.message
-				: patched.error.reason,
-		);
-		return false;
-	}
-	editor.input(patched.data);
-	return true;
-}
+export type TextFileEditor = ReturnType<typeof createTextFileEditor>;

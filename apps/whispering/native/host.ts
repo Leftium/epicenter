@@ -3,15 +3,15 @@
  *
  * It serves the built page on loopback and answers the operations a page
  * cannot do itself: the terminal, revealing the folder, transcription and
- * transformation requests with the device key, the microphone chosen on this
- * device, fixture audio, and the close handshake with the shell.
+ * text requests over this device's two connections, the microphone chosen on
+ * this device, fixture audio, and the close handshake with the shell.
  *
  * It does not own the data folder. The desktop shell's Rust owner opens the
  * directory, publishes files, and records history, and the page reaches it
  * through Tauri. This process is given the same directory by the shell and is
  * an ordinary program beside that owner: the terminal writes the directory
  * the way any shell does, transcription reads one audio file out of it, and
- * the device key and chosen microphone are one file under its `.git`. It
+ * the connections and chosen microphone are one file under its `.git`. It
  * takes no folder lock, opens no folder, initializes no Git, and watches
  * nothing.
  *
@@ -22,19 +22,30 @@ import { spawn } from 'node:child_process';
 import { timingSafeEqual } from 'node:crypto';
 import { readFile, realpath, stat } from 'node:fs/promises';
 import { basename, extname, isAbsolute, join, resolve, sep } from 'node:path';
+import { Err, Ok } from 'wellcrafted/result';
 import { audioMimeTypeOf } from '../src/lib/audio-format.js';
 import { decode, encode } from '../src/lib/bridge/codec.js';
 import type { MicrophonePreference } from '../src/lib/capture.js';
-import { DEFAULT_TRANSCRIPTION_SETTINGS } from '../src/lib/definition.js';
 import {
-	requestTranscription,
-	TranscriptionError,
-} from '../src/lib/transcription.js';
-import { requestTransformation } from '../src/lib/transformation.js';
+	type ConnectionChange,
+	type ConnectionDefaults,
+	type ConnectionsInfo,
+	canonicalBaseUrl,
+	connectionInfo,
+	type KeyChange,
+	type LegacyKeyTargets,
+	OPERATIONS,
+	type Operation,
+	type StoredConnection,
+} from '../src/lib/connections.js';
+import { DEFAULT_TRANSCRIPTION_CONNECTION } from '../src/lib/definition.js';
+import { transcribeOverConnection } from '../src/lib/transcription.js';
+import { transformOverConnection } from '../src/lib/transformation.js';
 import { readAudio } from './audio.js';
 import {
+	connectionIn,
 	createDeviceFile,
-	keyIn,
+	legacyKeyIn,
 	microphoneIn,
 	readMicrophone,
 } from './device-file.js';
@@ -78,14 +89,59 @@ export type HostInfo = {
 	readonly fixture: { readonly name: string; readonly size: number } | null;
 	/** A fixture was requested from a shell that does not allow one. */
 	readonly fixtureRefused: boolean;
-	readonly defaults: {
-		readonly transcriptionBaseUrl: string;
-		readonly transcriptionModel: string;
-	};
-	readonly credentialPresent: boolean;
-	/** Whether the key comes from the environment and cannot be changed here. */
-	readonly credentialFromEnvironment: boolean;
+	/** Where an unconfigured connection's form starts. Nothing is sent there until it is saved. */
+	readonly defaults: ConnectionDefaults;
 };
+
+/** Why the transcription connection cannot be changed from the app, when it comes from the launch. */
+const ENVIRONMENT_CONNECTION =
+	'The transcription connection comes from WHISPERING_TRANSCRIPTION_API_KEY and WHISPERING_TRANSCRIPTION_BASE_URL for this launch.';
+
+/**
+ * The transcription connection a launch names with
+ * `WHISPERING_TRANSCRIPTION_API_KEY`, or undefined when it names none. Its
+ * base URL and model are the launch's own, so nothing saved in the folder or
+ * on the device retargets that key. An empty key is a keyless connection.
+ */
+function environmentConnection(
+	env: HostOptions['env'],
+): StoredConnection | undefined {
+	const key = env.WHISPERING_TRANSCRIPTION_API_KEY;
+	if (key === undefined) return undefined;
+	const raw =
+		env.WHISPERING_TRANSCRIPTION_BASE_URL ??
+		DEFAULT_TRANSCRIPTION_CONNECTION.baseUrl;
+	const baseUrl = canonicalBaseUrl(raw);
+	if (baseUrl.error !== null)
+		throw new Error(
+			`WHISPERING_TRANSCRIPTION_BASE_URL is not a base URL this host can send to: ${baseUrl.error}`,
+		);
+	const model =
+		env.WHISPERING_TRANSCRIPTION_MODEL ??
+		DEFAULT_TRANSCRIPTION_CONNECTION.model;
+	return key === ''
+		? { baseUrl: baseUrl.data, model }
+		: { baseUrl: baseUrl.data, model, apiKey: key };
+}
+
+function readOperation(value: unknown): Operation {
+	if (value === 'transcription' || value === 'text') return value;
+	throw new Error('A connection is transcription or text.');
+}
+
+function readKeyChange(value: unknown): KeyChange {
+	const { action, key } = (value ?? {}) as Record<string, unknown>;
+	if (action === 'keep' || action === 'remove') return { action };
+	if (action === 'replace' && typeof key === 'string') return { action, key };
+	throw new Error('A key change is keep, remove, or replace with the new key.');
+}
+
+function readTarget(value: unknown): { baseUrl: string; model: string } {
+	const { baseUrl, model } = (value ?? {}) as Record<string, unknown>;
+	if (typeof baseUrl !== 'string' || typeof model !== 'string')
+		throw new Error('A connection names a base URL and a model.');
+	return { baseUrl, model };
+}
 
 /** What `preferences` and `set-preferences` answer. Never the key. */
 export type DevicePreferences = {
@@ -185,11 +241,39 @@ export async function createHost(options: HostOptions) {
 		}
 	}
 
-	/** The saved key, or '' when there is none or the device file cannot be read. */
-	const storedKey = () => device.read().then(keyIn, () => '');
+	const environment = environmentConnection(options.env);
 
-	const environmentKey = options.env.WHISPERING_TRANSCRIPTION_API_KEY;
-	const apiKey = async () => environmentKey ?? (await storedKey());
+	/**
+	 * The connection an operation uses now, read once per call. Rejects when
+	 * the device file cannot be read or holds one that does not read as a
+	 * connection: an unreadable connection is never taken for none.
+	 */
+	async function storedConnection(
+		operation: Operation,
+	): Promise<StoredConnection | undefined> {
+		if (operation === 'transcription' && environment !== undefined)
+			return environment;
+		return connectionIn(await device.read(), operation);
+	}
+
+	/** What the page may know about the connections: never a key. */
+	async function connections(): Promise<ConnectionsInfo> {
+		const values = await device.read();
+		const describeOne = (operation: Operation) => {
+			if (operation === 'transcription' && environment !== undefined)
+				return connectionInfo(environment, ENVIRONMENT_CONNECTION);
+			const stored = connectionIn(values, operation);
+			return stored && connectionInfo(stored);
+		};
+		return {
+			transcription: describeOne('transcription'),
+			text: describeOne('text'),
+			legacyKey: legacyKeyIn(values) !== '',
+		};
+	}
+
+	const readOnly: Partial<Record<Operation, string>> =
+		environment === undefined ? {} : { transcription: ENVIRONMENT_CONNECTION };
 
 	// --- events -------------------------------------------------------------
 
@@ -283,15 +367,17 @@ export async function createHost(options: HostOptions) {
 			fixture: await fixtureInfo(),
 			fixtureRefused: !options.debug && options.fixturePath !== undefined,
 			defaults: {
-				transcriptionBaseUrl:
-					options.env.WHISPERING_TRANSCRIPTION_BASE_URL ??
-					DEFAULT_TRANSCRIPTION_SETTINGS.transcriptionBaseUrl,
-				transcriptionModel:
-					options.env.WHISPERING_TRANSCRIPTION_MODEL ??
-					DEFAULT_TRANSCRIPTION_SETTINGS.transcriptionModel,
+				transcription: {
+					baseUrl:
+						options.env.WHISPERING_TRANSCRIPTION_BASE_URL ??
+						DEFAULT_TRANSCRIPTION_CONNECTION.baseUrl,
+					model:
+						options.env.WHISPERING_TRANSCRIPTION_MODEL ??
+						DEFAULT_TRANSCRIPTION_CONNECTION.model,
+				},
+				// Only the person knows which chat model their endpoint serves.
+				text: { baseUrl: DEFAULT_TRANSCRIPTION_CONNECTION.baseUrl, model: '' },
 			},
-			credentialPresent: (await apiKey()) !== '',
-			credentialFromEnvironment: environmentKey !== undefined,
 		};
 	}
 
@@ -317,52 +403,86 @@ export async function createHost(options: HostOptions) {
 	}
 
 	/**
-	 * Send the audio at a folder-relative path. The file is read here, once,
-	 * as it is at that moment, and those bytes are what is sent: nothing is
-	 * read again and the page carries no audio. A path that cannot be read
-	 * sends nothing.
+	 * Send the audio at a folder-relative path over the transcription
+	 * connection. The connection is read once, at entry; then the file is read
+	 * here, once, as it is at that moment, and those bytes are what is sent:
+	 * nothing is read again and the page carries no audio. A path that cannot
+	 * be read sends nothing.
 	 */
 	async function transcribe(payload: Record<string, unknown>) {
 		const path = String(payload.path ?? '');
-		const read = await readAudio(root, path);
-		if (read.error)
-			return TranscriptionError.AudioUnreadable({
-				path,
-				reason: read.error.message,
-			});
-		return requestTranscription({
-			baseUrl: String(payload.baseUrl ?? ''),
-			model: String(payload.model ?? ''),
-			apiKey: await apiKey(),
-			fetch: options.fetch,
-			audio: {
-				bytes: read.data,
-				filename: basename(path),
-				mimeType: audioMimeTypeOf(path) ?? 'application/octet-stream',
+		return transcribeOverConnection(
+			() => storedConnection('transcription'),
+			{
+				audioPath: path,
+				expectedBaseUrl: String(payload.expectedBaseUrl ?? ''),
+				model: String(payload.model ?? ''),
 			},
-		});
+			async () => {
+				const read = await readAudio(root, path);
+				if (read.error) return Err(read.error.message);
+				return Ok({
+					bytes: read.data,
+					filename: basename(path),
+					mimeType: audioMimeTypeOf(path) ?? 'application/octet-stream',
+				});
+			},
+			options.fetch,
+		);
 	}
 
-	/** The device key is added here and never returned, logged, or written to the folder. */
+	/**
+	 * Send a prepared request over the text connection. The key is added here
+	 * and never returned, logged, or written to the folder. The transcription
+	 * connection's key, including one from the environment, is never used for
+	 * it.
+	 */
 	async function transform(payload: Record<string, unknown>) {
-		return requestTransformation({
-			baseUrl: String(payload.baseUrl ?? ''),
-			model: String(payload.model ?? ''),
-			prompt: String(payload.prompt ?? ''),
-			input: String(payload.input ?? ''),
-			apiKey: await apiKey(),
-			fetch: options.fetch,
-		});
+		return transformOverConnection(
+			() => storedConnection('text'),
+			{
+				expectedBaseUrl: String(payload.expectedBaseUrl ?? ''),
+				model: String(payload.model ?? ''),
+				prompt: String(payload.prompt ?? ''),
+				input: String(payload.input ?? ''),
+			},
+			options.fetch,
+		);
 	}
 
-	async function setCredential(payload: Record<string, unknown>) {
-		if (environmentKey !== undefined)
-			throw new Error(
-				'The transcription key comes from WHISPERING_TRANSCRIPTION_API_KEY and cannot be changed here.',
-			);
-		const key = String(payload.key ?? '');
-		await device.setKey(key);
-		return { present: key !== '' };
+	/**
+	 * Save one connection. Its base URL, model, and key change in one write,
+	 * and a key is kept only for the base URL it was saved for. The reply says
+	 * what is set now, never the key.
+	 */
+	async function setConnection(
+		payload: Record<string, unknown>,
+	): Promise<ConnectionsInfo> {
+		const operation = readOperation(payload.operation);
+		const reason = readOnly[operation];
+		if (reason !== undefined) throw new Error(reason);
+		const change: ConnectionChange = {
+			...readTarget(payload),
+			key: readKeyChange(payload.key),
+		};
+		await device.setConnection(operation, change);
+		return connections();
+	}
+
+	/**
+	 * Move the earlier build's key into the connections the person chose, at
+	 * the base URLs they were shown. The key is never returned.
+	 */
+	async function adoptLegacy(
+		payload: Record<string, unknown>,
+	): Promise<ConnectionsInfo> {
+		const given = (payload.targets ?? {}) as Record<string, unknown>;
+		const targets: LegacyKeyTargets = {};
+		for (const operation of OPERATIONS)
+			if (given[operation] !== undefined)
+				targets[operation] = readTarget(given[operation]);
+		await device.adoptLegacyKey(targets, readOnly);
+		return connections();
 	}
 
 	/**
@@ -375,8 +495,8 @@ export async function createHost(options: HostOptions) {
 
 	/**
 	 * Remember the chosen microphone, or with `null` forget it. Only that
-	 * field of the device file changes: the key stays as it is, including when
-	 * the key in use comes from the environment.
+	 * field of the device file changes: the connections stay as they are,
+	 * including when the transcription connection comes from the environment.
 	 */
 	async function setPreferences(
 		payload: Record<string, unknown>,
@@ -423,8 +543,12 @@ export async function createHost(options: HostOptions) {
 				return transcribe(payload);
 			case 'transform':
 				return transform(payload);
-			case 'credential':
-				return setCredential(payload);
+			case 'connections':
+				return connections();
+			case 'set-connection':
+				return setConnection(payload);
+			case 'adopt-legacy-key':
+				return adoptLegacy(payload);
 			case 'preferences':
 				return preferences();
 			case 'set-preferences':
@@ -443,8 +567,9 @@ export async function createHost(options: HostOptions) {
 			case 'obstruct':
 				return {
 					obstacle: await debugInjection().obstruct({
+						step: payload.step,
 						stem: payload.stem,
-						audioPath: payload.audioPath,
+						path: payload.path,
 					}),
 				};
 			case 'unobstruct':

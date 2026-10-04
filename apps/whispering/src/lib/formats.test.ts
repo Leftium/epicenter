@@ -97,14 +97,16 @@ test('recording ids encode capture time and conflict copies name their source', 
 	).toBe('conflicts/abc-20260102-030405.md');
 });
 
-test('a transcription request posts the audio and reads the text', async () => {
+test('a transcription request posts the audio and reads the text, refusing redirects and ambient credentials', async () => {
 	let seen: Request | undefined;
+	let given: RequestInit | undefined;
 	const result = await requestTranscription({
 		baseUrl: 'http://127.0.0.1:18080/v1',
 		model: 'verification-model',
 		apiKey: '',
 		audio: { bytes: toneWav(), filename: 'a.wav', mimeType: 'audio/wav' },
 		fetch: async (input, init) => {
+			given = init;
 			seen = new Request(input, init);
 			return Response.json({ text: 'hello' });
 		},
@@ -112,6 +114,7 @@ test('a transcription request posts the audio and reads the text', async () => {
 	expect(result.data).toEqual({ text: 'hello' });
 	expect(seen?.url).toBe('http://127.0.0.1:18080/v1/audio/transcriptions');
 	expect(seen?.headers.get('authorization')).toBeNull();
+	expect(given).toMatchObject({ redirect: 'error', credentials: 'omit' });
 });
 
 test('transcription failures say what happened', async () => {

@@ -150,6 +150,14 @@ export async function createSession(
 		showingTransformation: false,
 		/** The transcription a transformation is tried on, by row path. */
 		applyTo: undefined as string | undefined,
+		/** What a transformation's page runs on: a saved transcript, or pasted text. */
+		applySource: 'transcript' as 'transcript' | 'pasted',
+		/**
+		 * Text pasted to try a transformation on. One text for the session, so
+		 * it stays when the person moves between pages or transformations. It
+		 * is never written anywhere; a run takes a copy of it when it starts.
+		 */
+		pastedText: '',
 		/**
 		 * The transformation chosen for post-processing, by row path. Undefined
 		 * is None, which is how a session starts. Choosing sends nothing: a
@@ -176,7 +184,7 @@ export async function createSession(
 		library,
 		leave,
 		view,
-		/** The one draft of the transcription settings, wherever its form is shown. */
+		/** The one draft of the connection settings, wherever its form is shown. */
 		settings,
 		/**
 		 * Whether a navigation must be held back. A navigation between this app's
@@ -233,7 +241,7 @@ export async function openSession(
  *
  * While the opening is still under way nothing answers, and that lasts until
  * the session has finished starting: opening the workspace, the first read of
- * the folder, and credential presence. A request made in
+ * the folder, and the read of this device's connections. A request made in
  * that time waits, and is answered by whichever of the two the opening
  * becomes. A refused opening holds nothing. A rejected one is answered for
  * only when it proves that everything it opened was closed

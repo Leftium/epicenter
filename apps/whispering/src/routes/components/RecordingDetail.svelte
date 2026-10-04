@@ -6,28 +6,34 @@
 	import * as Tabs from '@epicenter/ui/tabs';
 	import { Textarea } from '@epicenter/ui/textarea';
 	import * as Collapsible from '@epicenter/ui/collapsible';
+	import { Loading } from '@epicenter/ui/loading';
+	import { toast } from '@epicenter/ui/sonner';
 	import ArrowLeftIcon from '@lucide/svelte/icons/arrow-left';
 	import ChevronRightIcon from '@lucide/svelte/icons/chevron-right';
 	import XIcon from '@lucide/svelte/icons/x';
-	import { audioPathIn } from '$lib/definition.js';
-	import { patchRow, type RecordingEditor, type RecordingEntry } from '$lib/editor.svelte.js';
+	import { rowStemOf } from '@epicenter/folder';
+	import { audioPathIn, RECORDINGS, type RecordingFields } from '$lib/definition.js';
 	import { withFileNewlines } from '$lib/files.js';
-	import type { Library } from '$lib/library.svelte.js';
+	import type { Library, RecordingEntry, RowSlot } from '$lib/library.svelte.js';
 	import { committedState } from '$lib/status.js';
 	import AudioPlayer from './AudioPlayer.svelte';
 	import { confirmDelete } from './file-actions.js';
+	import RowSaveStatus from './RowSaveStatus.svelte';
 	import SaveStatus from './SaveStatus.svelte';
 	import TranscriptCard from './TranscriptCard.svelte';
 
 	let {
 		library,
-		editor,
+		path,
+		slot,
 		entry,
 		onBack,
 		onClose,
 	}: {
 		library: Library;
-		editor: RecordingEditor;
+		path: string;
+		/** The one draft kept for the recording's file. */
+		slot: RowSlot<RecordingFields>;
 		/** The listed row, or undefined when the file left the folder. */
 		entry: RecordingEntry | undefined;
 		/** Shown on narrow windows, where the table and the details take turns. */
@@ -42,16 +48,26 @@
 	 * kept, one press away, under File details.
 	 */
 
+	/** The folder's row editor, when the file opens as fields. */
+	const form = $derived(slot.kind === 'form' ? slot.draft : undefined);
+	/** The file's text, when it is edited as text: to repair it, or by choice. */
+	const raw = $derived(slot.kind === 'raw' ? slot : undefined);
 	/**
-	 * How the draft reads, by the recordings table's own interpreter. Details
-	 * and Source are two views of this one draft, and every message below
-	 * describes the text on screen, saved or not, never the file as last saved.
+	 * How the draft reads, saved or not: the form's document, or the text on
+	 * screen by the recordings table's own interpreter. Every message below
+	 * describes it, never the file as last saved.
 	 */
-	const draft = $derived(library.folder.tables.recordings.inspect(editor.buffer));
-	const title = $derived(draft.fields.title ?? '');
-	// A draft that does not parse has no fields or notes to edit; its source does.
-	const fieldsEditable = $derived(draft.parseError === undefined);
-	const id = $derived(editor.baseline.stem);
+	const draft = $derived(
+		form ? form.state.reading : library.folder.tables.recordings.inspect(raw?.editor.buffer ?? ''),
+	);
+	/** The values being typed, which may not conform yet. */
+	const typed = $derived(form?.state.document);
+	const title = $derived(
+		typeof typed?.fields.title === 'string' ? typed.fields.title : (draft.fields.title ?? ''),
+	);
+	// Fields and notes are edited in the form; text that is not a row is fixed in Source.
+	const fieldsEditable = $derived(form !== undefined);
+	const id = $derived(rowStemOf(RECORDINGS, path) ?? path);
 	const results = $derived(library.resultsFor(id));
 	const run = $derived(library.transcriptionRun(id));
 	/** The audio the saved row names. Nothing is guessed from another file's name. */
@@ -70,6 +86,16 @@
 	function seconds(value: unknown) {
 		return typeof value === 'number' ? `${(value / 1000).toFixed(1)} s` : 'Unknown';
 	}
+
+	async function editText() {
+		const problem = await library.editSource(path);
+		if (problem) toast.error('The text was not opened for editing', { description: problem });
+	}
+
+	async function editFields() {
+		const problem = await library.useForm(path);
+		if (problem) toast.error('The fields were not opened', { description: problem });
+	}
 </script>
 
 <section class="flex h-full min-h-0 flex-col" aria-label="Recording" data-testid="recording-detail">
@@ -85,7 +111,7 @@
 			placeholder="Title"
 			aria-label="Recording title"
 			disabled={!fieldsEditable}
-			oninput={(event) => patchRow(editor, { fields: { title: event.currentTarget.value } })}
+			oninput={(event) => form?.change({ fields: { title: event.currentTarget.value } })}
 		/>
 		{#if onClose}
 			<Button variant="ghost" size="icon-sm" tooltip="Close details" aria-label="Close details" onclick={onClose} data-testid="close-detail">
@@ -94,9 +120,13 @@
 		{/if}
 	</div>
 
-	<SaveStatus {editor} autosavePaused={library.autosave.paused} onDiscardRemoved={() => library.discardRemoved(editor.path)} />
+	{#if form}
+		<RowSaveStatus {library} draft={form} />
+	{:else if raw}
+		<SaveStatus editor={raw.editor} autosavePaused={library.autosave.paused} onDiscardRemoved={() => void library.discardDraft(path)} />
+	{/if}
 
-	{#if draft.parseError}
+	{#if raw && draft.parseError}
 		<div class="border-b bg-destructive/5 px-4 py-2 text-xs" data-testid="needs-repair">
 			<p class="mb-1 flex flex-wrap items-center gap-2 font-medium">
 				<Badge variant="destructive">Needs repair</Badge>
@@ -111,11 +141,14 @@
 				{/each}
 			</ul>
 		</div>
-	{:else if draft.issues.length > 0}
+	{:else if raw && draft.issues.length > 0}
 		<div class="border-b bg-destructive/5 px-4 py-2 text-xs" data-testid="needs-repair">
-			<p class="mb-1 flex items-center gap-2 font-medium">
+			<p class="mb-1 flex flex-wrap items-center gap-2 font-medium">
 				<Badge variant="destructive">Needs repair</Badge>
 				Some fields need fixing in Source. The rest of the recording still works.
+				{#if tab !== 'source'}
+					<Button size="xs" variant="outline" onclick={() => (tab = 'source')}>Edit Source</Button>
+				{/if}
 			</p>
 			<ul class="space-y-0.5 text-muted-foreground">
 				{#each draft.issues as issue, index (index)}
@@ -123,7 +156,18 @@
 				{/each}
 			</ul>
 		</div>
+	{:else if raw?.reason}
+		<div class="border-b bg-destructive/5 px-4 py-2 text-xs" data-testid="needs-repair">
+			<p class="flex flex-wrap items-center gap-2 font-medium">
+				<Badge variant="destructive">Edited as text</Badge>
+				{raw.reason} Repair it in Source, or choose Edit the fields to check it again.
+			</p>
+		</div>
 	{/if}
+
+	{#if slot.kind === 'opening'}
+		<Loading class="flex-1" label="Opening the recording…" />
+	{:else}
 
 	<Tabs.Root bind:value={tab} class="flex min-h-0 flex-1 flex-col px-3 py-3 sm:px-4">
 		<Tabs.List>
@@ -191,12 +235,12 @@
 					<h3 class="text-sm font-medium">Notes</h3>
 					<Textarea
 						class="min-h-28 resize-y font-sans"
-						value={draft.body ?? ''}
+						value={typed?.body ?? draft.body ?? ''}
 						placeholder="Notes in Markdown, saved in the recording’s file"
 						aria-label="Notes"
 						disabled={!fieldsEditable}
 						oninput={(event) =>
-							patchRow(editor, { body: withFileNewlines(event.currentTarget.value, draft.body ?? '') })}
+							typed && form?.change({ body: withFileNewlines(event.currentTarget.value, typed.body) })}
 					/>
 				</div>
 
@@ -226,7 +270,13 @@
 							{/if}
 						</dd>
 						<dt class="text-muted-foreground">Transcribes with</dt>
-						<dd class="min-w-0 break-words">{library.settings.transcriptionModel} at {library.settings.transcriptionBaseUrl}</dd>
+						<dd class="min-w-0 break-words">
+							{#if library.connections?.transcription}
+								{library.connections.transcription.model} at {library.connections.transcription.baseUrl}
+							{:else}
+								Not set up
+							{/if}
+						</dd>
 						<dt class="text-muted-foreground">History</dt>
 						<dd data-testid="recording-history">
 							{history === 'uncommitted' ? 'Saved · not in history yet' : history === 'committed' ? 'In history' : 'Unknown'}
@@ -235,26 +285,46 @@
 						<dd class="min-w-0 font-mono text-xs break-all">{id}</dd>
 						<dt class="text-muted-foreground">Files</dt>
 						<dd class="min-w-0 font-mono text-xs break-all">
-							{editor.path}{#if audioPath}<br />{audioPath}{/if}{#each results as result (result.path)}<br />{result.path}{/each}
+							{path}{#if audioPath}<br />{audioPath}{/if}{#each results as result (result.path)}<br />{result.path}{/each}
 						</dd>
 					</dl>
 					</Collapsible.Content>
 				</Collapsible.Root>
 			</div>
 		</Tabs.Content>
-		<Tabs.Content value="source" class="min-h-0 flex-1">
-			<Textarea
-				class="h-full min-h-40 resize-none font-mono text-xs"
-				value={editor.buffer}
-				aria-label="Markdown source"
-				spellcheck={false}
-				oninput={(event) => editor.input(withFileNewlines(event.currentTarget.value, editor.buffer))}
-			/>
+		<Tabs.Content value="source" class="flex min-h-0 flex-1 flex-col gap-2">
+			{#if form}
+				<p class="text-xs text-muted-foreground">
+					What a save writes: the fields above in a fixed form, then the notes. Fields the app does not know are kept.
+					<Button size="xs" variant="outline" class="ml-1" onclick={() => void editText()} data-testid="edit-text">Edit the text</Button>
+				</p>
+				<Textarea
+					class="h-full min-h-40 flex-1 resize-none font-mono text-xs"
+					value={form.state.source}
+					aria-label="Markdown source"
+					readonly
+					spellcheck={false}
+				/>
+			{:else if raw}
+				{@const editor = raw.editor}
+				<p class="text-xs text-muted-foreground">
+					The file’s exact text. It saves as typed, readable or not.
+					<Button size="xs" variant="outline" class="ml-1" onclick={() => void editFields()} data-testid="edit-fields">Edit the fields</Button>
+				</p>
+				<Textarea
+					class="h-full min-h-40 flex-1 resize-none font-mono text-xs"
+					value={editor.buffer}
+					aria-label="Markdown source"
+					spellcheck={false}
+					oninput={(event) => editor.input(withFileNewlines(event.currentTarget.value, editor.buffer))}
+				/>
+			{/if}
 		</Tabs.Content>
 	</Tabs.Root>
+	{/if}
 
 	<div class="flex flex-wrap items-center gap-2 border-t px-4 py-2 text-xs text-muted-foreground">
-		<Button class="ml-auto" size="sm" variant="ghost-destructive" onclick={() => void confirmDelete(library, editor.path)}>
+		<Button class="ml-auto" size="sm" variant="ghost-destructive" onclick={() => void confirmDelete(library, path)}>
 			Delete recording
 		</Button>
 	</div>

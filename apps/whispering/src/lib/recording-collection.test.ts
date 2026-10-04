@@ -27,7 +27,7 @@
  * - A recording that left the folder is unticked when a listing confirms it,
  *   so a file made later at its path is not ticked; a search and a failed
  *   listing untick nothing
- * - Once the session is closing, a transcript read that answers late makes
+ * - Once the session is closing, a transcript opening that answers late makes
  *   no draft, nothing new is opened, and a recording still waiting its turn
  *   to be transcribed is not sent
  */
@@ -52,13 +52,14 @@ import {
 	transcriptExcerpt,
 	transcriptsToCopy,
 } from './recording-collection.js';
+import type { RowEditor } from '@epicenter/folder/bun';
 import type { Session } from './session.svelte.js';
 import { toneWav } from './capture.js';
 import type { Workspace } from './workspace/types.js';
+import { formOf } from './row-slot.test-support.js';
 import { deferred, openTestWorkspace } from './workspace.test-support.js';
 
 const { openSession } = await import('./session.svelte.ts');
-const { patchRow } = await import('./editor.svelte.ts');
 
 const cleanups: (() => Promise<void>)[] = [];
 afterEach(async () => {
@@ -631,27 +632,24 @@ test('a transcript is edited through the one draft kept for its file, and its re
 
 	expect(library.selectedPath).toBe(path('standup'));
 	expect(library.selection?.kind).toBe('recording');
-	const file = library.fileAt(TRANSCRIPT);
-	if (file?.kind !== 'text')
-		throw new Error('The transcript was read into a draft');
-	const { editor } = file;
+	const slot = library.transcriptAt(TRANSCRIPT);
+	const editor = formOf(slot);
 	expect(
-		patchRow(editor, {
+		editor.change({
 			body: 'Yesterday I finished the importer. Today: the exporter.\n',
 		}),
 	).toBe(true);
 	expect(library.holdsUnsavedWork).toBe(true);
-	await editor.save();
+	await editor.saveNow();
 
 	const saved = await readFile(join(root, TRANSCRIPT), 'utf8');
-	// Only the body changed: the frontmatter is as it was written.
-	expect(saved).toBe(
-		before.replace(
-			'Yesterday I finished the importer. Today I start on the exporter.',
-			'Yesterday I finished the importer. Today: the exporter.',
-		),
+	// The whole row is saved in its one form: the fields as they were, the new text.
+	expect(saved).toBe(editor.state.source);
+	const { inspect } = library.folder.tables.transcriptions;
+	expect(inspect(saved).fields).toEqual(inspect(before).fields);
+	expect(inspect(saved).body).toBe(
+		'Yesterday I finished the importer. Today: the exporter.\n',
 	);
-	expect(saved).toContain('recordingId: standup');
 	expect(library.holdsUnsavedWork).toBe(false);
 	await library.refreshAll();
 	// The table and a copy read the edited text.
@@ -661,24 +659,20 @@ test('a transcript is edited through the one draft kept for its file, and its re
 
 	// Asking again, and opening the file from Files, reach the same draft.
 	await library.openTranscript(TRANSCRIPT);
-	expect(library.fileAt(TRANSCRIPT)).toBe(file);
+	expect(library.transcriptAt(TRANSCRIPT)).toBe(slot);
 	await library.open(TRANSCRIPT);
-	expect(library.selection).toMatchObject({ kind: 'file', file });
-	// A path that is not a transcript is not read by this.
+	expect(library.selection).toMatchObject({ kind: 'transcript', slot });
+	// A path that is not a transcript is not opened by this.
 	await library.openTranscript('notes.md');
-	expect(library.fileAt('notes.md')).toBeUndefined();
+	expect(library.transcriptAt('notes.md')).toBeUndefined();
 });
 
 test('a transcript changed outside while it is being typed in keeps both: the typing here, the outside text in the folder', async () => {
 	const { library, root } = await history();
 	await library.open(path('standup'));
 	await library.openTranscript(TRANSCRIPT);
-	const file = library.fileAt(TRANSCRIPT);
-	if (file?.kind !== 'text')
-		throw new Error('The transcript was read into a draft');
-	const { editor } = file;
-	library.autosave.paused = true;
-	patchRow(editor, { body: 'What I typed.\n' });
+	const editor = formOf(library.transcriptAt(TRANSCRIPT));
+	editor.change({ body: 'What I typed.\n' });
 	const outside = (await readFile(join(root, TRANSCRIPT), 'utf8')).replace(
 		'importer',
 		'migration',
@@ -687,19 +681,21 @@ test('a transcript changed outside while it is being typed in keeps both: the ty
 
 	await library.refreshAll();
 
-	expect(editor.saveState.kind).toBe('conflict');
-	if (editor.saveState.kind === 'conflict')
-		expect(editor.saveState.current?.source).toBe(outside);
-	expect(editor.buffer).toContain('What I typed.');
-	// Saving is refused while the conflict stands: the outside text is still the file.
-	await editor.save();
+	expect(editor.review).toMatchObject({
+		kind: 'changed',
+		current: { source: outside },
+	});
+	expect(editor.state.document.body).toBe('What I typed.\n');
+	// Nothing saves on its own while both stand: the outside text is still the file.
+	expect(await editor.settle()).toBe(false);
 	expect(await readFile(join(root, TRANSCRIPT), 'utf8')).toBe(outside);
 	expect(library.selectedPath).toBe(path('standup'));
 	expect(library.holdsUnsavedWork).toBe(true);
 
 	// The person takes the saved version; nothing is held any more.
-	editor.loadSaved();
-	expect(editor.buffer).toBe(outside);
+	expect(await library.discardDraft(TRANSCRIPT)).toBeUndefined();
+	expect(editor.state.baseline.source).toBe(outside);
+	expect(editor.isDirty).toBe(false);
 	expect(library.holdsUnsavedWork).toBe(false);
 });
 
@@ -708,20 +704,19 @@ test('closing the details and changing page discard no typing: the draft is the 
 	await library.open(path('standup'));
 	view.showingDetail = true;
 	await library.openTranscript(TRANSCRIPT);
-	const file = library.fileAt(TRANSCRIPT);
-	if (file?.kind !== 'text')
-		throw new Error('The transcript was read into a draft');
+	const slot = library.transcriptAt(TRANSCRIPT);
+	const editor = formOf(slot);
 	library.autosave.paused = true;
-	patchRow(file.editor, { body: 'Typed just before closing the details.\n' });
+	editor.change({ body: 'Typed just before closing the details.\n' });
 	view.recordingQuery = 'standup';
 
 	// Closing the pane, then a change of page: neither unloads the document.
 	view.showingDetail = false;
 	expect(session.blocksNavigation({ willUnload: false })).toBe(false);
 
-	expect(library.fileAt(TRANSCRIPT)).toBe(file);
-	expect(file.editor.buffer).toContain(
-		'Typed just before closing the details.',
+	expect(library.transcriptAt(TRANSCRIPT)).toBe(slot);
+	expect(editor.state.document.body).toBe(
+		'Typed just before closing the details.\n',
 	);
 	expect(library.selectedPath).toBe(path('standup'));
 	expect(view.recordingQuery).toBe('standup');
@@ -735,8 +730,8 @@ test('closing the details and changing page discard no typing: the draft is the 
 	);
 	// Coming back to the recording finds the same draft, saved.
 	await library.openTranscript(TRANSCRIPT);
-	expect(library.fileAt(TRANSCRIPT)).toBe(file);
-	expect(file.editor.dirty).toBe(false);
+	expect(library.transcriptAt(TRANSCRIPT)).toBe(slot);
+	expect(editor.isDirty).toBe(false);
 });
 
 // ============================================================================
@@ -806,51 +801,72 @@ test('a selected recording that left the folder is unticked once a listing confi
 // Closing
 // ============================================================================
 
-test('a transcript read that answers after the session closed makes no draft, and nothing is opened or read after closing', async () => {
+test('a transcript opening that answers after the session closed makes no draft, and nothing is opened or read after closing', async () => {
 	const answer = deferred<void>();
+	const read = deferred<void>();
 	const reads: string[] = [];
-	const { session, library } = await history(undefined, (folder) => ({
-		...folder,
-		files: {
-			...folder.files,
-			async read(target: string) {
-				reads.push(target);
-				// The bytes are read while the folder is open; the answer is held past its closing.
-				const read = await folder.files.read(target);
-				if (target === TRANSCRIPT) await answer.promise;
-				return read;
+	const opened: RowEditor<unknown>[] = [];
+	const { session, library } = await history(undefined, (folder) => {
+		const { transcriptions } = folder.tables;
+		return {
+			...folder,
+			tables: {
+				...folder.tables,
+				transcriptions: {
+					...transcriptions,
+					async edit(stem: string, options?: { signal?: AbortSignal }) {
+						reads.push(stem);
+						// The row is read while the folder is open; the answer is held past its closing.
+						const edited = await transcriptions.edit(stem, options);
+						if (edited.error === null) opened.push(edited.data);
+						if (stem === 'standup-t1') {
+							read.resolve();
+							await answer.promise;
+						}
+						return edited;
+					},
+				},
 			},
-		},
-	}));
+			files: {
+				...folder.files,
+				async read(target: string) {
+					reads.push(target);
+					return folder.files.read(target);
+				},
+			},
+		};
+	});
 	await library.open(path('standup'));
 	const opening = library.openTranscript(TRANSCRIPT);
-	expect(library.fileAt(TRANSCRIPT)).toEqual({ kind: 'loading' });
+	expect(library.transcriptAt(TRANSCRIPT)?.kind).toBe('opening');
+	await read.promise;
 
-	// Closing does not wait for the read, and finds no draft of it to settle.
+	// Closing does not wait for the opening, and finds no draft of it to settle.
 	await session.close();
 	expect(library.closing).toBe(true);
 	answer.resolve();
 	await opening;
 
-	expect(library.fileAt(TRANSCRIPT)).toBeUndefined();
+	expect(library.transcriptAt(TRANSCRIPT)).toBeUndefined();
+	// The editor that answered late belongs to no view: it was put down.
+	expect(opened.map((editor) => editor.get().isDisposed)).toEqual([true]);
 	// Nothing is admitted after closing: no selection, no draft, no read.
 	const before = reads.length;
 	await library.openTranscript('transcriptions/walk-t1.md');
 	await library.open('transcriptions/walk-t2.md');
 	await library.open(path('walk'));
-	expect(library.fileAt('transcriptions/walk-t1.md')).toBeUndefined();
-	expect(library.fileAt('transcriptions/walk-t2.md')).toBeUndefined();
+	expect(library.transcriptAt('transcriptions/walk-t1.md')).toBeUndefined();
+	expect(library.transcriptAt('transcriptions/walk-t2.md')).toBeUndefined();
 	expect(library.selectedPath).toBe(path('standup'));
 	expect(reads).toHaveLength(before);
 });
 
-test('typing in a transcript draft that was read before closing is still saved by the close', async () => {
+test('typing in a transcript draft that was opened before closing is still saved by the close', async () => {
 	const { session, library, root } = await history();
 	await library.openTranscript(TRANSCRIPT);
-	const file = library.fileAt(TRANSCRIPT);
-	if (file?.kind !== 'text')
-		throw new Error('The transcript was read into a draft');
-	patchRow(file.editor, { body: 'Typed just before quitting.\n' });
+	formOf(library.transcriptAt(TRANSCRIPT)).change({
+		body: 'Typed just before quitting.\n',
+	});
 
 	await session.close();
 

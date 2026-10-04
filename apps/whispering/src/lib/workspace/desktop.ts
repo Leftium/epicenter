@@ -4,13 +4,13 @@
  *
  * The folder is the shell's. The shell registered one directory for this
  * window, and this attaches to it through `@epicenter/folder/tauri`, naming
- * only the folder's ID. Saves, batches, history, and the hints that files
+ * only the folder's ID. Saves, history, and the hints that files
  * changed all come from that owner. The page supplies no path.
  *
  * The host that serves this page does the rest: the terminal is the person's
- * shell in that directory, transcription and transformation requests leave
- * from the host with the device key, the microphone chosen on this device is
- * kept beside that key, and the shell's close question arrives on the host's
+ * shell in that directory, transcription and text requests leave from the
+ * host over the device's two connections, the microphone chosen on this
+ * device is kept beside them, and the shell's close question arrives on the host's
  * event stream. The host holds no folder; what its terminal
  * writes reaches this page as the owner's hints, like any other program's.
  *
@@ -19,7 +19,7 @@
  * refusal, and nothing else is opened in their place.
  *
  * Once open, the two fail apart. If the host stops, the folder is still the
- * shell's and still open: saves, batches, and commits keep working, and only
+ * shell's and still open: saves and commits keep working, and only
  * what the host did is unavailable. A reply the host never delivered says
  * nothing about whether it acted, so a lost transcription or transformation
  * reply is reported as unknown, never as "not sent", and nothing is sent again
@@ -27,13 +27,14 @@
  */
 
 import { openFolder } from '@epicenter/folder/tauri';
-import { Ok, type Result } from 'wellcrafted/result';
+import { Err, Ok, type Result } from 'wellcrafted/result';
 import { type BridgeConnection, createHttpBridge } from '../bridge/http.js';
 import {
 	type CaptureDevice,
 	createFixtureDevice,
 	type MicrophonePreference,
 } from '../capture.js';
+import type { ConnectionDefaults, ConnectionsInfo } from '../connections.js';
 import { whisperingDefinition } from '../definition.js';
 import { createMicrophoneDevice } from '../microphone.js';
 import { TranscriptionError } from '../transcription.js';
@@ -45,6 +46,7 @@ import {
 } from './closing.js';
 import {
 	type InjectionState,
+	WHISPERING_FOLDER_ID,
 	type Workspace,
 	WorkspaceError,
 } from './types.js';
@@ -56,12 +58,7 @@ type HostInfo = {
 	readonly debug: boolean;
 	readonly fixture: { readonly name: string; readonly size: number } | null;
 	readonly fixtureRefused: boolean;
-	readonly defaults: {
-		readonly transcriptionBaseUrl: string;
-		readonly transcriptionModel: string;
-	};
-	readonly credentialPresent: boolean;
-	readonly credentialFromEnvironment: boolean;
+	readonly defaults: ConnectionDefaults;
 };
 
 /** What the host remembers for this device. Mirrors `DevicePreferences` in `native/host.ts`. */
@@ -91,7 +88,10 @@ export async function openDesktopWorkspace(
 	} catch (cause) {
 		return WorkspaceError.HostUnreachable({ reason: describe(cause) });
 	}
-	const opened = await openFolder({ definition: whisperingDefinition });
+	const opened = await openFolder({
+		id: WHISPERING_FOLDER_ID,
+		definition: whisperingDefinition,
+	});
 	if (opened.error)
 		return WorkspaceError.DesktopFolder({ refusal: opened.error });
 	const folder = opened.data;
@@ -173,11 +173,11 @@ export async function openDesktopWorkspace(
 		// The bridge rejects when the host is unreachable, faults, or its reply is
 		// lost; a workspace answers with a Result either way. A rejection does
 		// not say the endpoint was not called, and the call is not made again.
-		async transcribe({ audioPath, baseUrl, model }) {
+		async transcribe({ audioPath, expectedBaseUrl, model }) {
 			try {
 				return await bridge.app<Awaited<ReturnType<Workspace['transcribe']>>>(
 					'transcribe',
-					{ path: audioPath, baseUrl, model },
+					{ path: audioPath, expectedBaseUrl, model },
 				);
 			} catch (cause) {
 				return TranscriptionError.HostUnavailable({ reason: describe(cause) });
@@ -194,7 +194,7 @@ export async function openDesktopWorkspace(
 			}
 		},
 		transformNote:
-			'Requests are sent by Whispering’s host, not by this window, with the same API key as transcription. The key is never given to the window or written to the folder.',
+			'Requests are sent by Whispering’s host, not by this window, over the text connection in Settings. Its key is never given to the window or written to the folder.',
 		closing: {
 			onRequest(listener) {
 				closeListeners.add(listener);
@@ -224,20 +224,31 @@ export async function openDesktopWorkspace(
 				window.location.assign(`${connection.origin}${QUIT_PATH}`);
 			},
 		},
-		credential: {
+		// The host holds the keys and answers with what is set, never a key.
+		connections: {
 			storedIn:
-				'this folder’s private .git directory on this device; it is never committed',
-			readOnlyReason: info.credentialFromEnvironment
-				? 'The key comes from WHISPERING_TRANSCRIPTION_API_KEY.'
-				: undefined,
-			present: async () =>
-				(await bridge.app<HostInfo>('info')).credentialPresent,
-			async set(key) {
+				'this folder’s private .git directory; Git never commits it, but copying the whole directory carries it',
+			defaults: info.defaults,
+			read: () => bridge.app<ConnectionsInfo>('connections'),
+			async set(operation, change) {
 				try {
-					await bridge.app('credential', { key });
-					return undefined;
+					return Ok(
+						await bridge.app<ConnectionsInfo>('set-connection', {
+							operation,
+							...change,
+						}),
+					);
 				} catch (cause) {
-					return describe(cause);
+					return Err(describe(cause));
+				}
+			},
+			async adoptLegacyKey(targets) {
+				try {
+					return Ok(
+						await bridge.app<ConnectionsInfo>('adopt-legacy-key', { targets }),
+					);
+				} catch (cause) {
+					return Err(describe(cause));
 				}
 			},
 		},
@@ -258,20 +269,19 @@ export async function openDesktopWorkspace(
 				}
 			},
 		},
-		initialSettings: info.defaults,
 		debugControls: info.debug,
 		injection: info.debug
 			? {
 					state: () => bridge.app<InjectionState>('injection'),
 					arm: (change) => bridge.app<InjectionState>('inject', change),
 					// The host only places and removes the obstacle. A host that cannot
-					// be asked places none, and the recording is published all the same.
-					async aroundRecordingPublication(recording, publish) {
+					// be asked places none, and the write is made all the same.
+					async aroundRecordingWrite(write, run) {
 						const placed = await bridge
-							.app<{ obstacle: string | null }>('obstruct', recording)
+							.app<{ obstacle: string | null }>('obstruct', write)
 							.catch(() => undefined);
 						try {
-							return await publish();
+							return await run();
 						} finally {
 							if (placed?.obstacle != null)
 								await bridge

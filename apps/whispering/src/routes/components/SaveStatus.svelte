@@ -1,10 +1,11 @@
 <script lang="ts">
 	import { Button } from '@epicenter/ui/button';
 	import { toast } from '@epicenter/ui/sonner';
-	import type { RecordingEditor, TextFileEditor, TransformationEditor } from '$lib/editor.svelte.js';
+	import type { TextFileEditor } from '$lib/editor.svelte.js';
 
 	let { editor, autosavePaused, onDiscardRemoved }: {
-		editor: RecordingEditor | TransformationEditor | TextFileEditor;
+		/** A text draft: an ordinary file, or a row file edited as its text. */
+		editor: TextFileEditor;
 		autosavePaused: boolean;
 		onDiscardRemoved: () => void;
 	} = $props();
@@ -18,17 +19,28 @@
 	}
 </script>
 
-<!-- One editor's save state. A conflict holds both versions until the person chooses. -->
+<!--
+	One editor's save state. A failed or unknown save stops saving until the person tries again, and a
+	conflict holds both versions until the person chooses. A file that holds the same text answers neither.
+-->
 <div class="flex min-h-9 flex-wrap items-center gap-2 border-b px-4 py-1.5 text-xs" data-testid="save-status" data-save-state={editor.saveState.kind}>
 	{#if editor.saveState.kind === 'saving'}
 		<span class="text-muted-foreground">Saving…</span>
 	{:else if editor.saveState.kind === 'failed'}
-		<span class="text-destructive" role="alert">Not saved: {editor.saveState.message}</span>
+		<span class="text-destructive" role="alert">Not saved: {editor.saveState.message}. Saving has stopped until you try again.</span>
+		<Button size="xs" variant="outline" onclick={() => void editor.retry()}>Try again</Button>
+	{:else if editor.saveState.kind === 'unconfirmed'}
+		<span class="text-destructive" role="alert">
+			The last save was not confirmed, so it may or may not be in the file: {editor.saveState.message}. Your edits are kept
+			here, and saving has stopped until you try again.
+		</span>
 		<Button size="xs" variant="outline" onclick={() => void editor.retry()}>Try again</Button>
 	{:else if editor.saveState.kind === 'conflict'}
 		<span class="text-destructive" role="alert">
 			{editor.saveState.current
-				? 'This file changed elsewhere. Your edits are kept here and not saved.'
+				? editor.saveState.current.source === editor.buffer
+					? 'This file changed after it was read, and now holds exactly your text. Which save put it there is not known.'
+					: 'This file changed elsewhere. Your edits are kept here and not saved.'
 				: 'This file was removed elsewhere. Your edits are kept here and not saved.'}
 		</span>
 		{#if editor.saveState.current}
@@ -51,11 +63,12 @@
 		{#if autosavePaused}
 			<Button size="xs" variant="outline" onclick={() => void editor.save()}>Save now</Button>
 		{/if}
+	{:else if editor.unknown}
+		<span class="text-muted-foreground" role="status">
+			Showing <code class="font-mono">{editor.path}</code> as it is now. Whether an earlier save reached it is not known.
+		</span>
 	{:else}
 		<span class="text-muted-foreground">Saved to <code class="font-mono">{editor.path}</code></span>
-	{/if}
-	{#if editor.refusal}
-		<span class="text-warning">Change refused: {editor.refusal}</span>
 	{/if}
 </div>
 {#if editor.saveState.kind === 'conflict' && editor.saveState.current && showSaved}

@@ -76,12 +76,12 @@ What the TypeScript tests establish, and with what:
   that holds a pending recording, only the session's guard answers and it
   does not approve.
 - **Closing while the session is starting**, over the Bun directory opener
-  with the first `kv.json` read, and separately the first `kv.json` write,
+  with the first `kv.json` read
   held open: a close asked then gets no answer, not even `asking`, and no
   guard is listening; when the start finishes the kept request reaches the
   guard, which answers; when the start fails nothing answers until the
   workspace has finished closing; and a layout released mid-start leaves
-  nothing listening, lets the admitted write land, and answers nothing. A
+  nothing listening, lets the admitted read settle, and answers nothing. A
   guard disposed mid-request approves nothing.
 - **A stopped host**, over the Bun directory opener: with the host gone, a
   draft and a pending recording are still saved through the folder, the held
@@ -102,7 +102,8 @@ Not done, and needed before this can be called accepted on the desktop:
   folder. Confirm a recording's audio saves in acceptable time: file bytes
   cross Tauri's IPC as JSON number arrays.
 - Exercise both debug publication failures and **Try again** in the window,
-  confirming the Rust owner reports `Partial` for an obstructed row.
+  confirming an obstructed row ends as `rowNotSaved` with certainty `failed`,
+  the audio saved, and the Rust owner's own message for the row.
 - Edit a file from the terminal while a draft of it is open, and confirm the
   conflict; confirm a terminal edit refreshes a clean view.
 - Close and quit with drafts, pending audio, and a running request; stop the

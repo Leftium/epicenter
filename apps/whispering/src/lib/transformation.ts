@@ -8,16 +8,50 @@
  * desktop host makes the call so the key stays out of the page and the
  * endpoint needs no CORS headers.
  *
+ * The base URL and key are the text connection's (see `connections.ts`); the
+ * caller passes them in and nothing here chooses either. A redirect is
+ * refused, not followed, so the key is never carried to another URL, and no
+ * ambient credential (a cookie) is sent.
+ *
  * The key never appears in an error: an endpoint that echoes it in a refusal
  * has it removed before the detail is returned.
  */
 import { defineErrors, type InferErrors } from 'wellcrafted/error';
 import { Ok, type Result } from 'wellcrafted/result';
+import {
+	canonicalBaseUrl,
+	connectionTargets,
+	type StoredConnection,
+} from './connections.js';
 
 export const TransformationError = defineErrors({
 	NotConfigured: ({ missing }: { missing: string }) => ({
 		message: `This transformation cannot run: ${missing} is missing`,
 		missing,
+	}),
+	InvalidEndpoint: ({ reason }: { reason: string }) => ({
+		message: `This transformation cannot run: ${reason}`,
+		reason,
+	}),
+	/** The text connection is not set up, or could not be read. Nothing was sent. */
+	ConnectionUnavailable: ({ reason }: { reason: string }) => ({
+		message: `Nothing was sent: ${reason}`,
+		reason,
+	}),
+	/**
+	 * The text connection no longer targets the URL this request was prepared
+	 * for. Nothing was sent: a prepared request is never retargeted.
+	 */
+	ConnectionChanged: ({
+		expected,
+		configured,
+	}: {
+		expected: string;
+		configured: string;
+	}) => ({
+		message: `This request was prepared for ${expected}, but the text connection is now ${configured}, so nothing was sent. Run it again to use the current connection.`,
+		expected,
+		configured,
 	}),
 	/**
 	 * The host did not answer, or its answer never arrived. That says nothing
@@ -89,7 +123,11 @@ function firstChoiceText(parsed: unknown): string | undefined {
 	if (typeof first !== 'object' || first === null || !('message' in first))
 		return undefined;
 	const { message } = first;
-	if (typeof message !== 'object' || message === null || !('content' in message))
+	if (
+		typeof message !== 'object' ||
+		message === null ||
+		!('content' in message)
+	)
 		return undefined;
 	return typeof message.content === 'string' ? message.content : undefined;
 }
@@ -107,13 +145,16 @@ export async function requestTransformation({
 > {
 	if (baseUrl.trim() === '')
 		return TransformationError.NotConfigured({ missing: 'the endpoint URL' });
+	const base = canonicalBaseUrl(baseUrl);
+	if (base.error !== null)
+		return TransformationError.InvalidEndpoint({ reason: base.error });
 	if (model.trim() === '')
 		return TransformationError.NotConfigured({ missing: 'the model' });
 	if (prompt.trim() === '')
 		return TransformationError.NotConfigured({ missing: 'the prompt' });
 	if (input.trim() === '')
-		return TransformationError.NotConfigured({ missing: 'the transcript text' });
-	const url = chatCompletionsUrl(baseUrl);
+		return TransformationError.NotConfigured({ missing: 'the input text' });
+	const url = chatCompletionsUrl(base.data);
 	const redact = (text: string) =>
 		apiKey === '' ? text : text.split(apiKey).join('[key removed]');
 
@@ -132,6 +173,9 @@ export async function requestTransformation({
 					{ role: 'user', content: input },
 				],
 			}),
+			// A redirect could carry the key to a URL the connection does not name.
+			redirect: 'error',
+			credentials: 'omit',
 			signal,
 		});
 	} catch (cause) {
@@ -156,4 +200,56 @@ export async function requestTransformation({
 	if (text === undefined) return TransformationError.Malformed({ url });
 	if (text.trim() === '') return TransformationError.Empty({ url });
 	return Ok({ text });
+}
+
+/**
+ * What the page asks for. It names the text connection's base URL it was
+ * prepared for, and never a URL to send to: the request goes to the
+ * connection's own base URL, with its key, only while that is still
+ * `expectedBaseUrl`.
+ */
+export type PreparedTransformation = {
+	readonly expectedBaseUrl: string;
+	readonly model: string;
+	readonly prompt: string;
+	readonly input: string;
+};
+
+/**
+ * Send a prepared request over the text connection. The connection is read
+ * once, here, and that reading is what the request uses to the end: a
+ * change saved while it is out does not move it or change its key.
+ * `connection` rejects when the connection cannot be read, and resolves to
+ * undefined when none is set up; either way nothing is sent.
+ */
+export async function transformOverConnection(
+	connection: () => Promise<StoredConnection | undefined>,
+	request: PreparedTransformation,
+	send?: TransformationRequest['fetch'],
+): Promise<Result<{ text: string }, TransformationError>> {
+	let stored: StoredConnection | undefined;
+	try {
+		stored = await connection();
+	} catch (cause) {
+		return TransformationError.ConnectionUnavailable({
+			reason: describe(cause),
+		});
+	}
+	if (stored === undefined)
+		return TransformationError.ConnectionUnavailable({
+			reason: 'no text connection is set up. Set one up in Settings.',
+		});
+	if (!connectionTargets(stored, request.expectedBaseUrl))
+		return TransformationError.ConnectionChanged({
+			expected: request.expectedBaseUrl,
+			configured: stored.baseUrl,
+		});
+	return requestTransformation({
+		baseUrl: stored.baseUrl,
+		apiKey: stored.apiKey ?? '',
+		model: request.model,
+		prompt: request.prompt,
+		input: request.input,
+		fetch: send,
+	});
 }

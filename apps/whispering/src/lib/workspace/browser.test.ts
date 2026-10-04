@@ -1,4 +1,9 @@
-/** Browser preference failures must reach the microphone chooser, not become System default. */
+/**
+ * The browser workspace's own storage: microphone preference failures reach
+ * the chooser rather than becoming System default, and connections keep their
+ * keys in this browser, tell the page none, and send only to the base URL a
+ * request was prepared for.
+ */
 import { afterEach, expect, mock, test } from 'bun:test';
 import { expectOk } from 'wellcrafted/testing';
 import { Ok } from 'wellcrafted/result';
@@ -21,7 +26,10 @@ Bun.plugin({
 
 let folder: Workspace['folder'];
 mock.module('@epicenter/folder/browser', () => ({
-	openFolder: async () => Ok(folder),
+	openFolder: async (options: { id: string }) => {
+		expect(options.id).toBe('so.epicenter.whispering');
+		return Ok(folder);
+	},
 }));
 const { openBrowserWorkspace } = await import('./browser.js');
 const originalStorage = Object.getOwnPropertyDescriptor(
@@ -90,4 +98,174 @@ test('a refused storage read rejects instead of selecting System default', async
 test('malformed microphone JSON rejects instead of selecting System default', async () => {
 	const reader = await preferences(() => '{broken');
 	await expect(reader.microphone()).rejects.toBeInstanceOf(SyntaxError);
+});
+
+// ============================================================================
+// Connections in this browser's storage
+// ============================================================================
+
+const BASE_URL = 'http://127.0.0.1:18080/v1';
+const prepared = (expectedBaseUrl: string) => ({
+	expectedBaseUrl,
+	model: 'chat-model',
+	prompt: 'Fix it.',
+	input: 'some text',
+});
+
+/** A browser workspace over storage held in `stored`, with every request it sends recorded. */
+async function browserWithStorage(stored: Map<string, string>) {
+	const workspace = await openTestWorkspace();
+	folder = workspace.workspace.folder;
+	Object.defineProperty(globalThis, 'localStorage', {
+		configurable: true,
+		value: {
+			getItem: (key: string) => stored.get(key) ?? null,
+			setItem: (key: string, value: string) => void stored.set(key, value),
+			removeItem: (key: string) => void stored.delete(key),
+		},
+	});
+	Object.defineProperty(globalThis, 'location', {
+		configurable: true,
+		value: new URL('http://localhost:5199'),
+	});
+	const sent: {
+		url: string;
+		authorization: string | null;
+		init: RequestInit;
+	}[] = [];
+	const originalFetch = globalThis.fetch;
+	globalThis.fetch = (async (input: string, init: RequestInit) => {
+		const request = new Request(input, init);
+		sent.push({
+			url: request.url,
+			authorization: request.headers.get('authorization'),
+			init,
+		});
+		return Response.json({ choices: [{ message: { content: 'ok' } }] });
+	}) as unknown as typeof fetch;
+	const browser = expectOk(await openBrowserWorkspace());
+	cleanups.push(async () => {
+		globalThis.fetch = originalFetch;
+		await browser.close();
+		await workspace.remove();
+	});
+	return { browser, sent };
+}
+
+test('a browser keeps connections and keys in its own storage, tells the page no key, and sends only to the connection it was prepared for', async () => {
+	const stored = new Map([['whispering.transcriptionApiKey', 'earlier-key']]);
+	const { browser, sent } = await browserWithStorage(stored);
+	expect(await browser.connections.read()).toEqual({
+		transcription: undefined,
+		text: undefined,
+		legacyKey: true,
+	});
+	// Nothing is set up, so nothing is sent, and the earlier key is lent to nothing.
+	expect((await browser.transform(prepared(BASE_URL))).error?.name).toBe(
+		'ConnectionUnavailable',
+	);
+
+	const saved = expectOk(
+		await browser.connections.set('text', {
+			baseUrl: `${BASE_URL}/`,
+			model: 'chat-model',
+			key: { action: 'replace', key: 'text-key' },
+		}),
+	);
+	expect(JSON.stringify(saved)).not.toContain('text-key');
+	expect(JSON.parse(stored.get('whispering.connections')!)).toEqual({
+		text: { baseUrl: BASE_URL, model: 'chat-model', apiKey: 'text-key' },
+	});
+
+	for (const elsewhere of [
+		'http://127.0.0.1:18080/other/v1',
+		'https://api.openai.com/v1',
+	])
+		expect((await browser.transform(prepared(elsewhere))).error?.name).toBe(
+			'ConnectionChanged',
+		);
+	expect(sent).toEqual([]);
+	expect((await browser.transform(prepared(BASE_URL))).data?.text).toBe('ok');
+	expect(sent).toMatchObject([
+		{
+			url: `${BASE_URL}/chat/completions`,
+			authorization: 'Bearer text-key',
+			init: { redirect: 'error', credentials: 'omit' },
+		},
+	]);
+
+	// A new endpoint cannot keep the key.
+	const refused = await browser.connections.set('text', {
+		baseUrl: 'http://127.0.0.1:18080/other/v1',
+		model: 'chat-model',
+		key: { action: 'keep' },
+	});
+	expect(refused.error).toContain('saved key is not sent there');
+
+	// The earlier key moves into the chosen connection, at the URL shown, and is gone.
+	expectOk(
+		await browser.connections.adoptLegacyKey({
+			transcription: { baseUrl: BASE_URL, model: 'whisper-1' },
+		}),
+	);
+	expect(stored.has('whispering.transcriptionApiKey')).toBe(false);
+	expect(JSON.parse(stored.get('whispering.connections')!)).toEqual({
+		text: { baseUrl: BASE_URL, model: 'chat-model', apiKey: 'text-key' },
+		transcription: {
+			baseUrl: BASE_URL,
+			model: 'whisper-1',
+			apiKey: 'earlier-key',
+		},
+	});
+});
+
+test('browser connections that do not read are reported, never taken for none, and never replaced', async () => {
+	const stored = new Map([['whispering.connections', '{"text": ']]);
+	const { browser, sent } = await browserWithStorage(stored);
+
+	await expect(browser.connections.read()).rejects.toThrow(
+		'do not read as a JSON object',
+	);
+	const set = await browser.connections.set('text', {
+		baseUrl: BASE_URL,
+		model: 'chat-model',
+		key: { action: 'remove' },
+	});
+	expect(set.error).toContain('do not read as a JSON object');
+	expect(stored.get('whispering.connections')).toBe('{"text": ');
+	expect((await browser.transform(prepared(BASE_URL))).error?.name).toBe(
+		'ConnectionUnavailable',
+	);
+	expect(sent).toEqual([]);
+});
+
+test('a malformed browser connection is never replaced by setup or legacy adoption', async () => {
+	const original = JSON.stringify({
+		text: { baseUrl: BASE_URL, model: 7, apiKey: 'recoverable-key' },
+	});
+	const stored = new Map([
+		['whispering.connections', original],
+		['whispering.transcriptionApiKey', 'earlier-key'],
+	]);
+	const { browser, sent } = await browserWithStorage(stored);
+	for (const key of [
+		{ action: 'keep' },
+		{ action: 'remove' },
+		{ action: 'replace', key: 'new-key' },
+	] as const) {
+		const result = await browser.connections.set('text', {
+			baseUrl: BASE_URL,
+			model: 'chat-model',
+			key,
+		});
+		expect(result.error).toContain('does not read as one');
+		expect(stored.get('whispering.connections')).toBe(original);
+	}
+	const adoption = await browser.connections.adoptLegacyKey({
+		text: { baseUrl: BASE_URL, model: 'chat-model' },
+	});
+	expect(adoption.error).toContain('does not read as one');
+	expect(stored.get('whispering.connections')).toBe(original);
+	expect(stored.get('whispering.transcriptionApiKey')).toBe('earlier-key');
+	expect(sent).toEqual([]);
 });

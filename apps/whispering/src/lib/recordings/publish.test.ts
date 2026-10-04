@@ -2,21 +2,22 @@
  * Recording Publication Tests
  *
  * Publication and recovery against a real directory and a real Git
- * repository, through the folder's own batch. Failures are real: a directory
- * placed where a step writes makes the folder fail that step itself.
+ * repository, as two independent folder writes. Failures are real: a
+ * directory placed where one write goes makes the folder refuse that write
+ * itself.
  *
  * Key behaviors:
- * - A capture is one batch: the audio, then a row that names it in `audioPath`
- * - Audio that landed without its row is completed under the same id, by a
- *   batch that lands only if the audio is still exactly what was read
- * - A retry of a published capture writes nothing
+ * - A capture is saved as its audio, then a row that names it in `audioPath`;
+ *   each write's receipt describes exactly the bytes it was given
+ * - Audio that landed without its row stays, and a retry under the same id
+ *   reads both paths and creates only the row; it never rewrites the audio
+ * - A retry of a published capture writes nothing and reports what it found
  * - Foreign audio, same-size changed audio, a foreign row, and a row without
  *   its audio all refuse and are left as found
  * - A file that only shares the stem is not the recording's and blocks nothing
- * - A lost reply is not success, and the next attempt recognizes what landed
- * - A complete receipt is a publication. A row that then cannot be read, or
- *   that another writer removed or replaced, is reported as published with an
- *   observation problem; looking again only reads and repairs nothing
+ * - A lost reply is unknown, never success; a retry recognizes what is there
+ *   as found, not as the confirmation of that earlier write
+ * - The debug hook surrounds each write that is made, and no other
  */
 import { afterEach, expect, test } from 'bun:test';
 import { execFileSync } from 'node:child_process';
@@ -27,12 +28,12 @@ import { FileError, hashBytes } from '@epicenter/folder/bun';
 import { expectOk } from 'wellcrafted/testing';
 import { toneWav } from '../capture.js';
 import type { RecordingFields } from '../definition.js';
+import type { RecordingWrite } from '../workspace/types.js';
 import {
-	batchWithRecordingFailures,
 	openTestFolder,
+	recordingWriteFailures,
 } from '../workspace.test-support.js';
 import {
-	observePublication,
 	type PendingCapture,
 	type PublishTarget,
 	publishRecording,
@@ -75,6 +76,30 @@ const bytesAt = async (...path: string[]) =>
 const names = async (root: string) =>
 	(await readdir(join(root, 'recordings'))).sort();
 
+/** The folder, counting every write publication could make. */
+function counted(target: PublishTarget) {
+	const writes: string[] = [];
+	const counting: PublishTarget = {
+		files: {
+			read: (path) => target.files.read(path),
+			create(path, content) {
+				writes.push(path);
+				return target.files.create(path, content);
+			},
+		},
+		tables: {
+			recordings: {
+				get: (stem) => target.tables.recordings.get(stem),
+				create(input) {
+					writes.push(`recordings/${input.stem}.md`);
+					return target.tables.recordings.create(input);
+				},
+			},
+		},
+	};
+	return { writes, counting };
+}
+
 // ============================================================================
 // Publication
 // ============================================================================
@@ -83,26 +108,37 @@ test('a capture is saved as audio and a row that names it, then committed and re
 	const { root, folder } = await open();
 	const pending = capture();
 
-	const outcome = await publishRecording(folder, pending);
+	const outcome = await publishRecording(folder, pending, { retry: false });
 
-	expect(outcome.status).toBe('saved');
-	if (outcome.status !== 'saved') return;
-	expect(outcome.recovered).toBe(false);
-	// The entry is the capture of the row, and its text reads as the capture's facts.
-	expect(outcome.entry).toMatchObject({
+	expect(outcome.kind).toBe('published');
+	if (outcome.kind !== 'published') return;
+	// Each receipt is of the bytes its write was given.
+	expect(outcome.audio).toEqual({
+		by: 'receipt',
+		file: {
+			path: pending.fields.audioPath,
+			sha256: await hashBytes(pending.bytes),
+		},
+	});
+	expect(outcome.row).toEqual({
+		by: 'receipt',
+		file: {
+			path: `recordings/${pending.id}.md`,
+			sha256: await hashBytes(
+				await bytesAt(root, 'recordings', `${pending.id}.md`),
+			),
+		},
+	});
+	const row = expectOk(await folder.tables.recordings.get(pending.id));
+	expect(row).toMatchObject({
 		fields: pending.fields,
 		body: pending.body,
 		parseError: undefined,
 		issues: [],
 	});
-	expect(pending.fields.audioPath).toBe(`recordings/${pending.id}.wav`);
 	expect(await names(root)).toEqual([`${pending.id}.md`, `${pending.id}.wav`]);
 	// The stored audio is the captured bytes, exactly.
 	expect(await bytesAt(root, 'recordings', `${pending.id}.wav`)).toEqual(
-		new Uint8Array(pending.bytes),
-	);
-	const opened = expectOk(await folder.files.open(pending.fields.audioPath));
-	expect(new Uint8Array(await opened.arrayBuffer())).toEqual(
 		new Uint8Array(pending.bytes),
 	);
 
@@ -115,9 +151,9 @@ test('a capture is saved as audio and a row that names it, then committed and re
 		{ cwd: root },
 	);
 	expect(new Uint8Array(blob)).toEqual(new Uint8Array(pending.bytes));
-	const row = git(root, 'show', `HEAD:recordings/${pending.id}.md`);
-	expect(row).toContain('title: First take');
-	expect(row).toContain(`audioPath: recordings/${pending.id}.wav`);
+	const committedRow = git(root, 'show', `HEAD:recordings/${pending.id}.md`);
+	expect(committedRow).toContain('title: First take');
+	expect(committedRow).toContain(`audioPath: recordings/${pending.id}.wav`);
 	await folder.close();
 
 	// Ordinary Git, with no app involved, restores a playable recording.
@@ -132,7 +168,7 @@ test('a capture is saved as audio and a row that names it, then committed and re
 			join(restored, 'clone', 'recordings', `${pending.id}.md`),
 			'utf8',
 		),
-	).toBe(row);
+	).toBe(committedRow);
 });
 
 test('a file that only shares the stem is not the recording’s and does not block it', async () => {
@@ -142,15 +178,17 @@ test('a file that only shares the stem is not the recording’s and does not blo
 	expectOk(await folder.files.create(`recordings/${pending.id}.m4a`, sibling));
 	expectOk(await folder.files.create(`recordings/${pending.id}.txt`, 'note'));
 
-	const outcome = await publishRecording(folder, pending);
-
-	expect(outcome.status).toBe('saved');
-	if (outcome.status !== 'saved') return;
-	expect(outcome.recovered).toBe(false);
-	// The row names its own audio; the sibling is neither named nor touched.
-	expect(outcome.entry.fields.audioPath).toBe(
-		`recordings/${pending.id}.wav`,
+	expect(
+		(await publishRecording(folder, pending, { retry: false })).kind,
+	).toBe('published');
+	// A retry reads only the two paths the capture names.
+	expect((await publishRecording(folder, pending, { retry: true })).kind).toBe(
+		'published',
 	);
+
+	expect(
+		expectOk(await folder.tables.recordings.get(pending.id))?.fields.audioPath,
+	).toBe(`recordings/${pending.id}.wav`);
 	expect(await names(root)).toEqual([
 		`${pending.id}.m4a`,
 		`${pending.id}.md`,
@@ -164,51 +202,72 @@ test('a file that only shares the stem is not the recording’s and does not blo
 });
 
 // ============================================================================
-// Partial publication and recovery
+// A row that did not land, and recovery
 // ============================================================================
 
-test('a row that fails after the audio landed is a real partial publication, completed by a retry under the same id', async () => {
+test('a row that fails after the audio landed leaves the audio, and a retry creates only the row under the same id', async () => {
 	const { root, folder } = await open();
 	const pending = capture();
-	// Twice, a directory is in the way where the row is written: the folder's
-	// own step fails there, after its first step has saved the audio.
-	const target: PublishTarget = {
-		...folder,
-		batch: batchWithRecordingFailures(folder, root, { audio: 0, row: 2 }),
-	};
+	// Twice, a directory is in the way where the row is written: the folder
+	// refuses that write itself, after the audio write already succeeded.
+	const around = recordingWriteFailures(root, { audio: 0, row: 2 });
+	const { writes, counting } = counted(folder);
 
-	const first = await publishRecording(target, pending);
+	const first = await publishRecording(counting, pending, {
+		retry: false,
+		around,
+	});
 
-	expect(first.status).toBe('partial');
-	if (first.status !== 'partial') return;
-	expect(first.landed).toEqual([`recordings/${pending.id}.wav`]);
+	expect(first).toMatchObject({
+		kind: 'rowNotSaved',
+		certainty: 'failed',
+		audio: {
+			by: 'receipt',
+			file: {
+				path: pending.fields.audioPath,
+				sha256: await hashBytes(pending.bytes),
+			},
+		},
+	});
+	expect(await names(root)).toEqual([`${pending.id}.wav`]);
 	expect(await bytesAt(root, 'recordings', `${pending.id}.wav`)).toEqual(
 		new Uint8Array(pending.bytes),
 	);
 	// The capture is what it was: nothing about it changed by failing.
 	expect(pending).toEqual(capture());
-	// A partial publication requests no commit.
-	await folder.git.status();
-	expect(expectOk(await folder.git.log(10))).toEqual([]);
+	expect(writes).toEqual([
+		pending.fields.audioPath,
+		`recordings/${pending.id}.md`,
+	]);
 
-	// Still obstructed: the recovery batch replaces the audio it read with the
-	// same bytes and fails at the row again. Nothing is lost or duplicated.
-	const second = await publishRecording(target, pending);
-	expect(second.status).toBe('partial');
-	if (second.status === 'partial')
-		expect(second.landed).toEqual([`recordings/${pending.id}.wav`]);
+	// Still obstructed. The retry finds the audio and creates only the row; the
+	// audio is never written again.
+	const second = await publishRecording(counting, pending, {
+		retry: true,
+		around,
+	});
+	expect(second).toMatchObject({
+		kind: 'rowNotSaved',
+		certainty: 'failed',
+		audio: { by: 'found' },
+	});
+	expect(writes.slice(2)).toEqual([`recordings/${pending.id}.md`]);
 	expect(await names(root)).toEqual([`${pending.id}.wav`]);
-	expect(await bytesAt(root, 'recordings', `${pending.id}.wav`)).toEqual(
-		new Uint8Array(pending.bytes),
-	);
 
-	const third = await publishRecording(target, pending);
+	const third = await publishRecording(counting, pending, {
+		retry: true,
+		around,
+	});
 
-	expect(third.status).toBe('saved');
-	if (third.status !== 'saved') return;
-	expect(third.recovered).toBe(true);
-	expect(third.entry.stem).toBe(pending.id);
-	expect(third.entry.fields).toEqual(pending.fields);
+	expect(third).toMatchObject({
+		kind: 'published',
+		audio: { by: 'found' },
+		row: { by: 'receipt' },
+	});
+	expect(writes.slice(3)).toEqual([`recordings/${pending.id}.md`]);
+	expect(
+		expectOk(await folder.tables.recordings.get(pending.id))?.fields,
+	).toEqual(pending.fields);
 	expect(await names(root)).toEqual([`${pending.id}.md`, `${pending.id}.wav`]);
 	expect(await bytesAt(root, 'recordings', `${pending.id}.wav`)).toEqual(
 		new Uint8Array(pending.bytes),
@@ -221,49 +280,59 @@ test('a row that fails after the audio landed is a real partial publication, com
 	await folder.close();
 });
 
-test('audio that fails first leaves nothing in the folder, and a retry saves', async () => {
+test('audio that fails first leaves nothing in the folder and no row is attempted; a retry saves both', async () => {
 	const { root, folder } = await open();
 	const pending = capture();
-	const target: PublishTarget = {
-		...folder,
-		batch: batchWithRecordingFailures(folder, root, { audio: 1, row: 0 }),
-	};
+	const around = recordingWriteFailures(root, { audio: 1, row: 0 });
+	const { writes, counting } = counted(folder);
 
-	const first = await publishRecording(target, pending);
+	const first = await publishRecording(counting, pending, {
+		retry: false,
+		around,
+	});
 
-	expect(first.status).toBe('failed');
+	// The folder refused the create itself: a directory is where the audio goes.
+	expect(first).toMatchObject({
+		kind: 'audioNotSaved',
+		certainty: 'failed',
+		message: expect.stringContaining('is a directory'),
+	});
+	expect(writes).toEqual([pending.fields.audioPath]);
 	expect(await names(root)).toEqual([]);
 
-	const second = await publishRecording(target, pending);
-	expect(second.status).toBe('saved');
-	if (second.status === 'saved') expect(second.recovered).toBe(false);
+	const second = await publishRecording(counting, pending, {
+		retry: true,
+		around,
+	});
+	expect(second).toMatchObject({
+		kind: 'published',
+		audio: { by: 'receipt' },
+		row: { by: 'receipt' },
+	});
+	expect(await names(root)).toEqual([`${pending.id}.md`, `${pending.id}.wav`]);
 	await folder.close();
 });
 
-test('retrying a published capture writes nothing and reports the same recording', async () => {
+test('retrying a published capture writes nothing and reports both files as found', async () => {
 	const { root, folder } = await open();
 	const pending = capture();
-	const first = await publishRecording(folder, pending);
-	expect(first.status).toBe('saved');
+	expect(
+		(await publishRecording(folder, pending, { retry: false })).kind,
+	).toBe('published');
 	const before = await readFile(
 		join(root, 'recordings', `${pending.id}.md`),
 		'utf8',
 	);
-	let batches = 0;
-	const counting: PublishTarget = {
-		...folder,
-		batch: (collect) => {
-			batches += 1;
-			return folder.batch(collect);
-		},
-	};
+	const { writes, counting } = counted(folder);
 
-	const again = await publishRecording(counting, pending);
+	const again = await publishRecording(counting, pending, { retry: true });
 
-	expect(again.status).toBe('saved');
-	if (again.status !== 'saved') return;
-	expect(again.recovered).toBe(true);
-	expect(batches).toBe(0);
+	expect(again).toMatchObject({
+		kind: 'published',
+		audio: { by: 'found' },
+		row: { by: 'found' },
+	});
+	expect(writes).toEqual([]);
 	expect(
 		await readFile(join(root, 'recordings', `${pending.id}.md`), 'utf8'),
 	).toBe(before);
@@ -274,17 +343,16 @@ test('retrying a published capture writes nothing and reports the same recording
 test('a published recording whose title was edited since is still this recording', async () => {
 	const { root, folder } = await open();
 	const pending = capture();
-	const first = await publishRecording(folder, pending);
-	if (first.status !== 'saved') throw new Error('expected the capture saved');
+	await publishRecording(folder, pending, { retry: false });
 	expectOk(
-		await folder.tables.recordings.update(first.entry.stem, {
+		await folder.tables.recordings.update(pending.id, {
 			fields: { title: 'Renamed by its owner' },
 		}),
 	);
 
-	const again = await publishRecording(folder, pending);
+	const again = await publishRecording(folder, pending, { retry: true });
 
-	expect(again.status).toBe('saved');
+	expect(again.kind).toBe('published');
 	// Nothing was rewritten: the edited title is still there, in the same file.
 	expect(
 		await readFile(join(root, 'recordings', `${pending.id}.md`), 'utf8'),
@@ -297,17 +365,19 @@ test('a published recording whose title was edited since is still this recording
 // Refusals
 // ============================================================================
 
-test('audio it did not write is never replaced', async () => {
+test('audio it did not write is never replaced, on a first attempt or a retry', async () => {
 	const { root, folder } = await open();
 	const pending = capture();
 	const other = new Uint8Array([1, 2, 3, 4]);
 	expectOk(await folder.files.create(pending.fields.audioPath, other));
 
-	const outcome = await publishRecording(folder, pending);
-
-	expect(outcome.status).toBe('unexpected');
-	if (outcome.status === 'unexpected')
-		expect(outcome.path).toBe(pending.fields.audioPath);
+	for (const retry of [false, true]) {
+		const outcome = await publishRecording(folder, pending, { retry });
+		expect(outcome).toMatchObject({
+			kind: 'refused',
+			path: pending.fields.audioPath,
+		});
+	}
 	expect(await names(root)).toEqual([`${pending.id}.wav`]);
 	expect(await bytesAt(root, 'recordings', `${pending.id}.wav`)).toEqual(other);
 	await folder.close();
@@ -321,15 +391,18 @@ test('audio of the same size with other bytes is not this capture’s and is nev
 	expect(other).not.toEqual(new Uint8Array(pending.bytes));
 	expectOk(await folder.files.create(pending.fields.audioPath, other));
 
-	const outcome = await publishRecording(folder, pending);
+	const outcome = await publishRecording(folder, pending, { retry: true });
 
-	expect(outcome.status).toBe('unexpected');
+	expect(outcome).toMatchObject({
+		kind: 'refused',
+		path: pending.fields.audioPath,
+	});
 	expect(await names(root)).toEqual([`${pending.id}.wav`]);
 	expect(await bytesAt(root, 'recordings', `${pending.id}.wav`)).toEqual(other);
 	await folder.close();
 });
 
-test('audio changed between the read and the recovery batch refuses the whole batch', async () => {
+test('audio changed after a retry read it is not rewritten: independent writes cannot hold it still', async () => {
 	const { root, folder } = await open();
 	const pending = capture();
 	expectOk(await folder.files.create(pending.fields.audioPath, pending.bytes));
@@ -338,6 +411,7 @@ test('audio changed between the read and the recovery batch refuses the whole ba
 	const raced: PublishTarget = {
 		...folder,
 		files: {
+			create: (path, content) => folder.files.create(path, content),
 			async read(path) {
 				const read = await folder.files.read(path);
 				if (read.error === null)
@@ -347,13 +421,16 @@ test('audio changed between the read and the recovery batch refuses the whole ba
 		},
 	};
 
-	const outcome = await publishRecording(raced, pending);
+	const outcome = await publishRecording(raced, pending, { retry: true });
 
-	expect(outcome.status).toBe('unexpected');
-	if (outcome.status === 'unexpected')
-		expect(outcome.path).toBe(pending.fields.audioPath);
-	// The condition held the row back: no row beside audio that is not this capture's.
-	expect(await names(root)).toEqual([`${pending.id}.wav`]);
+	// The row is created beside the audio the retry recognized. Nothing writes
+	// the audio again to imitate a condition across the two files, so the
+	// other writer's bytes are what is there; the person sees them in the row.
+	expect(outcome).toMatchObject({
+		kind: 'published',
+		audio: { by: 'found' },
+		row: { by: 'receipt' },
+	});
 	expect(await bytesAt(root, 'recordings', `${pending.id}.wav`)).toEqual(other);
 	await folder.close();
 });
@@ -364,15 +441,27 @@ test('a row it did not write is never replaced', async () => {
 	const foreign = '---\ntitle: Someone else\n---\nKeep me\n';
 	expectOk(await folder.files.create(`recordings/${pending.id}.md`, foreign));
 
-	const outcome = await publishRecording(folder, pending);
+	// A first attempt reads nothing first: its audio lands, and the exclusive
+	// row create is refused by the folder.
+	const first = await publishRecording(folder, pending, { retry: false });
+	expect(first).toMatchObject({
+		kind: 'rowNotSaved',
+		certainty: 'failed',
+		audio: { by: 'receipt' },
+	});
+	if (first.kind === 'rowNotSaved')
+		expect(first.message).toContain('already exists');
 
-	expect(outcome.status).toBe('unexpected');
-	if (outcome.status === 'unexpected')
-		expect(outcome.path).toBe(`recordings/${pending.id}.md`);
+	// A retry reads the row first and refuses before writing anything.
+	const retry = await publishRecording(folder, pending, { retry: true });
+	expect(retry).toMatchObject({
+		kind: 'refused',
+		path: `recordings/${pending.id}.md`,
+	});
 	expect(
 		await readFile(join(root, 'recordings', `${pending.id}.md`), 'utf8'),
 	).toBe(foreign);
-	expect(await names(root)).toEqual([`${pending.id}.md`]);
+	expect(await names(root)).toEqual([`${pending.id}.md`, `${pending.id}.wav`]);
 	await folder.close();
 });
 
@@ -385,9 +474,9 @@ test('a row from before audioPath is not this recording, even beside matching au
 	expectOk(await folder.files.create(`recordings/${pending.id}.md`, old));
 	expectOk(await folder.files.create(pending.fields.audioPath, pending.bytes));
 
-	const outcome = await publishRecording(folder, pending);
+	const outcome = await publishRecording(folder, pending, { retry: true });
 
-	expect(outcome.status).toBe('unexpected');
+	expect(outcome.kind).toBe('refused');
 	// Nothing is inferred from the stem and nothing is migrated.
 	expect(
 		await readFile(join(root, 'recordings', `${pending.id}.md`), 'utf8'),
@@ -402,17 +491,49 @@ test('a row from before audioPath is not this recording, even beside matching au
 test('this recording’s row without its audio refuses and writes nothing', async () => {
 	const { root, folder } = await open();
 	const pending = capture();
-	expect((await publishRecording(folder, pending)).status).toBe('saved');
+	await publishRecording(folder, pending, { retry: false });
 	await rm(join(root, pending.fields.audioPath));
+	const { writes, counting } = counted(folder);
 
-	const outcome = await publishRecording(folder, pending);
+	const outcome = await publishRecording(counting, pending, { retry: true });
 
-	expect(outcome.status).toBe('unexpected');
-	if (outcome.status === 'unexpected') {
-		expect(outcome.path).toBe(pending.fields.audioPath);
+	expect(outcome).toMatchObject({
+		kind: 'refused',
+		path: pending.fields.audioPath,
+	});
+	if (outcome.kind === 'refused')
 		expect(outcome.message).toContain('is not in the folder');
-	}
+	expect(writes).toEqual([]);
 	expect(await names(root)).toEqual([`${pending.id}.md`]);
+	await folder.close();
+});
+
+test('a retry that cannot read the folder writes nothing', async () => {
+	const { root, folder } = await open();
+	const pending = capture();
+	const unreadable: PublishTarget = {
+		...folder,
+		tables: {
+			recordings: {
+				create: (input) => folder.tables.recordings.create(input),
+				get: (stem) =>
+					Promise.resolve(
+						FileError.Io({
+							path: `recordings/${stem}.md`,
+							operation: 'read',
+							cause: new Error('host unreachable'),
+						}),
+					),
+			},
+		},
+	};
+
+	const outcome = await publishRecording(unreadable, pending, { retry: true });
+
+	expect(outcome.kind).toBe('unchecked');
+	if (outcome.kind === 'unchecked')
+		expect(outcome.message).toContain('host unreachable');
+	expect(await readdir(root)).not.toContain('recordings');
 	await folder.close();
 });
 
@@ -420,240 +541,294 @@ test('this recording’s row without its audio refuses and writes nothing', asyn
 // Unknown outcomes
 // ============================================================================
 
-test('a lost publication reply is not success, and the retry recognizes what landed', async () => {
-	const { root, folder } = await open();
-	const pending = capture();
-	const lossy: PublishTarget = {
-		...folder,
-		async batch(collect) {
-			const result = await folder.batch(collect);
-			return result.error
-				? result
-				: FileError.Unconfirmed({
-						path: 'batch',
-						operation: 'batch',
-						cause: 'reply lost after publication',
-					});
+/** A folder whose next reply to `path` is lost after the write landed. */
+function losing(target: PublishTarget, lose: 'audio' | 'row'): PublishTarget {
+	const lost = (path: string, operation: string) =>
+		FileError.Unconfirmed({ path, operation, cause: 'reply lost' });
+	return {
+		files: {
+			read: (path) => target.files.read(path),
+			async create(path, content) {
+				const created = await target.files.create(path, content);
+				return lose === 'audio' && created.error === null
+					? lost(path, 'create')
+					: created;
+			},
+		},
+		tables: {
+			recordings: {
+				get: (stem) => target.tables.recordings.get(stem),
+				async create(input) {
+					const created = await target.tables.recordings.create(input);
+					return lose === 'row' && created.error === null
+						? lost(created.data.path, 'create')
+						: created;
+				},
+			},
 		},
 	};
+}
 
-	const first = await publishRecording(lossy, pending);
+test('a lost audio reply is unknown and the row is not attempted; the retry finds the audio and creates the row', async () => {
+	const { root, folder } = await open();
+	const pending = capture();
 
-	expect(first.status).toBe('failed');
+	const first = await publishRecording(losing(folder, 'audio'), pending, {
+		retry: false,
+	});
+
+	expect(first).toMatchObject({ kind: 'audioNotSaved', certainty: 'unknown' });
+	expect(await names(root)).toEqual([`${pending.id}.wav`]);
+
+	const retry = await publishRecording(folder, pending, { retry: true });
+
+	// What the retry found is not attributed to the lost write.
+	expect(retry).toMatchObject({
+		kind: 'published',
+		audio: { by: 'found' },
+		row: { by: 'receipt' },
+	});
+	expect(await names(root)).toEqual([`${pending.id}.md`, `${pending.id}.wav`]);
+	await folder.close();
+});
+
+test('a lost row reply is unknown, and the retry reports the row it finds as found, never as that write’s receipt', async () => {
+	const { root, folder } = await open();
+	const pending = capture();
+
+	const first = await publishRecording(losing(folder, 'row'), pending, {
+		retry: false,
+	});
+
+	expect(first).toMatchObject({
+		kind: 'rowNotSaved',
+		certainty: 'unknown',
+		audio: { by: 'receipt' },
+	});
 	const landed = await readFile(
 		join(root, 'recordings', `${pending.id}.md`),
 		'utf8',
 	);
+	const { writes, counting } = counted(folder);
 
-	const retry = await publishRecording(folder, pending);
+	const retry = await publishRecording(counting, pending, { retry: true });
 
-	expect(retry.status).toBe('saved');
-	if (retry.status === 'saved') expect(retry.recovered).toBe(true);
-	expect(await names(root)).toEqual([`${pending.id}.md`, `${pending.id}.wav`]);
+	expect(retry).toMatchObject({
+		kind: 'published',
+		audio: { by: 'found' },
+		row: { by: 'found' },
+	});
+	expect(writes).toEqual([]);
 	expect(
 		await readFile(join(root, 'recordings', `${pending.id}.md`), 'utf8'),
 	).toBe(landed);
 	await folder.close();
 });
 
-// ============================================================================
-// A confirmed publication whose row cannot then be shown
-// ============================================================================
-
-test('a row that cannot be read back after a confirmed publication is published, not failed', async () => {
+test('a write that throws is an unknown outcome, and what was known before it is kept', async () => {
 	const { root, folder } = await open();
 	const pending = capture();
-	let reads = 0;
-	const unreadable: PublishTarget = {
+	const throwing: PublishTarget = {
 		...folder,
 		tables: {
 			recordings: {
-				// The first read finds no row. The read after the batch fails.
-				get: (stem) =>
-					++reads === 1
-						? folder.tables.recordings.get(stem)
-						: Promise.resolve(
-								FileError.Io({
-									path: `recordings/${stem}.md`,
-									operation: 'read',
-									cause: new Error('host unreachable'),
-								}),
-							),
+				get: (stem) => folder.tables.recordings.get(stem),
+				create: () => Promise.reject(new Error('the folder host went away')),
 			},
 		},
 	};
 
-	const first = await publishRecording(unreadable, pending);
+	const outcome = await publishRecording(throwing, pending, { retry: false });
 
-	// The receipt proves the save. The failed read is about what can be shown.
-	expect(first.status).toBe('published');
-	if (first.status !== 'published') return;
-	expect(first.problem.status).toBe('unreadable');
-	expect(first.problem.message).toContain('host unreachable');
-	expect(reads).toBe(2);
-	// The receipt's captures are of the bytes that were submitted, exactly.
-	expect(first.publication.audio).toEqual({
-		path: pending.fields.audioPath,
-		sha256: await hashBytes(pending.bytes),
+	expect(outcome).toMatchObject({
+		kind: 'rowNotSaved',
+		certainty: 'unknown',
+		audio: { by: 'receipt' },
+		message: 'the folder host went away',
 	});
-	expect(first.publication.row).toEqual({
-		path: `recordings/${pending.id}.md`,
-		sha256: await hashBytes(
-			await bytesAt(root, 'recordings', `${pending.id}.md`),
-		),
-	});
-	expect(await bytesAt(root, 'recordings', `${pending.id}.wav`)).toEqual(
-		new Uint8Array(pending.bytes),
-	);
-	// No entry is invented from the receipt.
-	expect('entry' in first).toBe(false);
-	expect(pending).toEqual(capture());
-
-	// Looking again only reads, and finds the row as the folder has it.
-	const observed = await observePublication(folder, pending);
-	expect(observed.status).toBe('present');
-	if (observed.status === 'present')
-		expect(observed.entry.fields).toEqual(pending.fields);
-	expect(await names(root)).toEqual([`${pending.id}.md`, `${pending.id}.wav`]);
-	await folder.close();
-});
-
-test('a row another writer replaced right after publication is still a publication, and is left as found', async () => {
-	const { root, folder } = await open();
-	const pending = capture();
-	const foreign = '---\ntitle: Someone else\n---\nKeep me\n';
-	let reads = 0;
-	const raced: PublishTarget = {
-		...folder,
-		tables: {
-			recordings: {
-				async get(stem) {
-					// Before the read-back, another writer replaces the row.
-					if (++reads === 2)
-						expectOk(
-							await folder.files.overwrite(`recordings/${stem}.md`, foreign),
-						);
-					return folder.tables.recordings.get(stem);
-				},
-			},
-		},
-	};
-
-	const outcome = await publishRecording(raced, pending);
-
-	expect(outcome.status).toBe('published');
-	if (outcome.status === 'published')
-		expect(outcome.problem.status).toBe('foreign');
-	expect((await observePublication(folder, pending)).status).toBe('foreign');
-	expect(
-		await readFile(join(root, 'recordings', `${pending.id}.md`), 'utf8'),
-	).toBe(foreign);
-	await folder.close();
-});
-
-test('a row another writer removed right after publication is still a publication, and is not recreated', async () => {
-	const { root, folder } = await open();
-	const pending = capture();
-	let reads = 0;
-	const raced: PublishTarget = {
-		...folder,
-		tables: {
-			recordings: {
-				async get(stem) {
-					if (++reads === 2) await rm(join(root, 'recordings', `${stem}.md`));
-					return folder.tables.recordings.get(stem);
-				},
-			},
-		},
-	};
-
-	const outcome = await publishRecording(raced, pending);
-
-	expect(outcome.status).toBe('published');
-	if (outcome.status === 'published')
-		expect(outcome.problem.status).toBe('missing');
-	expect((await observePublication(folder, pending)).status).toBe('missing');
-	// Observing wrote nothing: only the audio is there.
 	expect(await names(root)).toEqual([`${pending.id}.wav`]);
 	await folder.close();
 });
 
-test('observing a published recording whose title and notes were edited returns the current row', async () => {
+// ============================================================================
+// An earlier write landing after the attempt looked
+// ============================================================================
+
+/**
+ * The folder, where something lands at `path` just before the attempt's own
+ * create there: as an earlier write of this capture whose reply was lost may
+ * land late, or another writer's file may.
+ */
+function landingBefore(
+	folder: PublishTarget,
+	path: string,
+	land: () => Promise<unknown>,
+): PublishTarget {
+	return {
+		files: {
+			read: (target) => folder.files.read(target),
+			async create(target, content) {
+				if (target === path) await land();
+				return folder.files.create(target, content);
+			},
+		},
+		tables: {
+			recordings: {
+				get: (stem) => folder.tables.recordings.get(stem),
+				async create(input) {
+					if (`recordings/${input.stem}.md` === path) await land();
+					return folder.tables.recordings.create(input);
+				},
+			},
+		},
+	};
+}
+
+test('audio that lands late from an earlier write of this capture is read and found, and the row is created', async () => {
 	const { root, folder } = await open();
 	const pending = capture();
-	const first = await publishRecording(folder, pending);
-	if (first.status !== 'saved') throw new Error('expected the capture saved');
-	const edited = expectOk(
-		await folder.tables.recordings.update(first.entry.stem, {
-			fields: { title: 'Renamed' },
-			body: 'Notes written later\n',
+	const raced = landingBefore(folder, pending.fields.audioPath, () =>
+		folder.files.create(pending.fields.audioPath, pending.bytes),
+	);
+
+	// The retry reads the path as empty, then its create finds it occupied.
+	const outcome = await publishRecording(raced, pending, { retry: true });
+
+	expect(outcome).toMatchObject({
+		kind: 'published',
+		audio: {
+			by: 'found',
+			file: {
+				path: pending.fields.audioPath,
+				sha256: await hashBytes(pending.bytes),
+			},
+		},
+		row: { by: 'receipt' },
+	});
+	expect(await names(root)).toEqual([`${pending.id}.md`, `${pending.id}.wav`]);
+	await folder.close();
+});
+
+test('other audio that lands before the create is read, called another writer’s, and left alone', async () => {
+	const { root, folder } = await open();
+	const pending = capture();
+	const other = new Uint8Array(toneWav({ frequency: 880 }));
+	const raced = landingBefore(folder, pending.fields.audioPath, () =>
+		folder.files.create(pending.fields.audioPath, other),
+	);
+
+	const outcome = await publishRecording(raced, pending, { retry: true });
+
+	expect(outcome).toMatchObject({
+		kind: 'refused',
+		path: pending.fields.audioPath,
+	});
+	expect(await bytesAt(root, 'recordings', `${pending.id}.wav`)).toEqual(other);
+	expect(await names(root)).toEqual([`${pending.id}.wav`]);
+	await folder.close();
+});
+
+test('an occupied audio path that cannot then be read stays unknown, never called another writer’s', async () => {
+	const { root, folder } = await open();
+	const pending = capture();
+	const landed = landingBefore(folder, pending.fields.audioPath, () =>
+		folder.files.create(pending.fields.audioPath, pending.bytes),
+	);
+	let reads = 0;
+	const raced: PublishTarget = {
+		...landed,
+		files: {
+			...landed.files,
+			// The retry's own look reads it as absent; the read after the refusal fails.
+			read: async (path) =>
+				++reads === 1
+					? folder.files.read(path)
+					: FileError.Io({
+							path,
+							operation: 'read',
+							cause: new Error('host unreachable'),
+						}),
+		},
+	};
+
+	const outcome = await publishRecording(raced, pending, { retry: true });
+
+	expect(outcome).toMatchObject({ kind: 'audioNotSaved', certainty: 'unknown' });
+	if (outcome.kind === 'audioNotSaved')
+		expect(outcome.message).toContain('is not known');
+	// The audio that is there stays, and nothing else was written.
+	expect(await names(root)).toEqual([`${pending.id}.wav`]);
+	await folder.close();
+});
+
+test('this recording’s row that lands late is read and found, never written over', async () => {
+	const { root, folder } = await open();
+	const pending = capture();
+	expectOk(await folder.files.create(pending.fields.audioPath, pending.bytes));
+	const raced = landingBefore(folder, `recordings/${pending.id}.md`, () =>
+		folder.tables.recordings.create({
+			stem: pending.id,
+			fields: pending.fields,
+			body: 'Notes written since\n',
 		}),
 	);
-	const before = await readFile(
-		join(root, 'recordings', `${pending.id}.md`),
-		'utf8',
-	);
 
-	const observed = await observePublication(folder, pending);
+	const outcome = await publishRecording(raced, pending, { retry: true });
 
-	// An edit is not evidence of a failed save: this is the recording, as it is now.
-	expect(observed.status).toBe('present');
-	if (observed.status !== 'present') return;
-	expect(observed.entry.sha256).toEqual(edited.sha256);
-	expect(observed.entry.fields.title).toBe('Renamed');
-	expect(observed.entry.body).toBe('Notes written later\n');
+	expect(outcome).toMatchObject({
+		kind: 'published',
+		audio: { by: 'found' },
+		row: { by: 'found' },
+	});
 	expect(
 		await readFile(join(root, 'recordings', `${pending.id}.md`), 'utf8'),
-	).toBe(before);
+	).toContain('Notes written since');
 	await folder.close();
 });
 
 // ============================================================================
-// The debug publication hook
+// The debug write hook
 // ============================================================================
 
-test('the hook surrounds exactly the batch: it is told what the batch creates, and is not reached when nothing is published', async () => {
+test('the hook surrounds each write that is made, and is not reached for a write that is not', async () => {
 	const { root, folder } = await open();
 	const pending = capture();
-	const seen: {
-		stem: string;
-		audioPath: string | undefined;
-		rows: string[];
-	}[] = [];
-	const around: Parameters<typeof publishRecording>[2] = async (
-		recording,
-		publish,
+	const seen: { write: RecordingWrite; rows: string[] }[] = [];
+	const failing = recordingWriteFailures(root, { audio: 0, row: 1 });
+	const around: Parameters<typeof publishRecording>[2]['around'] = async (
+		write,
+		run,
 	) => {
-		// The batch has not run yet: no row is in the folder when the hook is entered.
+		// The write has not run yet when the hook is entered.
 		seen.push({
-			...recording,
+			write,
 			rows: (
 				await readdir(join(root, 'recordings')).catch(() => [] as string[])
 			).filter((name) => name.endsWith('.md')),
 		});
-		return publish();
+		return failing(write, run);
 	};
 
-	// A new recording: the batch creates the audio, and the hook is told its path.
-	const failing: PublishTarget = {
-		...folder,
-		batch: batchWithRecordingFailures(folder, root, { audio: 0, row: 1 }),
-	};
-	expect((await publishRecording(failing, pending, around)).status).toBe(
-		'partial',
-	);
-	// A recovery: the audio is already there, so the batch creates no audio.
-	expect((await publishRecording(folder, pending, around)).status).toBe(
-		'saved',
-	);
-	// Already published: there is no batch, so the hook is not reached.
-	expect((await publishRecording(folder, pending, around)).status).toBe(
-		'saved',
-	);
+	// A new recording: the audio write, then the row write, which fails.
+	expect(
+		(await publishRecording(folder, pending, { retry: false, around })).kind,
+	).toBe('rowNotSaved');
+	// A retry: the audio is already there, so only the row is written.
+	expect(
+		(await publishRecording(folder, pending, { retry: true, around })).kind,
+	).toBe('published');
+	// Already published: nothing is written, so the hook is not reached.
+	expect(
+		(await publishRecording(folder, pending, { retry: true, around })).kind,
+	).toBe('published');
 
 	expect(seen).toEqual([
-		{ stem: pending.id, audioPath: pending.fields.audioPath, rows: [] },
-		{ stem: pending.id, audioPath: undefined, rows: [] },
+		{
+			write: { step: 'audio', stem: pending.id, path: pending.fields.audioPath },
+			rows: [],
+		},
+		{ write: { step: 'row', stem: pending.id }, rows: [] },
+		{ write: { step: 'row', stem: pending.id }, rows: [] },
 	]);
 	expect(await names(root)).toEqual([`${pending.id}.md`, `${pending.id}.wav`]);
 	await folder.close();

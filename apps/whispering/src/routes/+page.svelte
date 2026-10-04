@@ -24,10 +24,10 @@
 	const audioPath = $derived(latest ? audioPathIn(latest.fields) : undefined);
 	const transcript = $derived(latest ? library.resultsFor(latest.stem)[0] : undefined);
 	const run = $derived(latest ? library.transcriptionRun(latest.stem) : undefined);
-	const model = $derived(library.settings.transcriptionModel);
+	const model = $derived(library.connections?.transcription?.model);
 
-	/** The transformation chosen beside the recorder, as the folder has it now. */
-	const postProcessing = $derived(resolvePostProcessing(view.postProcessing, library.transformations));
+	/** The transformation chosen beside the recorder, as the folder and the text connection have it now. */
+	const postProcessing = $derived(resolvePostProcessing(view.postProcessing, library.transformations, library.resolve));
 	/** A run on this transcript that is not a saved result yet: the one under way, else the newest. */
 	const postRun = $derived.by(() => {
 		if (transcript === undefined) return undefined;
@@ -116,7 +116,7 @@
 							<Button size="sm" variant="outline" onclick={() => void copyText(text, 'the result')}>Copy</Button>
 						</div>
 					{:else if postProcessing.kind === 'ready'}
-						{@const chosen = postProcessing.entry.fields}
+						{@const chosen = library.resolve(postProcessing.entry)}
 						{@const name = transformationName(postProcessing.entry)}
 						<div class="flex flex-wrap items-center gap-2 text-sm">
 							<!-- The visible label stays short: a title can be longer than a narrow window. The name is in the accessible label and the tooltip. -->
@@ -125,7 +125,7 @@
 								variant="outline"
 								disabled={!transcript.body?.trim()}
 								aria-label="Run post-processing: {name}"
-								tooltip="Runs “{name}”: sends this transcript to {chosen.model} at {chosen.endpoint}"
+								tooltip={chosen.kind === 'ready' ? `Runs “${name}”: sends this transcript to ${chosen.model} at ${chosen.endpoint}` : undefined}
 								onclick={() => void runPostProcessing()}
 								data-testid="run-post-processing"
 							>
@@ -138,11 +138,16 @@
 						<p class="text-sm break-words text-warning" role="status" data-testid="post-processing-unavailable">
 							{postProcessing.kind === 'missing'
 								? 'The transformation chosen for post-processing is no longer in the folder. Choose another beside the recorder.'
-								: `“${transformationName(postProcessing.entry)}” needs repair before it can run. Fix it on the Transformations page.`}
+								: `“${transformationName(postProcessing.entry)}” cannot run: ${postProcessing.reason}`}
 						</p>
 					{/if}
 					{#if outputs[0]}
-						<TransformationOutput {library} output={outputs[0]} naming="transformation" onOpenFile={(path) => void openFile(path)} />
+						<TransformationOutput
+							{library}
+							output={{ source: 'transcript', entry: outputs[0] }}
+							naming="transformation"
+							onOpenFile={(path) => void openFile(path)}
+						/>
 						{#if outputs.length > 1}
 							<p class="text-xs text-muted-foreground">
 								{outputs.length - 1 === 1 ? '1 earlier result is' : `${outputs.length - 1} earlier results are`} on the recording’s page.
@@ -158,7 +163,7 @@
 						{:else if model}
 							Not transcribed yet. Nothing is sent until you press Transcribe.
 						{:else}
-							No transcription model is set. Add one in Settings.
+							Transcription is not set up. Set up its connection in Settings; nothing is sent until you do.
 						{/if}
 					</p>
 				{/if}

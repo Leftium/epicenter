@@ -10,7 +10,7 @@ Whispering keeps its standalone desktop data in ordinary files through
 `tauri-plugin-epicenter-folder`. The page attaches through
 `@epicenter/folder/tauri`; Rust owns the folder. A Bun sidecar still serves the
 page and supplies the terminal, provider requests, device settings, reveal,
-debug fixtures, and close relay. Browser Whispering uses IndexedDB.
+debug fixtures, and close relay. Browser Whispering uses OPFS; first open migrates its earlier IndexedDB folder.
 
 Epicenter already grants trusted loopback-served pages focused Tauri commands.
 Serving the SPA from Bun does not require Bun to open its data folder. A native
@@ -29,7 +29,7 @@ resolve that packaging discrepancy separately from the folder transport.
 ## Desired outcome
 
 Whispering is one application with shared file semantics and two storage
-implementations: IndexedDB in an ordinary browser and a shared Rust native
+implementations: OPFS in an ordinary browser and a shared Rust native
 implementation in either desktop shell. How the page is delivered does not
 change where desktop saves go.
 
@@ -37,7 +37,7 @@ change where desktop saves go.
 | ------------------------ | ------------------------------------------- | ------------------------------------------------------------------------- |
 | Standalone desktop       | Bundled SPA loaded by Tauri                 | Ordinary files and Git through Rust; no Bun child or loopback server      |
 | Inside Epicenter desktop | SPA served by Epicenter's existing Bun host | Ordinary files and Git through the same Rust implementation and typed SDK |
-| Ordinary browser         | Static SPA from a web server                | IndexedDB folder and browser implementations; no native authority         |
+| Ordinary browser         | Static SPA from a web server                | OPFS folder and browser implementations; no native authority              |
 
 The desktop app displays its canonical folder. A person can open its Markdown,
 settings, and audio in another program without exporting. Existing folders
@@ -50,7 +50,8 @@ finishes, the UI reports the save independently of its background commit. A
 blocked commit leaves the save intact and offers a retry. Long Git hashing does
 not occupy filesystem admission for its entire duration. Detected external
 file edits invalidate observations; a save that detects changed source reports
-the conflict instead of replacing it. Dirty drafts remain visible for the
+the conflict instead of replacing it. Canonical row editors overwrite a complete
+document after the person resolves any observed foreign content. Dirty drafts remain visible for the
 person to resolve. Detection remains best effort against external writers.
 
 Transcribing a saved recording asks Rust to read the scoped audio and send it
@@ -86,7 +87,7 @@ same native implementation and the standalone release runs without Bun:
 - Record, save, play, transcribe, edit, commit, reveal the folder, quit, and
   reopen against an existing folder without changing its format or history.
 - Run the same native operations from Epicenter's served WebView; missing
-  commands or authority fail visibly rather than opening an IndexedDB store.
+  commands or authority fail visibly rather than opening browser storage.
 - Demonstrate external edits, conflicting saves, partial publication, Git ref
   contention, and index-repair warnings without reporting a lost save as clean.
 - Attach two pages, close the requesting page after a save, and finish its
@@ -97,7 +98,7 @@ same native implementation and the standalone release runs without Bun:
 - Build one SPA and run it in an ordinary browser, standalone Tauri, and
   Epicenter's served WebView. Browser execution loads no Tauri adapter and
   imports no Bun/Node native implementation. Withhold the native capability
-  and prove acquisition fails without opening IndexedDB. Imports remain safe
+  and prove acquisition fails without opening browser storage. Imports remain safe
   under SSR; default acquisition there refuses.
 - Remove standalone sidecar scripts, binary packaging, bridge routes, and
   runtime dependence on a Bun executable.
@@ -106,8 +107,8 @@ same native implementation and the standalone release runs without Bun:
 
 **Shared TypeScript interprets the files; a shared Rust library accesses native resources.**
 The portable Folder implementation, `@epicenter/folder`, retains
-table and KV interpretation, source-preserving patches, and partial-save
-handling. The page retains drafts. Rust implements
+table and KV interpretation, source-preserving patches, canonical row editors, and one-file publication
+outcomes. The page retains drafts. Rust implements
 scoped filesystem access, conditional publication, Git operations, watching,
 and one history coordinator per native folder. Browser history retains its
 TypeScript coordinator. Both Tauri shells register the same plugin and pages
@@ -125,7 +126,7 @@ App code: folder.tables / folder.kv / folder.files / folder.git
                       |                 |
               TypeScript logic    Generated TS bindings
               + isomorphic-git          | invoke
-              + IndexedDB         Shared Rust plugin
+              + OPFS              Shared Rust plugin
                                   + files + native Git
                                   + history coordinator
 ```
@@ -210,20 +211,20 @@ not supply Whispering's native services.
 
 **The default `openFolder` selects its adapter at acquisition time.**
 Application code imports it from `@epicenter/folder`. In a browser it lazily
-loads the IndexedDB adapter; in Tauri it lazily loads the generated native
+loads the OPFS adapter; in Tauri it lazily loads the generated native
 adapter and acquires the scoped API. Imports acquire nothing and load neither
 storage implementation. Default acquisition under SSR refuses rather than
 treating absence of Tauri as availability of browser storage.
 Explicit entrypoints and optional build specialization follow the package
 record. Target mismatch fails visibly rather than opening another storage.
 
-The logical identity defaults to `definition.id`. Browser storage uses it as
-its address; Rust resolves it through shell-configured scopes. An unknown native
+The opener names the logical identity; a folder definition names none.
+Browser storage uses it as its address; Rust resolves it through shell-configured scopes. An unknown native
 identity fails, never creates an arbitrary root. It grants no authority and
 does not make browser and native data the same store.
 
 Once Tauri is detected, missing registration, denied capabilities, unknown
-scope, and incompatible protocol fail visibly; none falls back to IndexedDB.
+scope, and incompatible protocol fail visibly; none falls back to browser storage.
 Acquisition verifies the SDK/plugin protocol before admitting mutations.
 Generated types alone do not prove agreement with a separately built shell.
 If all Tauri markers and IPC are absent, runtime code cannot distinguish the

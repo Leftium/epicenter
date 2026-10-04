@@ -1,6 +1,6 @@
 /**
- * Publishing one captured recording, and finishing a publication that stopped
- * partway.
+ * Publishing one captured recording as two independent writes, and finishing
+ * one that stopped between them.
  *
  * A capture is fixed before anything is written: its id, its bytes, and every
  * field its row will hold, including `audioPath`, the one place the audio's
@@ -8,57 +8,43 @@
  * file at that path, and no other file is looked for or treated as the
  * recording's because of its name.
  *
- * Both files are published as one folder batch: the audio first, then the
- * row. A folder on disk applies those as ordered steps, so a failure between
- * them leaves the audio saved with no row (`Partial`), and a lost reply
- * leaves the outcome unknown (`Unconfirmed`). The capture keeps its id and
- * bytes in the window through both, and every attempt starts by reading what
- * the folder has now:
+ * The audio is written with `files.create`, then the row with
+ * `tables.recordings.create`. Each is its own operation with its own answer:
+ * the audio can land and the row fail, and nothing promises the audio stays
+ * as it was between the two. Both creates are exclusive, so neither ever
+ * replaces a file. The capture keeps its id and bytes in the window until the
+ * row is in place.
  *
- * | The folder has                                   | The attempt |
+ * A first attempt writes without reading. A retry is asked for by the person,
+ * and it reads the capture's two paths before it writes anything:
+ *
+ * | The folder has                                         | The retry |
  * | --- | --- |
- * | neither file                                     | creates the audio, then the row |
- * | exactly this capture's audio, and no row         | replaces the audio it read with the same bytes, then creates the row |
- * | this capture's row and exactly its audio         | is already published; writes nothing |
- * | another row, other audio, or the row without its audio | refuses and writes nothing |
+ * | neither file                                           | creates the audio, then the row |
+ * | exactly this capture's audio, and no row               | creates the row |
+ * | this capture's row and exactly its audio               | writes nothing: the recording is there |
+ * | other audio, another row, or the row without its audio | refuses and writes nothing |
  *
- * The replacement in the second case writes the bytes that are already
- * there. Its purpose is its condition: the batch lands only if the audio is
- * still exactly what was read, so the row is never created beside audio that
- * another writer changed in between.
+ * A create refused because its path is occupied reads what is there before
+ * calling it anything: an earlier write of this capture whose reply was lost
+ * can land after the attempt last looked. Exactly this capture's audio, or
+ * this recording's row, is found and the attempt goes on; anything else is
+ * another writer's and is left alone; a read that fails leaves it unknown.
  *
- * A complete batch receipt that covers both files proves they were published.
- * It does not say what the folder holds afterward, so the row is then read as
- * a new observation, to have a current entry to show and edit. These are two
- * facts and they are reported apart:
- *
- * - The row reads back as this recording: `saved`, with that entry.
- * - The read fails, or the row is gone or is no longer this recording:
- *   `published`. The save happened. What is wrong is the current observation,
- *   and the only thing done about it is to read again (`observePublication`).
- *   Nothing is published a second time, and a row another writer removed or
- *   changed after publication is not recreated or repaired.
- *
- * `Partial`, `Unconfirmed`, and a refusal before publication are not
- * confirmed publications. They stay unresolved, and a retry of one starts
- * from the table above.
+ * A receipt proves its own write: the bytes it was given landed. A read
+ * proves only what is there now. What a retry finds is reported as found,
+ * never as the confirmation of an earlier write whose reply was lost.
  */
 import {
-	type BatchReceipt,
 	type FileCapture,
 	type FileTable,
 	type FolderFiles,
 	hashBytes,
 	rowPath,
-	type TableSnapshot,
+	type TableReading,
 } from '@epicenter/folder';
 import { RECORDINGS, type RecordingFields } from '../definition.js';
-import type {
-	RecordingPublicationHook,
-	WhisperingFolder,
-} from '../workspace/types.js';
-
-export type RecordingEntry = TableSnapshot<RecordingFields>;
+import type { RecordingWriteHook } from '../workspace/types.js';
 
 export type PendingCapture = {
 	/** The row's stem. Fixed when the capture ended. */
@@ -71,85 +57,73 @@ export type PendingCapture = {
 };
 
 /**
- * The two files a complete batch receipt says this capture published, as the
- * captures of the bytes that were submitted. It is evidence of what was
- * written, not a reading of the folder: no entry or baseline is made from it.
+ * How this window knows one of the capture's files is in the folder:
+ * `receipt` when this attempt's create of exactly that content was
+ * confirmed, `found` when a retry read it there. A found file says nothing
+ * about which write put it there.
  */
-export type ConfirmedPublication = {
-	readonly audio: FileCapture;
-	readonly row: FileCapture;
+export type InPlace = {
+	readonly by: 'receipt' | 'found';
+	readonly file: FileCapture;
 };
 
-/** The row of a published recording, as the folder has it at one moment. */
-export type PublicationObservation =
-	| { readonly status: 'present'; readonly entry: RecordingEntry }
-	/** The read failed. Nothing is known about the row now. */
-	| { readonly status: 'unreadable'; readonly message: string }
-	/** No row is there. Another writer removed it after publication. */
-	| { readonly status: 'missing'; readonly message: string }
-	/** A row is there and is not this recording. Another writer changed it. */
-	| { readonly status: 'foreign'; readonly message: string };
+/**
+ * Whether a write that did not succeed may have landed: `failed` is the
+ * folder's refusal or failure, `unknown` is a reply that never arrived.
+ */
+export type Certainty = 'failed' | 'unknown';
 
 export type PublishOutcome =
+	/** Both files are in place. */
 	| {
-			readonly status: 'saved';
-			readonly entry: RecordingEntry;
-			/** Whether this attempt completed or confirmed an earlier one. */
-			readonly recovered: boolean;
+			readonly kind: 'published';
+			readonly audio: InPlace;
+			readonly row: InPlace;
+	  }
+	/** The audio is not known to be in the folder. The row was not attempted. */
+	| {
+			readonly kind: 'audioNotSaved';
+			readonly certainty: Certainty;
+			readonly message: string;
+	  }
+	/** The audio is in place, and the row write did not succeed. */
+	| {
+			readonly kind: 'rowNotSaved';
+			readonly certainty: Certainty;
+			readonly audio: InPlace;
+			readonly message: string;
 	  }
 	/**
-	 * Both files were published, and the row could not then be shown as this
-	 * recording. That is a problem with the current observation, not with the
-	 * save: nothing is unsaved, and nothing is published again for it.
+	 * The folder holds something at one of the capture's paths that is not
+	 * this recording's, or this recording's row without its audio. Nothing
+	 * was written.
 	 */
-	| {
-			readonly status: 'published';
-			readonly publication: ConfirmedPublication;
-			readonly problem: Exclude<PublicationObservation, { status: 'present' }>;
-	  }
-	/** Some files reached the folder and some did not. Retry completes it. */
-	| {
-			readonly status: 'partial';
-			readonly landed: readonly string[];
-			readonly message: string;
-	  }
-	/** Publication failed or was not confirmed. Retry reads the folder first. */
-	| { readonly status: 'failed'; readonly message: string }
-	/** The folder holds something at a path that is not this capture's. Nothing was written. */
-	| {
-			readonly status: 'unexpected';
-			readonly path: string;
-			readonly message: string;
-	  };
+	| { readonly kind: 'refused'; readonly path: string; readonly message: string }
+	/** A retry could not read what the folder has, so it wrote nothing. */
+	| { readonly kind: 'unchecked'; readonly message: string };
 
 export type PublishTarget = {
 	readonly tables: {
-		readonly recordings: Pick<FileTable<RecordingFields>, 'get'>;
+		readonly recordings: Pick<FileTable<RecordingFields>, 'get' | 'create'>;
 	};
-	readonly files: Pick<FolderFiles, 'read'>;
-	readonly batch: WhisperingFolder['batch'];
+	readonly files: Pick<FolderFiles, 'read' | 'create'>;
 };
 
-function occupied(path: string): PublishOutcome {
-	return {
-		status: 'unexpected',
-		path,
-		message: `${path} already exists and is not this recording. Nothing was overwritten.`,
-	};
-}
-
 /**
- * Whether a row is this capture's recording: a row whose text parses and
+ * Whether a row's reading is this capture's recording: text that parses,
  * whose validated facts are the capture's own. The title and notes are the
  * person's to change, and fields the app does not declare are not part of a
  * capture, so neither is compared: a title that needs fixing does not make
  * the row another recording. A fact that did not validate is not the
  * capture's, and a row that does not parse states none.
  */
-function isThisRecording(entry: RecordingEntry, capture: PendingCapture) {
-	const { fields } = entry;
+export function isThisRecording(
+	reading: Pick<TableReading<RecordingFields>, 'fields' | 'parseError'>,
+	capture: PendingCapture,
+): boolean {
+	const { fields } = reading;
 	return (
-		entry.parseError === undefined &&
+		reading.parseError === undefined &&
 		fields.recordedAt === capture.fields.recordedAt &&
 		fields.durationMs === capture.fields.durationMs &&
 		fields.capture === capture.fields.capture &&
@@ -157,172 +131,208 @@ function isThisRecording(entry: RecordingEntry, capture: PendingCapture) {
 	);
 }
 
+const refused = (path: string, message: string): PublishOutcome => ({
+	kind: 'refused',
+	path,
+	message,
+});
+const occupied = (path: string) =>
+	refused(
+		path,
+		`${path} already exists and is not this recording. Nothing was overwritten.`,
+	);
+
 /**
- * What a receipt confirms was published, when it names the two writes this
- * attempt asked for with these audio bytes. Undefined when it does not.
+ * Run one write through `around`, as an answer. Folder writes report their
+ * failures as results, so a throw is not one of their outcomes: it is caught
+ * here only so the capture and what is already known about it are not lost
+ * with it, and it is reported as an unknown outcome.
  */
-function confirmedBy(
-	receipt: BatchReceipt,
-	audioPath: string,
-	audio: string,
-	row: string,
-): ConfirmedPublication | undefined {
-	const [first, second] = receipt.steps;
-	if (
-		receipt.steps.length !== 2 ||
-		first?.kind !== 'write' ||
-		first.path !== audioPath ||
-		!(first.file.sha256 === audio) ||
-		second?.kind !== 'write' ||
-		second.path !== row
-	)
-		return undefined;
-	return { audio: first.file, row: second.file };
+async function write<T>(
+	around: RecordingWriteHook,
+	target: Parameters<RecordingWriteHook>[0],
+	run: () => Promise<T>,
+): Promise<{ readonly answer: T } | { readonly thrown: string }> {
+	try {
+		return { answer: await around(target, run) };
+	} catch (cause) {
+		return { thrown: cause instanceof Error ? cause.message : String(cause) };
+	}
 }
 
+const certaintyOf = (error: { readonly name: string }): Certainty =>
+	error.name === 'Unconfirmed' ? 'unknown' : 'failed';
+
 /**
- * `around` runs the batch. It exists for a debug desktop shell, which puts an
- * armed failure in the batch's way; everywhere else the batch simply runs. It
- * is given only the batch, so an attempt that publishes nothing never reaches
- * it.
+ * Read the capture's two paths before a retry writes anything. Returns the
+ * audio found in place, or the outcome that ends the attempt here.
  */
-export async function publishRecording(
+async function inspect(
 	target: PublishTarget,
 	capture: PendingCapture,
-	around: RecordingPublicationHook = (_recording, publish) => publish(),
-): Promise<PublishOutcome> {
-	const table = target.tables.recordings;
+): Promise<
+	| { readonly kind: 'clear'; readonly audio: InPlace | undefined }
+	| PublishOutcome
+> {
 	const { audioPath } = capture.fields;
 	const row = rowPath(RECORDINGS, capture.id);
-	const pendingVersion = await hashBytes(capture.bytes);
 
-	const existing = await table.get(capture.id);
+	const existing = await target.tables.recordings.get(capture.id);
 	if (existing.error)
-		return { status: 'failed', message: existing.error.message };
+		return {
+			kind: 'unchecked',
+			message: `${row} could not be read, so nothing was written: ${existing.error.message}`,
+		};
 	if (existing.data !== undefined && !isThisRecording(existing.data, capture))
 		return occupied(row);
 
 	const audio = await target.files.read(audioPath);
 	if (audio.error && audio.error.name !== 'NotFound')
-		return { status: 'failed', message: audio.error.message };
-	const observedAudio = audio.error ? undefined : audio.data;
-	if (observedAudio !== undefined && !(observedAudio.sha256 === pendingVersion))
+		return {
+			kind: 'unchecked',
+			message: `${audioPath} could not be read, so nothing was written: ${audio.error.message}`,
+		};
+	const found = audio.error
+		? undefined
+		: { path: audio.data.path, sha256: audio.data.sha256 };
+	if (found !== undefined && found.sha256 !== (await hashBytes(capture.bytes)))
 		return occupied(audioPath);
 
-	if (existing.data !== undefined) {
-		if (observedAudio === undefined)
-			return {
-				status: 'unexpected',
-				path: audioPath,
-				message: `${row} is this recording, but its audio ${audioPath} is not in the folder. Nothing was written.`,
-			};
-		return { status: 'saved', entry: existing.data, recovered: true };
-	}
-
-	const published = await around(
-		{
-			stem: capture.id,
-			audioPath: observedAudio === undefined ? audioPath : undefined,
+	if (existing.data === undefined)
+		return {
+			kind: 'clear',
+			audio: found && { by: 'found', file: found },
+		};
+	// Audio removed after its row landed is not recreated: the row is there,
+	// and putting its audio back is the person's decision, not a retry's.
+	if (found === undefined)
+		return refused(
+			audioPath,
+			`${row} is this recording, but its audio ${audioPath} is not in the folder. Nothing was written.`,
+		);
+	return {
+		kind: 'published',
+		audio: { by: 'found', file: found },
+		row: {
+			by: 'found',
+			file: { path: existing.data.path, sha256: existing.data.sha256 },
 		},
-		() =>
-			target.batch((batch) => {
-				if (observedAudio === undefined)
-					batch.files.create(audioPath, capture.bytes);
-				// The audio from an earlier attempt is in place. Writing the same bytes
-				// over exactly what was read makes the row's creation conditional on it.
-				else
-					batch.files.replace(
-						{ path: observedAudio.path, sha256: observedAudio.sha256 },
-						capture.bytes,
-					);
-				batch.tables.recordings.create({
-					stem: capture.id,
-					fields: capture.fields,
-					body: capture.body,
-				});
-			}),
-	);
-
-	if (published.error) {
-		const error = published.error;
-		switch (error.name) {
-			case 'Partial':
-				return {
-					status: 'partial',
-					landed: error.applied.map((step) =>
-						step.kind === 'move' ? step.to : step.path,
-					),
-					message: error.error.message,
-				};
-			// Refused before publication: another writer took a path after it was read.
-			case 'Exists':
-				return occupied(error.path);
-			case 'Conflict':
-				return {
-					status: 'unexpected',
-					path: error.path,
-					message: `${error.message}. Nothing was overwritten.`,
-				};
-			default:
-				return { status: 'failed', message: error.message };
-		}
-	}
-	const publication = confirmedBy(
-		published.data,
-		audioPath,
-		pendingVersion,
-		row,
-	);
-	if (publication === undefined)
-		return {
-			status: 'failed',
-			message:
-				'The folder answered without confirming this recording’s files. Trying again checks what it holds.',
-		};
-
-	// From here the publication is a fact: the receipt covers both files. What
-	// the folder holds now is a separate question, and no answer to it, and no
-	// failure to get one, turns a completed publication into a failed one.
-	const observed = await observePublication(target, capture);
-	if (observed.status === 'present')
-		return {
-			status: 'saved',
-			entry: observed.entry,
-			recovered: observedAudio !== undefined,
-		};
-	return { status: 'published', publication, problem: observed };
+	};
 }
 
 /**
- * Read a published recording's row as the folder has it now. This only
- * reads. It is how a publication whose row could not be shown is looked at
- * again: nothing is published, recreated, or repaired, whatever is found.
- *
- * A row that is this recording is returned as the current observation, with
- * any title or notes the person has changed since. A row that is gone, or is
- * no longer this recording, was changed by another writer after publication
- * and is left as it is.
+ * One attempt to publish a capture. `retry` is set for an attempt the person
+ * asked for: it reads the folder first and finishes only what is missing.
+ * `around` runs each write; a debug desktop shell puts an armed failure in
+ * that one write's way. A write the attempt does not make never reaches it.
  */
-export async function observePublication(
-	target: Pick<PublishTarget, 'tables'>,
+export async function publishRecording(
+	target: PublishTarget,
 	capture: PendingCapture,
-): Promise<PublicationObservation> {
+	{
+		retry,
+		around = (_write, run) => run(),
+	}: { retry: boolean; around?: RecordingWriteHook },
+): Promise<PublishOutcome> {
+	const { audioPath } = capture.fields;
 	const row = rowPath(RECORDINGS, capture.id);
-	const read = await target.tables.recordings.get(capture.id);
-	if (read.error)
+
+	let audio: InPlace | undefined;
+	if (retry) {
+		const found = await inspect(target, capture);
+		if (found.kind !== 'clear') return found;
+		audio = found.audio;
+	}
+
+	if (audio === undefined) {
+		const created = await write(
+			around,
+			{ step: 'audio', stem: capture.id, path: audioPath },
+			() => target.files.create(audioPath, capture.bytes),
+		);
+		if ('thrown' in created)
+			return { kind: 'audioNotSaved', certainty: 'unknown', message: created.thrown };
+		const { answer } = created;
+		if (answer.error?.name === 'Exists') {
+			// Something is there now. An earlier write of this capture whose
+			// reply was lost may have landed since the attempt last looked, so
+			// what is there is read before it is called anything.
+			const there = await target.files.read(audioPath);
+			if (there.error)
+				return {
+					kind: 'audioNotSaved',
+					certainty: 'unknown',
+					message: `${audioPath} was occupied when this recording's audio was written, and could not then be read, so whether it is this recording's audio is not known: ${there.error.message}`,
+				};
+			if (there.data.sha256 !== (await hashBytes(capture.bytes)))
+				return occupied(audioPath);
+			audio = {
+				by: 'found',
+				file: { path: there.data.path, sha256: there.data.sha256 },
+			};
+		} else if (answer.error) {
+			return {
+				kind: 'audioNotSaved',
+				certainty: certaintyOf(answer.error),
+				message: answer.error.message,
+			};
+		} else audio = { by: 'receipt', file: answer.data };
+	}
+
+	const created = await write(around, { step: 'row', stem: capture.id }, () =>
+		target.tables.recordings.create({
+			stem: capture.id,
+			fields: capture.fields,
+			body: capture.body,
+		}),
+	);
+	if ('thrown' in created)
 		return {
-			status: 'unreadable',
-			message: `${row} could not be read: ${read.error.message}`,
+			kind: 'rowNotSaved',
+			certainty: 'unknown',
+			audio,
+			message: created.thrown,
 		};
-	if (read.data === undefined)
+	const { answer } = created;
+	if (answer.error?.name === 'Exists') {
+		// As for the audio: the row there may be this capture's own, landed late.
+		const there = await target.tables.recordings.get(capture.id);
+		if (there.error || there.data === undefined)
+			return {
+				kind: 'rowNotSaved',
+				certainty: 'unknown',
+				audio,
+				message: `${row} was occupied when this recording's row was written, and could not then be read, so whether it is this recording's row is not known${there.error ? `: ${there.error.message}` : '.'}`,
+			};
+		if (!isThisRecording(there.data, capture))
+			return {
+				kind: 'rowNotSaved',
+				certainty: 'failed',
+				audio,
+				message: `${row} already exists and is not this recording. Nothing was overwritten.`,
+			};
 		return {
-			status: 'missing',
-			message: `${row} is no longer in the folder. It was removed after this recording was saved.`,
+			kind: 'published',
+			audio,
+			row: {
+				by: 'found',
+				file: { path: there.data.path, sha256: there.data.sha256 },
+			},
 		};
-	if (!isThisRecording(read.data, capture))
+	}
+	if (answer.error)
 		return {
-			status: 'foreign',
-			message: `${row} was changed after this recording was saved and is no longer this recording.`,
+			kind: 'rowNotSaved',
+			certainty: certaintyOf(answer.error),
+			audio,
+			message: answer.error.message,
 		};
-	return { status: 'present', entry: read.data };
+	return {
+		kind: 'published',
+		audio,
+		row: {
+			by: 'receipt',
+			file: { path: answer.data.path, sha256: answer.data.sha256 },
+		},
+	};
 }

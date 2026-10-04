@@ -58,6 +58,8 @@ export function filesLine(state: {
 	unsavedResults: number;
 	/** Transformation results received whose file could not be written. */
 	unsavedTransformations: number;
+	/** Results on pasted text received and not saved yet, by choice or by failure. */
+	unsavedTextResults?: number;
 }): StatusLine {
 	if (state.pendingCaptures > 0 && !state.capturesSaving)
 		return {
@@ -82,6 +84,15 @@ export function filesLine(state: {
 			detail:
 				'The text is kept in this window. Use Save it again in the notice under the header; the endpoint is not called again.',
 			tone: 'error',
+		};
+	const textResults = state.unsavedTextResults ?? 0;
+	if (textResults > 0)
+		return {
+			label: `${textResults} ${textResults === 1 ? 'result' : 'results'} on pasted text not saved`,
+			short: 'Result not saved',
+			detail:
+				'The text is kept in this window. Save or discard it on its transformation’s page; the endpoint is not called again.',
+			tone: 'warning',
 		};
 	if (state.problems > 0)
 		return {
@@ -117,6 +128,7 @@ export function filesLineOf(library: {
 	readonly pending: readonly { readonly state: { readonly kind: string } }[];
 	readonly unsavedResults: number;
 	readonly unsavedTransformations: number;
+	readonly unsavedTextResults: number;
 }): StatusLine {
 	const published = library.pending.filter(
 		(item) => item.state.kind === 'published',
@@ -132,6 +144,7 @@ export function filesLineOf(library: {
 		publishedUnshown: published,
 		unsavedResults: library.unsavedResults,
 		unsavedTransformations: library.unsavedTransformations,
+		unsavedTextResults: library.unsavedTextResults,
 	});
 }
 
@@ -265,22 +278,42 @@ export function commitLine(git: GitSnapshot): StatusLine {
 
 /** The committed head, as last observed. */
 export function headLine(git: GitSnapshot): StatusLine {
-	const head =
-		git.files.state === 'observed' ? git.files.value.head : undefined;
-	return head === undefined
-		? { label: 'No commits yet', tone: 'neutral' }
-		: { label: `${git.branch} at ${short(head)}`, tone: 'neutral' };
+	const files = git.files;
+	if (files.state === 'unknown')
+		return files.error
+			? { label: 'History unavailable', detail: files.error, tone: 'error' }
+			: { label: 'History not checked yet', tone: 'neutral' };
+	const line: StatusLine =
+		files.value.head === undefined
+			? { label: 'No commits yet', tone: 'neutral' }
+			: {
+					label: `${git.branch} at ${short(files.value.head)}`,
+					tone: 'neutral',
+				};
+	if (!files.stale && !files.error) return line;
+	return withTime(
+		{
+			...line,
+			label: `Last observed: ${line.label}`,
+			detail: files.error,
+		},
+		'Checked',
+		files.checkedAt,
+	);
 }
 
 /**
  * The one line the header shows: the most severe current fact, the earlier one
- * on a tie. The last commit attempt counts only when it needs attention.
+ * on a tie. Unsaved files take priority over history. The last commit attempt
+ * counts only when it needs attention.
  */
 export function summaryLine(lines: {
 	files: StatusLine;
 	uncommitted: StatusLine;
 	commit: StatusLine;
 }): StatusLine {
+	if (lines.files.tone === 'busy' || lines.files.tone === 'error')
+		return lines.files;
 	let chosen: StatusLine | undefined;
 	for (const line of [
 		lines.files,
@@ -295,7 +328,11 @@ export function summaryLine(lines: {
 		)
 			chosen = line;
 	if (chosen === undefined || chosen.tone === 'good')
-		return { label: 'Saved and committed', short: 'Committed', tone: 'good' };
+		return {
+			label: 'Saved · no uncommitted changes',
+			short: 'Saved',
+			tone: 'good',
+		};
 	// A saved file with history still to record: say both halves.
 	if (chosen === lines.uncommitted && chosen.tone === 'warning')
 		return {

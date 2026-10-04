@@ -11,6 +11,7 @@
 	import WandSparklesIcon from '@lucide/svelte/icons/wand-sparkles';
 	import { STARTER_TRANSFORMATIONS } from '$lib/definition.js';
 	import type { Library, TransformationEntry } from '$lib/library.svelte.js';
+	import { recipeModel } from '$lib/recipe.js';
 	import { needsRepair } from '$lib/rows.js';
 
 	let { library, onOpen }: { library: Library; onOpen?: () => void } = $props();
@@ -52,7 +53,7 @@
 		<SectionHeader.Root class="min-w-0 flex-1">
 			<SectionHeader.Title level={1} class="text-lg">Transformations</SectionHeader.Title>
 			<SectionHeader.Description class="text-xs">
-				Prompts you apply to a transcript. Each result is a new file; the transcript is never changed.
+				Instructions you apply to a transcript or to pasted text. Each saved result is a new file; the text it came from is never changed.
 			</SectionHeader.Description>
 		</SectionHeader.Root>
 		<DropdownMenu.Root>
@@ -81,7 +82,8 @@
 	<ul class="min-h-0 flex-1 overflow-y-auto" aria-label="Saved transformations" data-testid="transformation-list">
 		{#each library.transformations as entry (entry.path)}
 			{@const selected = library.selectedTransformationPath === entry.path}
-			{@const results = library.outputsOf(entry.stem).length}
+			{@const results = library.outputsOf(entry.stem).length + library.textOutputsOf(entry.stem).length}
+			{@const model = recipeModel(entry.fields)}
 			<li class="border-b text-sm {selected ? 'bg-accent text-accent-foreground' : 'hover:bg-muted/50'}">
 				<button
 					type="button"
@@ -98,7 +100,7 @@
 						{#if needsRepair(entry)}<Badge variant="destructive" class="shrink-0">Needs repair</Badge>{/if}
 					</span>
 					<span class="flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground">
-						<span>{entry.fields.model || 'No model set'}</span>
+						<span>{model ?? 'The text connection’s model'}</span>
 						{#if results > 0}<span>· {results} {results === 1 ? 'result' : 'results'}</span>{/if}
 					</span>
 				</button>
@@ -110,8 +112,8 @@
 						<Empty.Media variant="icon"><WandSparklesIcon /></Empty.Media>
 						<Empty.Title>No transformations yet</Empty.Title>
 						<Empty.Description>
-							A transformation is a prompt saved as a file in <code class="font-mono">transformations/</code>. Start from
-							one of these and edit it, or write your own.
+							A transformation is a title and instructions saved as a file in <code class="font-mono">transformations/</code>.
+							It runs with the text connection in Settings. Start from one of these and edit it, or write your own.
 						</Empty.Description>
 					</Empty.Header>
 					<Empty.Content class="flex-row flex-wrap justify-center">

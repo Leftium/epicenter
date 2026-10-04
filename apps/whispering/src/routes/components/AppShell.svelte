@@ -69,6 +69,7 @@
 		}
 	}
 
+	/** Open a recording beside the recordings, or a transformation on its page. */
 	async function openRecording(path: string) {
 		await library.open(path);
 		showOpened(path);
@@ -97,7 +98,11 @@
 		onToggleFiles={toggleFiles}
 		onToggleTerminal={() => void toggleTerminal()}
 	/>
-	<RecoveryNotices {library} onOpenRecording={(path) => void openRecording(path)} />
+	<RecoveryNotices
+		{library}
+		onOpenRecording={(path) => void openRecording(path)}
+		onOpenTransformation={(path) => void openRecording(path)}
+	/>
 {/snippet}
 
 {#snippet terminalPane()}

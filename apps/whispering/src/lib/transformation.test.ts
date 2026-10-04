@@ -13,6 +13,8 @@
  * - A refusal, an unreachable endpoint, and an answer of the wrong shape are
  *   distinct errors, and none of them carries the key
  * - A request missing its endpoint, model, prompt, or text is never sent
+ * - A redirect is refused rather than followed, no ambient credential is
+ *   sent, and a base URL that is not plain HTTP(S) is refused before sending
  */
 import { expect, test } from 'bun:test';
 import { expectErr, expectOk } from 'wellcrafted/testing';
@@ -53,7 +55,11 @@ const completion = (content: unknown) =>
 		id: 'chatcmpl-test',
 		object: 'chat.completion',
 		choices: [
-			{ index: 0, message: { role: 'assistant', content }, finish_reason: 'stop' },
+			{
+				index: 0,
+				message: { role: 'assistant', content },
+				finish_reason: 'stop',
+			},
 		],
 	});
 
@@ -91,6 +97,39 @@ test('the request is a chat completion with the prompt as system and the transcr
 			},
 		},
 	]);
+});
+
+test('the request refuses redirects and sends no ambient credentials', async () => {
+	let init: RequestInit | undefined;
+	expectOk(
+		await requestTransformation({
+			...request,
+			fetch: async (_input, given) => {
+				init = given;
+				return completion('ok');
+			},
+		}),
+	);
+
+	expect(init).toMatchObject({ redirect: 'error', credentials: 'omit' });
+});
+
+test('a base URL that is not plain HTTP(S) is refused before anything is sent', async () => {
+	for (const baseUrl of [
+		'ftp://127.0.0.1/v1',
+		'http://user:secret@127.0.0.1/v1',
+		'http://127.0.0.1/v1?key=1',
+		'http://127.0.0.1/v1#part',
+		'not a url',
+	]) {
+		const local = endpoint(() => completion('never'));
+		const error = expectErr(
+			await requestTransformation({ ...request, baseUrl, fetch: local.fetch }),
+		);
+		expect(error.name).toBe('InvalidEndpoint');
+		expect(JSON.stringify(error)).not.toContain('secret');
+		expect(local.seen).toHaveLength(0);
+	}
 });
 
 test('no key sends no authorization header', async () => {
@@ -180,13 +219,17 @@ for (const [missing, change] of [
 	['the endpoint URL', { baseUrl: '  ' }],
 	['the model', { model: '' }],
 	['the prompt', { prompt: '\n' }],
-	['the transcript text', { input: '' }],
+	['the input text', { input: '' }],
 ] as const) {
 	test(`a request without ${missing} is not sent`, async () => {
 		const local = endpoint(() => completion('never'));
 
 		const error = expectErr(
-			await requestTransformation({ ...request, ...change, fetch: local.fetch }),
+			await requestTransformation({
+				...request,
+				...change,
+				fetch: local.fetch,
+			}),
 		);
 
 		expect(error.name).toBe('NotConfigured');

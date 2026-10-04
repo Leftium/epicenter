@@ -750,3 +750,4 @@ When you add an ADR, add its row here.
 | [0497](0497-browser-folders-use-scoped-opfs-directories.md) | Browser folders use scoped OPFS directories | Accepted (app selection of development and account scopes and private SQL channel ownership unbuilt) |
 | [0498](0498-vocab-opens-one-local-folder-before-sign-in.md) | Vocab opens one local folder before sign-in | Accepted (native distribution, configured synchronization, and real legacy-account import unbuilt) |
 | [0501](0501-store-checkout-push-pull-and-its-baseline-are-removed.md) | Store checkout Pull/Push and its baseline are removed | Proposed (checkout removed; generic folder queries unbuilt; no replacement checkout or SQL export planned) |
+| [0502](0502-whispering-connections-own-request-destinations-and-credentials.md) | Whispering connections own request destinations and credentials | Accepted (cross-application execution and folder-independent credential storage unbuilt) |

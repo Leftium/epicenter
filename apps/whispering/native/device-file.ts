@@ -1,13 +1,21 @@
 /**
  * What this device keeps for Whispering outside the folder's history: one JSON
  * object in `<root>/.git/epicenter/whispering/device.json`. Git never commits
- * anything under `.git`, so nothing here travels with the folder.
+ * anything under `.git`, so Git transfers exclude this file. A full directory
+ * copy still carries its API key and device preferences.
  *
- * The file holds the API key and the chosen microphone, and may hold fields a
- * later build added. Each change rewrites the whole file, so every change
- * starts from what the file holds at that moment and keeps every field it
- * does not name. Changes run one at a time: a key save and a microphone save
- * that overlap would otherwise each write back the other's old value.
+ * The file holds the two connections (each a base URL, a default model, and
+ * an optional key), the chosen microphone, and may hold fields a later build
+ * added. An earlier build kept one key for every endpoint in
+ * `transcriptionApiKey`; that field is left exactly as it is, sent nowhere,
+ * until the person moves it into a connection.
+ *
+ * Each change rewrites the whole file, so every change starts from what the
+ * file holds at that moment and keeps every field it does not name. Changes
+ * run one at a time: a connection save and a microphone save that overlap
+ * would otherwise each write back the other's old value. A connection's base
+ * URL and key change in one write, so no reader ever sees a key beside a URL
+ * it was not saved for.
  *
  * A file that is there and does not decode as one JSON object is never
  * replaced. It may still hold a key, or fields from another build, that a
@@ -17,6 +25,17 @@
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import type { MicrophonePreference } from '../src/lib/capture.js';
+import {
+	adoptLegacyKey,
+	applyConnectionChange,
+	type ConnectionChange,
+	type LegacyKeyTargets,
+	OPERATION_NAMES,
+	OPERATIONS,
+	type Operation,
+	readStoredConnection,
+	type StoredConnection,
+} from '../src/lib/connections.js';
 
 export type DeviceValues = Readonly<Record<string, unknown>>;
 
@@ -27,15 +46,39 @@ export type DeviceValues = Readonly<Record<string, unknown>>;
 const UNDECODABLE =
 	'This device’s Whispering settings file does not read as a JSON object, so it was left as it is. Fix or remove device.json under the folder’s .git/epicenter/whispering directory, then try again.';
 
-const KEY_FIELD = 'transcriptionApiKey';
+/** Where an earlier build kept its one key. Read only to move it into a connection. */
+const LEGACY_KEY_FIELD = 'transcriptionApiKey';
+const CONNECTION_FIELDS: Record<Operation, string> = {
+	transcription: 'transcriptionConnection',
+	text: 'textConnection',
+};
 const MICROPHONE_FIELD = 'microphone';
 /** Device IDs and names are short; anything longer is not one. */
 const MAX_TEXT = 512;
 
-/** The saved key, or '' when there is none. */
-export function keyIn(values: DeviceValues): string {
-	const key = values[KEY_FIELD];
+/** The key an earlier build saved, or '' when there is none. */
+export function legacyKeyIn(values: DeviceValues): string {
+	const key = values[LEGACY_KEY_FIELD];
 	return typeof key === 'string' ? key : '';
+}
+
+/**
+ * The connection saved for an operation, or undefined when none is. One that
+ * is saved and does not read as a connection throws, so it is reported
+ * rather than taken for none. The message quotes nothing from the file.
+ */
+export function connectionIn(
+	values: DeviceValues,
+	operation: Operation,
+): StoredConnection | undefined {
+	const value = values[CONNECTION_FIELDS[operation]];
+	if (value === undefined) return undefined;
+	const stored = readStoredConnection(value);
+	if (stored === undefined)
+		throw new Error(
+			`This device’s ${OPERATION_NAMES[operation]} connection does not read as one. Fix or remove its entry in device.json under the folder’s .git/epicenter/whispering directory, then try again.`,
+		);
+	return stored;
 }
 
 /** The saved microphone, or undefined when none is saved or it does not read as one. */
@@ -90,13 +133,22 @@ export function createDeviceFile(path: string) {
 	let changes: Promise<unknown> = Promise.resolve();
 
 	/**
-	 * Replace the named fields and keep every other. `undefined` removes a
-	 * field. The new file is written beside the old one and renamed over it,
-	 * so an interrupted write leaves the old file whole.
+	 * Replace the fields `compute` names, from the file as it is when this
+	 * change's turn comes, and keep every other. `undefined` removes a field.
+	 * `compute` may throw to refuse, and then nothing is written. The new file
+	 * is written beside the old one and renamed over it, so an interrupted
+	 * write leaves the old file whole.
 	 */
-	function update(change: Readonly<Record<string, unknown>>): Promise<void> {
+	function update<T>(
+		compute: (values: DeviceValues) => {
+			readonly change: Readonly<Record<string, unknown>>;
+			readonly result: T;
+		},
+	): Promise<T> {
 		const run = changes.then(async () => {
-			const next: Record<string, unknown> = { ...(await read()), ...change };
+			const current = await read();
+			const { change, result } = compute(current);
+			const next: Record<string, unknown> = { ...current, ...change };
 			for (const [field, value] of Object.entries(next))
 				if (value === undefined) delete next[field];
 			await mkdir(dirname(path), { recursive: true });
@@ -105,6 +157,7 @@ export function createDeviceFile(path: string) {
 				mode: 0o600,
 			});
 			await rename(staged, path);
+			return result;
 		});
 		changes = run.catch(() => {});
 		return run;
@@ -112,8 +165,51 @@ export function createDeviceFile(path: string) {
 
 	return {
 		read,
-		setKey: (key: string) => update({ [KEY_FIELD]: key }),
+		/**
+		 * Save one connection from the one saved now. The base URL, model, and
+		 * key change together; a kept key stays only for the same base URL.
+		 */
+		setConnection: (operation: Operation, change: ConnectionChange) =>
+			update((values) => {
+				const next = applyConnectionChange(
+					operation,
+					connectionIn(values, operation),
+					change,
+				);
+				if (next.error !== null) throw new Error(next.error);
+				return {
+					change: { [CONNECTION_FIELDS[operation]]: next.data },
+					result: next.data,
+				};
+			}),
+		/**
+		 * Move the earlier build's key into the connections the person chose,
+		 * each at the base URL they were shown, and remove it from where it was.
+		 * One write: the key is never in two places that disagree.
+		 */
+		adoptLegacyKey: (
+			targets: LegacyKeyTargets,
+			readOnly: Partial<Record<Operation, string>>,
+		) =>
+			update((values) => {
+				const adopted = adoptLegacyKey(legacyKeyIn(values), targets, readOnly);
+				if (adopted.error !== null) throw new Error(adopted.error);
+				const change: Record<string, unknown> = {
+					[LEGACY_KEY_FIELD]: undefined,
+				};
+				for (const operation of OPERATIONS) {
+					const connection = adopted.data[operation];
+					if (connection !== undefined) {
+						connectionIn(values, operation);
+						change[CONNECTION_FIELDS[operation]] = connection;
+					}
+				}
+				return { change, result: undefined };
+			}),
 		setMicrophone: (microphone: MicrophonePreference | undefined) =>
-			update({ [MICROPHONE_FIELD]: microphone }),
+			update(() => ({
+				change: { [MICROPHONE_FIELD]: microphone },
+				result: undefined,
+			})),
 	};
 }

@@ -2,7 +2,16 @@
 	import { Button } from '@epicenter/ui/button';
 	import { confirmationDialog } from '@epicenter/ui/confirmation-dialog';
 	import { Spinner } from '@epicenter/ui/spinner';
-	import type { Library, PendingRecording, TransformationRun } from '$lib/library.svelte.js';
+	import { rowPath } from '@epicenter/folder';
+	import { TRANSFORMATIONS } from '$lib/definition.js';
+	import { toast } from '@epicenter/ui/sonner';
+	import type {
+		Library,
+		MoveChoice,
+		PendingRecording,
+		TransformationRun,
+		UnresolvedMove,
+	} from '$lib/library.svelte.js';
 	import AudioPlayer from './AudioPlayer.svelte';
 	import { copyText, recordingTitle } from './file-actions.js';
 
@@ -17,10 +26,18 @@
 	 * whose file could not then be shown as that recording. It says saved, offers
 	 * only to read the folder again, and never offers to save.
 	 */
-	let { library, onOpenRecording }: {
+	let { library, onOpenRecording, onOpenTransformation }: {
 		library: Library;
 		onOpenRecording: (path: string) => void;
+		onOpenTransformation: (path: string) => void;
 	} = $props();
+
+	/**
+	 * Results on pasted text that arrived and are held here. They are saved,
+	 * copied, or discarded on their transformation's page; this only says they
+	 * are held, from every page, so nothing that keeps the app open is hidden.
+	 */
+	const heldText = $derived(library.textRuns.filter((run) => run.state.kind === 'unsaved'));
 
 	const unsavedTranscripts = $derived(
 		library.unsavedTranscripts.map((id) => ({
@@ -29,22 +46,66 @@
 		})),
 	);
 	const runs = $derived(library.transformationRuns);
-	const any = $derived(library.pending.length > 0 || unsavedTranscripts.length > 0 || runs.length > 0);
+	const moves = $derived(library.unresolvedMoves);
+	const any = $derived(
+		library.pending.length > 0 ||
+			unsavedTranscripts.length > 0 ||
+			runs.length > 0 ||
+			heldText.length > 0 ||
+			moves.length > 0,
+	);
+
+	/** What a path holds now, against the file as it was before the rename. */
+	const pathStates = {
+		matches: 'holds the file as it was',
+		different: 'holds something else',
+		missing: 'has no file',
+		unreadable: 'could not be read',
+	} satisfies Record<UnresolvedMove['found']['from'], string>;
+
+	async function choose(move: UnresolvedMove, choice: MoveChoice) {
+		const problem = await library.resolveMove(move.from, choice);
+		if (problem) toast.error('Nothing was changed', { description: problem });
+	}
+
+	async function copyToFile(move: UnresolvedMove) {
+		const copied = await library.copyHeldEdits(move.from);
+		if (copied.error !== null) toast.error('The edits were not saved', { description: copied.error });
+		else toast.success(`Your edits were saved to ${copied.data}`);
+	}
+
+	function discardMove(move: UnresolvedMove) {
+		confirmationDialog.open({
+			title: 'Discard these edits?',
+			description: `The edits held in this window are dropped. Nothing at ${move.from} or ${move.to} is changed.`,
+			confirm: { text: 'Discard', variant: 'destructive' },
+			onConfirm: () => void choose(move, 'discard'),
+		});
+	}
 
 	function pendingHeadline(item: PendingRecording) {
-		switch (item.state.kind) {
+		const { state } = item;
+		switch (state.kind) {
 			case 'saving':
 				return 'Saving the recording…';
-			case 'partial':
-				return 'The audio file is saved, but the recording’s file is not.';
-			case 'unexpected':
+			case 'audioNotSaved':
+				return state.certainty === 'unknown'
+					? 'Not confirmed. The folder did not answer whether the audio was written.'
+					: 'Not saved. The audio could not be written, so nothing of this recording was saved.';
+			case 'rowNotSaved':
+				return state.certainty === 'unknown'
+					? 'The audio file is saved. The folder did not answer whether the recording’s file was written.'
+					: 'The audio file is saved, but the recording’s file is not.';
+			case 'refused':
 				return 'Not saved. Nothing was written, because the folder is not as this recording expects.';
-			case 'failed':
-				return 'Not confirmed as saved. Trying again checks what the folder has first.';
+			case 'unchecked':
+				return 'Not saved. The folder could not be checked, so nothing was written.';
 			case 'published':
-				return item.state.checking
+				return state.checking
 					? 'Reading the saved recording again…'
 					: 'The recording was saved, but its file cannot be shown as this recording right now.';
+			default:
+				return state satisfies never;
 		}
 	}
 
@@ -77,8 +138,8 @@
 		confirmationDialog.open({
 			title: 'Discard this recording?',
 			description:
-				item.state.kind === 'partial'
-					? `The audio held in this window is dropped. ${item.state.landed.join(', ')} stays in the folder without a recording file.`
+				item.state.kind === 'rowNotSaved' && item.state.certainty === 'failed'
+					? `The audio held in this window is dropped. ${item.state.audio.file.path} stays in the folder without a recording file.`
 					: `The copy of the audio held in this window is dropped. Files already written to the folder stay there. This recording’s save is not resolved, so check the folder for ${item.capture.fields.audioPath} and recordings/${item.capture.id}.md to see what it holds.`,
 			confirm: { text: 'Discard', variant: 'destructive' },
 			onConfirm: () => library.discardPending(item.capture.id),
@@ -112,6 +173,41 @@
 {#if any}
 	<section class="max-h-64 shrink-0 overflow-y-auto border-b bg-destructive/5 text-sm" aria-label="Needs your attention" data-testid="recovery">
 		<ul class="divide-y">
+			{#each moves as move (move.from)}
+				{@const text = library.heldText(move.from)}
+				<li class="flex flex-col gap-2 px-3 py-3 sm:px-4" data-testid="unresolved-move">
+					<p class="font-medium">{move.message}</p>
+					<ul class="text-xs text-muted-foreground">
+						<li><code class="font-mono">{move.from}</code> {pathStates[move.found.from]}.</li>
+						<li><code class="font-mono">{move.to}</code> {pathStates[move.found.to]}.</li>
+					</ul>
+					<p class="text-xs text-muted-foreground">
+						What a path holds now does not say what the rename did. Your edits are kept in this window and nothing is
+						saved until you choose where they go.
+					</p>
+					<div class="flex flex-wrap items-center gap-2">
+						{#if move.found.from === 'matches'}
+							<Button size="sm" onclick={() => void choose(move, 'keepAtSource')}>Keep my edits at {move.from}</Button>
+						{/if}
+						{#if move.found.to === 'matches'}
+							<Button size="sm" onclick={() => void choose(move, 'keepAtDestination')}>Keep my edits at {move.to}</Button>
+						{/if}
+						<Button size="sm" variant="outline" onclick={() => void copyToFile(move)}>Save my edits as a copy</Button>
+						{#if text !== undefined}
+							<Button size="sm" variant="outline" onclick={() => void copyText(text, 'your edits')}>Copy my edits</Button>
+						{/if}
+						{#if move.found.from === 'matches' || move.found.from === 'different'}
+							<Button size="sm" variant="ghost" onclick={() => void choose(move, 'openSource')}>Open {move.from} as it is</Button>
+						{/if}
+						{#if move.found.to === 'matches' || move.found.to === 'different'}
+							<Button size="sm" variant="ghost" onclick={() => void choose(move, 'openDestination')}>Open {move.to} as it is</Button>
+						{/if}
+						<Button size="sm" variant="ghost" onclick={() => void library.checkMove(move.from)}>Check again</Button>
+						<Button size="sm" variant="ghost-destructive" onclick={() => discardMove(move)}>Discard my edits</Button>
+					</div>
+				</li>
+			{/each}
+
 			{#each library.pending as item (item.capture.id)}
 				<li class="flex flex-col gap-2 px-3 py-3 sm:px-4" data-testid="pending-recording" data-pending-state={item.state.kind}>
 					<div class="flex items-center gap-2">
@@ -123,8 +219,8 @@
 						<p class="text-xs text-muted-foreground" role="status" data-testid="published-problem">{item.state.message}</p>
 						<p class="text-xs text-muted-foreground">
 							{publishedAdvice(item.state.problem)} Refresh reads the folder again and writes nothing. The recording’s ID
-							is <code class="font-mono">{item.capture.id}</code>; its audio was saved as
-							<code class="font-mono">{item.state.publication.audio.path}</code>.
+							is <code class="font-mono">{item.capture.id}</code>; its audio is
+							<code class="font-mono">{item.state.audio.file.path}</code>.
 						</p>
 						<AudioPlayer source={{ kind: 'bytes', bytes: item.capture.bytes, mimeType: item.mimeType }} label="The recording as it was saved" />
 						<div class="flex items-center gap-2">
@@ -134,9 +230,12 @@
 					{:else if item.state.kind !== 'saving'}
 						<p class="text-xs text-muted-foreground" role="alert">{item.state.message}</p>
 						<p class="text-xs text-muted-foreground">
+							{#if item.state.kind === 'rowNotSaved'}
+								The audio is in the folder as <code class="font-mono">{item.state.audio.file.path}</code>.
+							{/if}
 							The audio is kept in this window as <code class="font-mono">{item.capture.id}</code>
-							({item.capture.bytes.byteLength.toLocaleString()} bytes, attempt {item.attempts}). Trying again keeps this ID
-							and never creates a second recording.
+							({item.capture.bytes.byteLength.toLocaleString()} bytes, attempt {item.attempts}). Trying again reads what the
+							folder has, finishes only what is missing, keeps this ID, and never creates a second recording.
 						</p>
 						<AudioPlayer source={{ kind: 'bytes', bytes: item.capture.bytes, mimeType: item.mimeType }} label="Recording that is not saved yet" />
 						<div class="flex items-center gap-2">
@@ -202,6 +301,21 @@
 							<Button size="sm" variant="ghost-destructive" onclick={() => discardRun(run)}>Discard</Button>
 						</div>
 					{/if}
+				</li>
+			{/each}
+
+			{#each heldText as run (run.id)}
+				<li class="flex flex-wrap items-center gap-2 px-3 py-3 sm:px-4" data-testid="held-text-run">
+					<p class="min-w-0 flex-1">
+						A result of “{run.fields.transformationTitle}” on pasted text is held in this window and not saved.
+					</p>
+					<Button
+						size="sm"
+						variant="outline"
+						onclick={() => onOpenTransformation(rowPath(TRANSFORMATIONS, run.fields.transformationId))}
+					>
+						Open to save or discard
+					</Button>
 				</li>
 			{/each}
 		</ul>

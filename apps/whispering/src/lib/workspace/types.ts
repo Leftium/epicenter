@@ -3,7 +3,7 @@
  *
  * The desktop app reaches a real directory through the desktop shell's folder
  * owner, and its other native abilities through the Whispering host; a
- * browser tab keeps a logical folder in IndexedDB. Everything above this type
+ * browser tab keeps a logical folder in OPFS. Everything above this type
  * is the same code for both. Capabilities a storage cannot offer are
  * `undefined` here, not emulated: a browser folder has no directory to reveal.
  */
@@ -16,13 +16,30 @@ import { defineErrors, type InferErrors } from 'wellcrafted/error';
 import type { Result } from 'wellcrafted/result';
 import type { CaptureDevice, MicrophonePreference } from '../capture.js';
 import type {
-	TranscriptionSettings,
-	whisperingDefinition,
-} from '../definition.js';
-import type { TranscriptionError } from '../transcription.js';
-import type { TransformationError } from '../transformation.js';
+	ConnectionChange,
+	ConnectionDefaults,
+	ConnectionsInfo,
+	LegacyKeyTargets,
+	Operation,
+} from '../connections.js';
+import type { whisperingDefinition } from '../definition.js';
+import type {
+	PreparedTranscription,
+	TranscriptionError,
+} from '../transcription.js';
+import type {
+	PreparedTransformation,
+	TransformationError,
+} from '../transformation.js';
 
 export type WhisperingFolder = FolderAccess<typeof whisperingDefinition>;
+
+/**
+ * The folder both workspaces open. The browser names its scoped OPFS directory
+ * after it; the desktop shell registers its directory under it
+ * (`FOLDER_SCOPE` in `src-tauri/src/lib.rs`).
+ */
+export const WHISPERING_FOLDER_ID = 'so.epicenter.whispering';
 
 /**
  * Why no workspace could be opened. The message is what the person is shown.
@@ -37,7 +54,7 @@ export const WorkspaceError = defineErrors({
 			refusal.name === 'InsideTauri'
 				? 'This window is inside a desktop app. Browser storage is not used inside a desktop app, so there is no folder to open here.'
 				: refusal.name === 'NoIndexedDb'
-					? 'This browser has no storage Whispering can use (IndexedDB is unavailable here), so the folder cannot be opened.'
+					? 'Whispering cannot check files saved by an earlier version because IndexedDB is unavailable here, so the folder cannot be opened.'
 					: refusal.message,
 		refusal,
 	}),
@@ -80,18 +97,19 @@ export type InjectionState = {
 	readonly commitsBlocked: boolean;
 };
 
+/** One write of a recording's publication: its audio file, or its row. */
+export type RecordingWrite =
+	| { readonly step: 'audio'; readonly stem: string; readonly path: string }
+	| { readonly step: 'row'; readonly stem: string };
+
 /**
- * Runs the one batch that publishes a recording. A debug desktop shell puts
- * an armed failure in that batch's way and removes it afterward; the batch is
- * always the folder's own and so is its answer. `audioPath` is given only
- * when the batch creates the audio.
+ * Runs one write of a recording's publication. A debug desktop shell puts an
+ * armed failure in that write's way and removes it afterward; the write is
+ * always the folder's own and so is its answer.
  */
-export type RecordingPublicationHook = <T>(
-	recording: {
-		readonly stem: string;
-		readonly audioPath: string | undefined;
-	},
-	publish: () => Promise<T>,
+export type RecordingWriteHook = <T>(
+	write: RecordingWrite,
+	run: () => Promise<T>,
 ) => Promise<T>;
 
 export type CloseDecision = 'proceed' | 'asking' | 'cancel';
@@ -116,30 +134,44 @@ export type Workspace = {
 	onExternalChange(listener: () => void): () => void;
 	/** Show the folder in the system file manager; a problem is returned as text. */
 	readonly reveal: (() => Promise<string | undefined>) | undefined;
-	transcribe(request: {
-		readonly audioPath: string;
-		readonly baseUrl: string;
-		readonly model: string;
-	}): Promise<Result<{ text: string }, TranscriptionError>>;
 	/**
-	 * Send a prompt and a transcript to a chat endpoint and return its text.
-	 * Uses the same device key as transcription. Nothing is written by this.
+	 * Send the audio a row names over the transcription connection, only while
+	 * that connection is still the base URL the request was prepared for.
+	 * Nothing is written by this.
 	 */
-	transform(request: {
-		readonly baseUrl: string;
-		readonly model: string;
-		readonly prompt: string;
-		readonly input: string;
-	}): Promise<Result<{ text: string }, TransformationError>>;
-	/** Where transformation requests leave from, and what that requires of the endpoint. */
+	transcribe(
+		request: PreparedTranscription,
+	): Promise<Result<{ text: string }, TranscriptionError>>;
+	/**
+	 * Send instructions and a text to the text connection's chat endpoint and
+	 * return its answer, only while that connection is still the base URL the
+	 * request was prepared for. Nothing is written by this.
+	 */
+	transform(
+		request: PreparedTransformation,
+	): Promise<Result<{ text: string }, TransformationError>>;
+	/** Where text requests leave from, and what that requires of the endpoint. */
 	readonly transformNote: string;
-	readonly credential: {
-		/** Where the key is kept, for the settings form. */
+	/**
+	 * This device's two connections. Kept outside the folder; what the page is
+	 * told never includes a key.
+	 */
+	readonly connections: {
+		/** Where connections and keys are kept, for the settings form. */
 		readonly storedIn: string;
-		/** Set when the key cannot be changed from the app. */
-		readonly readOnlyReason: string | undefined;
-		present(): Promise<boolean>;
-		set(key: string): Promise<string | undefined>;
+		/** Where an unconfigured connection's form starts. Never used for a request. */
+		readonly defaults: ConnectionDefaults;
+		/** Rejects when what is stored cannot be read. */
+		read(): Promise<ConnectionsInfo>;
+		/** Save one connection; a refusal is returned as text. */
+		set(
+			operation: Operation,
+			change: ConnectionChange,
+		): Promise<Result<ConnectionsInfo, string>>;
+		/** Move the earlier build's key into the chosen connections; a refusal is returned as text. */
+		adoptLegacyKey(
+			targets: LegacyKeyTargets,
+		): Promise<Result<ConnectionsInfo, string>>;
 	};
 	/**
 	 * What this device remembers that is neither folder data nor a secret. It
@@ -176,8 +208,6 @@ export type Workspace = {
 				quitWithoutHost(): void;
 		  }
 		| undefined;
-	/** In-memory defaults for settings absent from `kv.json`. */
-	readonly initialSettings: TranscriptionSettings;
 	/** Whether debug controls (paused autosave) are offered. */
 	readonly debugControls: boolean;
 	/** Failure injection, in a debug desktop shell only. */
@@ -185,7 +215,7 @@ export type Workspace = {
 		| {
 				state(): Promise<InjectionState>;
 				arm(change: Partial<InjectionState>): Promise<InjectionState>;
-				readonly aroundRecordingPublication: RecordingPublicationHook;
+				readonly aroundRecordingWrite: RecordingWriteHook;
 		  }
 		| undefined;
 	close(): Promise<void>;

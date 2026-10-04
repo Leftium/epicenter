@@ -15,7 +15,7 @@
 	import { page } from '$app/state';
 	import type { Library } from '$lib/library.svelte.js';
 	import RecorderClock from './RecorderClock.svelte';
-	import TranscriptionSettingsForm from './TranscriptionSettingsForm.svelte';
+	import SettingsForm from './SettingsForm.svelte';
 	import {
 		commitLine,
 		commitOutcomeLine,
@@ -231,13 +231,17 @@
 		<Popover.Root>
 			<Popover.Trigger>
 				{#snippet child({ props })}
-					<Button {...props} variant="ghost" size="icon-sm" tooltip="Transcription settings" aria-label="Settings" data-testid="settings">
+					<Button {...props} variant="ghost" size="icon-sm" tooltip="Connections" aria-label="Settings" data-testid="settings">
 						<SettingsIcon />
 					</Button>
 				{/snippet}
 			</Popover.Trigger>
-			<Popover.Content align="end" class="w-96 max-w-[calc(100vw-1rem)]">
-				<TranscriptionSettingsForm />
+			<Popover.Content
+				align="end"
+				collisionPadding={8}
+				class="max-h-(--bits-popover-content-available-height) w-96 max-w-[calc(100vw-1rem)] overflow-y-auto"
+			>
+				<SettingsForm />
 			</Popover.Content>
 		</Popover.Root>
 

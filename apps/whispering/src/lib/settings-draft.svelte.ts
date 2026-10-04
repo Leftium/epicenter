@@ -1,19 +1,33 @@
 /**
- * The one draft of the transcription settings: the endpoint and model, which
- * are folder settings in `kv.json`, and a newly typed API key, which stays on
- * this device.
+ * The one draft of the connection settings: for transcription and for text,
+ * a base URL, a default model, and what to do with the key. All of it stays
+ * on this device; none of it is written to the folder.
  *
  * The session owns it, so the form is the same draft wherever it is shown:
  * what was typed in the header's Settings is what the form beside the
- * recorder shows, and there is one save and one typed key.
+ * recorder shows, and each connection has one save.
  *
- * The endpoint and model follow the saved settings until they are typed in,
- * and follow them again when the saved settings change. The key is never
- * read back: the draft holds only what was typed since the last save.
+ * The base URL and model follow the saved connection until they are typed
+ * in, and follow it again when it changes. A connection not set up yet
+ * starts from what an earlier build saved in `kv.json`, or from the
+ * workspace's defaults; nothing is sent to those, or saved, until Save. The
+ * key is never read back: the draft holds only what was typed since the last
+ * save, and whether to keep, replace, or remove the saved one. Keeping is
+ * offered only for the base URL the key was saved for, by the same rule the
+ * storage applies.
  */
+import {
+	applyConnectionChange,
+	type ConnectionChange,
+	type ConnectionInfo,
+	type KeyChange,
+	type LegacyKeyTargets,
+	type Operation,
+} from './connections.js';
 import type { Library } from './library.svelte.js';
 
 export type SettingsDraft = ReturnType<typeof createSettingsDraft>;
+export type ConnectionDraft = ReturnType<typeof createConnectionDraft>;
 
 /** Why a save did not finish, as a heading and the reason. */
 export type SettingsSaveProblem = {
@@ -21,13 +35,64 @@ export type SettingsSaveProblem = {
 	readonly description: string;
 };
 
-export function createSettingsDraft(library: Library) {
-	let baseUrl = $derived(library.settings.transcriptionBaseUrl);
-	let model = $derived(library.settings.transcriptionModel);
-	let apiKey = $state('');
+export type KeyAction = KeyChange['action'];
+
+function createConnectionDraft(library: Library, operation: Operation) {
+	const saved = $derived<ConnectionInfo | undefined>(
+		library.connections?.[operation],
+	);
+	const defaults = library.workspace.connections.defaults[operation];
+	/** Where an unconfigured form starts: an earlier build's folder settings, then the defaults. */
+	const start = $derived.by(() => {
+		if (operation === 'transcription')
+			return {
+				baseUrl:
+					library.legacySettings.transcriptionBaseUrl ?? defaults.baseUrl,
+				model: library.legacySettings.transcriptionModel ?? defaults.model,
+			};
+		// Text often goes to the same provider as transcription.
+		return {
+			baseUrl: library.connections?.transcription?.baseUrl ?? defaults.baseUrl,
+			model: defaults.model,
+		};
+	});
+	let baseUrl = $derived(saved?.baseUrl ?? start.baseUrl);
+	let model = $derived(saved?.model ?? start.model);
+	let keyAction = $derived<KeyAction>(saved?.keyPresent ? 'keep' : 'replace');
+	let key = $state('');
 	let saving = $state(false);
 
+	/** The change Save would make: a blank new key where none is saved means no key. */
+	const change = $derived.by((): ConnectionChange => {
+		const keyChange: KeyChange =
+			keyAction === 'replace' && key.trim() === '' && !saved?.keyPresent
+				? { action: 'remove' }
+				: keyAction === 'replace'
+					? { action: 'replace', key }
+					: { action: keyAction };
+		return { baseUrl, model, key: keyChange };
+	});
+
+	/** Why Save would be refused, by the rule the storage applies; undefined when it would not. */
+	const problem = $derived.by(() => {
+		const current = saved && {
+			baseUrl: saved.baseUrl,
+			model: saved.model,
+			// Stands for the saved key, which the page never sees.
+			...(saved.keyPresent && { apiKey: 'saved' }),
+		};
+		return applyConnectionChange(operation, current, change).error ?? undefined;
+	});
+
 	return {
+		operation,
+		get saved() {
+			return saved;
+		},
+		/** Set when this connection cannot be changed from the app. */
+		get readOnlyReason() {
+			return saved?.readOnlyReason;
+		},
 		get baseUrl() {
 			return baseUrl;
 		},
@@ -40,40 +105,83 @@ export function createSettingsDraft(library: Library) {
 		set model(value: string) {
 			model = value;
 		},
-		get apiKey() {
-			return apiKey;
+		get keyAction() {
+			return keyAction;
 		},
-		set apiKey(value: string) {
-			apiKey = value;
+		set keyAction(value: KeyAction) {
+			keyAction = value;
+		},
+		get key() {
+			return key;
+		},
+		set key(value: string) {
+			key = value;
+		},
+		get problem() {
+			return problem;
 		},
 		get saving() {
 			return saving;
 		},
 		/**
-		 * Save the endpoint and model to the folder, then a typed key to this
-		 * device. An empty key field keeps the current key. Nothing is sent to
-		 * the endpoint.
+		 * Save this connection on the device. Nothing is sent to the endpoint
+		 * and nothing is written to the folder. A key typed while the save is
+		 * under way is kept in the field.
 		 */
 		async save(): Promise<SettingsSaveProblem | undefined> {
 			if (saving) return undefined;
-			const submittedKey = apiKey;
+			const submitted = change;
+			const submittedKey = key;
 			saving = true;
 			try {
-				const problem = await library.saveSettings({
-					transcriptionBaseUrl: baseUrl.trim(),
-					transcriptionModel: model.trim(),
-				});
-				if (problem)
-					return { title: 'Could not save the settings', description: problem };
-				if (submittedKey !== '') {
-					const keyProblem = await library.saveCredential(submittedKey);
-					if (keyProblem)
-						return { title: 'Could not save the key', description: keyProblem };
-					if (apiKey === submittedKey) apiKey = '';
-				}
+				const refused = await library.saveConnection(operation, submitted);
+				if (refused)
+					return {
+						title: `Could not save the ${operation} connection`,
+						description: refused,
+					};
+				if (key === submittedKey) key = '';
 				return undefined;
 			} finally {
 				saving = false;
+			}
+		},
+	};
+}
+
+export function createSettingsDraft(library: Library) {
+	const transcription = createConnectionDraft(library, 'transcription');
+	const text = createConnectionDraft(library, 'text');
+	let adopting = $state(false);
+
+	return {
+		transcription,
+		text,
+		get adopting() {
+			return adopting;
+		},
+		/**
+		 * Move the key an earlier build saved into the chosen connections, at
+		 * the base URL and model each form shows now. That shown base URL is
+		 * the destination the person agrees to; the key is sent nowhere else.
+		 */
+		async adoptLegacyKey(
+			operations: readonly Operation[],
+		): Promise<SettingsSaveProblem | undefined> {
+			if (adopting) return undefined;
+			const targets: LegacyKeyTargets = {};
+			for (const operation of operations) {
+				const draft = operation === 'transcription' ? transcription : text;
+				targets[operation] = { baseUrl: draft.baseUrl, model: draft.model };
+			}
+			adopting = true;
+			try {
+				const refused = await library.adoptLegacyKey(targets);
+				return refused
+					? { title: 'Could not use the earlier key', description: refused }
+					: undefined;
+			} finally {
+				adopting = false;
 			}
 		},
 	};

@@ -5,9 +5,8 @@
  * be checked against what `library.remove` does to the folder.
  */
 import { audioPathIn } from './definition.js';
-import type { RecordingEntry } from './editor.svelte.js';
 import { basename } from './files.js';
-import type { Deletion } from './library.svelte.js';
+import type { Deletion, RecordingEntry } from './library.svelte.js';
 
 /** A recording's title, or its ID when the title is empty or did not validate. */
 export function recordingTitle(entry: RecordingEntry): string {
@@ -71,7 +70,7 @@ export function describeDeletion(
 				title: `Delete the transformation “${title}”?`,
 				description: `This deletes ${entry.path} from the folder. ${
 					results > 0
-						? `Its ${count(results, 'saved result stays', 'saved results stay')} in transformation_runs, each with the prompt it used.`
+						? `Its ${count(results, 'saved result stays', 'saved results stay')} in transformation_runs or text_runs, each with the prompt it used.`
 						: 'It has no saved results.'
 				} Committed versions stay in Git history.`,
 			};

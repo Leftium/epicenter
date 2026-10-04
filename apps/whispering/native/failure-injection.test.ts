@@ -301,24 +301,25 @@ test('an obstacle is one empty directory at a recording’s own path, and its re
 		launch: { rowWrites: 1, audioWrites: 1 },
 	});
 
-	// A new recording: the audio is what an armed audio failure obstructs.
+	// A recording's audio write: the audio is what an armed audio failure obstructs.
 	const audio = await injection.obstruct({
+		step: 'audio',
 		stem: 'take',
-		audioPath: 'media/2026/take.wav',
+		path: 'recordings/take.wav',
 	});
 	expect(audio).not.toBeNull();
-	expect(
-		(await stat(join(root, 'media', '2026', 'take.wav'))).isDirectory(),
-	).toBe(true);
+	expect((await stat(join(root, 'recordings', 'take.wav'))).isDirectory()).toBe(
+		true,
+	);
 	expect(injection.state).toMatchObject({ rowWrites: 1, audioWrites: 0 });
 	await injection.clear(audio);
-	// The directory and both parents it had to make are gone.
+	// The directory and the parent it had to make are gone.
 	expect(await readdir(root)).toEqual([]);
 
-	// A recovery names no audio to create: the row is obstructed.
+	// A row write is obstructed at the row, never at the audio beside it.
 	await mkdir(join(root, 'recordings'));
 	await writeFile(join(root, 'recordings', 'take.wav'), 'audio');
-	const row = await injection.obstruct({ stem: 'take', audioPath: undefined });
+	const row = await injection.obstruct({ step: 'row', stem: 'take' });
 	expect((await stat(join(root, 'recordings', 'take.md'))).isDirectory()).toBe(
 		true,
 	);
@@ -331,9 +332,36 @@ test('an obstacle is one empty directory at a recording’s own path, and its re
 
 	// Nothing armed: nothing is placed.
 	expect(
-		await injection.obstruct({ stem: 'take', audioPath: 'recordings/b.wav' }),
+		await injection.obstruct({
+			step: 'audio',
+			stem: 'b',
+			path: 'recordings/b.wav',
+		}),
 	).toBeNull();
+	expect(await injection.obstruct({ step: 'row', stem: 'b' })).toBeNull();
 	expect(await readdir(join(root, 'recordings'))).toEqual(['take.wav']);
+});
+
+test('a write is obstructed only by a failure armed for its own step', async () => {
+	const root = await directory();
+	const injection = createFailureInjection({
+		root,
+		launch: { rowWrites: 1, audioWrites: 0 },
+	});
+
+	// A row failure armed: the audio write before it is not in the way of anything.
+	expect(
+		await injection.obstruct({
+			step: 'audio',
+			stem: 'take',
+			path: 'recordings/take.wav',
+		}),
+	).toBeNull();
+	expect(injection.state).toMatchObject({ rowWrites: 1, audioWrites: 0 });
+	const row = await injection.obstruct({ step: 'row', stem: 'take' });
+	expect(row).not.toBeNull();
+	expect(injection.state).toMatchObject({ rowWrites: 0, audioWrites: 0 });
+	await injection.clear(row);
 });
 
 test('an occupied path is left alone and the failure is not spent on it', async () => {
@@ -341,57 +369,130 @@ test('an occupied path is left alone and the failure is not spent on it', async 
 	await mkdir(join(root, 'recordings'));
 	const foreign = '---\ntitle: Someone else\n---\nKeep me\n';
 	await writeFile(join(root, 'recordings', 'take.md'), foreign);
-	// A file where a parent directory would be.
-	await writeFile(join(root, 'media'), 'a file, not a directory');
+	await writeFile(join(root, 'recordings', 'take.wav'), 'someone’s audio');
 	const injection = createFailureInjection({
 		root,
 		launch: { rowWrites: 1, audioWrites: 1 },
 	});
 
 	expect(
-		await injection.obstruct({ stem: 'take', audioPath: 'media/take.wav' }),
+		await injection.obstruct({
+			step: 'audio',
+			stem: 'take',
+			path: 'recordings/take.wav',
+		}),
 	).toBeNull();
-	expect(
-		await injection.obstruct({ stem: 'take', audioPath: undefined }),
-	).toBeNull();
+	expect(await injection.obstruct({ step: 'row', stem: 'take' })).toBeNull();
 
 	expect(injection.state).toMatchObject({ rowWrites: 1, audioWrites: 1 });
 	expect(await readFile(join(root, 'recordings', 'take.md'), 'utf8')).toBe(
 		foreign,
 	);
-	expect(await readFile(join(root, 'media'), 'utf8')).toBe(
+	expect(await readFile(join(root, 'recordings', 'take.wav'), 'utf8')).toBe(
+		'someone’s audio',
+	);
+	expect((await readdir(join(root, 'recordings'))).sort()).toEqual([
+		'take.md',
+		'take.wav',
+	]);
+
+	// A file where the recordings directory would be.
+	const other = await directory();
+	await writeFile(join(other, 'recordings'), 'a file, not a directory');
+	const blocked = createFailureInjection({
+		root: other,
+		launch: { rowWrites: 1, audioWrites: 1 },
+	});
+	expect(
+		await blocked.obstruct({
+			step: 'audio',
+			stem: 'take',
+			path: 'recordings/take.wav',
+		}),
+	).toBeNull();
+	expect(await blocked.obstruct({ step: 'row', stem: 'take' })).toBeNull();
+	expect(blocked.state).toMatchObject({ rowWrites: 1, audioWrites: 1 });
+	expect(await readFile(join(other, 'recordings'), 'utf8')).toBe(
 		'a file, not a directory',
 	);
-	expect((await readdir(root)).sort()).toEqual(['media', 'recordings']);
 });
 
-test('an obstacle is placed only at a recording’s row or a usable audio path inside the folder', async () => {
+test('overlapping obstacles for one armed failure place one, and the count never goes below zero', async () => {
+	const root = await directory();
+	// Each recording's audio landed before its row write.
+	await mkdir(join(root, 'recordings'));
+	await writeFile(join(root, 'recordings', 'first.wav'), 'audio');
+	await writeFile(join(root, 'recordings', 'second.wav'), 'audio');
+	const injection = createFailureInjection({ root, launch: { rowWrites: 1 } });
+
+	// Two quick retries of different recordings ask at once.
+	const placed = (
+		await Promise.all([
+			injection.obstruct({ step: 'row', stem: 'first' }),
+			injection.obstruct({ step: 'row', stem: 'second' }),
+		])
+	).filter((obstacle) => obstacle !== null);
+
+	expect(placed).toHaveLength(1);
+	expect(injection.state.rowWrites).toBe(0);
+	expect(await readdir(join(root, 'recordings'))).toHaveLength(3);
+	// The one failure is spent: the next row write is not obstructed.
+	expect(await injection.obstruct({ step: 'row', stem: 'third' })).toBeNull();
+	expect(injection.state.rowWrites).toBe(0);
+	await injection.clear(placed[0]);
+	expect((await readdir(join(root, 'recordings'))).sort()).toEqual([
+		'first.wav',
+		'second.wav',
+	]);
+});
+
+test('an obstacle is placed only at a recording’s row or the audio a capture of it is saved at', async () => {
 	const directoryOutside = await directory();
 	const root = join(directoryOutside, 'data');
 	await mkdir(root);
 	await mkdir(join(directoryOutside, 'outside'));
-	await symlink(join(directoryOutside, 'outside'), join(root, 'linked'));
 	const injection = createFailureInjection({
 		root,
 		launch: { rowWrites: 5, audioWrites: 5 },
 	});
 
-	for (const recording of [
-		{ stem: '../escape', audioPath: undefined },
-		{ stem: 'a/b', audioPath: undefined },
-		{ stem: 'a\\b', audioPath: undefined },
-		{ stem: 7, audioPath: undefined },
-		{ stem: 'take', audioPath: '../outside/take.wav' },
-		{ stem: 'take', audioPath: '/tmp/take.wav' },
-		{ stem: 'take', audioPath: '.git/refs/heads/main.lock' },
-		{ stem: 'take', audioPath: 7 },
-		// A directory on the way that is a link out of the folder.
-		{ stem: 'take', audioPath: 'linked/take.wav' },
+	for (const write of [
+		{ step: 'row', stem: '../escape' },
+		{ step: 'row', stem: 'a/b' },
+		{ step: 'row', stem: 'a\\b' },
+		{ step: 'row', stem: 7 },
+		{ step: 'audio', stem: 'take', path: '../outside/take.wav' },
+		{ step: 'audio', stem: 'take', path: '/tmp/take.wav' },
+		{ step: 'audio', stem: 'take', path: '.git/refs/heads/main.lock' },
+		{ step: 'audio', stem: 'take', path: 7 },
+		{ step: 'audio', stem: 'take', path: undefined },
+		// Not where a capture of this recording is saved.
+		{ step: 'audio', stem: 'take', path: 'media/take.wav' },
+		{ step: 'audio', stem: 'take', path: 'recordings/other.wav' },
+		{ step: 'audio', stem: 'take', path: 'recordings/take.' },
+		// The row is not audio.
+		{ step: 'audio', stem: 'take', path: 'recordings/take.md' },
+		// Neither write of a recording.
+		{ step: 'batch', stem: 'take', path: 'recordings/take.wav' },
+		{ stem: 'take', path: 'recordings/take.wav' },
 	])
-		await expect(injection.obstruct(recording)).rejects.toThrow();
+		await expect(injection.obstruct(write)).rejects.toThrow();
+
+	// A directory on the way that is a link out of the folder.
+	await symlink(join(directoryOutside, 'outside'), join(root, 'recordings'));
+	await expect(
+		injection.obstruct({
+			step: 'audio',
+			stem: 'take',
+			path: 'recordings/take.wav',
+		}),
+	).rejects.toThrow();
+	await expect(
+		injection.obstruct({ step: 'row', stem: 'take' }),
+	).rejects.toThrow();
 
 	expect(injection.state).toMatchObject({ rowWrites: 5, audioWrites: 5 });
-	expect(await readdir(root)).toEqual(['linked']);
+	expect(await readdir(root)).toEqual(['recordings']);
 	expect(await readdir(join(directoryOutside, 'outside'))).toEqual([]);
 	expect((await readdir(directoryOutside)).sort()).toEqual(['data', 'outside']);
 });
@@ -399,7 +500,7 @@ test('an obstacle is placed only at a recording’s row or a usable audio path i
 test('stopping the host removes an obstacle the page never had removed', async () => {
 	const root = await directory();
 	const injection = createFailureInjection({ root, launch: { rowWrites: 1 } });
-	await injection.obstruct({ stem: 'take', audioPath: undefined });
+	await injection.obstruct({ step: 'row', stem: 'take' });
 	expect(await readdir(root)).toEqual(['recordings']);
 
 	await injection.release();

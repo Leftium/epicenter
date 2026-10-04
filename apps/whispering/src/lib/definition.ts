@@ -1,6 +1,6 @@
 import {
 	type CreateRowOf,
-	type DataDefinition,
+	type DataSchema,
 	defineTable,
 	field,
 	type KvOf,
@@ -12,30 +12,41 @@ import {
  * audio in `audioPath`; the audio is an ordinary file the table does not own,
  * so nothing is inferred from a file that happens to share the row's stem.
  * Each transcription result is its own row in `transcriptions/`, naming the
- * recording it was made from, with the transcript as its body. Settings that
- * travel with the folder live in `kv.json`.
+ * recording it was made from, with the transcript as its body.
  *
- * A transformation is a reusable prompt: `transformations/<id>.md` with its
- * title, model, and endpoint in frontmatter and the prompt as its body.
- * Applying one to a transcript writes a new row in `transformation_runs/` with
- * the output as its body. That row names the recording, transcription, and
- * transformation it came from and carries the prompt and transcript text that
- * were sent, so it still reads correctly after any of them changes or is
- * deleted. The transcription row is never written.
+ * A recipe is a reusable title and instructions: `transformations/<id>.md`
+ * with its title in frontmatter and the instructions as its body. Where its
+ * requests go is the device's text connection, never the file. A recipe may
+ * name a model to use instead of the connection's, and a recipe written by an
+ * earlier build may name an endpoint, which is kept as a constraint: it runs
+ * only while the text connection is that endpoint. `null` or empty in either
+ * field means "use the connection's".
+ *
+ * Applying a recipe to a transcript writes a new row in `transformation_runs/`
+ * naming the recording, transcription, and recipe it came from. Applying one
+ * to pasted text writes a new row in `text_runs/`, which names no recording.
+ * Both carry the instructions and input text that were sent, with the output
+ * as the body, so they still read correctly after anything they came from
+ * changes or is deleted. The transcription row is never written.
+ *
+ * `kv.json` holds the transcription endpoint and model an earlier build
+ * saved. This build reads them, to offer them when the transcription
+ * connection is set up, and never writes them; no request goes to them.
  *
  * The file stem is a row's identity. A recording's title is a field, so
  * renaming a recording never moves a file or breaks a result's `recordingId`.
  *
- * The page and the Bun folder host both load this module, so it names only
- * the inert vocabulary. Each opener checks the definition before it acquires
+ * The page and Whispering's Bun host both load this module, so it names only
+ * the inert vocabulary. It names no folder: each workspace opens
+ * `WHISPERING_FOLDER_ID`. Each opener checks the definition before it acquires
  * anything, and `definition.test.ts` checks it with `defineFolder`.
  */
 export const whisperingDefinition = {
-	id: 'so.epicenter.whispering',
 	title: 'Whispering',
 	kv: {
-		/** An OpenAI-compatible base URL, such as `https://api.openai.com/v1`. */
+		/** Saved by an earlier build. Offered at setup; never written, never a destination. */
 		transcriptionBaseUrl: field.string(),
+		/** Saved by an earlier build, with the endpoint above. */
 		transcriptionModel: field.string(),
 	},
 	tables: {
@@ -65,10 +76,17 @@ export const whisperingDefinition = {
 		transformations: defineTable({
 			fields: {
 				title: field.string(),
-				/** The chat model the endpoint serves, such as `gpt-4o-mini`. */
-				model: field.string(),
-				/** An OpenAI-compatible base URL. The request goes to `/chat/completions` under it. */
-				endpoint: field.string(),
+				/**
+				 * A chat model to use instead of the text connection's, such as
+				 * `gpt-4o-mini`. `null` or empty uses the connection's model.
+				 */
+				model: field.nullable(field.string()),
+				/**
+				 * Written by an earlier build, which sent requests here. Kept as a
+				 * constraint, never as a destination: the recipe runs only while the
+				 * text connection is exactly this base URL. `null` or empty is none.
+				 */
+				endpoint: field.nullable(field.string()),
 			},
 		}),
 		// A table name is one bare identifier, so the folder cannot be `transformation-runs`.
@@ -88,8 +106,24 @@ export const whisperingDefinition = {
 				input: field.string(),
 			},
 		}),
+		/** Results of a recipe applied to pasted text. They name no recording. */
+		text_runs: defineTable({
+			fields: {
+				transformationId: field.string(),
+				/** The recipe's title when it ran. */
+				transformationTitle: field.string(),
+				createdAt: field.instant(),
+				model: field.string(),
+				/** The text connection's base URL the request went to. */
+				endpoint: field.string(),
+				/** The instructions that were sent, exactly. */
+				prompt: field.string(),
+				/** The pasted text that was sent, exactly. */
+				input: field.string(),
+			},
+		}),
 	},
-} as const satisfies DataDefinition;
+} as const satisfies DataSchema;
 
 export type CaptureSource = 'microphone' | 'fixture';
 
@@ -105,17 +139,23 @@ export type TransformationFields = CreateRowOf<
 export type TransformationRunFields = CreateRowOf<
 	typeof whisperingDefinition.tables.transformation_runs
 >;
-export type TranscriptionSettings = KvOf<typeof whisperingDefinition>;
+export type TextRunFields = CreateRowOf<
+	typeof whisperingDefinition.tables.text_runs
+>;
+/** What an earlier build saved in `kv.json`. */
+export type LegacySettings = KvOf<typeof whisperingDefinition>;
 
 export const RECORDINGS = 'recordings';
 export const TRANSCRIPTIONS = 'transcriptions';
 export const TRANSFORMATIONS = 'transformations';
 export const TRANSFORMATION_RUNS = 'transformation_runs';
+export const TEXT_RUNS = 'text_runs';
 
-export const DEFAULT_TRANSCRIPTION_SETTINGS: TranscriptionSettings = {
-	transcriptionBaseUrl: 'https://api.openai.com/v1',
-	transcriptionModel: 'whisper-1',
-};
+/** Where the transcription connection's form starts. Nothing is sent there until it is saved. */
+export const DEFAULT_TRANSCRIPTION_CONNECTION = {
+	baseUrl: 'https://api.openai.com/v1',
+	model: 'whisper-1',
+} as const;
 
 /** Where a new capture's audio is saved. An existing row's audio is whatever its `audioPath` says. */
 export function recordingAudioPath(id: string, extension: string): string {

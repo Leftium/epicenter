@@ -37,9 +37,11 @@
 {#snippet detail(onBack: (() => void) | undefined, onClose: (() => void) | undefined)}
 	{@const selection = library.selection}
 	{#if selection?.kind === 'recording'}
-		{#key selection.editor}
-			<RecordingDetail {library} editor={selection.editor} entry={selection.entry} {onBack} {onClose} />
+		{#key selection.path}
+			<RecordingDetail {library} path={selection.path} slot={selection.slot} entry={selection.entry} {onBack} {onClose} />
 		{/key}
+	{:else if selection?.kind === 'transcript'}
+		<FileView {library} path={selection.path} file={{ kind: 'row', slot: selection.slot }} onBack={onBack ?? onClose} />
 	{:else if selection?.kind === 'file'}
 		<FileView {library} path={selection.path} file={selection.file} onBack={onBack ?? onClose} />
 	{:else}

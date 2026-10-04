@@ -16,17 +16,116 @@ import { mkdtemp, realpath, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { FileError, openFolder } from '@epicenter/folder/bun';
-import { Ok } from 'wellcrafted/result';
+import { Err, Ok } from 'wellcrafted/result';
 import { expectOk } from 'wellcrafted/testing';
 import { createFixtureDevice, toneWav } from './capture.js';
+import {
+	adoptLegacyKey,
+	applyConnectionChange,
+	type ConnectionsInfo,
+	connectionInfo,
+	connectionTargets,
+	OPERATIONS,
+	type Operation,
+	type StoredConnection,
+} from './connections.js';
 import { whisperingDefinition } from './definition.js';
+import { TranscriptionError } from './transcription.js';
+import { TransformationError } from './transformation.js';
 import type {
 	CloseDecision,
-	WhisperingFolder,
+	RecordingWriteHook,
 	Workspace,
 } from './workspace/types.js';
 
 type TransformRequest = Parameters<Workspace['transform']>[0];
+type TranscribeRequest = Parameters<Workspace['transcribe']>[0];
+
+/** The base URL both stub endpoints answer at. */
+export const TEST_BASE_URL = 'http://127.0.0.1:18080/v1';
+
+/**
+ * The connections a test device has set up unless a test says otherwise: a
+ * keyless local endpoint for each, as a person would configure on purpose.
+ */
+export const TEST_CONNECTIONS: Record<Operation, StoredConnection> = {
+	transcription: { baseUrl: TEST_BASE_URL, model: 'verification-model' },
+	text: { baseUrl: TEST_BASE_URL, model: 'connection-model' },
+};
+
+/**
+ * A device's connections, kept in memory by the same rules the host and the
+ * browser apply to their storage. `stored` holds the keys, so a test can see
+ * where one went; the workspace member answers as a workspace does, never
+ * with a key.
+ */
+export function testConnections({
+	connections = TEST_CONNECTIONS,
+	legacyKey = '',
+	readOnly = {},
+}: {
+	connections?: Partial<Record<Operation, StoredConnection>>;
+	legacyKey?: string;
+	readOnly?: Partial<Record<Operation, string>>;
+} = {}) {
+	const stored: Partial<Record<Operation, StoredConnection>> = {
+		...connections,
+	};
+	const device = { legacyKey };
+	const info = (): ConnectionsInfo => ({
+		transcription:
+			stored.transcription &&
+			connectionInfo(stored.transcription, readOnly.transcription),
+		text: stored.text && connectionInfo(stored.text, readOnly.text),
+		legacyKey: device.legacyKey !== '',
+	});
+	const member: Workspace['connections'] = {
+		storedIn: 'test',
+		defaults: {
+			transcription: {
+				baseUrl: 'https://api.openai.com/v1',
+				model: 'whisper-1',
+			},
+			text: { baseUrl: 'https://api.openai.com/v1', model: '' },
+		},
+		read: async () => info(),
+		async set(operation, change) {
+			const reason = readOnly[operation];
+			if (reason !== undefined) return Err(reason);
+			const next = applyConnectionChange(operation, stored[operation], change);
+			if (next.error !== null) return next;
+			stored[operation] = next.data;
+			return Ok(info());
+		},
+		async adoptLegacyKey(targets) {
+			const adopted = adoptLegacyKey(device.legacyKey, targets, readOnly);
+			if (adopted.error !== null) return adopted;
+			for (const operation of OPERATIONS)
+				if (adopted.data[operation] !== undefined)
+					stored[operation] = adopted.data[operation];
+			device.legacyKey = '';
+			return Ok(info());
+		},
+	};
+	return { stored, device, member };
+}
+
+/**
+ * Whether a prepared request would go out over the connection stored now,
+ * as the host and the browser decide it: undefined when it would.
+ */
+function refusedConnection(
+	stored: StoredConnection | undefined,
+	expectedBaseUrl: string,
+):
+	| { readonly kind: 'missing' }
+	| { readonly kind: 'changed'; readonly configured: string }
+	| undefined {
+	if (stored === undefined) return { kind: 'missing' };
+	if (!connectionTargets(stored, expectedBaseUrl))
+		return { kind: 'changed', configured: stored.baseUrl };
+	return undefined;
+}
 
 /** A real directory opened as Whispering's folder, by this test process. */
 export async function openTestFolder(
@@ -42,69 +141,61 @@ export async function openTestFolder(
 	);
 }
 
-/** How many upcoming recording publications fail, and at which step. */
+/** How many upcoming recording writes fail, by step. */
 export type RecordingFailures = {
-	/** Fail at the audio, the batch's first step: nothing reaches the folder. */
+	/** Audio writes: nothing of that attempt reaches the folder. */
 	audio: number;
-	/** Fail at the row, after the audio landed: a real partial publication. */
+	/** Row writes: the audio the attempt wrote before stays. */
 	row: number;
 };
 
 /**
- * The folder's own `batch`, with a real failure in the way of a recording's
- * publication while `failures` has any left.
- *
- * Nothing is answered on the folder's behalf. An empty directory is put at
- * the path of the step that should fail, from inside the batch callback, so
- * it is there before the folder publishes. The folder then fails that step
- * itself and reports what it reports for a real disk: a plain refusal when
- * the audio is obstructed, `Partial` with the audio applied when the row is.
+ * What a debug desktop shell does around each write of a recording's
+ * publication, in this process: while `failures` has any left for the
+ * write's step, an empty directory is put where that write goes and removed
+ * after it. Nothing is answered on the folder's behalf; the folder refuses the
+ * obstructed write itself, as it would on a real disk.
  */
-export function batchWithRecordingFailures(
-	folder: Pick<WhisperingFolder, 'batch'>,
+export function recordingWriteFailures(
 	root: string,
 	failures: RecordingFailures,
-): WhisperingFolder['batch'] {
-	return async (collect) => {
+): RecordingWriteHook {
+	return async (write, run) => {
 		let obstacle: string | undefined;
-		const result = await folder.batch((batch) => {
-			let audioPath: string | undefined;
-			let stem: string | undefined;
-			collect({
-				files: {
-					...batch.files,
-					create(path, content) {
-						audioPath ??= path;
-						batch.files.create(path, content);
-					},
-				},
-				tables: {
-					...batch.tables,
-					recordings: {
-						create(input) {
-							stem = input.stem;
-							batch.tables.recordings.create(input);
-						},
-					},
-				},
-			});
-			if (stem === undefined) return undefined;
-			let target: string | undefined;
-			if (failures.audio > 0 && audioPath !== undefined) {
-				failures.audio -= 1;
-				target = audioPath;
-			} else if (failures.row > 0) {
-				failures.row -= 1;
-				target = `recordings/${stem}.md`;
-			}
-			if (target !== undefined) {
-				obstacle = join(root, target);
-				mkdirSync(obstacle, { recursive: true });
-			}
-			return undefined;
-		});
-		if (obstacle !== undefined) rmdirSync(obstacle);
-		return result;
+		if (failures[write.step] > 0) {
+			failures[write.step] -= 1;
+			obstacle = join(
+				root,
+				write.step === 'audio' ? write.path : `recordings/${write.stem}.md`,
+			);
+			mkdirSync(obstacle, { recursive: true });
+		}
+		try {
+			return await run();
+		} finally {
+			if (obstacle !== undefined) rmdirSync(obstacle);
+		}
+	};
+}
+
+/** A debug shell's injection whose only armed failures are recording writes. */
+export function testInjection(
+	root: string,
+	failures: RecordingFailures,
+): NonNullable<Workspace['injection']> {
+	const state = () => ({
+		rowWrites: failures.row,
+		audioWrites: failures.audio,
+		commitsBlocked: false,
+	});
+	return {
+		state: async () => state(),
+		async arm(change) {
+			failures.row = change.rowWrites ?? failures.row;
+			failures.audio = change.audioWrites ?? failures.audio;
+			return state();
+		},
+		aroundRecordingWrite: recordingWriteFailures(root, failures),
 	};
 }
 
@@ -121,7 +212,47 @@ export type TestWorkspaceOptions = {
 	failRunWrites?: number;
 	/** Report this many transformation result writes as failed after the file landed. */
 	loseRunWriteAnswers?: number;
+	/** Fail this many writes of results on pasted text before any byte is written. */
+	failTextRunWrites?: number;
+	/** Report this many writes of results on pasted text as failed after the file landed. */
+	loseTextRunWriteAnswers?: number;
+	/** What the device has set up. Both connections, keyless, unless a test says otherwise. */
+	connections?: Partial<Record<Operation, StoredConnection>>;
+	/** A key an earlier build saved on the device. */
+	legacyKey?: string;
 };
+
+/**
+ * A result table whose next creates fail before writing, or land and then
+ * answer as failed, as many times as `counts` says.
+ */
+function withWriteFailures<
+	TTable extends {
+		create(input: { readonly stem?: string }): Promise<{ error: unknown }>;
+	},
+>(table: TTable, name: string, counts: { fail: number; lose: number }): TTable {
+	const refused = (stem: string | undefined) =>
+		FileError.Io({
+			path: `${name}/${stem}.md`,
+			operation: 'create',
+			cause: new Error('disk refused the result'),
+		});
+	return {
+		...table,
+		create: async (input: Parameters<TTable['create']>[0]) => {
+			if (counts.fail > 0) {
+				counts.fail -= 1;
+				return refused(input.stem);
+			}
+			const created = await table.create(input);
+			if (counts.lose > 0 && created.error === null) {
+				counts.lose -= 1;
+				return refused(input.stem);
+			}
+			return created;
+		},
+	};
+}
 
 export async function openTestWorkspace({
 	transcribe,
@@ -130,40 +261,31 @@ export async function openTestWorkspace({
 	failRowWrites = 0,
 	failRunWrites = 0,
 	loseRunWriteAnswers = 0,
+	failTextRunWrites = 0,
+	loseTextRunWriteAnswers = 0,
+	connections,
+	legacyKey,
 }: TestWorkspaceOptions = {}) {
 	const root = await realpath(
 		await mkdtemp(join(tmpdir(), 'whispering-workspace-')),
 	);
 	const folder = await openTestFolder(root);
-	let remainingFailures = failRunWrites;
-	let remainingLostAnswers = loseRunWriteAnswers;
-	const runs = folder.tables.transformation_runs;
-	const refused = (stem: string | undefined) =>
-		FileError.Io({
-			path: `transformation_runs/${stem}.md`,
-			operation: 'create',
-			cause: new Error('disk refused the result'),
-		});
 	const tables = {
 		...folder.tables,
-		transformation_runs: {
-			...runs,
-			create: async (input: Parameters<typeof runs.create>[0]) => {
-				if (remainingFailures > 0) {
-					remainingFailures -= 1;
-					return refused(input.stem);
-				}
-				const created = await runs.create(input);
-				if (remainingLostAnswers > 0 && created.error === null) {
-					remainingLostAnswers -= 1;
-					return refused(input.stem);
-				}
-				return created;
-			},
-		},
+		transformation_runs: withWriteFailures(
+			folder.tables.transformation_runs,
+			'transformation_runs',
+			{ fail: failRunWrites, lose: loseRunWriteAnswers },
+		),
+		text_runs: withWriteFailures(folder.tables.text_runs, 'text_runs', {
+			fail: failTextRunWrites,
+			lose: loseTextRunWriteAnswers,
+		}),
 	};
+	const device = testConnections({ connections, legacyKey });
 
 	const transformed: TransformRequest[] = [];
+	const transcribed: TranscribeRequest[] = [];
 	const answers: CloseDecision[] = [];
 	const closeListeners = new Set<() => void>();
 	/** A close the shell asked for while nothing was listening. */
@@ -175,14 +297,7 @@ export async function openTestWorkspace({
 
 	const workspace: Workspace = {
 		kind: 'native',
-		folder: {
-			...folder,
-			tables,
-			batch: batchWithRecordingFailures(folder, root, {
-				audio: failAudioWrites,
-				row: failRowWrites,
-			}),
-		} as Workspace['folder'],
+		folder: { ...folder, tables } as Workspace['folder'],
 		location: root,
 		terminal: {
 			get cwd() {
@@ -202,8 +317,40 @@ export async function openTestWorkspace({
 		captureNotice: undefined,
 		onExternalChange: () => () => {},
 		reveal: undefined,
-		transcribe: transcribe ?? (async () => Ok({ text: 'um so a steady tone' })),
+		// Each stub decides the connection as the host does, at entry, and only a
+		// request that would go out is counted as sent.
+		async transcribe(request) {
+			const refused = refusedConnection(
+				device.stored.transcription,
+				request.expectedBaseUrl,
+			);
+			if (refused?.kind === 'missing')
+				return TranscriptionError.ConnectionUnavailable({
+					reason: 'no transcription connection is set up.',
+				});
+			if (refused?.kind === 'changed')
+				return TranscriptionError.ConnectionChanged({
+					expected: request.expectedBaseUrl,
+					configured: refused.configured,
+				});
+			transcribed.push(request);
+			if (transcribe !== undefined) return transcribe(request);
+			return Ok({ text: 'um so a steady tone' });
+		},
 		async transform(request) {
+			const refused = refusedConnection(
+				device.stored.text,
+				request.expectedBaseUrl,
+			);
+			if (refused?.kind === 'missing')
+				return TransformationError.ConnectionUnavailable({
+					reason: 'no text connection is set up.',
+				});
+			if (refused?.kind === 'changed')
+				return TransformationError.ConnectionChanged({
+					expected: request.expectedBaseUrl,
+					configured: refused.configured,
+				});
 			transformed.push(request);
 			if (transform !== undefined) return transform(request);
 			return Ok({ text: `Transformed: ${request.input.trim()}` });
@@ -226,22 +373,16 @@ export async function openTestWorkspace({
 			onRequestWithoutHost: () => () => {},
 			quitWithoutHost() {},
 		},
-		credential: {
-			storedIn: 'test',
-			readOnlyReason: undefined,
-			present: async () => false,
-			set: async () => undefined,
-		},
+		connections: device.member,
 		preferences: {
 			microphone: async () => undefined,
 			setMicrophone: async () => undefined,
 		},
-		initialSettings: {
-			transcriptionBaseUrl: 'http://127.0.0.1:18080/v1',
-			transcriptionModel: 'verification-model',
-		},
 		debugControls: true,
-		injection: undefined,
+		injection:
+			failAudioWrites > 0 || failRowWrites > 0
+				? testInjection(root, { audio: failAudioWrites, row: failRowWrites })
+				: undefined,
 		async close() {
 			closes += 1;
 			await folder.close();
@@ -258,6 +399,10 @@ export async function openTestWorkspace({
 		},
 		/** Every transformation request the endpoint stub received, in order. */
 		transformed,
+		/** Every transcription request the endpoint stub received, in order. */
+		transcribed,
+		/** The device's stored connections, keys included, and its earlier key. */
+		device,
 		answers,
 		closeListeners,
 		/** The shell asks to close, as the workspace delivers it: now, or kept. */

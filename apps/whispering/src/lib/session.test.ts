@@ -58,8 +58,8 @@ test('a session opens the folder once and releases it once', async () => {
 	const { session, library, test } = await open();
 	expect(test.opens).toBe(1);
 	expect(test.closeListeners.size).toBe(1);
-	// The first read happened: missing settings use defaults in memory.
-	expect(library.settings.transcriptionModel).toBe('verification-model');
+	// The first read happened: the device's connections were read, and nothing was written.
+	expect(library.connections?.transcription?.model).toBe('verification-model');
 
 	await session.close();
 	await session.close();
@@ -399,7 +399,7 @@ test('a close asked while the first read is pending is not answered until the se
 	expect(test.answers).toEqual(['asking', 'proceed']);
 	expect(test.closeListeners.size).toBe(1);
 	expect(await Bun.file(`${test.root}/kv.json`).exists()).toBe(false);
-	expect(session.library.settings.transcriptionModel).toBe(
+	expect(session.library.connections?.transcription?.model).toBe(
 		'verification-model',
 	);
 	// It was the guard's answer. Nothing answered for the opening unseen.

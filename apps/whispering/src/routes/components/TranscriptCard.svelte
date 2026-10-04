@@ -8,10 +8,11 @@
 	import { untrack } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
-	import { patchRow } from '$lib/editor.svelte.js';
 	import { withFileNewlines } from '$lib/files.js';
 	import type { Library, TranscriptionEntry } from '$lib/library.svelte.js';
+	import { transformationName } from '$lib/post-processing.js';
 	import { copyText, formatTime } from './file-actions.js';
+	import RowSaveStatus from './RowSaveStatus.svelte';
 	import SaveStatus from './SaveStatus.svelte';
 	import TransformationOutput from './TransformationOutput.svelte';
 
@@ -19,26 +20,32 @@
 	 * One saved transcript of the recording that is open, edited where it is
 	 * read, beside the player. The text is the body of the transcript's own
 	 * file, through the one draft the library keeps for that file: the draft
-	 * Files shows for it, with the same saves and the same conflict handling.
-	 * Nothing here selects the transcript's file, so the recording stays open.
+	 * Files shows for it, with the same saves and the same review. Nothing
+	 * here selects the transcript's file, so the recording stays open.
 	 */
 	let { library, result }: { library: Library; result: TranscriptionEntry } = $props();
 
-	// Read the file into its draft once for this path. The draft outlives this
-	// card: closing the details or changing page keeps what was typed.
+	// Open the file's draft once for this path. The draft outlives this card:
+	// closing the details or changing page keeps what was typed.
 	$effect(() => {
 		const path = result.path;
 		untrack(() => void library.openTranscript(path));
 	});
-	const file = $derived(library.fileAt(result.path));
-	const editor = $derived(file?.kind === 'text' ? file.editor : undefined);
-	/** How the draft reads now, saved or not. Before the draft is read, the row as listed. */
-	const draft = $derived(editor ? library.folder.tables.transcriptions.inspect(editor.buffer) : result);
-	const text = $derived(draft.body);
-	/** A draft that does not parse has no body to edit here; its file is fixed in Files. */
-	const editable = $derived(editor !== undefined && draft.parseError === undefined);
+	const slot = $derived(library.transcriptAt(result.path));
+	/** The folder's row editor, when the file opens as a transcript. */
+	const form = $derived(slot?.kind === 'form' ? slot.draft : undefined);
+	/** The file's text, when it is being repaired or edited as text in Files. */
+	const raw = $derived(slot?.kind === 'raw' ? slot.editor : undefined);
+	/** The text now, saved or not. Before the draft is open, the row as listed. */
+	const text = $derived(
+		form ? form.state.document.body : raw ? library.folder.tables.transcriptions.inspect(raw.buffer).body : result.body,
+	);
+	/** Only the row editor edits the text here; text that is not a transcript is fixed in Files. */
+	const editable = $derived(form !== undefined);
 	const unsettled = $derived(
-		editor !== undefined && (editor.dirty || editor.saveState.kind !== 'saved' || editor.refusal !== undefined),
+		form !== undefined
+			? form.status.kind !== 'saved' || form.refusal !== undefined
+			: raw !== undefined && (raw.dirty || raw.saveState.kind !== 'saved'),
 	);
 
 	const outputs = $derived(library.outputsFor(result.stem));
@@ -48,15 +55,11 @@
 		),
 	);
 	/**
-	 * Transformations that can run: a run needs the prompt and all three
-	 * fields. One that lacks any is fixed on its own page first.
+	 * Every transformation, with whether it can run now by the one decision
+	 * the run itself makes. One that cannot is shown with why, and fixed on its
+	 * own page or in Settings first.
 	 */
-	const runnable = $derived(
-		library.transformations.filter((item) => {
-			const { title, model, endpoint } = item.fields;
-			return item.body !== undefined && title !== undefined && model !== undefined && endpoint !== undefined;
-		}),
-	);
+	const choices = $derived(library.transformations.map((item) => ({ item, resolved: library.resolve(item) })));
 
 	/** Apply a transformation to this transcript. The result is a new file; the transcript is not changed by it. */
 	async function transform(path: string) {
@@ -72,19 +75,18 @@
 		placeholder={editable ? 'This transcript has no text.' : undefined}
 		aria-label="Transcript of {formatTime(result.fields.createdAt) || result.path}"
 		disabled={!editable}
-		oninput={(event) =>
-			editor && patchRow(editor, { body: withFileNewlines(event.currentTarget.value, text ?? '') })}
+		oninput={(event) => form?.change({ body: withFileNewlines(event.currentTarget.value, text ?? '') })}
 		data-testid="transcript-text"
 	/>
-	{#if file?.kind === 'failed'}
-		<p class="text-xs text-destructive" role="alert">This transcript’s file could not be opened for editing: {file.message}</p>
-	{:else if editor && draft.parseError}
+	{#if raw}
 		<p class="text-xs text-destructive" role="alert">
-			This transcript’s file does not read as a transcript, so its text cannot be edited here. Fix it from Files.
+			This transcript’s file is being edited as text, so its text cannot be edited here. Open it from Files.
 		</p>
 	{/if}
-	{#if editor && unsettled}
-		<SaveStatus {editor} autosavePaused={library.autosave.paused} onDiscardRemoved={() => library.discardRemoved(editor.path)} />
+	{#if form && unsettled}
+		<RowSaveStatus {library} draft={form} />
+	{:else if raw && unsettled}
+		<SaveStatus editor={raw} autosavePaused={library.autosave.paused} onDiscardRemoved={() => void library.discardDraft(raw.path)} />
 	{/if}
 	<footer class="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
 		<span>{formatTime(result.fields.createdAt) || 'Unknown time'} · {result.fields.model ?? 'unknown model'}</span>
@@ -103,9 +105,18 @@
 				</DropdownMenu.Trigger>
 				<DropdownMenu.Content align="end" class="min-w-52">
 					<DropdownMenu.Label>Make a new text from this transcript</DropdownMenu.Label>
-					{#each runnable as item (item.path)}
-						<DropdownMenu.Item onSelect={() => void transform(item.path)}>
-							{item.fields.title || (item.stem === '' ? item.path : item.stem)}
+					{#each choices as { item, resolved } (item.path)}
+						<DropdownMenu.Item
+							disabled={resolved.kind !== 'ready'}
+							title={resolved.kind === 'blocked' ? resolved.reason : undefined}
+							onSelect={() => void transform(item.path)}
+						>
+							<span class="flex min-w-0 flex-col">
+								<span class="truncate">{transformationName(item)}</span>
+								{#if resolved.kind === 'blocked'}
+									<span class="text-xs text-muted-foreground">{resolved.fix === 'recipe' ? 'Needs repair' : 'Text connection not set up'}</span>
+								{/if}
+							</span>
 						</DropdownMenu.Item>
 					{:else}
 						<DropdownMenu.Item disabled>No transformations yet</DropdownMenu.Item>
@@ -119,6 +130,11 @@
 		</span>
 	</footer>
 	{#each outputs as output (output.path)}
-		<TransformationOutput {library} {output} naming="transformation" onOpenFile={(path) => void library.open(path)} />
+		<TransformationOutput
+			{library}
+			output={{ source: 'transcript', entry: output }}
+			naming="transformation"
+			onOpenFile={(path) => void library.open(path)}
+		/>
 	{/each}
 </article>

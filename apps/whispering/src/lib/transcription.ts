@@ -4,14 +4,47 @@
  * Plain `fetch` and nothing else, so the page (browser folder) and the Bun
  * host (desktop) run the same request. The desktop host makes the call so the
  * key stays out of the page and the endpoint needs no CORS headers.
+ *
+ * The base URL and key are the transcription connection's (see
+ * `connections.ts`). A redirect is refused, not followed, so the key is never
+ * carried to another URL, and no ambient credential (a cookie) is sent.
  */
 import { defineErrors, type InferErrors } from 'wellcrafted/error';
 import { Ok, type Result } from 'wellcrafted/result';
+import {
+	canonicalBaseUrl,
+	connectionTargets,
+	type StoredConnection,
+} from './connections.js';
 
 export const TranscriptionError = defineErrors({
 	NotConfigured: ({ missing }: { missing: string }) => ({
 		message: `Transcription is not set up: ${missing} is missing`,
 		missing,
+	}),
+	InvalidEndpoint: ({ reason }: { reason: string }) => ({
+		message: `Transcription cannot run: ${reason}`,
+		reason,
+	}),
+	/** The transcription connection is not set up, or could not be read. Nothing was sent. */
+	ConnectionUnavailable: ({ reason }: { reason: string }) => ({
+		message: `Nothing was sent: ${reason}`,
+		reason,
+	}),
+	/**
+	 * The transcription connection no longer targets the URL this request was
+	 * prepared for. Nothing was sent: a prepared request is never retargeted.
+	 */
+	ConnectionChanged: ({
+		expected,
+		configured,
+	}: {
+		expected: string;
+		configured: string;
+	}) => ({
+		message: `This request was prepared for ${expected}, but the transcription connection is now ${configured}, so nothing was sent. Transcribe again to use the current connection.`,
+		expected,
+		configured,
 	}),
 	/**
 	 * The host did not answer, or its answer never arrived. That says nothing
@@ -88,9 +121,12 @@ export async function requestTranscription({
 > {
 	if (baseUrl.trim() === '')
 		return TranscriptionError.NotConfigured({ missing: 'the endpoint URL' });
+	const base = canonicalBaseUrl(baseUrl);
+	if (base.error !== null)
+		return TranscriptionError.InvalidEndpoint({ reason: base.error });
 	if (model.trim() === '')
 		return TranscriptionError.NotConfigured({ missing: 'the model' });
-	const url = transcriptionUrl(baseUrl);
+	const url = transcriptionUrl(base.data);
 	const form = new FormData();
 	form.append(
 		'file',
@@ -112,6 +148,9 @@ export async function requestTranscription({
 			method: 'POST',
 			headers: apiKey === '' ? {} : { authorization: `Bearer ${apiKey}` },
 			body: form,
+			// A redirect could carry the key to a URL the connection does not name.
+			redirect: 'error',
+			credentials: 'omit',
 			signal,
 		});
 	} catch (cause) {
@@ -140,4 +179,61 @@ export async function requestTranscription({
 		// Reported below: an answer that is not the expected JSON is malformed.
 	}
 	return TranscriptionError.Malformed({ url });
+}
+
+/**
+ * What the page asks for. It names the transcription connection's base URL it
+ * was prepared for, and never a URL to send to: the request goes to the
+ * connection's own base URL, with its key, only while that is still
+ * `expectedBaseUrl`.
+ */
+export type PreparedTranscription = {
+	readonly audioPath: string;
+	readonly expectedBaseUrl: string;
+	readonly model: string;
+};
+
+/**
+ * Send a recording's audio over the transcription connection. The connection
+ * is read once, here, before the audio, and that reading is what the request
+ * uses to the end. `connection` rejects when it cannot be read and resolves
+ * to undefined when none is set up; audio that cannot be read is the same
+ * certain case. Either way nothing is sent.
+ */
+export async function transcribeOverConnection(
+	connection: () => Promise<StoredConnection | undefined>,
+	request: PreparedTranscription,
+	audio: () => Promise<Result<TranscriptionRequest['audio'], string>>,
+	send?: TranscriptionRequest['fetch'],
+): Promise<Result<{ text: string }, TranscriptionError>> {
+	let stored: StoredConnection | undefined;
+	try {
+		stored = await connection();
+	} catch (cause) {
+		return TranscriptionError.ConnectionUnavailable({
+			reason: describe(cause),
+		});
+	}
+	if (stored === undefined)
+		return TranscriptionError.ConnectionUnavailable({
+			reason: 'no transcription connection is set up. Set one up in Settings.',
+		});
+	if (!connectionTargets(stored, request.expectedBaseUrl))
+		return TranscriptionError.ConnectionChanged({
+			expected: request.expectedBaseUrl,
+			configured: stored.baseUrl,
+		});
+	const read = await audio();
+	if (read.error !== null)
+		return TranscriptionError.AudioUnreadable({
+			path: request.audioPath,
+			reason: read.error,
+		});
+	return requestTranscription({
+		baseUrl: stored.baseUrl,
+		apiKey: stored.apiKey ?? '',
+		model: request.model,
+		audio: read.data,
+		fetch: send,
+	});
 }

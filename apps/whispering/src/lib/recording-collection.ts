@@ -16,7 +16,7 @@
  */
 import { audioPathIn } from './definition.js';
 import { recordingTitle } from './deletion-copy.js';
-import type { RecordingEntry } from './editor.svelte.js';
+import type { RecordingEntry } from './library.svelte.js';
 import type {
 	Deletion,
 	Library,

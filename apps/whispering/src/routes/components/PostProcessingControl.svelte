@@ -10,7 +10,7 @@
 	import TriangleAlertIcon from '@lucide/svelte/icons/triangle-alert';
 	import WandIcon from '@lucide/svelte/icons/wand';
 	import { resolve } from '$app/paths';
-	import { canRun, resolvePostProcessing, transformationName } from '$lib/post-processing.js';
+	import { resolvePostProcessing, transformationName } from '$lib/post-processing.js';
 	import { getSession } from '$lib/session.svelte.js';
 	import { returnFocusToTrigger } from './option-popover-focus.js';
 
@@ -27,14 +27,14 @@
 
 	const { library, view } = getSession();
 
-	const choice = $derived(resolvePostProcessing(view.postProcessing, library.transformations));
+	const choice = $derived(resolvePostProcessing(view.postProcessing, library.transformations, library.resolve));
 	const name = $derived(
 		choice.kind === 'none' ? 'None' : choice.kind === 'missing' ? 'Not in the folder' : transformationName(choice.entry),
 	);
 
 	/** The trigger is an icon, so this is its whole name: what it is, what is chosen, and what is wrong. */
 	const summary = $derived(
-		`Post-processing: ${name}${choice.kind === 'repair' ? '. It needs repair before it can run.' : choice.kind === 'missing' ? '. The chosen transformation was deleted or moved.' : ''}`,
+		`Post-processing: ${name}${choice.kind === 'repair' ? `. It cannot run: ${choice.reason}` : choice.kind === 'missing' ? '. The chosen transformation was deleted or moved.' : ''}`,
 	);
 	let hinting = $state(false);
 
@@ -105,14 +105,19 @@
 				<Label for="post-processing-none" class="font-normal">None</Label>
 			</div>
 			{#each library.transformations as item, index (item.path)}
-				{@const runnable = canRun(item)}
+				{@const resolved = library.resolve(item)}
+				{@const runnable = resolved.kind === 'ready'}
 				<!-- The group is a grid, so a row shrinks to the popover only with min-w-0; the label then takes what the radio leaves and the title truncates in it. -->
 				<div class="flex min-w-0 items-center gap-2">
 					<!-- One that cannot run is not offered, but stays shown as chosen if it already is. -->
 					<RadioGroup.Item value={item.path} id="post-processing-{index}" disabled={!runnable && view.postProcessing !== item.path} />
 					<Label for="post-processing-{index}" class="min-w-0 flex-1 font-normal">
 						<span class="min-w-0 truncate" title={transformationName(item)}>{transformationName(item)}</span>
-						{#if !runnable}<Badge variant="destructive" class="shrink-0">Needs repair</Badge>{/if}
+						{#if resolved.kind === 'blocked'}
+							<Badge variant={resolved.fix === 'recipe' ? 'destructive' : 'outline'} class="shrink-0" title={resolved.reason}>
+								{resolved.fix === 'recipe' ? 'Needs repair' : 'Not set up'}
+							</Badge>
+						{/if}
 					</Label>
 				</div>
 			{/each}
@@ -144,9 +149,7 @@
 			</p>
 		{/if}
 		{#if choice.kind === 'repair'}
-			<p class="text-xs text-warning" role="status">
-				“{name}” needs a title, a model, an endpoint, and a prompt before it can run. Fix it on its page.
-			</p>
+			<p class="text-xs text-warning" role="status">“{name}” cannot run: {choice.reason}</p>
 		{:else if choice.kind === 'missing'}
 			<p class="text-xs text-warning" role="status">The chosen transformation was deleted or moved. Choose another, or None.</p>
 		{/if}

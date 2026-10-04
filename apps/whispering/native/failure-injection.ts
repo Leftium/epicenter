@@ -5,22 +5,24 @@
  * exactly the next N attempts fail and then publication works again, so a test
  * can exercise failure and retry in a fixed order.
  *
- * A recording is published by the page as one folder batch: the audio file,
- * then the row. The folder's owner is the shell, not this host, and nothing
- * here publishes or answers for it. Just before the page sends a recording's
- * batch it asks for an obstacle, naming the recording's stem and the audio
- * path the batch creates. An armed failure puts an empty directory at the
- * path of the step that should fail and hands back a name for it; the page
- * sends its batch and then has the obstacle removed. The owner fails that
- * step itself: an obstructed row leaves the audio saved and reports its own
- * `Partial`, and an obstructed audio file fails before anything is written.
- * A path that is already occupied is left alone and the attempt is not
- * counted, since the owner refuses it without help.
+ * A recording is published by the page as two writes, each the folder's own
+ * operation: the audio file, then the row. The folder's owner is the shell,
+ * not this host, and nothing here publishes or answers for it. Just before
+ * the page makes one of those writes it asks for an obstacle, naming the
+ * write's step, the recording's stem, and, for the audio, its path. An armed
+ * failure for that step puts an empty directory at the path and hands back a
+ * name for it; the page makes its write and then has the obstacle removed.
+ * The owner refuses that write itself. An obstructed audio write leaves
+ * nothing written; an obstructed row write leaves the audio the first write
+ * saved. A path that is already occupied is left alone and the failure is
+ * not counted, since the owner refuses it without help.
  *
- * Only those two paths can be obstructed, and each is checked before it is
- * joined onto the root. A directory on the way that is a symbolic link is
- * refused. Removing an obstacle removes the empty directory this host made and
- * the empty parents it had to create, and nothing else.
+ * Only those two paths can be obstructed: the recording's row, and audio at
+ * `recordings/<stem>.<extension>`, where a capture of that stem is saved.
+ * Each is checked before it is joined onto the root. A directory on the way
+ * that is a symbolic link is refused. Removing an obstacle removes the empty
+ * directory this host made and the empty parents it had to create, and
+ * nothing else.
  *
  * Commit failures are real: a lock file is created on the branch ref, where an
  * interrupted Git process leaves one, so Git refuses to move the branch and
@@ -50,10 +52,10 @@ import { dirname, join } from 'node:path';
 import { pathProblem, rowPath } from '@epicenter/folder';
 import { RECORDINGS } from '../src/lib/definition.js';
 
-export type InjectionState = {
-	/** How many upcoming recording publications fail at the row, after the audio lands. */
+type InjectionState = {
+	/** How many upcoming recording row writes fail. The audio written before each stays. */
 	rowWrites: number;
-	/** How many upcoming new recording publications fail at the audio, before anything lands. */
+	/** How many upcoming recording audio writes fail. Nothing is written by those attempts. */
 	audioWrites: number;
 	/** Whether the branch ref is locked, so commits cannot be recorded. */
 	commitsBlocked: boolean;
@@ -158,7 +160,7 @@ export function createFailureInjection({
 	}
 
 	/**
-	 * Make every missing directory above `target`, one at a time, and return
+	 * Make every missing directory above `path`, one at a time, and return
 	 * the ones made. Undefined when something on the way is not a directory,
 	 * which the owner refuses without help.
 	 */
@@ -196,16 +198,16 @@ export function createFailureInjection({
 	}
 
 	/**
-	 * Put an empty directory in the way of one recording's publication, when a
-	 * failure is armed for it. `audioPath` is given only by a publication that
-	 * creates the audio. Returns the obstacle's name, or null when nothing was
-	 * placed.
+	 * Put an empty directory in the way of one write of a recording's
+	 * publication, when a failure is armed for that step. Returns the
+	 * obstacle's name, or null when nothing was placed.
 	 */
-	async function obstruct(recording: {
-		stem: unknown;
-		audioPath: unknown;
+	async function obstruct(write: {
+		step?: unknown;
+		stem?: unknown;
+		path?: unknown;
 	}): Promise<string | null> {
-		const { stem, audioPath } = recording;
+		const { step, stem, path } = write;
 		// A stem is one literal segment whose row path stays inside the folder.
 		if (
 			typeof stem !== 'string' ||
@@ -213,34 +215,58 @@ export function createFailureInjection({
 			pathProblem(rowPath(RECORDINGS, stem)) !== undefined
 		)
 			throw new Error('An obstacle needs the stem of a recording row.');
-		if (
-			audioPath !== undefined &&
-			(typeof audioPath !== 'string' || pathProblem(audioPath) !== undefined)
-		)
-			throw new Error('An obstacle needs a usable folder-relative audio path.');
 
-		const step =
-			state.audioWrites > 0 && audioPath !== undefined
-				? ({ counter: 'audioWrites', path: audioPath } as const)
-				: state.rowWrites > 0
-					? ({ counter: 'rowWrites', path: rowPath(RECORDINGS, stem) } as const)
-					: undefined;
-		if (step === undefined) return null;
-
-		const made = await makeParents(step.path);
-		if (made === undefined) return null;
-		const target = join(root, ...step.path.split('/'));
-		try {
-			await mkdir(target);
-		} catch (cause) {
-			await removeEmpty(made);
-			if (codeOf(cause) === 'EEXIST') return null;
-			throw cause;
+		let target: { counter: 'audioWrites' | 'rowWrites'; path: string };
+		switch (step) {
+			case 'audio': {
+				const extension =
+					typeof path === 'string' && path.startsWith(`${RECORDINGS}/${stem}.`)
+						? path.slice(`${RECORDINGS}/${stem}.`.length)
+						: undefined;
+				if (
+					typeof path !== 'string' ||
+					extension === undefined ||
+					extension === '' ||
+					extension.includes('/') ||
+					extension === 'md' ||
+					pathProblem(path) !== undefined
+				)
+					throw new Error(
+						'An obstacle needs the audio path a capture of this recording is saved at.',
+					);
+				target = { counter: 'audioWrites', path };
+				break;
+			}
+			case 'row':
+				target = { counter: 'rowWrites', path: rowPath(RECORDINGS, stem) };
+				break;
+			default:
+				throw new Error(
+					'An obstacle names the audio write or the row write of a recording.',
+				);
 		}
-		state[step.counter] -= 1;
-		const obstacle = randomUUID();
-		obstacles.set(obstacle, () => removeEmpty([...made, target]));
-		return obstacle;
+		if (state[target.counter] === 0) return null;
+		// Taken before anything is awaited, so overlapping calls cannot both
+		// spend the last armed failure. Given back when nothing is placed.
+		state[target.counter] -= 1;
+		let obstacle: string | null = null;
+		try {
+			const made = await makeParents(target.path);
+			if (made === undefined) return null;
+			const placed = join(root, ...target.path.split('/'));
+			try {
+				await mkdir(placed);
+			} catch (cause) {
+				await removeEmpty(made);
+				if (codeOf(cause) === 'EEXIST') return null;
+				throw cause;
+			}
+			obstacle = randomUUID();
+			obstacles.set(obstacle, () => removeEmpty([...made, placed]));
+			return obstacle;
+		} finally {
+			if (obstacle === null) state[target.counter] += 1;
+		}
 	}
 
 	/** Remove one obstacle. A name this host does not hold removes nothing. */

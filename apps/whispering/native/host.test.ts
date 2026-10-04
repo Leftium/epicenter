@@ -36,7 +36,7 @@ import {
 	type PendingCapture,
 	publishRecording,
 } from '../src/lib/recordings/publish.js';
-import type { RecordingPublicationHook } from '../src/lib/workspace/types.js';
+import type { RecordingWriteHook } from '../src/lib/workspace/types.js';
 import { openTestFolder } from '../src/lib/workspace.test-support.js';
 import { createHost, type Host, type HostOptions } from './host.js';
 import type { ShellRun } from './terminal.js';
@@ -86,17 +86,17 @@ async function owner(root: string) {
 	return folder;
 }
 
-/** What the desktop workspace does around a recording's batch in a debug shell. */
+/** What the desktop workspace does around each recording write in a debug shell. */
 function obstacles(
 	bridge: ReturnType<typeof createHttpBridge>,
-): RecordingPublicationHook {
-	return async (recording, publish) => {
+): RecordingWriteHook {
+	return async (write, run) => {
 		const { obstacle } = await bridge.app<{ obstacle: string | null }>(
 			'obstruct',
-			recording,
+			write,
 		);
 		try {
-			return await publish();
+			return await run();
 		} finally {
 			if (obstacle !== null) await bridge.app('unobstruct', { obstacle });
 		}
@@ -155,11 +155,29 @@ function endpoint(
 	};
 }
 
+const BASE_URL = 'http://127.0.0.1:18080/v1';
+/** A launch whose transcription connection is this key at the stub endpoint. */
+const ENVIRONMENT = {
+	WHISPERING_TRANSCRIPTION_API_KEY: 'local-test-key',
+	WHISPERING_TRANSCRIPTION_BASE_URL: BASE_URL,
+};
+
 const transcribeRequest = (path: string) => ({
 	path,
-	baseUrl: 'http://127.0.0.1:18080/v1/',
+	expectedBaseUrl: `${BASE_URL}/`,
 	model: 'verification-model',
 });
+
+/** Set up a connection as the Settings form does: base URL, model, and what to do with the key. */
+const connect = (
+	bridge: ReturnType<typeof createHttpBridge>,
+	operation: 'transcription' | 'text',
+	{
+		baseUrl = BASE_URL,
+		model = operation === 'text' ? 'chat-model' : 'verification-model',
+		key = { action: 'remove' } as Record<string, unknown>,
+	} = {},
+) => bridge.app('set-connection', { operation, baseUrl, model, key });
 
 type Transcribed = {
 	data: { text: string } | null;
@@ -226,7 +244,10 @@ test('the host has no folder route, no folder operation, and no folder', async (
 
 test('the host works beside a held folder lock and leaves the directory exactly as it was given', async () => {
 	const stub = endpoint();
-	const { directory, root, host, bridge } = await start({ fetch: stub.fetch });
+	const { directory, root, host, bridge } = await start({
+		env: ENVIRONMENT,
+		fetch: stub.fetch,
+	});
 	// The lock the shell's owner holds for as long as it has the folder: an
 	// exclusive transaction on this file beside the directory.
 	const lock = new Database(join(directory, '.data.epicenter-lock'));
@@ -314,15 +335,17 @@ test('an injected row failure leaves the audio saved, and retry completes one re
 	const pending = capture();
 	await bridge.app('inject', { rowWrites: 2 });
 
-	const first = await publishRecording(folder, pending, around);
-	expect(first.status).toBe('partial');
-	if (first.status === 'partial') {
-		expect(first.landed).toEqual([`recordings/${pending.id}.wav`]);
-		// The failure is the folder's own report of its own step, not an invented one.
-		expect(first.message).toBe(
-			`'recordings/${pending.id}.md' is a directory, not a file`,
-		);
-	}
+	const first = await publishRecording(folder, pending, {
+		retry: false,
+		around,
+	});
+	// The failure is the folder's own report of its own write, not an invented one.
+	expect(first).toMatchObject({
+		kind: 'rowNotSaved',
+		certainty: 'failed',
+		audio: { by: 'receipt', file: { path: `recordings/${pending.id}.wav` } },
+		message: `'recordings/${pending.id}.md' is a directory, not a file`,
+	});
 	// The audio is the captured bytes, and the obstruction is gone again.
 	expect(await readdir(join(root, 'recordings'))).toEqual([
 		`${pending.id}.wav`,
@@ -336,22 +359,30 @@ test('an injected row failure leaves the audio saved, and retry completes one re
 		1,
 	);
 
-	// The second armed failure hits the recovery batch, which replaces the
-	// audio it read with the same bytes and fails at the row. The audio stays put.
-	const second = await publishRecording(folder, pending, around);
-	expect(second.status).toBe('partial');
-	if (second.status === 'partial')
-		expect(second.landed).toEqual([`recordings/${pending.id}.wav`]);
+	// The second armed failure hits the retry's row write. The retry found the
+	// audio and did not write it again; it stays put.
+	const second = await publishRecording(folder, pending, {
+		retry: true,
+		around,
+	});
+	expect(second).toMatchObject({
+		kind: 'rowNotSaved',
+		certainty: 'failed',
+		audio: { by: 'found' },
+	});
 	expect(await readdir(join(root, 'recordings'))).toEqual([
 		`${pending.id}.wav`,
 	]);
 
-	const third = await publishRecording(folder, pending, around);
-	expect(third.status).toBe('saved');
-	if (third.status === 'saved') {
-		expect(third.recovered).toBe(true);
-		expect(third.entry.fields).toEqual(pending.fields);
-	}
+	const third = await publishRecording(folder, pending, {
+		retry: true,
+		around,
+	});
+	expect(third).toMatchObject({
+		kind: 'published',
+		audio: { by: 'found' },
+		row: { by: 'receipt' },
+	});
 	expect(
 		new Uint8Array(
 			await readFile(join(root, 'recordings', `${pending.id}.wav`)),
@@ -376,15 +407,24 @@ test('an injected audio failure writes nothing, and retry saves', async () => {
 	const pending = capture();
 	await bridge.app('inject', { audioWrites: 1 });
 
-	const first = await publishRecording(folder, pending, around);
-	expect(first.status).toBe('failed');
+	const first = await publishRecording(folder, pending, {
+		retry: false,
+		around,
+	});
+	expect(first).toMatchObject({ kind: 'audioNotSaved', certainty: 'failed' });
 	expect(
 		await readdir(join(root, 'recordings')).catch(() => [] as string[]),
 	).toEqual([]);
 
-	const second = await publishRecording(folder, pending, around);
-	expect(second.status).toBe('saved');
-	if (second.status === 'saved') expect(second.recovered).toBe(false);
+	const second = await publishRecording(folder, pending, {
+		retry: true,
+		around,
+	});
+	expect(second).toMatchObject({
+		kind: 'published',
+		audio: { by: 'receipt' },
+		row: { by: 'receipt' },
+	});
 });
 
 test('an armed failure leaves a path that is already occupied alone, and is not spent on it', async () => {
@@ -396,28 +436,24 @@ test('an armed failure leaves a path that is already occupied alone, and is not 
 	await writeFile(join(root, 'recordings', `${pending.id}.md`), foreign);
 	await bridge.app('inject', { rowWrites: 1 });
 
-	// The page's own check refuses before any batch, so no obstacle is asked for.
+	// A retry's own reads refuse before any write, so no obstacle is asked for.
 	let asked = 0;
-	const counting: RecordingPublicationHook = (recording, publish) => {
+	const counting: RecordingWriteHook = (write, run) => {
 		asked += 1;
-		return obstacles(bridge)(recording, publish);
+		return obstacles(bridge)(write, run);
 	};
-	expect((await publishRecording(folder, pending, counting)).status).toBe(
-		'unexpected',
-	);
+	expect(
+		(await publishRecording(folder, pending, { retry: true, around: counting }))
+			.kind,
+	).toBe('refused');
 	expect(asked).toBe(0);
-	// Asked for directly, the occupied row is left alone, and the folder refuses the batch itself.
+	// Asked for directly, the occupied row is left alone, and the folder refuses the write itself.
 	const refused = expectErr(
-		await obstacles(bridge)(
-			{ stem: pending.id, audioPath: pending.fields.audioPath },
-			() =>
-				folder.batch((batch) => {
-					batch.files.create(pending.fields.audioPath, pending.bytes);
-					batch.tables.recordings.create({
-						stem: pending.id,
-						fields: pending.fields,
-					});
-				}),
+		await obstacles(bridge)({ step: 'row', stem: pending.id }, () =>
+			folder.tables.recordings.create({
+				stem: pending.id,
+				fields: pending.fields,
+			}),
 		),
 	);
 
@@ -451,8 +487,11 @@ test('a locked branch fails the commit and never the save; unlocking lets it com
 	).toBe(true);
 	const pending = capture();
 
-	const outcome = await publishRecording(folder, pending, obstacles(bridge));
-	expect(outcome.status).toBe('saved');
+	const outcome = await publishRecording(folder, pending, {
+		retry: false,
+		around: obstacles(bridge),
+	});
+	expect(outcome.kind).toBe('published');
 	const blocked = await folder.git.commit();
 	expect(blocked.status).not.toBe('committed');
 	expect((await readdir(join(root, 'recordings'))).sort()).toEqual([
@@ -502,7 +541,7 @@ test('a terminal edit is an outside write: the owner’s next read sees it, and 
 	const { root, bridge } = await start();
 	const folder = await owner(root);
 	const pending = capture();
-	await publishRecording(folder, pending);
+	await publishRecording(folder, pending, { retry: false });
 	const entry = (await folder.tables.recordings.get(pending.id)).data!;
 	expect((await folder.git.commit()).status).toBe('committed');
 
@@ -530,11 +569,11 @@ test('a terminal edit is an outside write: the owner’s next read sees it, and 
 test('transcription reads the saved audio and sends it to the configured endpoint', async () => {
 	const stub = endpoint();
 	const { root, bridge } = await start({
-		env: { WHISPERING_TRANSCRIPTION_API_KEY: 'local-test-key' },
+		env: ENVIRONMENT,
 		fetch: stub.fetch,
 	});
 	const pending = capture();
-	await publishRecording(await owner(root), pending);
+	await publishRecording(await owner(root), pending, { retry: false });
 
 	const result = await bridge.app<Transcribed>(
 		'transcribe',
@@ -559,6 +598,8 @@ test('transcription reads the saved audio and sends it to the configured endpoin
 test('audio at a nested path the row names is sent once, under its own name and type', async () => {
 	const stub = endpoint();
 	const { root, bridge } = await start({ fetch: stub.fetch });
+	// A keyless local endpoint, set up on purpose.
+	await connect(bridge, 'transcription');
 	const bytes = new Uint8Array([
 		0, 0, 0, 24, 102, 116, 121, 112, 77, 52, 65, 32,
 	]);
@@ -599,6 +640,7 @@ test('the bytes sent are the ones read: changing or removing the file during the
 		},
 	});
 	const original = toneWav();
+	await connect(bridge, 'transcription');
 	await mkdir(join(root, 'recordings'));
 	await writeFile(join(root, 'recordings', 'take.wav'), original);
 
@@ -618,7 +660,7 @@ test('the bytes sent are the ones read: changing or removing the file during the
 test('a path that cannot be read as the folder’s own regular file sends nothing', async () => {
 	const stub = endpoint();
 	const { directory, root, bridge } = await start({
-		env: { WHISPERING_TRANSCRIPTION_API_KEY: 'local-test-key' },
+		env: ENVIRONMENT,
 		fetch: stub.fetch,
 	});
 	const outside = join(directory, 'outside');
@@ -675,7 +717,7 @@ test('a path that cannot be read as the folder’s own regular file sends nothin
 
 test('a transcription refusal that echoes the key reaches the page without it', async () => {
 	const { root, host } = await start({
-		env: { WHISPERING_TRANSCRIPTION_API_KEY: 'local-test-key' },
+		env: ENVIRONMENT,
 		fetch: async (input, init) =>
 			Response.json(
 				{
@@ -688,11 +730,7 @@ test('a transcription refusal that echoes the key reaches the page without it', 
 
 	const answered = await post(host, '/bridge/app', {
 		op: 'transcribe',
-		payload: {
-			path: 'take.wav',
-			baseUrl: 'http://127.0.0.1:18080/v1',
-			model: 'verification-model',
-		},
+		payload: transcribeRequest('take.wav'),
 	});
 	const answer = await answered.text();
 
@@ -703,7 +741,7 @@ test('a transcription refusal that echoes the key reaches the page without it', 
 	expect(answer).not.toContain('local-test-key');
 });
 
-test('a transformation is sent by the host with the device key, which never reaches the page', async () => {
+test('a transformation is sent by the host over the text connection with its key, which never reaches the page', async () => {
 	const requests: {
 		url: string;
 		authorization: string | null;
@@ -732,12 +770,15 @@ test('a transformation is sent by the host with the device key, which never reac
 			});
 		},
 	});
-	await bridge.app('credential', { key: 'device-secret-key' });
+	const configured = await connect(bridge, 'text', {
+		key: { action: 'replace', key: 'device-secret-key' },
+	});
+	expect(JSON.stringify(configured)).not.toContain('device-secret-key');
 	const send = () =>
 		post(host, '/bridge/app', {
 			op: 'transform',
 			payload: {
-				baseUrl: 'http://127.0.0.1:18080/v1/',
+				expectedBaseUrl: `${BASE_URL}/`,
 				model: 'chat-model',
 				prompt: 'Fix the punctuation.',
 				input: 'um so a steady tone',
@@ -816,7 +857,7 @@ test('fixture audio and failure injection exist only in a debug shell', async ()
 		['inject', { rowWrites: 1 }],
 		['injection', {}],
 		['injection-launch', {}],
-		['obstruct', { stem: 'take', audioPath: 'recordings/take.wav' }],
+		['obstruct', { step: 'audio', stem: 'take', path: 'recordings/take.wav' }],
 		['unobstruct', { obstacle: 'any' }],
 	] as const)
 		await expect(release.bridge.app(op, payload)).rejects.toThrow(
@@ -825,12 +866,24 @@ test('fixture audio and failure injection exist only in a debug shell', async ()
 	expect(await readdir(release.root)).toEqual([]);
 });
 
-test('the device transcription key is kept out of the versioned folder', async () => {
+test('a connection’s key is kept out of the versioned folder and out of every reply', async () => {
 	const { root, bridge } = await start();
 	const folder = await owner(root);
-	await bridge.app('credential', { key: 'secret-key' });
-	const info = await bridge.app<{ credentialPresent: boolean }>('info');
-	expect(info.credentialPresent).toBe(true);
+	const reply = await connect(bridge, 'transcription', {
+		key: { action: 'replace', key: 'secret-key' },
+	});
+	expect(reply).toEqual({
+		transcription: {
+			baseUrl: BASE_URL,
+			model: 'verification-model',
+			keyPresent: true,
+		},
+		legacyKey: false,
+	});
+	expect(JSON.stringify(await bridge.app('connections'))).not.toContain(
+		'secret-key',
+	);
+	expect(JSON.stringify(await bridge.app('info'))).not.toContain('secret-key');
 
 	const listing = await folder.files.list();
 	for (const file of listing.data!.files)
@@ -846,17 +899,8 @@ test('the device transcription key is kept out of the versioned folder', async (
 	).toContain('secret-key');
 });
 
-test('a key from the environment decides, even an empty one, and cannot be changed from the app', async () => {
-	const stub = endpoint();
-	const { root, bridge } = await start({
-		env: { WHISPERING_TRANSCRIPTION_API_KEY: '' },
-		fetch: stub.fetch,
-	});
-	// A key saved by an earlier launch that had no override.
-	await mkdir(join(root, '.git', 'epicenter', 'whispering'), {
-		recursive: true,
-	});
-	const saved = `${JSON.stringify({ transcriptionApiKey: 'saved-device-key' })}\n`;
+/** The device file, as an earlier build or another launch left it. */
+async function seedDevice(root: string, values: Record<string, unknown>) {
 	const deviceFile = join(
 		root,
 		'.git',
@@ -864,26 +908,350 @@ test('a key from the environment decides, even an empty one, and cannot be chang
 		'whispering',
 		'device.json',
 	);
-	await writeFile(deviceFile, saved);
+	await mkdir(join(deviceFile, '..'), { recursive: true });
+	const text = `${JSON.stringify(values)}\n`;
+	await writeFile(deviceFile, text);
+	return { deviceFile, text };
+}
+
+test('a key from the environment is a read-only transcription connection at its launch URL, even an empty one, and is never lent to text', async () => {
+	const stub = endpoint(() =>
+		Response.json({
+			text: 'a steady tone',
+			choices: [{ message: { content: 'A steady tone.' } }],
+		}),
+	);
+	const { root, bridge } = await start({
+		env: {
+			WHISPERING_TRANSCRIPTION_API_KEY: '',
+			WHISPERING_TRANSCRIPTION_BASE_URL: BASE_URL,
+		},
+		fetch: stub.fetch,
+	});
+	// A key saved by an earlier launch that had no override.
+	const { deviceFile, text: saved } = await seedDevice(root, {
+		transcriptionApiKey: 'saved-device-key',
+	});
 	await writeFile(join(root, 'take.wav'), toneWav());
 
-	const info = await bridge.app<{
-		credentialPresent: boolean;
-		credentialFromEnvironment: boolean;
-	}>('info');
-	expect(info).toMatchObject({
-		credentialPresent: false,
-		credentialFromEnvironment: true,
+	expect(await bridge.app<unknown>('connections')).toEqual({
+		transcription: {
+			baseUrl: BASE_URL,
+			// The launch named no model, so the default one.
+			model: 'whisper-1',
+			keyPresent: false,
+			readOnlyReason: expect.stringContaining(
+				'WHISPERING_TRANSCRIPTION_API_KEY',
+			),
+		},
+		legacyKey: true,
 	});
-	await expect(bridge.app('credential', { key: 'typed-key' })).rejects.toThrow(
-		'cannot be changed here',
+	// Neither a saved connection nor the earlier key can retarget it.
+	await expect(connect(bridge, 'transcription')).rejects.toThrow(
+		'comes from WHISPERING_TRANSCRIPTION_API_KEY',
 	);
+	await expect(
+		bridge.app('adopt-legacy-key', {
+			targets: { transcription: { baseUrl: BASE_URL, model: 'm' } },
+		}),
+	).rejects.toThrow('comes from WHISPERING_TRANSCRIPTION_API_KEY');
 	expect(await readFile(deviceFile, 'utf8')).toBe(saved);
 
 	// The empty override is what is used: the saved key is not sent.
 	await bridge.app<Transcribed>('transcribe', transcribeRequest('take.wav'));
 	expect(stub.requests).toHaveLength(1);
 	expect(stub.requests[0]!.authorization).toBeNull();
+	// A request prepared for another URL, such as one a folder names, is refused.
+	const elsewhere = await bridge.app<Transcribed>('transcribe', {
+		...transcribeRequest('take.wav'),
+		expectedBaseUrl: 'https://elsewhere.example/v1',
+	});
+	expect(elsewhere.error?.name).toBe('ConnectionChanged');
+	expect(stub.requests).toHaveLength(1);
+
+	// Text has no connection of its own, so nothing is sent with any key.
+	const text = await bridge.app<Transcribed>('transform', {
+		expectedBaseUrl: BASE_URL,
+		model: 'chat-model',
+		prompt: 'p',
+		input: 'i',
+	});
+	expect(text.error?.name).toBe('ConnectionUnavailable');
+	expect(stub.requests).toHaveLength(1);
+});
+
+test('a nonempty environment key is sent only to transcription; a keyless text connection sends no key', async () => {
+	const requests: { url: string; authorization: string | null }[] = [];
+	const { bridge } = await start({
+		env: ENVIRONMENT,
+		fetch: async (input, init) => {
+			const request = new Request(input, init);
+			requests.push({
+				url: request.url,
+				authorization: request.headers.get('authorization'),
+			});
+			return Response.json({ choices: [{ message: { content: 'ok' } }] });
+		},
+	});
+	await connect(bridge, 'text');
+
+	const answered = await bridge.app<Transcribed>('transform', {
+		expectedBaseUrl: BASE_URL,
+		model: 'chat-model',
+		prompt: 'p',
+		input: 'i',
+	});
+
+	expect(answered.data?.text).toBe('ok');
+	expect(requests).toEqual([
+		{ url: `${BASE_URL}/chat/completions`, authorization: null },
+	]);
+});
+
+/** A chat endpoint stub that counts requests and the key each carried. */
+function chatEndpoint() {
+	const requests: { url: string; authorization: string | null }[] = [];
+	return {
+		requests,
+		fetch: async (input: string, init?: RequestInit) => {
+			const request = new Request(input, init);
+			requests.push({
+				url: request.url,
+				authorization: request.headers.get('authorization'),
+			});
+			return Response.json({ choices: [{ message: { content: 'ok' } }] });
+		},
+	};
+}
+
+const prepared = (expectedBaseUrl: string) => ({
+	expectedBaseUrl,
+	model: 'chat-model',
+	prompt: 'Fix it.',
+	input: 'some text',
+});
+
+test('a request prepared for another endpoint is refused before anything is sent, a same-origin path included', async () => {
+	const stub = chatEndpoint();
+	const { bridge } = await start({ fetch: stub.fetch });
+	await connect(bridge, 'text', {
+		key: { action: 'replace', key: 'text-key' },
+	});
+
+	for (const expected of [
+		'http://127.0.0.1:18080/other/v1',
+		'http://127.0.0.1:18080',
+		'http://127.0.0.1:18081/v1',
+		'https://127.0.0.1:18080/v1',
+		'http://127.0.0.1:18080/v1?key=1',
+		'not a url',
+	]) {
+		const refused = await bridge.app<Transcribed>(
+			'transform',
+			prepared(expected),
+		);
+		expect(refused.error?.name).toBe('ConnectionChanged');
+	}
+	expect(stub.requests).toEqual([]);
+
+	// Spelling differences that name the same endpoint are the same endpoint.
+	const sent = await bridge.app<Transcribed>(
+		'transform',
+		prepared('HTTP://127.0.0.1:18080/v1//'),
+	);
+	expect(sent.data?.text).toBe('ok');
+	expect(stub.requests).toEqual([
+		{ url: `${BASE_URL}/chat/completions`, authorization: 'Bearer text-key' },
+	]);
+});
+
+test('a connection saved while a request is out does not move it or change its key; the next request prepared for the old URL is refused', async () => {
+	const arrived = Promise.withResolvers<void>();
+	const release = Promise.withResolvers<void>();
+	const requests: { url: string; authorization: string | null }[] = [];
+	const { bridge } = await start({
+		fetch: async (input, init) => {
+			const request = new Request(input, init);
+			requests.push({
+				url: request.url,
+				authorization: request.headers.get('authorization'),
+			});
+			arrived.resolve();
+			await release.promise;
+			return Response.json({ choices: [{ message: { content: 'ok' } }] });
+		},
+	});
+	await connect(bridge, 'text', {
+		key: { action: 'replace', key: 'first-key' },
+	});
+
+	const out = bridge.app<Transcribed>('transform', prepared(BASE_URL));
+	await arrived.promise;
+	await connect(bridge, 'text', {
+		baseUrl: 'http://127.0.0.1:9999/v1',
+		key: { action: 'replace', key: 'second-key' },
+	});
+	release.resolve();
+
+	expect((await out).data?.text).toBe('ok');
+	expect(requests).toEqual([
+		{ url: `${BASE_URL}/chat/completions`, authorization: 'Bearer first-key' },
+	]);
+	const retried = await bridge.app<Transcribed>(
+		'transform',
+		prepared(BASE_URL),
+	);
+	expect(retried.error).toMatchObject({
+		name: 'ConnectionChanged',
+		expected: BASE_URL,
+		configured: 'http://127.0.0.1:9999/v1',
+	});
+	expect(requests).toHaveLength(1);
+});
+
+test('a key cannot be kept for a new endpoint; the base URL and key change together in one write', async () => {
+	const { root, bridge } = await start();
+	await connect(bridge, 'text', {
+		key: { action: 'replace', key: 'text-key' },
+	});
+	const deviceFile = join(
+		root,
+		'.git',
+		'epicenter',
+		'whispering',
+		'device.json',
+	);
+	const before = await readFile(deviceFile, 'utf8');
+
+	await expect(
+		connect(bridge, 'text', {
+			baseUrl: 'http://127.0.0.1:18080/other/v1',
+			key: { action: 'keep' },
+		}),
+	).rejects.toThrow('saved key is not sent there');
+	expect(await readFile(deviceFile, 'utf8')).toBe(before);
+
+	// Keeping it for the same endpoint, spelled differently, is allowed.
+	await connect(bridge, 'text', {
+		baseUrl: `${BASE_URL}/`,
+		model: 'another-model',
+		key: { action: 'keep' },
+	});
+	expect(JSON.parse(await readFile(deviceFile, 'utf8')).textConnection).toEqual(
+		{
+			baseUrl: BASE_URL,
+			model: 'another-model',
+			apiKey: 'text-key',
+		},
+	);
+	for (const baseUrl of [
+		'ftp://127.0.0.1/v1',
+		'http://user:pass@127.0.0.1/v1',
+		'http://127.0.0.1/v1#fragment',
+	])
+		await expect(connect(bridge, 'text', { baseUrl })).rejects.toThrow();
+});
+
+test('an earlier build’s key is sent nowhere until moved, and moves only to the destination shown', async () => {
+	const stub = chatEndpoint();
+	const { root, bridge, host } = await start({ fetch: stub.fetch });
+	await seedDevice(root, { transcriptionApiKey: 'earlier-key', kept: 7 });
+	// A keyless local endpoint set up on purpose: the earlier key is not lent to it.
+	await connect(bridge, 'text');
+	expect(
+		(await bridge.app<Transcribed>('transform', prepared(BASE_URL))).data?.text,
+	).toBe('ok');
+	expect(stub.requests).toEqual([
+		{ url: `${BASE_URL}/chat/completions`, authorization: null },
+	]);
+	expect(await bridge.app('connections')).toMatchObject({ legacyKey: true });
+
+	const moved = await post(host, '/bridge/app', {
+		op: 'adopt-legacy-key',
+		payload: {
+			targets: {
+				text: { baseUrl: 'http://127.0.0.1:18080/v1', model: 'chat-model' },
+			},
+		},
+	});
+	const reply = await moved.text();
+	expect(reply).not.toContain('earlier-key');
+	expect(JSON.parse(reply)).toMatchObject({
+		ok: { text: { keyPresent: true }, legacyKey: false },
+	});
+	const device = JSON.parse(
+		await readFile(
+			join(root, '.git', 'epicenter', 'whispering', 'device.json'),
+			'utf8',
+		),
+	);
+	expect(device).toEqual({
+		kept: 7,
+		textConnection: {
+			baseUrl: BASE_URL,
+			model: 'chat-model',
+			apiKey: 'earlier-key',
+		},
+	});
+	await bridge.app('transform', prepared(BASE_URL));
+	expect(stub.requests[1]).toEqual({
+		url: `${BASE_URL}/chat/completions`,
+		authorization: 'Bearer earlier-key',
+	});
+	// Once moved it is gone from where it was: it cannot be moved again.
+	await expect(
+		bridge.app('adopt-legacy-key', {
+			targets: { transcription: { baseUrl: BASE_URL, model: 'm' } },
+		}),
+	).rejects.toThrow('No key from an earlier version');
+});
+
+test('a redirect from the endpoint is not followed, so the key never reaches another URL', async () => {
+	const hits: { path: string; authorization: string | null }[] = [];
+	let server: ReturnType<typeof Bun.serve>;
+	try {
+		server = Bun.serve({
+			hostname: '127.0.0.1',
+			port: 0,
+			fetch(request) {
+				const { pathname } = new URL(request.url);
+				hits.push({
+					path: pathname,
+					authorization: request.headers.get('authorization'),
+				});
+				if (pathname === '/v1/chat/completions')
+					return new Response(null, {
+						status: 307,
+						headers: { location: '/elsewhere/chat/completions' },
+					});
+				return Response.json({
+					choices: [{ message: { content: 'followed' } }],
+				});
+			},
+		});
+	} catch (cause) {
+		throw new Error(
+			`This test needs to listen on a loopback port, and could not: ${String(cause)}`,
+		);
+	}
+	cleanups.push(async () => {
+		await server.stop(true);
+	});
+	const base = `http://127.0.0.1:${server.port}/v1`;
+	// The real fetch: nothing stands in for the network here.
+	const { bridge } = await start();
+	await connect(bridge, 'text', {
+		baseUrl: base,
+		key: { action: 'replace', key: 'redirect-key' },
+	});
+
+	const answered = await bridge.app<Transcribed>('transform', prepared(base));
+
+	expect(answered.error?.name).toBe('Unreachable');
+	expect(JSON.stringify(answered)).not.toContain('redirect-key');
+	expect(hits).toEqual([
+		{ path: '/v1/chat/completions', authorization: 'Bearer redirect-key' },
+	]);
 });
 
 test('the page is served without the token, may reach the shell’s commands, and paths stay inside it', async () => {

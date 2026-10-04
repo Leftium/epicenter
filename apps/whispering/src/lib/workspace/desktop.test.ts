@@ -16,6 +16,7 @@
  */
 import '../svelte-modules.test-support.js';
 import { afterEach, beforeEach, expect, mock, test } from 'bun:test';
+import { createHash } from 'node:crypto';
 import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -55,6 +56,8 @@ const { openWorkspace } = await import('./index.js');
 const { openBrowserWorkspace } = await import('./browser.js');
 const { openDesktopWorkspace } = await import('./desktop.js');
 const { mountSession } = await import('../session.svelte.ts');
+const { createRowDraft } = await import('../row-draft.svelte.ts');
+const { TYPING_BATCH_MS } = await import('../editor.svelte.ts');
 
 const ROOT = '/Users/someone/Epicenter/local/so.epicenter.whispering';
 const SCOPE = 'so.epicenter.whispering';
@@ -64,6 +67,7 @@ const snapshot = () => ({
 	branch: 'main',
 	remote: null,
 	commitOnEdit: true,
+	pendingIncoming: null,
 	files: { state: 'unknown', error: null },
 	sync: { state: 'unknown', error: null },
 	activity: Object.fromEntries(
@@ -95,9 +99,10 @@ const info = (overrides: Record<string, unknown> = {}) => ({
 	debug: false,
 	fixture: null,
 	fixtureRefused: false,
-	defaults: { transcriptionBaseUrl: 'u', transcriptionModel: 'm' },
-	credentialPresent: false,
-	credentialFromEnvironment: false,
+	defaults: {
+		transcription: { baseUrl: 'u', model: 'm' },
+		text: { baseUrl: 'u', model: '' },
+	},
 	...overrides,
 });
 
@@ -398,7 +403,7 @@ test('a host that uses another directory than the owner’s is refused, and the 
 // The folder is the shell's
 // ============================================================================
 
-test('saves, batches, and history go to the shell’s owner and never to the host', async () => {
+test('saves and history go to the shell’s owner and never to the host', async () => {
 	attachable();
 	Object.assign(replies, {
 		apply: () => null,
@@ -413,31 +418,102 @@ test('saves, batches, and history go to the shell’s owner and never to the hos
 	);
 	const audio = new Uint8Array([1, 2, 3]);
 
-	// The callback batch is the shared adapter's: one `apply`, in the order named.
-	const receipt = expectOk(
-		await workspace.folder.batch((batch) => {
-			batch.files.create('recordings/a.wav', audio);
-			batch.files.create('notes.md', 'hello');
-		}),
-	);
-	expect(receipt.steps.map((step) => step.kind)).toEqual(['write', 'write']);
+	// Each write is the shared adapter's own call: one `apply` apiece, in order.
+	expectOk(await workspace.folder.files.create('recordings/a.wav', audio));
+	expectOk(await workspace.folder.files.create('notes.md', 'hello'));
 	expect((await workspace.folder.git.commit()).status).toBe('unchanged');
 	expect((await workspace.folder.files.read('notes.md')).error?.name).toBe(
 		'NotFound',
 	);
 
-	expect(sent('apply')).toHaveLength(1);
-	const changes = sent('apply')[0]?.args.changes as { path: string }[];
-	expect(changes.map((change) => change.path)).toEqual([
-		'recordings/a.wav',
-		'notes.md',
-	]);
+	expect(
+		sent('apply').map((call) =>
+			(call.args.changes as { path: string }[]).map((change) => change.path),
+		),
+	).toEqual([['recordings/a.wav'], ['notes.md']]);
 	expect(sent('commit')).toHaveLength(1);
 	// The host was asked who it is, and for its event stream. Nothing else.
 	expect(served.operationsAsked.map((call) => call.op)).toEqual(['info']);
 	expect(new Set(served.requested)).toEqual(
 		new Set(['/bridge/app', '/bridge/events']),
 	);
+	await workspace.close();
+});
+
+test('a row save whose reply the shell never sent stays unknown in the real row editor, and nothing more is written on its own', async () => {
+	attachable();
+	const disk = new Map<string, Uint8Array>([
+		[
+			'transformations/clean.md',
+			new TextEncoder().encode(
+				'---\ntitle: Clean up\nmodel: null\nendpoint: null\n---\nTidy.\n',
+			),
+		],
+	]);
+	const written: string[] = [];
+	let loseReplies = true;
+	Object.assign(replies, {
+		read: ({ args }: Call) => {
+			const bytes = disk.get(String(args.path));
+			if (bytes === undefined) throw { name: 'NotFound', path: args.path };
+			return {
+				bytes: [...bytes],
+				sha256: createHash('sha256').update(bytes).digest('hex'),
+			};
+		},
+		// The owner writes, and the reply never reaches the page.
+		apply: ({ args }: Call) => {
+			for (const change of args.changes as { path: string; bytes: number[] }[]) {
+				disk.set(change.path, Uint8Array.from(change.bytes));
+				written.push(new TextDecoder().decode(Uint8Array.from(change.bytes)));
+			}
+			if (loseReplies) throw 'the reply was lost';
+			return null;
+		},
+	});
+	const served = host();
+	const workspace = expectOk(
+		await openDesktopWorkspace({ ...CONNECTION, fetch: served.fetch }),
+	);
+	const editor = expectOk(
+		await workspace.folder.tables.transformations.edit('clean'),
+	);
+	const draft = createRowDraft(editor, {
+		files: workspace.folder.files,
+		autosave: { paused: false },
+		admits: () => true,
+		onSaved: () => {},
+		onIdleUnfollowable: () => {},
+	});
+
+	draft.change({ body: 'Tidy it.\n' });
+	expect(await draft.settle()).toBe(false);
+	expect(written).toHaveLength(1);
+	expect(draft.state.lastSave?.kind).toBe('unconfirmed');
+
+	// The owner's file holds the draft. That is current content: the draft is
+	// clean, and the save it may have come from is still unknown.
+	await draft.refresh();
+	expect(draft.isDirty).toBe(false);
+	expect(draft.status).toMatchObject({ kind: 'unconfirmed', inFile: true });
+	expect(draft.unknown).toContain('the reply was lost');
+
+	// Typing after it is held: nothing is written by a pause or by settling.
+	draft.change({ body: 'Tidy it more.\n' });
+	await Bun.sleep(TYPING_BATCH_MS + 100);
+	expect(await draft.settle()).toBe(false);
+	expect(draft.holds).toBe(true);
+	expect(written).toHaveLength(1);
+
+	// Saving again is the person's choice; its own reply confirms it.
+	loseReplies = false;
+	await draft.saveNow();
+	expect(written).toHaveLength(2);
+	expect(written[1]).toContain('Tidy it more.');
+	expect(draft.status).toEqual({ kind: 'saved' });
+	expect(draft.unknown).toBeUndefined();
+
+	await draft.dispose();
 	await workspace.close();
 });
 
@@ -599,7 +675,7 @@ test('a host that stops answering does not close the folder: the page keeps savi
 	// What needs the host answers as unavailable, as a Result.
 	const transcribed = await workspace.transcribe({
 		audioPath: 'recordings/a.wav',
-		baseUrl: 'u',
+		expectedBaseUrl: 'u',
 		model: 'm',
 	});
 	expect(transcribed.error?.name).toBe('HostUnavailable');
@@ -637,7 +713,11 @@ test('a failed transcription call is a Result, and the next call still works', a
 		},
 	});
 	const workspace = expectOk(opened);
-	const request = { audioPath: 'recordings/a.wav', baseUrl: 'u', model: 'm' };
+	const request = {
+		audioPath: 'recordings/a.wav',
+		expectedBaseUrl: 'u',
+		model: 'm',
+	};
 
 	const unreachable = await workspace.transcribe(request);
 	expect(unreachable.error?.name).toBe('HostUnavailable');
@@ -648,9 +728,14 @@ test('a failed transcription call is a Result, and the next call still works', a
 	expect(faulted.error?.message).toContain('host fault');
 
 	expect((await workspace.transcribe(request)).data).toEqual({ text: 'ok' });
-	// The page sends the path the row names, and no audio: the host reads the file.
+	// The page sends the path the row names, and no audio: the host reads the
+	// file. It names the base URL it expects, and the host decides where to send.
 	expect(asked).toEqual(
-		Array(3).fill({ path: 'recordings/a.wav', baseUrl: 'u', model: 'm' }),
+		Array(3).fill({
+			path: 'recordings/a.wav',
+			expectedBaseUrl: 'u',
+			model: 'm',
+		}),
 	);
 	expect(sent('read')).toEqual([]);
 	await workspace.close();
@@ -660,7 +745,7 @@ test('a failed transformation call is a Result, and the next call still works', 
 	attachable();
 	let transformCalls = 0;
 	const asked: unknown[] = [];
-	const served = host({}, info({ credentialPresent: true }));
+	const served = host();
 	const opened = await openDesktopWorkspace({
 		...CONNECTION,
 		fetch: async (input, init) => {
@@ -677,7 +762,12 @@ test('a failed transformation call is a Result, and the next call still works', 
 		},
 	});
 	const workspace = expectOk(opened);
-	const request = { baseUrl: 'u', model: 'm', prompt: 'p', input: 'text' };
+	const request = {
+		expectedBaseUrl: 'u',
+		model: 'm',
+		prompt: 'p',
+		input: 'text',
+	};
 
 	const unreachable = await workspace.transform(request);
 	expect(unreachable.error?.name).toBe('HostUnavailable');
@@ -697,7 +787,7 @@ test('a failed transformation call is a Result, and the next call still works', 
 // The chosen microphone
 // ============================================================================
 
-test('the chosen microphone is kept by the host beside the key, survives a new window, and never brings the key back', async () => {
+test('the chosen microphone is kept by the host beside the connections, survives a new window, and never brings a key back', async () => {
 	const served = await realHost();
 	attachable(served.root);
 	const usb = { deviceId: 'usb-id', label: 'USB Microphone' };
@@ -709,7 +799,19 @@ test('the chosen microphone is kept by the host beside the key, survives a new w
 		return response;
 	};
 	const first = expectOk(await openDesktopWorkspace({ ...CONNECTION, fetch }));
-	expect(await first.credential.set('device-secret-key')).toBeUndefined();
+	const saved = expectOk(
+		await first.connections.set('text', {
+			baseUrl: 'http://127.0.0.1:18080/v1',
+			model: 'chat-model',
+			key: { action: 'replace', key: 'device-secret-key' },
+		}),
+	);
+	expect(saved.text).toEqual({
+		baseUrl: 'http://127.0.0.1:18080/v1',
+		model: 'chat-model',
+		keyPresent: true,
+		readOnlyReason: undefined,
+	});
 
 	expect(await first.preferences.microphone()).toBeUndefined();
 	expect(await first.preferences.setMicrophone(usb)).toBeUndefined();
@@ -718,10 +820,10 @@ test('the chosen microphone is kept by the host beside the key, survives a new w
 	// The page's own storage would be gone: a new launch serves a new origin.
 	const second = expectOk(await openDesktopWorkspace({ ...CONNECTION, fetch }));
 	expect(await second.preferences.microphone()).toEqual(usb);
-	expect(await second.credential.present()).toBe(true);
+	expect((await second.connections.read()).text?.keyPresent).toBe(true);
 	expect(await second.preferences.setMicrophone(undefined)).toBeUndefined();
 	expect(await second.preferences.microphone()).toBeUndefined();
-	expect(await second.credential.present()).toBe(true);
+	expect((await second.connections.read()).text?.keyPresent).toBe(true);
 	expect(replies.join('\n')).not.toContain('device-secret-key');
 	await second.close();
 });
@@ -776,7 +878,7 @@ test('a release shell offers no failure injection, and asks the host for none', 
 	await workspace.close();
 });
 
-test('a debug shell tells the host the folder is open only after the owner attached it, and wraps one recording’s batch in an obstacle', async () => {
+test('a debug shell tells the host the folder is open only after the owner attached it, and wraps each recording write in its own obstacle', async () => {
 	attachable();
 	const order: string[] = [];
 	const attach = replies.attach!;
@@ -808,27 +910,45 @@ test('a debug shell tells the host the folder is open only after the owner attac
 	// Git exists once the owner has opened the folder, and not before.
 	expect(order).toEqual(['attach', 'injection-launch']);
 
-	const published = await workspace.injection!.aroundRecordingPublication(
-		{ stem: 'take', audioPath: 'recordings/take.wav' },
+	const around = workspace.injection!.aroundRecordingWrite;
+	const audio = await around(
+		{ step: 'audio', stem: 'take', path: 'recordings/take.wav' },
 		async () => {
-			order.push('publish');
+			order.push('audio');
 			return 'the folder’s own answer';
 		},
 	);
+	const row = await around({ step: 'row', stem: 'take' }, async () => {
+		order.push('row');
+		return 'the folder’s own answer';
+	});
 
-	expect(published).toBe('the folder’s own answer');
-	expect(order.slice(2)).toEqual(['obstruct', 'publish', 'unobstruct']);
-	expect(served.operationsAsked.slice(-2)).toMatchObject([
+	expect([audio, row]).toEqual([
+		'the folder’s own answer',
+		'the folder’s own answer',
+	]);
+	// Each write is its own: obstructed, made, and cleared before the next.
+	expect(order.slice(2)).toEqual([
+		'obstruct',
+		'audio',
+		'unobstruct',
+		'obstruct',
+		'row',
+		'unobstruct',
+	]);
+	expect(served.operationsAsked.slice(-4)).toMatchObject([
 		{
 			op: 'obstruct',
-			payload: { stem: 'take', audioPath: 'recordings/take.wav' },
+			payload: { step: 'audio', stem: 'take', path: 'recordings/take.wav' },
 		},
+		{ op: 'unobstruct', payload: { obstacle: 'obstacle-1' } },
+		{ op: 'obstruct', payload: { step: 'row', stem: 'take' } },
 		{ op: 'unobstruct', payload: { obstacle: 'obstacle-1' } },
 	]);
 	await workspace.close();
 });
 
-test('an obstacle that was not placed, or a host that cannot be asked, never keeps a recording from being published', async () => {
+test('an obstacle that was not placed, or a host that cannot be asked, never keeps a recording write from being made', async () => {
 	attachable();
 	let obstructs: 'none' | 'fault' = 'none';
 	const removed: unknown[] = [];
@@ -861,25 +981,25 @@ test('an obstacle that was not placed, or a host that cannot be asked, never kee
 			},
 		}),
 	);
-	const recording = { stem: 'take', audioPath: undefined };
-	let publications = 0;
-	const publish = async () => {
-		publications += 1;
-		return 'published';
+	const write = { step: 'row', stem: 'take' } as const;
+	let writes = 0;
+	const run = async () => {
+		writes += 1;
+		return 'written';
 	};
-	const around = workspace.injection!.aroundRecordingPublication;
+	const around = workspace.injection!.aroundRecordingWrite;
 
-	expect(await around(recording, publish)).toBe('published');
+	expect(await around(write, run)).toBe('written');
 	obstructs = 'fault';
-	expect(await around(recording, publish)).toBe('published');
-	// A batch that throws still has no obstacle to leave behind.
+	expect(await around(write, run)).toBe('written');
+	// A write that throws still has no obstacle to leave behind.
 	await expect(
-		around(recording, async () => {
-			throw new Error('the batch threw');
+		around(write, async () => {
+			throw new Error('the write threw');
 		}),
-	).rejects.toThrow('the batch threw');
+	).rejects.toThrow('the write threw');
 
-	expect(publications).toBe(2);
+	expect(writes).toBe(2);
 	expect(removed).toEqual([]);
 	await workspace.close();
 });
@@ -1062,7 +1182,10 @@ test('a desktop app that is not Whispering’s shell, and a browser tab, are ask
 test('a lost host reply after the endpoint was called is reported as unknown, never as not sent, and nothing is sent again', async () => {
 	const provider = { transcriptions: 0, completions: 0 };
 	const served = await realHost({
-		env: { WHISPERING_TRANSCRIPTION_API_KEY: 'local-test-key' },
+		env: {
+			WHISPERING_TRANSCRIPTION_API_KEY: 'local-test-key',
+			WHISPERING_TRANSCRIPTION_BASE_URL: 'http://127.0.0.1:18080/v1',
+		},
 		// A counted local stand-in for the endpoint. Nothing leaves this process.
 		fetch: async (input) => {
 			if (input.endsWith('/audio/transcriptions')) {
@@ -1097,13 +1220,20 @@ test('a lost host reply after the endpoint was called is reported as unknown, ne
 			},
 		}),
 	);
+	expectOk(
+		await workspace.connections.set('text', {
+			baseUrl: 'http://127.0.0.1:18080/v1',
+			model: 'chat-model',
+			key: { action: 'replace', key: 'text-test-key' },
+		}),
+	);
 	const transcription = {
 		audioPath: 'recordings/take.wav',
-		baseUrl: 'http://127.0.0.1:18080/v1',
+		expectedBaseUrl: 'http://127.0.0.1:18080/v1',
 		model: 'verification-model',
 	};
 	const transformation = {
-		baseUrl: 'http://127.0.0.1:18080/v1',
+		expectedBaseUrl: 'http://127.0.0.1:18080/v1',
 		model: 'chat-model',
 		prompt: 'Fix the punctuation.',
 		input: 'um so a steady tone',

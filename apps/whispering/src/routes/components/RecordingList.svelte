@@ -201,7 +201,7 @@
 						size="sm"
 						variant="outline"
 						disabled={busy || selection.rows.length === 0}
-						tooltip="Sends each selected recording shown here that has no transcript, one at a time, with {library.settings.transcriptionModel || 'the model in Settings'}"
+						tooltip="Sends each selected recording shown here that has no transcript, one at a time, with {library.connections?.transcription?.model ?? 'the transcription connection in Settings'}"
 						onclick={() => void transcribeSelected()}
 						data-testid="transcribe-selected"
 					>

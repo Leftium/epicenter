@@ -38,12 +38,15 @@
 {#snippet detail(onBack: (() => void) | undefined)}
 	{@const selected = library.selectedTransformation}
 	{#if selected}
-		{#key selected.editor}
+		{#key selected.path}
 			<TransformationDetail
 				{library}
-				editor={selected.editor}
+				path={selected.path}
+				slot={selected.slot}
 				entry={selected.entry}
 				bind:applyTo={view.applyTo}
+				bind:applySource={view.applySource}
+				bind:pastedText={view.pastedText}
 				{onBack}
 				onOpenFile={(path) => void openFile(path)}
 			/>
@@ -55,7 +58,7 @@
 				<Empty.Description>It was renamed or deleted outside this window. Results it produced are still saved.</Empty.Description>
 			{:else}
 				<Empty.Title>Select a transformation</Empty.Title>
-				<Empty.Description>Its prompt, endpoint, model, and results open here.</Empty.Description>
+				<Empty.Description>Its instructions and results open here, with a place to try it on pasted text.</Empty.Description>
 			{/if}
 			{#if onBack}
 				<Button variant="outline" size="sm" onclick={onBack}><ArrowLeftIcon /> Back to transformations</Button>

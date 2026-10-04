@@ -1,15 +1,17 @@
 /**
  * Device preferences tests
  *
- * The chosen microphone is kept in the same device file as the API key,
- * under the folder's `.git`. These drive the host through the real bridge
- * encoding against a real directory and read the file that results.
+ * The chosen microphone is kept in the same device file as the connections
+ * and their keys, under the folder's `.git`. These drive the host through the
+ * real bridge encoding against a real directory and read the file that
+ * results.
  *
  * Key behaviors:
- * - Saving a microphone keeps the key and every field the app does not know;
- *   saving a key keeps the microphone and those fields
- * - A key save and a microphone save that overlap both land
- * - No preference reply carries the key
+ * - Saving a microphone keeps the connections, an earlier build's key, and
+ *   every field the app does not know; saving a connection keeps the
+ *   microphone and those fields
+ * - Connection saves and a microphone save that overlap all land
+ * - No preference or connection reply carries a key
  * - A key from the environment does not stop a microphone from being saved,
  *   and the key saved in the file is left as it was
  * - A preference that does not read as one is refused and writes nothing
@@ -38,6 +40,21 @@ const TOKEN = 'test-token';
 const ORIGIN = 'http://127.0.0.1:4999';
 const SECRET = 'device-secret-key';
 const USB = { deviceId: 'usb-id', label: 'USB Microphone' };
+const BASE_URL = 'http://127.0.0.1:18080/v1';
+
+/** A text connection with this key, as the Settings form saves it. */
+const textConnection = (key: string) => ({
+	operation: 'text',
+	baseUrl: BASE_URL,
+	model: 'chat-model',
+	key: { action: 'replace', key },
+});
+/** The connection as the device file holds it. */
+const stored = (key: string) => ({
+	baseUrl: BASE_URL,
+	model: 'chat-model',
+	apiKey: key,
+});
 
 const cleanups: (() => Promise<void>)[] = [];
 afterEach(async () => {
@@ -98,7 +115,7 @@ async function start(overrides: Partial<HostOptions> = {}) {
 	};
 }
 
-test('saving a microphone keeps the key and unknown fields, and no reply or log carries the key', async () => {
+test('saving a microphone keeps the keys and unknown fields, and no reply or log carries a key', async () => {
 	const { bridge, saved, seed, replies, logged } = await start();
 	await seed({
 		transcriptionApiKey: SECRET,
@@ -118,22 +135,20 @@ test('saving a microphone keeps the key and unknown fields, and no reply or log 
 		microphone: USB,
 	});
 	expect(await bridge.app<unknown>('preferences')).toEqual({ microphone: USB });
-	// The key is still the one in use.
-	expect(
-		await bridge.app<{ credentialPresent: boolean }>('info'),
-	).toMatchObject({ credentialPresent: true });
+	// The earlier key is still there, still sent nowhere until it is moved.
+	expect(await bridge.app('connections')).toMatchObject({ legacyKey: true });
 	expect([...replies, ...logged].join('\n')).not.toContain(SECRET);
 });
 
-test('saving a key keeps the microphone and unknown fields; forgetting the microphone keeps the key', async () => {
-	const { bridge, saved, seed } = await start();
+test('saving a connection keeps the microphone and unknown fields; forgetting the microphone keeps the connection', async () => {
+	const { bridge, saved, seed, replies } = await start();
 	await seed({ microphone: USB, addedByALaterBuild: 7 });
 
-	await bridge.app('credential', { key: SECRET });
+	await bridge.app('set-connection', textConnection(SECRET));
 	expect(await saved()).toEqual({
 		microphone: USB,
 		addedByALaterBuild: 7,
-		transcriptionApiKey: SECRET,
+		textConnection: stored(SECRET),
 	});
 
 	expect(
@@ -141,21 +156,27 @@ test('saving a key keeps the microphone and unknown fields; forgetting the micro
 	).toEqual({ microphone: null });
 	expect(await saved()).toEqual({
 		addedByALaterBuild: 7,
-		transcriptionApiKey: SECRET,
+		textConnection: stored(SECRET),
 	});
+	expect(replies.join('\n')).not.toContain(SECRET);
 });
 
-test('a key save and microphone saves that overlap all land', async () => {
+test('connection saves and microphone saves that overlap all land', async () => {
 	const { bridge, saved } = await start();
 
 	await Promise.all([
-		bridge.app('credential', { key: SECRET }),
+		bridge.app('set-connection', textConnection(SECRET)),
 		bridge.app('set-preferences', { microphone: USB }),
-		bridge.app('credential', { key: `${SECRET}-2` }),
+		bridge.app('set-connection', {
+			...textConnection(`${SECRET}-2`),
+			operation: 'transcription',
+		}),
+		bridge.app('set-connection', textConnection(`${SECRET}-3`)),
 	]);
 
 	expect(await saved()).toEqual({
-		transcriptionApiKey: `${SECRET}-2`,
+		textConnection: stored(`${SECRET}-3`),
+		transcriptionConnection: stored(`${SECRET}-2`),
 		microphone: USB,
 	});
 });
@@ -174,9 +195,12 @@ test('a key from the environment does not stop a microphone save, and the saved 
 		transcriptionApiKey: SECRET,
 		microphone: USB,
 	});
-	await expect(bridge.app('credential', { key: 'typed-key' })).rejects.toThrow(
-		'cannot be changed here',
-	);
+	await expect(
+		bridge.app('set-connection', {
+			...textConnection('typed-key'),
+			operation: 'transcription',
+		}),
+	).rejects.toThrow('comes from WHISPERING_TRANSCRIPTION_API_KEY');
 	expect(await saved()).toEqual({
 		transcriptionApiKey: SECRET,
 		microphone: USB,
@@ -245,9 +269,14 @@ test('a device file that is not one JSON object is refused and left as it is, by
 		await expect(
 			bridge.app('set-preferences', { microphone: null }),
 		).rejects.toThrow('does not read as a JSON object');
-		await expect(bridge.app('credential', { key: 'new-key' })).rejects.toThrow(
-			'does not read as a JSON object',
-		);
+		await expect(
+			bridge.app('set-connection', textConnection('new-key')),
+		).rejects.toThrow('does not read as a JSON object');
+		await expect(
+			bridge.app('adopt-legacy-key', {
+				targets: { text: { baseUrl: BASE_URL, model: 'chat-model' } },
+			}),
+		).rejects.toThrow('does not read as a JSON object');
 		await expect(bridge.app('preferences')).rejects.toThrow(
 			'does not read as a JSON object',
 		);
@@ -255,12 +284,15 @@ test('a device file that is not one JSON object is refused and left as it is, by
 		expect(await readFile(deviceFile, 'utf8')).toBe(contents);
 		// Nothing was staged beside it either.
 		expect(await readdir(join(deviceFile, '..'))).toEqual(['device.json']);
-		// A key that cannot be read is not reported as set, and is not quoted anywhere.
-		expect(
-			await bridge.app<{ credentialPresent: boolean }>('info'),
-		).toMatchObject({ credentialPresent: false });
+		// Connections that cannot be read are reported as that, never as none
+		// set up, and no key is quoted anywhere.
+		await expect(bridge.app('connections')).rejects.toThrow(
+			'does not read as a JSON object',
+		);
 		expect([...replies, ...logged].join('\n')).not.toContain(SECRET);
-		expect([...replies, ...logged].join('\n')).not.toContain('addedByALaterBuild');
+		expect([...replies, ...logged].join('\n')).not.toContain(
+			'addedByALaterBuild',
+		);
 	}
 });
 
@@ -280,4 +312,35 @@ test('once the file is repaired by hand, saves work again and keep what it holds
 		addedByALaterBuild: 7,
 		microphone: USB,
 	});
+});
+
+test('a malformed connection remains recoverable through saves and legacy adoption', async () => {
+	const { bridge, deviceFile, seed, replies, logged } = await start();
+	await seed({
+		textConnection: { baseUrl: BASE_URL, model: 7, apiKey: SECRET },
+		transcriptionApiKey: 'earlier-key',
+	});
+	const before = await readFile(deviceFile, 'utf8');
+	for (const key of [
+		{ action: 'keep' },
+		{ action: 'remove' },
+		{ action: 'replace', key: 'new-key' },
+	]) {
+		await expect(
+			bridge.app('set-connection', {
+				operation: 'text',
+				baseUrl: BASE_URL,
+				model: 'chat-model',
+				key,
+			}),
+		).rejects.toThrow('does not read as one');
+		expect(await readFile(deviceFile, 'utf8')).toBe(before);
+	}
+	await expect(
+		bridge.app('adopt-legacy-key', {
+			targets: { text: { baseUrl: BASE_URL, model: 'chat-model' } },
+		}),
+	).rejects.toThrow('does not read as one');
+	expect(await readFile(deviceFile, 'utf8')).toBe(before);
+	expect([...replies, ...logged].join('\n')).not.toContain(SECRET);
 });

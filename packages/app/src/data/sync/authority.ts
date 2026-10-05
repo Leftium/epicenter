@@ -292,11 +292,12 @@ function createLogOperations(
 		},
 		since(cursor: number, limit = 64): LogEntry[] {
 			// Limit entries, not storage chunks: every returned entry is complete.
-			const positions = sqlite.all<SqliteRow & { seq: number }>(
-				'SELECT DISTINCT seq FROM _log WHERE seq > ? ORDER BY seq LIMIT ?',
-				[cursor, limit],
-			);
-			const newest = positions.at(-1)?.seq;
+			const newest = sqlite
+				.all<SqliteRow & { seq: number }>(
+					'SELECT DISTINCT seq FROM _log WHERE seq > ? ORDER BY seq LIMIT ?',
+					[cursor, limit],
+				)
+				.at(-1)?.seq;
 			if (newest === undefined) return [];
 			const rows = sqlite.all<
 				SqliteRow & { seq: number; bytes: Uint8Array | ArrayBuffer }
@@ -336,11 +337,12 @@ function createLogOperations(
 		fold(position: number, bytes: Uint8Array): void {
 			writeSnapshot(position, bytes);
 			sqlite.run('DELETE FROM _log WHERE seq <= ?', [position]);
-			const kept = sqlite.all<SqliteRow & { position: number }>(
-				'SELECT DISTINCT position FROM _snapshot ORDER BY position DESC LIMIT ?',
-				[SNAPSHOTS_KEPT],
-			);
-			const oldest = kept.at(-1)?.position;
+			const oldest = sqlite
+				.all<SqliteRow & { position: number }>(
+					'SELECT DISTINCT position FROM _snapshot ORDER BY position DESC LIMIT ?',
+					[SNAPSHOTS_KEPT],
+				)
+				.at(-1)?.position;
 			if (oldest !== undefined)
 				sqlite.run('DELETE FROM _snapshot WHERE position < ?', [oldest]);
 		},

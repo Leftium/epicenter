@@ -174,9 +174,8 @@ export async function acquireStoreData(
 	);
 	if (prefixError !== null) return Err(prefixError);
 	// A stable name per actor and selected scope; generations live in its header.
-	const address = `${prefix}personal/current`;
 	const { data: cache, error: cacheError } = await openCurrentCache(
-		address,
+		`${prefix}personal/current`,
 		idb,
 	);
 	if (cacheError !== null) return Err(cacheError);

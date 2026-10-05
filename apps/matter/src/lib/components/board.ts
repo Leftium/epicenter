@@ -118,23 +118,16 @@ export function boardDropEditFor({
 	groupByField: ContractField;
 	columnValue: string | null;
 }): BoardDropEdit | null {
-	const fileName = card.row.fileName;
 	// Match the bucketing in `groupRowsByField`: a nullish cell is Unassigned, and a
 	// present value keys by its string form, so the no-op check compares like with like.
 	const current = card.row.frontmatter[groupByField.name];
 	const currentColumn = current == null ? null : String(current);
 	if (currentColumn === columnValue) return null;
-	if (columnValue === null) {
-		return {
-			fileName,
-			key: groupByField.name,
-			value: undefined,
-		};
-	}
-	if (!canWriteBoardColumn(groupByField, columnValue)) return null;
+	if (columnValue !== null && !canWriteBoardColumn(groupByField, columnValue))
+		return null;
 	return {
-		fileName,
+		fileName: card.row.fileName,
 		key: groupByField.name,
-		value: columnValue,
+		value: columnValue ?? undefined,
 	};
 }

@@ -192,7 +192,7 @@ merge bases are `UnsupportedHistory`.
   path whatever its bytes. `commit_staged` checks the incoming record and the
   merge state under the Git lock and is `Unmerged { paths }` while a path is.
   `ORIG_HEAD` is the merge's first parent: the merge commit is built from a
-  listing of the index, with exactly `ORIG_HEAD` and `MERGE_HEAD` as parents
+  private copy of the index, with exactly `ORIG_HEAD` and `MERGE_HEAD` as parents
   even when its tree equals the head's, and the branch moves by
   compare-and-swap from `ORIG_HEAD`, never by `git commit`. A branch another
   program moved anywhere else is `BranchMoved { expected, actual }`, and a
@@ -201,6 +201,12 @@ merge bases are `UnsupportedHistory`.
   the merge state afterward is `mergeStateWarning`, and the next staged commit
   removes leftover merge state only when the branch's latest commit has
   exactly those two parents.
+- **Every staged commit** pins its parents before construction and moves the
+  branch only if it still names the first parent. Git writes the tree from a
+  private index copy, excluding intent-to-add placeholders while preserving
+  staged empty files, modes, and deletions. A concurrent branch move reports
+  `BranchMoved { expected, actual }` and leaves the live index unchanged.
+  Built-in commits run no commit hooks and are unsigned.
 - **Unmerged stages without `MERGE_HEAD`** block whole-folder commits,
   automatic commits, and incoming updates, and a staged commit over them is
   `Unmerged`; nothing erases them but staging each path.

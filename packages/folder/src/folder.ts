@@ -126,10 +126,13 @@ export type FolderGit = {
 	 */
 	stage(paths: readonly string[] | 'all'): Promise<Result<undefined, GitError>>;
 	/**
-	 * Commit staged changes with a user-authored message in manual mode. With
-	 * a merge in progress the commit finishes it, with the branch head and
-	 * `snapshot.merging.incoming` as parents; while a path is still unmerged
-	 * it is `Unmerged` and writes nothing.
+	 * Commit staged changes with a user-authored message in manual mode. The
+	 * commit pins its parent and moves the branch only if it still names that
+	 * parent; otherwise it is `BranchMoved` and keeps the index unchanged.
+	 * With a merge in progress, the parents are the head recorded when the
+	 * merge began and `snapshot.merging.incoming`; while a path is still
+	 * unmerged it is `Unmerged` and writes nothing. Built-in commits run no
+	 * commit hooks and are unsigned.
 	 */
 	commitStaged(message: string): Promise<Result<StagedCommit, GitError>>;
 	diff(options: {

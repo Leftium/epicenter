@@ -1442,9 +1442,14 @@ the merge state stay as they were. Moving the branch back to `ORIG_HEAD`
 lets the merge finish. To abandon it, remove `MERGE_HEAD` and reset the index;
 the working files remain available to repair. Without a readable
 `ORIG_HEAD` the staged commit is refused, because the merge's first parent is
-unknown. The Bun directory writes this commit's tree and commit as objects
-rather than running `git commit`, which would take whatever `HEAD` names, so
-no commit hooks run for it.
+unknown.
+
+Every built-in staged commit pins its parents, writes the staged tree and
+commit as objects, and moves the branch only if it still names the pinned
+first parent. A concurrent branch move is `BranchMoved` and leaves the index
+unchanged. On disk, Git writes the tree from a private copy of the index:
+intent-to-add placeholders stay out, while staged empty files, modes, and
+deletions remain. Built-in commits run no commit hooks and are unsigned.
 
 If that removal fails, the commit is still reported with `mergeStateWarning`.
 While `MERGE_HEAD` remains, `snapshot.merging` stays visible. The next staged

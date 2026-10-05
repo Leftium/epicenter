@@ -59,16 +59,15 @@ export async function enumerateDevices(): Promise<
 				audio: SPEECH_MEDIA_TRACK_CONSTRAINTS,
 			});
 			try {
-				const devices = await navigator.mediaDevices.enumerateDevices();
 				// On Web: Return Device objects with both ID and label
-				return devices
+				return (await navigator.mediaDevices.enumerateDevices())
 					.filter((device) => device.kind === 'audioinput')
 					.map((device) => ({
 						id: asDeviceIdentifier(device.deviceId),
 						label: device.label,
 					}));
 			} finally {
-				for (const track of stream.getTracks()) track.stop();
+				cleanupRecordingStream(stream);
 			}
 		},
 		catch: (error) => DeviceStreamError.PermissionDenied({ cause: error }),

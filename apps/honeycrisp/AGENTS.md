@@ -46,10 +46,11 @@ against the code. The constraints below apply to every edit here.
   derived from a listed snapshot; keep that condition in the pending record
   so a resend is never rebased. On an open note the same command goes into
   its editor as the whole note. It is refused, before it changes the editor,
-  while the last save failed or is unconfirmed, the note shows its file or
-  has fields that do not read, or a rename or delete runs or stopped short:
-  going past one would act as the person's Try again. A running save is no
-  reason to refuse; the write queues behind it.
+  while the note shows its file, has fields that do not read, or a rename
+  or delete runs or stopped short:
+  the command must not save to an unsettled path. A running or failed save
+  is no reason to refuse; the new complete document queues behind any running
+  write.
 - A note whose text does not read as one opens the same row editor and is
   repaired in its file view. Never hand a note path to a text session or an
   ordinary file publisher, including when its editor does not open; a file
@@ -78,10 +79,13 @@ against the code. The constraints below apply to every edit here.
   file: the last writer wins.
 - A save receipt acknowledges submitted bytes. A later read is a separate
   observation and never proves which request published those bytes.
-- A failed or unconfirmed write pauses publication until the person chooses
-  Try again (`retry`), however much they type meanwhile; the text stays
-  editable. Present unconfirmed as uncertainty, with the folder's own
-  message. Nothing replays an old request, and `flush` only waits.
+- A failed or unconfirmed write keeps its error visible and the text
+  editable. The error stays visible during a later save until a save or
+  explicit reload succeeds. The latest waiting input proceeds after failure, and later input
+  starts another save. Try again (`retry`) resubmits the current text. Present
+  unconfirmed as uncertainty, with the folder's own message. Nothing replays
+  an old request, and `flush` waits for every consecutive admitted write and
+  reports the final outcome.
 - Typed text the editor refuses (a title or Markdown source with an
   unpaired surrogate) stays in its own control with the reason shown, and
   counts as unsaved. It is never submitted and never grows into a whole

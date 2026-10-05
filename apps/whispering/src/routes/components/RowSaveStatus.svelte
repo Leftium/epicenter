@@ -8,8 +8,8 @@
 	/**
 	 * One open row's save, in the row editor's terms. Typing is saved as it
 	 * is typed. A write that failed or was never answered keeps the edits on
-	 * screen and stops saving until the person saves again; an unknown one
-	 * stays unknown even when the file holds the same text. The file is read
+	 * screen. New input saves again; an unknown outcome stays unknown even
+	 * when the file holds the same text. The file is read
 	 * again only when the person asks, which replaces what is shown.
 	 *
 	 * `editing` can be another path's on the next render, so every action
@@ -18,6 +18,9 @@
 	 * state returns.
 	 */
 	let { library, editing }: { library: Library; editing: RowEditing<TFields> } = $props();
+
+	/** A previous save error stays visible while the latest input is saving. */
+	const failure = $derived('error' in editing.save ? editing.save.error : undefined);
 
 	async function reload() {
 		const problem = await library.reloadRow(editing.path);
@@ -33,12 +36,20 @@
 <div class="flex min-h-9 flex-wrap items-center gap-2 border-b px-4 py-1.5 text-xs" data-testid="save-status" data-save-state={editing.status.kind}>
 	{#if editing.status.kind === 'saving'}
 		<span class="text-muted-foreground">Saving…</span>
+		{#if failure}
+			<span class="text-destructive" role="alert">
+				{failure.name === 'Unconfirmed'
+					? `The last save was not confirmed, so it may or may not be in the file: ${failure.message}`
+					: `The last save failed: ${failure.message}`}
+				Your latest edit is being saved.
+			</span>
+		{/if}
 	{:else if editing.status.kind === 'failed' || editing.status.kind === 'unconfirmed'}
 		<span class="text-destructive" role="alert">
 			{editing.status.kind === 'failed'
 				? `Not saved: ${editing.status.message}.`
 				: `The last save was not confirmed, so it may or may not be in the file: ${editing.status.message}`}
-			Your edits are kept here, and saving has stopped until you save again.
+			Your edits are kept here. Your next edit saves again, or use Save again without changing them.
 		</span>
 		<LiveButton size="xs" variant="outline" onclick={retry}>Save again</LiveButton>
 		<LiveButton size="xs" variant="outline" onclick={() => void reload()}>Discard mine and load the file</LiveButton>

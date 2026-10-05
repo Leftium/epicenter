@@ -15,8 +15,8 @@
  * - a control kept after its view is gone, or after the component is
  *   destroyed, changes nothing; nor does one from an earlier mode after that
  *   mode returns
- * - after a failed save the typing stays on screen and editable; Save again
- *   saves it, and Discard loads the file into the same editor and view
+ * - after a failed save the typing stays on screen and editable; later typing
+ *   saves again, and Discard loads the file into the same editor and view
  * - another program's change is shown only after Reload from file
  * - a transformation's title and source are one editor, and its Source
  *   preference outlives the view
@@ -206,7 +206,7 @@ test('a control kept after its view is gone, or after the component is destroyed
 	expectOk(await editor.flush());
 });
 
-test('after a failed save the typing stays on screen and editable; Save again saves it, and Discard loads the file into the same view', async () => {
+test('after a failed save later typing saves again, and Discard loads the file into the same view', async () => {
 	const { library, target, root } = await open({ [A]: transcript('Alpha.\n') });
 	await show(library, A);
 	const field = bodyField(target, 'a.md');
@@ -221,14 +221,12 @@ test('after a failed save the typing stays on screen and editable; Save again sa
 		// The view stays, with the typing, and takes more of it.
 		expect(bodyField(target, 'a.md')).toBe(field);
 		expect(field?.value).toBe('Typed before it failed.\n');
-		type(field, 'Typed after it failed.\n');
-		expect(editor.row).toMatchObject({ body: 'Typed after it failed.\n' });
-		expect(editor.save.status).toBe('failed');
 	} finally {
 		chmodSync(join(root, 'transcriptions'), 0o755);
 	}
 
-	click(target, 'Save again');
+	type(field, 'Typed after it failed.\n');
+	expect(editor.row).toMatchObject({ body: 'Typed after it failed.\n' });
 	expectOk(await editor.flush());
 	flushSync();
 	expect(await readFile(join(root, A), 'utf8')).toContain(
@@ -436,9 +434,9 @@ test('a recording’s title and notes stay live, with the typing on screen, afte
 		body: 'Typed notes.\n',
 		fields: { title: 'Retitled' },
 	});
-	expect(await readFile(join(root, RECORDING), 'utf8')).toBe(
-		recording('Take', 'Notes.\n'),
-	);
+	expectOk(await editor.flush());
+	expect(await readFile(join(root, RECORDING), 'utf8')).toContain('Retitled');
+	expect(await readFile(join(root, RECORDING), 'utf8')).toContain('Typed notes.');
 });
 
 test('a recording’s Source edits the same editor, and a source control from an earlier mode stays inert', async () => {

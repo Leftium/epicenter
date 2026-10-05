@@ -398,7 +398,7 @@ test('typing in a row whose file was removed blocks the close, stays in the edit
 	expect(await Bun.file(path).exists()).toBe(false);
 });
 
-test('typing after a save that failed is not saved by the close: it is held until the person saves again', async () => {
+test('close keeps failed input visible, and typing after Keep working saves again', async () => {
 	const { library, guard, answers, ask, root } = await open();
 	await record(library);
 	const selection = library.selection;
@@ -406,21 +406,21 @@ test('typing after a save that failed is not saved by the close: it is held unti
 	const editor = editingOf(selection.slot);
 	const path = join(root, editor.path);
 	const before = await Bun.file(path).text();
-	// The row's directory refuses writes, so the save fails and saving stops.
+	// The row's directory refuses both saves; their latest input stays visible.
 	chmodSync(join(root, 'recordings'), 0o555);
 	try {
 		editor.setField('title', 'Typed before it failed');
 		expect((await editor.flush()).error).not.toBeNull();
 		expect(editor.status.kind).toBe('failed');
+		editor.setField('title', 'Typed after it failed');
+		expect((await editor.flush()).error).not.toBeNull();
 	} finally {
 		chmodSync(join(root, 'recordings'), 0o755);
 	}
-	// Typing after the failure is shown and kept, and not saved on its own.
-	editor.setField('title', 'Typed after it failed');
 
 	await ask();
 
-	// Writable again, but nothing is sent on its own after a failure.
+	// Close does not resubmit failed input without another edit.
 	expect(answers).toEqual(['asking']);
 	expect(guard.held).toContain(
 		`${editor.path} has edits whose last save failed.`,
@@ -431,11 +431,11 @@ test('typing after a save that failed is not saved by the close: it is held unti
 		fields: { title: 'Typed after it failed' },
 	});
 
-	// Saving again is the person's choice, and saves the latest input.
-	expect(editor.retry()).toBeUndefined();
+	// Keep working admits later input, which starts another save.
+	editor.setField('title', 'Typed after staying');
 	expectOk(await editor.flush());
 	expect(editor.status.kind).toBe('saved');
-	expect(await Bun.file(path).text()).toContain('Typed after it failed');
+	expect(await Bun.file(path).text()).toContain('Typed after staying');
 	await ask();
 	expect(answers).toEqual(['asking', 'cancel', 'asking', 'proceed']);
 });

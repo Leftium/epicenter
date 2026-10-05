@@ -24,7 +24,10 @@
 	// entry acts on that entry's word.
 	const word = $derived(entries.word(entry.id));
 	const stage = $derived(word.stage());
-	const failure = $derived(word.save?.status === 'failed' ? word.save.error : undefined);
+	const failure = $derived.by(() => {
+		const save = word.save;
+		return save !== undefined && 'error' in save ? save.error : undefined;
+	});
 	/**
 	 * The word whose file text the learner is editing. Only which view to show:
 	 * it keeps the text in view while it becomes a valid word mid-edit.
@@ -117,11 +120,11 @@
 			</div>
 		</div>
 	{:else if failure}
-		<!-- The learner's input stays shown above. Saving waits for their choice. -->
+		<!-- The learner's input stays shown above; another edit starts another save. -->
 		<div role="alert" class="mt-2 space-y-2 text-xs text-destructive">
-			<p>{describeSaveError(failure)} Your text stays here, and nothing is sent again until you choose.</p>
+			<p>{describeSaveError(failure)} {word.save?.status === 'saving' ? 'Saving your latest edit.' : ''} Your text stays here. Your next edit saves again, or choose Try again without changing it.</p>
 			<div class="flex flex-wrap gap-1">
-				<Button size="sm" variant="outline" disabled={word.fenced} onclick={() => { if (mounted) word.retry(); }}>Try again</Button>
+				<Button size="sm" variant="outline" disabled={word.fenced || word.save?.status === 'saving'} onclick={() => { if (mounted) word.retry(); }}>Try again</Button>
 				<Button size="sm" variant="ghost" disabled={word.fenced} onclick={() => act(() => word.reload())}>Discard mine and reload the file</Button>
 			</div>
 		</div>

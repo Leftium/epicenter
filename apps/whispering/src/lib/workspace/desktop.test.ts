@@ -439,7 +439,7 @@ test('saves and history go to the shell’s owner and never to the host', async 
 	await workspace.close();
 });
 
-test('a row save whose reply the shell never sent stays unknown in the real row editor, and nothing more is written on its own', async () => {
+test('a row save whose reply the shell never sent stays unknown, and later input starts another save', async () => {
 	attachable();
 	const disk = new Map<string, Uint8Array>([
 		[
@@ -494,8 +494,7 @@ test('a row save whose reply the shell never sent stays unknown in the real row 
 	});
 	expect(editing.holds).toBe(true);
 
-	// Typing after it is shown and kept, and nothing writes it on its own:
-	// another automatic write would be a retry the person did not ask for.
+	// Later input starts another write, whose reply is lost too.
 	editing.setBody('Tidy it more.\n');
 	expect(editing.row).toMatchObject({
 		status: 'valid',
@@ -503,15 +502,15 @@ test('a row save whose reply the shell never sent stays unknown in the real row 
 	});
 	expect((await editing.flush()).error?.name).toBe('Unconfirmed');
 	expect(editing.holds).toBe(true);
-	expect(written).toHaveLength(1);
+	expect(written).toHaveLength(2);
 
 	// Saving again is the person's choice, and writes the latest input; its
 	// own reply confirms it.
 	loseReplies = false;
 	expect(editing.retry()).toBeUndefined();
 	expect((await editing.flush()).error).toBeNull();
-	expect(written).toHaveLength(2);
-	expect(written[1]).toContain('Tidy it more.');
+	expect(written).toHaveLength(3);
+	expect(written[2]).toContain('Tidy it more.');
 	expect(editing.status).toEqual({ kind: 'saved' });
 
 	editing.release();

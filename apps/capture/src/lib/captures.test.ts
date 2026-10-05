@@ -977,7 +977,7 @@ test('text a file cannot hold exactly is never put back or copied: nothing is wr
 	await t.folder.close();
 });
 
-test('a file that came back is not put back over; only Try again writes over it', async () => {
+test('a file that came back is not put back over; Try again explicitly writes over it', async () => {
 	const t = await setup();
 	const { stem, draft, mine } = await removedWithText(t);
 	const C = `${mine.replace('Mine', 'Written by another program')}- with a thought\n`;
@@ -987,7 +987,7 @@ test('a file that came back is not put back over; only Try again writes over it'
 	expect(restored).toMatchObject({ ok: false });
 	expect(!restored.ok && restored.message).toContain('nothing was written');
 	expect(await t.text(stem)).toBe(C);
-	// Leaving does not write over it either: the failure waits for the person.
+	// Leaving does not write over it either: no new input was submitted.
 	expect(await t.captures.departure.settle()).toBe(1);
 	expect(await t.text(stem)).toBe(C);
 

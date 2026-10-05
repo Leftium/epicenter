@@ -6,9 +6,9 @@
  * change is a complete replacement handed to `set` or `setText` at once; it
  * is the row the views show from then on and is written last-writer-wins
  * over the existing file, one write at a time with the latest input next.
- * A failed or unconfirmed write keeps the input and the error and pauses
- * writing until the person tries again (`retry`) or reloads the file over
- * their input (`reload`). The file is read when the editor opens and again
+ * A failed or unconfirmed write keeps the input and error visible. New input
+ * saves again; `retry` saves the current input without changing it, and
+ * `reload` replaces it with the file. The file is read when the editor opens and again
  * only on `reload`; nothing adopts another writer's change on its own.
  *
  * This module adds only:
@@ -298,15 +298,13 @@ export function createTodoEditor(
 		/**
 		 * The list's checkbox for this open todo: `done` in the complete row on
 		 * screen, written now. Answers why nothing was written. Refused while
-		 * the todo is edited as source, or writing waits for the person.
+		 * the todo is edited as source.
 		 */
 		async toggle(done: boolean): Promise<string | undefined> {
 			const blocked = refused();
 			if (blocked !== undefined) return blocked;
 			if (editor.row.status !== 'valid' || rawMode)
 				return 'This todo is open in its source editor. Change it there.';
-			if (editor.save.status === 'failed')
-				return 'This todo has a save that did not finish. Choose what to do in its editor first.';
 			const { error: unrepresentable } = editor.set({
 				fields: { ...editor.row.fields, done },
 				body: editor.row.body,

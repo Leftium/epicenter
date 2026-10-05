@@ -5,8 +5,8 @@
  * The row editor owns the row. What the person types is its input as soon as
  * they type it, valid or not, and one write at a time saves the latest input
  * over the file. A write that failed, or whose reply never arrived, keeps the
- * input on screen and stops saving, typing included, until the person saves
- * again. The editor never reads the file again on its own: a change made
+ * input and error on screen. New input saves again; Save again resubmits
+ * the current input. The editor never reads the file again on its own: a change made
  * elsewhere shows only when the person reloads, and otherwise the next save
  * writes over it. A file that is gone is never created again.
  *

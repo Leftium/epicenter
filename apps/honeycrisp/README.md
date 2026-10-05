@@ -170,14 +170,14 @@ For a note:
 | You typed while a save was running | The newer typing saves next. |
 | Your text does not read as a note | It is saved as you type it, and the note shows its file view with the problems named until it reads as a note again. |
 | A value cannot be written at all, such as a title with half of an emoji | It is not saved, and the note says why. What you typed stays in that field until you change it, and counts as unsaved at close. In the rich-text view the keystroke is refused instead. |
-| A save failed | Your text stays editable, with **Try again**, and nothing more is saved until you choose it, however much you type. **Reload file** replaces your text with the file. |
-| A save got no reply, or the folder threw an error during the save | It is shown as not confirmed, with the folder's own words, such as where it kept text it displaced: the file may or may not have it. Nothing more is saved until you choose **Save again** or **Reload file**. |
+| A save failed | Your text stays editable and the error stays visible, including during a later save, until a newer save or reload succeeds. A waiting edit proceeds, and later typing saves again. **Try again** saves the current text without changing it. **Reload file** replaces your text with the file. |
+| A save got no reply, or the folder threw an error during the save | It is shown as not confirmed, with the folder's own words, such as where it kept text it displaced: the file may or may not have it. A waiting edit proceeds, and later typing saves again. **Save again** resubmits the current text; **Reload file** replaces it with the file. |
 | A reload could not read the file | Your text and its save state stay as they were, and the note says why. |
 | The file was deleted | The note stays open with your text. Its next save, or a reload, finds no file and says so; nothing writes the file back by itself. **Save as a note** creates it again, exactly as the editor holds it, while the path is free, and as a new note when another file took the path; that file stays as it is. Text a file cannot hold exactly, such as half of an emoji, is not saved as a file at all, and **Save as a note** waits while such a value you typed is still in a field. |
 | Your text was saved as a file that then would not open | Your text stays on screen, exactly as saved, with **Copy text** and **Try opening again**, and counts as unsaved at close until the note opens or you choose **Stop keeping this text**. |
 | A rename or delete got no reply, or a rename created the new file without removing the old one | The editor stays where it was, takes no typing, and saves nothing, since a save would land at the old path. **Copy text** keeps your text, and **Stop tracking this rename** (or **delete**) concludes nothing about where the file is; typing waits until you choose **Save at** the old name or **Reload file**. |
 | You rename or delete a note | Typing waits while it runs. Its saves finish first, then the file is read: if it holds other text than the editor, nothing is renamed or deleted, and **Reload file** shows that text. A delete removes exactly the version you confirmed and reads nothing after you confirm. A confirmed rename opens the note at its new name. |
-| You move an open note to Recently Deleted or restore it, or pin or move it from the note list, while its last save failed or is not confirmed, the note shows its file, or a rename or delete of it runs or is not finished | Refused, and the note is unchanged. Nothing is saved again for you. A save that is only running is no reason to refuse: the action saves after it. |
+| You move an open note to Recently Deleted or restore it, or pin or move it from the note list, while the note shows its file, or a rename or delete of it runs or is not finished | Refused, and the note is unchanged. A running or failed save does not block the action: it submits the complete current document after any running save. |
 | You open another note | Each note keeps its editor and its text. |
 
 A text session keeps these apart: the saved file it last agreed with, your
@@ -301,7 +301,9 @@ An open note is saved by its row editor (`folder.tables.notes.edit`): each
 edit gives it the complete document with `set`, or the file view's exact text
 with `setText`, and the editor writes the whole note by replacing the existing
 file, one write at a time with only the latest waiting. After a failed write
-it publishes again only on `retry`; `flush` waits for admitted writes, and
+the latest waiting input proceeds, and later input starts another save.
+`retry` resubmits the current text; `flush` waits for all consecutive admitted
+writes and reports the final outcome, and
 `reload` is the one read of the file after opening. The views read it
 through `fromRowEditor` from `@epicenter/folder/svelte`. A deleted note is
 created again only by `files.create`, at the person's request. A field change to a

@@ -15,7 +15,7 @@
  *   explicit exclusive create through the same editor
  * - Source saves exactly as typed, frontmatter and malformed text included,
  *   through the one editor; the Capture view returns once the text is valid
- * - A failed save pauses saving until Try again; Reload drops the failed text
+ * - A failed save keeps text visible; later input saves and Reload replaces it
  * - An operation that holds the capture takes no input through any path
  *
  * See also:
@@ -324,7 +324,7 @@ test('unsent thought text and refused capture text are unsettled until resolved'
 	await t.done();
 });
 
-test('a failed save pauses saving: later text is shown and kept, and only Try again sends it', async () => {
+test('a failed save keeps input visible and later corrected text saves again', async () => {
 	const t = await setup();
 	t.draft.setView('source');
 	const lone = t.draft.source.replace('\nA\n', '\nlone \uD800\n');
@@ -339,11 +339,6 @@ test('a failed save pauses saving: later text is shown and kept, and only Try ag
 	t.draft.inputSource(fixed);
 	await t.draft.settle();
 	expect(t.draft.source).toBe(fixed);
-	expect(t.draft.notice?.kind).toBe('failed');
-	expect(await t.disk()).toBe(A);
-
-	t.draft.retry();
-	await t.draft.settle();
 	expect(t.draft.notice).toBeUndefined();
 	expect(await t.disk()).toBe(fixed);
 	await t.done();

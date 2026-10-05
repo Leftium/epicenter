@@ -4,8 +4,7 @@
  * Drives the real todo editor runes module over a real native row editor
  * (`table.edit`) whose storage the test controls: replies can be held,
  * writes can fail, reads can fail, and another writer can change the file.
- * The native editor owns the row, its publication queue, and its pause after
- * a failure; these tests pin what the app adds: complete rows from the
+ * The native editor owns the row and its publication queue; these tests pin what the app adds: complete rows from the
  * fields view, the source preference, view gates, fences, and release.
  *
  * Key behaviors:
@@ -17,8 +16,7 @@
  * - A malformed row opens for raw repair, and raw mode stays after the
  *   repair until the person chooses fields
  * - Each setter admits input only while its own view's gate holds
- * - A failed save keeps newer input on screen and writes nothing until
- *   Try again, which writes the exact latest text, comments included
+ * - A failed save keeps input on screen; a later edit or checkbox saves again
  * - Another writer's change is not read in; Reload shows it and ends a
  *   failure, and a read that fails keeps the input
  * - A title or notes value the row cannot take stays in its field with why,
@@ -228,7 +226,7 @@ test('a leaving view admits nothing: raw input outside raw mode, and fields inpu
 	expect(fake.writes).toEqual([]);
 });
 
-test('a failed save keeps newer input on screen and writes nothing until Try again, which writes the latest input', async () => {
+test('a failed save keeps input on screen and the list checkbox saves the complete row again', async () => {
 	const { fake, todo } = await setup();
 	fake.script('io');
 	todo.setTitle('A');
@@ -236,16 +234,12 @@ test('a failed save keeps newer input on screen and writes nothing until Try aga
 	expect(todo.hasProblem).toBe(true);
 	expect(fake.writes).toEqual([]);
 
-	todo.setTitle('B');
-	expect(todo.title()).toBe('B');
-	expect(await written(todo)).toBe('Io');
-	expect(fake.writes).toEqual([]);
-	expect(await todo.toggle(true)).toContain('did not finish');
-
-	expect(todo.retry()).toBeUndefined();
+	expect(await todo.toggle(true)).toBeUndefined();
+	expect(todo.title()).toBe('A');
+	expect(todo.editor.row).toMatchObject({ fields: { title: 'A', done: true } });
 	expect(await written(todo)).toBeUndefined();
 	expect(todo.isIdle).toBe(true);
-	expect(fake.writes.map((text) => parsed(text).fields.title)).toEqual(['B']);
+	expect(fake.writes.map((text) => parsed(text).fields.title)).toEqual(['A']);
 });
 
 test('Try again writes the exact text on screen: a comment and quoting stay', async () => {
@@ -359,7 +353,7 @@ test('a refused title or notes value stays in its field with why, other fields k
 	expect(todo.isIdle).toBe(true);
 });
 
-test('raw text UTF-8 cannot encode exactly is held by the native editor and fails on its turn without a write; a fix and Try again write it', async () => {
+test('raw text UTF-8 cannot encode exactly is held by the native editor and fails on its turn without a write; corrected input writes it', async () => {
 	const { fake, todo } = await setup();
 	expect(todo.editSource()).toBeUndefined();
 	const valid = todo.text();
@@ -373,8 +367,6 @@ test('raw text UTF-8 cannot encode exactly is held by the native editor and fail
 	expect(fake.writes).toEqual([]);
 
 	todo.setText(`${valid}fixed\n`);
-	expect(await written(todo)).toBe('Unencodable');
-	expect(todo.retry()).toBeUndefined();
 	expect(await written(todo)).toBeUndefined();
 	expect(fake.disk()).toBe(`${valid}fixed\n`);
 });
@@ -403,10 +395,10 @@ test('a fence refuses input and waits for admitted writes; a failure leaves it u
 	todo.setTitle('B');
 	expect(await todo.fence(async (settled) => settled)).toBe(false);
 	expect(todo.hasProblem).toBe(true);
-	// Newer input after the failure is not written by the fence either.
+	// Newer input starts a save; the fence waits for it without another retry.
 	todo.setTitle('C');
-	expect(await todo.fence(async (settled) => settled)).toBe(false);
-	expect(parsed(fake.disk()).fields.title).toBe('A');
+	expect(await todo.fence(async (settled) => settled)).toBe(true);
+	expect(parsed(fake.disk()).fields.title).toBe('C');
 });
 
 test('a hold refuses input while its work runs, then reads the row the work wrote', async () => {

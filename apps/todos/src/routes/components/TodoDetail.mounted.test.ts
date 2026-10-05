@@ -17,7 +17,7 @@
  *   control of a mode that left (source, Edit fields, title, notes,
  *   checkbox, Edit source) admits nothing, even after that mode returns;
  *   the returned mode's new controls edit the todo
- * - A failed save keeps the input on screen and pauses; disk C written by
+ * - A failed save keeps the input on screen; disk C written by
  *   another writer replaces nothing, and Discard mine and reload shows C in
  *   the same editor
  * - Another writer's change is not shown until Reload, and the todo's next
@@ -289,7 +289,7 @@ test('raw repair stays raw after it validates until Edit fields, and controls of
 	});
 });
 
-test('a failed save keeps the input and pauses; disk C replaces nothing, and Discard mine and reload shows C in the same editor', async () => {
+test('a failed save keeps the input; disk C replaces nothing, and Discard mine and reload shows C in the same editor', async () => {
 	const { todos, opfs, target, get, selected, text } = await setup();
 	await todos.create('Milk');
 	const path = todos.selectedPath!;
@@ -308,7 +308,8 @@ test('a failed save keeps the input and pauses; disk C replaces nothing, and Dis
 	await settle();
 	expect(title.value).toBe('Mine');
 
-	// Newer typing stays on screen, and nothing sends it on its own.
+	// A second failed attempt keeps newer typing available for deliberate reload.
+	failNextWrite(opfs, path);
 	type(title, 'Mine again');
 	await editor.editor.flush();
 	expect(await text(path)).toBe(ROW('Theirs'));

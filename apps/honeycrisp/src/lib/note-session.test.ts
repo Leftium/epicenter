@@ -12,8 +12,8 @@
  *   once, unknown keys included, and a field left out is removed
  * - Typing during a held write saves only the latest input next, with no
  *   idle moment between the two writes
- * - A failed or unconfirmed write keeps the text editable; typing afterwards
- *   saves nothing until the person's Try again
+ * - A failed or unconfirmed write keeps the text editable; later typing
+ *   saves again
  * - Another program's change leaves the open text alone until the person
  *   reloads; a reload that fails keeps the text and its save state
  * - Typed text the editor refuses stays in its own control with the reason,
@@ -209,7 +209,7 @@ describe('typing and saving', () => {
 });
 
 describe('a write that does not end saved', () => {
-	test('a failed write keeps the text editable, typing afterwards saves nothing, and only Try again saves', async () => {
+	test('a failed write keeps the text editable and later typing saves again', async () => {
 		const { session, text, failWrites, saves, notes } = await open();
 		failWrites();
 		session.edit({ fields: { title: 'Lost?' } });
@@ -222,18 +222,13 @@ describe('a write that does not end saved', () => {
 		expect(session.status).toBe('failed');
 		expect(session.unsettled).toBe(true);
 		const attempts = notes();
-		// The text stays editable; nothing is attempted.
+		failWrites(false);
+		// The text stays editable, and another edit starts another attempt.
 		expect(session.edit({ fields: { title: 'Newer' } })).toBeUndefined();
 		await settle();
 		expect(fieldsOf(session).title).toBe('Newer');
-		expect(notes()).toBe(attempts);
-		expect(saves).toEqual(['saving', 'failed']);
-		expect(text(PATH)).toBe(noteText());
-		// Waiting for the chain never tries again either.
-		expect((await session.flush()).error?.name).toBe('Io');
-		expect(notes()).toBe(attempts);
-		failWrites(false);
-		expect(session.retry()).toBeUndefined();
+		expect(notes()).toBe(attempts + 1);
+		expect(saves).toEqual(['saving', 'failed', 'saving', 'idle']);
 		expect((await session.flush()).error).toBeNull();
 		expect(text(PATH)).toBe(canonical(noteText(), { title: 'Newer' }));
 		expect(session.status).toBe('saved');

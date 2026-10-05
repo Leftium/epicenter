@@ -35,6 +35,9 @@
 		void command();
 	};
 
+	/** Read through to the owner's error, including during a newer save. */
+	const failure = $derived('error' in session.save ? session.save.error : undefined);
+
 	const FIELD_NAMES: Record<TypedField, string> = { title: 'the title', body: 'Source' };
 
 	/** While the app answers a close, or a rename, delete, or reload runs, no choice here is taken. */
@@ -128,14 +131,15 @@
 		</span>
 		<Button size="xs" variant="outline" disabled={held} onclick={saveHere}>Save at {basename(session.path)}</Button>
 		<Button size="xs" variant="ghost" onclick={copyText}>Copy text</Button>
-	{:else if session.save.status === 'failed'}
-		<!-- The failure stands until the person tries again, however much they type. -->
-		<span class={session.save.error.name === 'Unconfirmed' ? 'text-warning' : 'text-destructive'} role="alert">
-			{noteSaveProblem(session.save.error)} Your text stays here and you can keep editing it. Nothing more is saved until
-			you choose {session.save.error.name === 'Unconfirmed' ? 'Save again' : 'Try again'}.
+	{:else if failure}
+		<!-- A failure stays visible until a newer save or explicit reload succeeds. -->
+		{#if session.save.status === 'saving'}<span class="text-muted-foreground">Saving…</span>{/if}
+		<span class={failure.name === 'Unconfirmed' ? 'text-warning' : 'text-destructive'} role="alert">
+			{noteSaveProblem(failure)} Your text stays here. Your next edit saves again, or you can choose
+			{failure.name === 'Unconfirmed' ? 'Save again' : 'Try again'} without changing it.
 		</span>
-		<Button size="xs" disabled={!session.admitting} onclick={retry}>
-			{session.save.error.name === 'Unconfirmed' ? 'Save again' : 'Try again'}
+		<Button size="xs" disabled={!session.admitting || session.save.status === 'saving'} onclick={retry}>
+			{failure.name === 'Unconfirmed' ? 'Save again' : 'Try again'}
 		</Button>
 		<Button size="xs" variant="ghost" onclick={copyText}>Copy text</Button>
 	{:else if session.save.status === 'saving'}

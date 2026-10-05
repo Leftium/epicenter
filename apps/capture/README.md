@@ -73,9 +73,10 @@ when saving is stopped or was not confirmed.
 - A save never creates a file. A capture removed outside this window is not
   written back by saving; see below.
 - Opening, selecting, and listing captures write nothing.
-- **If a save fails or cannot be confirmed**, saving pauses and the notice
-  puts the choices first. Your text stays, and what you type after it stays
-  too, but nothing is sent until you choose. An unconfirmed save shows the
+- **If a save fails or cannot be confirmed**, your text and the error
+  stay visible until a newer save succeeds or a reload succeeds.
+  The latest waiting edit proceeds after the failure, and
+  later typing starts another save. Try again saves the current text. An unconfirmed save shows the
   exact report, which names where a file it displaced was kept when there
   was one; a failure keeps its report under "Show technical details". The
   window does not claim the file is unchanged, because a write can reach the
@@ -277,7 +278,7 @@ shows the reason.
 | The Capture window is closed | The shell hides it. The page, its session, and its drafts stay loaded. |
 | The shell closes the folder | The folder's Git snapshot arrives with `closed`. The window says saving cannot be confirmed, keeps every draft, and holds reloads back. |
 | Epicenter's Bun service stops (`host-stopped`, sent to this window) | A notice. The folder is the shell's, so saving carries on. The service served this page, so a reload may fail until Epicenter restarts. |
-| A reply to a save is lost | The capture keeps its text and is marked not confirmed, with the exact report. Saving pauses; Try again sends the latest text again. Nothing is sent twice automatically. |
+| A reply to a save is lost | The capture keeps its text and is marked not confirmed, with the exact report. The latest waiting edit proceeds, and later edits save again. Try again resubmits the current text. |
 
 ### Quitting and restarting
 
@@ -360,7 +361,7 @@ them.
 | `src/lib/platform/folder.epicenter-host.test.ts` | The desktop leaf over the real folder adapter and row editor, with the shell's `invoke` and events scripted: refusals fail the open, departure is heard on this window only, closing detaches once and waits for admitted saves, and the collection keeps a capture's text through a lost or failed reply, a failed reload, and a removed file; the next save replaces a corrupt or outside-changed file, and a change hint never reads into an open capture. Try again sends exactly the latest accepted text, and an import interrupted by a lost reply is finished by a retry. It does not run the Rust owner. |
 | `src/lib/platform/departure.test.ts` | The departure wire against a scripted host: registration before the first read, rounds that arrive while the folder opens, repeated and newer rounds, lost and reset answers sent again until idle, out-of-order statuses, discarded votes, and a real collection whose drafts come back unchanged after another page cancels. |
 | `src/lib/platform-selection.test.ts` | Which leaf each build bundles: the desktop bundle has the desktop adapter, the departure client, and of the host package only its wire module, and no browser adapter, browser storage, Git implementation, or Node module; the browser bundle has the browser adapter and no desktop adapter, generated bindings, or departure gate. |
-| `src/lib/captures.test.ts`, `src/lib/draft.test.ts` | The collection and the draft over a real directory and the folder's real row editor: complete-row saves submitted at once, latest save wins over an outside change, explicit reload, a failed save paused until Try again, removal without resurrection, restores waited for through their reload, a file that came back written over only by Try again, exact text or no copy, repair in Source with no other writer, reviewed deletion without a second read and none while leaving, copies, leaving, and closing. |
+| `src/lib/captures.test.ts`, `src/lib/draft.test.ts` | The collection and the draft over a real directory and the folder's real row editor: complete-row saves submitted at once, latest save wins over an outside change, explicit reload, later input saving after a failed save, removal without resurrection, restores waited for through their reload, a file that came back written over by an explicit retry, exact text or no copy, repair in Source with no other writer, reviewed deletion without a second read and none while leaving, copies, leaving, and closing. |
 | `src/lib/components/capture-detail.mounted.test.ts`, `timeline.mounted.test.ts` | The real capture view and timeline mounted in jsdom over real drafts and the real collection: a view kept mounted while its draft changes writes to the draft it has then; a text box whose view or block went away delivers nothing, even after the view makes a new one; a thought's editor writes only to that thought; a capture whose editor could not open says why and shows no text box; the deletion review outlives its view and deletes nothing while leaving; Source saves CRLF files exactly; and a fenced capture takes nothing. It shows what a delivered event does; jsdom has no layout, focus, selection, or IME. |
 
 The Rust owner, its watcher, its lock, and its history are tested in

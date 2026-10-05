@@ -22,7 +22,7 @@
  * - A failed reload keeps the text and the failure; the next save replaces
  *   whatever the file holds, a corrupt file included
  * - A removed file is never written back by saving; putting it back is a
- *   create, and a file that came back is replaced only by Try again
+ *   create, and a file that came back is replaced by an explicit retry
  * - A change hint relists the folder and never reads into an open capture
  * - Closing waits for every admitted save
  * - A failed commit is reported beside a saved file; a closed folder is
@@ -345,7 +345,7 @@ test('the page names the Capture scope and is told the directory', async () => {
 
 	expect(sent('attach')[0]?.args).toEqual({
 		scope: 'so.epicenter.capture',
-		protocol: 6,
+		protocol: 7,
 	});
 	expect(host.location).toEqual({ kind: 'directory', root: ROOT });
 	await host.close();
@@ -448,7 +448,7 @@ test('an edit made elsewhere that this page never read is replaced by its save',
 	await host.close();
 });
 
-test('a save whose reply is lost stays unknown, shown exactly; only Try again sends again', async () => {
+test('a save whose reply is lost stays unknown, shown exactly; later typing saves again', async () => {
 	put(PATH, SAVED);
 	const { host, captures } = await opened();
 	const draft = await openOne(captures);
@@ -475,15 +475,10 @@ test('a save whose reply is lost stays unknown, shown exactly; only Try again se
 	expect(notice?.kind === 'unconfirmed' && notice.message).toContain(scratch);
 	expect(text(PATH)).toBe(withText('Mine'));
 
-	// Typing and settling send nothing again by themselves.
+	// Later typing starts a new save without choosing Try again.
 	draft.inputText('Mine, more');
-	expect(await captures.departure.settle()).toBe(1);
-	expect(sent('apply')).toHaveLength(1);
+	expect(await captures.departure.settle()).toBe(0);
 	expect(draft.text).toBe('Mine, more');
-
-	// Try again is a new attempt with the newest text.
-	draft.retry();
-	await draft.settle();
 	expect(sent('apply')).toHaveLength(2);
 	expect(text(PATH)).toBe(withText('Mine, more'));
 	expect(draft.notice).toBeUndefined();
@@ -538,19 +533,20 @@ test('failed A, then B, then C on disk: B and the failure stay; discarding reloa
 
 	draft.inputText('A');
 	await draft.settle();
-	delete overrides.apply;
 	expect(draft.notice?.kind).toBe('failed');
 	draft.inputText('B');
+	await draft.settle();
+	delete overrides.apply;
 	const C = `${SAVED}- from another program\n`;
 	put(PATH, C);
 	await captures.refresh();
 
-	// B is shown with the failure; C is not taken, and nothing is sent.
+	// The second attempt failed too: B stays shown and C is not adopted.
 	expect(draft.text).toBe('B');
 	expect(draft.notice?.kind).toBe('failed');
 	expect(await captures.departure.settle()).toBe(1);
 	expect(text(PATH)).toBe(C);
-	expect(sent('apply')).toHaveLength(1);
+	expect(sent('apply')).toHaveLength(2);
 
 	expect(await draft.reload()).toBe(true);
 	expect(draft.notice).toBeUndefined();
@@ -560,7 +556,7 @@ test('failed A, then B, then C on disk: B and the failure stay; discarding reloa
 		'first\nnested line',
 		'from another program',
 	]);
-	expect(sent('apply')).toHaveLength(1);
+	expect(sent('apply')).toHaveLength(2);
 	await captures.close();
 	await host.close();
 });

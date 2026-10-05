@@ -575,9 +575,9 @@ own: a refresh lists another program's change, the open editor keeps what it
 shows, and the next save writes over the change. Reload, as the person asks,
 waits for running writes, reads the file, and replaces the input; the editor
 takes no input while it reads. A write that failed or was never answered
-keeps the input on screen and editable and stops saving, typing included,
-until the person saves again, which writes the latest input, or discards it,
-which is a reload. A file removed under the editor fails its next save as
+keeps the input and error on screen. The latest waiting input proceeds
+after failure, and later input starts another save. Save again resubmits the
+current input; discarding it is a reload. A file removed under the editor fails its next save as
 gone; discarding then puts the editor down. An editor holding nothing whose
 file a listing no longer finds is put down. A text draft's save the folder
 refuses as stale holds both versions for review.

@@ -17,8 +17,8 @@
  *   shows, in the same field; no note crosses between words
  * - A card that is gone takes nothing from its retained field or buttons
  * - Each keystroke saves the note; a stage press saves the note as typed
- * - A failed save keeps the learner's text in the field, sends nothing more
- *   until "Try again", and can be discarded by reloading the file
+ * - A failed save keeps the learner's text in the field; later typing saves
+ *   again, and reloading the file can discard it
  * - A file that is gone keeps the learner's text and offers no way to save it
  *   back, only to let it go
  * - A file that is not a valid word is edited as exact text, in its own line
@@ -312,7 +312,7 @@ test('each keystroke saves the note, and a stage press saves the note as typed w
 	);
 });
 
-test('a failed save keeps the text in the field and sends nothing more until Try again, which sends the latest', async () => {
+test('a failed save keeps the text in the field and later typing saves the latest', async () => {
 	await using context = await setup(['lucid']);
 	const { field, target } = context;
 	const word = await context.opened('lucid');
@@ -323,12 +323,8 @@ test('a failed save keeps the text in the field and sends nothing more until Try
 	expect(target.textContent).toContain('Your last change was not saved');
 
 	type(note, 'my note, and more');
-	await Bun.sleep(10);
+	await until(() => word.save?.status === 'idle', 'the later edit to land');
 	expect(note?.value).toBe('my note, and more');
-	expect(await context.file('lucid')).not.toContain('my note');
-
-	click(target, 'Try again');
-	await until(() => word.save?.status === 'idle', 'the retry to land');
 	expect(await context.file('lucid')).toContain('"note": "my note, and more"');
 	expect(target.textContent).not.toContain('Your last change was not saved');
 });

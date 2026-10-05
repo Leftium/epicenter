@@ -7,9 +7,9 @@
  * existing file, one write at a time with only the latest waiting. Every
  * accepted edit goes to it at once, a structured edit as the complete
  * document through `set` and the file view's exact text through `setText`;
- * there is no second draft here. A failed or unconfirmed write pauses
- * publication until the person chooses Try again (`retry`), however much they
- * type meanwhile. Every write replaces the file as it is; none creates it. The
+ * there is no second draft here. A failed or unconfirmed write keeps the
+ * input and error visible; newer input saves again. Try again (`retry`)
+ * saves the current input without changing it. Every write replaces the file as it is; none creates it. The
  * editor never reads the file by itself: another program's change shows only
  * when the person reloads (`reload`), and a reload that fails changes nothing.
  * The views read the editor through `fromRowEditor` and never copy it.
@@ -368,7 +368,7 @@ export function createNoteSession(
 		},
 		/**
 		 * The person's Try again after a failed or unconfirmed write: the editor
-		 * publishes what it holds now. Nothing else resumes publication.
+		 * publishes what it holds now without changing the input.
 		 */
 		retry(): string | undefined {
 			const why = blocked();
@@ -424,8 +424,8 @@ export function createNoteSession(
 			return undefined;
 		},
 		/**
-		 * Wait for every write already admitted. Resolves the failure that
-		 * paused publication, if any; it never tries again.
+		 * Wait for every write already admitted and report the last outcome.
+		 * Waiting never resubmits a failed write.
 		 */
 		flush: native.flush,
 		/** Run `work` with input fenced: a rename, a delete, a departure. */

@@ -15,8 +15,7 @@
  * - Whichever editor is open on a row settles before its table rename or delete
  * - An open todo's controls and a toggle from the list submit complete rows
  *   to its one native editor at once. A toggle while that editor's save runs
- *   queues behind it; a lost reply pauses writing and the toggle is not sent
- *   until the person tries again. A toggle with no editor open assigns
+ *   queues behind it and proceeds after a lost reply. A toggle with no editor open assigns
  *   `done` in the row as it is now and keeps every other byte, and a write
  *   that lands between its read and its save refuses it
  * - A row that does not read as a todo opens its todo editor for raw repair,
@@ -44,7 +43,7 @@
  *   call, and a clean raw editor adopts the saved text. An open todo is read
  *   only when it opens or the person reloads it: another tab's change is
  *   replaced by the todo's next edit, and Reload shows it instead
- * - A failed todo save keeps its input and stops writing until Try again;
+ * - A failed todo save keeps its input; later edits save again;
  *   Reload replaces the input with the file, and closes a todo that is gone
  * - A todo title or notes value that cannot be saved stays in its field and
  *   counts as unsaved for leaving, rename, delete, and close, until Reload
@@ -577,26 +576,20 @@ test("a todo's own saves reach the listings through the folder's hint, with no r
 	}
 });
 
-test('a failed save keeps the input and stops writing: later typing stays on screen until Try again, and Reload replaces it with the file', async () => {
+test('a failed save keeps the input and later typing saves again; Reload replaces another failed edit', async () => {
 	const { todos, path, failNext } = await openFailingNextWrite();
 	const editor = todoEditor(todos);
-	const saved = (await text(todos, path))!;
 	failNext();
 	editor.setTitle('Mine');
 	expect(await written(editor)).toBeDefined();
 	expect(editor.editor.save.status).toBe('failed');
 	expect(todos.saveProblems).toBe(1);
 
-	// Newer typing is the todo's input, but nothing is sent on its own.
+	// Newer typing is the todo's input and saves the complete row again.
 	editor.setNotes('later\n');
 	expect(editor.title()).toBe('Mine');
 	expect(editor.notes()).toBe('later\n');
-	expect(await written(editor)).toBeDefined();
-	expect(await text(todos, path)).toBe(saved);
-	expect(await todos.toggle(todos.entries[0]!)).toContain('did not finish');
 
-	// Try again writes the latest input, whole.
-	expect(editor.retry()).toBeUndefined();
 	expect(await written(editor)).toBeUndefined();
 	expect(await reading(todos, path)).toMatchObject({
 		fields: { title: 'Mine', done: false },
@@ -1041,41 +1034,19 @@ async function openLosingNextSave() {
 	return { todos, loseNext };
 }
 
-test("a list toggle while an open todo's save runs queues behind it; a lost reply pauses writing, and the toggle is sent only by the person's Try again", async () => {
+test("a list toggle while an open todo's save runs proceeds after its lost reply", async () => {
 	const { todos, loseNext } = await openLosingNextSave();
 	const path = todos.selectedPath!;
 	const editor = todoEditor(todos);
-
 	loseNext();
 	editor.setNotes('mine\n');
 	expect(editor.isSaving).toBe(true);
-	// Not refused: the toggle is accepted behind the running save.
-	const toggled = await todos.toggle(todos.entries[0]!);
-	expect(toggled).toContain('may or may not be in the file');
+	expect(await todos.toggle(todos.entries[0]!)).toBeUndefined();
 	expect(editor.done()).toBe(true);
 	expect(editor.notes()).toBe('mine\n');
-	expect(editor.editor.save).toMatchObject({
-		status: 'failed',
-		error: { name: 'Unconfirmed' },
-	});
-	// The first save landed; the toggle behind it was never sent.
+	expect(editor.editor.save.status).toBe('idle');
 	expect(await reading(todos, path)).toMatchObject({
-		fields: { done: false },
-		body: 'mine\n',
-	});
-
-	// No listing or later toggle sends it or answers the unconfirmed save.
-	await todos.check();
-	expect((await reading(todos, path)).fields.done).toBe(false);
-	expect(await todos.toggle(todos.entries[0]!)).toContain('did not finish');
-	expect(editor.editor.save.status).toBe('failed');
-
-	// The person's Try again is a new attempt with the todo's latest row.
-	expect(editor.retry()).toBeUndefined();
-	expect(await written(editor)).toBeUndefined();
-	expect(await reading(todos, path)).toMatchObject({
-		fields: { title: 'Milk', done: true },
-		body: 'mine\n',
+		fields: { title: 'Milk', done: true }, body: 'mine\n',
 	});
 });
 
@@ -2070,7 +2041,7 @@ test('a hint from another tab rereads the folder: new rows are listed and a clea
 	}
 });
 
-test("another tab's change is listed while an open todo's failed save keeps its input, its error, and its pause", async () => {
+test("another tab's change is listed while an open todo's failed save keeps its input and its error", async () => {
 	const { todos, other, faults } = await openWithAnotherTab();
 	try {
 		await todos.create('Milk');
@@ -2743,15 +2714,15 @@ test('close names the paths whose input it could not settle, and neither saves n
 		return found && new TextDecoder().decode(found[1]);
 	};
 
-	// A save that fails, then newer typing held behind it.
+	// Two saves fail; close reports the latest unsaved input.
 	opfs.faults.write = (path) => {
 		if (!path.endsWith(`/${failedPath}`)) return undefined;
-		opfs.faults.write = undefined;
 		return 'fail';
 	};
 	failed.setNotes('first\n');
 	expect(await written(failed)).toBeDefined();
 	failed.setNotes('held\n');
+	expect(await written(failed)).toBeDefined();
 	const failedText = stored(failedPath);
 
 	const outcome = await todos.close();

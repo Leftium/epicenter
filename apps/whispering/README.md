@@ -504,8 +504,10 @@ otherwise within a couple of seconds.
   keeps your input. **Copy mine** puts it on the clipboard; **Discard mine**
   deliberately closes its editor.
 - A save that failed, or whose reply never arrived, keeps your text on screen
-  and stops saving, typing included, until you choose **Save again**, which
-  writes your latest text, or **Discard mine and load the file**. A reply that
+  with its error visible during later saves until a save or reload succeeds.
+  The latest waiting edit proceeds, and later typing
+  saves again. **Save again** resubmits your current text; **Discard mine and
+  load the file** replaces it with the file. A reply that
   never arrived is shown as not known, never as saved.
 
 A recording or transformation file whose text does not read as a row stays in

@@ -308,8 +308,10 @@ without the push.
    of one todo run one at a time, and the latest edit follows the save that
    is running. The todo does not follow changes made elsewhere: **Reload**
    reads the file and shows it, and otherwise your next edit writes over
-   them. A save that fails stops: newer typing stays on screen and nothing is
-   sent on its own until you choose "Try again" or "Discard mine and reload".
+   them. A save that fails keeps your input and its error visible, including while
+   a newer save runs, until a save or reload succeeds. The latest
+   waiting edit proceeds, and later typing saves again. "Try again" saves
+   the current text; "Discard mine and reload" replaces it with the file.
    Trying again sends exactly the text the todo holds, comments and quoting
    included. Discarding writes nothing and shows the file as it is now. A
    save whose reply was lost says it may or may not be in the file, with the
@@ -377,8 +379,8 @@ without the push.
    writes its standard form, which keeps `owner` and `labels`. While the todo
    is open, the list's checkbox is a change to its editor and saves the same
    way, with its latest title and notes, after any save already running; it
-   changes nothing while that todo is edited as source or has a save that
-   did not finish.
+   changes nothing while that todo is edited as source. A failed save does
+   not block the next checkbox change.
 7. `bun apps/todos/scripts/native.ts <checkout> status` prints the native
    folder's JSON status through `openFolder` from `@epicenter/folder/bun`.
    `create "<title>"`, `complete <stem>`, `commit-and-push`, `fetch`, and

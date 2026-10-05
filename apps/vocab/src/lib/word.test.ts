@@ -12,7 +12,7 @@
  * - The editor reads the file once; a change made elsewhere is not read into
  *   it by the list, and the learner's next save replaces it
  * - A save that failed or whose answer was lost keeps the input shown and
- *   sends nothing more until "Try again"; reloading replaces the input with
+ *   saves again on later input; reloading replaces the input with
  *   the file, and a reload that cannot read keeps both input and failure
  * - A note no file can hold is kept as typed with its reason and sends
  *   nothing; the word is not deleted, reloaded, or left without asking until
@@ -312,7 +312,7 @@ test('a change saved elsewhere is not read into an open word, and the learner’
 // A save that failed or whose answer was lost
 // ============================================================================
 
-test('a failed save keeps the input shown and sends nothing more until Try again, which sends the latest', async () => {
+test('a failed save keeps the input shown and later note and stage edits save the latest', async () => {
 	await using context = await setup();
 	const { entries, id } = context;
 	const word = entries.word(id);
@@ -325,16 +325,13 @@ test('a failed save keeps the input shown and sends nothing more until Try again
 	expect(word.unsettled).toBe(true);
 	expect(word.note()).toBe('first');
 
-	// Later input is shown and kept, and is not sent.
+	// Later input saves again, and a stage change saves the complete word.
 	word.inputNote('first and second');
-	expect(await word.setStage('recognized')).toContain('not saved');
+	expect(await word.setStage('recognized')).toBeNull();
 	await Bun.sleep(5);
 	expect(word.note()).toBe('first and second');
 	expect(word.stage()).toBe('recognized');
-	expect(await context.file()).not.toContain('first');
-
-	word.retry();
-	await until(() => word.save?.status === 'idle', 'the retry to land');
+	await until(() => word.save?.status === 'idle', 'the later edits to land');
 	expect(word.unsettled).toBe(false);
 	expect(await context.reopened()).toEqual([
 		{ text: 'lucid', note: 'first and second', stage: 'recognized' },

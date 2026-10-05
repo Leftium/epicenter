@@ -16,8 +16,8 @@
  * elsewhere is overwritten by the next save, and is shown only when the
  * person reloads.
  *
- * A failed or unconfirmed save pauses publication. Input stays visible and
- * accepted, and nothing is written until the person retries. Reloading reads
+ * A failed or unconfirmed save keeps the input and error visible. New input
+ * saves again; retry saves the current input without changing it. Reloading reads
  * the file and replaces the input with it.
  *
  * This module holds only what the editor cannot: the new-thought text, a
@@ -255,7 +255,7 @@ export function createDraft(
 	function notice(): Notice | undefined {
 		if (deletion !== undefined) return { kind: 'deletion', message: deletion };
 		const save = editor?.save;
-		if (save?.status === 'failed') {
+		if (save !== undefined && 'error' in save && save.error !== undefined) {
 			const { error } = save;
 			if (error.name === 'Unconfirmed')
 				return { kind: 'unconfirmed', message: error.message };
@@ -490,7 +490,7 @@ export function createDraft(
 			if (fenced()) return;
 			view = next;
 		},
-		/** What saving waits on the person for. */
+		/** The latest save error, including while a newer write runs, or a file action needing a choice. */
 		get notice() {
 			return notice();
 		},

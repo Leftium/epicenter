@@ -255,19 +255,17 @@ test('typed values no file can hold are kept per control: a second refusal keeps
 	expect(editing.showSource(true)).toBeUndefined();
 });
 
-test('a failed save keeps the latest input on screen, newer typing included, until the person saves again', async () => {
+test('a missing file keeps input on screen and later typing saves after the file returns', async () => {
 	const { root, editing, file } = await open();
 	await rm(join(root, PATH));
 	editing.setBody('First.\n');
 	expect((await editing.flush()).error?.name).toBe('NotFound');
-	editing.setBody('Second.\n');
-
-	expect(editing.row).toMatchObject({ status: 'valid', body: 'Second.\n' });
-	expect(editing.bodyText()).toBe('Second.\n');
+	expect(editing.row).toMatchObject({ status: 'valid', body: 'First.\n' });
+	expect(editing.bodyText()).toBe('First.\n');
 	expect(editing.status.kind).toBe('removed');
 	expect(editing.holds).toBe(true);
 	await Bun.write(join(root, PATH), SEED);
-	expect(editing.retry()).toBeUndefined();
+	editing.setBody('Second.\n');
 	expectOk(await editing.flush());
 	expect(await file()).toContain('Second.\n');
 });

@@ -13,8 +13,8 @@
  * discards it, and the word is not deleted or left without asking meanwhile.
  *
  * - A failed save, or one whose answer was lost, keeps the learner's input
- *   shown and pauses saving. "Try again" resumes it; reloading reads the
- *   file and replaces the input with it.
+ *   shown with the error. Waiting and later input saves again; "Try again"
+ *   resubmits the current text, and reloading replaces it with the file.
  * - The editor reads the file once, when the word's card opens it. Changes
  *   made elsewhere reach it only through an explicit reload.
  * - A file that is not a valid word shows its exact text for repair through
@@ -154,8 +154,8 @@ export function createWord({
 
 	/**
 	 * Once the writes admitted now and while waiting have landed, list the
-	 * word as saved. A failure stays on the editor until the learner retries
-	 * or reloads, and either one follows again.
+	 * word as saved. A failure stays on the editor until another save starts
+	 * or a reload succeeds; each accepted edit follows again.
 	 */
 	function follow(current: WordEditor) {
 		if (following) return;

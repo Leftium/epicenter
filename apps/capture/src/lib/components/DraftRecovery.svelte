@@ -7,8 +7,8 @@
 	import type { Draft } from '$lib/draft.svelte.js';
 	import TechnicalDetails from './TechnicalDetails.svelte';
 
-	// Shown while saving waits for the person: a save failed or was not
-	// confirmed, a delete was not confirmed, or a reload found no file. Every
+	// Shows a save error until a newer save succeeds, including while it runs;
+	// also shown when a delete was not confirmed or a reload found no file. Every
 	// choice is one explicit action, and none of them runs on its own.
 	let {
 		draft,
@@ -93,10 +93,11 @@
 	</Alert.Root>
 {:else if draft.notice}
 	<Alert.Root variant="destructive" aria-label="Save failed">
+		{#if draft.saving}<p role="status">Saving your latest edit…</p>{/if}
 		{#if draft.notice.kind === 'unconfirmed'}
 			<Alert.Title>The save could not be confirmed</Alert.Title>
 			<Alert.Description>
-				<p>Your text is still here. Whether that save reached the file is not known, and nothing is saved until you choose. A later read that finds your text says what the file holds, not that this save landed.</p>
+				<p>Your text is still here. Whether that save reached the file is not known. Your next edit saves again; Try again saves your current text. A later read that finds your text says what the file holds, not that this save landed.</p>
 				<!-- The exact report: it names where a displaced file was kept, when one was. -->
 				<p class="mt-1 font-medium break-words">{draft.notice.message}</p>
 			</Alert.Description>
@@ -105,14 +106,14 @@
 			<Alert.Description>Your text is still here. Saving never creates the file again. Put it back, save a copy, or download your text.</Alert.Description>
 		{:else}
 			<Alert.Title>The save failed</Alert.Title>
-			<Alert.Description>Your text is still here and was not saved. Nothing is saved until you choose.</Alert.Description>
+			<Alert.Description>Your text is still here and was not saved. Your next edit saves again; Try again saves your current text.</Alert.Description>
 		{/if}
 		<div class="mt-2 flex flex-wrap gap-2 text-foreground">
 			{#if draft.notice.kind === 'failed' && draft.notice.missing}
 				<Button size="sm" disabled={busy} onclick={restore}>Put the file back</Button>
 			{/if}
 			<!-- Sends the latest text over whatever the file holds now. -->
-			<Button size="sm" disabled={busy} onclick={() => draft.retry()}>Try again</Button>
+			<Button size="sm" disabled={busy || draft.saving} onclick={() => draft.retry()}>Try again</Button>
 			{@render copyAndDownload()}
 			{#if draft.notice.kind === 'failed' && draft.notice.missing}
 				<Button size="sm" variant="destructive" disabled={busy} onclick={letGo}>Let it go</Button>

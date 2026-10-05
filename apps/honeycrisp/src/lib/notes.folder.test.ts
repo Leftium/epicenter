@@ -695,7 +695,7 @@ test('a Git failure leaves the file saved and is reported as history, not as a s
 // ============================================================================
 
 describe('a note save that fails', () => {
-	test('keeps the text editable, stops saving by itself, and saves again when the person tries again', async () => {
+	test('keeps the text editable and later typing saves again', async () => {
 		const { state, root, seedNote } = await product();
 		const note = await seedNote();
 		const session = await openedNote(state, note.path);
@@ -710,14 +710,10 @@ describe('a note save that fails', () => {
 		expect(state.notSaved).toBe(1);
 		expect(shown(session).body).toBe('Not yet saved\n');
 		expect(await readFile(join(root, note.path), 'utf8')).toBe(note.text);
-		// More typing is kept, and nothing is sent by itself, even once a write
-		// would succeed.
+		// Once writing succeeds, later typing saves again.
 		spawnSync('chmod', ['u+w', notes]);
 		expect(typeBody(session, 'Still not saved\n')).toBe(true);
-		expect(await saved(session)).toContain('Not saved');
-		expect(await readFile(join(root, note.path), 'utf8')).toBe(note.text);
-		expect(await state.settleAll()).toBe(1);
-		expect(session.retry()).toBeUndefined();
+
 		expect(await saved(session)).toBeUndefined();
 		expect(session.status).toBe('saved');
 		expect(await readFile(join(root, note.path), 'utf8')).toContain(
@@ -1455,6 +1451,8 @@ describe('kept sessions', () => {
 			session.edit({ fields: { title: 'Half' } }, { keep: true }),
 		).toBeUndefined();
 		expect(session.refused.title).toBeUndefined();
+		// The corrected title starts a replace; it still cannot create the missing file.
+		expect(await saved(session)).toContain('not there');
 		expect(await state.recoverDraft(note.path)).toBeUndefined();
 		expect(await readFile(join(root, note.path), 'utf8')).toContain(
 			'"title": "Half"',
@@ -3015,9 +3013,8 @@ describe('field actions and what they were derived from', () => {
 		expect(shown(session).fields.pinned).toBe(true);
 	});
 
-	test('an action on an open note whose save got no reply is refused, and the save is not sent again', async () => {
-		const { state, seedNote, loseReplies, writes, text } =
-			await browserProduct();
+	test('an action on an open note after a lost reply saves the complete current document again', async () => {
+		const { state, seedNote, loseReplies, writes, text } = await browserProduct();
 		const note = await seedNote();
 		const session = await openedNote(state, note.path);
 		loseReplies();
@@ -3025,23 +3022,18 @@ describe('field actions and what they were derived from', () => {
 		expect(await saved(session)).toContain('not confirmed');
 		expect(session.status).toBe('unconfirmed');
 		const sent = writes().length;
-		for (const act of [
-			() => state.trashNote(note.path),
-			() => state.patchNote(note.path, { pinned: true }),
-		])
-			expect(await act()).toContain('not settled');
-		expect(writes()).toHaveLength(sent);
-		expect(shown(session).fields).toMatchObject({
-			deletedAt: null,
-			pinned: false,
+		loseReplies(false);
+		expect(await state.patchNote(note.path, { pinned: true })).toBeUndefined();
+		expect(writes()).toHaveLength(sent + 1);
+		expect(shown(session)).toMatchObject({
+			fields: { pinned: true }, body: 'typed before the lost save\n',
 		});
-		expect(shown(session).body).toBe('typed before the lost save\n');
-		// The lost write landed; that says what the file holds, not who wrote it.
+		expect(text(note.path)).toContain('"pinned": true');
 		expect(text(note.path)).toContain('typed before the lost save');
-		expect(session.save.status).toBe('failed');
+		expect(session.save.status).toBe('idle');
 	});
 
-	test('an action while a save runs joins the queue behind it, and pauses with it when its reply is lost', async () => {
+	test('an action while a save runs proceeds behind it even when its reply is lost', async () => {
 		const { state, seedNote, hold, held, release, loseReplies, text, writes } =
 			await browserProduct();
 		const note = await seedNote();
@@ -3058,17 +3050,16 @@ describe('field actions and what they were derived from', () => {
 		expect(session.save.status).toBe('saving');
 		release({ all: true });
 		expect(await pinning).toContain('not confirmed');
-		// The running write landed with its reply lost; the newer text waits,
-		// unsent, until the person tries again.
-		expect(writes()).toHaveLength(start + 1);
+		// Both writes lost their replies, but the newer complete document landed.
+		expect(writes()).toHaveLength(start + 2);
 		expect(text(note.path)).toContain('typed');
-		expect(text(note.path)).not.toContain('"pinned": true');
+		expect(text(note.path)).toContain('"pinned": true');
 		expect(shown(session)).toMatchObject({
 			fields: { pinned: true },
 			body: 'typed\n',
 		});
 		expect(await saved(session)).toContain('not confirmed');
-		expect(writes()).toHaveLength(start + 1);
+		expect(writes()).toHaveLength(start + 2);
 		loseReplies(false);
 		expect(session.retry()).toBeUndefined();
 		expect(await saved(session)).toBeUndefined();
@@ -3444,11 +3435,7 @@ describe('a save that found no file', () => {
 		expect(session.missing).toBe(true);
 		const mine = textOf(session);
 		expect(mine).toContain('Mine');
-		// More typing, a list action, and settling all write nothing.
-		expect(typeBody(session, 'Mine, more\n')).toBe(true);
-		expect(await state.patchNote(note.path, { pinned: true })).toContain(
-			'not settled',
-		);
+		// No edit has arrived, so settling does not replay the failed request.
 		expect(await state.settleAll()).toBe(1);
 		expect(text(note.path)).toBe(theirs);
 		// The person's reload is the one way the file's text replaces theirs.

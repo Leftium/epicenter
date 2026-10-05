@@ -931,10 +931,9 @@ export function createNotes(host: NotesHost) {
 	/**
 	 * Why an action from a list may not change an open note now, before it
 	 * touches the editor. The change goes into the editor's whole document,
-	 * so it waits for the person's choice about a failed or unconfirmed save
-	 * and about a rename or delete that is running or stopped short: going
-	 * past one would act as their Try again. `listed` is the text the values
-	 * were derived from.
+	 * so a failed save does not block it. A rename or delete that is running
+	 * or stopped short still blocks changes to the old path. `listed` is the
+	 * text the values were derived from.
 	 */
 	function noteActionProblem(
 		session: NoteSession,
@@ -942,12 +941,8 @@ export function createNotes(host: NotesHost) {
 	): string | undefined {
 		if (session.busy)
 			return 'A rename or delete of this note is still running. Try again when it finishes.';
-		const { row, save } = session.get();
-		if (
-			session.hold !== undefined ||
-			session.pathChange !== undefined ||
-			save.status === 'failed'
-		)
+		const { row } = session.get();
+		if (session.hold !== undefined || session.pathChange !== undefined)
 			return 'This note has a change that is not settled. Choose what to do in the note first.';
 		if (session.rawMode)
 			return 'This note is open as a file. Open it as a note to change it here.';

@@ -19,7 +19,7 @@
  * - Another program's change shows only on Reload file; with text not saved
  *   the person confirms first, and a reload that fails keeps the text
  * - A failed save keeps the text editable and offers Try again; typing
- *   afterwards saves nothing until it is chosen
+ *   afterwards saves again
  * - A title the editor refuses stays in its control with the reason
  * - The file view shows LF and writes the file's own line endings back, and
  *   its control takes nothing once the fields show again
@@ -274,8 +274,8 @@ test('another program’s change shows only on Reload file, and with text not sa
 	expect(target.textContent).toContain('Your text is unchanged');
 });
 
-test('a failed save keeps the text editable with Try again, and typing afterwards saves nothing until it is chosen', async () => {
-	const { a, target, failWrites, text } = await view();
+test('a failed save stays visible during a held later edit, and its successful save clears the error', async () => {
+	const { a, target, failWrites, text, hold, held, release } = await view();
 	const title = only<HTMLInputElement>(target, 'input[aria-label="Title"]');
 	const status = only(target, '[data-testid="draft-status"]');
 	failWrites();
@@ -285,17 +285,24 @@ test('a failed save keeps the text editable with Try again, and typing afterward
 	expect(status.getAttribute('data-status')).toBe('failed');
 	expect(buttonNamed(target, 'Try again')).toBeDefined();
 	failWrites(false);
+	hold();
 	type(title, 'Second');
-	await a.flush();
-	await tick();
-	expect(title.value).toBe('Second');
-	expect(text('notes/a.md')).toBe(noteText({ title: 'Alpha' }));
-	expect(status.getAttribute('data-status')).toBe('failed');
-	click(target, 'Try again');
+	try {
+		await until(() => held().length === 1, 'the later write to be held');
+		await tick();
+		expect(status.getAttribute('data-status')).toBe('saving');
+		expect(status.textContent).toContain('Not saved');
+		expect(status.textContent).toContain('Saving');
+		expect(title.value).toBe('Second');
+		expect(title.disabled).toBe(false);
+	} finally {
+		release({ all: true });
+	}
 	expect((await a.flush()).error).toBeNull();
 	flushSync();
 	expect(text('notes/a.md')).toContain('"title": "Second"');
 	expect(status.getAttribute('data-status')).toBe('saved');
+	expect(status.textContent).not.toContain('Not saved');
 });
 
 test('a title the editor refuses stays in its control with the reason', async () => {

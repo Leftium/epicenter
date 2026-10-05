@@ -255,7 +255,6 @@ fn repository_author_is_used_for_local_history_without_adopting_origin() {
         "plugin:epicenter-folder|apply",
         json!({
             "session": attached["session"],
-            "submission": 1,
             "changes": [{ "kind": "create", "path": "kv.json", "bytes": b"{}\n" }],
         }),
     )
@@ -449,15 +448,12 @@ fn a_new_folder_is_set_up_through_the_owner_and_its_settings_are_the_first_commi
         .unwrap();
         assert!(fixture.root.join(table).is_dir());
     }
-    let submitted = std::cell::Cell::new(0_u64);
     let create = |text: &str| {
-        submitted.set(submitted.get() + 1);
         invoke(
             &main,
             "plugin:epicenter-folder|apply",
             json!({
                 "session": session,
-                "submission": submitted.get(),
                 "changes": [{
                     "kind": "create",
                     "path": "kv.json",
@@ -516,15 +512,12 @@ fn a_save_that_cannot_be_written_fails_alone_and_a_commit_that_cannot_be_recorde
     )
     .unwrap();
     let session = &attached["session"];
-    let submitted = std::cell::Cell::new(0_u64);
     let write = |path: &str, text: &str| {
-        submitted.set(submitted.get() + 1);
         invoke(
             &main,
             "plugin:epicenter-folder|apply",
             json!({
                 "session": session,
-                "submission": submitted.get(),
                 "changes": [{
                     "kind": "overwrite",
                     "path": path,

@@ -17,11 +17,9 @@
 	const invoke = (command, args) => internals.invoke(command, args);
 	const bytes = (text) => Array.from(new TextEncoder().encode(text));
 	let session;
-	let submission = 0;
 	const apply = (changes) =>
 		invoke('plugin:epicenter-folder|apply', {
 			session,
-			submission: ++submission,
 			changes,
 		});
 	const report = (name, value) =>

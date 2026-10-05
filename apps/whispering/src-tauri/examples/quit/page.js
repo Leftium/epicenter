@@ -24,11 +24,9 @@
 	const scenario = '__SCENARIO__';
 	const bytes = (text) => Array.from(new TextEncoder().encode(text));
 	let session;
-	let submission = 0;
 	const apply = (changes) =>
 		invoke('plugin:epicenter-folder|apply', {
 			session,
-			submission: ++submission,
 			changes,
 		});
 	const report = (name, value) =>

@@ -467,7 +467,9 @@ test('a round cancelled elsewhere gives back a failed save and the newer input t
 	editor.setTitle('First');
 	await editor.editor.flush();
 	expect(editor.editor.save.status).toBe('failed');
+	failNextWrite(path);
 	editor.setTitle('Newer');
+	await editor.editor.flush();
 
 	host.begin('quit');
 	host.nudge();

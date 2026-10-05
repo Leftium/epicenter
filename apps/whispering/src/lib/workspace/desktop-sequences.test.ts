@@ -11,8 +11,8 @@
  * - typing is saved as it is typed: one write at a time, and the latest
  *   input behind it, so input superseded while a write runs is never written
  * - a save that failed, or whose reply was lost, stays on screen, holds the
- *   close, and stops saving, typing included, until the person saves again;
- *   saving again writes the latest input, exactly
+ *   close while unresolved; later input saves again, and Save again
+ *   resubmits the current input exactly
  * - another writer's change is not loaded into an open editor: the next save
  *   writes over it, and reloading, as the person asks, takes it and clears a
  *   stopped save; a reload whose read fails changes nothing
@@ -119,7 +119,7 @@ function holdNextApply(kind: string) {
 	return { reached: reached.promise, release: () => held.resolve() };
 }
 
-test('a save whose reply was lost stays unknown with its own message, holds the close, and saves later typing only when the person asks', async () => {
+test('a save whose reply was lost stays unknown with its own message and later typing saves again', async () => {
 	const { library, editor } = await open({ [PATH]: SEED });
 	owner.control.loseReplies = 1;
 
@@ -144,15 +144,10 @@ test('a save whose reply was lost stays unknown with its own message, holds the 
 	expect(current(library)).toBe(editor);
 	expect(editor.sourceValue()).toBe(owner.text(PATH)!);
 
-	// Typing after it is shown and kept; neither typing nor leaving writes it.
+	// Later typing starts another save, whose own reply confirms it.
 	editor.setText(`${editor.sourceValue()}More.\n`);
 	expect(editor.row.text).toContain('Tidy it.\nMore.\n');
-	expect(editor.status.kind).toBe('unconfirmed');
-	expect(await library.prepareToLeave()).toBe(false);
-	expect(owner.applied).toHaveLength(1);
 
-	// Saving again is the person's choice, and its own reply confirms it.
-	expect(editor.retry()).toBeUndefined();
 	expectOk(await editor.flush());
 	expect(owner.applied).toHaveLength(2);
 	expect(owner.text(PATH)).toContain('Tidy it.\nMore.\n');
@@ -202,7 +197,7 @@ test('typing during a save is shown at once and saved after it; input superseded
 	expect(editor.holds).toBe(false);
 });
 
-test('a failed save keeps newer typing and another writer’s change is not loaded; saving again writes the latest whole row over it', async () => {
+test('a failed save keeps input and another writer’s change is not loaded; later typing writes the latest whole row over it', async () => {
 	const { library, editor } = await open({ [PATH]: SEED });
 	owner.control.refuseNext = 1;
 	editor.setBody('A.\n');
@@ -212,13 +207,12 @@ test('a failed save keeps newer typing and another writer’s change is not load
 		message: expect.stringContaining('the disk refused the write'),
 	});
 
-	editor.setBody('B.\n');
 	const other = SEED.replace('Tidy.', 'C from another program.');
 	owner.write(PATH, other);
 	await library.refreshAll();
 
-	// B is the input on screen, the save stays stopped, and C waits on disk.
-	expect(editor.row).toMatchObject({ status: 'valid', body: 'B.\n' });
+	// The failed input and its error stay visible; C is not loaded.
+	expect(editor.row).toMatchObject({ status: 'valid', body: 'A.\n' });
 	expect(editor.status.kind).toBe('failed');
 	expect(owner.text(PATH)).toBe(other);
 	expect(owner.applied).toEqual([]);
@@ -226,7 +220,7 @@ test('a failed save keeps newer typing and another writer’s change is not load
 		`${PATH} has edits whose last save failed.`,
 	]);
 
-	expect(editor.retry()).toBeUndefined();
+	editor.setBody('B.\n');
 	expectOk(await editor.flush());
 	expect(owner.text(PATH)).toBe(editor.row.text);
 	expect(owner.text(PATH)).toContain('B.\n');
@@ -238,7 +232,6 @@ test('discarding a failed save loads the file as it is now into the same editor,
 	owner.control.refuseNext = 1;
 	editor.setBody('A.\n');
 	await editor.flush();
-	editor.setBody('B.\n');
 	const other = SEED.replace('Tidy.', 'C.');
 	owner.write(PATH, other);
 
@@ -270,9 +263,11 @@ test('a discard whose read fails keeps the input on screen, the stopped save, an
 	expect(editor.row).toMatchObject({ status: 'valid', body: 'A.\n' });
 	expect(editor.status.kind).toBe('failed');
 	expect(library.holdsUnsavedWork).toBe(true);
-	// Still on screen and still editable while the file cannot be read.
+	// Still editable while unreadable; another refused save keeps newer input.
+	owner.control.refuseNext = 1;
 	editor.setBody('A, still mine.\n');
 	expect(editor.row).toMatchObject({ body: 'A, still mine.\n' });
+	expect((await editor.flush()).error).not.toBeNull();
 
 	owner.control.failReads.delete(PATH);
 	expect(await library.reloadRow(PATH)).toBeUndefined();
@@ -407,7 +402,7 @@ test('a typed value no file can hold is kept in its own field, holds the close, 
 	expect(owner.text(PATH)).not.toContain('�');
 });
 
-test('source text a file cannot hold exactly is kept as typed and never written; fixed and saved again, it is written', async () => {
+test('source text a file cannot hold exactly is kept as typed and never written; corrected input saves again', async () => {
 	const { library, editor } = await open({ [PATH]: SEED });
 	library.editSource(PATH);
 	const lone = `${SEED}Half a pair: \uD800.\n`;
@@ -419,9 +414,7 @@ test('source text a file cannot hold exactly is kept as typed and never written;
 	expect(owner.applied).toEqual([]);
 
 	editor.setText(SEED.replace('Tidy.', 'Fixed.'));
-	// Stopped: nothing is written until the person saves again.
-	expect(owner.applied).toEqual([]);
-	expect(editor.retry()).toBeUndefined();
+	// The corrected input starts another save.
 	expectOk(await editor.flush());
 	expect(owner.text(PATH)).toContain('Fixed.');
 });

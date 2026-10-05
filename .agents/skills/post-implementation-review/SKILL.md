@@ -58,7 +58,6 @@ Load only the skills that match the touched surface:
 collapse-pass            continuous deletion of unearned indirection
 rethink                  public API, package boundary, config, lifecycle, naming, ownership, greenfield, or clean-break decision
 asymmetric-wins          refuse a feature to collapse a disproportionate code family
-refactoring              caller counts, inlining, dead exports, stale imports, straggler sweep
 code-audit               recurring repo smells and grep-based checks
 one-sentence-test        new abstraction, wrapper, option, endpoint, command, or module
 testing                  test files or changed behavior that needs coverage
@@ -66,6 +65,9 @@ typescript               type organization, inference, runtime schema, type test
 svelte                   Svelte components, stores, runes, query usage, UI state
 yjs                      CRDT documents, shared types, transactions, conflict behavior
 ```
+
+Read the [refactoring methods](../collapse-pass/references/refactoring-methods.md)
+for caller evidence, inlining, and straggler cleanup without starting a hunt.
 
 ## Independent review
 
@@ -148,7 +150,7 @@ factory, compartment, and extracted function back into its call sites, then keep
 a layer only when it earns its place.
 
 For local bindings, apply
-[refactoring's source-and-action test](../refactoring/SKILL.md#keep-source-and-action-visible).
+[the source-and-action test](../collapse-pass/references/refactoring-methods.md#keep-source-and-action-visible).
 Inspect repeated shallow aliases and forwarding handlers as well as single-use
 helpers; caller count alone does not justify a boundary.
 
@@ -205,8 +207,8 @@ near-identical sibling files or types (judge: cheap independence or latent coupl
 ```
 
 If a smell is repo-recurring, use `code-audit` for the relevant grep pattern. If
-the smell came from the refactor itself, use `refactoring` for the straggler
-sweep.
+the smell came from the refactor itself, use the [refactoring methods](../collapse-pass/references/refactoring-methods.md#post-refactor-straggler-sweep)
+for the straggler sweep.
 
 ## Invariant Audit
 

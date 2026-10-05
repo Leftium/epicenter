@@ -484,7 +484,7 @@ reads such as `editor.row` can stay direct so ownership remains visible at every
 use. Keep extraction when it centralizes a shared rule, avoids substantial
 repetition, provides necessary caching, or gives non-obvious work a useful name.
 Two uses alone do not establish any of those benefits. See
-[refactoring](../../refactoring/SKILL.md#keep-source-and-action-visible) for the
+[refactoring methods](../../collapse-pass/references/refactoring-methods.md#keep-source-and-action-visible) for the
 general test, and [lifecycle and reactivity](lifecycle-and-reactivity.md#shallow-template-aliases-inline-direct-reads)
 for reactive reads and operation-local snapshots.
 

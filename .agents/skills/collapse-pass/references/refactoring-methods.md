@@ -1,23 +1,15 @@
----
-name: refactoring
-description: Apply caller-aware, behavior-preserving code simplifications such as inlining, branch collapse, and typed access boundaries. Use when cleaning up code or planning focused refactor commits.
-metadata:
-  author: epicenter
-  version: '1.0'
----
+# Refactoring methods
 
-# Refactoring Methodology
+Read the sections relevant to a candidate: inlining and source visibility,
+caller evidence, typed access boundaries, duplicate branches, derivable state,
+file shape, straggler cleanup, or definition navigation. These methods also
+support focused reviews without starting an exploratory pass.
 
-Systematic approach to auditing and improving code. Every change is evidence-based: count callers, show diffs, commit surgically.
-
-> **Related Skills**: See `post-implementation-review` for the full second-read ritual after implementation. See `rethink` when the refactor changes public shape, ownership, naming, or lifecycle boundaries. See `control-flow` for linearizing conditionals and guard clauses. See `factory-function-composition` for the four-zone factory anatomy and its [method documentation reference](../factory-function-composition/references/method-documentation-and-sibling-calls.md) for `this.method()` versus direct calls. See `code-prose` for the naming and comment pass over whatever the refactor leaves behind.
-
-Use [asymmetric-wins](../asymmetric-wins/SKILL.md) when a refactor is preserving
-a small promise that owns a large code family: legacy aliases, fallback parsers,
-exact old fixtures, pixel-perfect UI reproduction, duplicate call shapes, or a
-rare mode with its own tests and docs. Refactors do not need to preserve every
-old promise. They need to preserve the product sentence and the load-bearing
-contracts.
+[collapse-pass](../SKILL.md) owns execution, scope, authorization, and reporting.
+Use [control-flow](../../control-flow/SKILL.md) for linearizing conditionals,
+[factory composition](../../factory-function-composition/SKILL.md) for factory
+shape and [method documentation](../../factory-function-composition/references/method-documentation-and-sibling-calls.md),
+and [code-prose](../../code-prose/SKILL.md) for identifiers and comments.
 
 ## Keep source and action visible
 
@@ -75,7 +67,8 @@ Not every 1-caller function should be inlined. Keep it when:
 
 ## Type Safety Boundaries
 
-All raw/untyped access should go through a single parsing boundary. Everything downstream uses typed results.
+For each stored or incoming shape, give raw access one parsing boundary.
+Downstream operations use its typed result rather than repeating casts.
 
 ```
 BAD: Multiple raw access points scattered across methods
@@ -92,7 +85,8 @@ readEntry()         → entry.get('type'), instanceof checks  ← THE boundary
 read()              → this.currentEntry (discriminated)     ← typed
 ```
 
-    Fix: route all access through the typed getter. Public methods use `this.currentEntry` with type discrimination instead of raw `.get()`.
+Route access through the typed getter. Public methods discriminate
+`this.currentEntry` instead of repeating raw `.get()` calls.
 
 ## Collapsing Duplicate Branches
 
@@ -119,9 +113,9 @@ switch (entry.type) {
 }
 ```
 
- Also applies to `as*()` conversion methods. If every non-matching branch does "read as string → push as target type", collapse:
+Also applies to `as*()` conversion methods. If every non-matching branch does "read as string → push as target type", collapse:
 
-         ```typescript
+```typescript
 // BEFORE: 3 cases, 2 are near-identical
 asRichText(): Y.XmlFragment {
 	const entry = this.currentEntry;
@@ -166,8 +160,8 @@ function pushSheetFromCsv(csv: string): SheetEntry {
 	parseSheetFromCsv(csv, columns, rows);
 }
 
-    // AFTER: Compose
-    const result = pushSheet();
+// AFTER: Compose
+const result = pushSheet();
 parseSheetFromCsv(csv, result);
 ```
 
@@ -231,7 +225,7 @@ four-use alias can still deserve deletion.
 
 ## Inline Known-Behavior Calls
 
-    When a "smart" function branches internally but every caller already knows which branch it takes:
+When a "smart" function branches internally but every caller already knows which branch it takes:
 
 ```typescript
 // replaceCurrentText branches on type, but callers know the answer:
@@ -244,7 +238,7 @@ function replaceCurrentText(content, current) {
 // appendText() KNOWS it's NOT text → always takes the else-branch
 ```
 
-    Inline the known branch at each call site. Keep the branching function only for callers that genuinely don't know (e.g., `restoreFromSnapshot` where the live doc's type is unknown).
+Inline the known branch at each call site. Keep the branching function only for callers that genuinely don't know (e.g., `restoreFromSnapshot` where the live doc's type is unknown).
 
 ## Parameter Objects and Derivation
 
@@ -299,47 +293,9 @@ Caller counts audit a function. These audit the file it lives in.
 3. **Combine overlapping concepts.** If two types, functions, or constants overlap significantly, merge them. The fewer distinct concepts a reader must hold in their head, the better.
 4. **Use shared code.** A common utility (file path parsing, say) may already exist. Check for it before writing the same thing inline.
 
-## Presenting Changes
-
-Always show the proposed change as a diff with tradeoffs before implementing:
-
-```
-Proposed: inline replaceCurrentSheet into write()
-
- write(text: string) {
-     ydoc.transact(() => {
--        if (type === 'sheet') replaceCurrentSheet(text);
-+        if (type === 'sheet') {
-+            entry.columns.forEach((_, key) => entry.columns.delete(key));
-+            entry.rows.forEach((_, key) => entry.rows.delete(key));
-    +            parseSheetFromCsv(text, entry);
-+        }
-
-Tradeoff: write() goes from 6 to 14 lines, but is now self-contained.
-```
-
-State what gets better AND what gets worse. Let the reviewer decide.
-
-## Surgical Commits
-
-One logical change per commit. Test between each.
-
-```
-    edit → diagnostics → test → commit → next edit
-    ```
-
-Never mix two unrelated refactors in one commit:
-
-```
-98fcabe  refactor: inline ValidatedEntry type and single-use write helpers
-af643fd  refactor: replace validated()/currentType() closures with this.currentEntry
-19d108a  refactor: remove pushSheetFromCsv, compose pushSheet + parseSheetFromCsv
-c4f8ddc  refactor: move SheetBinding to sheet.ts, accept as single param
-```
-
 ## Post-Refactor Straggler Sweep
 
-After a refactor lands, immediately hunt for dead references the change left behind. Refactors that remove or move code create orphaned exports, stale JSDoc, and unnecessary indirection that won't trigger type errors: they compile fine but add confusion.
+Before handing off a refactor, hunt for dead references the change left behind. Refactors that remove or move code create orphaned exports, stale JSDoc, and unnecessary indirection that won't trigger type errors: they compile fine but add confusion.
 
 ### The Sweep Checklist
 
@@ -373,11 +329,13 @@ WorkspaceKeyResponse contract type             grep for the type → zero consum
 - After inlining a function (its callers may have stale comments)
 - After renaming (old name may linger in JSDoc, error messages, tests)
 
-The sweep is a separate commit from the refactor. Label it `refactor(scope): remove dead X` or `refactor(scope): fix stale JSDoc after Y`.
+Complete the sweep before handing off the refactor. When commits are authorized,
+include related stragglers with the change that created them; separate unrelated
+cleanup so it remains reviewable.
 
 ## Go-to-Definition Check
 
-After a refactor that moves, renames, or re-exports a symbol, press Go-to-Def from a real call site. The cursor should land on the actual definition, not on an alias line, a re-export passthrough, or a destructure-re-export of a module-level object. If it lands somewhere worse than before, the refactor regressed navigation: fix it before committing.
+After a refactor that moves, renames, or re-exports a symbol, press Go-to-Def from a real call site. The cursor should land on the actual definition, not on an alias line, a re-export passthrough, or a destructure-re-export of a module-level object. If it lands somewhere worse than before, the refactor regressed navigation: fix it before handing off the change.
 
 Common regressions introduced by refactors:
 
@@ -386,7 +344,7 @@ Common regressions introduced by refactors:
 - Wrapper / adapter functions inserted with no behavior change.
 - Hand-written interface annotation added to a factory whose `ReturnType<typeof ...>` already covered it.
 
-See `typescript` "Go-to-Definition Awareness" for the per-shape mechanics.
+See [typescript](../../typescript/SKILL.md) "Go-to-Definition Awareness" for the per-shape mechanics.
 
 ## Anti-Patterns
 

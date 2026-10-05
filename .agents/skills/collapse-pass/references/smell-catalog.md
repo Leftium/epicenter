@@ -56,7 +56,7 @@ rg "^export (function|const|type|class) \w+" packages apps -o
 Cross-reference each name against `rg "<name>" packages apps --type ts -l`. If the only hit is the definition itself, it is a dead-export candidate. Verify before deleting:
 
 1. Check whether the symbol is part of a package's `exports` map (it might be public API with external consumers).
-2. Check `references/never-touch.md` for "external CLI/SDK consumers" rule.
+2. Use [durable contracts](durable-contracts.md) to check external consumers.
 
 ### Re-export chains
 
@@ -85,7 +85,7 @@ rg -F "<literal>" packages apps | wc -l
 For HKDF labels, IndexedDB prefixes, DO names, and error message templates, three or more hits across files signals either:
 
 - A constant worth extracting and importing (preferred)
-- A durable-string violation (see `references/never-touch.md`)
+- A durable-string violation (see `durable-contracts.md`)
 
 Pick a candidate string. Run the grep. Read the hits.
 
@@ -117,5 +117,5 @@ This is a *discovery* catalog. It enumerates candidates; it does not decide. Tri
 
 - [code-audit](../../code-audit/SKILL.md) for the worked examples and false-positive guidance
 - [one-sentence-test](../../one-sentence-test/SKILL.md) for the cohesion gate
-- [refactoring](../../refactoring/SKILL.md) for caller counting and surgical-commit mechanics
-- `references/never-touch.md` for the things that *look* duplicated but are durable strings
+- [refactoring methods](refactoring-methods.md) for caller evidence and safe transformations
+- `durable-contracts.md` for the things that *look* duplicated but are durable strings

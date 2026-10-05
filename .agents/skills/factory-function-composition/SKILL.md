@@ -10,7 +10,7 @@ metadata:
 
 This skill helps you apply factory function patterns for clean dependency injection and function composition in TypeScript.
 
-> **Related Skills**: See `refactoring` for caller counting and inlining single-use extractions.
+> **Related Skills**: See [refactoring methods](../collapse-pass/references/refactoring-methods.md) for caller counting and inlining single-use extractions.
 
 ## The Universal Signature
 

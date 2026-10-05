@@ -39,7 +39,7 @@
  * Status scans take no protection. Callers who ask while a scan is running
  * share the one scan that follows it, so a burst of requests costs two scans
  * and the last one reads the folder after every request was made. That shared
- * scan is the only work here that waits on behalf of several callers, and it
+ * scan shares one observation among callers, and it
  * never commits or pushes.
  */
 import { Err, Ok, type Result } from 'wellcrafted/result';
@@ -516,9 +516,11 @@ export function createHistory({
 	 * finds, they are not asked for again. An automatic checkpoint with no
 	 * request left to answer resolves `undefined` and touches nothing.
 	 */
-	function checkpoint(trigger: 'explicit'): Promise<CommitOutcome>;
-	function checkpoint(trigger: 'automatic'): Promise<CommitOutcome | undefined>;
-	function checkpoint(
+	function commitCurrentFiles(trigger: 'explicit'): Promise<CommitOutcome>;
+	function commitCurrentFiles(
+		trigger: 'automatic',
+	): Promise<CommitOutcome | undefined>;
+	function commitCurrentFiles(
 		trigger: 'explicit' | 'automatic',
 	): Promise<CommitOutcome | undefined> {
 		return exclusive(async (): Promise<CommitOutcome | undefined> => {
@@ -663,7 +665,7 @@ export function createHistory({
 		return owned('commit', async (): Promise<CommitOutcome> => {
 			let outcome: CommitOutcome;
 			try {
-				outcome = await checkpoint('explicit');
+				outcome = await commitCurrentFiles('explicit');
 			} catch (cause) {
 				// Refused while waiting: nothing ran, so no attempt is recorded.
 				if (refusedByClose(cause)) return { status: 'closed' };
@@ -700,7 +702,7 @@ export function createHistory({
 				const through = requested;
 				let outcome: CommitOutcome | undefined;
 				try {
-					outcome = await checkpoint('automatic');
+					outcome = await commitCurrentFiles('automatic');
 				} catch (cause) {
 					if (refusedByClose(cause)) continue;
 					giveUp(through);

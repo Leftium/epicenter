@@ -2,16 +2,15 @@
  * Test helper: a Web Locks stand-in for runtimes that have none.
  *
  * It is shared by every tab opened in this process. A plain request waits its
- * turn. With `ifAvailable`, a lock that is held or waited for calls back with
- * `null` at once and is never granted later. A `signal` that aborts while the
+ * turn. A `signal` that aborts while the
  * request still waits rejects and the callback is never called; once granted,
  * the signal changes nothing.
  */
 import { afterAll } from 'bun:test';
 
 type Lock = { name: string };
-type Work<T> = (lock: Lock | null) => Promise<T> | T;
-type Options = { ifAvailable?: boolean; signal?: AbortSignal };
+type Work<T> = (lock: Lock) => Promise<T> | T;
+type Options = { signal?: AbortSignal };
 
 function setNavigator(value: unknown) {
 	const original = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
@@ -34,7 +33,6 @@ export function installWebLocks(): () => void {
 /** A stand-in lock manager of its own, shared by whoever is handed it. */
 export function createWebLocks() {
 	const tails = new Map<string, Promise<unknown>>();
-	const busy = new Map<string, number>();
 	const locks = {
 		request<T>(
 			name: string,
@@ -45,11 +43,8 @@ export function createWebLocks() {
 				typeof optionsOrWork === 'function' ? optionsOrWork : maybeWork
 			) as Work<T>;
 			const options = typeof optionsOrWork === 'function' ? {} : optionsOrWork;
-			if (options.ifAvailable && (busy.get(name) ?? 0) > 0)
-				return Promise.resolve(work(null));
 			const { signal } = options;
 			if (signal?.aborted) return Promise.reject(signal.reason);
-			busy.set(name, (busy.get(name) ?? 0) + 1);
 			let granted = false;
 			const turn = async () => {
 				if (signal?.aborted) throw signal.reason;
@@ -57,10 +52,7 @@ export function createWebLocks() {
 				return work({ name });
 			};
 			const result = (tails.get(name) ?? Promise.resolve()).then(turn, turn);
-			const done = () => {
-				busy.set(name, (busy.get(name) ?? 1) - 1);
-			};
-			tails.set(name, result.then(done, done));
+			tails.set(name, result);
 			if (signal === undefined) return result;
 			return new Promise<T>((resolve, reject) => {
 				signal.addEventListener('abort', () => {

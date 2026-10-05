@@ -97,7 +97,7 @@ export type OpfsDirectoryHandle = {
 export type OpfsLocks = {
 	request<T>(
 		name: string,
-		options: { ifAvailable?: boolean; signal?: AbortSignal },
+		options: { signal?: AbortSignal },
 		work: (lock: unknown) => Promise<T> | T,
 	): Promise<T>;
 };

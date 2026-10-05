@@ -128,6 +128,8 @@ async function tab(
 		publications: 0,
 		pushes: 0,
 		fetches: 0,
+		/** Fail the next capture after its optional hold. */
+		failCaptureNext: false,
 		/** Whole-folder reads, by a scan or a commit. */
 		captures: 0,
 		/** Object-store sessions opened, by a scan or a commit. */
@@ -144,6 +146,10 @@ async function tab(
 			probe.captures++;
 			const captured = await base.capture();
 			await heldAt('captured');
+			if (probe.failCaptureNext) {
+				probe.failCaptureNext = false;
+				throw new Error('Controlled capture failure');
+			}
 			return captured;
 		},
 	};
@@ -378,6 +384,42 @@ test("saves during this handle's held commit are committed by one following chec
 	await Bun.sleep(30);
 	expect(probe.admissions).toBe(2);
 	expect(probe.pushes).toBe(0);
+	await history.close();
+});
+
+test('a save during a failing capture requests one later pass, and the failure alone requests nothing', async () => {
+	const { history, probe, holds, save, idle, committed } = await tab(
+		createTestStorage(),
+		'failed-capture',
+	);
+	const captured = gate();
+	holds.captured = captured;
+	probe.failCaptureNext = true;
+	await save('a.txt', 'one');
+	await until(() => holds.captured === undefined);
+	await save('a.txt', 'two');
+	const outcomes: string[] = [];
+	const unsubscribe = history.subscribe((snapshot) => {
+		const status = snapshot.lastCommit?.status;
+		if (status && outcomes.at(-1) !== status) outcomes.push(status);
+	});
+	captured.open();
+	await idle();
+	expect(outcomes).toEqual(['failed', 'committed']);
+	expect(probe.admissions).toBe(2);
+	expect(await committed()).toEqual({ 'a.txt': 'two' });
+
+	probe.failCaptureNext = true;
+	await save('a.txt', 'three');
+	await idle();
+	expect(history.snapshot.lastCommit).toMatchObject({
+		status: 'failed',
+		error: 'Controlled capture failure',
+	});
+	await Bun.sleep(30);
+	expect(probe.admissions).toBe(3);
+	expect(await committed()).toEqual({ 'a.txt': 'two' });
+	unsubscribe();
 	await history.close();
 });
 

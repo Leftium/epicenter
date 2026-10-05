@@ -8,6 +8,8 @@
 //! - A save asks for an automatic commit. While the Git lock or the file gate
 //!   is held, the request waits with any later ones, and once the holder lets
 //!   go one commit takes the latest files without another save.
+//! - A failed automatic commit is not retried on its own; a save that landed
+//!   while it ran gets one more commit.
 //! - An explicit commit or fast-forward waits and then reads fresh inputs.
 //! - A fetch or push in flight holds neither the file gate nor the Git lock:
 //!   saves land and are committed while it runs.
@@ -20,7 +22,7 @@
 //! - Push, fetch, and fast-forward follow the shared history's rules.
 
 use std::path::Path;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{mpsc, Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -591,6 +593,109 @@ fn a_held_ref_lock_fails_the_commit_and_leaves_the_saved_bytes() {
         owner.commit(),
         CommitOutcome::Committed { ref message, .. } if message == "Add rec/take.wav"
     ));
+}
+
+#[test]
+fn a_save_during_a_failing_automatic_commit_gets_one_more_and_the_failure_alone_gets_none() {
+    let temp = TempDir::new("failed-automatic");
+    let root = temp.folder("notes");
+    let owner = open(&root);
+    save(&owner, "a.md", "A");
+    settled(&owner);
+    let base = git(&root, &["rev-parse", "HEAD"]);
+    let ref_lock = root.join(".git/refs/heads/main.lock");
+
+    // Count every commit that reaches publishing. The first takes the
+    // branch's ref lock, as another Git process would, and is held there;
+    // the second finds the lock gone.
+    let captures = Arc::new(AtomicUsize::new(0));
+    let (reached, at_capture) = mpsc::channel::<()>();
+    let (release, gate) = mpsc::channel::<()>();
+    let gate = Mutex::new(gate);
+    let counter = Arc::clone(&captures);
+    let locked = ref_lock.clone();
+    owner.hooks().after_capture = Some(Arc::new(move || {
+        match counter.fetch_add(1, Ordering::SeqCst) {
+            0 => {
+                std::fs::write(&locked, "").unwrap();
+                reached.send(()).unwrap();
+                gate.lock().unwrap().recv().unwrap();
+            }
+            1 => std::fs::remove_file(&locked).unwrap(),
+            _ => {}
+        }
+    }));
+    let outcomes: Arc<Mutex<Vec<CommitOutcome>>> = Arc::default();
+    let heard = Arc::clone(&outcomes);
+    let _subscription = owner.subscribe(move |event| {
+        if let OwnerEvent::Snapshot { snapshot, .. } = event {
+            if let Some(attempt) = &snapshot.last_commit {
+                let mut heard = heard.lock().unwrap();
+                if heard.last() != Some(&attempt.result) {
+                    heard.push(attempt.result.clone());
+                }
+            }
+        }
+    });
+
+    // B's commit answered its request and holds the Git lock. A newer save
+    // lands while that commit is still going to fail.
+    save(&owner, "b.md", "B");
+    at_capture.recv().unwrap();
+    save(&owner, "b.md", "B, again");
+    assert!(owner.snapshot().activity.commit.active);
+
+    // The held commit fails, and with no further save one more commit takes
+    // the newer bytes on the unchanged parent.
+    release.send(()).unwrap();
+    settled(&owner);
+    assert_eq!(captures.load(Ordering::SeqCst), 2);
+    let outcomes = outcomes.lock().unwrap().clone();
+    assert!(
+        matches!(
+            outcomes.as_slice(),
+            [
+                CommitOutcome::Committed { message: a_message, .. },
+                CommitOutcome::Failed { error },
+                CommitOutcome::Committed { parent: Some(parent), message, changed_paths: 1, .. },
+            ] if a_message == "Add a.md"
+                && error.contains("update-ref")
+                && *parent == base
+                && message == "Add b.md"
+        ),
+        "{outcomes:?}"
+    );
+    assert_eq!(git(&root, &["show", "HEAD:b.md"]), "B, again");
+    assert_eq!(git(&root, &["status", "--porcelain"]), "");
+
+    // A failure with no save during it asks for nothing: once the lock is
+    // gone, nothing runs on its own and the save stays uncommitted.
+    let head = git(&root, &["rev-parse", "HEAD"]);
+    std::fs::write(&ref_lock, "").unwrap();
+    save(&owner, "c.md", "C");
+    settled(&owner);
+    assert_eq!(captures.load(Ordering::SeqCst), 3);
+    assert!(matches!(
+        &owner.snapshot().last_commit.as_ref().unwrap().result,
+        CommitOutcome::Failed { error } if error.contains("update-ref")
+    ));
+    std::fs::remove_file(&ref_lock).unwrap();
+    std::thread::sleep(Duration::from_millis(50));
+    assert_eq!(captures.load(Ordering::SeqCst), 3);
+    assert!(!owner.snapshot().activity.commit.active);
+    assert_eq!(git(&root, &["rev-parse", "HEAD"]), head);
+    assert_eq!(git(&root, &["status", "--porcelain"]), "?? c.md");
+    assert_eq!(owner.read("c.md").unwrap().bytes, b"C");
+
+    // The next save's commit carries both.
+    save(&owner, "d.md", "D");
+    settled(&owner);
+    assert!(matches!(
+        &owner.snapshot().last_commit.as_ref().unwrap().result,
+        CommitOutcome::Committed { parent: Some(parent), message, changed_paths: 2, .. }
+            if *parent == head && message == "Update 2 files"
+    ));
+    assert_eq!(git(&root, &["status", "--porcelain"]), "");
 }
 
 #[test]

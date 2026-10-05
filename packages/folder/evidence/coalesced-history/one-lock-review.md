@@ -60,6 +60,20 @@ failed branch publication, failure alone causing no retry, and close after a
 lock grant but before the backend callback. The native regression uses existing
 hooks and a real ref lock; it adds no production test seam.
 
+### Committed-source verification
+
+Codex also checked committed source at `a42574064d` in a separate clone,
+without transferring dirty files. Installed dependencies were reused; internal
+workspace dependencies resolved to the clone. Git tests passed all 94 cases,
+native core tests passed all 106 cases, Svelte tests passed all 14 cases,
+and folder typecheck found no errors or warnings.
+
+The full folder run passed 758 cases and skipped 18. Its one failing browser
+journey came from omitted dependencies of the separate `evidence/edit-handle`
+harness during clone preparation. After supplying those installed dependencies,
+that exact journey passed. No source change was needed. Cargo regenerated its
+existing `libc` lock entry; this did not change the tested production source.
+
 Claude completed the native regression and browser queue removal in an isolated
 clone. Its sandbox could not read the dependency symlinks or cargo cache, so it
 did not establish runtime acceptance. Codex compiled and ran the returned native

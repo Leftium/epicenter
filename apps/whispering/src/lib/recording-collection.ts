@@ -178,16 +178,12 @@ export function sortRows(
 		}
 	};
 	const sign = sort.direction === 'asc' ? 1 : -1;
-	const byPath = (a: RecordingRow, b: RecordingRow) =>
-		a.path < b.path ? -1 : a.path > b.path ? 1 : 0;
 	return [...rows].sort((a, b) => {
 		const left = value(a);
 		const right = value(b);
-		if (left === undefined || right === undefined) {
-			if (left === right) return byPath(a, b);
-			return left === undefined ? 1 : -1;
-		}
-		if (left === right) return byPath(a, b);
+		if (left === right) return a.path < b.path ? -1 : a.path > b.path ? 1 : 0;
+		if (left === undefined) return 1;
+		if (right === undefined) return -1;
 		return (left < right ? -1 : 1) * sign;
 	});
 }

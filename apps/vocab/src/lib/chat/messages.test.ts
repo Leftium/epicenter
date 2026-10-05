@@ -106,7 +106,7 @@ test('a message write resolves only after its file exists, and chats stay apart 
 	expect(await transcript(reopened, 'chat-c')).toEqual([]);
 });
 
-test('a message with line and paragraph separators, NEL, and C1 controls reads back exactly and is recognized on a second save', async () => {
+test('Unicode message text survives reopening and retry; changed content or another chat cannot take its file', async () => {
 	await using context = await setup();
 	const { browser, folder } = context;
 	// Characters YAML treats as line breaks or must escape, and JSON leaves raw.
@@ -128,40 +128,25 @@ test('a message with line and paragraph separators, NEL, and C1 controls reads b
 
 	const [read] = await transcript(await browser.open(), 'chat-a');
 	expect(read).toEqual(tricky);
-	const part = read?.parts[0];
-	expect(part?.type === 'text' ? [...part.text] : []).toEqual([...text]);
 	// The retry of an unconfirmed save compares against the file: it must
 	// find its own message, not report a different one.
+	const saved = await fileText(folder, 'messages/tricky.md');
 	const again = createChatMessageStore(folder.tables.messages, 'chat-a');
 	expectOk(await again.set(tricky.id, tricky));
 	expect(await tableFiles(folder, 'messages')).toEqual(['messages/tricky.md']);
-});
-
-test('saving a message again adds no second file, and a different message at its name is refused', async () => {
-	await using context = await setup();
-	const { folder } = context;
-	const store = createChatMessageStore(folder.tables.messages, 'chat-a');
-	expectOk(await store.set(answer.id, answer));
-	const saved = await fileText(folder, 'messages/answer.md');
-
-	// The retry after an unconfirmed attempt: the same message, the same file.
-	const again = createChatMessageStore(folder.tables.messages, 'chat-a');
-	expectOk(await again.set(answer.id, answer));
-	expect(await tableFiles(folder, 'messages')).toEqual(['messages/answer.md']);
-	expect(await fileText(folder, 'messages/answer.md')).toBe(saved);
-
+	expect(await fileText(folder, 'messages/tricky.md')).toBe(saved);
 	const other = {
-		...answer,
+		...tricky,
 		parts: [{ type: 'text' as const, text: 'Other' }],
 	};
-	expect(expectErr(await again.set(answer.id, other))).toMatchObject({
+	expect(expectErr(await again.set(tricky.id, other))).toMatchObject({
 		name: 'WriteFailed',
 		cause: { name: 'Taken' },
 	});
 	// The same message in another chat is not this chat's message either.
 	const elsewhere = createChatMessageStore(folder.tables.messages, 'chat-b');
-	expectErr(await elsewhere.set(answer.id, answer));
-	expect(await fileText(folder, 'messages/answer.md')).toBe(saved);
+	expectErr(await elsewhere.set(tricky.id, tricky));
+	expect(await fileText(folder, 'messages/tricky.md')).toBe(saved);
 	expect(await transcript(folder, 'chat-b')).toEqual([]);
 });
 

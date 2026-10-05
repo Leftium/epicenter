@@ -1,19 +1,31 @@
 /**
  * Unfinished Merge Tests on Disk
  *
- * A Bun directory folder publishes a merge left for a person in Git's own
- * order of trust: `ORIG_HEAD`, `MERGE_MSG`, and `MERGE_HEAD` first, then the
- * files, then the index in one `update-index`. Each step is faulted against a
- * real repository; whatever lands, the folder never checkpoints conflict
- * markers and never records the resolution with one parent.
+ * A Bun directory folder publishes a merge left for a person with everything
+ * its commit depends on in place before any authored file: `ORIG_HEAD` and
+ * `MERGE_MSG`, the whole index (incoming entries and conflict stages) in one
+ * `update-index`, `MERGE_HEAD`, and only then the files. Each step is
+ * faulted against a real repository; whatever lands, the folder never
+ * checkpoints conflict markers, never records the resolution with one
+ * parent, and never commits the local tree as the merge.
  *
  * Key behaviors:
- * - A merge state write that fails writes no file or index entry, and the
- *   merge is refused, never reported as published
- * - A file step that writes nothing removes the merge state again
- * - Files or an index that stop partway stay under the pinned merge: a
- *   whole-folder commit is blocked before and after reopening, and staging
- *   and a staged commit record both original parents
+ * - An `ORIG_HEAD`, `MERGE_MSG`, or index write that fails changes no file,
+ *   leaves the index byte for byte as it was, and is refused, never reported
+ *   as merged
+ * - Nothing is rolled back once the index holds the merge, so a file another
+ *   program staged meanwhile survives every failure after it
+ * - A failed `MERGE_HEAD` write is `Partial` with no file step: the stages
+ *   and incoming entries stay, both commits refuse them, reopening changes
+ *   nothing, and the full incoming commit that `MERGE_MSG` names, written
+ *   to `MERGE_HEAD` after the tracking ref moved on, finishes the merge
+ *   with its original parents
+ * - A first file write that writes nothing is `Partial` with no file step,
+ *   and the merge stays in progress with its stages and incoming entries
+ * - Files that stop partway stay under the pinned merge with its real
+ *   unresolved paths: a staged commit with nothing staged is `Unmerged`,
+ *   before and after reopening, and the merge commit keeps the fetched
+ *   files the folder never got to write
  * - Unmerged stages whose `MERGE_HEAD` is gone block a whole-folder commit
  * - A staged commit finishes the merge only from `ORIG_HEAD`: a branch moved
  *   before or during the commit is refused, and the index, the branch, and
@@ -33,15 +45,19 @@ import { writeCommitObject, writeFilesTree } from './git/objects.js';
 import { GIT_ENV, git, scratch } from './git-http.test-support.js';
 
 const real = { ...realFs };
+/** Runs before a file is renamed into place: another program acting then. */
+let renaming: ((target: string) => Promise<void>) | undefined;
 /** Private Git files whose replacement fails, when set. */
 let failing: ((target: string) => boolean) | undefined;
 
 // The native backend reads these bindings at call time, so a merge state
-// write fails at its own rename without a production seam.
+// write fails at its own rename, and another program can act just before
+// it, without a production seam.
 mock.module('node:fs/promises', () => ({
 	...real,
 	default: real,
 	async rename(...args: Parameters<typeof real.rename>) {
+		await renaming?.(String(args[1]));
 		if (failing?.(String(args[1])))
 			throw Object.assign(new Error('Injected rename failure'), {
 				code: 'EIO',
@@ -81,6 +97,7 @@ afterAll(() => {
 		else process.env[key] = originalEnv[key];
 });
 afterEach(async () => {
+	renaming = undefined;
 	failing = undefined;
 	for (const made of opened.splice(0)) await made.close();
 	for (const root of roots.splice(0))
@@ -178,13 +195,19 @@ async function reopen(made: Opened) {
 const readText = (root: string, path: string) =>
 	real.readFile(join(root, path), 'utf8').catch(() => undefined);
 
-/** The branch, the merge state, the index entries, and the authored files. */
+/**
+ * The branch, the merge state, the exact index bytes and their entries, and
+ * the authored files.
+ */
 async function state(root: string) {
 	return {
 		branch: await git(root, 'rev-parse', 'refs/heads/main'),
 		mergeHead: await readText(root, '.git/MERGE_HEAD'),
 		origHead: await readText(root, '.git/ORIG_HEAD'),
 		index: await git(root, 'ls-files', '--stage'),
+		indexBytes: (await real.readFile(join(root, '.git/index'))).toString(
+			'base64',
+		),
 		color: await readText(root, 'notes/color.txt'),
 		theirs: await readText(root, 'theirs.md'),
 	};
@@ -194,7 +217,40 @@ async function parentsOf(root: string, commit: string) {
 	return (await git(root, 'log', '-1', '--format=%P', commit)).split(' ');
 }
 
-for (const name of ['ORIG_HEAD', 'MERGE_MSG', 'MERGE_HEAD'])
+/**
+ * A refused merge left the folder as `before`, except perhaps a harmless
+ * `ORIG_HEAD`, and a reopened folder has no merge to finish.
+ */
+async function nothingPublished(
+	made: Awaited<ReturnType<typeof folder>>,
+	before: Awaited<ReturnType<typeof state>>,
+) {
+	const after = await state(made.root);
+	expect({ ...after, origHead: undefined }).toEqual({
+		...before,
+		origHead: undefined,
+	});
+	expect(after.mergeHead).toBeUndefined();
+	expect(
+		(await real.readdir(join(made.root, '.git'))).filter(
+			(entry) => entry.includes('.tmp-') || entry === 'index.lock',
+		),
+	).toEqual([]);
+
+	const reopened = await reopen(made);
+	expectOk(await reopened.history.status());
+	expect(reopened.history.snapshot.merging).toBeUndefined();
+	expect(await reopened.history.commit()).toMatchObject({
+		status: 'unchanged',
+	});
+	expectOk(await reopened.history.stage('all'));
+	expect(expectErr(await reopened.history.commitStaged('Merge')).name).toBe(
+		'NothingToCommit',
+	);
+	expect(await git(made.root, 'rev-parse', 'HEAD')).toBe(made.sides.ours);
+}
+
+for (const name of ['ORIG_HEAD', 'MERGE_MSG'])
 	test(`a failed ${name} write publishes nothing and is not reported as a merge`, async () => {
 		const made = await folder();
 		const before = await state(made.root);
@@ -205,32 +261,144 @@ for (const name of ['ORIG_HEAD', 'MERGE_MSG', 'MERGE_HEAD'])
 		).toMatchObject({ name: 'Refused' });
 
 		failing = undefined;
-		const after = await state(made.root);
-		// Only a head and a message may be left; no merge began.
-		expect({ ...after, origHead: undefined }).toEqual({
-			...before,
-			origHead: undefined,
-		});
-		expect(after.mergeHead).toBeUndefined();
-		expect(
-			(await real.readdir(join(made.root, '.git'))).filter((entry) =>
-				entry.includes('.tmp-'),
-			),
-		).toEqual([]);
-
-		const reopened = await reopen(made);
-		expect(reopened.history.snapshot.merging).toBeUndefined();
-		expect(await reopened.history.commit()).toMatchObject({
-			status: 'unchanged',
-		});
-		expectOk(await reopened.history.stage('all'));
-		expect(expectErr(await reopened.history.commitStaged('Merge')).name).toBe(
-			'NothingToCommit',
-		);
-		expect(await git(made.root, 'rev-parse', 'HEAD')).toBe(made.sides.ours);
+		await nothingPublished(made, before);
 	});
 
-test('a file step that writes nothing removes the merge state it began with', async () => {
+test('an index the merge cannot write refuses it before any file', async () => {
+	const made = await folder();
+	// Another Git process holds the index.
+	await real.writeFile(join(made.root, '.git/index.lock'), '');
+	const before = await state(made.root);
+
+	expect(
+		expectErr(await made.history.mergeIncoming({ conflicts: 'leave' })),
+	).toMatchObject({ name: 'Refused', error: { path: '.git/index' } });
+
+	await real.rm(join(made.root, '.git/index.lock'));
+	await nothingPublished(made, before);
+});
+
+/** Another program saves and stages a file the merge does not touch. */
+async function stageOutside(root: string) {
+	await real.writeFile(join(root, 'extra.md'), 'outside\n');
+	await git(root, 'add', 'extra.md');
+}
+
+/**
+ * The index a prepared merge holds: the incoming entries, each conflict's
+ * three stages, and, when another program staged it, `extra.md`.
+ */
+async function preparedIndex(
+	root: string,
+	sides: { base: string; ours: string; theirs: string },
+	{ outside }: { outside: boolean },
+) {
+	const blob = (spec: string) => git(root, 'rev-parse', spec);
+	return [
+		...(outside
+			? [`100644 ${await git(root, 'hash-object', 'extra.md')} 0\textra.md`]
+			: []),
+		`100644 ${await blob(`${sides.ours}:keep.md`)} 0\tkeep.md`,
+		`100644 ${await blob(`${sides.base}:notes/color.txt`)} 1\tnotes/color.txt`,
+		`100644 ${await blob(`${sides.ours}:notes/color.txt`)} 2\tnotes/color.txt`,
+		`100644 ${await blob(`${sides.theirs}:notes/color.txt`)} 3\tnotes/color.txt`,
+		`100644 ${await blob(`${sides.theirs}:theirs.md`)} 0\ttheirs.md`,
+	].join('\n');
+}
+
+/**
+ * Resolve the conflict, stage only it, and commit: the merge commit has the
+ * original parents and keeps the incoming file and the outside stage, though
+ * neither was ever written by the merge.
+ */
+async function finishResolved(
+	made: Opened,
+	sides: { ours: string; theirs: string },
+) {
+	const { root, history } = made;
+	await real.writeFile(join(root, 'notes/color.txt'), 'green\n');
+	expectOk(await history.stage(['notes/color.txt']));
+	const committed = expectOk(await history.commitStaged('Merge'));
+	expect(committed.incoming).toBe(sides.theirs);
+	expect(await parentsOf(root, committed.oid)).toEqual([
+		sides.ours,
+		sides.theirs,
+	]);
+	expect(await git(root, 'rev-parse', `${committed.oid}:theirs.md`)).toBe(
+		await git(root, 'rev-parse', `${sides.theirs}:theirs.md`),
+	);
+	expect(await git(root, 'show', `${committed.oid}:extra.md`)).toBe('outside');
+	expect(await readText(root, '.git/MERGE_HEAD')).toBeUndefined();
+}
+
+test('a failed MERGE_HEAD write keeps the prepared index, and the full incoming commit in MERGE_MSG repairs it', async () => {
+	const made = await folder();
+	const { root, sides } = made;
+	// Another program stages a file after the merge began, before its index.
+	renaming = async (target) => {
+		if (target.endsWith('/.git/MERGE_MSG')) await stageOutside(root);
+	};
+	failing = (target) => target.endsWith('/.git/MERGE_HEAD');
+
+	const stopped = expectErr(
+		await made.history.mergeIncoming({ conflicts: 'leave' }),
+	);
+
+	renaming = undefined;
+	failing = undefined;
+	// The outside stage survives with the prepared merge.
+	expect(await git(root, 'ls-files', '--stage')).toBe(
+		await preparedIndex(root, sides, { outside: true }),
+	);
+	expect(stopped).toMatchObject({
+		name: 'Partial',
+		applied: [],
+		error: { path: '.git/MERGE_HEAD' },
+	});
+	expect(stopped.message).toContain(sides.theirs);
+	expect(stopped.message).toContain('MERGE_MSG');
+	expect(await readText(root, '.git/MERGE_HEAD')).toBeUndefined();
+	expect(await readText(root, '.git/ORIG_HEAD')).toBe(`${sides.ours}\n`);
+	const message = await readText(root, '.git/MERGE_MSG');
+	expect(message).toBe(
+		`Merge remote-tracking branch 'origin/main'\n\n# Incoming commit: ${sides.theirs}\n`,
+	);
+	expect(await readText(root, 'notes/color.txt')).toBe('red\n');
+	expect(await readText(root, 'theirs.md')).toBeUndefined();
+
+	// Stages with no MERGE_HEAD: neither commit takes them.
+	const blocked = await made.history.commit();
+	expect(blocked.status === 'blocked' && blocked.reason).toContain(
+		'notes/color.txt has unmerged index stages',
+	);
+	expect(expectErr(await made.history.commitStaged('Merge')).name).toBe(
+		'Failed',
+	);
+	expect(await git(root, 'rev-parse', 'HEAD')).toBe(sides.ours);
+
+	// Reopening reads it again and changes nothing.
+	const before = await state(root);
+	const reopened = await reopen(made);
+	expectOk(await reopened.history.status());
+	expect(reopened.history.snapshot.merging).toBeUndefined();
+	expect(await state(root)).toEqual(before);
+	expect(await readText(root, '.git/MERGE_MSG')).toBe(message);
+
+	// The tracking ref moves on; MERGE_MSG still names the merge's commit.
+	await git(root, 'update-ref', 'refs/remotes/origin/main', sides.base);
+	const named = /^# Incoming commit: ([0-9a-f]{40})$/m.exec(message ?? '')?.[1];
+	expect(named).toBe(sides.theirs);
+	await real.writeFile(join(root, '.git/MERGE_HEAD'), `${named}\n`);
+	expectOk(await reopened.history.status());
+	expect(reopened.history.snapshot.merging).toEqual({
+		incoming: sides.theirs,
+		head: sides.ours,
+		unresolved: ['notes/color.txt'],
+	});
+	await finishResolved(reopened, sides);
+});
+
+test('a first file write that writes nothing keeps the merge in progress', async () => {
 	const made = await folder({
 		apply: async () => ({
 			data: null,
@@ -243,62 +411,64 @@ test('a file step that writes nothing removes the merge state it began with', as
 			},
 		}),
 	});
-	const before = await state(made.root);
+	const { root, sides } = made;
+	// Another program stages a file once the merge's index is written.
+	renaming = async (target) => {
+		if (target.endsWith('/.git/MERGE_HEAD')) await stageOutside(root);
+	};
 
 	expect(
 		expectErr(await made.history.mergeIncoming({ conflicts: 'leave' })),
-	).toMatchObject({ name: 'Refused' });
-
-	expect({ ...(await state(made.root)), origHead: undefined }).toEqual({
-		...before,
-		origHead: undefined,
+	).toMatchObject({
+		name: 'Partial',
+		applied: [],
+		error: { name: 'Io', path: 'notes/color.txt' },
 	});
-});
 
-/**
- * After a publication stopped with files written and no stages: no
- * checkpoint takes the markers, before or after reopening, and the staged
- * resolution records both parents.
- */
-async function finishesWithBothParents(
-	made: Awaited<ReturnType<typeof folder>>,
-) {
-	const { root, sides } = made;
+	renaming = undefined;
 	expect(await readText(root, '.git/MERGE_HEAD')).toBe(`${sides.theirs}\n`);
 	expect(await readText(root, '.git/ORIG_HEAD')).toBe(`${sides.ours}\n`);
-	expect(await made.history.commit()).toMatchObject({ status: 'blocked' });
-
-	const reopened = await reopen(made);
-	expectOk(await reopened.history.status());
-	expect(reopened.history.snapshot.merging).toEqual({
+	expect(await git(root, 'ls-files', '--stage')).toBe(
+		await preparedIndex(root, sides, { outside: true }),
+	);
+	expect(await readText(root, 'notes/color.txt')).toBe('red\n');
+	expect(await readText(root, 'theirs.md')).toBeUndefined();
+	expectOk(await made.history.status());
+	expect(made.history.snapshot.merging).toEqual({
 		incoming: sides.theirs,
 		head: sides.ours,
-		unresolved: [],
+		unresolved: ['notes/color.txt'],
 	});
-	expect(await reopened.history.commit()).toMatchObject({ status: 'blocked' });
-	expect(await git(root, 'rev-parse', 'HEAD')).toBe(sides.ours);
+	expect(expectErr(await made.history.commitStaged('Merge')).name).toBe(
+		'Unmerged',
+	);
+	expect(await made.history.commit()).toMatchObject({ status: 'blocked' });
+	// Staged and unstaged differences show what the files never got.
+	expect((await git(root, 'status', '--porcelain')).split('\n').sort()).toEqual(
+		['A  extra.md', 'AD theirs.md', 'UU notes/color.txt'],
+	);
 
-	await real.writeFile(join(root, 'notes/color.txt'), 'green\n');
-	expectOk(await reopened.history.stage('all'));
-	const committed = expectOk(await reopened.history.commitStaged('Merge'));
-	expect(committed.incoming).toBe(sides.theirs);
-	expect(await parentsOf(root, committed.oid)).toEqual([
-		sides.ours,
-		sides.theirs,
+	const before = await state(root);
+	const reopened = await reopen(made);
+	expectOk(await reopened.history.status());
+	expect(await state(root)).toEqual(before);
+	expect(reopened.history.snapshot.merging?.unresolved).toEqual([
+		'notes/color.txt',
 	]);
-	expect(await readText(root, '.git/MERGE_HEAD')).toBeUndefined();
-}
+	await finishResolved(reopened, sides);
+});
 
-test('files that stop partway stay under the pinned merge', async () => {
+test('files that stop partway leave the merge unresolved, and its commit keeps the fetched files', async () => {
 	let root = '';
 	const made = await folder({
 		async apply(files, changes) {
-			// Another program takes a path the merge creates, after the first write.
+			// Another program saves a path the merge creates, before it is written.
 			if (root !== '') await real.writeFile(join(root, 'theirs.md'), 'mine\n');
 			return files.apply(changes);
 		},
 	});
 	root = made.root;
+	const { sides } = made;
 
 	expect(
 		expectErr(await made.history.mergeIncoming({ conflicts: 'leave' })),
@@ -308,32 +478,49 @@ test('files that stop partway stay under the pinned merge', async () => {
 	});
 
 	expect(await readText(root, 'notes/color.txt')).toBe(MARKED);
-	expect(await git(root, 'ls-files', '--unmerged')).toBe('');
-	await real.rm(join(root, 'theirs.md'));
-	await finishesWithBothParents(made);
-});
-
-test('an index that cannot be written stays under the pinned merge', async () => {
-	let root = '';
-	const made = await folder({
-		async apply(files, changes) {
-			const applied = await files.apply(changes);
-			// Another Git process holds the index.
-			if (root !== '') await real.writeFile(join(root, '.git/index.lock'), '');
-			return applied;
-		},
+	expect(await readText(root, '.git/MERGE_HEAD')).toBe(`${sides.theirs}\n`);
+	expect(await readText(root, '.git/ORIG_HEAD')).toBe(`${sides.ours}\n`);
+	expectOk(await made.history.status());
+	expect(made.history.snapshot.merging).toEqual({
+		incoming: sides.theirs,
+		head: sides.ours,
+		unresolved: ['notes/color.txt'],
 	});
-	root = made.root;
-	const index = await git(root, 'ls-files', '--stage');
+	// Nothing staged: no commit, and no checkpoint of the markers.
+	expect(expectErr(await made.history.commitStaged('Merge'))).toMatchObject({
+		name: 'Unmerged',
+		paths: ['notes/color.txt'],
+	});
+	expect(await made.history.commit()).toMatchObject({ status: 'blocked' });
 
-	expect(
-		expectErr(await made.history.mergeIncoming({ conflicts: 'leave' })),
-	).toMatchObject({ name: 'IndexFailed' });
+	const reopened = await reopen(made);
+	expectOk(await reopened.history.status());
+	expect(reopened.history.snapshot.merging?.unresolved).toEqual([
+		'notes/color.txt',
+	]);
+	expect(expectErr(await reopened.history.commitStaged('Merge')).name).toBe(
+		'Unmerged',
+	);
+	expect(await reopened.history.commit()).toMatchObject({ status: 'blocked' });
+	expect(await git(root, 'rev-parse', 'HEAD')).toBe(sides.ours);
+	// The fetched file is in the index; the saved file stays as it was saved.
+	expect((await git(root, 'status', '--porcelain')).split('\n').sort()).toEqual(
+		['AM theirs.md', 'UU notes/color.txt'],
+	);
 
-	expect(await readText(root, 'notes/color.txt')).toBe(MARKED);
-	expect(await git(root, 'ls-files', '--stage')).toBe(index);
-	await real.rm(join(root, '.git/index.lock'));
-	await finishesWithBothParents(made);
+	await real.writeFile(join(root, 'notes/color.txt'), 'green\n');
+	expectOk(await reopened.history.stage(['notes/color.txt']));
+	const committed = expectOk(await reopened.history.commitStaged('Merge'));
+
+	expect(await parentsOf(root, committed.oid)).toEqual([
+		sides.ours,
+		sides.theirs,
+	]);
+	expect(await git(root, 'rev-parse', `${committed.oid}:theirs.md`)).toBe(
+		await git(root, 'rev-parse', `${sides.theirs}:theirs.md`),
+	);
+	expect(await readText(root, 'theirs.md')).toBe('mine\n');
+	expect(await readText(root, '.git/MERGE_HEAD')).toBeUndefined();
 });
 
 test('a published merge writes its index entries and stages together', async () => {
@@ -345,13 +532,10 @@ test('a published merge writes its index entries and stages together', async () 
 
 	const { root, sides } = made;
 	expect(await git(root, 'ls-files', '--stage')).toBe(
-		[
-			`100644 ${await git(root, 'rev-parse', `${sides.ours}:keep.md`)} 0\tkeep.md`,
-			`100644 ${await git(root, 'rev-parse', `${sides.base}:notes/color.txt`)} 1\tnotes/color.txt`,
-			`100644 ${await git(root, 'rev-parse', `${sides.ours}:notes/color.txt`)} 2\tnotes/color.txt`,
-			`100644 ${await git(root, 'rev-parse', `${sides.theirs}:notes/color.txt`)} 3\tnotes/color.txt`,
-			`100644 ${await git(root, 'rev-parse', `${sides.theirs}:theirs.md`)} 0\ttheirs.md`,
-		].join('\n'),
+		await preparedIndex(root, sides, { outside: false }),
+	);
+	expect(await readText(root, '.git/MERGE_MSG')).toBe(
+		`Merge remote-tracking branch 'origin/main'\n\n# Incoming commit: ${sides.theirs}\n`,
 	);
 	expect(await readText(root, 'notes/color.txt')).toBe(MARKED);
 });

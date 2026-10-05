@@ -156,3 +156,20 @@ Coordinator checks reproduced 121 Rust core tests with no failures, 47 adapter t
 Browser terminal computer use verified output following at the bottom, deliberate Home scrollback remaining in place when a command appended output, and End restoring following for the next appended result. The readonly output is keyboard-focusable.
 
 The second independent review accepted browser implementation but found a Bun-only publication-order gap: writing files before the intended index could advertise all conflicts staged after an index failure. A further correction publishes clean incoming index entries and every conflict stage before MERGE_HEAD and authored files. Review rejected restoring an old index on failure because it can erase unrelated outside staging. The bounded worker now retains prepared state and reports it for explicit repair; Bun acceptance remains conditional until its returned artifact is integrated and verified.
+
+### Final development and failure acceptance
+
+The root `bun dev:git:desktop` rebuilt and ran the current native source. The task-owned bundle wrapper again used exactly that executable; both SHA-256 values were `15a5929ef3487fcb834190c646a4b94ab6fac14893bf94cf0585352115045336`. Computer use reached its development frontend at `127.0.0.1:1430/`, reopened native B, edited pink and committed without pushing. Browser A independently edited cyan and pushed. Native fetch showed one ahead and one behind while keeping pink. Merge displayed pink/cyan markers with orange as the base. Editing amber, staging, committing and pushing produced:
+
+```text
+76cd35119c8a3bc53f9ca77e9fb3918fab69e869
+77a13d4d06d92ec7703a088d9a450709a4c82546 d34e25a7f9fe233c18786864d869ec00ef522553
+```
+
+Bare Git independently verified both original parents. Browser terminal then ran fetch, read the color, pulled, and read it again: cyan after fetch, amber after pull. The clean editor displayed amber.
+
+A real autosave failure was exercised in the development UI by temporarily removing write permission from the disposable notes directory. Typed input remained visible after Permission denied, with explicit replace/discard controls. Permissions were restored; an outside write changed the saved file. Save refused the stale SHA-256 capture while retaining typed input. Explicit discard reloaded the outside content. The disposable file and directory permissions were restored, and bare working-copy status was clean.
+
+The final Bun repair retained the prepared index after failures and deleted index rollback. Its incoming commit is durable in MERGE_MSG; explicit system-shell repair can restore MERGE_HEAD after a failed metadata write, even after the tracking ref moves. Before index publication, refusal changes no file or index; afterwards, Partial honestly reports prepared Git state and may name zero authored file steps. Tests retain unrelated outside staging before and after index publication. GPT and Claude independently accepted this final realization, including the deletion of rollback. Earlier conditional Bun acceptance is now resolved.
+
+Coordinator verification passed 171 focused Git/native cases, the full folder suite of 800 core cases plus 14 Svelte adapter cases, and the browser build. App and folder typechecks reported zero errors and warnings. The neighboring automatic-history chat independently reproduced five acceptance probes with 46 assertions and eighty composition tests with 718 assertions. No scheduler or row lifecycle redesign was needed.

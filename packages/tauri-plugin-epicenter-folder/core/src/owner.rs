@@ -1478,14 +1478,15 @@ impl Inner {
     /// incoming commit included, is refused and changes nothing: the files,
     /// the index, the branch, and the merge state stay for a person to
     /// inspect. Moving the branch back to `ORIG_HEAD` finishes the merge;
-    /// removing `MERGE_HEAD` abandons it.
+    /// removing `MERGE_HEAD` and resetting the index abandons it; working
+    /// files remain.
     fn current_merge(&self) -> Result<Finishing, String> {
         let Some(state) = self.git.merge_state()? else {
             return Ok(Finishing::None);
         };
         let Some(head) = state.head.clone() else {
             return Ok(Finishing::Unverifiable(format!(
-                "a merge of {} is in progress, but ORIG_HEAD does not name the commit it began from; write that commit to .git/ORIG_HEAD to finish the merge, or remove .git/MERGE_HEAD to abandon it",
+                "a merge of {} is in progress, but ORIG_HEAD does not name the commit it began from; write that commit to .git/ORIG_HEAD to finish the merge, or remove .git/MERGE_HEAD and reset the index to abandon it while keeping the working files",
                 state.incoming
             )));
         };

@@ -121,8 +121,11 @@ export type PublishResult =
 			readonly filesApplied: boolean;
 	  }
 	/**
-	 * Some file steps reached the folder, and the step that failed certainly
-	 * wrote nothing; the branch did not move. A browser keeps its incoming
+	 * The update stopped after some of it landed, and the step that failed
+	 * certainly wrote nothing; the branch did not move. `applied` names the
+	 * file steps that reached the folder. It may be empty when only Git state
+	 * landed: a Bun directory's unfinished merge prepares its index and merge
+	 * state before any file, and keeps them. A browser keeps its incoming
 	 * record until `recoverIncoming` is asked for.
 	 */
 	| {

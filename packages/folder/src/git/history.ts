@@ -625,7 +625,7 @@ export function createHistory({
 	 * the incoming commit, is refused and changes nothing: the files, the
 	 * index, the branch, and the merge state stay for a person to inspect.
 	 * Moving the branch back to `ORIG_HEAD` finishes the merge; removing
-	 * `MERGE_HEAD` abandons it.
+	 * `MERGE_HEAD` and resetting the index abandons it; working files remain.
 	 */
 	async function currentMerge(): Promise<
 		| { readonly status: 'none' }
@@ -647,7 +647,7 @@ export function createHistory({
 		if (state.head === undefined)
 			return {
 				status: 'unverifiable',
-				reason: `a merge of ${state.incoming} is in progress, but ORIG_HEAD does not name the commit it began from; write that commit to .git/ORIG_HEAD to finish the merge, or remove .git/MERGE_HEAD to abandon it`,
+				reason: `a merge of ${state.incoming} is in progress, but ORIG_HEAD does not name the commit it began from; write that commit to .git/ORIG_HEAD to finish the merge, or remove .git/MERGE_HEAD and reset the index to abandon it while keeping the working files`,
 			};
 		const head = await backend.readBranch();
 		if (head === state.head)

@@ -11,17 +11,37 @@
  * native index.
  *
  * A merge left unfinished is Git's own: `ORIG_HEAD`, `MERGE_MSG`, and
- * `MERGE_HEAD` beside the unmoved branch, files with markers, and unmerged
- * index stages written by `update-index --index-info`, so `git status`,
- * `git add`, and `git commit` in a terminal see the same merge. The merge
- * state is written first, `MERGE_HEAD` last, before any file or index
- * entry: it is what keeps the merge's two parents, the local head and the
- * fetched commit. If it cannot be written, nothing else is. Files or an index
- * that stop partway after it stay under that merge, so whole-folder commits
- * refuse them and a staged commit can only record both parents; a person
- * inspects the files, stages what they mean, and commits, or removes
- * `MERGE_HEAD` to abandon the merge. No other record is kept for a
- * publication that stops partway; it reports the steps that landed.
+ * `MERGE_HEAD` beside the unmoved branch, files with markers, and an index
+ * holding the incoming entries and each conflicted path's stages, written by
+ * `update-index --index-info`, so `git status`, `git add`, and `git commit`
+ * in a terminal see the same merge.
+ *
+ * Everything that makes the merge commit correct lands before any authored
+ * file: `ORIG_HEAD` (the local head) and `MERGE_MSG` (the message, with a
+ * `# Incoming commit: <oid>` line naming the fetched commit in full), then
+ * the whole index in one `update-index`, then `MERGE_HEAD`, then the files.
+ * The index and `MERGE_HEAD` together keep the merge's two parents, the
+ * fetched changes it brings, and its unresolved paths, so a staged commit
+ * made without staging anything is `Unmerged`, never a commit of the local
+ * tree that claims the fetched history.
+ *
+ * Nothing is rolled back: once the index holds the merge, another program
+ * may have staged something in it too, and putting older bytes back would
+ * erase that. A failure is reported where it stopped instead:
+ * - `ORIG_HEAD`, `MERGE_MSG`, or the index refused: `Refused`, with no file
+ *   or index entry changed. An `ORIG_HEAD` or `MERGE_MSG` left behind, with
+ *   no `MERGE_HEAD`, is only a head and a message; no merge is in progress.
+ * - `MERGE_HEAD` refused: `Partial` with no file step. The index holds the
+ *   stages and incoming entries with no `MERGE_HEAD`; whole-folder commits
+ *   refuse the stages and `git commit` refuses them as unmerged. Writing the
+ *   commit `MERGE_MSG` names to `.git/MERGE_HEAD` makes it the merge again,
+ *   whatever the tracking ref names by then.
+ * - A file step: `Partial`, with the steps that landed, possibly none. The
+ *   merge is in progress; files it did not write differ from their index
+ *   entries. A person inspects staged and unstaged differences, resolves,
+ *   stages what each path should hold, and commits, or removes `MERGE_HEAD`
+ *   and resets the index to abandon the merge while keeping working files.
+ * No other record is kept.
  *
  * A staged commit that finishes a merge writes, as objects, the index's tree
  * and a commit whose parents are `ORIG_HEAD` and `MERGE_HEAD`, then moves
@@ -35,7 +55,7 @@ import { readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import type * as git from 'isomorphic-git';
 import type { FileBoundary } from '../boundary.js';
-import { FileError } from '../errors.js';
+import { describe, FileError } from '../errors.js';
 import { byCodePoint, NORMALIZING } from './attributes.js';
 import type {
 	GitBackend,
@@ -142,6 +162,12 @@ export function createGitRunner(root: string): GitRun {
 }
 
 const text = (bytes: Uint8Array) => Buffer.from(bytes).toString('utf8');
+
+/**
+ * The `MERGE_MSG` line naming a merge's incoming commit in full. Git strips
+ * `#` lines from a message it edits, as it does its own `# Conflicts:` list.
+ */
+const INCOMING_LINE = '# Incoming commit: ';
 
 /** A node filesystem whose writes land atomically, for isomorphic-git object writes. */
 function atomicObjectFs(): git.PromiseFsClient {
@@ -280,62 +306,67 @@ export async function createNativeGitBackend({
 	}
 
 	/**
-	 * Publish a merge left unfinished: Git's merge state first, then the
-	 * files, then the index. See the module comment for why that order.
+	 * Publish a merge left unfinished: `ORIG_HEAD` and `MERGE_MSG`, the whole
+	 * index, `MERGE_HEAD`, then the files. See the module comment for why
+	 * that order, and why nothing is rolled back.
 	 */
 	async function publishMerge(
 		plan: IncomingPlan,
 		merge: UnfinishedMerge,
 	): Promise<PublishResult> {
+		const refused = (path: string, operation: string, cause: unknown) =>
+			({
+				status: 'refused',
+				error: FileError.Io({ path, operation, cause }).error,
+			}) as const;
 		const actual = await resolve(branchRef);
 		if (actual !== plan.expectedHead)
 			return { status: 'branchMoved', actual, filesApplied: false };
+		const message = merge.message.endsWith('\n')
+			? merge.message
+			: `${merge.message}\n`;
 		try {
 			await writePrivate('ORIG_HEAD', `${plan.expectedHead}\n`);
 			await writePrivate(
 				'MERGE_MSG',
-				merge.message.endsWith('\n') ? merge.message : `${merge.message}\n`,
+				`${message}\n${INCOMING_LINE}${merge.incoming}\n`,
 			);
-			await writePrivate('MERGE_HEAD', `${merge.incoming}\n`);
 		} catch (cause) {
-			// No `MERGE_HEAD`, so no merge began, and no file or index entry was
-			// written. An `ORIG_HEAD` or `MERGE_MSG` written before it is only a
-			// head and a message, as Git leaves them after other operations.
-			return {
-				status: 'refused',
-				error: FileError.Io({
-					path: '.git/MERGE_HEAD',
-					operation: 'record the merge before writing its files',
-					cause,
-				}).error,
-			};
-		}
-		const { error: applyError } = await boundary.apply(plan.changes);
-		if (applyError !== null) {
-			if (applyError.name === 'Partial')
-				return {
-					status: 'partial',
-					applied: applyError.applied,
-					error: applyError.error,
-				};
-			// No file was written, so the merge state describes nothing that
-			// happened. If it cannot be removed it stays, visible, and the
-			// result does not claim that nothing changed.
-			try {
-				await backend.clearMerge();
-			} catch {
-				return { status: 'partial', applied: [], error: applyError };
-			}
-			return { status: 'refused', error: applyError };
+			return refused('.git/MERGE_MSG', 'prepare the merge message', cause);
 		}
 		try {
 			await indexMerge(plan.nextHead, plan.paths, merge.unmerged);
 		} catch (cause) {
+			// `update-index` replaces the index whole or not at all.
+			return refused('.git/index', 'write the merge into the index', cause);
+		}
+		// From here the index holds the merge. It is never put back: another
+		// program may have staged something in it since.
+		try {
+			await writePrivate('MERGE_HEAD', `${merge.incoming}\n`);
+		} catch (cause) {
 			return {
-				status: 'indexFailed',
-				error: cause instanceof Error ? cause.message : String(cause),
+				status: 'partial',
+				applied: [],
+				error: FileError.Io({
+					path: '.git/MERGE_HEAD',
+					operation: `record the merge of ${merge.incoming} in`,
+					cause: new Error(
+						`${describe(cause)}. The index already holds the merge's stages and incoming entries, and .git/MERGE_MSG names the incoming commit on its "${INCOMING_LINE.trim()}" line; using a system shell, write that commit to .git/MERGE_HEAD before resolving, staging, or committing`,
+					),
+				}).error,
 			};
 		}
+		const { error: applyError } = await boundary.apply(plan.changes);
+		if (applyError !== null)
+			// The merge is in progress either way: its index and merge state stay.
+			return applyError.name === 'Partial'
+				? {
+						status: 'partial',
+						applied: applyError.applied,
+						error: applyError.error,
+					}
+				: { status: 'partial', applied: [], error: applyError };
 		// Another program may have moved the branch meanwhile. `ORIG_HEAD`
 		// still names the merge's first parent; a staged commit refuses to
 		// finish the merge from anywhere else.

@@ -1438,7 +1438,8 @@ and `MERGE_MSG`. Its result carries `incoming`. A branch that names any
 other commit, before the commit or while it is written, is `BranchMoved`
 with `expected` set to `ORIG_HEAD`: the files, the index, the branch, and
 the merge state stay as they were. Moving the branch back to `ORIG_HEAD`
-lets the merge finish; removing `MERGE_HEAD` abandons it. Without a readable
+lets the merge finish. To abandon it, remove `MERGE_HEAD` and reset the index;
+the working files remain available to repair. Without a readable
 `ORIG_HEAD` the staged commit is refused, because the merge's first parent is
 unknown. The Bun directory writes this commit's tree and commit as objects
 rather than running `git commit`, which would take whatever `HEAD` names, so
@@ -1466,18 +1467,49 @@ other merge's as in the way. It never resolves a path, clears a stage, or
 moves the branch, and a file edited since publication is a third state that
 it names and refuses. Edits to paths the merge does not change survive.
 
-A Bun directory keeps no record. It writes `ORIG_HEAD`, `MERGE_MSG`, and
-`MERGE_HEAD` before any file or index entry, so the merge's two parents are
-recorded before anything a person could mistake for ordinary edits. If that
-write fails, the merge is `Refused` and no file or index entry is written;
-an `ORIG_HEAD` or `MERGE_MSG` written before the failure is only a head and
-a message. A file step that writes nothing removes the merge state again.
-Files or an index that stop partway (`Partial`, `IndexFailed`) stay under
-the merge: whole-folder commits stay blocked, and a staged commit can only
-record both parents. Inspect the files, stage what they should hold, and
-commit, or remove `MERGE_HEAD` to abandon the merge. The index entries and
-stages are written by one `git update-index`, so the index holds all of them
-or none.
+A Bun directory keeps no record. Before any authored file it writes, in
+order:
+
+1. `ORIG_HEAD`, the local head.
+2. `MERGE_MSG`, the merge message with a last line
+   `# Incoming commit: <oid>` naming the fetched commit in full. Git strips
+   `#` lines from a message it edits, as it does its own `# Conflicts:`
+   list.
+3. The whole index: the incoming entries and each conflicted path's
+   stages, in one `git update-index`, so all or none.
+4. `MERGE_HEAD`.
+
+A staged commit with nothing staged is therefore `Unmerged` from the moment
+a file can change, and never records the local tree as the merge. Nothing is
+rolled back. Once the index holds the merge, another program may have staged
+something in it too, and putting older index bytes back would erase that. A
+failure is reported where it stopped instead. `Partial` then means the
+merge's Git state was prepared and kept; its `applied` file steps may be
+none.
+
+- If `ORIG_HEAD`, `MERGE_MSG`, or the index cannot be written, the merge is
+  `Refused` and no file or index entry changed. An `ORIG_HEAD` or
+  `MERGE_MSG` left behind, with no `MERGE_HEAD`, is only a head and a
+  message; no merge is in progress.
+- If `MERGE_HEAD` cannot be written, the result is `Partial` with no file
+  step, and its error names the incoming commit. The index keeps the
+  stages and incoming entries with no `MERGE_HEAD`, and both commits refuse
+  them: a whole-folder commit refuses orphan stages, and a staged commit is
+  refused as unmerged. Before resolving, staging, or committing, use a system
+  shell to write the commit on the `# Incoming commit:` line of `.git/MERGE_MSG` to
+  `.git/MERGE_HEAD`. That line holds it even after a later fetch moves the
+  tracking ref. The merge is then in progress as if it had been written,
+  and a staged commit records `ORIG_HEAD` and that commit as parents.
+- If a file step stops, `Partial` names the file steps that landed, possibly
+  none. The merge stays in progress with its real unresolved paths and the
+  incoming entries of files not yet written. Whole-folder commits stay
+  blocked, and a staged commit records both parents only after each
+  conflict is staged. Before staging everything, compare staged and unstaged
+  differences (`git diff --cached`, `git diff`, `git status`): a file the
+  merge did not get to write differs from its incoming entry, and staging it
+  replaces that entry with what the folder holds, deletion included. Resolve,
+  stage what each path should hold, and commit. To abandon the merge, remove
+  `MERGE_HEAD` and reset the index; keep the working files for repair.
 
 A whole-folder commit or fast-forward on disk writes every file as plain
 `100644` bytes, so it is refused in a repository it would misrepresent:

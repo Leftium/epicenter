@@ -45,13 +45,14 @@ function onSource(typed: string) {
 	setText(withFileNewlines(typed, row.text)); // the textarea's LF in the file's line endings
 }
 
-// Explicit commands: nothing resumes a failed chain or reads the file otherwise.
+// Explicit commands: nothing retries or reads the file otherwise; the next
+// input after a failure saves at once.
 onRetry(() => retry()); // write the latest input again
 onReload(async () => {
 	const { error: reloadError } = await reload(); // InputChanged, NotFound, InvalidUtf8, Io, ...
 	if (reloadError !== null) showReloadFailure(reloadError); // the row and save state stay
 });
-const { error: saveError } = await flush(); // before leaving: wait for the chain; never retries
+const { error: saveError } = await flush(); // before leaving: wait until no write runs; never retries
 ```
 
 `canonical-callers.md` shows these in vanilla DOM, Solid, and Svelte views,
@@ -68,7 +69,7 @@ asking before it drops input whose save failed.
 | `baseline`, `isDirty` | None. `get().row` is the accepted input; `save` says whether it is written |
 | `observation` beside the draft, `refresh()` | None. The editor never reads on its own; `reload()` adopts the file's text unless the input changed meanwhile, and a failed read changes nothing |
 | `adopt(reviewed)`, "Take this version" | `reload()` discards retained input and its failure on purpose |
-| `lastSave` outcomes | `save`: `idle`, `saving`, or `failed` with the error until `retry` or `reload` |
+| `lastSave` outcomes | `save`: `idle`, `saving` with an optional previous error, or `failed`; newer input saves automatically and success clears the error |
 | `dispose()` | None. Nothing watches; admitted writes settle whether or not anything holds the editor |
 | Acquisition refused `NoCanonicalForm` and `InvalidSource` | Readable text always opens; such a row is `invalid` and repaired with `setText` |
 | `subscribe(listener)` called with the state at once | `subscribe(invalidate)` makes no initial call; read the snapshot with `get` |

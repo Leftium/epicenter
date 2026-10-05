@@ -147,9 +147,8 @@ The status panel shows the row, the save state, and the exact accepted text.
 clears a failed save, unless the read fails or the input changed while it
 read, and the events log says which. After a failed save it offers "Save
 this text again", which calls `retry`: a new attempt with the latest input.
-Nothing else resumes a failed chain; typing after the failure is kept and
-shown but not written. Its subscription probe shows that `subscribe` makes
-no initial call.
+Typing after the failure saves at once; nothing retries on its own. Its
+subscription probe shows that `subscribe` makes no initial call.
 
 ### Leaving a row
 
@@ -166,7 +165,7 @@ failed, and it names its target path. Only `open`, as a transition's last
 step after the release left no editor, installs an editor.
 
 Leaving first unmounts every view, so no control can submit input. Then the
-owner awaits `flush()`. If the chain ended failed, the page asks: "Keep
+owner awaits `flush()`. If the last save failed, the page asks: "Keep
 editing" mounts the views again over the same editor and ends the
 transition, and the other choice drops the editor and its input. Opening the
 row again reads the file; nothing adopts or overwrites anything on the way.

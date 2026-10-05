@@ -1,6 +1,6 @@
 /**
  * The shared editor's snapshot in plain DOM: the row as the editor shows
- * it, the save chain, the exact accepted text, and the two explicit
+ * it, the save state, the exact accepted text, and the two explicit
  * commands that are not typing: "Read the file again" (`reload`), which
  * replaces the input with the file's text unless the input changed while it
  * read, and, after a failed save, "Save this text again" (`retry`), which

@@ -120,7 +120,7 @@ export function saveLabel(save: SaveState): string {
 		case 'idle':
 			return 'Saved';
 		case 'saving':
-			return 'Saving…';
+			return save.error === undefined ? 'Saving…' : `${describeSaveError(save.error)} Saving the latest input…`;
 		case 'failed':
 			return describeSaveError(save.error);
 		default:
@@ -133,9 +133,9 @@ export function describeSave(save: SaveState): string {
 		case 'idle':
 			return 'Saved: no write is running or waiting.';
 		case 'saving':
-			return 'Saving: a write is running, and the latest input waits behind it.';
+			return `${save.error === undefined ? '' : `${describeSaveError(save.error)} `}Saving: a write is running, and the latest input waits behind it.`;
 		case 'failed':
-			return `${describeSaveError(save.error)} The input is kept, and nothing is written, newer input included, until "Save this text again". "Read the file again" discards it.`;
+			return `${describeSaveError(save.error)} The input is kept. New edits save automatically; "Save this text again" retries this input. "Read the file again" discards it.`;
 		default:
 			return save satisfies never;
 	}

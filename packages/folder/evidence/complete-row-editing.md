@@ -1,6 +1,20 @@
 # Complete-row editing execution
 
-## Current collapse checkpoint: 2026-10-05
+## Continuous-save acceptance: 2026-10-05
+
+The continuous-save direction is integrated across the folder package, native
+owner, and Capture, Honeycrisp, Todos, Vocab, and Whispering. Each editor owns
+one active write and the latest waiting text. Failure consumes waiting input;
+later edits save normally. The previous error stays visible while newer input
+saves and clears on success. Independent writers use last-landed-wins, including
+late or duplicate IPC deliveries. Protocol 7 removes the submission argument.
+
+See [save-queue acceptance](save-queue/README.md) for verification, measurements,
+independent review conclusions, and actual browser journeys. The sections below
+record earlier execution checkpoints; their paused-save policy and unavailable
+browser observations are historical and superseded by this checkpoint.
+
+## Earlier collapse checkpoint: 2026-10-05
 
 The reviewed source is now applied to the live Epicenter checkout. All 282
 transferred or retired paths were hash-checked against the preserved live inputs
@@ -16,7 +30,8 @@ browser inventory remains empty, so the GUI checks below remain open.
 The accepted destination is one retained `table.edit(stem)` owner, with the
 existing `fromRowEditor` Svelte facade. Every representable field or source edit
 is accepted immediately. The owner keeps one active write and the latest waiting
-input. A failure pauses publication until explicit Retry. Flush only waits;
+input. A failure pauses publication until explicit Retry (superseded by the
+package wave above: later input now saves at once). Flush only waits;
 Reload deliberately reads the file and adopts nothing on a failed read.
 External writers use last-publication-wins. Open row editors no longer watch or
 automatically adopt file changes. See [ADR 0504](../../../docs/adr/0504-row-editors-own-complete-input-and-one-publication-queue.md).

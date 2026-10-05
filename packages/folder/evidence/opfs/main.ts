@@ -946,7 +946,8 @@ async function editing(id: string) {
 			);
 
 			// An explicit create makes the file again with other text. The
-			// paused editor writes nothing over it; reload adopts it.
+			// failed editor writes nothing over it without new input; reload
+			// adopts it.
 			const recreated = '---\ntitle: Made again\n---\n';
 			ok(await folder.files.create(path, recreated));
 			const stored = decoder.decode(await rawRead(id, path));

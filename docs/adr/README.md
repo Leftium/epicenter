@@ -752,5 +752,5 @@ When you add an ADR, add its row here.
 | [0501](0501-store-checkout-push-pull-and-its-baseline-are-removed.md) | Store checkout Pull/Push and its baseline are removed | Proposed (checkout removed; generic folder queries unbuilt; no replacement checkout or SQL export planned) |
 | [0502](0502-whispering-connections-own-request-destinations-and-credentials.md) | Whispering connections own request destinations and credentials | Accepted (cross-application execution and folder-independent credential storage unbuilt) |
 | [0503](0503-file-authoritative-workflows-preserve-information-and-tolerate-repairable-states.md) | File-authoritative workflows preserve information and tolerate repairable states | Proposed (application refusal review and simpler Honeycrisp folder deletion unbuilt) |
-| [0504](0504-row-editors-own-complete-input-and-one-publication-queue.md) | Row editors own complete input and one publication queue | Proposed (core replacement, tracked Svelte adapter, application migrations, and lifecycle acceptance unbuilt) |
+| [0504](0504-row-editors-own-complete-input-and-one-publication-queue.md) | Row editors own complete input and one publication queue | Accepted |
 | [0505](0505-automatic-commits-carry-one-coalesced-request-until-the-folder-is-free.md) | Automatic commits carry one coalesced request until the folder is free | Proposed (amends 0468) |

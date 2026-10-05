@@ -20,7 +20,7 @@ Standalone applications such as Whispering still need their own download and upl
 | `epicenter login`, `epicenter logout` | Start or end this tool's session; transfer no folder content. |
 | `epicenter folders` | Compare the account's live repository listing with local directories and their origins. |
 | `epicenter get <folder-id>` | Clone the selected repository into its expected absent directory. |
-| `epicenter create <folder-id>` | Explicitly allocate a new empty cloud repository and report its immutable URL. |
+| `epicenter create <folder-id>` | Explicitly allocate an empty private GitHub repository, pair its repository ID with the folder, and report its current URL. |
 | `epicenter git <folder-id> <git-arguments...>` | Resolve and lock the directory, then invoke Git there. |
 
 `--account` selects the session and is required when more than one account is signed in. `--root` selects a root other than `~/Epicenter`. Epicenter options precede `git`; the explicit folder ID precedes all Git arguments. Account folders follow [ADR-0461](0461-portable-data-folders-live-under-local-and-derived-account-scopes.md). An arbitrary or moved clone can be operated on through raw Git at its explicit path; it is not silently registered.
@@ -57,7 +57,7 @@ These commands operate on an existing `~/Epicenter/local/<folder-id>` directory.
 
 The CLI forwards SIGINT, SIGTERM, and SIGHUP and keeps the lock until the direct Git child exits. SIGKILL or SIGQUIT can terminate the CLI while Git survives. Detached descendants, including background Git maintenance, can outlive that child and are outside the lock's lifetime. This is cooperative ownership coordination, not a process sandbox.
 
-An invocation-scoped credential mechanism supplies the captured account's credential only to trusted service requests, without leaving a persistent helper in the repository or globally installing one. Isolate it from repository-configured helpers and scope it to the actual request destination after rewrites. A mismatching origin is reported by discovery; Git passthrough does not automatically retarget it. The server still decides whether the account may access the addressed repository. The credential implementation must satisfy ADR-0488's feasibility gate before these commands ship. Raw Git network commands need separately configured authentication; the Epicenter session does not automatically authenticate them.
+The captured Epicenter session authenticates requests to the Epicenter API. After checking the folder pairing, repository ID, and installation access, that API supplies a short-lived GitHub credential for the selected repository. An invocation-scoped mechanism supplies that credential only to the verified GitHub destination, without leaving a persistent helper in the repository or globally installing one. Isolate it from repository-configured helpers and scope it to the actual request destination after rewrites. A mismatching origin is reported by discovery; Git passthrough does not automatically retarget it. The credential implementation must satisfy ADR-0488's feasibility gate before these commands ship. Raw Git network commands need separately configured authentication; the Epicenter session does not automatically authenticate them.
 
 There are no separate Epicenter commit, push, pull, status, doctor, publish, sync, or connect commands. Git's command distinctions remain intact: commit records local history, push transfers commits, and fetch updates the remote observation. Integrity inspection can use `git fsck`; it is not a prerequisite for every folder listing. A person or coding agent can explicitly merge diverged histories with Git. Epicenter neither hides these operations nor implements another conflict workflow.
 
@@ -90,7 +90,7 @@ epicenter git so.epicenter.whispering status
 # Preserve any outstanding authored files before merging.
 # Stage selected data paths, inspect them, and commit if needed.
 
-# Use the immutable URL reported by the authenticated listing.
+# Use the current URL of the repository ID verified by account discovery.
 # Add origin only when absent; inspect an existing origin before changing it.
 epicenter git so.epicenter.whispering remote add origin <repository-url>
 epicenter git so.epicenter.whispering fetch origin
@@ -107,7 +107,7 @@ This is a reconciliation example, not an automatic recipe for every folder. Rela
 
 Get remains an absent-directory operation. It refuses an existing directory even if that directory has no commits. A pristine existing account folder uses guarded in-place adoption; a folder with local data preserves and reconciles it. No separate `epicenter connect` command, clone-and-swap operation, or local installation record is added.
 
-Applications can instead present Download folder, Upload changes, and Get updates through shared setup and transport code. A deliberate Upload changes action may combine commit and push while reporting each outcome. The engine already exposes these mechanisms under `folder.git`; automatic local history is separate from explicit outgoing publication. Account folder setup and hosted Git credentials remain unbuilt. Signing in reports a derived account path without downloading or configuring a remote.
+Applications can instead present Download folder and an explicit Sync action through shared setup and transport code. Sync saves, records, fetches, combines histories, and uploads under ADR-0489's application policy; it can join unrelated roots and must expose conflicts. The existing `folder.git` mechanisms provide parts of this journey, not the completed managed action. Automatic local history remains separate from explicit outgoing publication. Account folder setup, hosted Git credentials, and managed reconciliation remain unbuilt. Signing in reports a derived account path without downloading or configuring a remote.
 
 ## Private account sessions
 
@@ -115,7 +115,7 @@ The source CLI's session owner follows [ADR-0492](0492-the-source-cli-keeps-sess
 
 The CLI binds `http://127.0.0.1:39132/_epicenter/cli/callback` before opening the browser. This callback is separate from desktop development's default port. The hosted allowlist source admits the exact destination. Hosted login requires deployment of that change; this implementation does not deploy it.
 
-The next folder wave adds account directory selection and origin-based app opening. Cloud listing, staged get, allocation, and hosted Git credentials follow it. Existing-folder reconciliation remains explicit Git; it does not wait for an app-owned merge engine. Browser history reconciliation remains separate from the native Git passthrough.
+The next remote wave proves GitHub App connection, private repository creation, repository-ID-based folder pairing, and captured-account Git transfers under ADR-0488. Account directory selection, origin-based app opening, discovery, and staged get then consume that proof. Existing-folder reconciliation remains explicit Git; it does not wait for an app-owned merge engine. Browser transport and history reconciliation remain separate from the native Git passthrough.
 
 ## Consequences
 
@@ -131,4 +131,4 @@ The next folder wave adds account directory selection and origin-based app openi
 - **Separate Epicenter wrappers for each Git operation.** They can provide tailored messages, but require maintaining another operation and outcome model. Apps can own friendly controls without duplicating the CLI surface.
 - **Only raw Git.** It works once a repository is set up, but leaves account discovery, directory placement, and hosted credentials to each person or tool.
 - **Automatic get for every folder on login.** It downloads unwanted history, including audio, and makes authentication trigger content transfer.
-- **One sync command.** It must choose staging, commit, merge, and upload policy that the explicit Git arguments already express.
+- **One CLI sync command.** It duplicates the staging, commit, merge, and upload operations that the passthrough already exposes. An application's explicit Sync control can own a save-and-refresh policy for its editor without adding a CLI command.

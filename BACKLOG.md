@@ -54,6 +54,91 @@ starting: a prior session may already have completed it.
   work, and successful later repair. Retain current structured-write validation;
   revisit it only for a concrete caller that needs a different contract.
 
+## Complete the account-folder journey from sign-in to explicit cloud transfer
+
+- Current direction (2026-10-05): One GitHub connection supports several
+  account-folder pairings, each with its own private repository and history.
+  GitHub owns remote storage; Epicenter owns connection authorization, pairing,
+  and discovery. The next wave is specified in
+  [GitHub folder pairing](specs/20261005T134823-github-folder-pairing.md).
+  First prove a personal-account text-folder round trip, then integrate a text
+  app. Organizations, automatic transfers, and recording capacity follow
+  separate evidence. Existing first-party hosting results remain alternatives.
+- Desired result: A fresh laptop can sign in, discover the account's cloud
+  folders, get a chosen folder, edit it offline, and explicitly exchange Git
+  history. A standalone app can open a selected account folder from its own
+  cached identity before any remote exists. Existing local files remain intact
+  when a remote is configured later. Sign-in never uploads or moves Local data.
+- Grounding: The user retained this journey in the folder and CLI discussion.
+  On 2026-10-04 outcome consolidation verified `scripts/epicenter.ts`,
+  `epicenter-auth.ts`, and `epicenter-auth-credentials.ts`: source-CLI login,
+  offline account listing, logout, and OS credential storage exist. The CLI's
+  folder listing and Git passthrough accept Local only. Whispering still opens
+  its Local default; its browser opener names no account. Cloud serves the
+  existing store-sync authority, with no folder repository lifecycle/listing or
+  Git endpoint. ADR-0461, ADR-0488, and ADR-0489 describe the remaining design;
+  they do not establish its implementation. The consolidation passed 66 source
+  CLI/auth/managed-directory tests with 633 assertions; no live cloud journey
+  was exercised.
+- Smallest login acceptance: Complete one browser handoff with a designated
+  test account, then restart the source CLI and verify offline `accounts` and
+  logout. Confirm OS credential persistence without printing a token or
+  creating a data folder. The current tests exercise injected credentials and
+  a real loopback receiver; they do not establish a live hosted sign-in.
+- Smallest discovery continuation: With a designated development GitHub App
+  and personal test account, prove selected-repository authorization, explicit
+  private creation, access to the new repository, and ordinary Git fetch/push.
+  Pair an account folder with the GitHub repository ID. Verify account isolation
+  and deletion/recreation without adopting a replacement at a reused URL. Then
+  expose a read-only pairing listing that compares local origins without
+  claiming integrity or rewriting mismatches. The server stores pairings, not
+  a mirror of every GitHub repository.
+- Local hosting evidence: On 2026-10-04 the disposable
+  `apps/api/evidence/folder-git-host/` experiment passed 134 checks with ordinary
+  native Git clients: fixture-authenticated create/list, account isolation,
+  five initial-push races with both native receive hooks held alive, and
+  irreversible URL retirement after an admitted push and database reopen.
+  Independent Sol and Opus checkpoints removed an operation gate, then caught
+  and corrected weak overlap evidence and unsafe ID-collision cleanup.
+  Repository records own discovery and admission; native Git owns history.
+  This proves a local host candidate, not hosted deployment, real sign-in,
+  browser acceptance, streaming, crash recovery, or audio capacity.
+- Next deciding transfer experiment: Establish one captured-account native
+  GitHub credential channel with short-lived tokens restricted to the paired
+  repository ID. Refuse credential delivery through URL rewrites, redirects,
+  hostile helpers, hooks, or account replacement. Verify expiration and revoked
+  access. The designated test-account login acceptance above remains separate
+  and unverified. Do not build discovery/download UI before real GitHub
+  authorization and private repository creation are established. A browser
+  transport probe must decide whether a bounded authenticated proxy is needed.
+- Smallest offline-use continuation: Give one standalone app a deliberate
+  account selection and guarded close/reopen using its own cached identity.
+  Prove save, restart, and offline reopening under the derived account path
+  without discovery, a remote, or an upload. Signing in must not retarget its
+  existing Local handle. Coordinate with the app and storage owners after their
+  current acceptance work; do not change active OPFS or Result migrations.
+- Smallest transfer continuation: After the GitHub authorization proof, build one captured-
+  account authenticated Git transport and prove a two-device fetch/push round
+  trip. Include rewritten URLs, redirects, hostile credential helpers, and
+  account replacement. Bootstrap an absent folder with staged no-clobber
+  installation; connect an existing folder in place and preserve its files and
+  history. A matching origin does not reconcile unrelated histories. Keep
+  conflict handling and committed-versus-saved outcomes explicit. Independent
+  folders need no shared ancestry; independently started devices for the same
+  folder may need unrelated-history reconciliation. Measure real audio history
+  and GitHub file limits before claiming the choice fits Whispering recordings.
+- Application Sync continuation: After transport acceptance, compose explicit
+  save, commit, fetch, merge, and push under ADR-0489. Combine clean unrelated
+  roots of the paired dataset and retain both versions of conflicts. Pause new
+  edits during save/adoption. Reload affected views, or initially the whole app,
+  only when incoming files change; cursor and undo preservation are unnecessary.
+  Refresh adopted files even when upload fails and keep saved, recorded, and
+  uploaded outcomes separate. This app action does not add a CLI sync command.
+- Ownership: This account-folder continuation is separate from native
+  Whispering recipe/quit acceptance in `01a0fd21-5251-7201-a40b-1aa104733d90`.
+  No production hosting, cross-app execution, or new implementation is
+  authorized by this backlog entry.
+
 ## Build Whispering's recordings table with an optional detail pane
 
 - Desired result: Keep recordings manageable as a collection with search,

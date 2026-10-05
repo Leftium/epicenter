@@ -5,8 +5,8 @@
  */
 import { describe, expect, test } from 'bun:test';
 import { expectOk } from 'wellcrafted/testing';
-import { parseMarkdown } from './parse';
-import { editBody, editField, serializeEntry } from './serialize';
+import { parseMarkdown } from './parse.js';
+import { editBody, editField, serializeEntry } from './serialize.js';
 
 describe('serializeEntry', () => {
 	test('an empty mapping retains explicit row framing', () => {
@@ -23,35 +23,18 @@ describe('serializeEntry', () => {
 		});
 	});
 
-	test('emits a fence that reparses to the same values', () => {
-		const out = serializeEntry(
-			{ title: 'Hello', status: 'draft', count: 3 },
-			'# Body',
-		);
-		expect(out.startsWith('---\n')).toBe(true);
-		expect(expectOk(parseMarkdown(out))).toEqual({
-			frontmatter: { title: 'Hello', status: 'draft', count: 3 },
-			body: '# Body',
-		});
-	});
-
-	test('preserves value types: a number stays a number, a numeric string stays a string', () => {
-		const out = serializeEntry({ count: 3, code: '007' }, 'body');
-		expect(expectOk(parseMarkdown(out)).frontmatter).toEqual({
+	test('round-trips numbers, leading-zero strings, null, and opaque body text', () => {
+		const frontmatter = {
+			title: 'Hello',
+			status: 'draft',
 			count: 3,
 			code: '007',
-		});
-	});
-
-	test('an existing null value round-trips (never invented, never dropped)', () => {
-		const out = serializeEntry({ title: null }, 'body');
-		expect(expectOk(parseMarkdown(out)).frontmatter).toEqual({ title: null });
-	});
-
-	test('the body is written verbatim', () => {
+			reviewBy: null,
+		};
 		const body = '# Heading\n\n- a\n- b\n\ntrailing text';
-		const out = serializeEntry({ title: 'x' }, body);
-		expect(expectOk(parseMarkdown(out)).body).toBe(body);
+		const out = serializeEntry(frontmatter, body);
+		expect(out.startsWith('---\n')).toBe(true);
+		expect(expectOk(parseMarkdown(out))).toEqual({ frontmatter, body });
 	});
 });
 

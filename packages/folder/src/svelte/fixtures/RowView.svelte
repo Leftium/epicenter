@@ -33,31 +33,27 @@
 	const lf = (text: string) => text.replace(/\r\n?/g, '\n');
 
 	function title() {
-		const row = editor.row;
-		return row.status === 'valid' ? row.fields.title : '';
+		return editor.row.status === 'valid' ? editor.row.fields.title : '';
 	}
 
 	function setTitle(title: string) {
-		const row = editor.row;
-		if (row.status !== 'valid' || (guarded && rawMode)) return;
+		if (editor.row.status !== 'valid' || (guarded && rawMode)) return;
 		const { error } = editor.set({
-			fields: { ...row.fields, title },
-			body: row.body,
+			fields: { ...editor.row.fields, title },
+			body: editor.row.body,
 		});
 		refusal = error?.message;
 	}
 
 	function body() {
-		const row = editor.row;
-		return row.status === 'valid' ? lf(row.body) : '';
+		return editor.row.status === 'valid' ? lf(editor.row.body) : '';
 	}
 
 	function setBody(body: string) {
-		const row = editor.row;
-		if (row.status !== 'valid' || (guarded && rawMode)) return;
+		if (editor.row.status !== 'valid' || (guarded && rawMode)) return;
 		const { error } = editor.set({
-			fields: row.fields,
-			body: withFileNewlines(body, row.body),
+			fields: editor.row.fields,
+			body: withFileNewlines(body, editor.row.body),
 		});
 		refusal = error?.message;
 	}
@@ -67,11 +63,10 @@
 	}
 
 	function setText(next: string) {
-		const row = editor.row;
 		// Only a raw view that is leaving gets input the row no longer supports.
-		if (guarded && row.status === 'valid' && !rawMode) return;
+		if (guarded && editor.row.status === 'valid' && !rawMode) return;
 		rawMode = true;
-		editor.setText(withFileNewlines(next, row.text));
+		editor.setText(withFileNewlines(next, editor.row.text));
 	}
 
 	async function reload() {

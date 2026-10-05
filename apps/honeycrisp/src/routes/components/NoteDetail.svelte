@@ -59,31 +59,6 @@
 		if (problem) session.refuse(problem);
 	}
 
-	/** The title as typed when the editor refused it, else the editor's. */
-	function title() {
-		const current = session.row;
-		return session.refused.title?.value ?? (current.status === 'valid' ? (current.fields.title ?? '') : '');
-	}
-	function setTitle(value: string) {
-		const problem = session.edit({ fields: { title: value } }, { keep: true });
-		if (problem) session.refuse(problem);
-	}
-
-	/** The Markdown source as typed when the editor refused it, else the editor's body. */
-	function body() {
-		const current = session.row;
-		return lf(session.refused.body?.value ?? (current.status === 'valid' ? current.body : ''));
-	}
-
-	/** The whole file, as the file view shows it. */
-	function source() {
-		return lf(session.row.text);
-	}
-	function setSource(value: string) {
-		const problem = session.setText(withFileNewlines(value, session.row.text));
-		if (problem) session.refuse(problem);
-	}
-
 	function showFile(on: boolean) {
 		const problem = session.showFile(on);
 		if (problem)
@@ -91,9 +66,8 @@
 	}
 
 	function fillDefaults() {
-		const current = session.row;
-		if (current.status !== 'invalid' || defaults === undefined) return;
-		const { data: repaired, error } = repairFields(current.text, defaults);
+		if (session.row.status !== 'invalid' || defaults === undefined) return;
+		const { data: repaired, error } = repairFields(session.row.text, defaults);
 		if (error !== null) return void toast.error('Could not set the fields', { description: error });
 		const problem = session.setText(repaired);
 		if (problem) session.refuse(problem);
@@ -112,9 +86,11 @@
 					<Input
 						class="flex-1 text-base font-medium"
 						bind:value={
-							title,
+							() => session.refused.title?.value ?? (session.row.status === 'valid' ? (session.row.fields.title ?? '') : ''),
 							(value) => {
-								if (live()) setTitle(value);
+								if (!live()) return;
+								const problem = session.edit({ fields: { title: value } }, { keep: true });
+								if (problem) session.refuse(problem);
 							}
 						}
 						placeholder="Title"
@@ -213,7 +189,7 @@
 								<Textarea
 									class="min-h-40 flex-1 resize-none font-mono text-xs"
 									bind:value={
-										body,
+										() => lf(session.refused.body?.value ?? (session.row.status === 'valid' ? session.row.body : '')),
 										(value) => {
 											if (shown()) markdown.input(withFileNewlines(value, markdown.body));
 										}
@@ -265,9 +241,11 @@
 					<Textarea
 						class="min-h-40 flex-1 resize-none font-mono text-xs"
 						bind:value={
-							source,
+							() => lf(session.row.text),
 							(value) => {
-								if (live()) setSource(value);
+								if (!live()) return;
+								const problem = session.setText(withFileNewlines(value, session.row.text));
+								if (problem) session.refuse(problem);
 							}
 						}
 						aria-label="Contents of {session.path}"

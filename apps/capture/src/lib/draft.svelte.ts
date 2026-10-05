@@ -389,8 +389,7 @@ export function createDraft(
 	 */
 	function apply(edit: Edit): boolean {
 		if (undecided()) return false;
-		const current = editor?.row;
-		if (!editor || current?.status !== 'valid') {
+		if (!editor || editor.row.status !== 'valid') {
 			refusal = 'This capture cannot be edited here now.';
 			return false;
 		}
@@ -399,14 +398,14 @@ export function createDraft(
 			return false;
 		}
 		refusal = undefined;
-		if (edit.source === current.text) return true;
+		if (edit.source === editor.row.text) return true;
 		const frame = frameRowText(edit.source);
 		if (frame.kind !== 'frontmatter') {
 			refusal = 'The edited capture has no frontmatter.';
 			return false;
 		}
 		const { error } = editor.set({
-			fields: current.fields,
+			fields: editor.row.fields,
 			body: edit.source.slice(frame.bodyStart),
 		});
 		if (error !== null) {
@@ -459,9 +458,8 @@ export function createDraft(
 		},
 		/** Why readable text has no structured form, when it has none. */
 		get rowProblem(): string | undefined {
-			const current = editor?.row;
-			return current?.status === 'invalid'
-				? describeRowError(current.error)
+			return editor?.row.status === 'invalid'
+				? describeRowError(editor.row.error)
 				: undefined;
 		},
 		/** Why there is no editor, when acquisition gave none. */

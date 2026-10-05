@@ -43,10 +43,9 @@
 	const editable = $derived(editing?.view === 'fields');
 	/** The text now. Before the editor is open, the row as listed. */
 	const text = $derived.by(() => {
-		const row = editing?.row;
-		if (row === undefined) return result.body;
-		if (row.status === 'valid') return row.body;
-		return inspectRow(whisperingDefinition.tables.transcriptions, row.text).body;
+		if (editing === undefined) return result.body;
+		if (editing.row.status === 'valid') return editing.row.body;
+		return inspectRow(whisperingDefinition.tables.transcriptions, editing.row.text).body;
 	});
 	const unsettled = $derived(editing !== undefined && editing.status.kind !== 'saved');
 	// The live textarea has its own lifetime (LiveTextarea): one that is gone

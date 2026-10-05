@@ -902,24 +902,21 @@ Svelte 5.9 or later is an optional peer; no other entry loads it.
   const lf = (text: string) => text.replace(/\r\n?/g, '\n'); // what textareas report
 
   function title() {
-    const row = editor.row;
-    return row.status === 'valid' ? row.fields.title : '';
+    return editor.row.status === 'valid' ? editor.row.fields.title : '';
   }
   function setTitle(title: string) {
-    const row = editor.row;
-    if (row.status !== 'valid' || rawMode) return; // only while the fields view exists
-    const { error } = editor.set({ fields: { ...row.fields, title }, body: row.body });
+    if (editor.row.status !== 'valid' || rawMode) return; // only while the fields view exists
+    const { error } = editor.set({ fields: { ...editor.row.fields, title }, body: editor.row.body });
     if (error !== null) showRefusal(error);      // nothing was accepted
   }
   function text() {
     return lf(editor.row.text);
   }
   function setText(next: string) {
-    const row = editor.row;
     // Only while the raw view exists: invalid, or valid in raw mode.
-    if (row.status === 'valid' && !rawMode) return;
+    if (editor.row.status === 'valid' && !rawMode) return;
     rawMode = true;
-    editor.setText(withFileNewlines(next, row.text));
+    editor.setText(withFileNewlines(next, editor.row.text));
   }
   async function reload() {
     const { error } = await editor.reload();

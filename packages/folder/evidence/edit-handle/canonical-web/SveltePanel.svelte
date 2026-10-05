@@ -20,7 +20,6 @@
 	import { withFileNewlines } from '../../../src/file-browser.js';
 	import { fromRowEditor } from '../../../src/svelte/row-editor.svelte.js';
 	import {
-		controlsOf,
 		lf,
 		type Presentation,
 		saveLabel,
@@ -53,34 +52,20 @@
 		presentation.raw = next;
 	}
 
-	/** The latest valid row's controls, or empty ones while the fields are not shown. */
-	function controls() {
-		const row = editor.row;
-		return row.status === 'valid'
-			? controlsOf(row)
-			: { title: '', done: false, priority: '', body: '' };
-	}
-
 	/** Submit a complete row from the latest valid row, only while the fields are shown. */
 	function submit(next: (row: ValidTodo) => CanonicalDocument) {
 		if (!mounted) return;
-		const row = editor.row;
-		if (row.status !== 'valid' || raw) return;
-		const { error } = editor.set(next(row));
+		if (editor.row.status !== 'valid' || raw) return;
+		const { error } = editor.set(next(editor.row));
 		message = error === null ? '' : `Not accepted: ${error.message}`;
-	}
-
-	function source() {
-		return lf(editor.row.text);
 	}
 
 	function setSource(value: string) {
 		if (!mounted) return;
-		const row = editor.row;
-		if (row.status === 'valid' && !raw) return;
+		if (editor.row.status === 'valid' && !raw) return;
 		// Typing here keeps the source shown after the row becomes valid.
 		showSource(true);
-		editor.setText(withFileNewlines(value, row.text));
+		editor.setText(withFileNewlines(value, editor.row.text));
 	}
 </script>
 
@@ -88,24 +73,24 @@
 	<p class="warn">{sourceIssue(editor.row)}</p>
 	<label>
 		Markdown source
-		<textarea rows="8" class="source" bind:value={source, setSource}></textarea>
+		<textarea rows="8" class="source" bind:value={() => lf(editor.row.text), setSource}></textarea>
 	</label>
 	{#if editor.row.status === 'valid'}
 		<button type="button" onclick={() => showSource(false)}>Edit fields</button>
 	{/if}
 {:else}
 	<label>
-		<input type="checkbox" bind:checked={() => controls().done, (value: boolean) => submit((row) => withField(row, 'done', value))} />
+		<input type="checkbox" bind:checked={() => editor.row.status === 'valid' ? editor.row.fields.done : false, (value: boolean) => submit((row) => withField(row, 'done', value))} />
 		Done
 	</label>
 	<label>
 		Title
-		<input bind:value={() => controls().title, (value: string) => submit((row) => withField(row, 'title', value))} />
+		<input bind:value={() => editor.row.status === 'valid' ? editor.row.fields.title : '', (value: string) => submit((row) => withField(row, 'title', value))} />
 	</label>
 	<label>
 		Priority
 		<!-- The empty option omits the key, which deletes the field. -->
-		<select bind:value={() => controls().priority, (value: string) => submit((row) => withField(row, 'priority', value || undefined))}>
+		<select bind:value={() => editor.row.status === 'valid' ? (editor.row.fields.priority ?? '') : '', (value: string) => submit((row) => withField(row, 'priority', value || undefined))}>
 			<option value="">(none: remove the field)</option>
 			{#each PRIORITIES as option (option)}
 				<option value={option}>{option}</option>
@@ -114,7 +99,7 @@
 	</label>
 	<label>
 		Body
-		<textarea rows="3" bind:value={() => controls().body, (value: string) => submit((row) => withBody(row, value))}></textarea>
+		<textarea rows="3" bind:value={() => editor.row.status === 'valid' ? lf(editor.row.body) : '', (value: string) => submit((row) => withBody(row, value))}></textarea>
 	</label>
 	<button type="button" onclick={() => showSource(true)}>
 		Edit the Markdown source

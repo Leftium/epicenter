@@ -33,14 +33,14 @@
 
 	/** What the row shows: the open note's editor when there is one, else the listed file. */
 	function shown(note: NoteEntry) {
-		const row = notes.noteAt(note.path)?.row;
+		const session = notes.noteAt(note.path);
 		// An open note is shown as it is on screen, saved or not.
 		const reading =
-			row === undefined
+			session === undefined
 				? note
-				: row.status === 'valid'
-					? row
-					: inspectRow(honeycrispDefinition.tables.notes, row.text);
+				: session.row.status === 'valid'
+					? session.row
+					: inspectRow(honeycrispDefinition.tables.notes, session.row.text);
 		return {
 			title: displayTitle(reading.fields.title ?? note.fields.title, reading.body),
 			preview: previewText(reading.body),

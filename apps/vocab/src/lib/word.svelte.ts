@@ -273,14 +273,14 @@ export function createWord({
 		/** The note the field shows: a refused note, else the editor's, else the listed one. */
 		note(): string {
 			if (refusedNote !== undefined) return refusedNote.text;
-			const row = reactive()?.row;
-			if (row?.status === 'valid') return lf(row.fields.note);
+			const editing = reactive();
+			if (editing?.row.status === 'valid') return lf(editing.row.fields.note);
 			return editor === undefined ? lf(listed()?.note ?? '') : '';
 		},
 		/** The stage the controls show: the editor's, else the listed one. */
 		stage(): Stage | undefined {
-			const row = reactive()?.row;
-			if (row?.status === 'valid') return row.fields.stage;
+			const editing = reactive();
+			if (editing?.row.status === 'valid') return editing.row.fields.stage;
 			return editor === undefined ? listed()?.stage : undefined;
 		},
 		/**
@@ -340,8 +340,8 @@ export function createWord({
 
 		/** The text the repair field shows: the editor's exact text. */
 		repairText(): string {
-			const row = reactive()?.row;
-			return row === undefined ? '' : lf(row.text);
+			const editing = reactive();
+			return editing === undefined ? '' : lf(editing.row.text);
 		},
 		/** Type the file's exact text, saved in its own line endings. */
 		inputRepair(text: string) {

@@ -72,19 +72,19 @@ export function noteBody(
 ): BodyDraft {
 	return {
 		get body() {
-			const row = current().row;
-			return row.status === 'valid' ? row.body : '';
+			const session = current();
+			return session.row.status === 'valid' ? session.row.body : '';
 		},
 		input(body) {
 			if (!mounted()) return false;
 			const session = current();
-			const row = session.row;
 			return (
 				session.edit(
 					{
 						body,
 						fields:
-							row.status === 'valid' && row.fields.updatedAt !== undefined
+							session.row.status === 'valid' &&
+							session.row.fields.updatedAt !== undefined
 								? { updatedAt: now() }
 								: {},
 					},

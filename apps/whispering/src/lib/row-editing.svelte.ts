@@ -233,9 +233,8 @@ export function createRowEditing<TFields>(
 			return reloads > 0;
 		},
 		get status(): RowStatus {
-			const { row, save } = editor;
-			if (save.status === 'saving') return { kind: 'saving' };
-			if (save.status === 'failed') return saveProblem(save.error);
+			if (editor.save.status === 'saving') return { kind: 'saving' };
+			if (editor.save.status === 'failed') return saveProblem(editor.save.error);
 			if (holding()) {
 				const controls = [...held.fields.keys()];
 				if (held.body !== undefined) controls.push('body');
@@ -246,8 +245,8 @@ export function createRowEditing<TFields>(
 					message: first?.reason ?? '',
 				};
 			}
-			if (row.status === 'invalid')
-				return { kind: 'invalid', message: describeRowError(row.error) };
+			if (editor.row.status === 'invalid')
+				return { kind: 'invalid', message: describeRowError(editor.row.error) };
 			return { kind: 'saved' };
 		},
 		/**
@@ -264,15 +263,14 @@ export function createRowEditing<TFields>(
 		fieldText(key: string): string {
 			const kept = held.fields.get(key);
 			if (kept !== undefined) return kept.value;
-			const { row } = editor;
-			const value = row.status === 'valid' ? row.fields[key] : undefined;
+			const value =
+				editor.row.status === 'valid' ? editor.row.fields[key] : undefined;
 			return typeof value === 'string' ? value : '';
 		},
 		/** What the body's textarea shows, in LF: a refused typed body, else the valid row's. */
 		bodyText(): string {
 			if (held.body !== undefined) return held.body.value;
-			const { row } = editor;
-			return row.status === 'valid' ? lf(row.body) : '';
+			return editor.row.status === 'valid' ? lf(editor.row.body) : '';
 		},
 		/** Set one field of the valid row; `undefined` removes it. Every other field and the body stay. */
 		setField(key: string, value: CanonicalValue | undefined) {

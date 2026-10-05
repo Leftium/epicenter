@@ -131,11 +131,13 @@ export function createTodoEditor(
 	function setRow(
 		change: (row: CanonicalDocument, file: string) => CanonicalDocument,
 	): string | undefined {
-		const row = editor.row;
 		// A leaving fields view can still deliver input; it is not this view's row anymore.
-		if (row.status !== 'valid' || !fieldsOpen()) return undefined;
+		if (editor.row.status !== 'valid' || !fieldsOpen()) return undefined;
 		const { error } = editor.set(
-			change({ fields: row.fields, body: row.body }, row.text),
+			change(
+				{ fields: editor.row.fields, body: editor.row.body },
+				editor.row.text,
+			),
 		);
 		return error === null ? undefined : error.refusal.reason;
 	}
@@ -212,10 +214,11 @@ export function createTodoEditor(
 		// --- Function bindings. Each guards its own view's gate. -----------
 
 		title(): string {
-			const row = editor.row;
-			if (row.status !== 'valid') return '';
+			if (editor.row.status !== 'valid') return '';
 			if (refusals.title !== undefined) return refusals.title.value;
-			return typeof row.fields.title === 'string' ? row.fields.title : '';
+			return typeof editor.row.fields.title === 'string'
+				? editor.row.fields.title
+				: '';
 		},
 		setTitle(title: string) {
 			return setField('title', title, ({ fields, body }) => ({
@@ -224,8 +227,7 @@ export function createTodoEditor(
 			}));
 		},
 		done(): boolean {
-			const row = editor.row;
-			return row.status === 'valid' && row.fields.done === true;
+			return editor.row.status === 'valid' && editor.row.fields.done === true;
 		},
 		setDone(done: boolean) {
 			const reason = setRow(({ fields, body }) => ({
@@ -237,9 +239,8 @@ export function createTodoEditor(
 				: `This value cannot be saved: ${reason}.`;
 		},
 		notes(): string {
-			const row = editor.row;
-			if (row.status !== 'valid') return '';
-			return refusals.notes?.value ?? lf(row.body);
+			if (editor.row.status !== 'valid') return '';
+			return refusals.notes?.value ?? lf(editor.row.body);
 		},
 		setNotes(notes: string) {
 			return setField('notes', notes, ({ fields }, file) => ({
@@ -252,21 +253,22 @@ export function createTodoEditor(
 			return lf(editor.row.text);
 		},
 		setText(next: string) {
-			const row = editor.row;
 			// The raw view exists for an invalid row, or a valid one in raw mode.
-			if ((row.status === 'valid' && !rawMode) || refused() !== undefined)
+			if (
+				(editor.row.status === 'valid' && !rawMode) ||
+				refused() !== undefined
+			)
 				return;
 			// Raw repair stays in the source after the text becomes valid.
 			rawMode = true;
-			editor.setText(withFileNewlines(next, row.text));
+			editor.setText(withFileNewlines(next, editor.row.text));
 		},
 		/** Why the text on screen does not read as a todo, when it does not. */
 		diagnostics():
 			| { readonly summary: string; readonly details: readonly string[] }
 			| undefined {
-			const row = editor.row;
-			if (row.status === 'valid') return undefined;
-			const { error } = row;
+			if (editor.row.status === 'valid') return undefined;
+			const { error } = editor.row;
 			switch (error.name) {
 				case 'Nonconforming':
 					return {
@@ -324,8 +326,7 @@ export function createTodoEditor(
 		async toggle(done: boolean): Promise<string | undefined> {
 			const blocked = refused();
 			if (blocked !== undefined) return blocked;
-			const row = editor.row;
-			if (row.status !== 'valid' || rawMode)
+			if (editor.row.status !== 'valid' || rawMode)
 				return 'This todo is open in its source editor. Change it there.';
 			if (editor.save.status === 'failed')
 				return 'This todo has a save that did not finish. Choose what to do in its editor first.';

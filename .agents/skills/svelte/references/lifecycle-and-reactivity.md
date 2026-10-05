@@ -200,10 +200,18 @@ The same rule applies to block-local `{@const}` passthroughs:
 Keep the alias when it owns real work:
 
 - Computed predicates or values: `const isSelected = $derived(selectedId === item.id)`.
-- Values used by script logic, effects, or other derived values.
+- A named computation or selection shared by script logic, effects, or other derived values; those consumers can also read shallow properties directly.
 - Expensive or noisy computations that should run once per block.
+- A change filter for downstream effects: `$derived` skips downstream updates when its value remains referentially identical, even if the source notifies more broadly. Check effect behavior before replacing a derived read with a direct getter read. See [Svelte update propagation](https://svelte.dev/docs/svelte/$derived#Update-propagation).
 - Dynamic component binding: `{@const Icon = item.icon}` before `<Icon />`.
 - Discriminated union payloads inside an `{#each}` branch when the alias improves narrowing and readability: `{@const bookmark = item.bookmark}`.
+
+Repeating a shallow read does not require an alias. Prefer `editor.row` at each
+use when seeing the owner helps the reader. Do not replace a reactive alias with
+a component-level `const row = editor.row`: that captures an initial value.
+An operation-local snapshot can earn its place when it keeps narrowing and a
+read-modify-write operation coherent. Capture it when the handler runs, and
+re-read or check the operation's validity after an `await` before writing.
 
 Searches:
 
@@ -211,6 +219,53 @@ Searches:
 rg -n '\$derived\([^)]*\.[A-Za-z_$][A-Za-z0-9_$]*\)' --glob '*.svelte'
 rg -n '\{@const\s+[A-Za-z_$][A-Za-z0-9_$]*\s*=\s*[^}\n]+\.[A-Za-z_$][A-Za-z0-9_$]*\s*\}' --glob '*.svelte'
 ```
+
+# Stable adapters and reactive reads
+
+Separate the adapter's identity from the values it exposes. For a read-through
+adapter whose getters participate in Svelte reactivity, construct it once when
+the source owner is fixed for the component instance:
+
+```svelte
+<!-- Parent: owner changes recreate the child. -->
+{#key rowEditor}
+	<RowView {rowEditor} />
+{/key}
+```
+
+```svelte
+<!-- RowView.svelte -->
+<script lang="ts">
+	import { untrack } from 'svelte';
+	let { rowEditor } = $props();
+	// The parent keys this child on rowEditor; capture this instance's owner.
+	const editor = fromRowEditor(untrack(() => rowEditor));
+</script>
+
+{#if editor.row.status === 'valid'}
+	<p>{editor.row.fields.title}</p>
+{/if}
+```
+
+Changes to the row do not require reconstructing the adapter. If `rowEditor`
+can be replaced while this component stays mounted, a plain initialization
+would retain the old owner. For a side-effect-free read-through adapter, use
+`const editor = $derived(fromRowEditor(rowEditor))` in that case. For an adapter
+that owns a disposable resource, use an explicit lifecycle boundary instead;
+`$derived` does not supply cleanup.
+
+Confirm owner stability at the caller before removing the wrapper. A keyed
+child can establish that stability when the key tracks the owner identity.
+The caller now owns that guarantee; removing its key can leave the child stale.
+Use `untrack` for this intentional initial prop capture to avoid Svelte's
+[state_referenced_locally warning](https://svelte.dev/docs/svelte/compiler-warnings#state_referenced_locally). It documents the capture, not a substitute
+for the caller's lifetime guarantee. Prefer deriving from the prop when the
+component must remain correct independently of its caller's mount policy.
+Svelte executes component initialization once, and a `{#key}` block recreates
+its contents when the key changes. See the official
+[`$derived`](https://svelte.dev/docs/svelte/$derived),
+[`$props`](https://svelte.dev/docs/svelte/$props), and
+[`{#key}`](https://svelte.dev/docs/svelte/key) documentation.
 
 # `$derived` Value Mapping: Use `satisfies Record`, Not Ternaries
 

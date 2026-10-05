@@ -374,19 +374,26 @@ For more complex repeated patterns (e.g., toolbar buttons with tooltips), use `{
 
 ### When NOT to Extract
 
-- **2 or fewer** repetitions: extraction adds indirection without meaningful savings.
+- **Cheap local repetition**: Keep markup inline when a snippet adds navigation without explaining the structure or avoiding substantial repetition.
 - **Structurally similar but semantically different**: if the elements serve different purposes and might diverge, keep them separate.
 
 # Single-Use Functions And Aliases
 
-Inline a single-use binding when it merely forwards a call, aliases a property, or stores a one-off class string. Keep it when it owns a complete operation, a meaningful interaction boundary, or a non-obvious decision. A named operation can return a Result to the handler that presents its outcome, even when that handler is its only caller. See [error-handling](../../error-handling/SKILL.md) for Result composition and consumption.
+Keep source reads and actions visible beside their controls. Inline a binding
+when it merely forwards a call, aliases a property, or stores a one-off class
+string. Ask whether inlining loses an explanation or necessary behavior, or just
+removes a jump. Keep a name that explains a substantial operation, owns a
+meaningful interaction boundary, or captures a non-obvious decision. A named
+operation can return a Result to the handler that presents its outcome, even
+when that handler is its only caller. See
+[error-handling](../../error-handling/SKILL.md) for Result composition and consumption.
 
 ## Why Inline?
 
 Single-use extracted bindings add indirection: the reader jumps between the script definition and the template to understand what happens on click/keydown/render. Inlining keeps cause and effect together at the point where the action happens.
 
 ```svelte
-<!-- BAD: Extracted single-use function with no JSDoc or semantic value -->
+<!-- BAD: Extracted single-use function that only forwards a call -->
 <script>
 	function handleShare() {
 		share.mutate({ id });
@@ -418,6 +425,13 @@ A single-use `const` class string is the same smell: scanning it inline beats ch
 <div class="grid gap-3 rounded-md border bg-background px-3 py-3">...</div>
 ```
 
+A handler does not need a name just because it contains several statements or
+a guard. Keep lifetime, mode, and write-permission checks beside the control
+when that makes the permitted action clearer. Move the logic into a named
+operation when sequencing or distinct failure decisions would overwhelm the
+event wiring. Preserve method receivers when removing wrappers: inline
+`() => owner.act()` rather than passing `owner.act` if the method needs `this`.
+
 Event-specific logic can remain inline when its steps are easier to understand beside the element:
 
 ```svelte
@@ -439,7 +453,10 @@ Event-specific logic can remain inline when its steps are easier to understand b
 
 ## When A Name Earns Its Place
 
-Keep a single-use binding when its name tells the reader what the action accomplishes, or when the function owns sequencing or a failure decision that the event wiring should not carry. Add a comment when the decision itself needs an explanation; a comment is not required merely to justify the function.
+Keep a single-use binding when its name explains work beyond an already clear
+forwarded call, or when the function owns sequencing or a failure decision that
+the event wiring should not carry. Add a comment when the decision itself needs
+an explanation; a comment is not required merely to justify the function.
 
 ```svelte
 <script lang="ts">
@@ -462,7 +479,14 @@ Inline bindings that merely forward values or calls; their indirection does not 
 
 ## Multi-Use Bindings
 
-Bindings used **2 or more times** should always stay extracted: this rule only applies to single-use bindings.
+Reuse is evidence, not an exemption from the inlining test. Repeated shallow
+reads such as `editor.row` can stay direct so ownership remains visible at every
+use. Keep extraction when it centralizes a shared rule, avoids substantial
+repetition, provides necessary caching, or gives non-obvious work a useful name.
+Two uses alone do not establish any of those benefits. See
+[refactoring](../../refactoring/SKILL.md#keep-source-and-action-visible) for the
+general test, and [lifecycle and reactivity](lifecycle-and-reactivity.md#shallow-template-aliases-inline-direct-reads)
+for reactive reads and operation-local snapshots.
 
 # Referential Stability for Reactive Data Sources
 

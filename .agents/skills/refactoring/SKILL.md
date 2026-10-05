@@ -19,38 +19,37 @@ rare mode with its own tests and docs. Refactors do not need to preserve every
 old promise. They need to preserve the product sentence and the load-bearing
 contracts.
 
-## The Audit: Count Callers First
+## Keep source and action visible
 
-Before changing anything, map every internal function with its exact call count.
+Keep the source and the action visible where they are used. Introduce a separate
+name or layer when it adds understanding or owns necessary behavior. Mentally inline a
+binding and ask: does the reader lose an explanation or necessary behavior, or
+just lose a jump?
 
-```
-INTERNAL FUNCTIONS                          CALLERS
-────────────────────────────────────────────────
-lastEntry()                                 5  (currentType, validated, 3× replace*)
-validated()                                 6  (getter, read, appendText, asText, asRichText, asSheet)
-pushText(content)                           8  (write, appendText×3, asText×3, replace)
-replaceCurrentText(content)                 1  ← restoreFromSnapshot only ⚠️
-pushSheetFromSnapshot(cols, rows)           1  ← restoreFromSnapshot only ⚠️
-```
+A shallow property alias or forwarding helper can hide ownership without
+explaining anything. A named operation can earn its place by expressing a
+non-obvious decision, enforcing an invariant, owning a lifecycle, or making a
+long phase understandable. Preserve evaluation timing, receiver binding,
+caching, and snapshot semantics when inlining; fewer names must not change behavior.
 
-**1 caller = inline candidate.** Always ask: does this function earn its name?
+## The audit: count callers as evidence
 
-### Decision Table
+Trace the binding's actual callers before changing it. Delete unused internal
+code; check external consumers before deleting a public export. For a live
+binding, compare the explanation and behavior its definition contributes with
+the navigation and repetition it introduces. A single caller can justify a
+meaningful operation; several callers can repeat an unnecessary forwarding layer.
 
-| Callers | Action |
-|---|---|
-| 0 | Dead code. Delete. |
-| 1 | Inline candidate. Keep only if: complex logic worth naming, part of a constructor family, or carries important JSDoc. |
-| 2-3 | Evaluate. If all callers are in the same method, might still inline. |
-| 4+ | Keep. |
+Count callers when the number helps establish scope or maintenance cost. A
+local simplification does not require an inventory of every function in the file.
 
 ### When to Keep a Single-Caller Function
 
 Not every 1-caller function should be inlined. Keep it when:
 
-- **Part of a family**: `pushText`, `pushSheet`, `pushRichtext` all follow the same structure. Inlining one breaks the visual symmetry.
+- **Part of a meaningful family**: `pushText`, `pushSheet`, `pushRichtext` expose distinct typed constructors. Keep the shared vocabulary when it helps callers understand those operations; visual symmetry alone is insufficient.
 - **Complex logic worth naming**: Deep-clone operations, recursive tree walks, or multi-step parsing where the name documents intent.
-- **The calling method is already long**: Inlining 15 lines into a 50-line method hurts readability.
+- **A named phase makes the caller readable**: Extract a long imperative phase when its name explains the work. Length alone does not establish a useful boundary.
 
 ## Type Safety Boundaries
 
@@ -174,7 +173,7 @@ async createFolder(parentId: FileId | null, name: string) {
 	await fs.mkdir(path);
 }
 
-// BAD: Extracted for 2 callers in the same file.
+// Adds a helper name without explaining more than the local path construction.
 // Reader now has to find buildChildPath() to understand either function.
 function buildChildPath(parentId: FileId | null, name: string): string {
 	const parentPath = parentId ? (this.getPath(parentId) ?? '/') : '/';
@@ -200,12 +199,13 @@ Same principle in templates: a class string used twice is easier to scan inline 
 <TreeView.Folder class={itemClass} />
 ```
 
-### When extraction IS worth it
+### When extraction earns its place
 
-- The block is 5+ lines (the abstraction pays for itself)
-- It appears 4+ times (pattern, not coincidence)
-- The callers are in different files (no local context to rely on)
-- The logic is non-obvious and the function name documents intent
+Extract when the name explains non-obvious work, one owner must enforce a shared
+rule, or repeating a substantial operation would obscure callers and make changes
+harder. Block length, repetition count, and file distance are evidence of those
+costs, not automatic thresholds. A two-use parser can deserve extraction; a
+four-use alias can still deserve deletion.
 
 ## Inline Known-Behavior Calls
 
@@ -368,7 +368,7 @@ See `typescript` "Go-to-Definition Awareness" for the per-shape mechanics.
 
 ## Anti-Patterns
 
-- **Premature extraction**: Extracting a 1-3 line block used 2-3 times into a named helper. The indirection costs more than the duplication. See "Prefer Inline for Trivial Duplications" above.
+- **Premature extraction**: Naming already clear local work without adding an explanation or owning a shared rule. Repetition alone does not justify a helper. See "Prefer Inline for Trivial Duplications" above.
 - **Abstracting away differences**: Three push constructors with different fields share boilerplate, but a `pushEntry(type, fields: Record<string, unknown>)` helper loses all type safety. The duplication communicates structure.
 - **Type-erasing helpers**: Any helper that accepts `unknown` or `Record<string, any>` to "reduce duplication"
 - **Refactoring while fixing bugs**: Fix the bug at the owning boundary first, then use a separate commit for cleanup that is not required by that correction

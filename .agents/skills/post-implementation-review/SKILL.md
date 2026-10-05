@@ -147,6 +147,11 @@ Mentally inline every helper, wrapper, component, prop bundle, adapter, file,
 factory, compartment, and extracted function back into its call sites, then keep
 a layer only when it earns its place.
 
+For local bindings, apply
+[refactoring's source-and-action test](../refactoring/SKILL.md#keep-source-and-action-visible).
+Inspect repeated shallow aliases and forwarding handlers as well as single-use
+helpers; caller count alone does not justify a boundary.
+
 For the inspection method and criteria for keeping a boundary, use
 [rethink's mental-inlining reference](../rethink/references/radical-options.md#mental-inlining).
 The ownership check below applies the same test to runtime, durable, and
@@ -165,13 +170,13 @@ Which props exist only because of a stale file split?
 Which calls need `untrack`, and would moving ownership remove that need?
 ```
 
-Count callers for every new or changed helper, component, factory, wrapper, and
-export. A one-caller boundary is guilty until it proves it owns one of these:
+Inspect callers for every new or changed helper, component, factory, wrapper,
+and export. Keep a boundary when it explains necessary work or owns one of these:
 
 ```txt
 a lifecycle that must be isolated from parent rerenders
 an unsafe parse, network, storage, or external-library boundary
-a repeated domain operation with several real callers
+a shared domain rule or non-obvious operation
 a public contract that downstream code imports
 a long imperative block whose helper name explains the phase
 ```

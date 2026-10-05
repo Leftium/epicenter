@@ -38,7 +38,7 @@ implementation family. Name the refused promise before editing.
 
 For each candidate file or symbol family:
 
-1. **Pick one target.** Count non-test callers exactly with `rg`. If zero, the candidate is a dead-export collapse. If one, it's an inline-the-helper collapse. If many, find a narrower target.
+1. **Pick one target.** Inspect its actual non-test callers with `rg`. Caller count helps establish scope and detect unused code; it does not decide whether a boundary deserves to remain. Apply [refactoring's source-and-action test](../refactoring/SKILL.md#keep-source-and-action-visible) to repeated forwarding layers as well as single-use helpers.
 2. **Mentally inline** every helper, wrapper, prop, and indirection layer into its callers. Read the inlined result as a stranger would.
 3. **Run the one-sentence test** on the file. Write one concrete sentence describing what it does today. If the sentence drifts or grows "or" clauses, name the ambiguity; that ambiguity is usually the smell.
 4. **Surface the finding BEFORE editing**, in this exact shape:

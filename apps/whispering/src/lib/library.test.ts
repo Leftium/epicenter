@@ -1010,7 +1010,7 @@ test('a recording is not deleted while a result cannot say which recording it be
 	]);
 });
 
-test('a transcription is saved as its own row naming the recording', async () => {
+test('a transcription is saved as its own row naming the recording, and reopening keeps the recording, result, and exact audio', async () => {
 	const { library, root, transcribed } = await open();
 	await record(library);
 	const entry = library.entries[0]!;
@@ -1031,18 +1031,11 @@ test('a transcription is saved as its own row naming the recording', async () =>
 	expect(row).toContain(`recordingId: ${entry.stem}`);
 	expect(row).toContain('model: verification-model');
 	expect(row).toContain('a steady tone');
-});
+	await library.commit();
+	opened.splice(opened.indexOf(library), 1);
+	await library.close();
 
-test('reopening the folder shows the same recording and result', async () => {
-	const first = await open();
-	await record(first.library);
-	const entry = first.library.entries[0]!;
-	await first.library.transcribe(entry);
-	await first.library.commit();
-	opened.splice(opened.indexOf(first.library), 1);
-	await first.library.close();
-
-	const second = await open({ root: first.root });
+	const second = await open({ root });
 
 	expect(second.library.entries.map((item) => item.path)).toEqual([entry.path]);
 	expect(second.library.entries[0]!.fields.audioPath).toBe(
@@ -1057,7 +1050,7 @@ test('reopening the folder shows the same recording and result', async () => {
 	expect(new Uint8Array(await audio!.arrayBuffer())).toEqual(
 		new Uint8Array(toneWav()),
 	);
-	expect(git(first.root, 'status', '--porcelain').trim()).toBe('');
+	expect(git(root, 'status', '--porcelain').trim()).toBe('');
 });
 
 test('deleting a recording removes its row and results, keeps its audio, and says so first', async () => {

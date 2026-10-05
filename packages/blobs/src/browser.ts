@@ -189,8 +189,7 @@ export function createBrowserBlobStore(
 										try {
 											const entry = request.result;
 											if (!entry) return resolve(items);
-											const stat = indexedStat(entry.key);
-											items.push(stat);
+											items.push(indexedStat(entry.key));
 											if (items.length > limit) return resolve(items);
 											entry.continue();
 										} catch (cause) {

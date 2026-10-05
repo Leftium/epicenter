@@ -138,9 +138,6 @@ export async function getRecordingStream({
 
 	// Read back which device the browser actually granted so the outcome
 	// records it for next time.
-	const grantedDeviceId =
-		stream.getAudioTracks()[0]?.getSettings().deviceId ?? '';
-
 	return Ok({
 		stream,
 		deviceOutcome: {
@@ -148,7 +145,9 @@ export async function getRecordingStream({
 			reason: selectedDeviceId
 				? 'preferred-device-unavailable'
 				: 'no-device-selected',
-			deviceId: asDeviceIdentifier(grantedDeviceId),
+			deviceId: asDeviceIdentifier(
+				stream.getAudioTracks()[0]?.getSettings().deviceId ?? '',
+			),
 		},
 	});
 }

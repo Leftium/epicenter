@@ -33,12 +33,6 @@ const VadRecorderError = defineErrors({
 export type VadRecorderError = InferErrors<typeof VadRecorderError>;
 
 /**
- * Default base path the VAD loads its ONNX model and onnxruntime wasm from. The
- * consuming app must serve those assets at this path (see `@epicenter/recorder/vad-assets`).
- */
-const DEFAULT_VAD_ASSET_PATH = '/vad/';
-
-/**
  * Active VAD session, or null when idle. Holds the underlying MicVAD and the
  * MediaStream it borrows so the recorder can tear both down on stop.
  */
@@ -106,8 +100,9 @@ export type VadRecorder = {
  * - Stop listening: `await vad.stopActiveListening()`
  */
 export function createVadRecorder({
-	assetBaseUrl = DEFAULT_VAD_ASSET_PATH,
+	assetBaseUrl = '/vad/',
 }: {
+	/** Base path for the served ONNX model and wasm assets (see `@epicenter/recorder/vad-assets`). */
 	assetBaseUrl?: string;
 } = {}): VadRecorder {
 	let _session: VadSession | null = null;
@@ -154,9 +149,9 @@ export function createVadRecorder({
 							submitUserSpeechOnPause: true,
 							onSpeechStart,
 							onSpeechEnd: (audio) => {
-								const wavBuffer = utils.encodeWAV(audio);
-								const blob = new Blob([wavBuffer], { type: 'audio/wav' });
-								onSpeechEnd(blob);
+								onSpeechEnd(
+									new Blob([utils.encodeWAV(audio)], { type: 'audio/wav' }),
+								);
 							},
 							onVADMisfire,
 							onFrameProcessed: (_probabilities, frame) => {

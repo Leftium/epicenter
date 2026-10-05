@@ -191,11 +191,7 @@ export function createAiConnections({
 	}
 	const unsubscribe = subscribeStorage?.(() => {
 		if (closed) return;
-		const raw = storage.getItem(key);
-		const next =
-			raw === null
-				? { version: 1 as const, connections: [] }
-				: parseAiConnections(raw);
+		const next = load();
 		if (JSON.stringify(next) === JSON.stringify(state)) return;
 		state = next;
 		notify();

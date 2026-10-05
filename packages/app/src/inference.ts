@@ -82,13 +82,16 @@ export function createInference(
 				const headers = new Headers(
 					input instanceof Request ? input.headers : undefined,
 				);
-				new Headers(init?.headers).forEach((value, name) =>
-					headers.set(name, value),
-				);
+				new Headers(init?.headers).forEach((value, name) => {
+					headers.set(name, value);
+				});
 				headers.delete('authorization');
 				headers.delete('cookie');
-				const authentication = new Headers(await getAuthHeaders?.({ signal }));
-				authentication.forEach((value, name) => headers.set(name, value));
+				new Headers(await getAuthHeaders?.({ signal })).forEach(
+					(value, name) => {
+						headers.set(name, value);
+					},
+				);
 				headers.delete('cookie');
 				signal.throwIfAborted();
 				const response = await fetch(input, {

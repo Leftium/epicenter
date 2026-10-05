@@ -16,9 +16,7 @@ export function borrowSqlite(
 		> {
 			assertUsable();
 			if (!isDatabaseName(name))
-				return Promise.resolve(
-					DeviceError.InvalidDatabaseName({ databaseName: name }),
-				);
+				return DeviceError.InvalidDatabaseName({ databaseName: name });
 			return tryAsync({
 				try: () => namespace.open(name),
 				catch: (cause) => DeviceError.StorageFailed({ cause }),
@@ -27,9 +25,7 @@ export function borrowSqlite(
 		async delete(name: string): Promise<Result<void, DeviceError>> {
 			assertUsable();
 			if (!isDatabaseName(name))
-				return Promise.resolve(
-					DeviceError.InvalidDatabaseName({ databaseName: name }),
-				);
+				return DeviceError.InvalidDatabaseName({ databaseName: name });
 			return tryAsync({
 				try: async () => {
 					await namespace.delete(name);

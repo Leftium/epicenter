@@ -120,12 +120,11 @@ export function createRuntimeTranscriber(
 					'Native transcription requires audio, an exact model, and string hints.',
 				);
 			return run<RuntimeTranscript>(signal, async (signal) => {
-				const bytes = Array.from(new Uint8Array(await audio.arrayBuffer()));
 				const { data: value, error } = await call(
 					'transcribe_audio_bytes',
 					{
 						modelId: model,
-						bytes,
+						bytes: Array.from(new Uint8Array(await audio.arrayBuffer())),
 						hints: {
 							language: language ?? null,
 							initialPrompt: prompt ?? null,

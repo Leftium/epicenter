@@ -17,9 +17,13 @@
  * Reading uses Matter's YAML reader. Artifact framing and the JSON-value
  * boundary remain here; malformed YAML never falls back to guessed strings.
  */
+
+import {
+	isJsonObject,
+	type JsonObject,
+	type JsonValue,
+} from '@epicenter/definition';
 import { parseMarkdown } from '@epicenter/matter-core/parse';
-import type { JsonObject, JsonValue } from '../definition/index.js';
-import { isJsonObject } from '../definition/json.js';
 
 /** A key YAML takes unquoted without reinterpretation: the field grammar. */
 const BARE_KEY = /^[A-Za-z][A-Za-z0-9_]*$/;

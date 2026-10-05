@@ -6,15 +6,13 @@ import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { parseArgs } from 'node:util';
 import { parseRowFile } from '../packages/app/src/data/artifact/frontmatter.js';
-import {
-	isJsonObject,
-	type JsonObject,
-} from '../packages/app/src/data/definition/json.js';
 
 import {
 	conformance,
 	type DataDefinition,
 	type FieldMap,
+	isJsonObject,
+	type JsonObject,
 	prepareData,
 } from '../packages/definition/src/index.js';
 

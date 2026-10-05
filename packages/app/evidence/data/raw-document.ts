@@ -18,9 +18,9 @@
  * exported: it is the CRDT shape a row happens to have, which that module
  * exists to keep inside. This is the evidence-side twin, and it stays here.
  */
-import type * as Y from '@y/y';
 
-import type { JsonValue } from '../../src/data/definition/json.js';
+import type { JsonValue } from '@epicenter/definition';
+import type * as Y from '@y/y';
 
 /**
  * A type whose attributes are values: a row, a kv root, any JSON-valued bag.

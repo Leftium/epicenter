@@ -1,6 +1,6 @@
 import { isAppId } from '@epicenter/constants/app-id';
+import type { ValidateFields } from '@epicenter/definition';
 import type { DeclaredTable } from './data/definition/declaration.js';
-import type { ValidateFields } from './data/definition/define.js';
 import { type DataDefinition, prepareData } from './data/definition/index.js';
 
 /**
@@ -39,6 +39,11 @@ export function defineStore<const TDefinition extends DataDefinition>(
 	return prepared;
 }
 
+export {
+	type JsonObject,
+	type JsonValue,
+	jsonValue,
+} from '@epicenter/definition';
 export { plainText } from './data/definition/body.js';
 export {
 	type BodyCodec,
@@ -49,5 +54,3 @@ export {
 	type RowOf,
 } from './data/definition/declaration.js';
 export { defineTable } from './data/definition/define.js';
-export type { JsonObject, JsonValue } from './data/definition/json.js';
-export { jsonValue } from './data/field/index.js';

@@ -13,8 +13,12 @@ export {
 	type FieldHint,
 	InstantString,
 	isDataId,
+	isJsonObject,
+	isJsonValue,
 	isRowId,
 	isTableName,
+	type JsonObject,
+	type JsonValue,
 	jsonValue,
 	type Kind,
 	prepareData,
@@ -32,4 +36,3 @@ export {
 	type TableDeclaration,
 } from './declaration.js';
 export { defineTable } from './define.js';
-export * from './json.js';

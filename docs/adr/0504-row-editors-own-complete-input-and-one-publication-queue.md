@@ -1,6 +1,6 @@
 # 0504. Row editors own complete input and one publication queue
 
-- **Status:** Accepted
+- **Status:** Proposed
 - **Date:** 2026-10-05
 - **Amends:** [ADR-0483](0483-honeycrisp-shares-one-canonical-editor-per-open-row.md), replacing partial changes, schema-gated acquisition and saving, raw-session transfers, recreation, and automatic file adoption. One owner per open row and application close consent remain.
 - **Amends:** [ADR-0471](0471-a-data-folder-handle-exposes-tables-kv-and-files.md), replacing the retained table editor's surface. Ordinary table and file commands remain.

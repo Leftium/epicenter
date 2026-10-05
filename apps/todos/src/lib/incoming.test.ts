@@ -22,12 +22,15 @@
  *   runs, and open todos refuse typing while it runs, then read what the
  *   update wrote. A file still opening when recovery starts installs its
  *   editor first and is held with the rest
+ * - Each open todo is fenced before recovery waits for the next one, so
+ *   input that failed is kept and never reloaded away
  */
 import './svelte-modules.test-support.js';
 import { afterAll, afterEach, beforeAll, expect, test } from 'bun:test';
 import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { inspectRow, openFolder } from '@epicenter/folder/browser';
+import { Ok } from 'wellcrafted/result';
 import { expectErr, expectOk } from 'wellcrafted/testing';
 import {
 	browserStorage,
@@ -73,6 +76,7 @@ afterEach(async () => {
 let count = 0;
 const MILK = 'todos/milk.md';
 const BREAD = 'todos/bread.md';
+const EGGS = 'todos/eggs.md';
 /** The row as another computer rewrote it: a comment, and keys Todos does not declare. */
 const MILK_REMOTE = `---
 # Edited on another computer
@@ -507,4 +511,109 @@ test('recovery waits for open edits: a failed save stops it, and typing while it
 	expect(editor.notes()).toBe('Two cartons.\n');
 	expect(editor.isIdle).toBe(true);
 	expect(await text(todos, MILK)).toBe(MILK_REMOTE);
+}, 60_000);
+
+test('recovery fences each todo before it waits for the next: input that failed is kept, and typing while a later todo saves is refused, not reloaded away', async () => {
+	const { todos, before, opfs } = await interruptedPull();
+	const pending = todos.git.pendingIncoming;
+	expectOk(
+		await todos.folder.tables.todos.create({
+			stem: 'eggs',
+			fields: { title: 'Buy eggs', done: false },
+		}),
+	);
+	// The eggs editor's next wait for its writes is held until released.
+	type Gate = {
+		readonly reached: PromiseWithResolvers<void>;
+		readonly release: PromiseWithResolvers<void>;
+	};
+	let gate: Gate | undefined;
+	const holdNextFlush = (): Gate => {
+		gate = {
+			reached: Promise.withResolvers<void>(),
+			release: Promise.withResolvers<void>(),
+		};
+		return gate;
+	};
+	const table = todos.folder.tables.todos;
+	const edit = table.edit;
+	table.edit = async (...args) => {
+		const result = await edit(...args);
+		if (result.error !== null || args[0] !== 'eggs') return result;
+		const native = result.data;
+		return Ok({
+			...native,
+			async flush() {
+				const armed = gate;
+				gate = undefined;
+				if (armed !== undefined) {
+					armed.reached.resolve();
+					await armed.release.promise;
+				}
+				return native.flush();
+			},
+		});
+	};
+	await todos.open(MILK);
+	const milk = todoEditor(todos);
+	await todos.open(EGGS);
+	const eggs = todoEditor(todos);
+	table.edit = edit;
+
+	// Milk's save is still running when recovery starts, and fails.
+	opfs.faults.write = (path) => {
+		if (!path.endsWith(`/${MILK}`)) return undefined;
+		opfs.faults.write = undefined;
+		return 'fail';
+	};
+	milk.setNotes('mine\n');
+	let held = holdNextFlush();
+	let recovering = todos.recoverIncoming();
+	await held.reached.promise;
+
+	// Milk is fenced before recovery waits for eggs.
+	expect(milk.isFenced).toBe(true);
+	expect(eggs.isFenced).toBe(true);
+	milk.setNotes('typed while eggs saves\n');
+	expect(milk.notes()).toBe('mine\n');
+	held.release.resolve();
+	expect(await recovering).toEqual({ kind: 'unsettled', paths: [MILK] });
+	// The failed input stays with its error; nothing was reloaded over it.
+	expect(milk.isFenced).toBe(false);
+	expect(milk.notes()).toBe('mine\n');
+	expect(milk.hasProblem).toBe(true);
+	expect(await text(todos, MILK)).toBe(before);
+	expect(todos.git.pendingIncoming).toEqual(pending);
+
+	// Milk is clean now. Typing while recovery waits for eggs is refused, so
+	// no save of it can fail and then be replaced by what the update wrote.
+	expect(await todos.reload(MILK)).toBeUndefined();
+	expect(milk.isIdle).toBe(true);
+	held = holdNextFlush();
+	recovering = todos.recoverIncoming();
+	await held.reached.promise;
+	let attempted = false;
+	opfs.faults.write = (path) => {
+		if (!path.endsWith(`/${MILK}`)) return undefined;
+		attempted = true;
+		return 'fail';
+	};
+	expect(milk.isFenced).toBe(true);
+	milk.setNotes('typed while eggs saves\n');
+	expect(milk.notes()).toBe('');
+	expect(await written(milk)).toBeUndefined();
+	expect(attempted).toBe(false);
+	opfs.faults.write = undefined;
+	held.release.resolve();
+	expect(await recovering).toMatchObject({
+		kind: 'ran',
+		result: { data: { status: 'completed' } },
+	});
+	expect(milk.isFenced).toBe(false);
+	expect(milk.title()).toBe('Buy oat milk');
+	expect(milk.notes()).toBe('Two cartons.\n');
+	expect(milk.isIdle).toBe(true);
+	expect(await text(todos, MILK)).toBe(MILK_REMOTE);
+	expect(eggs.isFenced).toBe(false);
+	expect(eggs.title()).toBe('Buy eggs');
 }, 60_000);

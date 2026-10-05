@@ -20,6 +20,8 @@
  *   the person confirms first, and a reload that fails keeps the text
  * - A failed save keeps the text editable and offers Try again; typing
  *   afterwards saves again
+ * - A save that finds no file offers Save as a note at once, with no reload,
+ *   and a later save that lands clears the error and the offer
  * - A title the editor refuses stays in its control with the reason
  * - The file view shows LF and writes the file's own line endings back, and
  *   its control takes nothing once the fields show again
@@ -303,6 +305,35 @@ test('a failed save stays visible during a held later edit, and its successful s
 	expect(text('notes/a.md')).toContain('"title": "Second"');
 	expect(status.getAttribute('data-status')).toBe('saved');
 	expect(status.textContent).not.toContain('Not saved');
+});
+
+test('a save that finds no file offers Save as a note at once and keeps the text editable; a later save that lands clears both', async () => {
+	const { a, target, drop, put, text } = await view();
+	const title = only<HTMLInputElement>(target, 'input[aria-label="Title"]');
+	const status = only(target, '[data-testid="draft-status"]');
+	expect(buttonNamed(target, 'Save as a note')).toBeUndefined();
+	drop('notes/a.md');
+	type(title, 'Kept');
+	expect((await a.flush()).error?.name).toBe('NotFound');
+	await tick();
+	// The failed save alone offers it: no reload ran and no path change is tracked.
+	expect(a.reloadError).toBeUndefined();
+	expect(a.pathChange).toBeUndefined();
+	expect(status.getAttribute('data-status')).toBe('failed');
+	expect(status.textContent).toContain('saving does not create it again');
+	expect(buttonNamed(target, 'Save as a note')).toBeDefined();
+	expect(title.value).toBe('Kept');
+	expect(title.disabled).toBe(false);
+
+	// Another program puts the file back, and the next edit saves over it.
+	put('notes/a.md', noteText({ title: 'Outside' }));
+	type(title, 'Kept again');
+	expect((await a.flush()).error).toBeNull();
+	await tick();
+	expect(text('notes/a.md')).toContain('"title": "Kept again"');
+	expect(status.getAttribute('data-status')).toBe('saved');
+	expect(status.textContent).not.toContain('Not saved');
+	expect(buttonNamed(target, 'Save as a note')).toBeUndefined();
 });
 
 test('a title the editor refuses stays in its control with the reason', async () => {

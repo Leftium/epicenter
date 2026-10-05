@@ -242,8 +242,9 @@ export function createNoteSession(
 		return undefined;
 	}
 
+	// Views derive from these, so they read the editor's save state tracked.
 	const missing = () => {
-		const { save } = native.get();
+		const { save } = editor;
 		return (
 			(save.status === 'failed' && save.error.name === 'NotFound') ||
 			reloadError?.name === 'NotFound'
@@ -251,7 +252,7 @@ export function createNoteSession(
 	};
 
 	const unsettled = () =>
-		native.get().save.status !== 'idle' ||
+		editor.save.status !== 'idle' ||
 		pathChange !== undefined ||
 		hold !== undefined ||
 		Object.keys(refused).length > 0;

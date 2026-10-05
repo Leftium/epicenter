@@ -120,13 +120,45 @@ export type RecoveryAttempt =
  */
 export type CloseOutcome = { readonly unsettled: readonly string[] };
 
-/** Run `work` while every editor holds: todos refuse input, plain editors hold their saves. */
-function holdAll<T>(
-	held: readonly { hold<R>(work: () => Promise<R>): Promise<R> }[],
-	work: () => Promise<T>,
-): Promise<T> {
+/** An open editor, held while an incoming update is recovered. */
+type Held = Extract<Retained, { kind: 'todo' | 'text' }>;
+
+/**
+ * Hold each open editor in turn, then run `recover` only if every one
+ * settled; otherwise answer the paths still holding input they could not
+ * save. A todo fences its input before it waits for its writes, so nothing
+ * it takes while a later editor settles can fail unseen, and once `recover`
+ * ran it reads its row again before the fence lifts. A plain editor saves its
+ * pending typing, then holds its saves at once; typing meanwhile saves
+ * afterward against its baseline.
+ */
+async function recoverHeld(
+	held: readonly Held[],
+	recover: () => Promise<Result<RecoverOutcome, PullError | GitError>>,
+	unsettled: readonly string[] = [],
+): Promise<RecoveryAttempt> {
 	const [first, ...rest] = held;
-	return first === undefined ? work() : first.hold(() => holdAll(rest, work));
+	if (first === undefined)
+		return unsettled.length > 0
+			? { kind: 'unsettled', paths: unsettled }
+			: { kind: 'ran', result: await recover() };
+	const next = (settled: boolean) =>
+		recoverHeld(
+			rest,
+			recover,
+			settled ? unsettled : [...unsettled, first.editor.path],
+		);
+	if (first.kind === 'text') {
+		const settled = await first.editor.settle();
+		return first.editor.hold(() => next(settled));
+	}
+	return first.editor.fence(async (settled) => {
+		const attempt = await next(settled);
+		// A todo that held unsaved input keeps it: only a recovery that ran
+		// replaces what the todo shows.
+		if (attempt.kind === 'ran') await first.editor.reload();
+		return attempt;
+	});
 }
 
 const UNSETTLED = 'Save or discard the open edits first.';
@@ -1236,14 +1268,17 @@ export function createTodos(folder: TodosFolder) {
 		 * shows, so editors come first. From the first call no path operation
 		 * starts and no file opens; a file still opening installs its editor
 		 * first, so it is settled and held with the rest. Each editor saves its
-		 * pending input under its usual rules; if any still holds input it
+		 * pending input under its usual rules and is held from then on: an open
+		 * todo refuses input before it waits for its writes, and a plain editor
+		 * holds its saves once they settle. If any still holds input it
 		 * cannot save (a failed or unconfirmed save, a refused todo field, or a
-		 * plain editor's conflict), nothing runs and their paths are answered. Then, while the
-		 * folder recovers, open todos refuse input and plain editors hold their
-		 * saves. Each todo reads its row again before its fence lifts and shows
+		 * plain editor's conflict), nothing runs, their paths are answered, and
+		 * every editor keeps its input. Otherwise they stay held while the
+		 * folder recovers. Each todo reads its row again before its fence lifts and shows
 		 * what the update left; a plain editor's typing saves afterward against
 		 * its baseline, so a file the update changed comes back as a conflict.
-		 * No editor saves over the update.
+		 * No editor saves while recovery runs. A failed reread keeps the previous
+		 * input, which a later edit can save as a complete document.
 		 *
 		 * A refusal names the paths in neither state and writes nothing; the
 		 * update stays pending until the person makes each one hold one of its
@@ -1265,18 +1300,13 @@ export function createTodos(folder: TodosFolder) {
 						// No open starts from here on; those already reading install
 						// their editors first, so every editor is settled and held below.
 						while (admitting.size > 0) await Promise.all(admitting);
-						const unsettled: string[] = [];
-						for (const editor of editors())
-							if (!(await editor.settle())) unsettled.push(editor.path);
-						attempt =
-							unsettled.length > 0
-								? { kind: 'unsettled', paths: unsettled }
-								: {
-										kind: 'ran',
-										result: await holdAll(editors(), () =>
-											folder.git.recoverIncoming(),
-										),
-									};
+						const held = [...retained.values()].filter(
+							(item): item is Held =>
+								item.kind === 'todo' || item.kind === 'text',
+						);
+						attempt = await recoverHeld(held, () =>
+							folder.git.recoverIncoming(),
+						);
 					} finally {
 						recovering = undefined;
 						finished.resolve();

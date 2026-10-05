@@ -346,22 +346,6 @@ export function createTodoEditor(
 				fences -= 1;
 			}
 		},
-		/**
-		 * Refuse input while `work` runs, as when an incoming update is
-		 * recovered and may write this row, then read the row again so it shows
-		 * what `work` left. A read that fails keeps the row on screen.
-		 */
-		async hold<T>(work: () => Promise<T>): Promise<T> {
-			fences += 1;
-			try {
-				await editor.flush();
-				const done = await work();
-				await editor.reload();
-				return done;
-			} finally {
-				fences -= 1;
-			}
-		},
 		/** Epicenter asks to quit or restart: refuse input and commands at once. */
 		prepareDeparture() {
 			departing = true;

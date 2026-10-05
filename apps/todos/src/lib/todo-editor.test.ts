@@ -401,20 +401,6 @@ test('a fence refuses input and waits for admitted writes; a failure leaves it u
 	expect(parsed(fake.disk()).fields.title).toBe('C');
 });
 
-test('a hold refuses input while its work runs, then reads the row the work wrote', async () => {
-	const { fake, todo } = await setup();
-	await todo.hold(async () => {
-		expect(todo.isFenced).toBe(true);
-		todo.setTitle('Typed during');
-		expect(todo.title()).toBe('Plan');
-		fake.writeElsewhere(row('Incoming'));
-	});
-	expect(todo.isFenced).toBe(false);
-	expect(todo.title()).toBe('Incoming');
-	expect(todo.isIdle).toBe(true);
-	expect(fake.writes).toEqual([]);
-});
-
 test('release refuses later input, holds no subscription, and an admitted write still publishes', async () => {
 	const { fake, todo } = await setup();
 	// The editor watches no save of its own; the listings hear the folder.

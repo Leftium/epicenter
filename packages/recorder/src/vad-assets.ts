@@ -18,11 +18,9 @@ import { dirname, join } from 'node:path';
  * under both hoisted and isolated installs. Resolve each package's entry, not a
  * package.json subpath, which onnxruntime-web blocks via `exports`.
  */
-const requireFromHere = createRequire(import.meta.url);
-const vadEntry = requireFromHere.resolve('@ricky0123/vad-web');
+const vadEntry = createRequire(import.meta.url).resolve('@ricky0123/vad-web');
 const vadDist = dirname(vadEntry);
-const requireFromVad = createRequire(vadEntry);
-const ortDist = dirname(requireFromVad.resolve('onnxruntime-web'));
+const ortDist = dirname(createRequire(vadEntry).resolve('onnxruntime-web'));
 
 /**
  * Absolute source paths of the VAD assets to copy into the served `/vad/`

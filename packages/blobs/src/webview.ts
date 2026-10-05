@@ -136,12 +136,10 @@ export function createWebviewBlobs({
 					cause: new Error(`Local blob GET returned ${response.status}.`),
 				});
 			}
-			const { data: blob, error: bodyError } = await tryAsync({
+			return await tryAsync({
 				try: () => response.blob(),
 				catch: (cause) => BlobStoreError.BlobStoreFailed({ id, cause }),
 			});
-			if (bodyError !== null) return Err(bodyError);
-			return Ok(blob);
 		},
 
 		async stat(id) {
@@ -186,16 +184,18 @@ export function createWebviewBlobs({
 		},
 	};
 
-	const sources: BlobSources = {
-		async open(id) {
-			const { error } = await local.stat(id);
-			if (error !== null) return Err(error);
-			return Ok({
-				url: blobUrl(id),
-				// Stable host URLs allocate nothing per acquisition.
-				[Symbol.dispose]() {},
-			});
+	return {
+		local,
+		sources: {
+			async open(id) {
+				const { error } = await local.stat(id);
+				if (error !== null) return Err(error);
+				return Ok({
+					url: blobUrl(id),
+					// Stable host URLs allocate nothing per acquisition.
+					[Symbol.dispose]() {},
+				});
+			},
 		},
 	};
-	return { local, sources };
 }

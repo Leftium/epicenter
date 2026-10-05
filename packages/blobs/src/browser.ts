@@ -274,7 +274,6 @@ export function createBrowserBlobStore(
 			return operate(id, async () => {
 				const { data: stat, error } = await tryAsync({
 					try: async () => {
-						blobKeyFormat(id);
 						return transact(
 							idb.factory,
 							database,
@@ -305,7 +304,6 @@ export function createBrowserBlobStore(
 			return operate(id, () =>
 				tryAsync({
 					try: async () => {
-						blobKeyFormat(id);
 						await transact(
 							idb.factory,
 							database,

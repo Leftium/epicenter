@@ -38,7 +38,9 @@ Bun.plugin({
 				if (script === null)
 					throw new Error('The header has no instance script.');
 				// Select production syntax, not a duplicate of its reply handling.
-				const states = script.content.body.flatMap((node) => {
+				const states: string[] = [];
+				const effects: string[] = [];
+				for (const node of script.content.body) {
 					if (
 						!('start' in node) ||
 						typeof node.start !== 'number' ||
@@ -56,27 +58,15 @@ Bun.plugin({
 									declaration.id.name === 'log'),
 						)
 					)
-						return [syntax];
-					return [];
-				});
-				const effects = script.content.body.flatMap((node) => {
-					if (
-						!('start' in node) ||
-						typeof node.start !== 'number' ||
-						!('end' in node) ||
-						typeof node.end !== 'number'
-					)
-						throw new Error('The compiler did not provide source positions.');
-					const syntax = source.slice(node.start, node.end);
+						states.push(syntax);
 					if (
 						node.type === 'ExpressionStatement' &&
 						node.expression.type === 'CallExpression' &&
 						node.expression.callee.type === 'Identifier' &&
 						node.expression.callee.name === '$effect'
 					)
-						return [syntax];
-					return [];
-				});
+						effects.push(syntax);
+				}
 				if (states.length !== 2 || effects.length !== 1)
 					throw new Error(
 						'Review the harness when the header log ownership changes.',

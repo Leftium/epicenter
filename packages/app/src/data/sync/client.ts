@@ -139,11 +139,6 @@ export type SyncClient = {
 /** Cancelable delayed work, injected so tests do not wait in real time. */
 export type Schedule = (task: () => void, delayMs: number) => () => void;
 
-const defaultSchedule: Schedule = (task, delayMs) => {
-	const handle = setTimeout(task, delayMs);
-	return () => clearTimeout(handle);
-};
-
 /**
  * The ceiling on chunks held for a submission that is still incomplete.
  *
@@ -170,7 +165,10 @@ export function createSyncClient({
 	 * fixed batch because it is the same interval an editor debounces on anyway.
 	 */
 	idleMs = 1_000,
-	schedule = defaultSchedule,
+	schedule = (task, delayMs) => {
+		const handle = setTimeout(task, delayMs);
+		return () => clearTimeout(handle);
+	},
 }: {
 	store: DataDocument;
 	idleMs?: number;

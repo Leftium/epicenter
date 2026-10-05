@@ -65,7 +65,7 @@ import { defineErrors, type InferErrors } from 'wellcrafted/error';
 import { Err, Ok, type Result, trySync } from 'wellcrafted/result';
 
 import { copyBytes } from '../store/log.js';
-import { CHUNK_BYTES, intoChunks } from './frames.js';
+import { CHUNK_BYTES, intoChunks, reassemble } from './frames.js';
 import { createSyncHub, type SyncHub } from './hub.js';
 
 export const AuthorityError = defineErrors({
@@ -309,13 +309,16 @@ function createLogOperations(
 			for (const row of rows) {
 				if (holding === undefined || holding.seq !== row.seq) {
 					if (holding !== undefined)
-						entries.push({ seq: holding.seq, bytes: join(holding.chunks) });
+						entries.push({
+							seq: holding.seq,
+							bytes: reassemble(holding.chunks),
+						});
 					holding = { seq: row.seq, chunks: [] };
 				}
 				holding.chunks.push(copyBytes(row.bytes));
 			}
 			if (holding !== undefined)
-				entries.push({ seq: holding.seq, bytes: join(holding.chunks) });
+				entries.push({ seq: holding.seq, bytes: reassemble(holding.chunks) });
 			return entries;
 		},
 		snapshot(): Snapshot | undefined {
@@ -325,7 +328,10 @@ function createLogOperations(
 				'SELECT bytes FROM _snapshot WHERE position = ? ORDER BY chunk',
 				[position],
 			);
-			return { position, bytes: join(rows.map((row) => copyBytes(row.bytes))) };
+			return {
+				position,
+				bytes: reassemble(rows.map((row) => copyBytes(row.bytes))),
+			};
 		},
 		fold(position: number, bytes: Uint8Array): void {
 			writeSnapshot(position, bytes);
@@ -425,20 +431,6 @@ export function openSyncAuthority({
 		log: createLogOperations(sqlite, snapshotFloorBytes),
 		admission: () => Ok(undefined),
 	});
-}
-
-/** Concatenate chunks back into the value they were cut from. */
-function join(chunks: readonly Uint8Array[]): Uint8Array {
-	if (chunks.length === 1) return chunks[0] as Uint8Array;
-	let total = 0;
-	for (const chunk of chunks) total += chunk.length;
-	const bytes = new Uint8Array(total);
-	let at = 0;
-	for (const chunk of chunks) {
-		bytes.set(chunk, at);
-		at += chunk.length;
-	}
-	return bytes;
 }
 
 type CapturePosition = { generation: number; head: number };

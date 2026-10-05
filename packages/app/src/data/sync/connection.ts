@@ -154,18 +154,6 @@ export type SyncConnection = {
 	[Symbol.dispose](): void;
 };
 
-/**
- * The default backoff: double from a second, capped at half a minute.
- *
- * Capped rather than unbounded because the thing on the other end is a Durable
- * Object that hibernates and wakes, so "unreachable" is routinely a few seconds
- * rather than an outage, and a replica that has backed off to minutes would sit
- * out a recovery that already happened.
- */
-function defaultBackoff(failures: number): number {
-	return Math.min(30_000, 1_000 * 2 ** Math.max(0, failures - 1));
-}
-
 export function createSyncConnection({
 	store,
 	dial,
@@ -176,7 +164,10 @@ export function createSyncConnection({
 		const handle = setTimeout(task, delayMs);
 		return () => clearTimeout(handle);
 	},
-	backoff = defaultBackoff,
+	// Double from one second, capped at 30 seconds so a hibernating Durable
+	// Object's recovery does not leave this replica waiting for minutes.
+	backoff = (failures) =>
+		Math.min(30_000, 1_000 * 2 ** Math.max(0, failures - 1)),
 	/**
 	 * How long a socket must stay up before it counts as a working connection.
 	 *

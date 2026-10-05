@@ -9,7 +9,7 @@
  * Key behaviors:
  * - Round-trip: recognize(at-rest of field.X(...)) === X, for every kind
  * - Discrimination invariant: every legal schema matches EXACTLY ONE meta
- * - Cross-discrimination: the shapes that could collide resolve to one kind
+ * - Canonical schemas exclude competing kinds; additional enum forms remain accepted
  * - Refinements and annotations ride along without changing the kind
  * - String byte bounds count UTF-8 bytes at runtime
  * - Rejection lane: unsupported shapes match no meta and recognize as null
@@ -167,39 +167,7 @@ describe('recognize: every canonical schema matches exactly one meta', () => {
 	}
 });
 
-describe('the cross-discrimination pairs (the shapes that could collide)', () => {
-	test('bare string is string, not url/datetime/select', () => {
-		expect(kindOf({ type: 'string' })).toBe('string');
-		expect(countMatches({ type: 'string' })).toBe(1);
-	});
-
-	test('a uri-format string is url, not string', () => {
-		const s = { type: 'string', format: 'uri' };
-		expect(kindOf(s)).toBe('url');
-		expect(Value.Check(META_BY_KIND.string, s)).toBe(false); // string forbids `format`
-	});
-
-	test('a date-format string is date, not string or datetime', () => {
-		const s = { type: 'string', format: 'date' };
-		expect(kindOf(s)).toBe('date');
-		expect(Value.Check(META_BY_KIND.string, s)).toBe(false); // string forbids `format`
-		expect(Value.Check(META_BY_KIND.datetime, s)).toBe(false);
-	});
-
-	test('a date-time string is datetime, not string', () => {
-		expect(kindOf({ type: 'string', format: 'date-time' })).toBe('datetime');
-	});
-
-	test('a fixed UTC date-time schema is instant, not datetime', () => {
-		const s = {
-			type: 'string',
-			format: 'date-time',
-			pattern: INSTANT_STRING_PATTERN,
-		};
-		expect(kindOf(s)).toBe('instant');
-		expect(Value.Check(META_BY_KIND.datetime, s)).toBe(false); // datetime forbids `pattern`
-	});
-
+describe('additional enum wire forms and rejected numeric enums', () => {
 	test('a string with enum is select, not string', () => {
 		const s = { type: 'string', enum: ['a', 'b'] };
 		expect(kindOf(s)).toBe('select');
@@ -216,18 +184,6 @@ describe('the cross-discrimination pairs (the shapes that could collide)', () =>
 
 	test('an enum with no type is select', () => {
 		expect(kindOf({ enum: ['a', 'b'] })).toBe('select');
-	});
-
-	test('a string array is tags, not multiSelect', () => {
-		const s = { type: 'array', items: { type: 'string' } };
-		expect(kindOf(s)).toBe('tags');
-		expect(Value.Check(META_BY_KIND.multiSelect, s)).toBe(false); // items lack `enum`
-	});
-
-	test('an enum-item array is multiSelect, not tags', () => {
-		const s = { type: 'array', items: { type: 'string', enum: ['a', 'b'] } };
-		expect(kindOf(s)).toBe('multiSelect');
-		expect(Value.Check(META_BY_KIND.tags, s)).toBe(false); // string item forbids `enum`
 	});
 
 	test('an enum-item array with no item type is multiSelect', () => {
@@ -286,22 +242,6 @@ describe('reference: the marker-discriminated cross-row pointer', () => {
 		expect(kindOf(rest)).toBe('reference');
 		expect(countMatches(rest)).toBe(1);
 		expect(rest['x-ref']).toBe('pages');
-	});
-
-	test('the marker is what flips a plain string into a reference', () => {
-		// same string shape, no marker -> string; with marker -> reference
-		expect(kindOf({ type: 'string' })).toBe('string');
-		expect(kindOf({ type: 'string', 'x-ref': 'pages' })).toBe('reference');
-	});
-
-	test('a plain string is NOT a reference (the marker is required)', () => {
-		expect(Value.Check(META_BY_KIND.reference, { type: 'string' })).toBe(false);
-	});
-
-	test('the string meta forbids the marker, so the two are mutually exclusive', () => {
-		const s = { type: 'string', 'x-ref': 'pages' };
-		expect(Value.Check(META_BY_KIND.string, s)).toBe(false); // string forbids x-ref
-		expect(countMatches(s)).toBe(1);
 	});
 
 	test('value validation ignores the marker and validates the value as a string', () => {

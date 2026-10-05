@@ -19,7 +19,6 @@ import * as git from 'isomorphic-git';
 import type { OpfsLocks } from '../opfs-store.js';
 import { isAttributesPath, normalizingAttribute } from './attributes.js';
 import type {
-	Admitted,
 	CasResult,
 	GitBackend,
 	GitRemote,
@@ -244,21 +243,6 @@ export async function createStoredGitBackend<TSession extends GitFsSession>({
 		}, signal);
 	}
 
-	async function tryExclusive<T>(work: () => Promise<T>): Promise<Admitted<T>> {
-		// Both layers are asked without waiting: this tab's queue first, then
-		// the Web Lock another tab may hold.
-		const attempt = queue.tryRun(
-			async (): Promise<Admitted<T>> =>
-				locks.request(
-					lockName,
-					{ ifAvailable: true },
-					async (lock): Promise<Admitted<T>> =>
-						lock === null ? { ran: false } : { ran: true, value: await work() },
-				),
-		);
-		return attempt ?? { ran: false };
-	}
-
 	async function casBranch(
 		expected: string | undefined,
 		next: string,
@@ -354,7 +338,6 @@ export async function createStoredGitBackend<TSession extends GitFsSession>({
 		remote,
 		withObjects,
 		exclusive,
-		tryExclusive,
 		readBranch: () => readRef(branchKey),
 		readRemoteTracking: () => readRef(trackingKey),
 		casBranch,

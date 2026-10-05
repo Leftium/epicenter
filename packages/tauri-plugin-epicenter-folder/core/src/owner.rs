@@ -23,12 +23,18 @@
 //! observation is marked stale. A branch another Git process moved fails the
 //! compare-and-swap and is reported; there is no retry.
 //!
-//! With `commit_on_edit`, a complete save makes one attempt at that commit:
-//! it takes the file gate and then the Git lock only if each is free right
-//! now. If either is held, by another save or other Git work, the attempt did
-//! not happen and nothing remembers it. The save can stay uncommitted until a
-//! later save or an explicit commit. There is no timer, no queue, and no
-//! commit at shutdown.
+//! With `commit_on_edit`, a complete save asks for that commit. The request
+//! is numbered under the file gate, so a commit that snapshots the folder
+//! afterward has every request made before it in hand. Requests not yet
+//! answered are one obligation, carried by at most one worker thread that
+//! waits for both locks as an explicit commit does. Saves made while it waits
+//! or commits only renumber the obligation: when the Git work that held it
+//! ends, the worker commits the latest files without another save. Every
+//! commit of the whole folder, explicit or automatic, answers the requests
+//! made before it took both locks, whatever its outcome, so a failed commit
+//! is not retried until a newer save asks. There is no timer, no copy of any
+//! saved bytes, and no commit at shutdown: a worker still waiting when
+//! shutdown begins commits nothing.
 //!
 //! An explicit commit or fast-forward waits. It takes the file gate and then
 //! tries the Git lock. If the Git lock is held it gives the gate back, waits
@@ -59,7 +65,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
-use std::sync::{mpsc, Arc, Condvar, Mutex, MutexGuard, TryLockError, Weak};
+use std::sync::{Arc, Condvar, Mutex, MutexGuard, TryLockError, Weak};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use unicode_normalization::UnicodeNormalization;
@@ -91,8 +97,9 @@ pub struct FolderConfig {
     /// Author and committer for automatic and staged commits.
     pub author: Author,
     pub remote: Option<Remote>,
-    /// Whether a complete content save attempts an automatic local commit.
-    /// The attempt is skipped when the folder is busy. Transfers are explicit.
+    /// Whether a complete content save asks for an automatic local commit.
+    /// While the folder is busy the request waits, merged with later ones.
+    /// Transfers are explicit.
     pub commit_on_edit: bool,
     /// Whether the repository's own `user.name` and `user.email` decide who
     /// commits. They are read once, when the folder opens, after its lock is
@@ -204,6 +211,18 @@ struct HistoryState {
     pending_incoming: Option<PendingIncoming>,
 }
 
+/// Automatic commit requests, numbered by the complete saves that made them.
+/// A leaf lock: nothing else is taken, and nothing is emitted, while it is held.
+#[derive(Default)]
+struct Automatic {
+    requested: u64,
+    /// The newest request a whole-folder commit took both locks for, or a
+    /// worker that could not start gave up on. Later ones are pending.
+    answered: u64,
+    /// Whether the one worker is alive.
+    working: bool,
+}
+
 type Listener = Arc<dyn Fn(&OwnerEvent) + Send + Sync>;
 
 struct Emitted {
@@ -216,6 +235,11 @@ struct Emitted {
 pub(crate) struct Hooks {
     /// Runs inside an admitted `apply`, before the file gate.
     pub before_apply: Option<Arc<dyn Fn() + Send + Sync>>,
+    /// Runs in the automatic worker before it waits for the gates.
+    pub before_automatic: Option<Arc<dyn Fn() + Send + Sync>>,
+    /// Asked before the automatic worker's thread is spawned. Returning
+    /// `true` fails the spawn, as a process out of threads would.
+    pub refuse_spawn: Option<Arc<dyn Fn() -> bool + Send + Sync>>,
     /// Runs inside a commit while it holds the file gate and the Git lock,
     /// before it snapshots the folder.
     pub during_snapshot: Option<Arc<dyn Fn() + Send + Sync>>,
@@ -249,6 +273,7 @@ struct Inner {
     /// snapshots the folder.
     file_gate: Mutex<()>,
     git_lock: Mutex<()>,
+    automatic: Mutex<Automatic>,
     state: Mutex<HistoryState>,
     emitted: Mutex<Emitted>,
     listeners: Mutex<Vec<(u64, Listener)>>,
@@ -303,6 +328,20 @@ impl Drop for Running<'_> {
     fn drop(&mut self) {
         self.1.fetch_sub(1, Ordering::SeqCst);
         self.0.emit();
+    }
+}
+
+/// The automatic worker's admission and commit activity. Both are taken on
+/// the saving thread before the save returns, and released by the worker's
+/// thread, or at once if that thread could not start.
+struct Worker(Arc<Inner>);
+
+impl Drop for Worker {
+    fn drop(&mut self) {
+        self.0.commits.fetch_sub(1, Ordering::SeqCst);
+        self.0.emit();
+        *lock(&self.0.admitted) -= 1;
+        self.0.settled.notify_all();
     }
 }
 
@@ -424,6 +463,7 @@ impl FolderOwner {
             files: Files::new(&root),
             file_gate: Mutex::new(()),
             git_lock: Mutex::new(()),
+            automatic: Mutex::default(),
             state: Mutex::new(HistoryState {
                 clock: 0,
                 last_edit: 0,
@@ -641,9 +681,9 @@ impl FolderOwner {
             .collect())
     }
 
-    /// Publish ordered changes. A complete batch makes its one automatic
-    /// commit attempt before this returns; a partial one only marks
-    /// observations stale.
+    /// Publish ordered changes. A complete batch asks for an automatic
+    /// commit, and the worker that carries it is running before this
+    /// returns; a partial one only marks observations stale.
     pub fn apply(&self, changes: &[FileChange]) -> Result<(), ApplyError> {
         let refused = |error| ApplyError::Refused { error };
         let _admitted = self.inner.admit().map_err(refused)?;
@@ -652,13 +692,19 @@ impl FolderOwner {
         self.inner.hook(|hooks| &hooks.before_apply);
         let result = {
             let _files = lock(&self.inner.file_gate);
-            self.inner.publish(changes)
+            let result = self.inner.publish(changes);
+            // Numbered before the gate is released: a later checkpoint
+            // answers every request represented by its snapshot.
+            if result.is_ok() && !changes.is_empty() {
+                self.inner.request_automatic();
+            }
+            result
         };
         match &result {
             Ok(()) => {
                 let steps: Vec<FileStep> = changes.iter().map(FileChange::step).collect();
                 self.inner.edited(&steps);
-                self.inner.commit_if_free();
+                self.inner.wake_automatic();
             }
             Err(ApplyError::Partial { applied, .. }) => self.inner.edited(applied),
             // The owner itself always knows what it published; `Unconfirmed`
@@ -693,8 +739,8 @@ impl FolderOwner {
 
     /// Commit current source files if they changed, and reset the index to
     /// the head either way. Waits for the file gate and the Git lock, then
-    /// reads the folder, so it sees every save that landed while it waited.
-    /// Never requests a push.
+    /// reads the folder, so it sees every save that landed while it waited
+    /// and answers their automatic requests. Never requests a push.
     pub fn commit(&self) -> CommitOutcome {
         let inner = &self.inner;
         let Ok(_admitted) = inner.admit() else {
@@ -706,6 +752,7 @@ impl FolderOwner {
         if inner.closing.load(Ordering::SeqCst) {
             return CommitOutcome::Closed;
         }
+        inner.answer_requests();
         inner.commit_with(files, git)
     }
 
@@ -829,9 +876,9 @@ impl FolderOwner {
 
     /// Fence new work, cancel network work, and return once every admitted
     /// operation has settled. A save admitted before this call still lands,
-    /// and a commit admitted before it still finishes. Nothing is committed
-    /// because of shutdown: a save whose attempt was skipped, or which lands
-    /// after the fence, stays uncommitted.
+    /// and a commit that already holds both locks still finishes. Nothing is
+    /// committed because of shutdown: a save whose request was still waiting
+    /// for the locks, or which lands after the fence, stays uncommitted.
     pub fn shutdown(&self) {
         let inner = &self.inner;
         let mut done = lock(&inner.shutdown);
@@ -1085,39 +1132,113 @@ impl Inner {
         self.scan.request();
     }
 
-    /// The one attempt a complete save makes. It is admitted only if the
-    /// owner is not shutting down and the file gate and then the Git lock are
-    /// both free right now: no other save, no other Git work. Otherwise the
-    /// attempt did not happen: nothing is recorded, nothing is pushed, and
-    /// nothing runs when the holder lets go.
-    ///
-    /// The save waits only for that decision, never for the commit, which
-    /// runs on its own thread with the admission and both locks it took.
-    fn commit_if_free(self: &Arc<Self>) {
-        if !self.config.commit_on_edit {
-            return;
+    /// Number a complete save's request for an automatic commit. The caller
+    /// holds the file gate the save published under.
+    fn request_automatic(&self) {
+        if self.config.commit_on_edit {
+            lock(&self.automatic).requested += 1;
         }
-        let (decided, decision) = mpsc::channel::<()>();
-        let inner = Arc::clone(self);
-        let spawned = std::thread::Builder::new()
-            .name("folder-commit".to_string())
-            .spawn(move || {
-                let Ok(_admitted) = inner.admit() else {
+    }
+
+    /// Answer every request made so far, and say whether any was pending.
+    /// The caller holds both locks and has not yet snapshotted the folder.
+    fn answer_requests(&self) -> bool {
+        let mut automatic = lock(&self.automatic);
+        let pending = automatic.answered < automatic.requested;
+        automatic.answered = automatic.requested;
+        pending
+    }
+
+    /// Start the one automatic worker if a request is pending and none is
+    /// alive. Called with no lock held. The save waits for nothing but the
+    /// worker's admission and its thread's start, never for the commit.
+    fn wake_automatic(self: &Arc<Self>) {
+        loop {
+            let through = {
+                let mut automatic = lock(&self.automatic);
+                if automatic.working || automatic.answered >= automatic.requested {
                     return;
-                };
-                let Some(files) = try_lock(&inner.file_gate) else {
+                }
+                automatic.working = true;
+                automatic.requested
+            };
+            // Admitted here, not on the new thread, so shutdown cannot
+            // finish between this save and the worker's first step.
+            let worker = {
+                let mut admitted = lock(&self.admitted);
+                if self.closing.load(Ordering::SeqCst) {
+                    drop(admitted);
+                    // A request is not carried past the fence.
+                    lock(&self.automatic).working = false;
                     return;
-                };
-                let Some(git) = try_lock(&inner.git_lock) else {
-                    return;
-                };
-                let _running = inner.running(&inner.commits);
-                drop(decided);
-                inner.commit_with(files, git);
+                }
+                *admitted += 1;
+                self.commits.fetch_add(1, Ordering::SeqCst);
+                Worker(Arc::clone(self))
+            };
+            self.emit();
+            let spawned = {
+                #[cfg(test)]
+                let refuse = lock(&self.hooks).refuse_spawn.clone();
+                #[cfg(test)]
+                let refused = refuse.is_some_and(|refuse| refuse());
+                #[cfg(not(test))]
+                let refused = false;
+                if refused {
+                    drop(worker);
+                    Err(std::io::Error::other("thread creation was refused"))
+                } else {
+                    std::thread::Builder::new()
+                        .name("folder-commit".to_string())
+                        .spawn(move || worker.0.run_automatic(&worker))
+                }
+            };
+            let Err(cause) = spawned else {
+                return;
+            };
+            // The worker never ran, and its admission is already released.
+            // The requests it was started for are answered by this failure;
+            // one made since then starts another.
+            lock(&self.state).last_commit = Some(Attempt {
+                result: CommitOutcome::Failed {
+                    error: format!("the automatic commit could not start: {cause}"),
+                },
+                at: now_ms(),
             });
-        if spawned.is_ok() {
-            // Settles when the attempt was admitted or dropped.
-            let _ = decision.recv();
+            {
+                let mut automatic = lock(&self.automatic);
+                automatic.working = false;
+                automatic.answered = automatic.answered.max(through);
+            }
+            self.emit();
+        }
+    }
+
+    /// The automatic worker: while a request is pending, wait for both locks
+    /// like an explicit commit, answer every request, and commit. The pending
+    /// check and the release of the worker share one lock with numbering, so
+    /// a request either is seen here or starts a new worker.
+    fn run_automatic(&self, _worker: &Worker) {
+        loop {
+            {
+                let mut automatic = lock(&self.automatic);
+                if self.closing.load(Ordering::SeqCst) || automatic.answered >= automatic.requested
+                {
+                    automatic.working = false;
+                    return;
+                }
+            }
+            #[cfg(test)]
+            self.hook(|hooks| &hooks.before_automatic);
+            let (files, git) = self.enter_both();
+            // Shutdown began while this waited: nothing runs, nothing is recorded.
+            if self.closing.load(Ordering::SeqCst) {
+                continue;
+            }
+            // An explicit commit already answered them: nothing is recorded.
+            if self.answer_requests() {
+                self.commit_with(files, git);
+            }
         }
     }
 
@@ -1523,7 +1644,8 @@ impl Inner {
 
     /// Commit with both locks held, and record what happened and what is now
     /// known of the remote. The Git lock is kept until the attempt is
-    /// recorded, so attempts are recorded in the order they ran.
+    /// recorded, so attempts are recorded in the order they ran. The caller
+    /// answered the automatic requests first.
     fn commit_with(&self, files: MutexGuard<'_, ()>, _git: MutexGuard<'_, ()>) -> CommitOutcome {
         let outcome = self
             .checkpoint(files)
@@ -1873,43 +1995,184 @@ impl Drop for Inner {
 mod tests {
     use super::*;
 
+    use std::sync::mpsc;
+
     use crate::testing::{config, create, eventually, git, open, overwrite, TempDir};
 
+    /// Count the folder snapshots commits take.
+    fn count_snapshots(owner: &FolderOwner) -> Arc<AtomicUsize> {
+        let snapshots = Arc::new(AtomicUsize::new(0));
+        let counter = Arc::clone(&snapshots);
+        owner.hooks().during_snapshot = Some(Arc::new(move || {
+            counter.fetch_add(1, Ordering::SeqCst);
+        }));
+        snapshots
+    }
+
+    /// Wait for the automatic worker. A save that asked started it, and
+    /// counted it as active, before the save returned.
+    fn settled(owner: &FolderOwner) {
+        eventually("the automatic worker to finish", || {
+            !owner.snapshot().activity.commit.active
+        });
+    }
+
     #[test]
-    fn an_automatic_attempt_is_dropped_while_either_gate_is_held_and_never_made_up() {
-        let temp = TempDir::new("attempt-dropped");
+    fn requests_made_while_either_gate_is_held_wait_as_one_and_commit_the_latest_files() {
+        let temp = TempDir::new("requests-held");
         let root = temp.folder("notes");
         let owner = open(&root);
         let inner = &owner.inner;
-        let untouched = || {
-            let snapshot = owner.snapshot();
-            assert_eq!(snapshot.last_commit, None);
-            assert!(!snapshot.activity.commit.active);
-            assert!(!root.join(".git/refs/heads/main").exists());
-        };
-        std::fs::write(root.join("a.md"), "A").unwrap();
+        let snapshots = count_snapshots(&owner);
 
-        // The attempt a save makes, while a publication holds the file gate.
-        // It returns at once, and the holder letting go starts nothing.
-        let files = lock(&inner.file_gate);
-        inner.commit_if_free();
-        untouched();
-        drop(files);
-        untouched();
-
-        // The same while only the Git lock is held: a free gate is not enough.
+        // Other Git work holds the Git lock. Saves still land. The first
+        // starts the worker, which waits; the others only renumber.
         let git_held = lock(&inner.git_lock);
-        inner.commit_if_free();
-        drop(git_held);
-        untouched();
+        owner.apply(&[create("a.md", "A")]).unwrap();
+        owner.apply(&[overwrite("a.md", "A, again")]).unwrap();
+        owner.apply(&[create("b.md", "B")]).unwrap();
+        assert!(owner.snapshot().activity.commit.active);
+        assert_eq!(inner.commits.load(Ordering::SeqCst), 1, "one worker");
+        std::thread::sleep(Duration::from_millis(50));
+        assert_eq!(snapshots.load(Ordering::SeqCst), 0);
+        assert_eq!(owner.snapshot().last_commit, None);
 
-        // With both free, the attempt runs.
-        inner.commit_if_free();
-        eventually("the admitted commit to finish", || {
-            let snapshot = owner.snapshot();
-            snapshot.last_commit.is_some() && !snapshot.activity.commit.active
-        });
+        // The holder lets go, and one commit takes the latest files.
+        drop(git_held);
+        settled(&owner);
+        assert_eq!(snapshots.load(Ordering::SeqCst), 1);
+        assert_eq!(git(&root, &["log", "--format=%s"]), "Update 2 files");
+        assert_eq!(git(&root, &["show", "HEAD:a.md"]), "A, again");
+
+        // The same while a publication holds the file gate. A save numbers
+        // its request under that gate; this one is numbered by hand.
+        std::fs::write(root.join("c.md"), "C").unwrap();
+        let files = lock(&inner.file_gate);
+        inner.request_automatic();
+        inner.wake_automatic();
+        std::thread::sleep(Duration::from_millis(50));
+        assert_eq!(snapshots.load(Ordering::SeqCst), 1);
+        drop(files);
+        settled(&owner);
+        assert_eq!(snapshots.load(Ordering::SeqCst), 2);
+        assert_eq!(git(&root, &["log", "-1", "--format=%s"]), "Add c.md");
+
+        // Every request was answered; nothing runs on its own afterward.
+        std::thread::sleep(Duration::from_millis(50));
+        assert_eq!(snapshots.load(Ordering::SeqCst), 2);
+        assert!(!lock(&inner.automatic).working);
+    }
+
+    #[test]
+    fn a_request_an_explicit_commit_already_answered_records_nothing() {
+        let temp = TempDir::new("answered");
+        let root = temp.folder("notes");
+        let owner = open(&root);
+        let snapshots = count_snapshots(&owner);
+        let (hook, _, at_worker, release) = count_and_hold_first();
+        owner.hooks().before_automatic = Some(hook);
+
+        owner.apply(&[create("a.md", "A")]).unwrap();
+        at_worker.recv().unwrap();
+        // The worker is alive and has not taken the locks. An explicit
+        // commit takes them first and answers the save's request.
+        assert!(matches!(
+            owner.commit(),
+            CommitOutcome::Committed { ref message, .. } if message == "Add a.md"
+        ));
+        let recorded = owner.snapshot().last_commit.clone();
+        assert!(recorded.is_some());
+
+        release.send(()).unwrap();
+        settled(&owner);
+        assert_eq!(snapshots.load(Ordering::SeqCst), 1);
+        assert_eq!(owner.snapshot().last_commit, recorded);
         assert_eq!(git(&root, &["log", "--format=%s"]), "Add a.md");
+    }
+
+    #[test]
+    fn a_worker_that_cannot_start_is_reported_and_frees_its_place_for_a_newer_save() {
+        let temp = TempDir::new("spawn-refused");
+        let root = temp.folder("notes");
+        let owner = open(&root);
+        let inner = &owner.inner;
+
+        // The worker's thread cannot start. The save still lands and returns
+        // with the failure recorded, and nothing is left admitted or claimed.
+        let refuse = Arc::new(AtomicBool::new(true));
+        let refusing = Arc::clone(&refuse);
+        owner.hooks().refuse_spawn = Some(Arc::new(move || refusing.swap(false, Ordering::SeqCst)));
+        owner.apply(&[create("a.md", "A")]).unwrap();
+        let snapshot = owner.snapshot();
+        assert!(matches!(
+            &snapshot.last_commit.as_ref().unwrap().result,
+            CommitOutcome::Failed { error } if error.contains("could not start")
+        ));
+        assert!(!snapshot.activity.commit.active);
+        assert!(!lock(&inner.automatic).working);
+        assert_eq!(*lock(&inner.admitted), 0);
+        // Its request was answered by that failure: nothing retries it.
+        std::thread::sleep(Duration::from_millis(50));
+        assert!(!root.join(".git/refs/heads/main").exists());
+
+        // A newer save asks again and commits both files.
+        owner.apply(&[create("b.md", "B")]).unwrap();
+        settled(&owner);
+        assert_eq!(git(&root, &["log", "--format=%s"]), "Update 2 files");
+
+        // A save that asks while a start is being refused found the worker
+        // claimed. Its request is not stranded: the next worker carries it.
+        let owner_weak = Arc::downgrade(&owner.inner);
+        let once = AtomicBool::new(true);
+        let folder = root.clone();
+        owner.hooks().refuse_spawn = Some(Arc::new(move || {
+            if !once.swap(false, Ordering::SeqCst) {
+                return false;
+            }
+            std::fs::write(folder.join("d.md"), "D").unwrap();
+            let inner = owner_weak.upgrade().unwrap();
+            inner.request_automatic();
+            inner.wake_automatic();
+            true
+        }));
+        owner.apply(&[create("c.md", "C")]).unwrap();
+        settled(&owner);
+        assert_eq!(git(&root, &["log", "-1", "--format=%s"]), "Update 2 files");
+        assert_eq!(git(&root, &["show", "HEAD:d.md"]), "D");
+        assert!(!lock(&inner.automatic).working);
+    }
+
+    #[test]
+    fn a_worker_still_waiting_when_shutdown_begins_commits_nothing() {
+        let temp = TempDir::new("shutdown-waiting");
+        let root = temp.folder("notes");
+        let owner = open(&root);
+        let git_held = lock(&owner.inner.git_lock);
+        owner.apply(&[create("a.md", "A")]).unwrap();
+        assert!(owner.snapshot().activity.commit.active);
+
+        let closing = owner.clone();
+        let (closed, finished) = mpsc::channel();
+        let shutdown = std::thread::spawn(move || {
+            closing.shutdown();
+            closed.send(()).unwrap();
+        });
+        eventually("the fence", || owner.snapshot().closed);
+        assert!(
+            finished.recv_timeout(Duration::from_millis(150)).is_err(),
+            "shutdown waits for the worker it admitted"
+        );
+
+        // The Git work it waited for ends after the fence: the worker takes
+        // both locks, sees the fence, and leaves.
+        drop(git_held);
+        shutdown.join().unwrap();
+        let snapshot = owner.snapshot();
+        assert_eq!(snapshot.last_commit, None);
+        assert!(!snapshot.activity.commit.active);
+        assert!(!root.join(".git/refs/heads/main").exists());
+        assert!(!lock(&owner.inner.automatic).working);
+        assert_eq!(std::fs::read_to_string(root.join("a.md")).unwrap(), "A");
     }
 
     /// Apply `changes`, hold it after admission and before the file gate,

@@ -5,9 +5,9 @@
 //!
 //! Key behaviors:
 //! - A save is committed by the owner even after the handle that saved is gone.
-//! - A save makes one automatic commit attempt. When the Git lock or the file
-//!   gate is held, the attempt is dropped: nothing runs when the holder lets
-//!   go, and the save stays uncommitted until an explicit commit.
+//! - A save asks for an automatic commit. While the Git lock or the file gate
+//!   is held, the request waits with any later ones, and once the holder lets
+//!   go one commit takes the latest files without another save.
 //! - An explicit commit or fast-forward waits and then reads fresh inputs.
 //! - A fetch or push in flight holds neither the file gate nor the Git lock:
 //!   saves land and are committed while it runs.
@@ -29,15 +29,16 @@ use sha2::{Digest, Sha256};
 use crate::files::FileChange;
 use crate::git::Remote;
 use crate::history::{
-    CommitOutcome, GitError, Observation, PendingIncoming, PullError, PullOutcome, PushOutcome,
-    RecoverOutcome,
+    CommitOutcome, GitError, Observation, OwnerEvent, PendingIncoming, PullError, PullOutcome,
+    PushOutcome, RecoverOutcome,
 };
 use crate::messages::{ChangeKind, PathChange};
 use crate::owner::{FolderConfig, FolderOwner};
 use crate::testing::{config, create, eventually, git, open, overwrite, replace, tree, TempDir};
 
-/// Wait for the commit a save was admitted for, if it was. The save decided
-/// that before it returned, so nothing can start after this sees it idle.
+/// Wait for the automatic worker a save started, and any scan. The save
+/// counted the worker as active before it returned, so nothing can start
+/// after this sees it idle.
 fn settled(owner: &FolderOwner) {
     eventually("the admitted commit and any scan to finish", || {
         let activity = owner.snapshot().activity;
@@ -144,7 +145,7 @@ fn a_save_is_committed_after_the_handle_that_saved_is_gone() {
 }
 
 #[test]
-fn a_save_made_while_the_git_lock_is_held_is_never_committed_on_its_own() {
+fn saves_made_while_the_git_lock_is_held_are_committed_once_it_is_released() {
     let temp = TempDir::new("git-busy");
     let root = temp.folder("notes");
     let owner = open(&root);
@@ -154,35 +155,37 @@ fn a_save_made_while_the_git_lock_is_held_is_never_committed_on_its_own() {
     save(&owner, "a.md", "A");
     at_capture.recv().unwrap();
     // A's commit released the file gate and holds the Git lock, before it
-    // publishes. B's save lands, and its one attempt finds the Git lock held.
+    // publishes. Later saves land, and their requests wait for A.
     save(&owner, "b.md", "B");
-    assert_eq!(owner.read("b.md").unwrap().bytes, b"B");
+    save(&owner, "b.md", "B, again");
+    save(&owner, "c.md", "C");
+    assert_eq!(owner.read("b.md").unwrap().bytes, b"B, again");
     assert!(owner.snapshot().activity.commit.active, "A is still held");
+    assert!(!root.join(".git/refs/heads/main").exists());
 
+    // A publishes, and with no further save one more commit takes the
+    // latest files on top of it.
     release.send(()).unwrap();
     settled(&owner);
-    // Nothing ran when A released the lock: B's attempt was forgotten.
-    let first = git(&root, &["rev-parse", "HEAD"]);
-    assert_eq!(subjects(&root), vec!["Add a.md"]);
-    assert_eq!(git(&root, &["status", "--porcelain"]), "?? b.md");
+    let head = git(&root, &["rev-parse", "HEAD"]);
+    let first = git(&root, &["rev-parse", "HEAD~1"]);
+    assert_eq!(subjects(&root), vec!["Update 2 files", "Add a.md"]);
+    assert_eq!(git(&root, &["show", "HEAD:b.md"]), "B, again");
+    assert_eq!(git(&root, &["status", "--porcelain"]), "");
     let snapshot = owner.snapshot();
     assert!(matches!(
         &snapshot.last_commit.as_ref().unwrap().result,
-        CommitOutcome::Committed { oid, message, .. } if *oid == first && message == "Add a.md"
+        CommitOutcome::Committed { oid, parent, changed_paths: 2, .. }
+            if *oid == head && parent.as_deref() == Some(first.as_str())
     ));
-    assert!(
-        matches!(snapshot.files, Observation::Observed { stale: true, .. }),
-        "B landed after A's snapshot"
-    );
-
-    // An explicit commit finds B exactly as the skipped attempt left it. Had
-    // anything committed B meanwhile, this would have nothing to commit.
     assert!(matches!(
-        owner.commit(),
-        CommitOutcome::Committed { ref parent, ref message, changed_paths: 1, .. }
-            if parent.as_deref() == Some(first.as_str()) && message == "Add b.md"
+        snapshot.files,
+        Observation::Observed { stale: false, ref value, .. } if value.changes.is_empty()
     ));
-    assert_eq!(subjects(&root), vec!["Add b.md", "Add a.md"]);
+
+    // Every request was answered: an explicit commit finds nothing new.
+    assert!(matches!(owner.commit(), CommitOutcome::Unchanged { .. }));
+    assert_eq!(subjects(&root).len(), 2);
 }
 
 #[test]
@@ -343,6 +346,18 @@ fn a_commit_holds_exactly_what_it_snapshotted_while_later_saves_land() {
     let owner = open(&root);
     let (hook, at_hash, release) = hold_once();
     owner.hooks().before_hash = Some(hook);
+    let outcomes: Arc<Mutex<Vec<CommitOutcome>>> = Arc::default();
+    let heard = Arc::clone(&outcomes);
+    let _subscription = owner.subscribe(move |event| {
+        if let OwnerEvent::Snapshot { snapshot, .. } = event {
+            if let Some(attempt) = &snapshot.last_commit {
+                let mut heard = heard.lock().unwrap();
+                if heard.last() != Some(&attempt.result) {
+                    heard.push(attempt.result.clone());
+                }
+            }
+        }
+    });
 
     save(&owner, "a.md", "A");
     at_hash.recv().unwrap();
@@ -363,29 +378,32 @@ fn a_commit_holds_exactly_what_it_snapshotted_while_later_saves_land() {
 
     release.send(()).unwrap();
     settled(&owner);
-    // The target, the message, and the count all come from the snapshot.
+    // A's target, message, and count all come from its snapshot. Both later
+    // saves asked while it held the Git lock; their request was carried by
+    // one more commit, with no further save.
+    let first = git(&root, &["rev-parse", "HEAD~1"]);
     let head = git(&root, &["rev-parse", "HEAD"]);
-    assert!(matches!(
-        &owner.snapshot().last_commit.as_ref().unwrap().result,
-        CommitOutcome::Committed { oid, parent: None, message, changed_paths: 1, .. }
-            if *oid == head && message == "Add a.md"
-    ));
-    assert_eq!(subjects(&root), vec!["Add a.md"]);
+    let outcomes = outcomes.lock().unwrap().clone();
+    assert!(
+        matches!(
+            outcomes.as_slice(),
+            [
+                CommitOutcome::Committed { oid: a, parent: None, message: a_message, changed_paths: 1, .. },
+                CommitOutcome::Committed { oid: b, parent: Some(b_parent), message: b_message, changed_paths: 2, .. },
+            ] if *a == first
+                && a_message == "Add a.md"
+                && *b == head
+                && *b_parent == first
+                && b_message == "Update 2 files"
+        ),
+        "{outcomes:?}"
+    );
+    assert_eq!(subjects(&root), vec!["Update 2 files", "Add a.md"]);
     assert_eq!(
-        git(&root, &["ls-tree", "-r", "--name-only", "HEAD"]),
+        git(&root, &["ls-tree", "-r", "--name-only", "HEAD~1"]),
         "a.md"
     );
-    assert_eq!(git(&root, &["show", "HEAD:a.md"]), "A");
-    // Both later saves were skipped while the Git lock was held, and stay
-    // uncommitted until someone asks.
-    assert!(matches!(
-        owner.snapshot().files,
-        Observation::Observed { stale: true, .. }
-    ));
-    assert!(matches!(
-        owner.commit(),
-        CommitOutcome::Committed { ref message, changed_paths: 2, .. } if message == "Update 2 files"
-    ));
+    assert_eq!(git(&root, &["show", "HEAD~1:a.md"]), "A");
     assert_eq!(
         git(&root, &["show", "HEAD:a.md"]),
         "A, rewritten after the snapshot"
@@ -1032,7 +1050,8 @@ fn a_save_is_committed_locally_then_explicitly_pushed_and_another_folder_fast_fo
     );
 
     // An edit and an addition travel as one fast-forward. They are one save:
-    // a second save made while the first one's commit ran would be skipped.
+    // a second save made while the first one's commit ran would be a second
+    // commit.
     first
         .apply(&[overwrite("a.md", "A2"), overwrite("dir/b.md", "B")])
         .unwrap();
@@ -1905,8 +1924,8 @@ fn shutdown_waits_for_an_admitted_commit_and_commits_nothing_of_its_own() {
     let (hook, at_capture, release) = hold_once();
     owner.hooks().after_capture = Some(hook);
 
-    // A's commit is admitted and held before it publishes. B's attempt finds
-    // the Git lock held and is forgotten. The handle that saved is gone.
+    // A's commit is admitted and held before it publishes. B's request waits
+    // for the worker that is committing A. The handle that saved is gone.
     {
         let page = owner.clone();
         save(&page, "a.md", "A");
@@ -1938,7 +1957,8 @@ fn shutdown_waits_for_an_admitted_commit_and_commits_nothing_of_its_own() {
         &snapshot.last_commit.as_ref().unwrap().result,
         CommitOutcome::Committed { message, .. } if message == "Add a.md"
     ));
-    // There was no last commit for B: it is saved and uncommitted.
+    // B's request was not carried past the fence, and there was no last
+    // commit for it: B is saved and uncommitted.
     assert_eq!(git(&root, &["status", "--porcelain"]), "?? b.md");
     assert_eq!(std::fs::read_to_string(root.join("b.md")).unwrap(), "B");
 }
@@ -1983,8 +2003,8 @@ fn a_save_that_lands_after_the_fence_stays_saved_and_starts_no_commit() {
     release.send(()).unwrap();
     held.join().unwrap().unwrap();
     shutdown.join().unwrap();
-    // The save was admitted before the fence, so it landed. Its commit
-    // attempt came after the fence, so it was not admitted.
+    // The save was admitted before the fence, so it landed. Its request
+    // came after the fence, so no worker was admitted for it.
     assert_eq!(
         std::fs::read_to_string(root.join("held.md")).unwrap(),
         "admitted before shutdown"

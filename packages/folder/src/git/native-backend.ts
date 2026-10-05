@@ -206,13 +206,6 @@ export async function createNativeGitBackend({
 			return work(access);
 		},
 		exclusive: queue.run,
-		async tryExclusive(work) {
-			const attempt = queue.tryRun(async () => ({
-				ran: true as const,
-				value: await work(),
-			}));
-			return attempt ?? { ran: false };
-		},
 		readBranch: () => resolve(branchRef),
 		readRemoteTracking: () => resolve(trackingRef),
 		async casBranch(expected, next) {

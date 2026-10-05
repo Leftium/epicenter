@@ -1200,16 +1200,23 @@ compare-and-swap. A moved branch is reported and not retried. Commit and push
 failures never undo a save.
 
 With `commitOnEdit` (default `true`), each complete table, KV, or file save
-this handle published makes one commit attempt in the background. The
-attempt runs only if the folder's Git work is free at that moment. If another
-tab, a pull, a staged command, or an earlier commit holds it, the attempt
-does not happen and is not made up later: the save stays uncommitted until
-the next save or an explicit `commit()`. An attempt that fails is reported in
-`git.snapshot.lastCommit` and is not retried. There is no timer and no commit
-when the folder closes, so the last save can stay uncommitted indefinitely.
+this handle published asks for a commit in the background. If another tab, a
+pull, a staged command, or an earlier commit holds the folder's Git work, the
+request waits for it, together with every later request: when that work ends,
+one commit captures the latest files without another save. Each handle keeps
+at most one such waiting request, and no copy of the saved bytes. Any
+whole-folder commit, including an explicit `commit()`, answers the requests
+made before it started. An automatic waiter whose requests were already
+answered skips capture and records nothing. A browser or Bun save racing an
+admitted capture can authorize one later `unchanged` pass, which creates no
+empty commit. A commit that fails is reported in
+`git.snapshot.lastCommit` and is not retried; the next save asks again.
+There is no timer and no commit when the folder closes: a request still
+waiting then is dropped, so the last save can stay uncommitted indefinitely.
 Edits made by another program or tab, and saves that stopped partway or whose
-outcome is unknown, make no attempt. `git.snapshot.files` turns `stale` when a save lands after the last
-capture, and `git.status()` lists what is uncommitted.
+outcome is unknown, ask for nothing. `git.snapshot.files` turns `stale` when
+a save lands after the last capture, and `git.status()` lists what is
+uncommitted.
 
 The browser and Bun openers use local `main`. A remote branch selects the
 transfer destination; it never selects another local history. An existing
@@ -1258,8 +1265,8 @@ In the desktop app, closing detaches this page. The owner keeps the folder,
 finishes operations it already accepted, the commit, and any push or fetch it
 had already started for the page, and serves every other window. A push or fetch of the page that
 the owner had not started is withdrawn and never starts. The owner makes no
-commit because a page closed or the app quit: a save whose attempt was skipped
-stays uncommitted there too.
+commit because a page closed or the app quit: a save whose request was still
+waiting when the app quit stays uncommitted there too.
 
 ### Incoming changes
 

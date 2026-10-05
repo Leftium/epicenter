@@ -429,8 +429,8 @@ pub async fn read_many<R: Runtime>(
 }
 
 /// Publish ordered changes. Where the folder commits on edit, a complete
-/// batch makes one automatic commit attempt, which is skipped if the folder
-/// is busy.
+/// batch requests an automatic local commit. While the folder is busy,
+/// requests coalesce and wait for its protection.
 ///
 /// Saves are published in the order they reach the folder, not the order a
 /// page asked for them. The last to land on a path wins, from any window, and

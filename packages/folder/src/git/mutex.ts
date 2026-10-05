@@ -3,9 +3,7 @@
  *
  * `run` waits for the work ahead of it. A `signal` that aborts while the work
  * is still waiting rejects with the signal's reason and the work never runs;
- * once the work has started the signal has no effect. `tryRun` starts only
- * when nothing is running or waiting, and otherwise returns `undefined`
- * without leaving anything behind.
+ * once the work has started the signal has no effect.
  */
 export function createMutex() {
 	let tail = Promise.resolve();
@@ -50,10 +48,5 @@ export function createMutex() {
 		});
 	}
 
-	return {
-		run,
-		tryRun<T>(work: () => Promise<T>): Promise<T> | undefined {
-			return held > 0 ? undefined : run(work);
-		},
-	};
+	return { run };
 }

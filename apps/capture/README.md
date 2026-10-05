@@ -207,10 +207,10 @@ means for Capture:
   change the operating system did not report is still announced. A change
   announced to the window is a hint to relist. It never carries file contents
   and never replaces what an open capture shows.
-- The owner makes one commit attempt after each save, whether or not a
-  Capture window is still open. An attempt that finds Git busy is skipped,
-  and the save stays uncommitted until a later save or an explicit commit.
-  The window schedules no commits.
+- Complete saves request automatic local history from the owner, whether or
+  not a Capture window is still open. While Git is busy, requests coalesce
+  and wait for protection. A failed checkpoint stays visible and needs a
+  newer save or an explicit commit. The window schedules no commits.
 - History is local-only. The shell registers the Capture folder to take the
   commit author from the directory's Git config when one is set there
   (otherwise `Capture <capture@localhost>`), to ignore that config's

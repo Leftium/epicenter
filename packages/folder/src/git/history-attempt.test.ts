@@ -1,20 +1,24 @@
 /**
- * Commit-On-Edit Attempt Tests
+ * Commit-On-Edit Request Tests
  *
- * With `commitOnEdit`, each save this handle published makes one commit
- * attempt. The attempt takes the backend's protection only if it is free at
- * that moment. These tests pin what that promises and what it does not.
+ * With `commitOnEdit`, each save this handle published asks for an automatic
+ * commit. Requests not yet answered are one obligation, carried by at most
+ * one worker that waits for the backend's protection. These tests pin what
+ * that promises and what it does not.
  *
  * Key behaviors:
- * - One published save makes one attempt; its subject and count come from
- *   the committed tree
+ * - One published save makes one commit; its subject and count come from the
+ *   committed tree
  * - Held protection (another tab's Web Lock, this handle's pull, path
- *   listing, or running commit) means the attempt did not happen: the save is
- *   kept, no outcome is recorded, and nothing runs when the protection frees
- * - The next save or an explicit commit captures the latest saved input
- * - A write nobody published through this handle, and `noteEdit` alone, make
- *   no attempt
- * - A failed attempt records the error, keeps the files, and is not retried
+ *   listing, or running commit) delays the request: once it frees, one
+ *   checkpoint commits the latest files without another save, however many
+ *   saves asked meanwhile, and at most one wait is outstanding
+ * - A whole-folder checkpoint answers every request made before it started;
+ *   an automatic one left with nothing to answer records nothing
+ * - A write nobody published through this handle, and `noteEdit` alone, ask
+ *   for nothing
+ * - A failed checkpoint, or a refused request to enter the protection,
+ *   records the error and is not retried; a newer save asks again
  * - Automatic commits and `commit()` stay local; a caller that stopped waiting
  *   on `commitAndPush` starts no push later
  * - Closing refuses a request still waiting for the protection without moving
@@ -29,7 +33,7 @@
 import { afterAll, beforeAll, expect, test } from 'bun:test';
 import { readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { expectOk } from 'wellcrafted/testing';
+import { expectErr, expectOk } from 'wellcrafted/testing';
 import {
 	createTestStorage,
 	rawBrowserFolder,
@@ -108,8 +112,18 @@ async function tab(
 	}
 	const real = await raw.backend();
 	const probe = {
-		/** Automatic attempts made, admitted or not. */
-		attempts: 0,
+		/** Requests to enter the protection, by any operation of this handle. */
+		admissions: 0,
+		/** Those still waiting to enter, and the most that ever waited at once. */
+		waiting: 0,
+		mostWaiting: 0,
+		/** Refuses the next request to enter, as a failing lock manager would. */
+		refuseNext: undefined as Error | undefined,
+		/**
+		 * Runs once when an automatic request enters and finds nothing left to
+		 * answer, after its work returned and before the worker resumes.
+		 */
+		onAnswered: undefined as (() => void) | undefined,
 		/** Commits that reached the branch compare-and-swap. */
 		publications: 0,
 		pushes: 0,
@@ -136,9 +150,30 @@ async function tab(
 	const backend: GitBackend = {
 		...real,
 		remote: { url: 'http://unused.test/remote.git', branch: 'main' },
-		tryExclusive(work) {
-			probe.attempts++;
-			return real.tryExclusive(work);
+		async exclusive(work, signal) {
+			probe.admissions++;
+			const refused = probe.refuseNext;
+			probe.refuseNext = undefined;
+			if (refused !== undefined) throw refused;
+			probe.waiting++;
+			probe.mostWaiting = Math.max(probe.mostWaiting, probe.waiting);
+			let entered = false;
+			try {
+				const value = await real.exclusive(() => {
+					entered = true;
+					probe.waiting--;
+					return work();
+				}, signal);
+				// Only an automatic request with nothing to answer returns nothing.
+				const answered = probe.onAnswered;
+				if (value === undefined && answered !== undefined) {
+					probe.onAnswered = undefined;
+					answered();
+				}
+				return value;
+			} finally {
+				if (!entered) probe.waiting--;
+			}
 		},
 		withObjects(work) {
 			probe.objectSessions++;
@@ -182,7 +217,7 @@ async function tab(
 		]);
 		expect(applyError).toBeNull();
 	}
-	/** A complete save as the folder publishes it: land, note, one attempt. */
+	/** A complete save as the folder publishes it: land, note, one request. */
 	async function save(path: string, text: string) {
 		await land(path, text);
 		history.noteEdit();
@@ -234,19 +269,19 @@ async function tab(
 useWebLocks();
 
 // ============================================================================
-// One attempt per published save
+// One request per published save
 // ============================================================================
 
-test('a published save makes one attempt that commits the folder with a subject from the committed tree', async () => {
+test('a published save makes one commit of the folder with a subject from the committed tree', async () => {
 	const { history, probe, save, idle, committed } = await tab(
 		createTestStorage(),
 		'one-attempt',
 	);
 	await save('a.txt', 'one');
-	// The save returned; its attempt is in flight.
+	// The save returned; its request is in flight.
 	expect(history.snapshot.activity.commit).toEqual({ active: true });
 	await idle();
-	expect(probe.attempts).toBe(1);
+	expect(probe.admissions).toBe(1);
 	expect(probe.publications).toBe(1);
 	expect(history.snapshot.lastCommit).toMatchObject({
 		status: 'committed',
@@ -260,22 +295,23 @@ test('a published save makes one attempt that commits the folder with a subject 
 
 	// Nothing else happens until the next save.
 	await Bun.sleep(30);
-	expect(probe.attempts).toBe(1);
+	expect(probe.admissions).toBe(1);
 	await history.close();
 });
 
-test('with commitOnEdit off, a save makes no attempt', async () => {
+test('with commitOnEdit off, a save asks for nothing', async () => {
 	const { history, probe, save } = await tab(createTestStorage(), 'off', {
 		commitOnEdit: false,
 	});
 	await save('a.txt', 'one');
 	await Bun.sleep(20);
-	expect(probe.attempts).toBe(0);
+	expect(probe.admissions).toBe(0);
+	expect(history.snapshot.activity.commit).toEqual({ active: false });
 	expect(history.snapshot.lastCommit).toBeUndefined();
 	await history.close();
 });
 
-test('a write this handle did not publish, and a noted edit alone, make no attempt', async () => {
+test('a write this handle did not publish, and a noted edit alone, ask for nothing', async () => {
 	const environment = createTestStorage();
 	const mine = await tab(environment, 'external');
 	const other = await tab(environment, 'external', { commitOnEdit: false });
@@ -284,7 +320,7 @@ test('a write this handle did not publish, and a noted edit alone, make no attem
 	// A partial publication notes the edit and asks for nothing.
 	mine.history.noteEdit();
 	await Bun.sleep(30);
-	expect(mine.probe.attempts).toBe(0);
+	expect(mine.probe.admissions).toBe(0);
 	expect(mine.history.snapshot.lastCommit).toBeUndefined();
 	expect(await mine.committed()).toEqual({});
 
@@ -301,10 +337,10 @@ test('a write this handle did not publish, and a noted edit alone, make no attem
 });
 
 // ============================================================================
-// Held protection: the attempt did not happen
+// Held protection: one request waits and commits the latest files
 // ============================================================================
 
-test("a save during this handle's held commit is kept, makes no commit when that one finishes, and the next save captures it", async () => {
+test("saves during this handle's held commit are committed by one following checkpoint, without another save", async () => {
 	const { history, probe, save, idle, committed, saved } = await tab(
 		createTestStorage(),
 		'held-own',
@@ -314,36 +350,38 @@ test("a save during this handle's held commit is kept, makes no commit when that
 	await save('a.txt', 'one');
 	await probe.reached.opened;
 
-	// The held commit already captured `one`. This save's attempt is refused.
+	// The held commit already captured `one`. These saves only renumber the
+	// one request: no second wait starts while the first commit runs.
 	await save('a.txt', 'two');
-	expect(probe.attempts).toBe(2);
+	await save('b.txt', 'new');
+	await save('a.txt', 'three');
+	expect(probe.admissions).toBe(1);
 	held.open();
 	await idle();
-	await Bun.sleep(30);
-	expect(probe.publications).toBe(1);
-	expect(history.snapshot.lastCommit).toMatchObject({
-		status: 'committed',
-		message: 'Add a.txt',
-	});
-	expect(await committed()).toEqual({ 'a.txt': 'one' });
-	expect(await saved()).toEqual({ 'a.txt': 'two' });
-	// The snapshot does not call the folder clean.
-	const files = history.snapshot.files;
-	expect(files.state === 'observed' && files.stale).toBe(true);
-
-	// The next owned save commits the latest of both files.
-	await save('b.txt', 'new');
-	await idle();
+	expect(probe.admissions).toBe(2);
+	expect(probe.mostWaiting).toBe(1);
+	expect(probe.publications).toBe(2);
 	expect(history.snapshot.lastCommit).toMatchObject({
 		status: 'committed',
 		message: 'Update 2 files',
 		changedPaths: 2,
 	});
-	expect(await committed()).toEqual({ 'a.txt': 'two', 'b.txt': 'new' });
+	const latest = { 'a.txt': 'three', 'b.txt': 'new' };
+	expect(await committed()).toEqual(latest);
+	expect(await saved()).toEqual(latest);
+	expect(history.snapshot.files).toMatchObject({
+		state: 'observed',
+		stale: false,
+	});
+
+	// Every request was answered; nothing runs on its own afterward.
+	await Bun.sleep(30);
+	expect(probe.admissions).toBe(2);
+	expect(probe.pushes).toBe(0);
 	await history.close();
 });
 
-test('while another tab holds the Web Lock, a save is kept, records nothing, and is not committed when the lock frees', async () => {
+test('while another tab holds the Web Lock, repeated saves wait as one request and commit the latest files once it frees', async () => {
 	const restore = installWebLocks();
 	try {
 		const environment = createTestStorage();
@@ -354,29 +392,37 @@ test('while another tab holds the Web Lock, a save is kept, records nothing, and
 		await a.save('a.txt', 'from a');
 		await a.probe.reached.opened;
 
-		await b.save('b.txt', 'from b');
-		await b.idle();
-		expect(b.probe.attempts).toBe(1);
+		await b.save('b.txt', 'one');
+		await b.save('b.txt', 'two');
+		await b.save('c.txt', 'last');
+		await Bun.sleep(20);
+		// One wait for the lock, and nothing recorded while it waits.
+		expect(b.probe.admissions).toBe(1);
+		expect(b.probe.mostWaiting).toBe(1);
+		expect(b.history.snapshot.activity.commit).toEqual({ active: true });
 		expect(b.history.snapshot.lastCommit).toBeUndefined();
-		expect(b.history.snapshot.lastPush).toBeUndefined();
 
 		held.open();
 		await a.idle();
 		const first = a.history.snapshot.lastCommit;
 		expect(first).toMatchObject({ status: 'committed', message: 'Add a.txt' });
-		// The lock is free and nothing of tab B's runs on its own.
-		await Bun.sleep(30);
-		expect(b.probe.publications).toBe(0);
-		expect(b.history.snapshot.lastCommit).toBeUndefined();
-		expect(await a.committed()).toEqual({ 'a.txt': 'from a' });
-		expect(await b.saved()).toEqual({ 'a.txt': 'from a', 'b.txt': 'from b' });
-
-		// An explicit commit captures it, on top of tab A's commit.
-		expect(await b.history.commit()).toMatchObject({
+		// Tab B's request runs when the lock frees, on top of tab A's commit.
+		await b.idle();
+		expect(b.probe.publications).toBe(1);
+		expect(b.history.snapshot.lastCommit).toMatchObject({
 			status: 'committed',
-			message: 'Add b.txt',
+			message: 'Update 2 files',
 			parent: first?.status === 'committed' ? first.oid : undefined,
 		});
+		expect(await b.committed()).toEqual({
+			'a.txt': 'from a',
+			'b.txt': 'two',
+			'c.txt': 'last',
+		});
+		await Bun.sleep(30);
+		expect(b.probe.admissions).toBe(1);
+		expect(b.probe.pushes).toBe(0);
+		expect(b.history.snapshot.lastPush).toBeUndefined();
 		await a.history.close();
 		await b.history.close();
 	} finally {
@@ -384,7 +430,7 @@ test('while another tab holds the Web Lock, a save is kept, records nothing, and
 	}
 });
 
-test("a save during this handle's held pull or path listing makes no commit, then or later", async () => {
+test("a save during this handle's held pull or path listing is committed once that work ends", async () => {
 	const restore = installWebLocks();
 	try {
 		const { history, probe, holds, entered, save, idle, committed } = await tab(
@@ -399,13 +445,17 @@ test("a save during this handle's held pull or path listing makes no commit, the
 		await entered;
 		await save('a.txt', 'one');
 		await Bun.sleep(10);
-		expect(probe.attempts).toBe(1);
-		pulling.open();
-		expect((await pull).error?.name).toBe('NoFetchedHead');
-		await Bun.sleep(30);
 		expect(probe.publications).toBe(0);
 		expect(history.snapshot.lastCommit).toBeUndefined();
-		expect(await committed()).toEqual({});
+		pulling.open();
+		expect(expectErr(await pull).name).toBe('NoFetchedHead');
+		await idle();
+		expect(probe.publications).toBe(1);
+		expect(history.snapshot.lastCommit).toMatchObject({
+			status: 'committed',
+			message: 'Add a.txt',
+		});
+		expect(await committed()).toEqual({ 'a.txt': 'one' });
 
 		// So does an explicit path listing.
 		const listing = gate();
@@ -414,29 +464,28 @@ test("a save during this handle's held pull or path listing makes no commit, the
 		await until(() => holds.pathStatus === undefined);
 		await save('a.txt', 'two');
 		await Bun.sleep(10);
+		expect(probe.publications).toBe(1);
 		listing.open();
 		expectOk(await paths);
-		await Bun.sleep(30);
-		expect(probe.attempts).toBe(2);
-		expect(probe.publications).toBe(0);
-		expect(history.snapshot.lastCommit).toBeUndefined();
-
-		// Nothing holds it now: the next save's attempt commits the latest.
-		await save('b.txt', 'new');
 		await idle();
+		expect(probe.publications).toBe(2);
 		expect(history.snapshot.lastCommit).toMatchObject({
 			status: 'committed',
-			message: 'Update 2 files',
+			message: 'Update a.txt',
 		});
-		expect(await committed()).toEqual({ 'a.txt': 'two', 'b.txt': 'new' });
+		expect(await committed()).toEqual({ 'a.txt': 'two' });
 		await history.close();
 	} finally {
 		restore();
 	}
 });
 
+// ============================================================================
+// Explicit commits answer pending requests
+// ============================================================================
+
 test('an explicit commit during a held attempt waits and captures a save made while it waited', async () => {
-	const { history, probe, save, committed } = await tab(
+	const { history, probe, save, idle, committed } = await tab(
 		createTestStorage(),
 		'explicit-waits',
 	);
@@ -458,14 +507,128 @@ test('an explicit commit during a held attempt waits and captures a save made wh
 	held.open();
 	await explicit;
 	expect(outcome).toMatchObject({ status: 'committed', message: 'Add b.txt' });
+	const recorded = history.snapshot.lastCommit;
+	expect(recorded).toMatchObject({ status: 'committed', message: 'Add b.txt' });
+	// The explicit commit answered the request `b.txt` made. Whether the
+	// worker found that before or after entering again, it commits nothing
+	// and leaves the explicit commit's outcome in place.
+	await idle();
 	expect(probe.publications).toBe(2);
+	expect(history.snapshot.lastCommit).toBe(recorded);
 	expect(await committed()).toEqual({
 		'a.txt': 'one',
 		'b.txt': 'while waiting',
 	});
-	await until(() => !history.snapshot.activity.push.active);
-	// Both the automatic attempt and the explicit commit stayed local.
+	// Both the automatic commit and the explicit commit stayed local.
 	expect(probe.pushes).toBe(0);
+	await history.close();
+});
+
+test('a request an explicit commit already answered records nothing, and a save that asks as it returns is still committed', async () => {
+	const { real, history, probe, land, save, idle, committed } = await tab(
+		createTestStorage(),
+		'answered-race',
+	);
+	// Something of this tab holds the protection. An explicit commit, and
+	// then a save's request, wait behind it in that order.
+	const holding = gate();
+	const holder = real.exclusive(() => holding.opened);
+	const explicit = history.commit();
+	await save('a.txt', 'one');
+	await Bun.sleep(10);
+	expect(probe.mostWaiting).toBe(2);
+
+	// The explicit commit captures `a.txt` and is held before it publishes.
+	// A save lands then, and its request arrives just as the worker comes
+	// back from finding nothing left to answer.
+	const held = gate();
+	probe.hold = held;
+	probe.onAnswered = () => {
+		history.noteEdit();
+		history.requestAutomaticCommit();
+	};
+	holding.open();
+	await holder;
+	await probe.reached.opened;
+	await land('b.txt', 'raced');
+	held.open();
+	expect(await explicit).toMatchObject({
+		status: 'committed',
+		message: 'Add a.txt',
+	});
+
+	await idle();
+	expect(probe.onAnswered).toBeUndefined();
+	expect(probe.publications).toBe(2);
+	expect(history.snapshot.lastCommit).toMatchObject({
+		status: 'committed',
+		message: 'Add b.txt',
+	});
+	expect(await committed()).toEqual({ 'a.txt': 'one', 'b.txt': 'raced' });
+	await history.close();
+});
+
+// ============================================================================
+// Failures are reported and not retried
+// ============================================================================
+
+test('a refused request to enter the protection is recorded, not retried, and a newer save asks again', async () => {
+	const { history, probe, save, idle, committed } = await tab(
+		createTestStorage(),
+		'refused-entry',
+	);
+	probe.refuseNext = new Error('lock manager unavailable');
+	await save('a.txt', 'one');
+	await idle();
+	expect(probe.admissions).toBe(1);
+	expect(history.snapshot.lastCommit).toMatchObject({
+		status: 'failed',
+		error: 'lock manager unavailable',
+	});
+	await Bun.sleep(30);
+	expect(probe.admissions).toBe(1);
+	expect(await committed()).toEqual({});
+
+	await save('b.txt', 'two');
+	await idle();
+	expect(probe.admissions).toBe(2);
+	expect(history.snapshot.lastCommit).toMatchObject({
+		status: 'committed',
+		message: 'Update 2 files',
+	});
+	expect(await committed()).toEqual({ 'a.txt': 'one', 'b.txt': 'two' });
+	await history.close();
+});
+
+test('an explicit commit refused entry answers the saves before it: the waiting request then commits nothing', async () => {
+	const { real, history, probe, save, idle, committed } = await tab(
+		createTestStorage(),
+		'refused-explicit',
+	);
+	const holding = gate();
+	const holder = real.exclusive(() => holding.opened);
+	await save('a.txt', 'one');
+	await Bun.sleep(10);
+	expect(probe.waiting).toBe(1);
+
+	probe.refuseNext = new Error('lock manager unavailable');
+	const refused = await history.commit();
+	expect(refused).toMatchObject({
+		status: 'failed',
+		error: 'lock manager unavailable',
+	});
+	holding.open();
+	await holder;
+	await idle();
+	// The worker entered and found the save already answered by the failure.
+	expect(probe.admissions).toBe(2);
+	expect(probe.publications).toBe(0);
+	expect(history.snapshot.lastCommit).toMatchObject(refused);
+	expect(await committed()).toEqual({});
+
+	await save('b.txt', 'two');
+	await idle();
+	expect(await committed()).toEqual({ 'a.txt': 'one', 'b.txt': 'two' });
 	await history.close();
 });
 
@@ -596,6 +759,51 @@ test("closing refuses an explicit commit still waiting on another tab's Web Lock
 	}
 });
 
+test("closing refuses a save's request still waiting on another tab's Web Lock; nothing of it runs once the lock frees", async () => {
+	const restore = installWebLocks();
+	try {
+		const environment = createTestStorage();
+		const a = await tab(environment, 'close-request');
+		const b = await tab(environment, 'close-request');
+		const held = gate();
+		a.probe.hold = held;
+		await a.save('a.txt', 'from a');
+		await a.probe.reached.opened;
+		const head = await a.real.readBranch();
+
+		await b.save('b.txt', 'from b');
+		await b.save('b.txt', 'from b, again');
+		await Bun.sleep(20);
+		expect(b.probe.waiting).toBe(1);
+		expect(b.history.snapshot.activity.commit).toEqual({ active: true });
+
+		await b.history.close();
+		expect(b.probe.waiting).toBe(0);
+		expect(b.history.snapshot.activity.commit).toEqual({ active: false });
+		expect(b.history.snapshot.lastCommit).toBeUndefined();
+
+		held.open();
+		await a.idle();
+		await Bun.sleep(30);
+		// Only tab A's commit moved the branch; tab B's save stays saved.
+		expect(b.probe.admissions).toBe(1);
+		expect(b.probe.publications).toBe(0);
+		const first = a.history.snapshot.lastCommit;
+		expect(first).toMatchObject({ status: 'committed', parent: head });
+		expect(await a.real.readBranch()).toBe(
+			first?.status === 'committed' ? first.oid : undefined,
+		);
+		expect(await a.committed()).toEqual({ 'a.txt': 'from a' });
+		expect(await a.saved()).toEqual({
+			'a.txt': 'from a',
+			'b.txt': 'from b, again',
+		});
+		await a.history.close();
+	} finally {
+		restore();
+	}
+});
+
 test('closing waits for an attempt already inside the protection, refuses a commit waiting behind it, and makes no last commit', async () => {
 	const restore = installWebLocks();
 	try {
@@ -620,16 +828,18 @@ test('closing waits for an attempt already inside the protection, refuses a comm
 		const closing = history.close().then(() => {
 			closed = true;
 		});
-		// A save that lands after closing began makes no attempt.
-		const before = probe.attempts;
+		// A save that lands after closing began asks for nothing.
+		const before = probe.admissions;
 		await save('c.txt', 'later still');
-		expect(probe.attempts).toBe(before);
+		expect(probe.admissions).toBe(before);
 		await Bun.sleep(20);
 		// The admitted attempt still uses storage; close has not resolved.
 		expect(closed).toBe(false);
 
 		held.open();
 		await closing;
+		// The request `b.txt` left pending was not carried past close.
+		expect(probe.admissions).toBe(before);
 		expect(probe.publications).toBe(1);
 		expect(history.snapshot.lastCommit).toMatchObject({
 			status: 'committed',
@@ -702,7 +912,7 @@ test('status requests during a held scan share one following scan, which reads t
 	// The shared scan left no commit, push, or later work behind.
 	await Bun.sleep(30);
 	expect(probe.captures).toBe(2);
-	expect(probe.attempts).toBe(0);
+	expect(probe.admissions).toBe(0);
 	expect(probe.publications).toBe(0);
 	expect(probe.pushes).toBe(0);
 	expect(history.snapshot.lastCommit).toBeUndefined();

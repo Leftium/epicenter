@@ -720,7 +720,7 @@ When you add an ADR, add its row here.
 | [0465](0465-editors-keep-unsaved-source-separate-from-the-saved-baseline.md) | Editors keep unsaved source separate from the saved baseline | Proposed (file-backed editor lifecycle unbuilt) |
 | [0466](0466-opened-media-provides-stable-input-bytes.md) | Opened media provides stable input bytes | Proposed (stable media reads and transcription migration unbuilt) |
 | [0467](0467-file-workflows-report-each-operations-outcome.md) | File workflows report each operation's outcome | Accepted |
-| [0468](0468-file-saves-succeed-independently-of-automatic-commits.md) | File saves succeed independently of automatic commits | Accepted |
+| [0468](0468-file-saves-succeed-independently-of-automatic-commits.md) | File saves succeed independently of automatic commits | Accepted (busy-attempt skipping amended by 0505, proposed) |
 | [0469](0469-generated-commit-messages-describe-captured-file-changes.md) | Generated commit messages describe captured file changes | Proposed (tree-derived message generation unbuilt) |
 | [0470](0470-epicenter-helps-people-make-software-that-is-unmistakably-theirs.md) | Epicenter helps people make software that is unmistakably theirs | Proposed (product articulation; public adoption and independent browser folder access unbuilt) |
 | [0471](0471-a-data-folder-handle-exposes-tables-kv-and-files.md) | A data folder handle exposes tables, KV, files, and Git | Accepted |
@@ -753,3 +753,4 @@ When you add an ADR, add its row here.
 | [0502](0502-whispering-connections-own-request-destinations-and-credentials.md) | Whispering connections own request destinations and credentials | Accepted (cross-application execution and folder-independent credential storage unbuilt) |
 | [0503](0503-file-authoritative-workflows-preserve-information-and-tolerate-repairable-states.md) | File-authoritative workflows preserve information and tolerate repairable states | Proposed (application refusal review and simpler Honeycrisp folder deletion unbuilt) |
 | [0504](0504-row-editors-own-complete-input-and-one-publication-queue.md) | Row editors own complete input and one publication queue | Proposed (core replacement, tracked Svelte adapter, application migrations, and lifecycle acceptance unbuilt) |
+| [0505](0505-automatic-commits-carry-one-coalesced-request-until-the-folder-is-free.md) | Automatic commits carry one coalesced request until the folder is free | Proposed (amends 0468) |

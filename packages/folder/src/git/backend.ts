@@ -161,11 +161,6 @@ export type RecoverIncomingResult =
 			readonly error: string;
 	  };
 
-/** Whether `tryExclusive` ran its work, and what the work returned. */
-export type Admitted<T> =
-	| { readonly ran: true; readonly value: T }
-	| { readonly ran: false };
-
 export type GitBackend = {
 	readonly branch: string;
 	readonly remote: GitRemote | undefined;
@@ -178,12 +173,6 @@ export type GitBackend = {
 	 * signal changes nothing.
 	 */
 	exclusive<T>(work: () => Promise<T>, signal?: AbortSignal): Promise<T>;
-	/**
-	 * `exclusive` without the wait: run `work` only if nothing holds or waits
-	 * for that same protection right now, in this process or, in a browser,
-	 * in another tab. Otherwise `work` never runs, now or later.
-	 */
-	tryExclusive<T>(work: () => Promise<T>): Promise<Admitted<T>>;
 	readBranch(): Promise<string | undefined>;
 	readRemoteTracking(): Promise<string | undefined>;
 	/** Move the branch only if it still names `expected`. */

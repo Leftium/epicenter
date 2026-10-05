@@ -740,17 +740,17 @@ It is narrow on purpose:
   answered.
 
 When the shell exits, the owner refuses new work, lets the saves and commits
-it had already admitted finish, and releases the folder. It commits nothing of
-its own, so a save whose automatic commit attempt was skipped stays saved and
-uncommitted. Closing the page's folder handle only detaches the window.
+it had already admitted finish, and releases the folder. Checkpoints already
+inside Git protection finish; waiting automatic requests are cancelled.
+Shutdown makes no final commit, so those saves can remain uncommitted. Closing the page's folder handle only detaches the window.
 
 ## History
 
 The shell registers the folder with automatic commits on and no remote. A
-complete content save makes one automatic commit attempt and does not wait for
-it. The owner makes that attempt only if the folder is free at that moment; a
-skipped attempt is not retried by a timer and is not owed later, so the save
-stays uncommitted until a later save's attempt or **Commit now** includes it.
+complete content save requests automatic local history and does not wait for
+Git. While protection is busy, requests coalesce; the worker captures the
+latest files when admitted. A failed checkpoint stays visible and is not
+retried until a newer save or **Commit now** requests another attempt.
 `src/lib/status.ts` turns the folder's Git snapshot into separate lines for
 saved files, uncommitted changes, and the last commit attempt, and never lets
 a commit outcome change what it says about a save.

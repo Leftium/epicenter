@@ -66,7 +66,7 @@ once registered.
 | `branch` | `main` | The local branch, and the remote branch when a remote exists. |
 | `author` | required | Who commits. With `use_repository_author`, the fallback for whichever of name and email the repository does not configure. |
 | `remote` | none | Where to push and fetch. |
-| `commit_on_edit` | `true` | Whether a complete save attempts a local commit. Transfers are explicit. The attempt is skipped when the folder is busy; see "Automatic commits". |
+| `commit_on_edit` | `true` | Whether a complete save asks for a local commit. Transfers are explicit. While the folder is busy the request waits, merged with later ones; see "Automatic commits". |
 | `use_repository_author` | `false` | Read `user.name` and `user.email` when the folder opens. |
 | `use_repository_origin` | `false` | Read `remote.origin.url` when the folder opens and use it as the remote. |
 | `watch_events` | `true` | Watch filesystem events for changes made outside the owner. |
@@ -219,11 +219,11 @@ take the target away. Ordinary saves keep no record.
 
 - **The owner** opens on a scope's first attach and stays open until the app
   exits or the shell calls `app.folders().shutdown()`. Shutdown refuses new
-  work, lets admitted saves and admitted commits finish, cancels pushes and
-  fetches, and releases the lock. It commits nothing of its own: a save whose
-  automatic attempt was skipped, or which lands after shutdown began, stays
-  saved and uncommitted. A commit or fast-forward still waiting for the
-  folder when shutdown begins is refused as closed.
+  work, lets admitted saves and commits already inside the folder finish,
+  cancels pushes and fetches, and releases the lock. It commits nothing of its
+  own: a save whose automatic request was still waiting, or which lands after
+  shutdown began, stays saved and uncommitted. A commit or fast-forward still
+  waiting for the folder when shutdown begins is refused as closed.
 - **A session** belongs to the window that attached it. Another window that
   names it is denied. A session ends on `detach`, when its page reloads, and
   when its window is destroyed. Ending a session never cancels a save, a
@@ -292,25 +292,32 @@ removes only ended sessions, so an attachment from the new page survives it.
 
 ## Automatic commits
 
-With `commit_on_edit`, a complete `apply` batch makes one automatic commit
-attempt. The owner takes the file gate and then the Git lock only if each is
-free at that moment, and decides before the save returns.
+With `commit_on_edit`, a complete `apply` batch asks for an automatic commit.
+The request is numbered under the file gate the batch published under. One
+worker thread per owner carries every request not yet answered: it waits for
+the file gate and then the Git lock as an explicit commit does, and commits
+the folder as it is once it holds both. The save returns once the worker is
+admitted and started, never waiting for the commit.
 
-- If either is held, the attempt did not happen. Another save, a commit, a
-  fast-forward, or a staging call can be the holder.
-  Nothing is recorded, nothing runs when the holder lets go, and no timer
-  tries again.
-- A skipped save stays uncommitted until a later save's attempt or an
-  explicit commit includes it. It can stay uncommitted indefinitely.
-- A terminal's save makes the same attempt as any other save. A redirection
-  publishes the empty file and then its content, so its second attempt can
-  find the first still running and be skipped.
-- A partial, refused, or unconfirmed batch makes no attempt.
+- A save made while the worker waits, or while another save, commit,
+  fast-forward, or staging call holds the folder, only renumbers the pending
+  request. When the holder lets go, one commit takes the latest files without
+  another save. No copy of saved bytes is kept, and no timer exists.
+- Every whole-folder commit, explicit or automatic, answers the requests made
+  before it took both locks. A worker that then finds nothing pending records
+  nothing, so it never replaces an explicit commit's outcome.
+- A commit that is blocked or fails is recorded in `snapshot.lastCommit` and
+  is not retried; the next save asks again. A worker thread that cannot start
+  is recorded as `failed` the same way.
+- A terminal's save asks like any other save. A redirection publishes the
+  empty file and then its content; the second request is carried by the same
+  worker, so the content is committed.
+- A partial, refused, or unconfirmed batch asks for nothing.
 - Automatic commits stay local. Only an explicit push request starts outgoing
   transport, even when a remote is configured.
-- A page is never told that an attempt was skipped and has nothing to retry.
-  `snapshot.activity.commit.active` is true while a commit runs, and the
-  files observation is stale after any save the last commit did not cover.
+- `snapshot.activity.commit.active` is true while the worker waits or a
+  commit runs, and the files observation is stale after any save the last
+  commit did not cover.
 
 An explicit `commit` waits for the folder instead, reads it once it holds both
 locks, and replies with what it did. It never pushes; `commitAndPush` in a

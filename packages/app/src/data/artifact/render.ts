@@ -150,7 +150,6 @@ export async function renderRow(
 	if (!(body instanceof Y.Node)) {
 		return RenderError.MalformedRow({ table, rowId });
 	}
-	const node = body;
 	const codec = definition.tables[table]?.body;
 	if (codec === undefined) {
 		// A table may declare no codec, and a row whose
@@ -158,12 +157,12 @@ export async function renderRow(
 		// which is the whole of what it is (ADR-0296). A node WITH body and no
 		// codec has a body it cannot write, and writing the file without it is
 		// the data loss this refuses.
-		if (node.length > 0 || [...node.attrKeys()].length > 0) {
+		if (body.length > 0 || [...body.attrKeys()].length > 0) {
 			return RenderError.UncodedRow({ table, rowId });
 		}
 		return Ok({ path, contents: rowFile(fields, undefined) });
 	}
-	if ([...node.attrKeys()].length > 0) {
+	if ([...body.attrKeys()].length > 0) {
 		return RenderError.BodyUnwritable({
 			table,
 			rowId,
@@ -176,7 +175,7 @@ export async function renderRow(
 	try {
 		return Ok({
 			path,
-			contents: rowFile(fields, codec.encode(node)),
+			contents: rowFile(fields, codec.encode(body)),
 		});
 	} catch (cause) {
 		return RenderError.BodyUnwritable({ table, rowId, cause });

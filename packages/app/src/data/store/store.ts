@@ -1108,20 +1108,6 @@ export function createStoreOverPort<
 		const declared: FieldMap = definition.kv;
 		const root = kvRoot(database);
 
-		/**
-		 * The declared keys this release can read, and the ones it cannot.
-		 *
-		 * Conformance runs over the whole stored object because that is what the
-		 * declaration checks, and then the two halves are served separately: one
-		 * key that fails costs that key, not the object around it.
-		 */
-		function readBack(): {
-			conforming: JsonObject;
-			issues: ConformanceIssue[];
-		} {
-			return conformance(declared, storedKv());
-		}
-
 		// Typed where it is WRITTEN, not where it is returned. `Object.freeze(literal)`
 		// infers `Readonly<typeof literal>` first, so by the time the result meets
 		// the return type it is no longer a FRESH literal and an extra member is
@@ -1154,7 +1140,7 @@ export function createStoreOverPort<
 			},
 			get nonconforming(): ConformanceIssue[] {
 				assertUsable();
-				return readBack().issues;
+				return conformance(declared, storedKv()).issues;
 			},
 			subscribe(listener: () => void): () => void {
 				assertUsable();

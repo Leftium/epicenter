@@ -58,10 +58,9 @@ export function fieldChanges(
 		const before = Object.hasOwn(base, name) ? base[name] : undefined;
 		const after = Object.hasOwn(file, name) ? file[name] : undefined;
 		if (sameFieldValue(before ?? null, after ?? null)) continue;
-		const value = after ?? null;
 		if (!permitted.includes(name))
 			failures.push({ field: name, reason: 'not-permitted' });
-		else patch[name] = value;
+		else patch[name] = after ?? null;
 	}
 	return failures.length
 		? FileContractError.InvalidChanges({ fields: failures })

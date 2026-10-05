@@ -224,7 +224,10 @@ export function createRow(
 			`the body given for row '${rowId}' already belongs to a document; build a fresh node per row`,
 		);
 	}
-	const row = mintRow(root, rowId);
+	// Two devices minting this key create distinct nested types; last-writer-wins
+	// discards one subtree. Minted row ids prevent that collision (ADR-0216).
+	const row = new Y.Node() as RowType;
+	root.setAttr(rowId, row);
 	// Integrated exactly once in the transaction that mints the row. Root types
 	// converge by name; nested ones do not, so creation must use a minted id.
 	// RC26 accepts nested nodes at runtime but DeltaConf omits them from its type.
@@ -260,23 +263,6 @@ export function updateRow(
 	if (row === undefined) return false;
 	fill(row, fields);
 	return true;
-}
-
-/**
- * The one place a row comes into existence.
- *
- * A nested type at a chosen key is addressed by its struct id, so two devices
- * minting one at the same key converge by last-writer-wins and one device's
- * subtree is lost (`evidence/invariants.test.ts`). What makes that unreachable
- * is not this function: it is that row ids are MINTED rather than chosen
- * (ADR-0216), so two devices never independently mint the same key. Written
- * down here because this is the line that would be unsafe if that ever stopped
- * being true.
- */
-function mintRow(root: Y.Node, rowId: string): RowType {
-	const row = new Y.Node() as RowType;
-	root.setAttr(rowId, row);
-	return row;
 }
 
 function fill(row: RowType, fields: JsonObject): void {

@@ -7,10 +7,9 @@
  * native transport. Files, tables, KV, and editors publish one change at a
  * time through `applyOne` (`storage.ts`), which restates the raw outcome.
  *
- * Every save of files, tables, KV, editors, and the terminal carries the
- * `Submission` it reserved, synchronously, when its public method was
- * entered: before it hashes, reads, or tells a listener anything. That is
- * the order the page asked for its saves in, whatever finishes first.
+ * Saves are not ordered by when their methods were called: the last to land
+ * on a path wins. A change that must not overwrite bytes its caller did not
+ * review carries `expectedSha256`.
  *
  * Browser OPFS and native applications both use ordered filesystem steps and
  * report completed steps on later failure.
@@ -59,16 +58,8 @@ export type CapturedFiles = {
 	}[];
 };
 
-declare const reserved: unique symbol;
-
-/**
- * A save's place in this page's order of saves, taken by `reserveSubmission`
- * (`storage.ts`) when a public method that saves is entered.
- */
-export type Submission = number & { readonly [reserved]: true };
-
-/** What every storage serves besides publication. */
-type StorageAccess = {
+/** Storage used by domain methods; apply includes content-save accounting. */
+export type FolderStorage = {
 	list(): Promise<Result<FileListing, FileError>>;
 	/** Immediate children of a directory: files and subdirectories by name. */
 	children(
@@ -81,32 +72,15 @@ type StorageAccess = {
 	): Promise<Result<Map<string, Result<FileRead, FileError>>, FileError>>;
 	/** Stable bytes for consumption; later path changes do not alter them. */
 	open(path: string): Promise<Result<Blob, FileError>>;
+	/** Publish `changes` in order, each under its own condition. */
+	apply(
+		changes: readonly FileChange[],
+	): Promise<Result<undefined, FileError | ApplyError>>;
 	mkdir(path: string): Promise<Result<undefined, FileError>>;
 	rmdir(path: string): Promise<Result<undefined, FileError>>;
 };
 
-/** Storage used by domain methods; apply includes content-save accounting. */
-export type FolderStorage = StorageAccess & {
-	/**
-	 * Publish `changes` in `submission`'s place. A storage whose saves can
-	 * reach the folder out of order refuses one that arrives after a later
-	 * save of this page landed on its path; one that publishes in call order
-	 * needs no number.
-	 */
-	apply(
-		changes: readonly FileChange[],
-		submission: Submission,
-	): Promise<Result<undefined, FileError | ApplyError>>;
-};
-
-/**
- * Raw storage also captures portable files for history. Git publishes
- * through it in its own sequence, so its saves take no page number.
- */
-export type FileBoundary = StorageAccess & {
-	apply(
-		changes: readonly FileChange[],
-		submission?: Submission,
-	): Promise<Result<undefined, FileError | ApplyError>>;
+/** Raw storage also captures portable files for history. */
+export type FileBoundary = FolderStorage & {
 	capture(): Promise<Result<CapturedFiles, FileError>>;
 };

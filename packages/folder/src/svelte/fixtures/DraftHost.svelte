@@ -1,9 +1,9 @@
 <!--
 	An application raw draft. It is seeded once, and an `$effect` submits a
-	changed draft through the application's timer. The timer keeps submitting
-	after a failed save: the owner keeps that input without attempting it, so
-	only Retry resumes. Reload discards the draft for the file's text when the
-	read succeeds, and keeps it when the read fails.
+	changed draft through the application's timer. After a failed save, the
+	next submission saves again; Retry saves the current text again. Reload
+	discards the draft for the file's text when the read succeeds, and keeps it
+	when the read fails.
 -->
 <script lang="ts">
 	import { untrack } from 'svelte';

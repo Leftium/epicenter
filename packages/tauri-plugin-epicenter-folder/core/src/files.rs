@@ -138,7 +138,7 @@ pub enum FileChange {
 }
 
 impl FileChange {
-    pub(crate) fn paths(&self) -> Vec<&str> {
+    fn paths(&self) -> Vec<&str> {
         match self {
             Self::Create { path, .. }
             | Self::Replace { path, .. }
@@ -219,14 +219,6 @@ pub enum FileError {
         cause: String,
     },
     Closed,
-    /// A save its writer numbered at or after this one already landed on this
-    /// path, so this delivery was refused before writing anything: landing
-    /// now could put back bytes the writer had already replaced. That is all
-    /// it says. Another delivery of this same save may have landed earlier,
-    /// so whether the save itself landed is unknown.
-    Superseded {
-        path: String,
-    },
     /// The operation started and its outcome is unknown: it may have reached
     /// the folder. Look before trying again.
     Unconfirmed {

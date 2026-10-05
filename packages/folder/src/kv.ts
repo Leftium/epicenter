@@ -31,7 +31,7 @@ import {
 	parseTree,
 } from 'jsonc-parser';
 import { Err, Ok, type Result } from 'wellcrafted/result';
-import type { FolderStorage, Submission } from './boundary.js';
+import type { FolderStorage } from './boundary.js';
 import { hashBytes } from './capture.js';
 import {
 	describe,
@@ -48,7 +48,7 @@ import {
 	type ParseError,
 	parseError,
 } from './reading.js';
-import { applyOne, reserveSubmission } from './storage.js';
+import { applyOne } from './storage.js';
 
 export const KV_PATH = 'kv.json';
 
@@ -369,10 +369,8 @@ export function createKv<TValues>(
 	 * Publish once and return the snapshot of the submitted source; nothing is
 	 * read back. The source is well-formed text, built from JSON this module
 	 * serialized and from decoded UTF-8, so it is exactly the text of its bytes.
-	 * `submission` is the place the public method reserved when it was entered.
 	 */
 	async function publish(
-		submission: Submission,
 		source: string,
 		condition: { kind: 'create' } | { kind: 'replace'; expectedSha256: string },
 	): Promise<Result<KvSnapshot<TValues>, KvWriteError>> {
@@ -380,11 +378,12 @@ export function createKv<TValues>(
 		const sha256 = await hashBytes(bytes);
 		// Interpret before publication; returning the receipt needs no further validation.
 		const receipt = snapshotOf(source, sha256);
-		const { error: applyError } = await applyOne(
-			storage,
-			{ ...condition, path: KV_PATH, bytes, sha256 },
-			submission,
-		);
+		const { error: applyError } = await applyOne(storage, {
+			...condition,
+			path: KV_PATH,
+			bytes,
+			sha256,
+		});
 		if (applyError !== null) return Err(applyError);
 		return Ok(receipt);
 	}
@@ -404,7 +403,6 @@ export function createKv<TValues>(
 			return Ok(snapshotOf(source, read.sha256));
 		},
 		async create(values) {
-			const submission = reserveSubmission();
 			const { data: owned, error: valuesError } = ownValues(
 				schemas,
 				values as Record<string, unknown>,
@@ -413,12 +411,11 @@ export function createKv<TValues>(
 			const object = Object.fromEntries(
 				[...owned].map(([key, json]) => [key, JSON.parse(json)]),
 			);
-			return publish(submission, `${JSON.stringify(object, null, 2)}\n`, {
+			return publish(`${JSON.stringify(object, null, 2)}\n`, {
 				kind: 'create',
 			});
 		},
 		async update(values) {
-			const submission = reserveSubmission();
 			const { data: owned, error: valuesError } = ownValues(
 				schemas,
 				values as Record<string, unknown>,
@@ -434,7 +431,7 @@ export function createKv<TValues>(
 				});
 			const { data: patched, error: patchError } = assignKeys(source, owned);
 			if (patchError !== null) return Err(patchError);
-			return publish(submission, patched, {
+			return publish(patched, {
 				kind: 'replace',
 				expectedSha256: read.sha256,
 			});

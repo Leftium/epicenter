@@ -30,13 +30,6 @@
 //!   gone, so the plugin indexes instances weakly by owning window and ends
 //!   every instance recorded for that window. An ended instance never
 //!   accepts a session again.
-//! - A page numbers its saves once, across every handle and root it opens.
-//!   The instance keeps that page's writer for each canonical root, and
-//!   every session the page attaches to the root shares it, so a save sent
-//!   through one handle is ordered against a later save sent through
-//!   another, or through a session attached after detaching. A new page
-//!   starts with no writers; pages and windows are not ordered against each
-//!   other.
 //! - Ending a page or an instance drops its sessions' subscriptions and
 //!   withdraws their unstarted pushes and fetches. It never touches the
 //!   folder owner: saves the owner admitted still land, and every other
@@ -47,13 +40,10 @@
 //! by the sessions registered with it.
 
 use std::collections::BTreeMap;
-use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, Weak};
 
-use epicenter_folder_core::owner::{
-    Caller, FolderOwner, Request, Submission, Subscription, Writer,
-};
+use epicenter_folder_core::owner::{Caller, FolderOwner, Request, Subscription};
 use epicenter_folder_core::registry::Session;
 
 fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
@@ -66,12 +56,6 @@ fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
 /// withdraws its pushes and fetches that the owner has not started.
 pub(crate) struct Live {
     pub session: Session,
-    /// Orders this session's saves by the numbers the page gave them. It is
-    /// the page's writer for the session's root, shared with every other
-    /// session the page attached there, and it remembers, per path, the
-    /// highest number that landed for as long as the page lasts. See
-    /// `Instance::writer` and `SessionState::submit`.
-    pub writer: Writer,
     /// The pushes and fetches this session opened and has not finished or
     /// withdrawn. This map is the only record of them: removing an entry
     /// drops its `Request`, which is what withdraws it.
@@ -124,24 +108,6 @@ impl SessionState {
     pub fn owner(&self, window: &str) -> Result<FolderOwner, String> {
         match &*lock(&self.live) {
             Some(live) => live.session.authorize(window).cloned(),
-            None => Err(ENDED.to_string()),
-        }
-    }
-
-    /// The owner, for `window`, and the save the page numbered `sequence`,
-    /// taken together while the session is live. The page's saves to this
-    /// root are ordered by the page's numbers, through whichever of its
-    /// sessions they arrive, not by when they arrive here. A save that
-    /// arrives after the session ended is refused here and writes nothing;
-    /// one taken before keeps the page's record and still lands, unless a
-    /// later save of the page, or this save itself, already landed on one of
-    /// its paths.
-    pub fn submit(&self, window: &str, sequence: u64) -> Result<(FolderOwner, Submission), String> {
-        match &*lock(&self.live) {
-            Some(live) => Ok((
-                live.session.authorize(window)?.clone(),
-                live.writer.submission(sequence),
-            )),
             None => Err(ENDED.to_string()),
         }
     }
@@ -210,11 +176,6 @@ struct InstanceState {
     ended: bool,
     page: u64,
     sessions: Vec<Weak<SessionState>>,
-    /// The current page's order of saves, one per canonical folder root.
-    /// The page numbers its saves once for all its handles, so every session
-    /// it attaches to a root, at once or after detaching, shares that root's
-    /// writer. The next page starts with none: its numbers start again.
-    writers: BTreeMap<PathBuf, Writer>,
 }
 
 /// One actual webview, from its creation to its window's destruction.
@@ -233,7 +194,6 @@ impl Instance {
                 ended: false,
                 page: 0,
                 sessions: Vec::new(),
-                writers: BTreeMap::new(),
             }),
         })
     }
@@ -244,43 +204,23 @@ impl Instance {
         (!state.ended).then_some(Page(state.page))
     }
 
-    /// The writer `page` orders its saves to `root` with, while this webview
-    /// is alive and still on that page.
-    pub fn writer(&self, page: Page, root: &Path) -> Option<Writer> {
-        let mut state = lock(&self.state);
-        if state.ended || state.page != page.0 {
-            return None;
-        }
-        Some(state.writers.entry(root.to_path_buf()).or_default().clone())
-    }
-
     /// A page started loading in this webview: the page before it is over.
-    /// Its writers go with it; a save of it the owner already took keeps the
-    /// record it was ordered by.
     pub fn page_started(&self) {
-        let (ended, writers) = {
+        let ended = {
             let mut state = lock(&self.state);
             state.page += 1;
-            (
-                std::mem::take(&mut state.sessions),
-                std::mem::take(&mut state.writers),
-            )
+            std::mem::take(&mut state.sessions)
         };
-        drop(writers);
         end_all(ended);
     }
 
     /// This webview's window was destroyed.
     fn end(&self) {
-        let (ended, writers) = {
+        let ended = {
             let mut state = lock(&self.state);
             state.ended = true;
-            (
-                std::mem::take(&mut state.sessions),
-                std::mem::take(&mut state.writers),
-            )
+            std::mem::take(&mut state.sessions)
         };
-        drop(writers);
         end_all(ended);
     }
 

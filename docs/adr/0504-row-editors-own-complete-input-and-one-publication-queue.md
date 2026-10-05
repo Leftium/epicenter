@@ -14,8 +14,9 @@ A read failure that hides the owner's input forces the application to keep a
 copy precisely when that input matters most.
 
 The chosen editing workflow accepts complete input immediately. The editor
-retains it visibly and publishes it through one ordered chain. External writers
-use last-publication-wins. A person deliberately reloads to adopt their changes.
+shows it and saves it automatically. Each editor serializes its own writes.
+Across independent editors, handles, and file APIs, whichever write lands last
+wins. A person deliberately reloads to adopt their changes.
 
 ## Decision
 
@@ -57,7 +58,7 @@ type RowState<T> =
 
 type SaveState =
   | { status: 'idle' }
-  | { status: 'saving' }
+  | { status: 'saving'; error?: RowSaveError }
   | { status: 'failed'; error: RowSaveError };
 ```
 
@@ -66,37 +67,51 @@ The complete canonical parse supplies the valid row's fields and body. It
 retains unknown metadata and validates declared fields. Storage failure never
 hides accepted input. There is no unreadable variant after acquisition.
 
-### One publication chain saves the latest input
+### One active write and the latest waiting document
 
 Setters accept input before returning. One captured write runs at a time.
-Only the latest input waiting behind it is published next. Its submission order
-is reserved when accepted. Intermediate waiting inputs may never reach disk.
-A receipt settles its captured write and never replaces newer input.
+Only the latest complete document waiting behind it is written next. Intermediate
+waiting documents may never reach disk. A receipt settles its captured write and
+never replaces newer input. The editor holds one active write promise and one
+optional waiting text. `flush()` follows successive writes rather than retaining
+a separate promise for the sequence.
+
+Structured input is formatted, then enters the same interpretation and save path
+as arbitrary text. There is no formatter-produced flag or second admission path.
 
 Every write replaces an existing file. Deletion before publication yields
 `NotFound`; the editor never recreates a deleted row. Independent writers follow
 last-publication-wins at whole-row scope. Another writer's intervening metadata
 or body changes can therefore be replaced. Git recovers only committed versions.
 
-A failed or unconfirmed write pauses the chain. Subsequent typing remains
-visible and does not resume publication. `retry()` explicitly submits the latest
-held input. It is a new attempt, not confirmation of an earlier uncertain write.
-`flush()` waits for the current chain, including its latest pending input, and
-returns its outcome. It never retries a failure.
+After a write finishes, successfully or unsuccessfully, the latest waiting
+document is attempted. Failures remain visible in `saving.error` while newer input
+writes. Success clears the previous error. Without waiting input, a failure stops
+saving and is reported. A later edit starts saving normally. There is no automatic retry loop.
+`retry()` optionally saves the visible document again; it is a new attempt, not
+confirmation of an earlier uncertain write. `flush()` waits through successive
+writes and returns the final relevant outcome. It never starts a write.
+
+Storage carries no cross-writer request number. Browser and native owners retain
+their file locks, publication conditions, and permissions. Native protocol 7
+removes the submission argument; incompatible page and host versions are refused.
+A delayed or duplicate transport delivery can land after another write. The
+last-landed-wins policy accepts that consequence and promises no at-most-once
+delivery.
 
 ### Reload is the only read after acquisition
 
 Subscriptions invalidate memory reads. They attach no storage watcher and perform
 no reads. External file changes and save receipts do not trigger adoption.
 
-`reload()` waits for the running chain to settle, then reads the existing file.
+`reload()` waits for active and waiting writes to settle, then reads the existing file.
 Success deliberately discards held input and clears its save failure. Read
 failure returns an error and preserves the entire snapshot. A setter or save
 admission during reload prevents adoption with `InputChanged`. When reloads
 overlap, the latest call decides and earlier calls settle with its result.
 Applications fence input during deliberate reload and confirm discard when
 held input would otherwise be lost. Discarding an `Unconfirmed` failure does
-not confirm or cancel that earlier write. Idle describes the new local chain.
+not confirm or cancel that earlier write. Idle describes the newly adopted local state.
 
 ### Svelte tracks the same owner
 
@@ -113,7 +128,8 @@ Unmounting removes subscriptions; it does not cancel admitted writes.
 
 Applications retain owners through active or failed saves. Before changing a
 path or closing storage, they fence input and wait for admitted work. A failure
-keeps input available until deliberate discard or a successful retry. Quit may
+leaves the current input visible. New input saves normally; an explicit retry or
+reload remains available. Quit may
 warn and offer quit anyway. Creation forms, conditional inference publication,
 and arbitrary-file editing have their own contracts; they are not duplicate row
 drafts. A field-local buffer remains justified when a control can hold input
@@ -126,7 +142,8 @@ background adoption, read-readiness gates, and row/raw publisher transfers leave
 this workflow. One owner replaces their synchronization protocols. List refresh
 and ordinary file watching remain separate from editor input adoption.
 
-Whole-row last-publication-wins can overwrite another window's changes. Reload
+Whole-row last-landed-wins can overwrite another writer's changes. A failed
+attempt does not reserve the file against later input or other writers. Reload
 is deliberate, and a reload failure keeps the current input accessible for copy
 or repair. Immediate saves may produce more history versions; history policy
 owns commit coalescing rather than introducing another input owner.
@@ -138,8 +155,9 @@ uncertainty prevents false success claims.
 
 ## Verification
 
-Controlled storage tests cover publication ordering, failure followed by newer
-typing, explicit retry, flush without retry, deletion, reload failure, concurrent
+Controlled storage tests cover serial writes with latest waiting input, failure
+with waiting input, failure followed by a later edit, explicit retry, flush
+through consecutive writes and subscriber input, deletion, reload failure, concurrent
 input, overlapping reloads, malformed repair, and complete metadata. Mounted
 Svelte tests cover direct bindings, outgoing views, subscription lifetimes,
 newline preservation, and accepted writes surviving unmount.

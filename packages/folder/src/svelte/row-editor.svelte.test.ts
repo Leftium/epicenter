@@ -16,7 +16,7 @@
  * - a raw view leaving after Reload admits nothing
  * - unmounting or switching owners ends the subscription, never publication
  * - `set` owns a `$state` draft's values before it returns
- * - an application draft timer cannot resume a failed chain; only Retry does
+ * - a failure shows until the next input saves; Retry saves the same text again
  *
  * See also:
  * - `../editor.test.ts` for the owner's queue, flush, and reload rules
@@ -264,7 +264,7 @@ test('a shared bindable textarea component binds the same getter and setter', as
 	expect(source.value).toBe('outside\n');
 });
 
-test('a failed Reload keeps the editing view and failed input; Retry resumes it; a successful Reload discards it', async () => {
+test('a failure shows until typing saves; a failed Reload keeps the view and input; Retry saves the text again; a successful Reload discards a failure', async () => {
 	const fake = await openTodo('broken\n');
 	const { editor } = fake;
 	using view = render(RowView, { rowEditor: editor });
@@ -275,27 +275,32 @@ test('a failed Reload keeps the editing view and failed input; Retry resumes it;
 	flushSync();
 	expect(view.text('[data-view="save-failure"]')).toBe('Io');
 
-	// Typing after the failure is shown and kept, not attempted.
+	// Typing after the failure saves at once; its success clears the failure.
 	type(source, 'C\n');
 	await settle();
 	flushSync();
-	expect(view.text('[data-view="save-failure"]')).toBe('Io');
-	expect(fake.writes).toEqual([]);
+	expect(fake.writes).toEqual(['C\n']);
+	expect(view.has('[data-view="save-failure"]')).toBe(false);
 
+	fake.script('io');
+	type(source, 'D\n');
+	await settle();
+	flushSync();
+	expect(view.text('[data-view="save-failure"]')).toBe('Io');
 	fake.failReads(READ_FAILURE);
-	fake.writeElsewhere('D\n');
+	fake.writeElsewhere('X\n');
 	click(view.target, 'Reload');
 	await settle();
 	flushSync();
 	expect(view.text('[data-view="reload-failure"]')).toBe('Io');
 	expect(view.get('textarea')).toBe(source);
-	expect(source.value).toBe('C\n');
+	expect(source.value).toBe('D\n');
 	expect(view.text('[data-view="save-failure"]')).toBe('Io');
 
 	click(view.target, 'Retry');
 	await settle();
 	flushSync();
-	expect(fake.writes).toEqual(['C\n']);
+	expect(fake.writes).toEqual(['C\n', 'D\n']);
 	expect(view.has('[data-view="save-failure"]')).toBe(false);
 
 	fake.script('io');
@@ -311,7 +316,7 @@ test('a failed Reload keeps the editing view and failed input; Retry resumes it;
 	expect(view.has('[data-view="reload-failure"]')).toBe(false);
 	expect(view.has('[data-view="save-failure"]')).toBe(false);
 	expect(source.value).toBe('F\n');
-	expect(fake.writes).toEqual(['C\n']);
+	expect(fake.writes).toEqual(['C\n', 'D\n']);
 });
 
 /**
@@ -452,7 +457,7 @@ function controlledTimer() {
 	};
 }
 
-test('an application draft timer cannot resume a failed chain; Retry and Reload are explicit', async () => {
+test("an application draft timer's next submission saves after a failed one; Reload is explicit", async () => {
 	const fake = await openTodo('draft A\n');
 	const { editor } = fake;
 	const timer = controlledTimer();
@@ -480,7 +485,7 @@ test('an application draft timer cannot resume a failed chain; Retry and Reload 
 	flushSync();
 	expect(view.text('[data-view="save-failure"]')).toBe('Io');
 
-	// The timer submits the newer draft; the owner keeps it and attempts nothing.
+	// The timer submits the newer draft, and the owner saves it.
 	type(view.get('textarea'), 'draft B2\n');
 	flushSync();
 	expect(timer.pending()).toBe(1);
@@ -488,12 +493,6 @@ test('an application draft timer cannot resume a failed chain; Retry and Reload 
 	await settle();
 	flushSync();
 	expect(editor.get().row.text).toBe('draft B2\n');
-	expect(view.text('[data-view="save-failure"]')).toBe('Io');
-	expect(fake.writes).toEqual([]);
-
-	click(view.target, 'Retry');
-	await settle();
-	flushSync();
 	expect(fake.writes).toEqual(['draft B2\n']);
 	expect(view.has('[data-view="save-failure"]')).toBe(false);
 
@@ -516,7 +515,7 @@ test('an application draft timer cannot resume a failed chain; Retry and Reload 
 	expect(view.has('[data-view="reload-failure"]')).toBe(false);
 	expect(view.get('textarea').value).toBe('disk E\n');
 	expect(editor.get().row.text).toBe('disk E\n');
-	// The discarded draft's submission was cancelled with it.
+	// The discarded draft's scheduled call was cancelled with it.
 	expect(timer.pending()).toBe(0);
 	expect(fake.writes).toEqual(['draft B2\n']);
 });

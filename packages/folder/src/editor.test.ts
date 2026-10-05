@@ -11,10 +11,12 @@
  * - readable invalid text opens for repair; storage errors never hide input
  * - setters install the complete accepted snapshot before they return
  * - one running write and the latest input after it; receipts never roll input back
- * - failure or uncertainty pauses the chain, newer input included, until `retry`
- * - `flush` waits for the running chain and never retries
- * - `reload` waits for the chain, then adopts the file unless input changed
+ * - a settled write, failed or not, starts the waiting input before subscribers hear it
+ * - a failure with nothing waiting ends `failed`; the next input saves again
+ * - `flush` waits through consecutive writes, a subscriber's included, and never retries
+ * - `reload` waits as `flush` does, then adopts the file unless input changed
  * - every write replaces the existing row and never recreates it
+ * - nothing orders the editor's writes against other saves: the last to land stays
  *
  * See also:
  * - `canonical.test.ts` for the codec the editor formats and parses with
@@ -134,9 +136,9 @@ type Outcome = 'ok' | 'unconfirmed' | 'io' | 'throw';
 
 /**
  * The todos table over one row file. Reads see the file as it was when they
- * started and can be held or made to fail. A write lands, then waits for its
- * reply when replies are held. A replace of a missing file is `NotFound` and
- * writes nothing.
+ * started and can be held or made to fail. A write can be held before it
+ * lands; it lands, then waits for its reply when replies are held. A replace
+ * of a missing file is `NotFound` and writes nothing.
  */
 function createFakeTable(initial: string | Uint8Array | undefined) {
 	let content = initial;
@@ -146,9 +148,13 @@ function createFakeTable(initial: string | Uint8Array | undefined) {
 	const heldReads: PromiseWithResolvers<void>[] = [];
 	let holdingReplies = false;
 	const heldReplies: PromiseWithResolvers<void>[] = [];
+	let landing: PromiseWithResolvers<void> | undefined;
 	const outcomes: Outcome[] = [];
+	/** Text that landed. */
 	const writes: string[] = [];
-	const applied: { change: FileChange; submission: number }[] = [];
+	const applied: FileChange[] = [];
+	/** Text of every write the editor sent, landed or not. */
+	const attempts: string[] = [];
 	const unused = () => {
 		throw new Error('A row editor does not call this storage method');
 	};
@@ -167,7 +173,7 @@ function createFakeTable(initial: string | Uint8Array | undefined) {
 			const bytes = typeof seen === 'string' ? encoder.encode(seen) : seen;
 			return Ok({ bytes, sha256: await hashBytes(bytes) });
 		},
-		async apply(changes, submission) {
+		async apply(changes) {
 			const outcome = outcomes.shift() ?? 'ok';
 			const [change] = changes;
 			if (
@@ -176,7 +182,11 @@ function createFakeTable(initial: string | Uint8Array | undefined) {
 				change.expectedSha256 !== undefined
 			)
 				throw new Error('An editor applies one unguarded replace');
-			applied.push({ change, submission });
+			applied.push(change);
+			attempts.push(decoder.decode(change.bytes));
+			const held = landing;
+			landing = undefined;
+			if (held !== undefined) await held.promise;
 			const missing = content === undefined;
 			if (!missing && outcome !== 'io') {
 				content = decoder.decode(change.bytes);
@@ -219,6 +229,7 @@ function createFakeTable(initial: string | Uint8Array | undefined) {
 		table,
 		writes,
 		applied,
+		attempts,
 		disk: () => content,
 		reads: () => reads,
 		/** Another writer changes the file; `undefined` deletes it. */
@@ -257,6 +268,15 @@ function createFakeTable(initial: string | Uint8Array | undefined) {
 			holdingReplies = false;
 			for (const gate of heldReplies.splice(0)) gate.resolve();
 		},
+		/**
+		 * Hold the next write before it lands, as slow hashing or transport
+		 * would. Returns what lets it land.
+		 */
+		holdNextLanding() {
+			const gate = Promise.withResolvers<void>();
+			landing = gate;
+			return () => gate.resolve();
+		},
 		/** The outcomes of the next writes, in order; later writes succeed. */
 		script(...next: Outcome[]) {
 			outcomes.push(...next);
@@ -270,16 +290,12 @@ async function openPlan(initial: string | undefined = row('A')) {
 	return { ...fake, editor };
 }
 
-/** An editor whose first write failed with `outcome` while B waited behind it. */
+/** An editor whose only write, of B, failed with `outcome` with nothing waiting. */
 async function openFailed(outcome: 'io' | 'unconfirmed' = 'io') {
 	const fake = await openPlan();
 	const { editor } = fake;
 	fake.script(outcome);
-	fake.holdReplies();
-	editor.setText(row('A1'));
-	await flush();
 	editor.setText(row('B'));
-	fake.releaseReplies();
 	await until(() => editor.get().save.status !== 'saving');
 	const { save } = editor.get();
 	if (save.status !== 'failed') throw new Error('expected failed');
@@ -468,10 +484,8 @@ test('a whole-row spread keeps unknown metadata and body; omitted keys are delet
 	await until(() => editor.get().save.status === 'idle');
 	expect(fake.writes).toEqual([expected]);
 	// An existing-row replacement, unguarded, never an overwrite.
-	expect(fake.applied.map(({ change }) => change)).toMatchObject([
-		{ kind: 'replace', path: PATH },
-	]);
-	expect(fake.applied[0]?.change).not.toHaveProperty('expectedSha256');
+	expect(fake.applied).toMatchObject([{ kind: 'replace', path: PATH }]);
+	expect(fake.applied[0]).not.toHaveProperty('expectedSha256');
 });
 
 test('a caller mutating its objects after set changes neither held input nor queued bytes', async () => {
@@ -653,35 +667,118 @@ test("A's receipt with B public leaves B public: no rollback and no mixture", as
 });
 
 for (const outcome of ['io', 'unconfirmed'] as const)
-	test(`A ${outcome === 'io' ? 'failing' : 'unconfirmed'} with B pending pauses the chain; newer typing waits for retry`, async () => {
+	test(`A ${outcome === 'io' ? 'failing' : 'unconfirmed'} with B then C waiting: C is written next and its success is the outcome`, async () => {
+		const fake = await openPlan();
+		const { editor } = fake;
+		const { saves } = record(editor);
+		fake.script(outcome);
+		fake.holdReplies();
+		editor.setText(row('A1'));
+		await flush();
+		editor.setText(row('B'));
+		editor.setText(row('C'));
+		fake.releaseReplies();
+		await until(() => editor.get().save.status !== 'saving');
+		// Nothing paused: the failure consumed the waiting input and continued.
+		expect(fake.attempts).toEqual([row('A1'), row('C')]);
+		expect(fake.disk()).toBe(row('C'));
+		expect(editor.get().save.status).toBe('idle');
+		expect(saves()).not.toContain('failed');
+		expectOk(await editor.flush());
+	});
+
+for (const outcome of ['io', 'unconfirmed'] as const)
+	test(`a write ${outcome === 'io' ? 'failing' : 'unconfirmed'} with nothing waiting ends failed without retrying; the next input saves again`, async () => {
 		const fake = await openFailed(outcome);
 		const { editor, save } = fake;
 		expect(save.error.name).toBe(outcome === 'io' ? 'Io' : 'Unconfirmed');
 		expect(shown(editor)).toBe('B');
 		await flush();
-		// B was retained, not attempted.
+		// No retry loop: the failure stays reported and nothing is attempted.
 		expect(fake.applied).toHaveLength(1);
+		expect(editor.get().save).toBe(save);
 
-		// Typing after the failure is public at once and not attempted either.
-		const { seen } = record(editor);
+		// Typing after the failure starts a write at once.
 		editor.setText(row('C'));
 		expect(shown(editor)).toBe('C');
-		expect(seen).toHaveLength(1);
-		expect(editor.get().save).toBe(save);
-		await flush();
-		expect(fake.applied).toHaveLength(1);
-
-		// Only retry resumes, with the latest input.
-		editor.retry();
 		expect(editor.get().save.status).toBe('saving');
+		const active = editor.get().save;
+		expect('error' in active && active.error).toBe(save.error);
 		await until(() => editor.get().save.status === 'idle');
-		expect(fake.applied).toHaveLength(2);
+		expect(fake.attempts).toEqual([row('B'), row('C')]);
 		expect(fake.disk()).toBe(row('C'));
 		// A retry while idle starts nothing.
 		editor.retry();
 		await flush();
 		expect(fake.applied).toHaveLength(2);
 	});
+
+test('a failed attempt remains visible while newer pending text saves; success clears it', async () => {
+	const fake = await openPlan();
+	const { editor } = fake;
+	fake.script('io');
+	fake.holdReplies();
+	editor.setText(row('A1'));
+	await flush();
+	editor.setText(row('B'));
+	fake.releaseReply();
+	await until(() => fake.applied.length === 2);
+	const saving = editor.get().save;
+	expect(saving.status).toBe('saving');
+	expect('error' in saving && saving.error?.name).toBe('Io');
+	expect(shown(editor)).toBe('B');
+	// More typing keeps the error visible without changing the active write.
+	editor.setText(row('C'));
+	expect(editor.get().save).toBe(saving);
+	fake.releaseReply();
+	await until(() => fake.applied.length === 3);
+	expect(editor.get().save).toEqual({ status: 'saving' });
+	fake.releaseReplies();
+	expectOk(await editor.flush());
+	expect(editor.get().save).toEqual({ status: 'idle' });
+	expect(fake.disk()).toBe(row('C'));
+});
+
+test('a write that settles while a later one waits starts it before anything is heard; input after that waits for it', async () => {
+	const fake = await openPlan();
+	const { editor } = fake;
+	fake.holdReplies();
+	editor.setText(row('A1'));
+	await flush();
+	editor.setText(row('B'));
+	const { saves } = record(editor);
+	fake.releaseReply();
+	// B started as A settled; no subscriber heard A's settlement in between.
+	await until(() => fake.applied.length === 2);
+	expect(saves()).toEqual([]);
+	editor.setText(row('C'));
+	fake.releaseReplies();
+	await until(() => editor.get().save.status === 'idle');
+	// B was already running, so it is written, then C after it.
+	expect(fake.attempts).toEqual([row('A1'), row('B'), row('C')]);
+	expect(fake.disk()).toBe(row('C'));
+});
+
+test('a subscriber answering a failure with new input starts a write that the settlement does not clear', async () => {
+	const fake = await openPlan();
+	const { editor } = fake;
+	fake.holdReplies();
+	editor.setText(row('A1'));
+	await flush();
+	// Waiting input with no exact bytes fails its turn without writing.
+	editor.setText(`${row('B')}\uD800`);
+	let answered = false;
+	editor.subscribe(() => {
+		if (answered || editor.get().save.status !== 'failed') return;
+		answered = true;
+		editor.setText(row('C'));
+	});
+	fake.releaseReplies();
+	expectOk(await editor.flush());
+	expect(answered).toBe(true);
+	expect(fake.attempts).toEqual([row('A1'), row('C')]);
+	expect(editor.get().save.status).toBe('idle');
+});
 
 test('retry after an uncertain write is a new attempt of the same text, never a confirmation', async () => {
 	const fake = await openPlan();
@@ -701,7 +798,7 @@ test('retry after an uncertain write is a new attempt of the same text, never a 
 	expect(second.status === 'failed' && second.error.name).toBe('Unconfirmed');
 	editor.retry();
 	await until(() => editor.get().save.status === 'idle');
-	expect(fake.applied.map(({ change }) => change.kind)).toEqual([
+	expect(fake.applied.map((change) => change.kind)).toEqual([
 		'replace',
 		'replace',
 		'replace',
@@ -709,7 +806,7 @@ test('retry after an uncertain write is a new attempt of the same text, never a 
 	expect(fake.writes).toEqual([row('B'), row('B'), row('B')]);
 });
 
-test('raw text UTF-8 cannot encode exactly is held, never written lossily, and pauses until retry', async () => {
+test('raw text UTF-8 cannot encode exactly is held and never written lossily; the next encodable input saves', async () => {
 	const fake = await openPlan();
 	const { editor } = fake;
 	const lone = `${row('A')}\uD800`;
@@ -732,9 +829,8 @@ test('raw text UTF-8 cannot encode exactly is held, never written lossily, and p
 
 	editor.setText(row('Fixed'));
 	expect(shown(editor)).toBe('Fixed');
-	expect(editor.get().save).toBe(again);
-	editor.retry();
-	await until(() => editor.get().save.status === 'idle');
+	expect(editor.get().save.status).toBe('saving');
+	expectOk(await editor.flush());
 	expect(fake.writes).toEqual([row('Fixed')]);
 });
 
@@ -759,7 +855,7 @@ test('A active with unencodable B pending: B is public; A stays saving; B fails 
 	expect(saves()).toEqual(['saving', 'saving', 'failed']);
 });
 
-test("A failing before unencodable B's turn reports A's failure", async () => {
+test("A failing with unencodable B waiting reports B's Unencodable: the latest attempt's outcome", async () => {
 	const fake = await openPlan();
 	const { editor } = fake;
 	fake.script('io');
@@ -770,10 +866,12 @@ test("A failing before unencodable B's turn reports A's failure", async () => {
 	fake.releaseReplies();
 	await until(() => editor.get().save.status !== 'saving');
 	const { save } = editor.get();
-	expect(save.status === 'failed' && save.error.name).toBe('Io');
+	expect(save.status === 'failed' && save.error.name).toBe('Unencodable');
+	expect(expectErr(await editor.flush()).name).toBe('Unencodable');
+	expect(fake.attempts).toEqual([row('A1')]);
 });
 
-test('storage that throws settles as uncertain, never stuck saving; retry admits the latest input', async () => {
+test('storage that throws settles as uncertain, never stuck saving; the next input saves again', async () => {
 	const fake = await openPlan();
 	const { editor } = fake;
 	fake.script('throw');
@@ -783,54 +881,46 @@ test('storage that throws settles as uncertain, never stuck saving; retry admits
 	if (save.status !== 'failed') throw new Error('expected failed');
 	expect(save.error.name).toBe('Unconfirmed');
 	editor.setText(row('C'));
-	editor.retry();
-	await until(() => editor.get().save.status === 'idle');
+	expectOk(await editor.flush());
 	expect(fake.writes).toEqual([row('B'), row('C')]);
 });
 
-test('a row deleted before publication is NotFound, never recreated, and its input stays public', async () => {
+test('a row deleted before publication is NotFound, never recreated by any later write, and its input stays public', async () => {
 	const fake = await openPlan();
 	const { editor } = fake;
 	fake.writeElsewhere(undefined);
 	editor.setText(row('B'));
-	await until(() => editor.get().save.status !== 'saving');
-	const { save } = editor.get();
-	expect(save.status === 'failed' && save.error.name).toBe('NotFound');
+	expect(expectErr(await editor.flush()).name).toBe('NotFound');
 	expect(shown(editor)).toBe('B');
 
+	// Explicit retry and later typing each attempt again; neither recreates.
 	editor.retry();
-	await until(() => editor.get().save.status !== 'saving');
-	const again = editor.get().save;
-	expect(again.status === 'failed' && again.error.name).toBe('NotFound');
+	expect(expectErr(await editor.flush()).name).toBe('NotFound');
+	fake.holdReplies();
+	editor.setText(row('C'));
+	editor.setText(row('D'));
+	fake.releaseReplies();
+	expect(expectErr(await editor.flush()).name).toBe('NotFound');
+	expect(fake.attempts).toEqual([row('B'), row('B'), row('C'), row('D')]);
 	expect(fake.disk()).toBeUndefined();
 	expect(fake.writes).toEqual([]);
-	expect(shown(editor)).toBe('B');
+	expect(shown(editor)).toBe('D');
 });
 
-test("each capture takes its place in the page's order when accepted, before a save a listener starts", async () => {
+test('an earlier write that lands after a later save stays: nothing orders them', async () => {
 	const fake = await openPlan();
 	const { editor } = fake;
-	let raw: ReturnType<typeof fake.table.replace> | undefined;
-	editor.subscribe(() => {
-		if (editor.get().save.status === 'saving' && raw === undefined)
-			raw = fake.table.replace('plan', row('Raw'), {});
-	});
-	fake.holdReplies();
-	editor.setText(row('A1'));
-	if (raw === undefined) throw new Error('the listener never heard saving');
-	editor.setText(row('C'));
-	const later = fake.table.replace('plan', row('Later'), {});
-	fake.releaseReplies();
-	expectOk(await raw);
-	expectOk(await later);
-	await until(() => editor.get().save.status !== 'saving');
-	const numberOf = (text: string) =>
-		fake.applied.find(
-			({ change }) =>
-				change.kind === 'replace' && decoder.decode(change.bytes) === text,
-		)?.submission ?? Number.NaN;
-	expect(numberOf(row('A1'))).toBeLessThan(numberOf(row('Raw')));
-	expect(numberOf(row('C'))).toBeLessThan(numberOf(row('Later')));
+	// The editor's write is held before it lands, as slow hashing would.
+	const land = fake.holdNextLanding();
+	editor.setText(row('Mine'));
+	await until(() => fake.applied.length === 1);
+	expectOk(await fake.table.replace('plan', row('Later'), {}));
+	expect(fake.disk()).toBe(row('Later'));
+	land();
+	// It lands over the later save and reports success, not a refusal.
+	expectOk(await editor.flush());
+	expect(fake.disk()).toBe(row('Mine'));
+	expect(fake.writes).toEqual([row('Later'), row('Mine')]);
 });
 
 test('listener exceptions are isolated, never fail a save, and delivery is never reentrant', async () => {
@@ -859,7 +949,7 @@ test('listener exceptions are isolated, never fail a save, and delivery is never
 	expectOk(await editor.flush());
 	expect(editor.get().save.status).toBe('idle');
 	expect(fake.writes).toEqual([row('B'), row('Nested')]);
-	// The broken view heard every change, on every turn of the chain.
+	// The broken view heard every change, through both writes.
 	expect(thrown).toBe(3);
 });
 
@@ -885,7 +975,7 @@ test('unsubscribing ends only that subscription and leaves publication running',
 // flush
 // ============================================================================
 
-test('flush resolves Ok at once when idle and waits for the whole chain, input admitted during it included', async () => {
+test('flush resolves Ok at once when idle and waits through consecutive writes, input accepted during them included', async () => {
 	const fake = await openPlan();
 	const { editor } = fake;
 	expectOk(await editor.flush());
@@ -896,7 +986,7 @@ test('flush resolves Ok at once when idle and waits for the whole chain, input a
 	await flush();
 	editor.setText(row('B'));
 	fake.releaseReply();
-	// A settled, but B is running: the chain has not.
+	// A settled, but B is running.
 	await until(() => fake.applied.length === 2);
 	expect(await hasSettled(flushing)).toBe(false);
 	fake.releaseReplies();
@@ -905,7 +995,7 @@ test('flush resolves Ok at once when idle and waits for the whole chain, input a
 	expect(fake.disk()).toBe(row('B'));
 });
 
-test('flush returns the held failure and never retries, even with newer input', async () => {
+test('flush returns the latest attempt: a failure the waiting input replaced is Ok once that input saves', async () => {
 	const fake = await openPlan();
 	const { editor } = fake;
 	fake.script('io');
@@ -915,16 +1005,37 @@ test('flush returns the held failure and never retries, even with newer input', 
 	await flush();
 	editor.setText(row('B'));
 	fake.releaseReplies();
-	const error = expectErr(await flushing);
-	expect(error.name).toBe('Io');
-	const { save } = editor.get();
-	expect(save.status === 'failed' && save.error).toBe(error);
+	expectOk(await flushing);
+	expect(fake.disk()).toBe(row('B'));
+});
 
-	editor.setText(row('C'));
-	expect(expectErr(await editor.flush())).toBe(error);
+test('flush returns a failure with nothing waiting at once and never retries it', async () => {
+	const fake = await openFailed();
+	const { editor, save } = fake;
+	expect(expectErr(await editor.flush())).toBe(save.error);
+	expect(expectErr(await editor.flush())).toBe(save.error);
 	await flush();
 	expect(fake.applied).toHaveLength(1);
-	expect(shown(editor)).toBe('C');
+});
+
+test('flush waits through writes a subscriber starts as each settles, and returns the last outcome', async () => {
+	const fake = await openPlan();
+	const { editor } = fake;
+	const answers = [row('Second'), row('Third')];
+	fake.script('ok', 'ok', 'io');
+	editor.subscribe(() => {
+		const { save } = editor.get();
+		// Each settled write is answered with the next input, from inside the
+		// delivery that reports it.
+		if (save.status !== 'idle') return;
+		const next = answers.shift();
+		if (next !== undefined) editor.setText(next);
+	});
+	editor.setText(row('First'));
+	const error = expectErr(await editor.flush());
+	expect(error.name).toBe('Io');
+	expect(fake.attempts).toEqual([row('First'), row('Second'), row('Third')]);
+	expect(editor.get().save.status).toBe('failed');
 });
 
 // ============================================================================
@@ -947,7 +1058,7 @@ test('reload adopts the file over failed input and clears the failure without wr
 	await flush();
 	expect(fake.applied).toHaveLength(1);
 
-	// The chain runs again from the adopted row.
+	// Saving goes on from the adopted row.
 	editor.setText(row('Next'));
 	await until(() => editor.get().save.status === 'idle');
 	expect(fake.disk()).toBe(row('Next'));
@@ -965,7 +1076,7 @@ test('reload adopts malformed text exactly for raw repair', async () => {
 	expect(adopted.error.name).toBe('NoCanonicalForm');
 });
 
-test('reload waits for the running chain, then reads the file it left', async () => {
+test('reload waits for the running write, then reads the file it left', async () => {
 	const fake = await openPlan();
 	const { editor } = fake;
 	fake.holdReplies();
@@ -1015,7 +1126,7 @@ test('typing during a reload read returns InputChanged; the typed input stands a
 	expect(fake.disk()).toBe(row('Typed'));
 });
 
-test('typing while reload waits for the chain returns InputChanged without reading', async () => {
+test('typing while reload waits for a write returns InputChanged without reading', async () => {
 	const fake = await openPlan();
 	const { editor } = fake;
 	fake.holdReplies();
@@ -1030,10 +1141,10 @@ test('typing while reload waits for the chain returns InputChanged without readi
 	expect(fake.disk()).toBe(row('B'));
 });
 
-test('typing while paused, or a retry, during a reload read returns InputChanged and keeps the failure path', async () => {
+test('typing after a failure, or a retry, during a reload read returns InputChanged; that input is saved', async () => {
 	for (const during of ['typing', 'retry'] as const) {
 		const fake = await openFailed();
-		const { editor, save } = fake;
+		const { editor } = fake;
 		fake.writeElsewhere(row('Disk'));
 		fake.holdReads();
 		const reloading = editor.reload();
@@ -1041,18 +1152,26 @@ test('typing while paused, or a retry, during a reload read returns InputChanged
 		else editor.retry();
 		fake.releaseReads();
 		expect(expectErr(await reloading).name).toBe('InputChanged');
-		if (during === 'typing') {
-			expect(shown(editor)).toBe('C');
-			expect(editor.get().save).toBe(save);
-		} else {
-			await until(() => editor.get().save.status === 'idle');
-			expect(shown(editor)).toBe('B');
-			expect(fake.disk()).toBe(row('B'));
-		}
+		expectOk(await editor.flush());
+		const kept = during === 'typing' ? 'C' : 'B';
+		expect(shown(editor)).toBe(kept);
+		expect(fake.disk()).toBe(row(kept));
 	}
 });
 
-test('a synchronous failed retry while reload drains preserves input and prevents adoption', async () => {
+test('retyping the same text during a reload read still returns InputChanged', async () => {
+	const fake = await openPlan();
+	const { editor } = fake;
+	fake.writeElsewhere(row('Disk'));
+	fake.holdReads();
+	const reloading = editor.reload();
+	editor.setText(row('A'));
+	fake.releaseReads();
+	expect(expectErr(await reloading).name).toBe('InputChanged');
+	expect(shown(editor)).toBe('A');
+});
+
+test('a synchronous failed retry while reload waits for writes preserves input and prevents adoption', async () => {
 	const fake = await openPlan();
 	const { editor } = fake;
 	fake.holdReplies();

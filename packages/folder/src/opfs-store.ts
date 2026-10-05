@@ -37,10 +37,8 @@
  * A new file whose stream never reached its close is removed again; when its
  * absence cannot be established, the outcome is `Unconfirmed` too.
  *
- * A page's saves to one folder land in the order the page asked for them
- * (`reserveSubmission` in `storage.ts`): a save that reaches a path after a
- * later save of the page landed there writes nothing. Other pages are
- * serialized by the Web Lock, and whichever lands last stays.
+ * Saves are serialized by the Web Lock in the order they take it, not the
+ * order their methods were called: whichever lands last on a path stays.
  */
 import { Err, Ok, type Result } from 'wellcrafted/result';
 import type {
@@ -757,18 +755,6 @@ export async function applyChanges(
 const changePaths = (change: FileChange) =>
 	change.kind === 'move' ? [change.from, change.to] : [change.path];
 
-/**
- * Per folder (by its files lock, which its address names) and per path, the
- * highest save number of this page that reached it. Every handle of the page
- * on one folder shares it, including handles reopened after a close, because
- * save numbers are the page's, not a handle's. Git's own writes carry no
- * number and do not enter it.
- */
-const pageOrder = new Map<string, Map<string, number>>();
-
-const SUPERSEDED =
-	'a later save of this page already reached this path, so this one wrote nothing rather than put back older bytes';
-
 function invalid(path: string): Result<never, FileError> | undefined {
 	const problem = pathProblem(path);
 	return problem === undefined
@@ -792,13 +778,6 @@ export function createOpfsFileBoundary({
 }): FileBoundary {
 	/** Every mutation runs under the files lock. */
 	const mutate = <T>(work: () => Promise<T>) => holding(locks, filesLock, work);
-	/** This page's highest save number that reached each path of this folder. */
-	let order = pageOrder.get(filesLock);
-	if (order === undefined) {
-		order = new Map<string, number>();
-		pageOrder.set(filesLock, order);
-	}
-	const reachedBy = order;
 
 	async function readOne(path: string): Promise<Result<FileRead, FileError>> {
 		try {
@@ -880,37 +859,13 @@ export function createOpfsFileBoundary({
 			if (readError !== null) return Err(readError);
 			return Ok(new Blob([read.bytes as Uint8Array<ArrayBuffer>]));
 		},
-		async apply(changes, submission) {
-			const paths = changes.flatMap(changePaths);
-			for (const path of paths) {
+		async apply(changes) {
+			for (const path of changes.flatMap(changePaths)) {
 				const refused = invalid(path);
 				if (refused) return refused;
 			}
 			if (changes.length === 0) return Ok(undefined);
-			return mutate(async () => {
-				if (submission !== undefined) {
-					const later = paths.find(
-						(path) => (reachedBy.get(path) ?? 0) >= submission,
-					);
-					if (later !== undefined)
-						return FileError.Unconfirmed({
-							path: later,
-							operation: 'publishing to',
-							cause: SUPERSEDED,
-						});
-				}
-				// A step whose outcome is unknown counts as landed here too, so
-				// nothing older can put back bytes it may have replaced.
-				return applyChanges(root, changes, (reached) => {
-					if (submission !== undefined)
-						for (const path of reached)
-							reachedBy.set(
-								path,
-								Math.max(reachedBy.get(path) ?? 0, submission),
-							);
-					landed(reached);
-				});
-			});
+			return mutate(() => applyChanges(root, changes, landed));
 		},
 		async mkdir(path) {
 			const refused = invalid(path);

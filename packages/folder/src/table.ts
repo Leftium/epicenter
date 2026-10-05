@@ -62,7 +62,7 @@ import {
 	type TableReading,
 	unrepresentable,
 } from './row-text.js';
-import { applyOne, reserveSubmission } from './storage.js';
+import { applyOne } from './storage.js';
 
 /**
  * One immutable capture of a row file and how its text reads. `text` and
@@ -505,8 +505,6 @@ export function createTable<TFields>(
 			return readSnapshot(path, read);
 		},
 		async create(input) {
-			// Every save reserves its place first, before its reads and hash.
-			const submission = reserveSubmission();
 			const { data: prepared, error: prepareError } = prepareRow(
 				name,
 				schemas,
@@ -522,16 +520,16 @@ export function createTable<TFields>(
 			if (vacancy.error !== null) return vacancy;
 			const sha256 = await hashBytes(bytes);
 			const receipt = receiptOf(path, sha256, text);
-			const { error: applyError } = await applyOne(
-				storage,
-				{ kind: 'create', path, bytes, sha256 },
-				submission,
-			);
+			const { error: applyError } = await applyOne(storage, {
+				kind: 'create',
+				path,
+				bytes,
+				sha256,
+			});
 			if (applyError !== null) return Err(applyError);
 			return Ok(receipt);
 		},
 		async update(stem, change, options) {
-			const submission = reserveSubmission();
 			const { data: path, error: addressError } = rowAddress(name, stem);
 			if (addressError !== null) return Err(addressError);
 			// Own the baseline, the supplied values, and the body before the
@@ -592,22 +590,17 @@ export function createTable<TFields>(
 			const receipt = receiptOf(path, sha256, next.text);
 			// Published against this call's own read, whether or not the caller
 			// named a baseline: the patch is of exactly those bytes.
-			const { error: applyError } = await applyOne(
-				storage,
-				{
-					kind: 'replace',
-					path,
-					bytes,
-					sha256,
-					expectedSha256: read.sha256,
-				},
-				submission,
-			);
+			const { error: applyError } = await applyOne(storage, {
+				kind: 'replace',
+				path,
+				bytes,
+				sha256,
+				expectedSha256: read.sha256,
+			});
 			if (applyError !== null) return Err(applyError);
 			return Ok(receipt);
 		},
 		async replace(stem, text, options) {
-			const submission = reserveSubmission();
 			const { data: path, error: addressError } = rowAddress(name, stem);
 			if (addressError !== null) return Err(addressError);
 			const { data: expectedSha256, error: expectedError } = ownExpected(
@@ -622,16 +615,17 @@ export function createTable<TFields>(
 			const receipt = receiptOf(path, sha256, next.text);
 			// A replacement requires an existing row at the storage that
 			// publishes it, guarded or not; it is never an overwrite.
-			const { error: applyError } = await applyOne(
-				storage,
-				{ kind: 'replace', path, bytes, sha256, expectedSha256 },
-				submission,
-			);
+			const { error: applyError } = await applyOne(storage, {
+				kind: 'replace',
+				path,
+				bytes,
+				sha256,
+				expectedSha256,
+			});
 			if (applyError !== null) return Err(applyError);
 			return Ok(receipt);
 		},
 		async rename(stem, nextStem, options) {
-			const submission = reserveSubmission();
 			const { data: from, error: fromError } = rowAddress(name, stem);
 			if (fromError !== null) return Err(fromError);
 			const { data: to, error: toError } = rowAddress(name, nextStem);
@@ -650,14 +644,9 @@ export function createTable<TFields>(
 				});
 			const vacancy = await vacant(to);
 			if (vacancy.error !== null) return vacancy;
-			return applyOne(
-				storage,
-				{ kind: 'move', from, to, expectedSha256 },
-				submission,
-			);
+			return applyOne(storage, { kind: 'move', from, to, expectedSha256 });
 		},
 		async delete(stem, options) {
-			const submission = reserveSubmission();
 			const { data: path, error: addressError } = rowAddress(name, stem);
 			if (addressError !== null) return Err(addressError);
 			const { data: expectedSha256, error: expectedError } = ownExpected(
@@ -665,11 +654,7 @@ export function createTable<TFields>(
 				options,
 			);
 			if (expectedError !== null) return Err(expectedError);
-			return applyOne(
-				storage,
-				{ kind: 'remove', path, expectedSha256 },
-				submission,
-			);
+			return applyOne(storage, { kind: 'remove', path, expectedSha256 });
 		},
 		async edit(stem, options) {
 			const { data: path, error: addressError } = rowAddress(name, stem);

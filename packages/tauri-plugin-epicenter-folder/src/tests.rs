@@ -11,15 +11,11 @@
 //!   names it is denied, and a page never supplies a root.
 //! - Two windows share one owner: saves, conflicts, events, and history.
 //! - Detaching one window leaves the other and the commit already admitted.
-//! - A page's saves to one root are ordered by the numbers the page gave
-//!   them, through every session it attached there: a delivery that arrives,
-//!   or reaches the folder, after a save numbered at or after it landed on
-//!   the same path is refused as `Superseded` and writes nothing, a second
-//!   delivery of a landed save included, even with nothing in flight. One the
-//!   plugin took before its session ended
-//!   still lands. Another window, or the page after a reload, starts its own
-//!   order, and a second scope cannot open the same root.
-//! - A page built for an older protocol is refused at attach.
+//! - Saves are not ordered by the page: one held before the folder lands
+//!   after a later one and stays, and a second delivery lands again. One the
+//!   plugin took before its session ended still lands. A second scope cannot
+//!   open the same root.
+//! - A page built for another protocol is refused at attach.
 //! - A push request withdrawn before the owner starts its transport never
 //!   reaches the remote; one already started finishes, and ending a session
 //!   withdraws only what had not started.
@@ -206,29 +202,15 @@ fn replace(path: &str, content: &str, expected_sha256: &Value) -> Value {
     })
 }
 
-/// A save numbered as a page numbers its saves: each one higher than every
-/// save sent before it.
 fn apply(
     window: &WebviewWindow<MockRuntime>,
     session: u64,
     changes: Value,
 ) -> Result<Value, Value> {
-    static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
-    let submission = NEXT.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-    numbered(window, session, submission, changes)
-}
-
-/// A save under the number the test gives it.
-fn numbered(
-    window: &WebviewWindow<MockRuntime>,
-    session: u64,
-    submission: u64,
-    changes: Value,
-) -> Result<Value, Value> {
     invoke(
         window,
         "apply",
-        json!({ "session": session, "submission": submission, "changes": changes }),
+        json!({ "session": session, "changes": changes }),
     )
 }
 
@@ -1193,12 +1175,12 @@ pub(crate) fn attach_opened(label: &str) {
     run_hook(&ATTACH_HOOKS, label);
 }
 
-/// Runs inside `apply` for one window label, after the batch took its place
-/// in its session's order and before the owner sees it: where a worker pool
-/// that is slow to start the call would leave it.
+/// Runs inside `apply` for one window label, after its session admitted the
+/// batch and before the owner sees it: where a worker pool that is slow to
+/// start the call would leave it.
 static APPLY_HOOKS: Mutex<Vec<(String, AttachHook)>> = Mutex::new(Vec::new());
 
-pub(crate) fn apply_submitted(label: &str) {
+pub(crate) fn apply_admitted(label: &str) {
     run_hook(&APPLY_HOOKS, label);
 }
 
@@ -1245,29 +1227,29 @@ fn hold_next(
 }
 
 #[test]
-fn a_save_held_before_the_folder_never_lands_over_its_sessions_later_save() {
-    let fixture = fixture("ordered", &["ordered"], false);
-    let page = window(&fixture.app, "ordered");
+fn a_save_held_before_the_folder_lands_after_its_sessions_later_save_and_stays() {
+    let fixture = fixture("last-landed", &["last-landed"], false);
+    let page = window(&fixture.app, "last-landed");
     let session = attach(&page);
     let read = |path: &str| std::fs::read_to_string(fixture.root.join(path)).ok();
 
-    // Save 1 is in the plugin and waits before the folder. Save 2 lands.
-    let (at_hook, release) = hold_next(&APPLY_HOOKS, "ordered");
+    // The earlier save is in the plugin and waits before the folder. The
+    // later one lands first; the earlier one then lands over it and stays.
+    let (at_hook, release) = hold_next(&APPLY_HOOKS, "last-landed");
     std::thread::scope(|scope| {
         let earlier =
-            scope.spawn(|| numbered(&page, session, 1, json!([overwrite("note.md", "earlier")])));
+            scope.spawn(|| apply(&page, session, json!([overwrite("note.md", "earlier")])));
         at_hook.recv().unwrap();
-        numbered(&page, session, 2, json!([overwrite("note.md", "later")])).unwrap();
+        apply(&page, session, json!([overwrite("note.md", "later")])).unwrap();
         release.send(()).unwrap();
-        assert_eq!(earlier.join().unwrap().unwrap_err(), superseded("note.md"));
+        earlier.join().unwrap().expect("the held save lands");
     });
-    assert_eq!(read("note.md").as_deref(), Some("later"));
+    assert_eq!(read("note.md").as_deref(), Some("earlier"));
 
     // A save the plugin took before its session ended still lands.
-    let (at_hook, release) = hold_next(&APPLY_HOOKS, "ordered");
+    let (at_hook, release) = hold_next(&APPLY_HOOKS, "last-landed");
     std::thread::scope(|scope| {
-        let admitted =
-            scope.spawn(|| numbered(&page, session, 3, json!([overwrite("kept.md", "kept")])));
+        let admitted = scope.spawn(|| apply(&page, session, json!([overwrite("kept.md", "kept")])));
         at_hook.recv().unwrap();
         invoke(&page, "detach", json!({ "session": session })).unwrap();
         release.send(()).unwrap();
@@ -1276,123 +1258,35 @@ fn a_save_held_before_the_folder_never_lands_over_its_sessions_later_save() {
     assert_eq!(read("kept.md").as_deref(), Some("kept"));
 }
 
-fn superseded(path: &str) -> Value {
-    json!({ "name": "Refused", "error": { "name": "Superseded", "path": path } })
-}
-
 #[test]
-fn a_save_that_reaches_the_plugin_after_a_later_one_landed_is_refused_with_nothing_in_flight() {
-    let fixture = fixture("late-delivery", &["late-delivery"], false);
+fn a_second_delivery_of_a_save_lands_again_through_any_session() {
+    let fixture = fixture("late-delivery", &["late-delivery", "elsewhere"], false);
     let page = window(&fixture.app, "late-delivery");
-    let session = attach(&page);
-    let read = |path: &str| std::fs::read_to_string(fixture.root.join(path)).ok();
-
-    // The page numbered save 1 and then save 2. Save 2 is delivered first and
-    // lands; nothing of this session is in flight when save 1 is delivered.
-    numbered(&page, session, 2, json!([overwrite("note.md", "later")])).unwrap();
-    assert_eq!(
-        numbered(&page, session, 1, json!([overwrite("note.md", "earlier")])).unwrap_err(),
-        superseded("note.md")
-    );
-    // A second delivery of save 2, as Tauri's IPC fallback sends one, lands
-    // nothing either, with the same refusal: the record does not say which
-    // delivery landed.
-    assert_eq!(
-        numbered(&page, session, 2, json!([overwrite("note.md", "again")])).unwrap_err(),
-        superseded("note.md")
-    );
-    assert_eq!(read("note.md").as_deref(), Some("later"));
-
-    // Save 3 lands and its reply is lost; save 4 lands; then the fallback
-    // delivers save 3 again. It is refused and save 4's bytes stay.
-    numbered(&page, session, 3, json!([overwrite("lost.md", "three")])).unwrap();
-    numbered(&page, session, 4, json!([overwrite("lost.md", "four")])).unwrap();
-    assert_eq!(
-        numbered(&page, session, 3, json!([overwrite("lost.md", "three")])).unwrap_err(),
-        superseded("lost.md")
-    );
-    assert_eq!(read("lost.md").as_deref(), Some("four"));
-
-    // Save 1 orders nothing else: on another path it lands.
-    numbered(&page, session, 1, json!([overwrite("other.md", "earlier")])).unwrap();
-    assert_eq!(read("other.md").as_deref(), Some("earlier"));
-
-    // 0 names no save, and writes nothing.
-    assert_eq!(
-        numbered(&page, session, 0, json!([overwrite("zero.md", "x")])).unwrap_err(),
-        json!({
-            "name": "Refused",
-            "error": {
-                "name": "Denied",
-                "reason": "a save is numbered from 1 in its page; 0 names no save",
-            },
-        })
-    );
-    assert_eq!(read("zero.md"), None);
-}
-
-#[test]
-fn a_page_orders_its_saves_to_one_root_through_every_session_and_a_new_page_starts_again() {
-    let fixture = fixture("page-writer", &["page-writer", "elsewhere"], false);
-    let page = window(&fixture.app, "page-writer");
-    let read = |path: &str| std::fs::read_to_string(fixture.root.join(path)).ok();
     let (one, two) = (attach(&page), attach(&page));
+    let read = |path: &str| std::fs::read_to_string(fixture.root.join(path)).ok();
 
-    // Two handles of one page: save 2 lands through the second, and save 1
-    // reaches the plugin later through the first.
-    numbered(&page, two, 2, json!([overwrite("note.md", "two")])).unwrap();
-    assert_eq!(
-        numbered(&page, one, 1, json!([overwrite("note.md", "one")])).unwrap_err(),
-        superseded("note.md")
-    );
+    // A save lands and its reply is lost; a later save lands; then Tauri's
+    // IPC fallback delivers the first again. Nothing numbers saves, so it
+    // lands, through whichever session carried it, and is final.
+    apply(&page, one, json!([overwrite("lost.md", "three")])).unwrap();
+    apply(&page, two, json!([overwrite("lost.md", "four")])).unwrap();
+    apply(&page, one, json!([overwrite("lost.md", "three")])).unwrap();
+    assert_eq!(read("lost.md").as_deref(), Some("three"));
 
-    // Save 3 waits before the folder through the first session. The page
-    // detaches that session and attaches again, and save 4 lands through the
-    // new one first. The held save keeps the page's record.
-    let (at_hook, release) = hold_next(&APPLY_HOOKS, "page-writer");
-    let again = std::thread::scope(|scope| {
-        let held = scope.spawn(|| numbered(&page, one, 3, json!([overwrite("note.md", "three")])));
-        at_hook.recv().unwrap();
-        invoke(&page, "detach", json!({ "session": one })).unwrap();
-        let again = attach(&page);
-        numbered(&page, again, 4, json!([overwrite("note.md", "four")])).unwrap();
-        release.send(()).unwrap();
-        assert_eq!(held.join().unwrap().unwrap_err(), superseded("note.md"));
-        again
-    });
-    assert_eq!(read("note.md").as_deref(), Some("four"));
-    // Another path is not ordered by any of them.
-    numbered(&page, again, 1, json!([overwrite("other.md", "one")])).unwrap();
-    assert_eq!(read("other.md").as_deref(), Some("one"));
-
-    // Another window is another page: between pages the last save to land
-    // wins, whatever its number.
+    // Another window's save is the same: the last to land wins.
     let elsewhere = window(&fixture.app, "elsewhere");
     let there = attach(&elsewhere);
-    numbered(
+    apply(
         &elsewhere,
         there,
-        1,
-        json!([overwrite("note.md", "elsewhere")]),
+        json!([overwrite("lost.md", "elsewhere")]),
     )
     .unwrap();
-    assert_eq!(read("note.md").as_deref(), Some("elsewhere"));
-
-    // A reload starts a page whose numbers start again.
-    crate::commands::end_page(page.as_ref());
-    let reloaded = attach(&page);
-    numbered(
-        &page,
-        reloaded,
-        1,
-        json!([overwrite("note.md", "reloaded")]),
-    )
-    .unwrap();
-    assert_eq!(read("note.md").as_deref(), Some("reloaded"));
+    assert_eq!(read("lost.md").as_deref(), Some("elsewhere"));
 }
 
 #[test]
-fn a_second_scope_on_the_same_root_cannot_open_so_a_page_has_one_order_per_root() {
+fn a_second_scope_on_the_same_root_cannot_open() {
     let fixture = fixture("alias-scope", &["main"], false);
     // The same directory, spelled through its parent.
     let spelled = fixture.root.join("..").join("notes");
@@ -1595,7 +1489,6 @@ fn a_window_recreated_under_the_same_label_is_a_separate_instance() {
             instance,
             Live {
                 session,
-                writer: Default::default(),
                 requests: Default::default(),
                 _subscription: subscription,
             },

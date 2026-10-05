@@ -17,8 +17,8 @@
  *   from one capture exactly one wins and the other sees the winner's hash
  * - A write that fails before its close is `Io`; a close that throws is
  *   `Unconfirmed` whatever the path holds after, hinted, with no commit
- * - One page's saves land in the order the page asked for them, across
- *   handles; an older save delivered late writes nothing
+ * - Saves are not ordered by when they were asked for: a save entered first
+ *   that lands after a later one stays, across handles and row editors
  * - Closing refuses new work; a save already begun returns its real outcome
  */
 import { afterEach, describe, expect, spyOn, test } from 'bun:test';
@@ -331,21 +331,19 @@ afterEach(() => {
 	for (const restore of spies.splice(0)) restore();
 });
 
-describe("one page's saves land in the order the page asked for them", () => {
-	test('a save entered first and delivered after a later one landed writes nothing', async () => {
+describe('the last save to land on a path stays, whenever it was asked for', () => {
+	test('a save entered first that lands after a later one stays', async () => {
 		const [left, right] = [await open(), await open()];
 		const held = holdNextDigest();
 		const first = left.files.overwrite('order.md', 'first');
 		await held.reached;
 		expectOk(await right.files.overwrite('order.md', 'second'));
 		held.release();
-		const refused = expectErr(await first);
-		expect(refused).toMatchObject({ name: 'Unconfirmed', path: 'order.md' });
-		expect(refused.message).toContain('a later save of this page already');
-		expect(decoder.decode(opfs.files(ROOT).get('order.md'))).toBe('second');
+		expectOk(await first);
+		expect(decoder.decode(opfs.files(ROOT).get('order.md'))).toBe('first');
 	});
 
-	test('the order holds across a handle opened after the save began', async () => {
+	test('a handle opened after the save began does not order it', async () => {
 		const left = await open();
 		const held = holdNextDigest();
 		const first = left.files.overwrite('order.md', 'first');
@@ -353,12 +351,12 @@ describe("one page's saves land in the order the page asked for them", () => {
 		const reopened = await open();
 		expectOk(await reopened.files.overwrite('order.md', 'second'));
 		held.release();
-		expect(expectErr(await first).name).toBe('Unconfirmed');
-		expect(decoder.decode(opfs.files(ROOT).get('order.md'))).toBe('second');
+		expectOk(await first);
+		expect(decoder.decode(opfs.files(ROOT).get('order.md'))).toBe('first');
 	});
 
 	for (const held of ['source', 'destination'] as const)
-		test(`a later move keeps out an older save to its ${held}`, async () => {
+		test(`an older overwrite of a later move's ${held} lands after it`, async () => {
 			const [left, right] = [await open(), await open()];
 			const moved = expectOk(await right.files.create('from.md', 'moved'));
 			const digest = holdNextDigest();
@@ -369,12 +367,30 @@ describe("one page's saves land in the order the page asked for them", () => {
 			await digest.reached;
 			expectOk(await right.files.move(moved, 'to.md'));
 			digest.release();
-			expect(expectErr(await older).name).toBe('Unconfirmed');
-			expect(opfs.files(ROOT).has('from.md')).toBe(false);
-			expect(decoder.decode(opfs.files(ROOT).get('to.md'))).toBe('moved');
+			expectOk(await older);
+			const files = opfs.files(ROOT);
+			if (held === 'source') {
+				expect(decoder.decode(files.get('from.md'))).toBe('older');
+				expect(decoder.decode(files.get('to.md'))).toBe('moved');
+			} else {
+				expect(files.has('from.md')).toBe(false);
+				expect(decoder.decode(files.get('to.md'))).toBe('older');
+			}
 		});
 
-	test("a raw save a row editor's listener starts on hearing `saving` comes after the editor's capture", async () => {
+	test('a guarded save entered first is refused once a later save changed the bytes it names', async () => {
+		const [left, right] = [await open(), await open()];
+		const read = expectOk(await left.files.create('order.md', 'base'));
+		const held = holdNextDigest();
+		const guarded = left.files.replace(read, 'from base');
+		await held.reached;
+		expectOk(await right.files.overwrite('order.md', 'second'));
+		held.release();
+		expect(expectErr(await guarded).name).toBe('Conflict');
+		expect(decoder.decode(opfs.files(ROOT).get('order.md'))).toBe('second');
+	});
+
+	test("a row editor's write still hashing when a listener's raw save lands, lands after it and stays", async () => {
 		const folder = await open();
 		const stem = 'plan';
 		expectOk(
@@ -401,13 +417,15 @@ describe("one page's saves land in the order the page asked for them", () => {
 		if (raw === undefined) throw new Error('the listener never heard saving');
 		expectOk(await raw);
 		digest.release();
-		// The editor's capture was placed first and delivered after the raw one landed.
-		expect(expectErr(await editor.flush()).name).toBe('Unconfirmed');
-		expect(decoder.decode(opfs.files(ROOT).get(path))).toBe('raw\n');
+		// Nothing places the editor's write first: it lands last and stays.
+		expectOk(await editor.flush());
+		expect(decoder.decode(opfs.files(ROOT).get(path))).toBe(
+			editor.get().row.text,
+		);
 		stop();
 	});
 
-	test('a later save whose outcome is unknown still keeps an older one out', async () => {
+	test('a later save whose outcome is unknown does not keep an older one out', async () => {
 		const [left, right] = [await open(), await open()];
 		const held = holdNextDigest();
 		const first = left.files.overwrite('order.md', 'first');
@@ -419,8 +437,8 @@ describe("one page's saves land in the order the page asked for them", () => {
 		).toBe('Unconfirmed');
 		opfs.faults.close = undefined;
 		held.release();
-		expect(expectErr(await first).name).toBe('Unconfirmed');
-		expect(decoder.decode(opfs.files(ROOT).get('order.md'))).toBe('second');
+		expectOk(await first);
+		expect(decoder.decode(opfs.files(ROOT).get('order.md'))).toBe('first');
 	});
 
 	test('saves to other paths, and refusals that wrote nothing, do not hold anything back', async () => {

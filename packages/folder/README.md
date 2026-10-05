@@ -168,14 +168,11 @@ visible, empty, from its creation until its stream closes.
 | A stream's close threw | `Unconfirmed`, whatever the path holds afterward: matching bytes do not prove which write put them there. The path is hinted, the history observation turns stale, and no automatic commit is requested. |
 | A move landed its destination and could not remove its source | `SourceNotRemoved`. The destination is hinted. |
 
-A page's saves to one folder land in the order the page asked for them,
-across every handle and reopening in that page. A save takes its place when
-its method is called (a row editor's when a setter or Retry admits input), before it
-hashes or waits for the lock. A save that reaches a path after a later save of
-the page already landed there, or whose outcome there was unknown, writes
-nothing and returns `Unconfirmed`; the later save's bytes stay. Other pages
-are ordered by the lock alone: whichever lands last stays. Git's own writes
-under `.git` take no place in that order.
+Saves are ordered by the lock alone, not by when their methods were called.
+A save that hashes or waits longer can land after one asked for later, from
+the same page or another, and whichever lands last on a path stays. A save
+that must not overwrite bytes its caller did not review names them with
+`expectedSha256` and is refused as `Conflict` instead.
 
 ### Which directory is the folder
 
@@ -551,12 +548,14 @@ enforce no UI lifecycle. Change notifications are hints to reread,
 not new content. Subscribe before the initial read and prevent an older read
 from replacing newer input or observations. Drop or rerun a read that began
 before the latest local save settled.
-For eager autosave, serialize the application's writes: keep one in flight
-and at most one pending latest document. Rereading never triggers a save by
-itself. Adopting disk content discards pending drafts from before adoption;
-let already admitted writes settle, then reread before adopting. An
-`Unconfirmed` write remains uncertain: a read does not cancel it or prove it
-failed. The application chooses when its local save chain yields to disk.
+The folder does not order independent saves, so for eager autosave the
+application serializes its own writes: one in flight and at most one pending
+latest document, started when the running one settles. Rereading never
+triggers a save by itself. Adopting disk content discards pending drafts from
+before adoption; let already started writes settle, then reread before
+adopting. An `Unconfirmed` write remains uncertain: a read does not cancel it
+or prove it failed. The application chooses when its local saves yield to
+disk.
 See [Hints](#hints) for each adapter's observation coverage.
 
 ### Names
@@ -698,7 +697,7 @@ an undeclared key it stays in the text unreported.
 | The file changed, or went away, before publication | `Conflict` | No |
 | Storage failed | `Io` | No |
 | A rename stopped between its two steps | `Partial` | Yes: the destination holds the bytes |
-| The outcome is unknown: the desktop owner's reply was lost, a browser file's stream failed to close, or a later save of the page already landed | `Unconfirmed` | Unknown |
+| The outcome is unknown: the desktop owner's reply was lost, or a browser file's stream failed to close | `Unconfirmed` | Unknown |
 
 Each method's error type adds its own preparation failures to the shared storage family: `TableGetError`,
 `TableEnumerationError`, `TableReadError` for one listed file,
@@ -799,8 +798,8 @@ if (row.status === 'valid') {
   if (setError !== null) show(setError.message);     // Unrepresentable: nothing was accepted
 }
 setText(repairedText);                                // raw input joins the same queue
-retry();                                              // resume a failed chain with the latest input
-const { error: saveError } = await flush();           // wait for the running chain; never retries
+retry();                                              // after a failure: save the current text again
+const { error: saveError } = await flush();           // wait until no write runs; never retries
 const { error: reloadError } = await reload();        // adopt the file's text, discarding input
 ```
 
@@ -811,8 +810,8 @@ row                         the latest accepted input, always shown
 `-- invalid     { text, error }          Unencodable | NoCanonicalForm | Nonconforming
 save
 |-- idle
-|-- saving                               from admission until the chain settles
-`-- failed      { error }                FileError (Unconfirmed may have landed) | Unencodable
+|-- saving      { error? }               while a write runs; prior failure stays visible
+`-- failed      { error }                the latest attempt's FileError (Unconfirmed may have landed) | Unencodable
 ```
 
 - Acquisition. `edit` reads the row once. Readable text opens whether or not
@@ -835,34 +834,37 @@ save
   endings are not. The body is kept exactly. Acquisition and reload never
   write.
 - Publication. One write runs at a time, and the latest input accepted while
-  it runs follows it; input a newer setter replaced first is never
-  submitted. A running write is never cancelled, and its receipt never
-  replaces newer input. Each write is an unguarded `replace` of the existing
-  row: independent writers are last-publication-wins. A deletion before
-  publication yields `NotFound` without recreating the row, where storage
-  holds `replace` to that: [Files](#files) names each platform's guarantee
-  and native replacement being unavailable on Windows.
-- Failure. A failed or `Unconfirmed` write pauses the chain. Newer input,
-  including typing after the failure, is accepted and shown but not
-  attempted until `retry()`, which writes the latest input as a new attempt,
-  even when it is the text that failed. `Unconfirmed` may have landed:
-  present it as uncertainty; no later read confirms it. Raw text with a lone
-  surrogate is held as invalid and fails its turn with `Unencodable` rather
-  than writing lossy bytes.
-- `flush()` waits for the running chain, including input admitted while it
-  runs, and returns `Ok` when it ends idle or its error when it ends failed.
-  When the chain is already failed it returns that error at once. It never
-  starts a write.
-- `reload()` is the only read after acquisition. It waits for the running
-  chain to settle, failed or not, then reads the row. On success the file's
-  text becomes the row and `save` becomes `idle`: retained input and its
-  failure are discarded on purpose. A failed read is its `TableReadError` and
-  changes nothing: the row stays visible and editable. Input accepted, or a
-  `retry` admitted, after the call makes it `InputChanged`, and the newer
-  input stands. When reloads overlap, the latest call decides and the earlier
+  it runs is written when it settles, whether it saved or failed; input a
+  newer setter replaced first is never written. A running write is never
+  cancelled, and its receipt never replaces newer input. Each write is an
+  unguarded `replace` of the existing row. Nothing orders it against other
+  editors, handles, or pages: the last save to land stays, and a write that
+  hashed or travelled longer can land after a save asked for later. A
+  deletion before publication yields `NotFound` without recreating the row,
+  where storage holds `replace` to that: [Files](#files) names each
+  platform's guarantee and native replacement being unavailable on Windows.
+- Failure. `save` reports the latest attempt. A failure with input waiting
+  stays visible as `saving.error` while that input writes; a failure with nothing
+  waiting is `failed` until the next input, which saves at once and retains the error. A successful save clears the error. Nothing
+  retries on its own. `retry()` saves the current text again, even when it
+  is the text that failed, and does nothing unless `save` is `failed`.
+  `Unconfirmed` may have landed: present it as uncertainty; no later read
+  confirms it. Raw text with a lone surrogate is held as invalid and fails
+  its turn with `Unencodable` rather than writing lossy bytes.
+- `flush()` waits until no write runs or waits, through every write of input
+  accepted meanwhile, a subscriber's included. It returns `Ok` when the last
+  attempt saved and its error when it failed, at once when nothing is
+  writing. It never starts a write.
+- `reload()` is the only read after acquisition. It waits as `flush` does,
+  then reads the row. On success the file's text becomes the row and `save`
+  becomes `idle`: retained input and its failure are discarded on purpose.
+  A failed read is its `TableReadError` and changes nothing: the row stays
+  visible and editable. Input accepted after the call, the same text
+  included, or a `retry`, makes it `InputChanged`, and the newer input
+  stands. When reloads overlap, the latest call decides and the earlier
   ones settle with its result. Discarding a held `Unconfirmed` failure does
-  not confirm or cancel that earlier write; `idle` describes the new local
-  chain only.
+  not confirm or cancel that earlier write; `idle` describes later writes
+  only.
 - Subscription. `subscribe(invalidate)` makes no initial call. It hears
   changes to the snapshot in memory only: subscribing reads nothing and
   watches no change hints, and the editor never follows the file by itself.
@@ -870,9 +872,9 @@ save
   reaches no operation or other listener.
 - Retention. Methods close over the editor and never read `this`, so they
   can be destructured or passed as handlers. The application keeps the owner
-  through pending or failed publication. Before closing the folder or moving
-  the row, it stops input and awaits `flush()`; on failure it retries,
-  reloads, or releases the owner.
+  through pending or failed writes. Before closing the folder or moving the
+  row, it stops input and awaits `flush()`; on failure it retries, reloads,
+  or releases the owner.
 
 `table.update` and `table.replace` keep their own conditional,
 text-preserving contracts; the editor is the save shape for forms that own
@@ -924,9 +926,11 @@ Svelte 5.9 or later is an optional peer; no other entry loads it.
   }
 </script>
 
-{#if editor.save.status === 'failed'}
+{#if 'error' in editor.save && editor.save.error}
   <SaveFailure error={editor.save.error} />
-  <button onclick={editor.retry}>Retry</button>
+{/if}
+{#if editor.save.status === 'failed'}
+  <button onclick={editor.retry}>Save this text again</button>
 {/if}
 {#if editor.row.status === 'invalid' || rawMode}
   <textarea aria-label="Markdown source" bind:value={text, setText}></textarea>

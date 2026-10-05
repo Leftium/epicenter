@@ -21,8 +21,8 @@
  * - A page built for the previous protocol is refused at attach
  * - Two windows saving over one version: one lands, one conflicts
  * - A save the shell receives after a later save of its page landed on the
- *   same path writes nothing and is `Unconfirmed`, whether it was late in
- *   transit or still hashing, and through any handle of the page
+ *   same path lands over it and stays, whether it was late in transit or
+ *   still hashing, through any handle of the page or a row editor
  * - A row another window changed after a table's directory read is still an
  *   exact-sha256 conflict
  * - A terminal command holds nothing: another window saves, and runs a whole
@@ -810,28 +810,24 @@ describe.skipIf(!enabled)('tauri folder against the native owner', () => {
 		expect(decoder.decode(current.bytes)).toBe('landed');
 	});
 
-	test('a save the shell receives after its session saved again is refused and writes nothing', async () => {
+	test('a save the shell receives after its session saved again lands last and stays', async () => {
 		const { folder, other } = await setup({ manual: true });
 		const reached = Promise.withResolvers<void>();
 		const release = Promise.withResolvers<void>();
-		// Save 1 is numbered and held before Rust receives it.
+		// The earlier save is held before Rust receives it.
 		active().beforeApply = async () => {
 			reached.resolve();
 			await release.promise;
 		};
 		const earlier = a(() => folder.files.overwrite('order.md', 'earlier'));
 		await reached.promise;
-		// Save 2 reaches the owner first and lands. The owner refuses save 1's
-		// delivery; it cannot tell a stale save from a repeated one, so the
-		// page reports it unconfirmed.
+		// The later save reaches the owner first and lands; the earlier one
+		// then lands over it.
 		expectOk(await a(() => folder.files.overwrite('order.md', 'later')));
 		release.resolve();
-		expect(expectErr(await earlier)).toMatchObject({
-			name: 'Unconfirmed',
-			path: 'order.md',
-		});
+		expectOk(await earlier);
 		const current = expectOk(await b(() => other.files.read('order.md')));
-		expect(decoder.decode(current.bytes)).toBe('later');
+		expect(decoder.decode(current.bytes)).toBe('earlier');
 	});
 
 	/** Hold the next SHA-256 digest until released, where a slow hash leaves a save. */
@@ -859,7 +855,7 @@ describe.skipIf(!enabled)('tauri folder against the native owner', () => {
 		};
 	}
 
-	test('a save still hashing when a later save of the page lands is refused, through one handle or two', async () => {
+	test('a save still hashing when a later save of the page lands, lands after it, through one handle or two', async () => {
 		const { folder, other } = await setup({ manual: true });
 		const second = await a(async () =>
 			expectOk(await openFolder({ id: 'notes', definition })),
@@ -874,17 +870,14 @@ describe.skipIf(!enabled)('tauri folder against the native owner', () => {
 			await digest.reached;
 			expectOk(await a(() => later.files.overwrite(path, 'later')));
 			digest.release();
-			expect(expectErr(await earlier)).toMatchObject({
-				name: 'Unconfirmed',
-				path,
-			});
+			expectOk(await earlier);
 			const current = expectOk(await b(() => other.files.read(path)));
-			expect(decoder.decode(current.bytes)).toBe('later');
+			expect(decoder.decode(current.bytes)).toBe('earlier');
 		}
 		await a(() => second.close());
 	});
 
-	test("a row editor's capture still hashing when a raw save lands is refused, and the raw save stays", async () => {
+	test("a row editor's write still hashing when a raw save lands, lands after it and saves", async () => {
 		const { folder, other } = await setup({ manual: true });
 		const created = expectOk(
 			await a(() =>
@@ -897,20 +890,15 @@ describe.skipIf(!enabled)('tauri folder against the native owner', () => {
 		const editor = expectOk(
 			await a(() => folder.tables.todos.edit(created.stem)),
 		);
+		const edited = '---\n"title": "Edited"\n"done": false\n---\n';
 		const digest = holdNextDigest();
-		await a(async () =>
-			editor.setText('---\n"title": "Edited"\n"done": false\n---\n'),
-		);
+		await a(async () => editor.setText(edited));
 		await digest.reached;
 		expectOk(await a(() => folder.files.overwrite(created.path, 'raw')));
 		digest.release();
-		for (let i = 0; i < 400 && editor.get().save.status === 'saving'; i += 1)
-			await new Promise((r) => setTimeout(r, 5));
-		// The editor reports the write as uncertain, never as saved.
-		const { save } = editor.get();
-		expect(save.status === 'failed' && save.error.name).toBe('Unconfirmed');
+		expectOk(await a(() => editor.flush()));
 		const current = expectOk(await b(() => other.files.read(created.path)));
-		expect(decoder.decode(current.bytes)).toBe('raw');
+		expect(decoder.decode(current.bytes)).toBe(edited);
 	});
 
 	test('an apply delivered after detach returns the owner refusal without writing or replay', async () => {

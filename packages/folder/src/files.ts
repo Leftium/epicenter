@@ -14,7 +14,7 @@ import {
 	ownCapture,
 } from './capture.js';
 import type { CapturedMoveError, FileError } from './errors.js';
-import { applyOne, reserveSubmission } from './storage.js';
+import { applyOne } from './storage.js';
 
 /**
  * Ordinary files at literal folder-relative paths (ADR-0479).
@@ -71,17 +71,12 @@ export function createFiles({
 }: {
 	storage: FolderStorage;
 }): FolderFiles {
-	/**
-	 * Publish one write and return the capture of the bytes that were given.
-	 * Its place is reserved here, before the hash, so a later save never
-	 * overtakes it.
-	 */
+	/** Publish one write and return the capture of the bytes that were given. */
 	async function save(
 		intent: FileWriteIntent,
 	): Promise<Result<FileCapture, FileError>> {
-		const submission = reserveSubmission();
 		const sha256 = await hashBytes(intent.bytes);
-		const applied = await applyOne(storage, { ...intent, sha256 }, submission);
+		const applied = await applyOne(storage, { ...intent, sha256 });
 		return applied.error !== null
 			? applied
 			: Ok(fileCapture(intent.path, sha256));
@@ -119,23 +114,19 @@ export function createFiles({
 			const { data: captured, error: captureError } = ownCapture(file);
 			if (captureError !== null) return Promise.resolve(Err(captureError));
 			const { path, sha256 } = captured;
-			return applyOne(
-				storage,
-				{ kind: 'remove', path, expectedSha256: sha256 },
-				reserveSubmission(),
-			);
+			return applyOne(storage, { kind: 'remove', path, expectedSha256: sha256 });
 		},
 		move: async (file, destination) => {
-			const submission = reserveSubmission();
 			const { data: captured, error: captureError } = ownCapture(file);
 			if (captureError !== null) return Err(captureError);
 			const { path, sha256 } = captured;
 
-			const applied = await applyOne(
-				storage,
-				{ kind: 'move', from: path, to: destination, expectedSha256: sha256 },
-				submission,
-			);
+			const applied = await applyOne(storage, {
+				kind: 'move',
+				from: path,
+				to: destination,
+				expectedSha256: sha256,
+			});
 			// A move carries the captured bytes, so their hash is the capture's.
 			return applied.error !== null
 				? applied

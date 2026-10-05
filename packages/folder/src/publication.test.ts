@@ -15,7 +15,7 @@ import {
 } from './browser-storage.test-support.js';
 import { defineFolder } from './contract.js';
 import { ApplyError, FileError, type FileStep } from './errors.js';
-import { reserveSubmission, withPublication } from './storage.js';
+import { withPublication } from './storage.js';
 
 test('a directory move hints its uncertain destination after a completed prefix', async () => {
 	const storage = createTestStorage();
@@ -96,24 +96,21 @@ for (const failed of [
 				landed: (paths) => heard.push(...paths),
 			});
 			expect(
-				await storage.apply(
-					[
-						{
-							kind: 'overwrite',
-							path: 'confirmed.md',
-							bytes: new Uint8Array(),
-							sha256: 'confirmed',
-						},
-						failed,
-						{
-							kind: 'overwrite',
-							path: 'unattempted.md',
-							bytes: new Uint8Array(),
-							sha256: 'unattempted',
-						},
-					],
-					reserveSubmission(),
-				),
+				await storage.apply([
+					{
+						kind: 'overwrite',
+						path: 'confirmed.md',
+						bytes: new Uint8Array(),
+						sha256: 'confirmed',
+					},
+					failed,
+					{
+						kind: 'overwrite',
+						path: 'unattempted.md',
+						bytes: new Uint8Array(),
+						sha256: 'unattempted',
+					},
+				]),
 			).toBe(receipt);
 			expect(edits).toBe(1);
 			expect(commits).toBe(0);

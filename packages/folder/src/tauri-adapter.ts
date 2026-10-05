@@ -16,8 +16,9 @@
  * is returned as the refusal it is. Nothing here opens browser storage.
  *
  * Closing the handle detaches this page. File operations return their own
- * outcomes. A commit the owner already admitted finishes, and other windows carry on. Closing commits nothing: a save whose
- * automatic attempt the owner skipped stays uncommitted.
+ * outcomes. Detaching leaves the native owner and its coalesced automatic
+ * requests alive for other windows. Owner shutdown cancels waiting requests
+ * and drains checkpoints already inside protection; it makes no final commit.
  *
  * Nothing holds the folder between two commands. The terminal is the same
  * one every folder has: each step is an ordinary command, other windows'
@@ -28,17 +29,10 @@
  * report that as an ordinary failure. Anything that could have changed files
  * or history reports `Unconfirmed` and is never retried here.
  *
- * A page's saves keep the order the page asked for them in, even when they
- * finish preparing, or reach the shell, in another order. Each save carries
- * the number it reserved when its public method was entered (`storage.ts`),
- * one sequence for every handle and root of the page. The shell orders a
- * page's saves to one root by those numbers, whichever handle sent them: it
- * refuses a delivery that arrives after a save numbered at or after it
- * landed on one of its paths. That delivery wrote nothing, but it may be a
- * stale save or a second delivery of one whose first delivery landed, which
- * the shell cannot tell apart, so the save is reported `Unconfirmed`. Other
- * pages and windows are not ordered against it: the last save to land wins.
- * Directory changes are not numbered.
+ * Saves are not ordered by when their methods were called. Whichever lands
+ * last on a path stays, from any handle, page, or window, and a delivery
+ * Tauri sends again lands again. Each change's own condition still holds
+ * where the owner publishes it.
  *
  * A fast-forward that stops partway leaves the owner's incoming record
  * (ADR-0474). The snapshot reports it as `pendingIncoming`; until it is
@@ -140,9 +134,6 @@ async function call<W extends Wire<unknown, unknown>>(
 const orUndefined = <T>(value: T | null): T | undefined =>
 	value === null ? undefined : value;
 
-const SUPERSEDED =
-	'a delivery was refused by page ordering; whether an earlier delivery landed is unknown';
-
 function fileError(error: WireFileError): FileError {
 	switch (error.name) {
 		case 'InvalidPath':
@@ -167,16 +158,6 @@ function fileError(error: WireFileError): FileError {
 			return FileError.Io(error).error;
 		case 'Closed':
 			return FileError.Closed().error;
-		// This delivery wrote nothing. It may be a stale save, or Tauri's
-		// fallback delivering again a save whose first delivery landed and
-		// whose reply was lost; the owner cannot tell which. So the save is
-		// neither a success nor a definite failure.
-		case 'Superseded':
-			return FileError.Unconfirmed({
-				path: error.path,
-				operation: 'publishing to',
-				cause: SUPERSEDED,
-			}).error;
 		case 'Unconfirmed':
 			return FileError.Unconfirmed(error).error;
 		// A refusal before any write: the session the call named is not one
@@ -579,12 +560,10 @@ function createBoundary(session: number, hints: FileHints): FolderStorage {
 			if (readError !== null) return Err(readError);
 			return Ok(new Blob([found.bytes as Uint8Array<ArrayBuffer>]));
 		},
-		async apply(changes, submission) {
+		async apply(changes) {
 			const first = changes[0];
-			// The number the saving method reserved when it was entered, so a
-			// save that hashed or read longer keeps its place.
 			const result = await call(
-				commands.apply(session, submission, changes.map(changeToWire)),
+				commands.apply(session, changes.map(changeToWire)),
 			);
 			const outcome: Result<undefined, FileError | ApplyError> = !result.sent
 				? // No reply: the batch may have been published. It is sent once.
@@ -654,7 +633,7 @@ function until<T>(
 
 /**
  * History as the shell's owner reports it. The owner marks its own saves and
- * makes each one's single automatic commit attempt itself. The page exposes
+ * carries their coalesced automatic commit requests itself. The page exposes
  * history commands without repeating the owner's save accounting.
  */
 function createHistory(

@@ -153,7 +153,6 @@ fn file_error_path(error: &FileError) -> Option<String> {
         | FileError::NotADirectory { path }
         | FileError::DirectoryNotEmpty { path }
         | FileError::Io { path, .. }
-        | FileError::Superseded { path }
         | FileError::Unconfirmed { path, .. } => Some(path.clone()),
         FileError::Closed | FileError::Denied { .. } => None,
     }

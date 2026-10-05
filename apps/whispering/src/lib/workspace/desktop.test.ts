@@ -264,7 +264,6 @@ async function until(condition: () => boolean, what: string) {
 // ============================================================================
 
 test('inside a desktop app with no Whispering host, nothing is opened: no folder, no host call, no browser storage', async () => {
-	setup();
 	setup({ bridge: undefined });
 	attachable();
 
@@ -278,7 +277,6 @@ test('inside a desktop app with no Whispering host, nothing is opened: no folder
 });
 
 test('a host token does not make a browser tab the desktop app', async () => {
-	setup();
 	inShell = false;
 	setup({ bridge: { token: 'left-over-token' } });
 
@@ -631,7 +629,6 @@ test('a close question reaches the page from the host’s stream, across a recon
 });
 
 test('a close attempted with the host gone before anything listens is kept for the first listener, and closing stops hearing it', async () => {
-	setup();
 	const shell = setup({ bridge: { token: CONNECTION.token } });
 	attachable();
 	const served = host();
@@ -1036,7 +1033,6 @@ test('an obstacle that was not placed, or a host that cannot be asked, never kee
 // ============================================================================
 
 test('after a refused attach there is no session, and the person’s close is answered with proceed by the real host', async () => {
-	setup();
 	const served = await realHost();
 	globalThis.fetch = served.fetch as typeof fetch;
 	setup({ bridge: { token: CONNECTION.token } });
@@ -1078,7 +1074,6 @@ test('after a refused attach there is no session, and the person’s close is an
 });
 
 test('nothing is approved unasked: a failed opening by itself closes nothing', async () => {
-	setup();
 	const served = await realHost();
 	globalThis.fetch = served.fetch as typeof fetch;
 	const shell = setup({ bridge: { token: CONNECTION.token } });
@@ -1097,7 +1092,6 @@ test('nothing is approved unasked: a failed opening by itself closes nothing', a
 });
 
 test('after a failed opening with the host gone, the shell’s close attempt is answered with the quit address', async () => {
-	setup();
 	const shell = setup({ bridge: { token: CONNECTION.token } });
 	attachable();
 	const hostDown = Promise.withResolvers<never>();
@@ -1132,7 +1126,6 @@ test('after a failed opening with the host gone, the shell’s close attempt is 
 });
 
 test('after an opening that failed without proof, the real host approves only the person’s own Quit', async () => {
-	setup();
 	const served = await realHost();
 	globalThis.fetch = served.fetch as typeof fetch;
 	const shell = setup({ bridge: { token: CONNECTION.token } });
@@ -1156,7 +1149,6 @@ test('after an opening that failed without proof, the real host approves only th
 });
 
 test('a Quit the host cannot take also uses the quit address, and says it was not confirmed', async () => {
-	setup();
 	globalThis.fetch = (async () => {
 		throw new TypeError('Load failed');
 	}) as unknown as typeof fetch;
@@ -1176,7 +1168,6 @@ test('a Quit the host cannot take also uses the quit address, and says it was no
 });
 
 test('a desktop app that is not Whispering’s shell, and a browser tab, are asked no close question and answer none', async () => {
-	setup();
 	const requested: string[] = [];
 	globalThis.fetch = (async (input: string) => {
 		requested.push(input);

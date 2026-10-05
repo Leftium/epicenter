@@ -38,14 +38,6 @@ const NO_FOLLOW = constants.O_NOFOLLOW ?? 0;
 /** So opening something that is not a regular file can never wait for a writer. */
 const NON_BLOCKING = constants.O_NONBLOCK ?? 0;
 
-const linked = (path: string) =>
-	FileError.InvalidPath({
-		path,
-		reason: 'the path passes through a symbolic link',
-	});
-const irregular = (path: string) =>
-	FileError.InvalidPath({ path, reason: 'the path is not a regular file' });
-
 export async function readAudio(
 	root: string,
 	path: string,
@@ -77,7 +69,11 @@ export async function readAudio(
 			if (codeOf(cause) === 'ENOENT') return FileError.NotFound({ path });
 			return FileError.Io({ path, operation: 'inspect', cause });
 		}
-		if (stats.isSymbolicLink()) return linked(path);
+		if (stats.isSymbolicLink())
+			return FileError.InvalidPath({
+				path,
+				reason: 'the path passes through a symbolic link',
+			});
 		if (index < parts.length - 1) {
 			if (!stats.isDirectory())
 				return FileError.NotADirectory({
@@ -86,7 +82,11 @@ export async function readAudio(
 			continue;
 		}
 		if (stats.isDirectory()) return FileError.NotAFile({ path });
-		if (!stats.isFile()) return irregular(path);
+		if (!stats.isFile())
+			return FileError.InvalidPath({
+				path,
+				reason: 'the path is not a regular file',
+			});
 	}
 
 	let handle: Awaited<ReturnType<typeof open>>;
@@ -94,13 +94,21 @@ export async function readAudio(
 		handle = await open(current, constants.O_RDONLY | NO_FOLLOW | NON_BLOCKING);
 	} catch (cause) {
 		// A link put there after the check above is refused, not followed.
-		if (codeOf(cause) === 'ELOOP') return linked(path);
+		if (codeOf(cause) === 'ELOOP')
+			return FileError.InvalidPath({
+				path,
+				reason: 'the path passes through a symbolic link',
+			});
 		if (codeOf(cause) === 'ENOENT') return FileError.NotFound({ path });
 		return FileError.Io({ path, operation: 'open', cause });
 	}
 	try {
 		// What was opened, not what the path names now.
-		if (!(await handle.stat()).isFile()) return irregular(path);
+		if (!(await handle.stat()).isFile())
+			return FileError.InvalidPath({
+				path,
+				reason: 'the path is not a regular file',
+			});
 		return Ok(new Uint8Array(await handle.readFile()));
 	} catch (cause) {
 		return FileError.Io({ path, operation: 'read', cause });

@@ -73,8 +73,7 @@ try {
 		const app = await bounded('open local', openLocal(application));
 		const { createRecorder }: typeof import('../src/recorder.js') =
 			await import('/packages/app/src/recorder.ts');
-		const blobs = app.blobs;
-		const recorder = createRecorder({ localBlobs: blobs });
+		const recorder = createRecorder({ localBlobs: app.blobs });
 		await (
 			globalThis as unknown as { disconnectForAcceptance(): Promise<void> }
 		).disconnectForAcceptance();
@@ -95,9 +94,9 @@ try {
 		if (table.ids().length !== 0)
 			throw new Error('Capture created a row before save');
 		const row = table.create({ audioBlobId: stopped.data.blobId });
-		const bytes = await bounded('read', blobs.get(stopped.data.blobId));
+		const bytes = await bounded('read', app.blobs.get(stopped.data.blobId));
 		if (bytes.error) throw new Error(JSON.stringify(bytes.error));
-		const playback = await blobs.open(stopped.data.blobId);
+		const playback = await app.blobs.open(stopped.data.blobId);
 		if (playback.error) throw new Error(JSON.stringify(playback.error));
 		const audio = new Audio(playback.data.url);
 		await bounded('offline play', audio.play());

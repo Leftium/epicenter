@@ -139,9 +139,8 @@ export function createDesktopBrokerAuth({
 				: new Request(target, init);
 		const local = new URL('/_epicenter/account/http', brokerBaseURL);
 		local.searchParams.set('path', target.pathname + target.search);
-		const headers = remote.headers;
-		headers.delete('authorization');
-		headers.delete('cookie');
+		remote.headers.delete('authorization');
+		remote.headers.delete('cookie');
 		const signal = AbortSignal.any([lifetime.signal, remote.signal]);
 		// Reconstructing a Request turns even binary and FormData bodies into
 		// streaming uploads, which WebKit rejects. Preserve the encoded bytes
@@ -154,7 +153,7 @@ export function createDesktopBrokerAuth({
 		signal.throwIfAborted();
 		const response = await fetchImpl(local, {
 			method: remote.method,
-			headers,
+			headers: remote.headers,
 			body,
 			cache: remote.cache,
 			integrity: remote.integrity,

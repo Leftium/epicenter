@@ -25,18 +25,16 @@
 	let content = $state<HTMLElement | null>(null);
 
 	const { library } = getSession();
-	const input = library.input;
-	const capture = library.workspace.capture;
 
 	/** A recording keeps the microphone it opened, so the choice waits for it to end. */
 	const locked = $derived(library.recorder.phase !== 'idle');
-	const devices = $derived(input.list.kind === 'listed' ? input.list.devices : []);
+	const devices = $derived(library.input.list.kind === 'listed' ? library.input.list.devices : []);
 	/** Whether the choice's own ID is listed. A listed input with the same name is not it. */
-	const listed = $derived(devices.some((device) => device.deviceId === input.choice?.deviceId));
+	const listed = $derived(devices.some((device) => device.deviceId === library.input.choice?.deviceId));
 	/** Inputs are named only after access is allowed; until then enabling is the one thing to do. */
-	const unnamed = $derived(input.list.kind === 'listed' && devices.length === 0);
+	const unnamed = $derived(library.input.list.kind === 'listed' && devices.length === 0);
 	const name = $derived(
-		!input.available ? 'Fixture audio' : input.choice === undefined ? 'System default' : input.choice.label || 'Chosen microphone',
+		!library.input.available ? 'Fixture audio' : library.input.choice === undefined ? 'System default' : library.input.choice.label || 'Chosen microphone',
 	);
 
 	/**
@@ -45,14 +43,14 @@
 	 * allowed nothing is listed, and that says nothing about the choice.
 	 */
 	const warning = $derived(
-		!input.available
+		!library.input.available
 			? undefined
-			: input.denied
+			: library.input.denied
 				? 'Microphone access was denied'
-				: input.choiceListed === false
+				: library.input.choiceListed === false
 					? 'This input is not listed'
-					: input.preferenceProblem
-						? input.preferenceProblem
+					: library.input.preferenceProblem
+						? library.input.preferenceProblem
 						: undefined,
 	);
 	/** The trigger is an icon, so this is its whole name: what it is, what is chosen, and what is wrong. */
@@ -62,12 +60,12 @@
 	// Radio values: a listed ID never equals the system default's value.
 	const SYSTEM = 'system';
 	const valueOf = (deviceId: string) => `device:${deviceId}`;
-	const value = $derived(input.choice === undefined ? SYSTEM : valueOf(input.choice.deviceId));
+	const value = $derived(library.input.choice === undefined ? SYSTEM : valueOf(library.input.choice.deviceId));
 
 	function choose(next: string) {
 		const device = devices.find((item) => valueOf(item.deviceId) === next);
 		// A value that is neither is the unlisted choice itself, which is already chosen.
-		if (next === SYSTEM || device !== undefined) void input.select(device);
+		if (next === SYSTEM || device !== undefined) void library.input.select(device);
 	}
 
 	// While this is the open popover the inputs are listed. When it stops being
@@ -75,8 +73,8 @@
 	// left), whatever it was opening or testing is released.
 	$effect(() => {
 		if (!open) return;
-		untrack(() => void input.refresh());
-		return () => input.release();
+		untrack(() => void library.input.refresh());
+		return () => library.input.release();
 	});
 </script>
 
@@ -95,7 +93,7 @@
 							aria-label={summary}
 							data-testid="microphone-control"
 						>
-							<MicIcon class={cn('text-muted-foreground', !warning && input.choice && input.choiceListed === true && 'text-success brightness-75 dark:brightness-100', warning && 'text-warning')} />
+							<MicIcon class={cn('text-muted-foreground', !warning && library.input.choice && library.input.choiceListed === true && 'text-success brightness-75 dark:brightness-100', warning && 'text-warning')} />
 						</Button>
 					{/snippet}
 				</Popover.Trigger>
@@ -111,10 +109,10 @@
 		class="max-h-(--bits-popover-content-available-height) w-72 max-w-[calc(100vw-1rem)] gap-3 overflow-y-auto"
 		data-testid="microphone-popover"
 	>
-		{#if !input.available}
+		{#if !library.input.available}
 			<p class="font-medium">No real input</p>
 			<p class="text-xs text-muted-foreground" data-testid="microphone-fixture">
-				Recordings use {capture.label}. No microphone is listed, asked for, or opened.
+				Recordings use {library.workspace.capture.label}. No microphone is listed, asked for, or opened.
 			</p>
 		{:else}
 			<div class="flex items-center gap-2">
@@ -124,11 +122,11 @@
 					variant="ghost"
 					size="icon-xs"
 					aria-label="List inputs again"
-					disabled={input.listing}
-					onclick={() => void input.refresh()}
+					disabled={library.input.listing}
+					onclick={() => void library.input.refresh()}
 					data-testid="microphone-refresh"
 				>
-					{#if input.listing}<Spinner />{:else}<RefreshCwIcon />{/if}
+					{#if library.input.listing}<Spinner />{:else}<RefreshCwIcon />{/if}
 				</Button>
 			</div>
 
@@ -143,67 +141,67 @@
 						<Label for="microphone-{index}" class="min-w-0 font-normal"><span class="truncate">{device.label}</span></Label>
 					</div>
 				{/each}
-				{#if input.choice && !listed}
+				{#if library.input.choice && !listed}
 					<!-- The choice is kept as it is: it is never swapped for a microphone that happens to be listed. -->
 					<div class="flex items-center gap-2" data-testid="microphone-unlisted">
-						<RadioGroup.Item value={valueOf(input.choice.deviceId)} id="microphone-chosen" />
+						<RadioGroup.Item value={valueOf(library.input.choice.deviceId)} id="microphone-chosen" />
 						<Label for="microphone-chosen" class="min-w-0 font-normal">
-							<span class="truncate">{input.choice.label || 'Chosen microphone'}</span>
+							<span class="truncate">{library.input.choice.label || 'Chosen microphone'}</span>
 							<span class="shrink-0 text-xs text-warning">not listed</span>
 						</Label>
 					</div>
 				{/if}
 			</RadioGroup.Root>
 
-			{#if input.list.kind === 'unsupported' || input.list.kind === 'failed'}
-				<p class="text-xs text-destructive" role="alert" data-testid="microphone-list-problem">{input.list.message}</p>
+			{#if library.input.list.kind === 'unsupported' || library.input.list.kind === 'failed'}
+				<p class="text-xs text-destructive" role="alert" data-testid="microphone-list-problem">{library.input.list.message}</p>
 			{:else if locked}
 				<p class="text-xs text-muted-foreground" role="status">In use by this recording. Change it when the recording ends.</p>
-			{:else if input.choiceListed === false}
+			{:else if library.input.choiceListed === false}
 				<p class="text-xs text-warning" role="status" data-testid="microphone-unlisted-note">
 					This input is not listed. If it cannot be opened, recording will not start and no other microphone is used
 					in its place.
 				</p>
 			{:else if unnamed}
 				<p class="text-xs text-muted-foreground" data-testid="microphone-unnamed">
-					{input.list.kind === 'listed' && input.list.namesWithheld
+					{library.input.list.kind === 'listed' && library.input.list.namesWithheld
 						? 'Microphones are listed by name once you allow access.'
 						: 'No microphone is listed. Allowing access may show them.'}
 				</p>
 			{/if}
 
-			{#if input.test.phase === 'running'}
+			{#if library.input.test.phase === 'running'}
 				<div class="flex flex-col gap-1.5" data-testid="microphone-meter">
-					<Progress value={Math.round(input.level * 100)} aria-label="Input level of {input.test.label}" />
-					<p class="text-xs text-muted-foreground">Listening to {input.test.label}. Nothing is recorded.</p>
+					<Progress value={Math.round(library.input.level * 100)} aria-label="Input level of {library.input.test.label}" />
+					<p class="text-xs text-muted-foreground">Listening to {library.input.test.label}. Nothing is recorded.</p>
 				</div>
 			{/if}
-			{#if input.problem}
-				<p class="text-xs text-destructive" role="alert" data-testid="microphone-problem">{input.problem}</p>
+			{#if library.input.problem}
+				<p class="text-xs text-destructive" role="alert" data-testid="microphone-problem">{library.input.problem}</p>
 			{/if}
-			{#if input.preferenceProblem}
-				<p class="text-xs text-destructive" role="alert">Microphone setting: {input.preferenceProblem}</p>
+			{#if library.input.preferenceProblem}
+				<p class="text-xs text-destructive" role="alert">Microphone setting: {library.input.preferenceProblem}</p>
 			{/if}
 
 			<!-- One action at a time: enabling while nothing is named, otherwise the test. -->
-			{#if input.test.phase !== 'idle'}
-				<Button size="sm" variant="outline" onclick={() => input.release()} data-testid="microphone-test-stop">
-					{#if input.test.phase === 'opening'}<Spinner class="size-3.5" />{/if}
+			{#if library.input.test.phase !== 'idle'}
+				<Button size="sm" variant="outline" onclick={() => library.input.release()} data-testid="microphone-test-stop">
+					{#if library.input.test.phase === 'opening'}<Spinner class="size-3.5" />{/if}
 					Stop test
 				</Button>
 			{:else if unnamed}
 				<Button
 					size="sm"
 					tooltip="Opens the default microphone for a moment. Nothing is recorded."
-					disabled={locked || input.allowing}
-					onclick={() => void input.allow()}
+					disabled={locked || library.input.allowing}
+					onclick={() => void library.input.allow()}
 					data-testid="microphone-enable"
 				>
-					{#if input.allowing}<Spinner class="size-3.5" />{/if}
+					{#if library.input.allowing}<Spinner class="size-3.5" />{/if}
 					Enable microphones
 				</Button>
 			{:else}
-				<Button size="sm" variant="outline" disabled={locked || input.allowing} onclick={() => void input.startTest()} data-testid="microphone-test">
+				<Button size="sm" variant="outline" disabled={locked || library.input.allowing} onclick={() => void library.input.startTest()} data-testid="microphone-test">
 					Test microphone
 				</Button>
 			{/if}

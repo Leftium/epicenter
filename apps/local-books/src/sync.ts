@@ -211,11 +211,14 @@ export async function syncRealm(
 		}
 	}
 
-	const backfill = await fullPullEach(deps, newNames, cursorAfter, {
-		backfilled: true,
-	});
-	const entities = backfill.entities;
-	const failures = backfill.failures;
+	const { entities, failures } = await fullPullEach(
+		deps,
+		newNames,
+		cursorAfter,
+		{
+			backfilled: true,
+		},
+	);
 
 	let changes: Record<string, QbObject[]> = {};
 	if (cdcNames.length > 0) {

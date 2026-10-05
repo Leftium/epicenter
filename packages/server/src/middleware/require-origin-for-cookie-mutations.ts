@@ -19,9 +19,11 @@ import { RequestGuardError } from './request-guard-errors.js';
  */
 export const requireOriginForCookieMutations = createMiddleware<Env>(
 	async (c, next) => {
-		const method = c.req.method;
-		if (method === 'GET' || method === 'HEAD' || method === 'OPTIONS') {
-			return next();
+		switch (c.req.method) {
+			case 'GET':
+			case 'HEAD':
+			case 'OPTIONS':
+				return next();
 		}
 		if (parseBearer(c.req.header('authorization') ?? null)) return next();
 		const origin = c.req.header('origin');

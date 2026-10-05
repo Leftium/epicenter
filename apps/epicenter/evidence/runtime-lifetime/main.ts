@@ -75,8 +75,7 @@ try {
 			if (app.persistence.get() !== 'saved')
 				throw new Error('marker was not committed');
 		}
-		const sqlite = app.sqlite;
-		const database = unwrap(await sqlite.open('lifetime'));
+		const database = unwrap(await app.sqlite.open('lifetime'));
 		unwrap(
 			await database.run(
 				'CREATE TABLE IF NOT EXISTS markers (value INTEGER PRIMARY KEY)',

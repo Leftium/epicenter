@@ -34,10 +34,9 @@ export function mountSessionApp<E extends Env = Env>(
 			tags: ['auth'],
 		}),
 		async (c: Context<Env>) => {
-			const principal = c.var.principal;
 			return c.json({
-				principalId: principal.id,
-				email: principal.email,
+				principalId: c.var.principal.id,
+				email: c.var.principal.email,
 			} satisfies ApiSessionResponse);
 		},
 	);

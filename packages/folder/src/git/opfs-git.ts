@@ -1010,11 +1010,10 @@ export function createOpfsGitStore({
 			return refused('record the incoming update', cause);
 		}
 
-		const changes = plan.changes;
 		const applied = await applyInOrder(
-			changes.filter((change) => change.kind === 'remove'),
+			plan.changes.filter((change) => change.kind === 'remove'),
 			admitted.emptied,
-			changes.filter((change) => change.kind !== 'remove'),
+			plan.changes.filter((change) => change.kind !== 'remove'),
 		);
 		if (applied.status === 'failed') {
 			if (applied.unknown !== undefined)

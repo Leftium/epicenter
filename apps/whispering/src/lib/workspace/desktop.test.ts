@@ -15,12 +15,13 @@
  * real request handler and a real directory, with a stubbed endpoint.
  */
 import '../svelte-modules.test-support.js';
-import { afterEach, beforeEach, expect, mock, test } from 'bun:test';
+import { afterEach, expect, mock, test } from 'bun:test';
 import { createHash } from 'node:crypto';
 import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { expectErr, expectOk } from 'wellcrafted/testing';
+import type { GitSnapshot } from '../../../../../packages/folder/src/native/bindings.gen.js';
 import { createHost, type HostOptions } from '../../../native/host.js';
 import { encode } from '../bridge/codec.js';
 import { toneWav } from '../capture.js';
@@ -62,25 +63,30 @@ const ROOT = '/Users/someone/Epicenter/local/so.epicenter.whispering';
 const SCOPE = 'so.epicenter.whispering';
 const CONNECTION = { origin: 'http://127.0.0.1:4999', token: 'test-token' };
 
-const snapshot = () => ({
-	branch: 'main',
-	remote: null,
-	commitOnEdit: true,
-	pendingIncoming: null,
-	files: { state: 'unknown', error: null },
-	sync: { state: 'unknown', error: null },
-	activity: Object.fromEntries(
-		['scan', 'commit', 'push', 'fetch', 'pull'].map((name) => [
-			name,
-			{ active: false },
-		]),
-	),
-	lastCommit: null,
-	lastPush: null,
-	lastFetch: null,
-	lastPull: null,
-	closed: false,
-});
+const snapshot = () =>
+	({
+		branch: 'main',
+		remote: null,
+		commitOnEdit: true,
+		pendingIncoming: null,
+		files: { state: 'unknown', error: null },
+		sync: { state: 'unknown', error: null },
+		activity: {
+			scan: { active: false },
+			commit: { active: false },
+			push: { active: false },
+			fetch: { active: false },
+			pull: { active: false },
+			merge: { active: false },
+		},
+		lastCommit: null,
+		lastPush: null,
+		lastFetch: null,
+		lastPull: null,
+		lastMerge: null,
+		merging: null,
+		closed: false,
+	}) satisfies GitSnapshot;
 
 /** A shell whose owner has the folder registered for this window. */
 function attachable(root = ROOT) {
@@ -170,7 +176,11 @@ afterEach(async () => {
  * token: the token, the page's origin, the shell's page events, and where the
  * page was told to navigate.
  */
-function page(bridge: { token: string } | undefined) {
+function setup(
+	{ bridge }: { bridge: { token: string } | undefined } = {
+		bridge: { token: CONNECTION.token },
+	},
+) {
 	const scope = globalThis as { window?: unknown; location?: unknown };
 	const events = new EventTarget();
 	const navigations: string[] = [];
@@ -199,12 +209,6 @@ function page(bridge: { token: string } | undefined) {
 			events.dispatchEvent(new Event('whispering:close-blocked')),
 	};
 }
-
-// Every test starts as a page in Whispering's shell; a test that is about
-// another kind of page replaces this.
-beforeEach(() => {
-	page({ token: CONNECTION.token });
-});
 
 /**
  * The real host over a real directory, reached through its own request
@@ -260,7 +264,8 @@ async function until(condition: () => boolean, what: string) {
 // ============================================================================
 
 test('inside a desktop app with no Whispering host, nothing is opened: no folder, no host call, no browser storage', async () => {
-	page(undefined);
+	setup();
+	setup({ bridge: undefined });
 	attachable();
 
 	const refused = expectErr(await openWorkspace());
@@ -273,8 +278,9 @@ test('inside a desktop app with no Whispering host, nothing is opened: no folder
 });
 
 test('a host token does not make a browser tab the desktop app', async () => {
+	setup();
 	inShell = false;
-	page({ token: 'left-over-token' });
+	setup({ bridge: { token: 'left-over-token' } });
 
 	const refused = expectErr(await openWorkspace());
 
@@ -287,6 +293,7 @@ test('a host token does not make a browser tab the desktop app', async () => {
 });
 
 test('a browser folder that is refused is returned as that refusal', async () => {
+	setup();
 	// This process has no origin private file system, as a server render has none.
 	inShell = false;
 	const none = expectErr(await openBrowserWorkspace());
@@ -310,6 +317,7 @@ test('a browser folder that is refused is returned as that refusal', async () =>
 // ============================================================================
 
 test('a host that does not answer is the refusal, and the shell is not asked for a folder', async () => {
+	setup();
 	attachable();
 	const requested: string[] = [];
 
@@ -331,6 +339,7 @@ test('a host that does not answer is the refusal, and the shell is not asked for
 });
 
 test('the page names the folder by its ID and nothing else, and shows the directory the owner reports', async () => {
+	setup();
 	attachable();
 	const served = host();
 
@@ -352,6 +361,7 @@ test('the page names the folder by its ID and nothing else, and shows the direct
 });
 
 test('a refusal from the shell’s owner is returned, and nothing is opened in its place', async () => {
+	setup();
 	for (const refusal of [
 		{ name: 'UnknownScope', scope: SCOPE },
 		{ name: 'WindowNotPermitted', scope: SCOPE, window: 'other' },
@@ -385,6 +395,7 @@ test('a refusal from the shell’s owner is returned, and nothing is opened in i
 });
 
 test('a host that uses another directory than the owner’s is refused, and the window detaches', async () => {
+	setup();
 	attachable('/Users/someone/elsewhere');
 	const served = host();
 
@@ -404,6 +415,7 @@ test('a host that uses another directory than the owner’s is refused, and the 
 // ============================================================================
 
 test('saves and history go to the shell’s owner and never to the host', async () => {
+	setup();
 	attachable();
 	Object.assign(replies, {
 		apply: () => null,
@@ -440,6 +452,7 @@ test('saves and history go to the shell’s owner and never to the host', async 
 });
 
 test('a row save whose reply the shell never sent stays unknown, and later input starts another save', async () => {
+	setup();
 	attachable();
 	const disk = new Map<string, Uint8Array>([
 		[
@@ -518,6 +531,7 @@ test('a row save whose reply the shell never sent stays unknown, and later input
 });
 
 test('a change the owner announces, from the terminal or any other program, tells the page to read again', async () => {
+	setup();
 	attachable();
 	const served = host({
 		terminal: () => ({
@@ -569,6 +583,7 @@ test('a change the owner announces, from the terminal or any other program, tell
 // ============================================================================
 
 test('a close question reaches the page from the host’s stream, across a reconnect, and one that came early is not lost', async () => {
+	setup();
 	attachable();
 	const served = host({ close: () => ({ closing: false }) });
 	const workspace = expectOk(
@@ -616,7 +631,8 @@ test('a close question reaches the page from the host’s stream, across a recon
 });
 
 test('a close attempted with the host gone before anything listens is kept for the first listener, and closing stops hearing it', async () => {
-	const shell = page({ token: CONNECTION.token });
+	setup();
+	const shell = setup({ bridge: { token: CONNECTION.token } });
 	attachable();
 	const served = host();
 	const workspace = expectOk(
@@ -651,6 +667,7 @@ test('a close attempted with the host gone before anything listens is kept for t
 });
 
 test('a host that stops answering does not close the folder: the page keeps saving and keeps trying the stream', async () => {
+	setup();
 	attachable();
 	Object.assign(replies, { apply: () => null });
 	let hostUp = true;
@@ -693,6 +710,7 @@ test('a host that stops answering does not close the folder: the page keeps savi
 // ============================================================================
 
 test('a failed transcription call is a Result, and the next call still works', async () => {
+	setup();
 	attachable();
 	let transcribeCalls = 0;
 	const asked: unknown[] = [];
@@ -743,6 +761,7 @@ test('a failed transcription call is a Result, and the next call still works', a
 });
 
 test('a failed transformation call is a Result, and the next call still works', async () => {
+	setup();
 	attachable();
 	let transformCalls = 0;
 	const asked: unknown[] = [];
@@ -790,6 +809,7 @@ test('a failed transformation call is a Result, and the next call still works', 
 // ============================================================================
 
 test('the chosen microphone is kept by the host beside the connections, survives a new window, and never brings a key back', async () => {
+	setup();
 	const served = await realHost();
 	attachable(served.root);
 	const usb = { deviceId: 'usb-id', label: 'USB Microphone' };
@@ -831,6 +851,7 @@ test('the chosen microphone is kept by the host beside the connections, survives
 });
 
 test('a choice the host cannot save is returned as the reason, and one it cannot read rejects', async () => {
+	setup();
 	attachable();
 	const served = host();
 	const workspace = expectOk(
@@ -847,6 +868,7 @@ test('a choice the host cannot save is returned as the reason, and one it cannot
 });
 
 test('with fixture audio the workspace has no microphone input to list, ask for, or test', async () => {
+	setup();
 	attachable();
 	const served = host(
 		{},
@@ -867,6 +889,7 @@ test('with fixture audio the workspace has no microphone input to list, ask for,
 // ============================================================================
 
 test('a release shell offers no failure injection, and asks the host for none', async () => {
+	setup();
 	attachable();
 	const served = host();
 
@@ -881,6 +904,7 @@ test('a release shell offers no failure injection, and asks the host for none', 
 });
 
 test('a debug shell tells the host the folder is open only after the owner attached it, and wraps each recording write in its own obstacle', async () => {
+	setup();
 	attachable();
 	const order: string[] = [];
 	const attach = replies.attach!;
@@ -951,6 +975,7 @@ test('a debug shell tells the host the folder is open only after the owner attac
 });
 
 test('an obstacle that was not placed, or a host that cannot be asked, never keeps a recording write from being made', async () => {
+	setup();
 	attachable();
 	let obstructs: 'none' | 'fault' = 'none';
 	const removed: unknown[] = [];
@@ -1011,9 +1036,10 @@ test('an obstacle that was not placed, or a host that cannot be asked, never kee
 // ============================================================================
 
 test('after a refused attach there is no session, and the person’s close is answered with proceed by the real host', async () => {
+	setup();
 	const served = await realHost();
 	globalThis.fetch = served.fetch as typeof fetch;
-	page({ token: CONNECTION.token });
+	setup({ bridge: { token: CONNECTION.token } });
 	const refusedAttach = Promise.withResolvers<never>();
 	replies = { attach: () => refusedAttach.promise };
 
@@ -1052,9 +1078,10 @@ test('after a refused attach there is no session, and the person’s close is an
 });
 
 test('nothing is approved unasked: a failed opening by itself closes nothing', async () => {
+	setup();
 	const served = await realHost();
 	globalThis.fetch = served.fetch as typeof fetch;
-	const shell = page({ token: CONNECTION.token });
+	const shell = setup({ bridge: { token: CONNECTION.token } });
 	attachable('/Users/someone/elsewhere');
 
 	const mounted = mountSession();
@@ -1070,7 +1097,8 @@ test('nothing is approved unasked: a failed opening by itself closes nothing', a
 });
 
 test('after a failed opening with the host gone, the shell’s close attempt is answered with the quit address', async () => {
-	const shell = page({ token: CONNECTION.token });
+	setup();
+	const shell = setup({ bridge: { token: CONNECTION.token } });
 	attachable();
 	const hostDown = Promise.withResolvers<never>();
 	globalThis.fetch = (() => hostDown.promise) as unknown as typeof fetch;
@@ -1104,9 +1132,10 @@ test('after a failed opening with the host gone, the shell’s close attempt is 
 });
 
 test('after an opening that failed without proof, the real host approves only the person’s own Quit', async () => {
+	setup();
 	const served = await realHost();
 	globalThis.fetch = served.fetch as typeof fetch;
-	const shell = page({ token: CONNECTION.token });
+	const shell = setup({ bridge: { token: CONNECTION.token } });
 	// The failure is not one that proves anything was released, as when the
 	// desktop workspace's own module cannot be loaded.
 	const mounted = mountSession(async () => {
@@ -1127,10 +1156,11 @@ test('after an opening that failed without proof, the real host approves only th
 });
 
 test('a Quit the host cannot take also uses the quit address, and says it was not confirmed', async () => {
+	setup();
 	globalThis.fetch = (async () => {
 		throw new TypeError('Load failed');
 	}) as unknown as typeof fetch;
-	const shell = page({ token: CONNECTION.token });
+	const shell = setup({ bridge: { token: CONNECTION.token } });
 	const mounted = mountSession(async () => {
 		throw new Error('Failed to fetch dynamically imported module');
 	});
@@ -1146,6 +1176,7 @@ test('a Quit the host cannot take also uses the quit address, and says it was no
 });
 
 test('a desktop app that is not Whispering’s shell, and a browser tab, are asked no close question and answer none', async () => {
+	setup();
 	const requested: string[] = [];
 	globalThis.fetch = (async (input: string) => {
 		requested.push(input);
@@ -1153,7 +1184,7 @@ test('a desktop app that is not Whispering’s shell, and a browser tab, are ask
 	}) as unknown as typeof fetch;
 
 	// Inside another desktop app: no host token was injected.
-	const embedded = page(undefined);
+	const embedded = setup({ bridge: undefined });
 	const inApp = mountSession();
 	expect(expectErr(await inApp.opening).name).toBe('HostMissing');
 	// Nothing to quit through, so no Quit is offered.
@@ -1164,7 +1195,7 @@ test('a desktop app that is not Whispering’s shell, and a browser tab, are ask
 
 	// A browser tab that somehow carries a token: the browser owns leaving.
 	inShell = false;
-	const tab = page({ token: 'left-over-token' });
+	const tab = setup({ bridge: { token: 'left-over-token' } });
 	const inTab = mountSession();
 	expect(expectErr(await inTab.opening).name).toBe('BrowserFolder');
 	expect(inTab.quit).toBeUndefined();
@@ -1182,6 +1213,7 @@ test('a desktop app that is not Whispering’s shell, and a browser tab, are ask
 // ============================================================================
 
 test('a lost host reply after the endpoint was called is reported as unknown, never as not sent, and nothing is sent again', async () => {
+	setup();
 	const provider = { transcriptions: 0, completions: 0 };
 	const served = await realHost({
 		env: {

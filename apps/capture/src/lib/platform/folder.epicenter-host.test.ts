@@ -43,7 +43,10 @@ import {
 	HOST_STOPPED_EVENT,
 } from '@epicenter/epicenter/departure';
 import { expectOk } from 'wellcrafted/testing';
-import type { FileChange as Change } from '../../../../../packages/folder/src/native/bindings.gen.js';
+import type {
+	FileChange as Change,
+	GitSnapshot,
+} from '../../../../../packages/folder/src/native/bindings.gen.js';
 import fixture from '../../../fixtures/legacy-bundle.json';
 import { CAPTURE_FOLDER_ID } from './types.js';
 
@@ -68,26 +71,31 @@ let nextSession = 1;
 const hashOf = (bytes: Uint8Array): string =>
 	new Bun.CryptoHasher('sha256').update(bytes).digest('hex');
 
-const wireSnapshot = (overridden: Record<string, unknown> = {}) => ({
-	branch: 'main',
-	remote: null,
-	commitOnEdit: true,
-	pendingIncoming: null,
-	files: { state: 'unknown', error: null },
-	sync: { state: 'unknown', error: null },
-	activity: Object.fromEntries(
-		['scan', 'commit', 'push', 'fetch', 'pull'].map((name) => [
-			name,
-			{ active: false },
-		]),
-	),
-	lastCommit: null,
-	lastPush: null,
-	lastFetch: null,
-	lastPull: null,
-	closed: false,
-	...overridden,
-});
+const wireSnapshot = (overridden: Partial<GitSnapshot> = {}) =>
+	({
+		branch: 'main',
+		remote: null,
+		commitOnEdit: true,
+		pendingIncoming: null,
+		files: { state: 'unknown', error: null },
+		sync: { state: 'unknown', error: null },
+		activity: {
+			scan: { active: false },
+			commit: { active: false },
+			push: { active: false },
+			fetch: { active: false },
+			pull: { active: false },
+			merge: { active: false },
+		},
+		lastCommit: null,
+		lastPush: null,
+		lastFetch: null,
+		lastPull: null,
+		lastMerge: null,
+		merging: null,
+		closed: false,
+		...overridden,
+	}) satisfies GitSnapshot;
 
 /** A Rust `Err` rejects with the error value itself, not an `Error`. */
 const refuse = (error: unknown): never => {
@@ -345,7 +353,7 @@ test('the page names the Capture scope and is told the directory', async () => {
 
 	expect(sent('attach')[0]?.args).toEqual({
 		scope: 'so.epicenter.capture',
-		protocol: 7,
+		protocol: 8,
 	});
 	expect(host.location).toEqual({ kind: 'directory', root: ROOT });
 	await host.close();

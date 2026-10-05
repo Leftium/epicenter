@@ -15,6 +15,7 @@
  * scripts them.
  */
 import { createHash } from 'node:crypto';
+import type { GitSnapshot } from '../../../../../packages/folder/src/native/bindings.gen.js';
 
 type Call = Record<string, unknown>;
 
@@ -30,25 +31,30 @@ export type WireChange =
 	| { kind: 'remove'; path: string; expectedSha256?: string | null }
 	| { kind: 'move'; from: string; to: string; expectedSha256?: string | null };
 
-const snapshot = () => ({
-	pendingIncoming: null,
-	branch: 'main',
-	remote: null,
-	commitOnEdit: true,
-	files: { state: 'unknown', error: null },
-	sync: { state: 'unknown', error: null },
-	activity: Object.fromEntries(
-		['scan', 'commit', 'push', 'fetch', 'pull'].map((name) => [
-			name,
-			{ active: false },
-		]),
-	),
-	lastCommit: null,
-	lastPush: null,
-	lastFetch: null,
-	lastPull: null,
-	closed: false,
-});
+const snapshot = () =>
+	({
+		pendingIncoming: null,
+		branch: 'main',
+		remote: null,
+		commitOnEdit: true,
+		files: { state: 'unknown', error: null },
+		sync: { state: 'unknown', error: null },
+		activity: {
+			scan: { active: false },
+			commit: { active: false },
+			push: { active: false },
+			fetch: { active: false },
+			pull: { active: false },
+			merge: { active: false },
+		},
+		lastCommit: null,
+		lastPush: null,
+		lastFetch: null,
+		lastPull: null,
+		lastMerge: null,
+		merging: null,
+		closed: false,
+	}) satisfies GitSnapshot;
 
 const sha256 = (bytes: Uint8Array) =>
 	createHash('sha256').update(bytes).digest('hex');

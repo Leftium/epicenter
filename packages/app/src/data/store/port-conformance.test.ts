@@ -23,10 +23,11 @@ import { installTestLocks } from '@epicenter/device/test-locks';
 installTestLocks();
 
 import { Database } from 'bun:sqlite';
-import { beforeEach, describe, expect, test } from 'bun:test';
+import { describe, expect, test } from 'bun:test';
 import { createBunSqliteAdapter } from '@epicenter/sqlite/bun';
 import * as Y from '@y/y';
 import type { Logger } from 'wellcrafted/logger';
+import { expectOk } from 'wellcrafted/testing';
 import { openIdbBacking } from './browser.js';
 import { createRow, readRow, tableRoot, updateRow } from './document.js';
 import { createSqliteDurablePort, replay } from './log.js';
@@ -87,8 +88,7 @@ const indexedDbEngine: Engine = {
 				factory: indexedDB,
 				keyRange: IDBKeyRange,
 			});
-			if (opened.error !== null) throw opened.error;
-			return opened.data;
+			return expectOk(opened);
 		};
 		return {
 			commit: async (ops) => {
@@ -105,12 +105,6 @@ const indexedDbEngine: Engine = {
 };
 
 const ENGINES = [sqliteEngine, indexedDbEngine];
-
-/** A distinct label per test, so IndexedDB's process-global store is not shared. */
-let counter = 0;
-beforeEach(() => {
-	counter += 1;
-});
 
 /**
  * One update that sets a marker attribute, written the way the store itself
@@ -160,21 +154,25 @@ function readValue(chain: readonly Uint8Array[]): unknown {
 	return value;
 }
 
-let nextId = 0;
-const append = (text: string, authoritySeq?: number) => {
-	nextId += 1;
-	return {
-		kind: 'append',
-		id: nextId,
-		bytes: update(text),
-		authoritySeq,
-	} satisfies DurableOp;
-};
+async function setup(engine: Engine) {
+	const record = await engine.create(crypto.randomUUID());
+	let nextId = 0;
+	const append = (text: string, authoritySeq?: number) => {
+		nextId += 1;
+		return {
+			kind: 'append',
+			id: nextId,
+			bytes: update(text),
+			authoritySeq,
+		} satisfies DurableOp;
+	};
+	return { record, append, nextId: () => ++nextId };
+}
 
 for (const engine of ENGINES) {
 	describe(`DurablePort conformance: ${engine.name}`, () => {
 		test('an append survives a reopen', async () => {
-			const record = await engine.create(`append-${counter}`);
+			const { record, append } = await setup(engine);
 			await record.commit([append('one')]);
 
 			const { loaded } = await record.reopen();
@@ -182,7 +180,7 @@ for (const engine of ENGINES) {
 		});
 
 		test('an append with no position is owed, and one with a position is not', async () => {
-			const record = await engine.create(`owed-${counter}`);
+			const { record, append } = await setup(engine);
 			const owed = append('mine');
 			const received = append('theirs', 9);
 			await record.commit([owed, received]);
@@ -196,7 +194,7 @@ for (const engine of ENGINES) {
 		});
 
 		test('an ack retires the work it names AND records where it landed', async () => {
-			const record = await engine.create(`ack-${counter}`);
+			const { record, append } = await setup(engine);
 			const first = append('a');
 			const second = append('b');
 			await record.commit([first, second]);
@@ -221,7 +219,7 @@ for (const engine of ENGINES) {
 		});
 
 		test('a repeated ack does not restamp work a later ack already took', async () => {
-			const record = await engine.create(`reack-${counter}`);
+			const { record, append } = await setup(engine);
 			const only = append('a');
 			await record.commit([only]);
 			await record.commit([
@@ -243,7 +241,7 @@ for (const engine of ENGINES) {
 		});
 
 		test('a folded chain replays to the same value, and leaves owed work alone', async () => {
-			const record = await engine.create(`fold-${counter}`);
+			const { record, nextId } = await setup(engine);
 			// Past the fold threshold, all acknowledged, so the whole prefix is
 			// foldable. Then one owed append on top, which the fold must not
 			// touch: it is a suffix by construction, because ids only go up.
@@ -253,10 +251,9 @@ for (const engine of ENGINES) {
 			// client id.
 			const written = chain(71);
 			const numbered = written.map((bytes, index) => {
-				nextId += 1;
 				return {
 					kind: 'append' as const,
-					id: nextId,
+					id: nextId(),
 					bytes,
 					// Everything but the last is acknowledged, so the foldable
 					// prefix is 70 and the owed suffix is 1.
@@ -277,15 +274,14 @@ for (const engine of ENGINES) {
 		});
 
 		test('merged owed work replays the same and leaves one owed row', async () => {
-			const record = await engine.create(`merge-${counter}`);
+			const { record, nextId } = await setup(engine);
 			// Three owed appends, no authority position on any of them, which is
 			// what an offline replica accumulates.
 			const written = chain(3);
 			const numbered = written.map((bytes) => {
-				nextId += 1;
 				return {
 					kind: 'append' as const,
-					id: nextId,
+					id: nextId(),
 					bytes,
 					authoritySeq: undefined,
 				};
@@ -294,8 +290,7 @@ for (const engine of ENGINES) {
 
 			// The merge the store would enqueue: the same bytes, one row, at an
 			// id above every one it replaces.
-			nextId += 1;
-			const merged = nextId;
+			const merged = nextId();
 			await record.commit([
 				{
 					kind: 'mergeOwed',
@@ -316,16 +311,15 @@ for (const engine of ENGINES) {
 		});
 
 		test('an ack naming replaced ids redelivers rather than losing work', async () => {
-			const record = await engine.create(`merge-race-${counter}`);
+			const { record, nextId } = await setup(engine);
 			// The race the id rule exists for. A submission goes out naming ids
 			// through the second append; before its acknowledgement lands, a
 			// third append arrives and a merge collapses all three.
 			const written = chain(3);
 			const numbered = written.map((bytes) => {
-				nextId += 1;
 				return {
 					kind: 'append' as const,
-					id: nextId,
+					id: nextId(),
 					bytes,
 					authoritySeq: undefined,
 				};
@@ -333,8 +327,7 @@ for (const engine of ENGINES) {
 			await record.commit(numbered);
 			const sentThrough = (numbered[1] as { id: number }).id;
 
-			nextId += 1;
-			const merged = nextId;
+			const merged = nextId();
 			await record.commit([
 				{
 					kind: 'mergeOwed',
@@ -361,7 +354,7 @@ for (const engine of ENGINES) {
 		});
 
 		test("the controller's mirror agrees with the record it mirrors", async () => {
-			const record = await engine.create(`mirror-${counter}`);
+			const { record } = await setup(engine);
 			const opened = await record.reopen();
 			const controller = createPersistenceController({
 				assertUsable: () => undefined,
@@ -397,13 +390,12 @@ for (const engine of ENGINES) {
 			// those two numbers disagree, and ADR-0301 made that state ordinary:
 			// a device offline long enough has a long chain that is almost
 			// entirely owed.
-			const record = await engine.create(`owed-chain-${counter}`);
+			const { record, nextId } = await setup(engine);
 			const written = chain(70);
 			const numbered = written.map((bytes, index) => {
-				nextId += 1;
 				return {
 					kind: 'append' as const,
-					id: nextId,
+					id: nextId(),
 					bytes,
 					// A short acknowledged prefix under a long owed suffix: the
 					// chain is 70, and only 10 rows may be folded.
@@ -421,22 +413,20 @@ for (const engine of ENGINES) {
 			expect(loaded.cursor).toBe(1);
 		});
 
-		test('a batch is all or nothing', async () => {
-			const record = await engine.create(`atomic-${counter}`);
+		test('appends and acknowledgements in one batch persist in order', async () => {
+			const { record, nextId } = await setup(engine);
 			// One document's two successive updates, so the replayed value is
 			// the later one rather than whichever won a last-writer race.
 			const [first, second] = chain(2) as [Uint8Array, Uint8Array];
-			nextId += 1;
 			const one: DurableOp = {
 				kind: 'append',
-				id: nextId,
+				id: nextId(),
 				bytes: first,
 				authoritySeq: undefined,
 			};
-			nextId += 1;
 			const two: DurableOp = {
 				kind: 'append',
-				id: nextId,
+				id: nextId(),
 				bytes: second,
 				authoritySeq: undefined,
 			};
@@ -456,7 +446,7 @@ for (const engine of ENGINES) {
 			expect(loaded.lastId).toBe(two.id);
 		});
 		test('a failed fold rolls back every append in its batch', async () => {
-			const record = await engine.create(`failed-fold-${counter}`);
+			const { record } = await setup(engine);
 			const updates = chain(63);
 			updates.push(new Uint8Array([255]));
 			await expect(

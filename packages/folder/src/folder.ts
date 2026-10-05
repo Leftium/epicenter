@@ -4,14 +4,17 @@
  * `tables`, `kv`, and `files` publish through one file boundary, one file
  * change per operation. A caller that needs several changes makes several
  * calls; each one that succeeded stays published when a later one fails.
- * `git` observes and records history. A complete content save makes one
- * automatic commit attempt when the folder's history policy says so.
+ * `git` observes and records history. A complete content save requests an
+ * automatic commit when the folder's history policy says so. Requests made
+ * before a checkpoint starts share that checkpoint.
  *
- * Closing fences new file work and history requests and stops network work
- * at once. Each file operation owns its completion promise. Closing does not wait
- * for file helpers; storage applications already started return their actual
- * outcome. History work drains before storage is released. Closing makes no
- * last commit.
+ * Closing fences new file work and this handle's history requests at once.
+ * Browser and Bun handles cancel pending history and network work, then drain
+ * admitted Git work. A desktop handle detaches its page; the shared native
+ * owner continues until owner shutdown cancels pending work and drains
+ * admitted checkpoints. Each file operation owns its completion promise.
+ * Closing does not wait for file helpers; storage applications already started
+ * return their actual outcome. Closing makes no last commit.
  */
 import type { CreateRowOf, KvOf } from '@epicenter/definition';
 import type { Result } from 'wellcrafted/result';
@@ -69,9 +72,10 @@ export type FolderGit = {
 	/**
 	 * Commit, then push. `signal` only stops this caller waiting
 	 * (`stoppedWaiting`): a commit or transport that already started keeps
-	 * running, and closing the folder is what aborts owned network work. In a
-	 * browser or directory folder, a push or fetch that had not started when
-	 * its caller left is never started. The same holds for `push` and `fetch`.
+	 * running. Closing a browser or directory folder aborts owned network
+	 * work. Closing a desktop handle stops this page waiting; a transport the
+	 * native owner already started finishes there. A push or fetch withdrawn
+	 * before it starts never starts. The same holds for `push` and `fetch`.
 	 */
 	commitAndPush(options?: {
 		signal?: AbortSignal;
@@ -347,7 +351,7 @@ export function assembleFolder<TDefinition extends FolderDefinition>({
 			// Give them this completion before notifying either one.
 			closing = completion.promise;
 			void (async () => {
-				// Fence new file work, stop hints, and cancel network work now.
+				// Fence new file work and hints, then close this handle's history.
 				controller.abort();
 				hints.close();
 				await history.close();

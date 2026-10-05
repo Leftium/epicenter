@@ -203,10 +203,11 @@ export type StagedCommit = {
 	/** Set when the commit finished a merge: its second parent, `MERGE_HEAD`. */
 	readonly incoming?: string;
 	/**
-	 * The merge commit landed, but Git's merge state could not be removed.
-	 * `snapshot.merging` still shows it; the next staged commit removes it
-	 * once it confirms the branch names this commit, whose parents are
-	 * `ORIG_HEAD` and `MERGE_HEAD`.
+	 * The merge commit landed, but removing its metadata failed. While
+	 * `MERGE_HEAD` remains, `snapshot.merging` shows the merge and the next
+	 * staged commit retries cleanup if the branch names a commit with exactly
+	 * `ORIG_HEAD` and `MERGE_HEAD` as its parents. A leftover `MERGE_MSG` alone
+	 * does not keep a merge in progress.
 	 */
 	readonly mergeStateWarning?: string;
 };
@@ -1511,7 +1512,7 @@ export function createHistory({
 	 * nothing, while any path is still unmerged or while the branch names
 	 * another commit (`currentMerge`). Merge state is removed only after the
 	 * branch moved; a removal that fails is reported with the commit, and the
-	 * next staged commit retries it.
+	 * next staged commit retries cleanup while `MERGE_HEAD` remains.
 	 */
 	async function commitStaged(
 		message: string,

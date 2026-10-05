@@ -1,7 +1,7 @@
 //! What the folder owner reports about history.
 //!
 //! These are the native counterparts of the types in
-//! `packages/app/src/files/git/history.ts`, and they are the wire contract:
+//! `packages/folder/src/git/history.ts`, and they are the wire contract:
 //! the TypeScript bindings are generated from them. They carry object IDs,
 //! paths, and reasons, never file bytes, so a status or commit response stays
 //! small however much audio the folder holds.
@@ -414,9 +414,10 @@ pub struct StagedCommit {
     pub parent: Option<String>,
     /// Set when the commit finished a merge: its second parent.
     pub incoming: Option<String>,
-    /// The merge commit landed, but Git's merge state could not be removed.
-    /// The next staged commit removes it once it confirms the branch holds
-    /// `incoming`.
+    /// The merge commit landed, but removing its metadata failed. While
+    /// `MERGE_HEAD` remains, the next staged commit retries cleanup if the
+    /// branch names a commit with exactly `ORIG_HEAD` and `MERGE_HEAD` as
+    /// its parents. A leftover `MERGE_MSG` alone does not keep a merge active.
     pub merge_state_warning: Option<String>,
 }
 

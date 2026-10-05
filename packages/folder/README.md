@@ -104,9 +104,10 @@ openFolder({
 }): Promise<Result<Folder, OpenFolderError>>
 ```
 
-`browser` applies to a browser folder only. A browser folder commits under a
-local author by default and commits each save automatically; a `remote` needs
-an explicit `author`. In the desktop app the shell owns the directory, the
+`browser` applies to a browser folder only. A browser folder uses a local
+author by default. Complete saves request automatic commits; requests made
+before a checkpoint starts share it. A `remote` needs an explicit `author`.
+In the desktop app the shell owns the directory, the
 author, the remote, and the history policy. The policy in effect is on
 `folder.git.snapshot` either way.
 
@@ -1445,13 +1446,14 @@ unknown. The Bun directory writes this commit's tree and commit as objects
 rather than running `git commit`, which would take whatever `HEAD` names, so
 no commit hooks run for it.
 
-If that removal fails, the commit is still reported, with
-`mergeStateWarning`, and `snapshot.merging` stays visible. The next staged
-commit removes merge state when the branch names exactly that merge commit,
+If that removal fails, the commit is still reported with `mergeStateWarning`.
+While `MERGE_HEAD` remains, `snapshot.merging` stays visible. The next staged
+commit removes that state when the branch names exactly the merge commit,
 whose parents are `ORIG_HEAD` and `MERGE_HEAD`, so it never becomes the
 second parent of another commit. A branch that only contains the incoming
 commit is not taken for it; that state stays for a person to finish or
-repair. There is no abort operation.
+repair. A leftover `MERGE_MSG` alone does not keep a merge in progress.
+There is no abort operation.
 
 Unmerged index stages with no `MERGE_HEAD`, as when merge state was removed
 by hand or damaged, also block whole-folder and automatic commits: a
@@ -1589,8 +1591,9 @@ opens it, and `testBrowserStorage()` does both in one call.
 
 A reference field has no integrity: nothing checks its target, and rename
 repairs no references. `kv.update`
-writes each value it assigns as compact JSON. Browser bytes are stored whole, and every commit
-or status check reads and hashes the whole folder. Version checks on disk are best effort
+writes each value it assigns as compact JSON. Browser bytes are stored whole.
+A whole-folder checkpoint or status scan reads and hashes the whole folder.
+Version checks on disk are best effort
 against other programs. File bytes cross the desktop bridge as JSON number
 arrays, which is slow for large audio.
 
@@ -1621,6 +1624,6 @@ collection.
 
 Git keeps raw storage because incoming fast-forwards update files and history
 under their own policy. They must not trigger an automatic commit as a new
-local save. Every public save reserves its place in the page's order when it
-is called and passes it to `apply`. Terminal writes apply separately; a
+local save. Saves are not ordered by when their methods were called: the last
+to land on a path wins. Terminal writes apply separately; a
 recursive removal or directory move applies its captured file steps together.

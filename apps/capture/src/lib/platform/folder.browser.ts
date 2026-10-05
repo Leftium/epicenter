@@ -20,8 +20,8 @@ export const openCaptureHost: OpenCaptureHost = async () => {
 	const { data: folder, error } = await openFolder({
 		id: CAPTURE_FOLDER_ID,
 		definition: captureDefinition,
-		// History stays in this browser: a local author, a commit after each
-		// save, and no remote to push to.
+		// Complete saves request local history; pending requests coalesce.
+		// History stays in this browser, with no remote to push to.
 		browser: {
 			author: { name: 'Capture', email: 'capture@localhost' },
 			commitOnEdit: true,

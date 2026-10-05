@@ -115,12 +115,6 @@
 		sourceField?.focus();
 	}
 
-	function addThought(event: SubmitEvent) {
-		event.preventDefault();
-		draft.addThought();
-		newThoughtField?.focus();
-	}
-
 	function saveEdit(index: number) {
 		if (draft.commitEditing()) void focusThought(index);
 	}
@@ -128,12 +122,6 @@
 	function cancelEdit(index: number) {
 		draft.cancelEditing();
 		void focusThought(index);
-	}
-
-	function startEdit(thought: Thought) {
-		draft.startEditing(thought);
-		// The editor takes focus as it appears; the menu must not take it back.
-		afterMenu = () => {};
 	}
 
 	function move(thought: Thought, to: number) {
@@ -334,7 +322,11 @@
 												{/snippet}
 											</DropdownMenu.Trigger>
 											<DropdownMenu.Content align="end" class="w-48" onCloseAutoFocus={onMenuClosed}>
-												<DropdownMenu.Item disabled={draft.editing !== undefined} onclick={() => startEdit(thought)}>Edit</DropdownMenu.Item>
+												<DropdownMenu.Item disabled={draft.editing !== undefined} onclick={() => {
+													draft.startEditing(thought);
+													// The editor takes focus as it appears; the menu must not take it back.
+													afterMenu = () => {};
+												}}>Edit</DropdownMenu.Item>
 												<DropdownMenu.Item disabled={index === 0} onclick={() => move(thought, index - 1)}>Move up</DropdownMenu.Item>
 												<DropdownMenu.Item disabled={index === document.thoughts.length - 1} onclick={() => move(thought, index + 1)}>Move down</DropdownMenu.Item>
 												<DropdownMenu.Separator />
@@ -350,7 +342,11 @@
 					</ol>
 				{/if}
 
-				<form onsubmit={addThought} class="flex flex-col gap-2">
+				<form onsubmit={(event) => {
+					event.preventDefault();
+					draft.addThought();
+					newThoughtField?.focus();
+				}} class="flex flex-col gap-2">
 					<Field.Field>
 						<Field.Label for="new-thought">Add a thought</Field.Label>
 						<Textarea

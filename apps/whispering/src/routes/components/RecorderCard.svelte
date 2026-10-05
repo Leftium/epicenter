@@ -17,12 +17,10 @@
 	 */
 	let { library }: { library: Library } = $props();
 
-	const recorder = $derived(library.recorder);
-	const device = $derived(library.workspace.capture);
-	const active = $derived(recorder.phase === 'recording');
-	const pending = $derived(recorder.phase === 'starting' || recorder.phase === 'stopping');
+	const active = $derived(library.recorder.phase === 'recording');
+	const pending = $derived(library.recorder.phase === 'starting' || library.recorder.phase === 'stopping');
 	const label = $derived(
-		{ idle: 'Start recording', starting: 'Starting…', recording: 'Stop recording', stopping: 'Finishing…' }[recorder.phase],
+		{ idle: 'Start recording', starting: 'Starting…', recording: 'Stop recording', stopping: 'Finishing…' }[library.recorder.phase],
 	);
 
 	/**
@@ -90,12 +88,12 @@
 	</Button>
 
 	<p class="flex h-8 items-center gap-2 text-sm text-muted-foreground @md/recorder:col-span-full @md/recorder:row-start-2">
-		{#if recorder.phase === 'recording'}
+		{#if library.recorder.phase === 'recording'}
 			<span class="size-2 rounded-full bg-destructive" aria-hidden="true"></span>
-			<span class="text-2xl font-semibold text-foreground"><RecorderClock startedAt={recorder.startedAt} /></span>
-		{:else if recorder.phase === 'starting'}
+			<span class="text-2xl font-semibold text-foreground"><RecorderClock startedAt={library.recorder.startedAt} /></span>
+		{:else if library.recorder.phase === 'starting'}
 			Starting…
-		{:else if recorder.phase === 'stopping'}
+		{:else if library.recorder.phase === 'stopping'}
 			Saving the audio…
 		{:else}
 			Click to record. Click again to save.
@@ -120,9 +118,9 @@
 <!-- Always mounted so the start of a recording is announced. The clock stays outside it: it changes every second. -->
 <span class="sr-only" role="status">{active ? 'Recording' : ''}</span>
 
-{#if device.source === 'fixture'}
+{#if library.workspace.capture.source === 'fixture'}
 	<p class="text-center text-xs text-balance text-warning" data-testid="fixture-notice">
-		Fixture mode: recordings use {device.label}. The microphone is not used.
+		Fixture mode: recordings use {library.workspace.capture.label}. The microphone is not used.
 	</p>
 {/if}
 

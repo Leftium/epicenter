@@ -41,9 +41,7 @@
 		onToggleTerminal: () => void;
 	} = $props();
 
-	const workspace = $derived(library.workspace);
 	const files = $derived(filesLineOf(library));
-	const recorder = $derived(library.recorder);
 	/** The home page has the large recorder; every other page gets this compact one. */
 	const onHome = $derived(page.route.id === '/');
 	const uncommitted = $derived(uncommittedLine(library.git));
@@ -85,18 +83,18 @@
 	}
 
 	async function reveal() {
-		const problem = await workspace.reveal?.();
+		const problem = await library.workspace.reveal?.();
 		if (problem) toast.error('Could not open the folder', { description: problem });
 	}
 
 	// Debug controls: paused autosave everywhere they are offered, injected failures on the desktop.
 	let injection = $state<InjectionState | undefined>();
 	async function loadInjection() {
-		injection = await workspace.injection?.state().catch(() => undefined);
+		injection = await library.workspace.injection?.state().catch(() => undefined);
 	}
 	async function arm(change: Partial<InjectionState>) {
 		try {
-			injection = await workspace.injection?.arm(change);
+			injection = await library.workspace.injection?.arm(change);
 		} catch (cause) {
 			toast.error('Could not change the failure', {
 				description: cause instanceof Error ? cause.message : String(cause),
@@ -106,21 +104,21 @@
 </script>
 
 <header class="flex h-12 shrink-0 items-center gap-1.5 border-b px-2 sm:gap-2 sm:px-3">
-	{#if workspace.capture.source === 'fixture'}
+	{#if library.workspace.capture.source === 'fixture'}
 		<Badge variant="outline" class="shrink-0 border-warning text-warning" data-testid="fixture-badge">Fixture<span class="max-sm:sr-only">&nbsp;audio</span></Badge>
 	{/if}
 
 	<!-- A live recording is visible and stoppable from every page. -->
-	{#if recorder.phase === 'recording'}
+	{#if library.recorder.phase === 'recording'}
 		<Button variant="destructive" size="sm" class="shrink-0" onclick={() => void library.stopRecording()} data-testid="header-stop-recording">
 			<SquareIcon class="fill-current" />
 			<span class="max-sm:sr-only">Stop</span>
-			<RecorderClock startedAt={recorder.startedAt} />
+			<RecorderClock startedAt={library.recorder.startedAt} />
 		</Button>
-	{:else if recorder.phase !== 'idle'}
+	{:else if library.recorder.phase !== 'idle'}
 		<span class="flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground" role="status">
 			<Spinner class="size-3.5" />
-			{recorder.phase === 'starting' ? 'Starting…' : 'Finishing…'}
+			{library.recorder.phase === 'starting' ? 'Starting…' : 'Finishing…'}
 		</span>
 	{:else if !onHome}
 		<Button variant="ghost" size="icon-sm" tooltip="Start recording" aria-label="Start recording" onclick={() => void library.startRecording()} data-testid="header-start-recording">
@@ -167,7 +165,7 @@
 				{/each}
 				<div class="grid grid-cols-[5.5rem_1fr] gap-x-3 px-3 py-2">
 					<dt class="text-xs text-muted-foreground">Folder</dt>
-					<dd class="min-w-0 font-mono text-xs break-all" data-testid="status-folder">{workspace.location}</dd>
+					<dd class="min-w-0 font-mono text-xs break-all" data-testid="status-folder">{library.workspace.location}</dd>
 				</div>
 			</dl>
 			<div class="flex items-center gap-2 border-t px-3 py-2">
@@ -181,7 +179,7 @@
 	</Popover.Root>
 
 	<div class="ml-auto flex shrink-0 items-center gap-1">
-		{#if workspace.debugControls}
+		{#if library.workspace.debugControls}
 			<Popover.Root onOpenChange={(open) => open && void loadInjection()}>
 				<Popover.Trigger>
 					{#snippet child({ props })}
@@ -203,7 +201,7 @@
 						>
 							{library.autosave.paused ? 'Autosave is paused: resume' : 'Pause autosave (keep typing unsaved)'}
 						</Button>
-						{#if workspace.injection}
+						{#if library.workspace.injection}
 							<Button size="sm" variant="outline" onclick={() => void arm({ rowWrites: (injection?.rowWrites ?? 0) + 1 })} data-testid="inject-row">
 								Fail the next recording file write (audio lands) · armed {injection?.rowWrites ?? 0}
 							</Button>
@@ -245,8 +243,8 @@
 			</Popover.Content>
 		</Popover.Root>
 
-		{#if workspace.reveal}
-			<Button variant="ghost" size="sm" tooltip={workspace.location} onclick={reveal} data-testid="reveal-folder">
+		{#if library.workspace.reveal}
+			<Button variant="ghost" size="sm" tooltip={library.workspace.location} onclick={reveal} data-testid="reveal-folder">
 				<FolderOpenIcon />
 				<span class="max-md:sr-only">Reveal folder</span>
 			</Button>

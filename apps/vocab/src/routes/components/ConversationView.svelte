@@ -25,12 +25,6 @@
 	// The account the shell opened the tutor's connections with.
 	const account = auth.getState().account;
 
-	/** A successful start leaves this page for the sign-in page. */
-	async function signIn() {
-		const { error } = await auth.startSignIn();
-		if (error !== null) toast.error('Could not sign in', { description: error.message });
-	}
-
 	let {
 		chatId,
 		messages,
@@ -77,11 +71,6 @@
 	});
 	onDestroy(() => chat[Symbol.dispose]());
 
-	/** Land a dictated transcript in the draft for review. */
-	function appendTranscript(text: string) {
-		const draft = chat.inputValue.trim();
-		chat.inputValue = draft ? `${draft} ${text}` : text;
-	}
 	const lastMessage = $derived(chat.messages.at(-1));
 	const unsavedIds = $derived(new Set(chat.unsaved.map((unsaved) => unsaved.id)));
 </script>
@@ -177,7 +166,10 @@
 	{#if chat.error?.code === 'Unauthorized'}
 		<div role="alert" class="flex items-center justify-between border-t px-3 py-2 text-xs text-destructive">
 			<span>This model needs you to sign in. Your words and chats stay as they are.</span>
-			<Button variant="ghost" size="sm" onclick={signIn}>Sign in</Button>
+			<Button variant="ghost" size="sm" onclick={async () => {
+				const { error } = await auth.startSignIn();
+				if (error !== null) toast.error('Could not sign in', { description: error.message });
+			}}>Sign in</Button>
 		</div>
 	{:else if chat.error?.code === 'InsufficientCredits'}
 		<div role="alert" class="flex items-center justify-between border-t px-3 py-2 text-xs text-destructive">
@@ -203,7 +195,10 @@
 		<p class="px-3 pb-1 text-xs text-muted-foreground">Choose a model to chat. Connect your own endpoint in the picker{account ? '' : ", or sign in for Epicenter's hosted models"}.</p>
 	{/if}
 	<form class="flex items-end gap-1.5 border-t bg-background px-2 py-1.5" aria-label="Chat message" aria-busy={chat.isSaving} onsubmit={(event) => { event.preventDefault(); void chat.sendMessage(); }}>
-		{#if visible && catalog.ai.account}<DictationButton {catalog} disabled={chat.isGenerating} onTranscript={appendTranscript} />{/if}
+		{#if visible && catalog.ai.account}<DictationButton {catalog} disabled={chat.isGenerating} onTranscript={(text) => {
+			const draft = chat.inputValue.trim();
+			chat.inputValue = draft ? `${draft} ${text}` : text;
+		}} />{/if}
 		<Textarea
 			class="min-h-0 max-h-32 flex-1 resize-none overflow-y-auto"
 			rows={1}

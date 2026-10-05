@@ -7,18 +7,6 @@ async function forwardRequest(request, pathWithSearch) {
 	return await fetch(`https://${API_HOST}${pathWithSearch}`, originRequest);
 }
 
-async function handleRequest(request, ctx) {
-	const url = new URL(request.url);
-	const pathname = url.pathname;
-	const search = url.search;
-	const pathWithParams = pathname + search;
-
-	if (pathname.startsWith('/static/')) {
-		return retrieveStatic(request, pathWithParams, ctx);
-	}
-	return forwardRequest(request, pathWithParams);
-}
-
 async function retrieveStatic(request, pathname, ctx) {
 	let response = await caches.default.match(request);
 	if (!response) {
@@ -30,6 +18,11 @@ async function retrieveStatic(request, pathname, ctx) {
 
 export default {
 	async fetch(request, _env, ctx) {
-		return handleRequest(request, ctx);
+		const url = new URL(request.url);
+		const pathWithSearch = url.pathname + url.search;
+		if (url.pathname.startsWith('/static/')) {
+			return retrieveStatic(request, pathWithSearch, ctx);
+		}
+		return forwardRequest(request, pathWithSearch);
 	},
 };

@@ -114,9 +114,7 @@ export function prepareData<TDefinition extends DataDefinition>(
  */
 export function prepareSchema<
 	TSchema extends DataSchema & { readonly id?: never },
->(
-	value: TSchema,
-): Result<TSchema, DataDefinitionParseError> {
+>(value: TSchema): Result<TSchema, DataDefinitionParseError> {
 	return memoised(preparedSchemas, value, prepareIdentityFree) as Result<
 		TSchema,
 		DataDefinitionParseError
@@ -257,8 +255,14 @@ function prepareFields(
 		});
 	const fields: Record<string, TSchema & object> = Object.create(null);
 	for (const [fieldName, declared] of Object.entries(declaration)) {
-		const invalid = fieldNameProblem(tableName, fieldName);
-		if (invalid !== undefined) return invalid;
+		if (
+			fieldName.toLowerCase() === 'id' ||
+			!/^[A-Za-z!][A-Za-z0-9_!]*$/.test(fieldName)
+		) {
+			return DataDefinitionParseError.Malformed({
+				reason: `field name '${tableName}.${fieldName}' is not usable`,
+			});
+		}
 		if (!isPlainObject(declared)) {
 			return DataDefinitionParseError.UnrecognizedField({
 				table: tableName,
@@ -267,7 +271,11 @@ function prepareFields(
 			});
 		}
 		const field = trySync({
-			try: () => prepareField(declared),
+			try: () => {
+				const { schema, callbacks } = snapshot(declared);
+				validations.set(schema, { validator: Compile(schema), callbacks });
+				return schema;
+			},
 			catch: (cause) =>
 				DataDefinitionParseError.UnrecognizedField({
 					table: tableName,
@@ -302,16 +310,6 @@ type Validation = {
  * preparation's validator.
  */
 const validations = new WeakMap<object, Validation>();
-
-/**
- * Snapshot one declared schema and compile the snapshot. Throws when TypeBox
- * cannot compile it. No value is validated here, so no callback runs.
- */
-function prepareField(declared: object): TSchema & object {
-	const { schema, callbacks } = snapshot(declared);
-	validations.set(schema, { validator: Compile(schema), callbacks });
-	return schema;
-}
 
 /**
  * The validation of a prepared schema.
@@ -581,21 +579,6 @@ function snapshot(declared: object): {
 			pending.push(Object.getOwnPropertyDescriptor(value, key)?.value);
 	}
 	return { schema, callbacks };
-}
-
-function fieldNameProblem(
-	tableName: string,
-	fieldName: string,
-): Result<never, DataDefinitionParseError> | undefined {
-	if (
-		fieldName.toLowerCase() === 'id' ||
-		!/^[A-Za-z!][A-Za-z0-9_!]*$/.test(fieldName)
-	) {
-		return DataDefinitionParseError.Malformed({
-			reason: `field name '${tableName}.${fieldName}' is not usable`,
-		});
-	}
-	return undefined;
 }
 
 /** Check both conversion verbs at the runtime definition boundary. */

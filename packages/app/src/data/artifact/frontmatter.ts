@@ -42,11 +42,10 @@ export function frontmatter(fields: JsonObject): string {
 
 function yamlValue(value: JsonValue | undefined): string {
 	if (value === undefined || value === null) return 'null';
-	if (typeof value === 'string') return JSON.stringify(value);
 	if (typeof value === 'number' || typeof value === 'boolean') {
 		return String(value);
 	}
-	// Arrays and objects: JSON is valid YAML flow style, and exact.
+	// Quoted strings, arrays, and objects use their exact JSON representation.
 	return JSON.stringify(value);
 }
 

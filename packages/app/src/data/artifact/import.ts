@@ -155,7 +155,7 @@ export function readArtifact(
 				tableName: at.table,
 				rowId: at.rowId,
 				path,
-				data: file.fields,
+				fields: file.fields,
 				body: file.body,
 			});
 			if (error !== null) return { data: null, error };
@@ -188,7 +188,7 @@ function admitRow({
 	tableName,
 	rowId,
 	path,
-	data,
+	fields,
 	body,
 }: {
 	database: Y.Doc;
@@ -196,7 +196,7 @@ function admitRow({
 	tableName: string;
 	rowId: string;
 	path: string;
-	data: JsonObject;
+	fields: JsonObject;
 	body: string;
 }): Result<void, ImportError> {
 	const root = tableRoot(database, tableName);
@@ -206,7 +206,6 @@ function admitRow({
 	// naming a field never meant its data was gone (ADR-0240, ADR-0125). No
 	// value is checked on the way in. Conformance is one decision, made once,
 	// at read, for every row from every direction.
-	const fields = { ...data };
 	let node: Y.Node | undefined;
 
 	if (codec === undefined && body !== '') {

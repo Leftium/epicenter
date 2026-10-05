@@ -377,26 +377,19 @@ export function createHistory({
 	const listeners = new Set<(snapshot: GitSnapshot) => void>();
 	let snapshot: GitSnapshot;
 
-	function activity(runner: { active: boolean }): Activity {
-		return { active: runner.active };
-	}
-
 	function emit() {
-		const { capturedAt: _capturedAt, ...publicFiles } =
-			files as typeof files & {
-				capturedAt?: number;
-			};
+		const { capturedAt: _capturedAt, ...publicFiles } = files;
 		snapshot = Object.freeze({
 			branch: backend.branch,
 			remote: backend.remote,
 			commitOnEdit,
-			files: publicFiles as Observation<FilesObservation>,
+			files: publicFiles,
 			sync,
 			activity: {
-				scan: activity(scanRunner),
+				scan: { active: scanRunner.active },
 				commit: { active: running.commit > 0 },
-				push: activity(pushRunner),
-				fetch: activity(fetchRunner),
+				push: { active: pushRunner.active },
+				fetch: { active: fetchRunner.active },
 				pull: { active: running.pull > 0 },
 				merge: { active: running.merge > 0 },
 			},
@@ -686,7 +679,6 @@ export function createHistory({
 		trigger: 'explicit' | 'automatic',
 	): Promise<CommitOutcome | undefined> {
 		return exclusive(async (): Promise<CommitOutcome | undefined> => {
-			if (closing.signal.aborted) return { status: 'closed' };
 			const pending = answered < requested;
 			answered = requested;
 			if (!pending && trigger === 'automatic') return undefined;
@@ -834,22 +826,9 @@ export function createHistory({
 				giveUp(through);
 				outcome = failedCommit(cause);
 			}
-			if (outcome.status === 'closed') return outcome;
 			await settleCommit(outcome);
 			return outcome;
 		});
-	}
-
-	/**
-	 * Ask for an automatic commit, and start this handle's one worker unless
-	 * it is alive. The worker is claimed before `owned` reports it, so a
-	 * listener that saves or closes from that report finds it already there.
-	 */
-	function requestAutomatic() {
-		requested++;
-		if (automatic) return;
-		automatic = true;
-		void owned('commit', automaticCommits);
 	}
 
 	/**
@@ -870,8 +849,8 @@ export function createHistory({
 					giveUp(through);
 					outcome = failedCommit(cause);
 				}
-				// Nothing was left to answer, or the folder closed.
-				if (outcome === undefined || outcome.status === 'closed') continue;
+				// An explicit checkpoint already answered these requests.
+				if (outcome === undefined) continue;
 				await settleCommit(outcome);
 			}
 		} finally {
@@ -1684,7 +1663,12 @@ export function createHistory({
 		 */
 		requestAutomaticCommit() {
 			if (!commitOnEdit || closing.signal.aborted) return;
-			requestAutomatic();
+			requested++;
+			if (automatic) return;
+			// Claim the worker before `owned` reports it: a listener that saves
+			// or closes from that report must find it already there.
+			automatic = true;
+			void owned('commit', automaticCommits);
 		},
 		status: (): Promise<Result<FilesObservation, GitError>> =>
 			scanRunner.follow(),
@@ -1760,7 +1744,6 @@ export function createHistory({
 			guarded('diff', () => exclusive(() => backend.diff(options))),
 		log: (depth: number): Promise<Result<CommitSummary[], GitError>> =>
 			guarded('log', () => backend.log(depth)),
-		beginClose,
 		/**
 		 * Resolve once nothing of this handle still uses storage: the commits,
 		 * pulls, and other Git operations already inside the backend's

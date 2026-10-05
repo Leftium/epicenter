@@ -895,13 +895,13 @@ test('closing waits for an attempt already inside the protection, refuses a comm
 		// Asked for before closing, still waiting behind the held attempt.
 		const waiting = history.commit();
 
-		history.beginClose();
+		const closing = history.close();
 		expect(history.snapshot.closed).toBe(true);
 		expect(await waiting).toEqual({ status: 'closed' });
 		expect(await history.commit()).toEqual({ status: 'closed' });
 		expect((await history.status()).error?.name).toBe('Closed');
 		let closed = false;
-		const closing = history.close().then(() => {
+		void closing.then(() => {
 			closed = true;
 		});
 		// A save that lands after closing began asks for nothing.

@@ -150,8 +150,11 @@ async function acquireLocalData(
 		if (reopenError !== null) return Err(reopenError);
 		backing = reopenedBacking;
 	}
-	const held = backing;
-	return Ok({ durable: held.port, loaded: held.loaded, dispose: held.close });
+	return Ok({
+		durable: backing.port,
+		loaded: backing.loaded,
+		dispose: backing.close,
+	});
 }
 
 /** Acquire storage under the caller's exclusive store admission. */

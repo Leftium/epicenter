@@ -90,7 +90,7 @@ export async function readIdbUpdates(
 	// One pass over the chain answers everything the snapshot holds, which
 	// is the shape of the collapse: the outbox and the cursor are read off
 	// the appends rather than kept beside them.
-	const stored: { id: number; bytes: Uint8Array }[] = [];
+	const updates: Uint8Array[] = [];
 	const outbox: OutboxEntry[] = [];
 	let cursor = 0;
 	let lastId = 0;
@@ -101,13 +101,13 @@ export async function readIdbUpdates(
 	// nothing and cost a second whole document on every boot, because the
 	// baseline row IS the whole document.
 	//
-	// One array per row, shared by `stored` and `outbox`: an owed row
+	// One array per row, shared by `updates` and `outbox`: an owed row
 	// appears in both and neither ever writes through it.
 	for (const [index, row] of rows.entries()) {
 		const id = ids[index] as number;
 		if (id > lastId) lastId = id;
 		const bytes = row.bytes;
-		stored.push({ id, bytes });
+		updates.push(bytes);
 		if (row.authoritySeq === null) {
 			// NULL means owed, on every store kind (ADR-0301). A store with
 			// no authority records `NO_AUTHORITY` on its own appends, so it
@@ -126,13 +126,12 @@ export async function readIdbUpdates(
 	// doubt the line above it does not share. The fold and `held` depend
 	// on it too. One dependency, stated once.
 
-	const loaded: DurableSnapshot = {
-		updates: stored.map((row) => row.bytes),
+	return {
+		updates,
 		outbox,
 		cursor,
 		lastId,
 	};
-	return loaded;
 }
 
 export function createIdbUpdates(

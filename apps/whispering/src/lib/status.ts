@@ -130,9 +130,9 @@ export function filesLineOf(library: {
 	readonly unsavedTransformations: number;
 	readonly unsavedTextResults: number;
 }): StatusLine {
-	const published = library.pending.filter(
-		(item) => item.state.kind === 'published',
-	).length;
+	let published = 0;
+	for (const item of library.pending)
+		if (item.state.kind === 'published') published++;
 	return filesLine({
 		saving: library.saving,
 		problems: library.saveProblems,

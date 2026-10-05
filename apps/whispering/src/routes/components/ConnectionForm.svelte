@@ -19,9 +19,7 @@
 
 	const { library, settings } = getSession();
 	const draft = $derived(settings[operation]);
-	const saved = $derived(draft.saved);
 	const readOnly = $derived(draft.readOnlyReason !== undefined);
-	const legacy = $derived(library.legacySettings);
 	const id = $derived(`connection-${operation}`);
 
 	const copy = {
@@ -49,8 +47,8 @@
 <form class="flex flex-col gap-3 text-sm" onsubmit={save} data-testid={id}>
 	<p class="font-medium">{copy[operation].title}</p>
 	<p class="text-xs text-muted-foreground" data-testid="{id}-status">
-		{#if saved}
-			Set up: {saved.baseUrl} · {saved.model || 'no default model'} · {saved.keyPresent ? 'with a key' : 'no key'}.
+		{#if draft.saved}
+			Set up: {draft.saved.baseUrl} · {draft.saved.model || 'no default model'} · {draft.saved.keyPresent ? 'with a key' : 'no key'}.
 		{:else}
 			Not set up. Nothing is sent until you save it.
 		{/if}
@@ -59,9 +57,9 @@
 	{#if draft.readOnlyReason}
 		<p class="text-xs text-muted-foreground">{draft.readOnlyReason}</p>
 	{/if}
-	{#if operation === 'transcription' && !saved && legacy.transcriptionBaseUrl}
+	{#if operation === 'transcription' && !draft.saved && library.legacySettings.transcriptionBaseUrl}
 		<p class="text-xs text-muted-foreground" data-testid="legacy-settings">
-			This folder’s kv.json names {legacy.transcriptionBaseUrl}{legacy.transcriptionModel ? ` and ${legacy.transcriptionModel}` : ''}, saved by an earlier
+			This folder’s kv.json names {library.legacySettings.transcriptionBaseUrl}{library.legacySettings.transcriptionModel ? ` and ${library.legacySettings.transcriptionModel}` : ''}, saved by an earlier
 			version. They fill in the form; nothing is sent there until you save.
 		</p>
 	{/if}
@@ -78,7 +76,7 @@
 	{#if !readOnly}
 		<div class="flex flex-col gap-1">
 			<span class="text-xs text-muted-foreground">API key</span>
-			{#if saved?.keyPresent}
+			{#if draft.saved?.keyPresent}
 				<RadioGroup.Root
 					value={draft.keyAction}
 					onValueChange={(next) => (draft.keyAction = next as KeyAction)}
@@ -93,11 +91,11 @@
 					{/each}
 				</RadioGroup.Root>
 			{/if}
-			{#if !saved?.keyPresent || draft.keyAction === 'replace'}
+			{#if !draft.saved?.keyPresent || draft.keyAction === 'replace'}
 				<Input
 					type="password"
 					bind:value={draft.key}
-					placeholder={saved?.keyPresent ? 'The new key' : 'Optional for a local endpoint'}
+					placeholder={draft.saved?.keyPresent ? 'The new key' : 'Optional for a local endpoint'}
 					autocomplete="off"
 					data-testid="{id}-key"
 				/>

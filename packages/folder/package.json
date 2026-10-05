@@ -9,13 +9,17 @@
 		"./browser": "./src/browser.ts",
 		"./tauri": "./src/tauri.ts",
 		"./bun": "./src/bun.ts",
-		"./file-browser": "./src/file-browser.ts"
+		"./file-browser": "./src/file-browser.ts",
+		"./svelte": "./src/svelte/row-editor.svelte.ts"
 	},
 	"scripts": {
-		"typecheck": "tsc --noEmit",
-		"test": "bun test --isolate",
+		"typecheck": "svelte-check --tsconfig ./tsconfig.json",
+		"test": "bun run build:addon && bun test --isolate --path-ignore-patterns='src/svelte/**' && bun run test:svelte",
+		"test:svelte": "bun test --isolate --conditions=browser src/svelte",
+		"bench": "bun --conditions=browser src/svelte/row-editor.bench.ts",
 		"test:native": "EPICENTER_FOLDER_BRIDGE=1 bun test --isolate src/tauri-native.test.ts",
-		"gen:vectors": "bun src/git/commit-subject-vectors.ts"
+		"gen:vectors": "bun src/git/commit-subject-vectors.ts",
+		"build:addon": "bun scripts/build-addon.ts"
 	},
 	"dependencies": {
 		"@epicenter/definition": "workspace:*",
@@ -31,10 +35,23 @@
 		"wellcrafted": "catalog:",
 		"yaml": "catalog:"
 	},
+	"peerDependencies": {
+		"svelte": "^5.9.0"
+	},
+	"peerDependenciesMeta": {
+		"svelte": {
+			"optional": true
+		}
+	},
 	"devDependencies": {
 		"@types/bun": "catalog:",
 		"typescript": "catalog:",
-		"vite": "catalog:"
+		"vite": "catalog:",
+		"svelte": "catalog:",
+		"svelte-check": "catalog:",
+		"jsdom": "26.1.0",
+		"@types/jsdom": "21.1.7",
+		"node-api-headers": "^1.9.0"
 	},
 	"license": "AGPL-3.0-or-later"
 }

@@ -9,7 +9,11 @@
 import { FileError } from '@epicenter/folder';
 import { openFolder } from '@epicenter/folder/browser';
 import { expectOk } from 'wellcrafted/testing';
-import { testBrowserStorage } from '../../../../packages/folder/src/browser-storage.test-support.js';
+import {
+	browserStorage,
+	createTestStorage,
+	opfsOf,
+} from '../../../../packages/folder/src/browser-storage.test-support.js';
 import {
 	type Stage,
 	type VocabFolder,
@@ -19,9 +23,19 @@ import {
 import type { EntriesState } from './entries.svelte.js';
 import { VOCAB_FOLDER_ID } from './folder.js';
 
+/** Let the folder answer until `done` holds. */
+export async function until(done: () => boolean, what: string) {
+	for (let attempt = 0; attempt < 500; attempt++) {
+		if (done()) return;
+		await Bun.sleep(1);
+	}
+	throw new Error(`Timed out waiting for ${what}`);
+}
+
 /**
- * Edit a word the way its card does: type the note and leave the field, then
- * press a stage. Answers why it was not saved, or null.
+ * Edit a word the way its card does: type the note, then press a stage, and
+ * wait until the saves land and the list shows them. Answers why it was not
+ * saved, or null.
  */
 export async function editWord(
 	entries: EntriesState,
@@ -31,18 +45,64 @@ export async function editWord(
 	const word = entries.word(id);
 	await word.open();
 	if (edit.note !== undefined) {
-		word.inputNote(edit.note);
-		const failed = await word.blur();
+		const refused = word.inputNote(edit.note);
+		if (refused !== null) return refused;
+	}
+	if (edit.stage !== undefined) {
+		const failed = await word.setStage(edit.stage);
 		if (failed !== null) return failed;
 	}
-	return edit.stage === undefined ? null : word.setStage(edit.stage);
+	await until(() => word.save?.status !== 'saving', 'the word to save');
+	const { save } = word;
+	if (save?.status === 'failed') return `not saved: ${save.error.message}`;
+	await until(
+		() =>
+			entries.entries.find((entry) => entry.id === id)?.file.text ===
+			word.row?.text,
+		'the list to show the saved word',
+	);
+	return null;
 }
 
-/** One browser's storage, and every folder handle opened over it. */
+/** What the words list is given from an open folder, as the page gives it. */
+export const entriesOf = (folder: VocabFolder) => ({
+	table: folder.tables.entries,
+});
+
+/**
+ * One browser's storage, and every folder handle opened over it. `opfs` is
+ * the stand-in tree itself: its `faults` hold or fail the next write, and
+ * `put` and `drop` change a file the way another program would, with no
+ * change hint.
+ */
 export function createBrowser() {
-	const storage = testBrowserStorage();
+	const tree = createTestStorage();
+	const storage = browserStorage(tree);
 	const opened: VocabFolder[] = [];
+	const opfs = opfsOf(tree);
+	/** The stand-in's path for a folder path. */
+	const located = (path: string) => {
+		const found = [...opfs.files().keys()].find(
+			(key) => key.endsWith(`/${path}`) && !key.includes('/.git/'),
+		);
+		if (found === undefined) throw new Error(`No file at ${path}`);
+		return found;
+	};
 	return {
+		opfs,
+		/** Write `bytes` at a folder path as another program would. */
+		put(path: string, content: string | Uint8Array) {
+			opfs.put(
+				located(path),
+				typeof content === 'string'
+					? new TextEncoder().encode(content)
+					: content,
+			);
+		},
+		/** Remove a folder path as another program would. */
+		drop(path: string) {
+			opfs.drop(located(path));
+		},
 		/** Open Vocab's folder in this browser: a first visit, a reload, or another tab. */
 		async open(): Promise<VocabFolder> {
 			const folder = expectOk(
@@ -84,27 +144,50 @@ export async function tableFiles(
 
 /**
  * The real entries table with its word operations held where a test says.
- * `edit` waits before it reads anything. `replace` and `delete` run for real
- * first, so the file has changed, and their answers wait.
+ * `edit` and `get` wait before they read anything; `delete` runs for real
+ * first, so the file is gone, and its answer waits. `ordinaryWrites` counts
+ * `replace` and `update` calls, which a word's own saves never make;
+ * `deletes` counts deletes sent. While `refusing` names `edit` or `get`,
+ * that call answers with a storage failure and reads nothing, the way a
+ * browser store that cannot read answers.
  */
 export function heldEntries(table: VocabTables['entries']) {
 	const holds: {
 		edit?: Promise<void>;
-		replaceAnswer?: Promise<void>;
+		get?: Promise<void>;
 		deleteAnswer?: Promise<void>;
-	} = {};
+		refusing: Set<'edit' | 'get'>;
+		ordinaryWrites: number;
+		deletes: number;
+	} = { refusing: new Set(), ordinaryWrites: 0, deletes: 0 };
+	const refused = (stem: string) =>
+		FileError.Io({
+			path: `entries/${stem}.md`,
+			operation: 'read',
+			cause: new Error('storage refused'),
+		});
 	const held: VocabTables['entries'] = {
 		...table,
 		async edit(stem, options) {
 			await holds.edit;
+			if (holds.refusing.has('edit')) return refused(stem);
 			return table.edit(stem, options);
 		},
+		async get(stem) {
+			await holds.get;
+			if (holds.refusing.has('get')) return refused(stem);
+			return table.get(stem);
+		},
 		async replace(stem, text, options) {
-			const replaced = await table.replace(stem, text, options);
-			await holds.replaceAnswer;
-			return replaced;
+			holds.ordinaryWrites++;
+			return table.replace(stem, text, options);
+		},
+		async update(stem, change, options) {
+			holds.ordinaryWrites++;
+			return table.update(stem, change, options);
 		},
 		async delete(stem, options) {
+			holds.deletes++;
 			const deleted = await table.delete(stem, options);
 			await holds.deleteAnswer;
 			return deleted;

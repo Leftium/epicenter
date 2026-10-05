@@ -1,96 +1,153 @@
 /**
- * Vanilla caller: plain DOM over a shared canonical editor.
+ * Vanilla caller: plain DOM over a shared row editor.
  *
- * `subscribe` renders the current state at once and on later notifications;
- * the function it returns stops only this view, never the editor. A refused
- * change emits no state, so the control is repainted from `get()`.
+ * `subscribe` makes no initial call, so the view renders `get()` itself once
+ * it has subscribed, then again on every invalidation. The function it
+ * returns ends only this view's subscription, never the editor or its saves.
+ *
+ * Each handler reads the latest row with `get()` and submits the complete
+ * row. It returns unless this view is still mounted and the row still
+ * supports its own part of it: structured controls only while the row is
+ * valid and shown as fields, the source only while it is shown.
+ * `presentation` is this view's own choice of fields or source, kept by the
+ * owner for the next mount and read by no other view.
  */
-import { h, shortSha } from './dom.js';
+import type { CanonicalDocument } from '../../../src/browser.js';
+import { withFileNewlines } from '../../../src/file-browser.js';
+import { h } from './dom.js';
 import {
-	describeChangeError,
-	describeSaveError,
-	draftOf,
+	controlsOf,
+	lf,
+	type Presentation,
+	saveLabel,
+	sourceIssue,
 	type TodoEditor,
-	type TodoState,
+	type ValidTodo,
+	withBody,
+	withField,
 } from './todo-editor.js';
 import { PRIORITIES } from './todos.js';
 
-export function mountVanillaPanel(root: HTMLElement, editor: TodoEditor) {
-	const { get, subscribe, change, save } = editor;
+export function mountVanillaPanel(
+	root: HTMLElement,
+	editor: TodoEditor,
+	presentation: Presentation,
+) {
+	const { get, subscribe, set, setText } = editor;
 	const message = h('p', { className: 'message' });
+	/**
+	 * Whether this view is mounted. Its controls are detached when it
+	 * unmounts, but a retained element can still receive an event, from
+	 * script or assistive technology; no handler submits after that.
+	 */
+	let mounted = true;
 
-	function apply(requested: Parameters<TodoEditor['change']>[0]) {
-		const { error } = change(requested);
-		message.textContent = error === null ? '' : describeChangeError(error);
-		if (error !== null) render(get());
+	/** Submit a complete row built from the latest valid row, only while the fields are shown. */
+	function submit(next: (row: ValidTodo) => CanonicalDocument) {
+		if (!mounted) return;
+		const { row } = get();
+		if (row.status !== 'valid' || presentation.raw) return;
+		const { error } = set(next(row));
+		message.textContent =
+			error === null ? '' : `Not accepted: ${error.message}`;
+		// Nothing was accepted, so nothing invalidates: show the accepted row again.
+		if (error !== null) render();
 	}
 
 	const done = h('input', {
 		type: 'checkbox',
-		onchange: () => apply({ fields: { done: done.checked } }),
+		onchange: () => submit((row) => withField(row, 'done', done.checked)),
 	});
 	const title = h('input', {
-		oninput: () => apply({ fields: { title: title.value } }),
+		oninput: () => submit((row) => withField(row, 'title', title.value)),
 	});
 	const priority = h(
 		'select',
 		{
-			// The empty option removes the field from the draft.
+			// The empty option omits the key, which deletes the field.
 			onchange: () =>
-				apply({ fields: { priority: priority.value || undefined } }),
+				submit((row) =>
+					withField(row, 'priority', priority.value || undefined),
+				),
 		},
 		h('option', { value: '' }, '(none: remove the field)'),
 		...PRIORITIES.map((option) => h('option', { value: option }, option)),
 	);
 	const body = h('textarea', {
 		rows: 3,
-		oninput: () => apply({ body: body.value }),
+		oninput: () => submit((row) => withBody(row, body.value)),
 	});
-	const issues = h('ul', { className: 'issues' });
-	const status = h('p', { className: 'quiet' });
-	const saveButton = h('button', { type: 'button' }, 'Save');
-	saveButton.onclick = async () => {
-		message.textContent = 'Saving…';
-		const { data: receipt, error } = await save();
-		message.textContent =
-			error !== null
-				? describeSaveError(error)
-				: `Saved: wrote ${shortSha(receipt.sha256)}`;
-	};
+	const source = h('textarea', {
+		rows: 8,
+		className: 'source',
+		oninput: () => {
+			if (!mounted) return;
+			const { row } = get();
+			if (row.status === 'valid' && !presentation.raw) return;
+			// Typing here keeps the source shown after the row becomes valid.
+			presentation.raw = true;
+			setText(withFileNewlines(source.value, row.text));
+		},
+	});
 
-	root.replaceChildren(
+	function showSource(raw: boolean) {
+		if (!mounted) return;
+		presentation.raw = raw;
+		render();
+	}
+	const toSource = h('button', { type: 'button' }, 'Edit the Markdown source');
+	toSource.onclick = () => showSource(true);
+	const toFields = h('button', { type: 'button' }, 'Edit fields');
+	toFields.onclick = () => showSource(false);
+
+	const rowIssue = h('p', { className: 'warn' });
+	const fieldsView = h(
+		'div',
+		{},
 		h('label', {}, done, ' Done'),
 		h('label', {}, 'Title ', title),
 		h('label', {}, 'Priority ', priority),
 		h('label', {}, 'Body', body),
-		issues,
-		h('div', { className: 'row' }, saveButton, status),
-		message,
+		toSource,
 	);
+	const sourceView = h(
+		'div',
+		{},
+		rowIssue,
+		h('label', {}, 'Markdown source', source),
+		toFields,
+	);
+	const saveLine = h('p', { className: 'quiet' });
 
-	function render(state: TodoState) {
-		const draft = draftOf(state);
+	root.replaceChildren(fieldsView, sourceView, saveLine, message);
+
+	function render() {
+		const { row, save } = get();
+		saveLine.textContent = saveLabel(save);
+		const shown =
+			row.status === 'invalid' || presentation.raw ? sourceView : fieldsView;
+		for (const view of [fieldsView, sourceView]) view.hidden = view !== shown;
 		// Assign only what changed, so the control being typed in keeps its caret.
-		done.checked = draft.done;
-		if (title.value !== draft.title) title.value = draft.title;
-		if (priority.value !== draft.priority) priority.value = draft.priority;
-		if (body.value !== draft.body) body.value = draft.body;
-		issues.replaceChildren(
-			...state.reading.issues.map((issue) =>
-				h('li', {}, `${issue.field}: ${issue.message}`),
-			),
-		);
-		status.textContent = [
-			state.isDirty ? 'Unsaved changes' : 'No unsaved changes',
-			state.saving !== undefined && 'saving',
-		]
-			.filter(Boolean)
-			.join(', ');
+		if (shown === sourceView) {
+			rowIssue.textContent = sourceIssue(row);
+			toFields.hidden = row.status !== 'valid';
+			const text = lf(row.text);
+			if (source.value !== text) source.value = text;
+			return;
+		}
+		if (row.status !== 'valid') return;
+		const values = controlsOf(row);
+		done.checked = values.done;
+		if (title.value !== values.title) title.value = values.title;
+		if (priority.value !== values.priority) priority.value = values.priority;
+		if (body.value !== values.body) body.value = values.body;
 	}
 
-	const unsubscribe = subscribe(render);
+	const stop = subscribe(render);
+	render();
 	return () => {
-		unsubscribe();
+		mounted = false;
+		stop();
 		root.replaceChildren();
 	};
 }

@@ -11,10 +11,13 @@
 	import { audioMimeTypeOf } from '$lib/audio-format.js';
 	import type { TranscriptionFields } from '$lib/definition.js';
 	import { basename, dirname, withFileNewlines } from '@epicenter/folder/file-browser';
+	import { toast } from '@epicenter/ui/sonner';
 	import type { Library, OpenFile, RowSlot } from '$lib/library.svelte.js';
 	import AudioPlayer from './AudioPlayer.svelte';
-	import { confirmDelete, copyPath } from './file-actions.js';
+	import { confirmDelete, copyPath, lf } from './file-actions.js';
 	import FileNameBar from './FileNameBar.svelte';
+	import LiveButton from './LiveButton.svelte';
+	import LiveTextarea from './LiveTextarea.svelte';
 	import RowSaveStatus from './RowSaveStatus.svelte';
 	import SaveStatus from './SaveStatus.svelte';
 
@@ -27,20 +30,31 @@
 		library: Library;
 		path: string;
 		/**
-		 * The file, or the one draft kept for a transcript's file: the same
-		 * draft the transcript is edited through beside its recording.
+		 * The file, or the one row editor kept for a transcript's file: the
+		 * same editor the transcript is edited through beside its recording.
 		 */
 		file: OpenFile | { readonly kind: 'row'; readonly slot: RowSlot<TranscriptionFields> };
 		/** Shown on narrow windows, where the list and the editor take turns. */
 		onBack?: () => void;
 	} = $props();
 
-	/** A transcript's text edited as its text: to repair it, or by choice. */
-	const text = $derived(
-		file.kind === 'text' ? { editor: file.editor, reason: undefined } : file.kind === 'row' && file.slot.kind === 'raw' ? file.slot : undefined,
-	);
-	/** A transcript edited as a row: its body, through the folder's row editor. */
-	const form = $derived(file.kind === 'row' && file.slot.kind === 'form' ? file.slot.draft : undefined);
+	/** An ordinary file's text draft. */
+	const text = $derived(file.kind === 'text' ? { editor: file.editor } : undefined);
+	/**
+	 * A transcript's one row editor: its body as fields, or its whole text.
+	 * This view is reused for every selected file, so each binding reads
+	 * `editing` when it runs, never the editor it first saw. Each live control
+	 * has its own lifetime (LiveTextarea, LiveButton): one that is gone
+	 * delivers nothing, even after its mode returns.
+	 */
+	const editing = $derived(file.kind === 'row' && file.slot.kind === 'open' ? file.slot.editing : undefined);
+	function showSource(next: boolean) {
+		const problem = next ? library.editSource(path) : library.useForm(path);
+		if (problem)
+			toast.error(next ? 'The text was not opened for editing' : 'The text was not opened alone', {
+				description: problem,
+			});
+	}
 
 	const name = $derived(basename(path));
 	const directory = $derived(dirname(path));
@@ -87,31 +101,41 @@
 			<Empty.Description>{file.message}</Empty.Description>
 			<Button variant="outline" size="sm" onclick={() => void library.open(path)}>Try again</Button>
 		</Empty.Root>
-	{:else if form}
-		{@const body = form.state.document.body}
-		<RowSaveStatus {library} draft={form} />
+	{:else if file.kind === 'row' && file.slot.kind === 'unopened'}
+		<Empty.Root class="flex-1">
+			<Empty.Media><TriangleAlertIcon class="size-8 text-muted-foreground" /></Empty.Media>
+			<Empty.Title>Could not open this file</Empty.Title>
+			<Empty.Description>{file.slot.message}</Empty.Description>
+			<LiveButton variant="outline" size="sm" onclick={() => void library.retryOpen(path)}>Try again</LiveButton>
+		</Empty.Root>
+	{:else if editing}
+		<RowSaveStatus {library} {editing} />
 		<div class="flex min-h-0 flex-1 flex-col gap-2 px-3 py-3 sm:px-4">
-			<p class="text-xs text-muted-foreground">
-				The transcript’s text, the body of its file. Its fields are kept as they are.
-				<Button size="xs" variant="outline" class="ml-1" onclick={() => void library.editSource(path)}>Edit the whole file</Button>
-			</p>
-			<Textarea
-				class="min-h-40 flex-1 resize-none font-sans"
-				value={body}
-				aria-label="Contents of {name}"
-				oninput={(event) => form.change({ body: withFileNewlines(event.currentTarget.value, body) })}
-			/>
+			{#if editing.view === 'fields'}
+				<p class="text-xs text-muted-foreground">
+					The transcript’s text, the body of its file. Its fields are kept as they are.
+					<LiveButton size="xs" variant="outline" class="ml-1" onclick={() => showSource(true)}>Edit the whole file</LiveButton>
+				</p>
+				<LiveTextarea class="min-h-40 flex-1 resize-none font-sans" get={() => editing?.bodyText() ?? ''} set={(value) => editing?.setBody(value)} aria-label="Contents of {name}" />
+			{:else if editing.view === 'source'}
+				<p class="text-xs text-muted-foreground" data-testid="needs-repair">
+					{editing.row.status === 'invalid' ? 'The whole file, as its text, until it reads as a transcript again.' : 'The whole file, as its text.'}
+					It saves as typed, readable or not.
+					<LiveButton size="xs" variant="outline" class="ml-1" onclick={() => showSource(false)}>Edit the text only</LiveButton>
+				</p>
+				<LiveTextarea
+					class="min-h-40 flex-1 resize-none font-mono text-xs"
+					get={() => editing?.sourceValue() ?? ''}
+					set={(value) => editing?.setText(value)}
+					aria-label="Contents of {name}"
+					spellcheck={false}
+				/>
+			{/if}
 		</div>
 	{:else if text}
 		{@const editor = text.editor}
 		<SaveStatus {editor} autosavePaused={library.autosave.paused} onDiscardRemoved={() => void library.discardDraft(editor.path)} />
 		<div class="flex min-h-0 flex-1 flex-col gap-2 px-3 py-3 sm:px-4">
-			{#if file.kind === 'row'}
-				<p class="text-xs text-muted-foreground" data-testid="needs-repair">
-					{text.reason ?? 'The whole file, as its text.'} It saves as typed, readable or not.
-					<Button size="xs" variant="outline" class="ml-1" onclick={() => void library.useForm(path)}>Edit the text only</Button>
-				</p>
-			{/if}
 			<Textarea
 				class="min-h-40 flex-1 resize-none font-mono text-xs"
 				value={editor.buffer}

@@ -9,7 +9,11 @@
  */
 import { captureDefinition } from '@epicenter/capture';
 import { openFolder } from '@epicenter/folder/browser';
-import { CAPTURE_FOLDER_ID, type OpenCaptureHost } from './types.js';
+import {
+	CAPTURE_FOLDER_ID,
+	type OpenCaptureHost,
+	type OpenDeparture,
+} from './types.js';
 
 /** Called from a mounted component; importing this module opens nothing. */
 export const openCaptureHost: OpenCaptureHost = async () => {
@@ -28,11 +32,9 @@ export const openCaptureHost: OpenCaptureHost = async () => {
 		folder,
 		location: folder.location,
 		onExternalChange: (listener) => folder.onFilesChanged(() => listener()),
-		// A tab has no quit request and no desktop service; its leave warning
-		// covers a reload or a close.
-		onQuitRequested: () => () => {},
-		onServiceStopped: () => () => {},
-		quitProtectionProblem: undefined,
 		close: () => folder.close(),
 	};
 };
+
+/** A tab has no host to quit; its leave warning covers a reload or a close. */
+export const openDeparture: OpenDeparture = () => undefined;

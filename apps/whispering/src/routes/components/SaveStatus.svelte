@@ -4,7 +4,7 @@
 	import type { TextFileEditor } from '$lib/editor.svelte.js';
 
 	let { editor, autosavePaused, onDiscardRemoved }: {
-		/** A text draft: an ordinary file, or a row file edited as its text. */
+		/** A text draft: an ordinary file. */
 		editor: TextFileEditor;
 		autosavePaused: boolean;
 		onDiscardRemoved: () => void;

@@ -374,7 +374,7 @@ describe("one page's saves land in the order the page asked for them", () => {
 			expect(decoder.decode(opfs.files(ROOT).get('to.md'))).toBe('moved');
 		});
 
-	test("a raw save a row editor's listener starts on hearing `saving` comes after the editor's save", async () => {
+	test("a raw save a row editor's listener starts on hearing `saving` comes after the editor's capture", async () => {
 		const folder = await open();
 		const stem = 'plan';
 		expectOk(
@@ -382,24 +382,29 @@ describe("one page's saves land in the order the page asked for them", () => {
 		);
 		const path = `notes/${stem}.md`;
 		const editor = expectOk(await folder.tables.notes.edit(stem));
-		expectOk(editor.change({ fields: { title: 'Edited' } }));
-		// The listener's raw save hashes first, inside save(); the editor's next.
-		const digest = holdNextDigest(1);
 		let raw: ReturnType<typeof folder.files.overwrite> | undefined;
-		editor.subscribe((state) => {
-			if (state.saving !== undefined && raw === undefined)
+		const stop = editor.subscribe(() => {
+			if (editor.get().save.status === 'saving' && raw === undefined)
 				raw = folder.files.overwrite(path, 'raw\n');
 		});
-		const saving = editor.save();
+		const opened = editor.get().row;
+		if (opened.status !== 'valid') throw new Error('expected a valid row');
+		// The editor's capture hashes first, inside set(); the listener's next.
+		const digest = holdNextDigest();
+		expectOk(
+			editor.set({
+				fields: { ...opened.fields, title: 'Edited' },
+				body: opened.body,
+			}),
+		);
 		await digest.reached;
 		if (raw === undefined) throw new Error('the listener never heard saving');
 		expectOk(await raw);
 		digest.release();
-		// The editor's save was placed first and delivered after the raw one landed.
-		expect(expectErr(await saving).name).toBe('Unconfirmed');
-		expect(editor.get().lastSave?.kind).toBe('unconfirmed');
+		// The editor's capture was placed first and delivered after the raw one landed.
+		expect(expectErr(await editor.flush()).name).toBe('Unconfirmed');
 		expect(decoder.decode(opfs.files(ROOT).get(path))).toBe('raw\n');
-		await editor.dispose();
+		stop();
 	});
 
 	test('a later save whose outcome is unknown still keeps an older one out', async () => {

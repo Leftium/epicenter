@@ -24,8 +24,8 @@
  *   unsaved, including work that began after the deletion was confirmed
  * - A transformation is edited through the folder's row editor: a save writes
  *   the whole row in one form and keeps unknown fields; a malformed row stays
- *   listed and is repaired as text; a dirty draft keeps both versions when
- *   the file changes outside
+ *   listed and is repaired as text; an outside change is loaded only when the
+ *   person reloads, and otherwise the next save writes over it
  * - Two asks for the same transcript and transformation at once are one
  *   request and one result, while another pair and a later run stay separate;
  *   a run retried or saved again twice at once is retried or saved once
@@ -36,6 +36,7 @@
 import './svelte-modules.test-support.js';
 import { afterEach, expect, test } from 'bun:test';
 import { execFileSync } from 'node:child_process';
+import { chmodSync } from 'node:fs';
 import { mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { FileError } from '@epicenter/folder/bun';
@@ -43,10 +44,11 @@ import { Ok } from 'wellcrafted/result';
 import { expectOk } from 'wellcrafted/testing';
 import { STARTER_TRANSFORMATIONS } from './definition.js';
 import type { Library } from './library.svelte.js';
+import type { RowEditing } from './row-editing.svelte.js';
+import { editingOf } from './row-slot.test-support.js';
 import { needsRepair } from './rows.js';
 import { filesLineOf } from './status.js';
 import { TransformationError } from './transformation.js';
-import { formOf, textOf } from './row-slot.test-support.js';
 import {
 	deferred,
 	openTestWorkspace,
@@ -94,11 +96,16 @@ async function transcribed(library: Library, root: string) {
 /** Create the cleanup starter and give it a model, as a person would before running it. */
 async function cleanupProfile(library: Library) {
 	expect(await library.createTransformation(CLEANUP)).toBeUndefined();
-	const editor = formOf(library.selectedTransformation?.slot);
-	expect(editor.change({ fields: { model: 'chat-model' } })).toBe(true);
-	await editor.saveNow();
+	const editor = editingOf(library.selectedTransformation?.slot);
+	editor.setField('model', 'chat-model');
+	await saved(editor);
 	expect(editor.status.kind).toBe('saved');
 	return editor;
+}
+
+/** Wait until the writes typing started have settled, and expect them saved. */
+async function saved<TFields>(editor: RowEditing<TFields>) {
+	expectOk(await editor.flush());
 }
 
 // ============================================================================
@@ -132,8 +139,8 @@ test('opening a folder seeds no transformation; creating one writes an ordinary 
 test('a new transformation copies no endpoint or model from another one', async () => {
 	const { library } = await open();
 	const editor = await cleanupProfile(library);
-	editor.change({ fields: { endpoint: 'http://127.0.0.1:11434/v1' } });
-	await editor.saveNow();
+	editor.setField('endpoint', 'http://127.0.0.1:11434/v1');
+	await saved(editor);
 	await library.refresh();
 
 	await library.createTransformation({ title: 'Summarize', prompt: 'Sum.\n' });
@@ -154,19 +161,19 @@ test('editing a transformation saves the whole row in one form and keeps fields 
 	const path = join(root, 'transformations', 'mine.md');
 	await writeFile(path, source);
 	await library.open('transformations/mine.md');
-	const editor = formOf(library.selectedTransformation?.slot);
+	const editor = editingOf(library.selectedTransformation?.slot);
 	// Opening reads; it writes nothing, and a file in another form is not unsaved.
-	expect(editor.isDirty).toBe(false);
+	expect(editor.holds).toBe(false);
 	expect(await readFile(path, 'utf8')).toBe(source);
 
-	expect(editor.change({ fields: { title: 'Renamed' } })).toBe(true);
-	expect(editor.change({ body: 'A new prompt\n' })).toBe(true);
-	await editor.saveNow();
+	editor.setField('title', 'Renamed');
+	editor.setBody('A new prompt\n');
+	await saved(editor);
 
 	expect(editor.status.kind).toBe('saved');
-	const saved = await readFile(path, 'utf8');
-	// The save is the editor's whole document in its one form.
-	expect(saved).toBe(editor.state.text);
+	const written = await readFile(path, 'utf8');
+	// The save is the editor's whole row in its one form.
+	expect(written).toBe(editor.row.text);
 	const row = expectOk(
 		await library.folder.tables.transformations.get('mine'),
 	)!;
@@ -177,8 +184,8 @@ test('editing a transformation saves the whole row in one form and keeps fields 
 	});
 	expect(row.body).toBe('A new prompt\n');
 	// A field the app does not declare is kept; a comment is not part of the row.
-	expect(saved).toContain('"temperature": 0.2');
-	expect(saved).not.toContain('# a comment');
+	expect(written).toContain('"temperature": 0.2');
+	expect(written).not.toContain('# a comment');
 	expect(await library.rename(editor.path, 'other.md')).toContain(
 		'named by its ID',
 	);
@@ -201,9 +208,10 @@ test('a malformed transformation stays listed, cannot run, and is repaired in it
 	expect(entry?.body).toBeUndefined();
 	expect(library.unreadableTransformations).toEqual([]);
 	await library.open('transformations/broken.md');
-	// It opens as its exact text: there are no fields to edit until it is repaired.
-	const editor = textOf(library.selectedTransformation?.slot);
-	expect(editor.buffer).toBe(broken);
+	// It opens in its editor as its exact text: no fields to edit until it is repaired.
+	const editor = editingOf(library.selectedTransformation?.slot);
+	expect(editor.view).toBe('source');
+	expect(editor.sourceValue()).toBe(broken);
 	expect(await library.transform(transcript.path, editor.path)).toBe(
 		'Repair this transformation before running it.',
 	);
@@ -212,10 +220,10 @@ test('a malformed transformation stays listed, cannot run, and is repaired in it
 		await readFile(join(root, 'transformations', 'broken.md'), 'utf8'),
 	).toBe(broken);
 
-	editor.input(
+	editor.setText(
 		'---\ntitle: Repaired\nmodel: chat-model\nendpoint: http://127.0.0.1:18080/v1\nmood: curious\n---\nStill here\n',
 	);
-	await editor.save();
+	await saved(editor);
 	await library.refresh();
 
 	const repaired = library.transformations.find(
@@ -227,21 +235,19 @@ test('a malformed transformation stays listed, cannot run, and is repaired in it
 	).toContain('mood: curious');
 	expect(await library.transform(transcript.path, editor.path)).toBeUndefined();
 	expect(transformed).toHaveLength(1);
-	// Repaired, it is edited as fields again, with its unknown field kept.
-	expect(await library.useForm(editor.path)).toBeUndefined();
-	const form = formOf(library.selectedTransformation?.slot);
-	expect(form.state.document.fields).toMatchObject({
-		title: 'Repaired',
-		mood: 'curious',
+	// Repaired, the same editor is edited as fields again, with its unknown field kept.
+	expect(library.useForm(editor.path)).toBeUndefined();
+	expect(editingOf(library.selectedTransformation?.slot)).toBe(editor);
+	expect(editor.row).toMatchObject({
+		status: 'valid',
+		fields: { title: 'Repaired', mood: 'curious' },
 	});
 });
 
-test('a dirty transformation draft keeps both versions when the file changes outside', async () => {
+test('an outside edit to an open transformation is listed but not loaded into it, and the next save writes the whole row over it', async () => {
 	const { library, root } = await open();
 	const editor = await cleanupProfile(library);
 	const path = join(root, editor.path);
-	editor.change({ body: 'My prompt\n' });
-
 	const outside = (await readFile(path, 'utf8')).replace(
 		'"title": "Clean up"',
 		'"title": "Theirs"',
@@ -249,39 +255,41 @@ test('a dirty transformation draft keeps both versions when the file changes out
 	await writeFile(path, outside);
 	await library.refreshAll();
 
-	expect(editor.status.kind).toBe('changed');
-	expect(editor.state.document.body).toBe('My prompt\n');
-	expect(library.saveProblems).toBe(1);
-	// Nothing saves on its own while both versions stand; neither is written over.
-	expect(await editor.settle()).toBe(false);
-	await library.prepareToLeave();
-	expect(await readFile(path, 'utf8')).toBe(outside);
+	expect(library.transformations[0]!.fields.title).toBe('Theirs');
+	expect(editor.row).toMatchObject({ fields: { title: 'Clean up' } });
+	expect(editor.status.kind).toBe('saved');
+	expect(library.saveProblems).toBe(0);
+	expect(library.holdsUnsavedWork).toBe(false);
 
-	const kept = expectOk(await library.keepDraftCopy(editor.path));
-	// The typing went to the copy; the draft took the version in the folder.
-	expect(editor.isDirty).toBe(false);
-	expect(editor.state.text).toBe(outside);
-	expect(await readFile(path, 'utf8')).toBe(outside);
-	expect(await readFile(join(root, kept), 'utf8')).toContain('My prompt');
+	editor.setBody('My prompt\n');
+	await saved(editor);
+
+	const written = await readFile(path, 'utf8');
+	expect(written).toBe(editor.row.text);
+	expect(written).toContain('"title": "Clean up"');
+	expect(written).toContain('My prompt');
 });
 
-test('a clean transformation editor follows an outside edit', async () => {
+test('reloading an open transformation takes an outside edit and writes nothing', async () => {
 	const { library, root } = await open();
 	const editor = await cleanupProfile(library);
 	const path = join(root, editor.path);
-
-	await writeFile(
-		path,
-		(await readFile(path, 'utf8')).replace(
-			'"title": "Clean up"',
-			'"title": "From outside"',
-		),
+	const outside = (await readFile(path, 'utf8')).replace(
+		'"title": "Clean up"',
+		'"title": "From outside"',
 	);
+	await writeFile(path, outside);
 	await library.refreshAll();
 
+	expect(await library.reloadRow(editor.path)).toBeUndefined();
+
 	expect(editor.status.kind).toBe('saved');
-	expect(editor.isDirty).toBe(false);
-	expect(editor.state.document.fields.title).toBe('From outside');
+	expect(editor.row).toMatchObject({
+		status: 'valid',
+		text: outside,
+		fields: { title: 'From outside' },
+	});
+	expect(await readFile(path, 'utf8')).toBe(outside);
 	expect(library.transformations[0]!.fields.title).toBe('From outside');
 });
 
@@ -342,17 +350,16 @@ test('applying a transformation writes a new result row and leaves the transcrip
 	expect(tree).toContain(profile.path);
 });
 
-test('what is sent is the saved transformation: unsaved edits are saved first', async () => {
+test('what is sent is the saved transformation: a save still running settles first', async () => {
 	const { library, root, transformed } = await open();
 	const { transcript } = await transcribed(library, root);
 	const editor = await cleanupProfile(library);
-	library.autosave.paused = true;
-	editor.change({ body: 'Edited just now.\n' });
-	expect(editor.isDirty).toBe(true);
+	editor.setBody('Edited just now.\n');
+	expect(editor.save.status).toBe('saving');
 
 	expect(await library.transform(transcript.path, editor.path)).toBeUndefined();
 
-	expect(editor.isDirty).toBe(false);
+	expect(editor.holds).toBe(false);
 	expect(transformed[0]!.prompt).toBe('Edited just now.\n');
 	expect(await readFile(join(root, editor.path), 'utf8')).toContain(
 		'Edited just now.',
@@ -366,12 +373,12 @@ test('a transformation with no instructions, or a transcript with no text, sends
 	const { library, root, transformed } = await open();
 	const { transcript } = await transcribed(library, root);
 	await library.createTransformation({ title: 'Empty', prompt: '' });
-	const editor = formOf(library.selectedTransformation?.slot);
+	const editor = editingOf(library.selectedTransformation?.slot);
 
 	expect(await library.transform(transcript.path, editor.path)).toBe(
 		'Write instructions to run this.',
 	);
-	editor.change({ body: 'Fix it.\n' });
+	editor.setBody('Fix it.\n');
 	await writeFile(
 		join(root, transcript.path),
 		transcript.text.replace(transcript.body!, ' \n'),
@@ -458,52 +465,55 @@ test('a transcript whose recording was deleted outside refuses', async () => {
 	expect(library.transformationRuns).toHaveLength(0);
 });
 
-/** The row draft Files opens for a transcript's file. */
-async function transcriptDraft(library: Library, path: string) {
+/** The row editor Files opens for a transcript's file. */
+async function transcriptEditor(library: Library, path: string) {
 	await library.open(path);
 	const selection = library.selection;
 	if (selection?.kind !== 'transcript')
 		throw new Error('expected the transcript to open as a transcript');
-	return formOf(selection.slot);
+	return editingOf(selection.slot);
 }
 
-test('unsaved edits to the transcript’s file are saved first, then sent', async () => {
+test('a save of the transcript’s file still running settles first, then what it saved is sent', async () => {
 	const { library, root, transformed } = await open();
 	const { transcript } = await transcribed(library, root);
 	const editor = await cleanupProfile(library);
-	const source = await transcriptDraft(library, transcript.path);
-	library.autosave.paused = true;
-	source.change({ body: 'Typed in Files.\n' });
-	expect(source.isDirty).toBe(true);
+	const source = await transcriptEditor(library, transcript.path);
+	source.setBody('Typed in Files.\n');
+	expect(source.save.status).toBe('saving');
 
 	expect(await library.transform(transcript.path, editor.path)).toBeUndefined();
 
-	expect(source.isDirty).toBe(false);
+	expect(source.holds).toBe(false);
 	expect(await readFile(join(root, transcript.path), 'utf8')).toContain(
 		'Typed in Files.',
 	);
 	expect(transformed[0]!.input).toBe('Typed in Files.\n');
 });
 
-test('a transcript draft in conflict refuses, and both versions are kept', async () => {
+test('a transcript whose save failed refuses, and the edits stay in its editor', async () => {
 	const { library, root, transformed } = await open();
 	const { transcript } = await transcribed(library, root);
 	const editor = await cleanupProfile(library);
-	const source = await transcriptDraft(library, transcript.path);
-	library.autosave.paused = true;
-	source.change({ body: 'Mine.\n' });
-	const outside = transcript.text.replace(transcript.body!, 'Theirs.\n');
-	await writeFile(join(root, transcript.path), outside);
-	await library.refreshAll();
-	expect(source.status.kind).toBe('changed');
+	const source = await transcriptEditor(library, transcript.path);
+	chmodSync(join(root, 'transcriptions'), 0o555);
+	try {
+		source.setBody('Mine.\n');
+		expect((await source.flush()).error).not.toBeNull();
+	} finally {
+		chmodSync(join(root, 'transcriptions'), 0o755);
+	}
 
 	expect(await library.transform(transcript.path, editor.path)).toContain(
 		'has edits that are not saved',
 	);
 
 	expect(transformed).toHaveLength(0);
-	expect(source.state.document.body).toBe('Mine.\n');
-	expect(await readFile(join(root, transcript.path), 'utf8')).toBe(outside);
+	expect(source.row).toMatchObject({ body: 'Mine.\n' });
+	expect(source.status.kind).toBe('failed');
+	expect(await readFile(join(root, transcript.path), 'utf8')).toBe(
+		transcript.text,
+	);
 });
 
 // ============================================================================
@@ -658,13 +668,13 @@ test('a result outlives edits to its transformation and the transformation’s d
 	const editor = await cleanupProfile(library);
 	await library.transform(transcript.path, editor.path);
 	const output = library.outputsFor(transcript.stem)[0]!;
-	const saved = await readFile(join(root, output.path), 'utf8');
+	const result = await readFile(join(root, output.path), 'utf8');
 
-	editor.change({ fields: { title: 'Renamed' } });
-	editor.change({ body: 'A different prompt.\n' });
-	await editor.saveNow();
+	editor.setField('title', 'Renamed');
+	editor.setBody('A different prompt.\n');
+	await saved(editor);
 	await library.refreshAll();
-	expect(await readFile(join(root, output.path), 'utf8')).toBe(saved);
+	expect(await readFile(join(root, output.path), 'utf8')).toBe(result);
 
 	const deletion = expectOk(await library.deletionFor(editor.path));
 	expect(deletion).toMatchObject({ kind: 'transformation', results: 1 });
@@ -673,7 +683,7 @@ test('a result outlives edits to its transformation and the transformation’s d
 	expect(library.transformations).toHaveLength(0);
 	expect(library.selectedTransformation).toBeUndefined();
 	expect(await names(root, 'transformations')).toEqual([]);
-	expect(await readFile(join(root, output.path), 'utf8')).toBe(saved);
+	expect(await readFile(join(root, output.path), 'utf8')).toBe(result);
 	const kept = library.outputsFor(transcript.stem)[0]!;
 	expect(kept.fields.transformationTitle).toBe('Clean up');
 	expect(kept.fields.prompt).toBe(CLEANUP.prompt);
@@ -1022,9 +1032,9 @@ test('two asks for the same transcript and transformation at once send one reque
 	expect(
 		await library.createTransformation(STARTER_TRANSFORMATIONS[1]!),
 	).toBeUndefined();
-	const summarize = formOf(library.selectedTransformation?.slot);
-	summarize.change({ fields: { model: 'chat-model' } });
-	await summarize.saveNow();
+	const summarize = editingOf(library.selectedTransformation?.slot);
+	summarize.setField('model', 'chat-model');
+	await saved(summarize);
 	expect(summarize.status.kind).toBe('saved');
 	const reading = deferred<void>();
 	reads.hold = reading.promise;

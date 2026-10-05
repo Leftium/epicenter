@@ -2,18 +2,19 @@
  * A note's text: its Markdown body for the rich-text view, the text a list
  * shows, and help for repairing a note's file as text.
  *
- * A structured note is a row editor's document: fields and a Markdown body.
- * The rich-text view and the Markdown view both edit that body through
- * `noteBody`; a save writes the whole document in its canonical form. A note
- * file the row editor cannot hold is repaired as text, and `repairFields` is
- * the one change made to that text here: a person asks for it.
+ * A structured note is its row editor's complete document: fields and a
+ * Markdown body. The rich-text view and the Source view both edit that body
+ * through `noteBody`; each edit gives the editor the whole document in its
+ * canonical form. A note whose text does not read as one is repaired in its file view,
+ * and `repairFields` is the one change made to that text here: a person asks
+ * for it.
  */
 import { patchRowText, type TableReading } from '@epicenter/folder';
 import { Err, Ok, type Result } from 'wellcrafted/result';
 import { instantNow, type NoteFields } from './data.js';
 import { type BodyInspection, inspectNoteBody } from './editor/markdown.js';
 import type { BodyDraft } from './editor/rich-session.js';
-import type { RowSession } from './row-session.svelte.js';
+import type { NoteSession } from './note-session.svelte.js';
 
 export type RichAvailability =
 	| {
@@ -47,27 +48,49 @@ export function bodyText(markdown: string, previousBody: string): string {
 }
 
 /**
- * A note's body, as the rich-text and Markdown views edit it, in whichever
+ * A note's body, as the rich-text and Source views edit it, in whichever
  * session holds the note now: a rename hands the note to a new session, and
- * the views, with their undo history, stay. A body change moves `updatedAt`
- * when the document holds a valid one; it never adds the field.
+ * the views, with their undo history, stay. `current` is read on every call,
+ * never kept. `mounted` is the view's own lifetime: a control something
+ * still holds can deliver input after its view is gone, and that input is
+ * not taken. A body change moves `updatedAt`; it never adds the field.
+ * `input` answers whether the editor took the body. A refused body changes
+ * nothing; with `keep` (the Source view) it stays in that view with the
+ * reason, since its control would otherwise show the saved body again.
  */
 export function noteBody(
-	current: () => RowSession<NoteFields>,
-	now: () => NoteFields['updatedAt'] = instantNow,
+	current: () => NoteSession,
+	{
+		mounted = () => true,
+		now = instantNow,
+		keep = false,
+	}: {
+		mounted?: () => boolean;
+		now?: () => NoteFields['updatedAt'];
+		keep?: boolean;
+	} = {},
 ): BodyDraft {
 	return {
 		get body() {
-			return current().state.document.body;
+			const row = current().row;
+			return row.status === 'valid' ? row.body : '';
 		},
 		input(body) {
+			if (!mounted()) return false;
 			const session = current();
-			return session.change({
-				body,
-				...(session.state.reading.fields.updatedAt !== undefined && {
-					fields: { updatedAt: now() },
-				}),
-			});
+			const row = session.row;
+			return (
+				session.edit(
+					{
+						body,
+						fields:
+							row.status === 'valid' && row.fields.updatedAt !== undefined
+								? { updatedAt: now() }
+								: {},
+					},
+					{ keep },
+				) === undefined
+			);
 		},
 		refuse: (reason) => current().refuse(reason),
 	};

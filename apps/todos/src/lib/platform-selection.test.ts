@@ -62,6 +62,26 @@ describe('#platform/folder', () => {
 		expect(modules.some(folderModule('tauri.ts'))).toBe(true);
 		expect(modules.some(folderModule('tauri-adapter.ts'))).toBe(true);
 		expect(modules.some(folderModule('native/bindings.gen.ts'))).toBe(true);
+		// The departure leaf reaches the host's published wire and this
+		// window's Tauri API, never the host's Bun entry.
+		expect(
+			modules.some((path) =>
+				path.endsWith('platform/departure.epicenter-host.ts'),
+			),
+		).toBe(true);
+		expect(
+			modules.some((path) => path.endsWith('apps/epicenter/src/departure-wire.ts')),
+		).toBe(true);
+		expect(modules.some((path) => /@tauri-apps\/api\/.*webviewWindow/.test(path))).toBe(
+			true,
+		);
+		expect(
+			modules.filter(
+				(path) =>
+					/apps\/epicenter\/src\/(?!departure-wire\.ts$)/.test(path) ||
+					/platform\/departure\.browser\.ts$/.test(path),
+			),
+		).toEqual([]);
 		expect(
 			modules.filter(
 				(path) =>
@@ -83,6 +103,17 @@ describe('#platform/folder', () => {
 		expect(modules.some(folderModule('browser-adapter.ts'))).toBe(true);
 		expect(modules.some(folderModule('opfs-store.ts'))).toBe(true);
 		expect(modules.some((path) => path.includes('isomorphic-git'))).toBe(true);
+		// The browser has no departure port and reaches nothing of the host's.
+		expect(
+			modules.some((path) => path.endsWith('platform/departure.browser.ts')),
+		).toBe(true);
+		expect(
+			modules.filter((path) =>
+				/apps\/epicenter\/|platform\/departure\.epicenter-host\.ts$|@tauri-apps\/api\/.*webviewWindow/.test(
+					path,
+				),
+			),
+		).toEqual([]);
 		expect(
 			modules.filter((path) =>
 				/folder\/src\/browser-(store|migration)\.ts$|fake-indexeddb/.test(path),

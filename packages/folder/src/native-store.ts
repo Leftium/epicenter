@@ -5,12 +5,33 @@
  * and replaces them only when they match; this is a best-effort check, not an
  * operating-system-wide compare-and-swap against other programs. Exclusive
  * creation and moves use hard links, which fail rather than overwrite an
- * existing destination. Replacement writes a scratch file under
- * `.git/epicenter/scratch`, checks again that a file is at the path (with the
- * expected sha256, when one is given), and renames the scratch file into
- * place. The second check catches a writer that landed, or a removal, while
- * the bytes were being staged; a writer or removal between that check and the
- * rename is still overwritten.
+ * existing destination. A write stages its bytes in a scratch file under
+ * `.git/epicenter/scratch` first.
+ *
+ * A replacement checks again that a file is at the path (with the expected
+ * sha256, when one is given), then exchanges the scratch file with it in one
+ * system call (`native-exchange.ts`). The exchange requires the file to exist
+ * at that moment, so a replacement never puts back a file another program
+ * removed, however late the removal: the outcome is `NotFound`, or
+ * `Conflict` when a sha256 was expected. Bytes another program wrote between
+ * the second check and the exchange are still displaced. macOS and Linux
+ * exchange; a filesystem there that cannot, or an addon that is not built,
+ * is an `Io` failure and nothing is written. An overwrite renames on every
+ * platform; it may create the file, and is a separate guarantee.
+ *
+ * The exchange is the only operation on the path. What it displaced lands in
+ * scratch: a regular file is removed. Anything else (a directory, a link, a
+ * pipe, or an entry that cannot be inspected) is kept where it is, and the
+ * outcome is a `Partial` whose write is both applied and failed, with an `Io`
+ * error naming where the entry was kept. Nothing tries to put it back: by
+ * then the path may hold a third program's bytes.
+ *
+ * Windows has no exchange here yet, so a replacement is unavailable there
+ * until a mechanism that requires the file at publication is proven: it is
+ * an `Io` failure naming the platform, the staged copy is removed, and the
+ * file at the path is untouched. Nothing retries it. Creation, reads,
+ * overwrites, moves, and removals are unchanged by this repair; none is
+ * verified on Windows.
  *
  * One boundary applies its batches one at a time, so two saves through the
  * same opened folder never share that window: the later one checks against
@@ -23,6 +44,7 @@
  * A multi-file batch applies ordered steps. When a step fails, the result
  * reports which steps reached the folder; nothing is rolled back.
  */
+import type { Stats } from 'node:fs';
 import {
 	link,
 	lstat,
@@ -44,12 +66,22 @@ import type {
 	FileListing,
 	FileRead,
 } from './boundary.js';
-import { ApplyError, FileError, type FileStep } from './errors.js';
-import { ancestors, isPortablePath, pathProblem } from './paths.js';
 import { hashBytes } from './capture.js';
+import { ApplyError, describe, FileError, type FileStep } from './errors.js';
+import { exchangeFiles } from './native-exchange.js';
+import { ancestors, isPortablePath, pathProblem } from './paths.js';
 
 type Code = { code?: string };
 const codeOf = (cause: unknown) => (cause as Code | undefined)?.code;
+
+/** What a directory entry that is not a regular file is, for a message. */
+function entryKind(stats: Stats): string {
+	if (stats.isDirectory()) return 'a directory';
+	if (stats.isSymbolicLink()) return 'a symbolic link';
+	if (stats.isFIFO()) return 'a named pipe';
+	if (stats.isSocket()) return 'a socket';
+	return 'a special file';
+}
 
 export function createNativeFileBoundary(root: string): FileBoundary {
 	const scratch = join(root, '.git', 'epicenter', 'scratch');
@@ -186,9 +218,77 @@ export function createNativeFileBoundary(root: string): FileBoundary {
 	}
 
 	/**
-	 * Apply one change. A move is two filesystem steps; when its destination
-	 * link lands but retiring the source fails, `landed` receives the
-	 * destination write so the caller reports it instead of an ordinary error.
+	 * Put the staged bytes at `path` only if a file is there when they land,
+	 * and settle `temporary`. Until the one exchange succeeds it holds the
+	 * staged bytes, removed on any failure. After it the write has landed and
+	 * `temporary` holds whatever the path held: a regular file is removed;
+	 * anything else, or an entry that cannot be inspected, stays exactly
+	 * there, `landed` receives the write, and the `Io` error names where it
+	 * is. Nothing touches the path again: another program may already have
+	 * written there since.
+	 */
+	async function publishReplacement(
+		path: string,
+		expectedSha256: string | undefined,
+		temporary: string,
+		landed: FileStep[],
+	): Promise<Result<undefined, FileError>> {
+		const target = absolute(path);
+		const discard = () => unlink(temporary).catch(() => {});
+		// Every platform publishes a replacement this way and no other. Where
+		// there is no exchange, Windows included, it rejects without a `code`
+		// before touching the path: `Io`, nothing written.
+		try {
+			await exchangeFiles(temporary, target);
+		} catch (cause) {
+			// Nothing was exchanged: `temporary` holds only the staged bytes.
+			const missing = codeOf(cause) === 'ENOENT';
+			const staged =
+				missing &&
+				(await lstat(temporary).then(
+					() => true,
+					() => false,
+				));
+			await discard();
+			if (!missing) return FileError.Io({ path, operation: 'replace', cause });
+			// Either path may be the missing one; the staged file never moves.
+			if (!staged)
+				return FileError.Io({ path, operation: 'stage bytes for', cause });
+			return expectedSha256 === undefined
+				? FileError.NotFound({ path })
+				: conflict(path, expectedSha256, undefined);
+		}
+		let displaced: Stats | undefined;
+		let unreadable: unknown;
+		try {
+			displaced = await lstat(temporary);
+		} catch (cause) {
+			unreadable = cause;
+		}
+		if (displaced?.isFile()) {
+			await discard();
+			return Ok(undefined);
+		}
+		landed.push({ kind: 'write', path });
+		const found =
+			displaced === undefined
+				? `could not be inspected (${describe(unreadable)})`
+				: `is ${entryKind(displaced)}, not a regular file`;
+		return FileError.Io({
+			path,
+			operation: 'set aside what the replacement displaced from',
+			cause: new Error(
+				`The new bytes landed at '${path}', so the file there changed. What they displaced ${found}, and it was left at '${temporary}'. Inspect '${path}', and anything written there since, before restoring it.`,
+				{ cause: unreadable },
+			),
+		});
+	}
+
+	/**
+	 * Apply one change. A step that fails after something of it landed puts
+	 * that in `landed`, so the caller reports it instead of an ordinary error:
+	 * a move whose destination link landed but whose source was not retired,
+	 * and a replacement whose bytes landed but whose displaced entry was kept.
 	 */
 	async function step(
 		change: FileChange,
@@ -213,8 +313,12 @@ export function createNativeFileBoundary(root: string): FileBoundary {
 				);
 				if (refused !== undefined) return refused;
 			}
-			const parent = await ensureParent(change.path);
-			if (parent.error !== null) return parent;
+			// A replacement's file, and so its parent, was just found; creating a
+			// parent that went since would only leave an empty directory behind.
+			if (change.kind !== 'replace') {
+				const parent = await ensureParent(change.path);
+				if (parent.error !== null) return parent;
+			}
 			let temporary: string;
 			try {
 				temporary = await scratchFile(change.bytes);
@@ -225,18 +329,27 @@ export function createNativeFileBoundary(root: string): FileBoundary {
 					cause,
 				});
 			}
+			// Whether `temporary` is still only the staged bytes, for the cleanup below.
+			let staged = true;
 			try {
-				// Staging and parent creation took time. Check the sha256 again so
-				// the only unchecked window left is this read to the rename below.
 				if (change.kind === 'replace') {
+					// Staging took time. Check the sha256 again so the only unchecked
+					// window left is this read to the exchange.
 					const { data: now, error: rereadError } = await readCurrent(
 						change.path,
 					);
 					if (rereadError !== null) return Err(rereadError);
 					const refused = replaceable(change.path, change.expectedSha256, now);
 					if (refused !== undefined) return refused;
-				}
-				if (change.kind === 'create') {
+					staged = false;
+					const published = await publishReplacement(
+						change.path,
+						change.expectedSha256,
+						temporary,
+						landed,
+					);
+					if (published.error !== null) return published;
+				} else if (change.kind === 'create') {
 					// Exclusive creation: link fails instead of replacing a newcomer.
 					try {
 						await link(temporary, absolute(change.path));
@@ -251,6 +364,7 @@ export function createNativeFileBoundary(root: string): FileBoundary {
 						});
 					}
 				} else {
+					// A deliberate overwrite: create or replace, whatever is there.
 					try {
 						await rename(temporary, absolute(change.path));
 					} catch (cause) {
@@ -262,7 +376,9 @@ export function createNativeFileBoundary(root: string): FileBoundary {
 					}
 				}
 			} finally {
-				await unlink(temporary).catch(() => {});
+				// The staged bytes, or nothing after a rename. A replacement settles
+				// `temporary` itself once it hands it over.
+				if (staged) await unlink(temporary).catch(() => {});
 			}
 			return Ok(undefined);
 		}
@@ -456,6 +572,8 @@ export function createNativeFileBoundary(root: string): FileBoundary {
 						return ApplyError.Partial({
 							applied: reached,
 							// A move whose destination landed failed at retiring its source.
+							// A replacement whose bytes landed failed at settling what they
+							// displaced: its write is both applied and failed.
 							failed:
 								landed.length > 0 && change.kind === 'move'
 									? { kind: 'remove', path: change.from }

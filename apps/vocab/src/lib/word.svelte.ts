@@ -1,695 +1,459 @@
 /**
- * One saved word: who owns its text, and every piece of work on its file.
+ * One saved word: its row editor and every operation on its file.
  *
- * Exactly one owner holds the word's text at a time:
+ * The folder's row editor owns the word's input and publishes it. Every note
+ * keystroke, stage press, and repair keystroke goes to it at once as the
+ * whole word: `set` for note and stage, with the metadata and body the row
+ * already holds, and `setText` for exact file text. The editor keeps one write
+ * running and the latest input waiting, and later input replaces the file
+ * whatever another tab saved there meanwhile. What the learner sees is the
+ * editor's row. The one exception is a note the editor refused because no
+ * row can hold it, such as one with half of a surrogate pair: that note text
+ * alone stays in the field with the reason until the learner corrects or
+ * discards it, and the word is not deleted or left without asking meanwhile.
  *
- * - `editing`: the folder's row editor, holding the note while it is typed
- *   and the stage in one local document, its baseline, the latest read, and
- *   each save. A save writes the whole word, note and stage together,
- *   whatever the file holds, and a note typed during it stays unsaved against
- *   its receipt.
- * - `repair`: the exact text of a file that cannot open as a row, as this
- *   page holds it. No editor runs. A repair replaces only the version of the
- *   file that was shown, and only when the learner saves it.
- *
- * The editor opens on first use, not for the whole list. Opening, every save,
- * every repair, and deletion run on one tracked chain, one at a time.
- * Deletion and disposal close a gate first, so no view of the word starts new
- * work, then wait for the chain.
- *
- * - The note saves on leaving its field. A stage saves on pressing it, with
- *   the note as typed, so neither control resets the other. Leaving the field
- *   while the editor is still opening saves once it has opened.
- * - Leaving the field does not save, and a stage is refused, while the word
- *   holds other content than the note was typed over, or the file is not a
- *   valid word or cannot be read. The learner keeps theirs, takes the saved
- *   word, or repairs the file's text.
- * - A failed save, or one whose answer was lost, is not sent again by leaving
- *   the field; it stays shown, unknown when unknown. Trying again sends the
- *   word again. Taking the saved word answers that outcome without calling it
- *   saved, so later typing saves as usual.
+ * - A failed save, or one whose answer was lost, keeps the learner's input
+ *   shown and pauses saving. "Try again" resumes it; reloading reads the
+ *   file and replaces the input with it.
+ * - The editor reads the file once, when the word's card opens it. Changes
+ *   made elsewhere reach it only through an explicit reload.
+ * - A file that is not a valid word shows its exact text for repair through
+ *   the same editor. No save ever creates a file that is gone.
+ * - Deletion and closing stop every view of the word from taking input
+ *   first, and let admitted saves settle. A delete whose answer was lost
+ *   keeps the word until the learner reads the file again or lets it go.
  */
 import {
-	inspectRow,
-	type RowRevision,
-	type RowSaveOutcome,
+	FileError,
+	type RowError,
+	type RowSaveError,
 	type TableEditError,
-	type TextCapture,
 } from '@epicenter/folder';
+import { withFileNewlines } from '@epicenter/folder/file-browser';
+import { fromRowEditor } from '@epicenter/folder/svelte';
 import { extractErrorMessage } from 'wellcrafted/error';
-import {
-	type Entry,
-	readEntry,
-	type Stage,
-	type VocabTables,
-	vocabFolder,
-} from './data.js';
+import type { Entry, Stage, VocabTables } from './data.js';
 
 type EntriesTable = VocabTables['entries'];
 type WordEditor = NonNullable<
 	Awaited<ReturnType<EntriesTable['edit']>>['data']
 >;
 type WordState = ReturnType<WordEditor['get']>;
+type WordRow = WordState['row'];
+type SaveState = WordState['save'];
+type ReloadError = NonNullable<
+	Awaited<ReturnType<WordEditor['reload']>>['error']
+>;
 
-type WordMode =
-	| { readonly kind: 'closed' }
-	| { readonly kind: 'opening' }
-	| { readonly kind: 'editing'; readonly editor: WordEditor }
-	| {
-			readonly kind: 'repair';
-			/** The file's exact text as the learner was shown it; a repair replaces only this. */
-			readonly file: TextCapture;
-			/** The repair text, as typed here. */
-			readonly text: string;
-			readonly reason: string;
-			/** Why the last repair did not land. */
-			readonly problem: string | undefined;
-	  }
-	/** No editor could be opened: the word is gone or cannot be read. */
-	| { readonly kind: 'unavailable'; readonly message: string };
+/** Textareas report LF; the file's own convention is restored on saving. */
+export const lf = (text: string) => text.replace(/\r\n?/g, '\n');
 
-/** A save of this word that did not land, or whose answer was lost. */
-type WordOutcome =
-	| { readonly kind: 'unconfirmed'; readonly message: string }
-	| { readonly kind: 'failed'; readonly message: string }
-	/**
-	 * A delete was sent and no answer came back: the word may be gone. A later
-	 * read showing it present or gone confirms nothing about the delete.
-	 */
-	| { readonly kind: 'deletion'; readonly message: string };
-
-/** What the latest read of the file asks the learner to review first. */
-type WordReview =
-	/** The note is unsaved and the word holds other content than it was typed over. */
-	| {
-			readonly kind: 'changed';
-			readonly revision: RowRevision;
-			readonly note: unknown;
-	  }
-	/** The file was changed into something that is not a valid word. */
-	| {
-			readonly kind: 'invalid';
-			readonly file: TextCapture;
-			readonly message: string;
-	  }
-	/** The file cannot be read, so nothing may be saved over it. */
-	| { readonly kind: 'unreadable'; readonly message: string };
-
-/**
- * The last save's outcome while the learner has not answered it. History:
- * `acknowledged` is an outcome they answered by taking the saved word; it
- * stays the editor's `lastSave` and only stops being shown.
- */
-function wordOutcome(
-	state: WordState,
-	{
-		acknowledged,
-		thrown,
-	}: { acknowledged: RowSaveOutcome | undefined; thrown: string | undefined },
-): WordOutcome | undefined {
-	if (thrown !== undefined) return { kind: 'failed', message: thrown };
-	const lastSave = state.lastSave === acknowledged ? undefined : state.lastSave;
-	if (lastSave?.kind === 'failed' || lastSave?.kind === 'unconfirmed')
-		return { kind: lastSave.kind, message: lastSave.error.message };
-	return undefined;
-}
-
-/**
- * What the latest read asks the learner to review before anything saves,
- * whatever any earlier save's outcome was. A word removed elsewhere asks
- * nothing: the next save writes it back.
- */
-function wordReview(
-	state: WordState,
-	{ working }: { working: boolean },
-): WordReview | undefined {
-	const { observation, isDirty, baseline } = state;
-	switch (observation.kind) {
-		case 'present':
-			// A read from before this page's own save settled is not news.
-			if (working || state.saving !== undefined) return;
-			return isDirty && observation.revision.canonical !== baseline.canonical
-				? {
-						kind: 'changed',
-						revision: observation.revision,
-						note: observation.revision.document.fields.note,
-					}
-				: undefined;
-		case 'unreadable':
-			return { kind: 'unreadable', message: observation.error.message };
-		case 'unsupported':
-			return {
-				kind: 'invalid',
-				file: observation.file,
-				message: observation.refusal.reason,
-			};
-		case 'invalid':
-			return {
-				kind: 'invalid',
-				file: observation.file,
-				message:
-					observation.reading.parseError?.message ??
-					observation.reading.issues.map((issue) => issue.message).join('; '),
-			};
-		// A word removed elsewhere is written back by the next save.
-		case 'missing':
-			return;
+/** Why readable text is not a valid word, in a sentence. */
+export function describeRowError(error: RowError): string {
+	switch (error.name) {
+		case 'Nonconforming':
+			return error.reading.issues.map((issue) => issue.message).join('; ');
+		case 'NoCanonicalForm':
+			return error.refusal.reason;
+		case 'Unencodable':
+			return 'The text has a lone surrogate, which a file cannot hold exactly.';
 		default:
-			return observation satisfies never;
+			return error satisfies never;
 	}
 }
 
-const captureOf = ({ path, sha256, text }: TextCapture): TextCapture => ({
-	path,
-	sha256,
-	text,
-});
+/** Why a save did not land, or that its answer was lost, as the learner reads it. */
+export function describeSaveError(error: RowSaveError): string {
+	switch (error.name) {
+		case 'Unconfirmed':
+			return `Whether your last change was saved is not known. ${error.message}`;
+		case 'NotFound':
+			return 'Your last change was not saved: the word’s file is gone, and saving never creates it again.';
+		default:
+			return `Your last change was not saved: ${error.message}`;
+	}
+}
 
-const noop = () => {};
+/** Why reading the file again replaced nothing. */
+function describeReloadError(error: ReloadError): string {
+	switch (error.name) {
+		case 'InputChanged':
+			return 'You changed this word while its file was being read, so your text was kept. Reload again to replace it.';
+		case 'NotFound':
+			return 'This word’s file is gone.';
+		default:
+			return `This word’s file could not be read: ${error.message}`;
+	}
+}
 
-export type WordDraft = ReturnType<typeof createWordDraft>;
+/** Why a reload waits while a refused note is kept in the field. */
+const REFUSED_NOTE_HELD =
+	'Your note could not be saved as typed. Correct it or discard it first.';
 
-export function createWordDraft({
+function describeOpenError(error: TableEditError): string {
+	return error.name === 'NotFound'
+		? 'This word’s file is gone, so it cannot be edited.'
+		: `This word could not be opened: ${error.message}`;
+}
+
+export type Word = ReturnType<typeof createWord>;
+
+export function createWord({
 	table,
 	id,
-	onSaved,
+	listed,
+	onSettled,
 }: {
 	table: EntriesTable;
 	id: string;
-	/** A save or a repair reached the folder: this is the word it wrote. */
-	onSaved: (entry: Entry) => void;
+	/** The word as the list last read it, if it is listed. */
+	listed: () => Entry | undefined;
+	/** This word's saves landed: read it into the list. */
+	onSettled: () => Promise<void>;
 }) {
-	let mode = $state.raw<WordMode>({ kind: 'closed' });
-	/** The editor's state, only while the editor owns the text. */
-	let state = $state.raw<WordState | undefined>();
-	/** A note typed while no editor holds it, applied once one does. */
-	let pendingNote = $state<string | undefined>();
-	/** How many tracked operations are queued or running. */
-	let working = $state(0);
-	/** The folder threw instead of answering a save. */
-	let thrown = $state<string | undefined>();
-	/** A delete of this word was not answered; held until the learner chooses. */
+	/** The row editor, once one is open. Kept until the word closes. */
+	let editor = $state.raw<WordEditor | undefined>();
+	let opening = $state.raw<Promise<void> | undefined>();
+	/** Why the latest attempt to open gave no editor. */
+	let openError = $state.raw<TableEditError | undefined>();
+	/** The latest reload found no file, until one finds it again. */
+	let goneOnRead = $state(false);
+	/** A delete was sent and no answer came back; held until the file is read or let go. */
 	let deletion = $state<string | undefined>();
-	let acknowledged = $state.raw<RowSaveOutcome | undefined>();
-	/** Deletion or disposal is under way: no view starts new work. */
-	let gated = $state(false);
-	/** Disposal began: an editor opened from now on is let go at once. */
-	let retired = false;
-	let tail: Promise<void> | undefined;
-	let disposal: Promise<void> | undefined;
+	/** Note text the editor refused, and why, until a later note is accepted or this is discarded. */
+	let refusedNote = $state.raw<
+		{ readonly text: string; readonly reason: string } | undefined
+	>();
+	/** An operation is under way: no view takes input or starts new work. */
+	let fence = $state<'deleting' | 'closing' | 'reloading' | undefined>();
+	/** The delete under way, which closing waits for. */
+	let operation: Promise<unknown> | undefined;
+	/** Why the word is closed for good: nothing typed is taken and no editor is installed. */
+	let ended: string | undefined;
+	/** Waiting for this word's writes to land, to list them. */
+	let following = false;
+
+	const stopped = (): string | null => {
+		if (ended !== undefined) return ended;
+		if (fence === 'deleting') return 'This word is being deleted.';
+		if (fence === 'reloading') return 'This word is being read again.';
+		return null;
+	};
+
+	const reactive = () =>
+		editor === undefined ? undefined : fromRowEditor(editor);
+
+	/** Whether the word's file is known to be gone. */
+	function missing(save: SaveState | undefined): boolean {
+		if (editor === undefined) return openError?.name === 'NotFound';
+		return (
+			goneOnRead ||
+			(save?.status === 'failed' && save.error.name === 'NotFound')
+		);
+	}
 
 	/**
-	 * Run `operation` after every operation before it. With nothing pending it
-	 * starts now, so a save captures the word as it is at the call.
+	 * Once the writes admitted now and while waiting have landed, list the
+	 * word as saved. A failure stays on the editor until the learner retries
+	 * or reloads, and either one follows again.
 	 */
-	function track<T>(operation: () => Promise<T>): Promise<T> {
-		working++;
-		const start = async () => {
-			try {
-				return await operation();
-			} finally {
-				// The last one out leaves the chain idle before its caller resumes.
-				if (--working === 0) tail = undefined;
-			}
-		};
-		const result = tail === undefined ? start() : tail.then(start);
-		tail = result.then(noop, noop);
-		return result;
-	}
-
-	async function idle() {
-		while (tail) await tail;
-	}
-
-	/** Why no new work starts, while the gate is closed. */
-	const stopped = () =>
-		retired
-			? 'This page is closing, so nothing more is saved here.'
-			: 'This word is being deleted.';
-	const dirty = () => mode.kind === 'editing' && (state?.isDirty ?? false);
-	const repairTyped = () =>
-		mode.kind === 'repair' && mode.text !== mode.file.text;
-
-	// Shown side by side, and each judged on its own: an old outcome never
-	// hides what the latest read found, and what it found never hides that a
-	// save did not land.
-	const outcome = $derived(
-		deletion !== undefined
-			? ({ kind: 'deletion', message: deletion } as const)
-			: mode.kind === 'editing' && state !== undefined
-				? wordOutcome(state, { acknowledged, thrown })
-				: undefined,
-	);
-	const review = $derived(
-		mode.kind === 'editing' && state !== undefined
-			? wordReview(state, { working: working > 0 })
-			: undefined,
-	);
-
-	/** The word a save receipt wrote, read as the listing reads it. */
-	function entryOf({ path, text, sha256 }: RowRevision): Entry | undefined {
-		return readEntry({
-			path,
-			stem: id,
-			text,
-			sha256,
-			...inspectRow(vocabFolder.tables.entries, text),
-		});
-	}
-
-	function attach(editor: WordEditor) {
-		mode = { kind: 'editing', editor };
-		thrown = undefined;
-		acknowledged = undefined;
-		editor.subscribe((next) => {
-			// A former editor's last states are not news.
-			if (mode.kind === 'editing' && mode.editor === editor) state = next;
-		});
-		if (pendingNote !== undefined) {
-			const { error: changeError } = editor.change({
-				fields: { note: pendingNote },
-			});
-			if (changeError === null) pendingNote = undefined;
-		}
-	}
-
-	/** Hold a file that has no row form as repair text, keeping text typed here. */
-	function holdRepair(file: TextCapture, reason: string) {
-		const text =
-			repairTyped() && mode.kind === 'repair' ? mode.text : file.text;
-		mode = {
-			kind: 'repair',
-			file: captureOf(file),
-			text,
-			reason,
-			problem: mode.kind === 'repair' ? mode.problem : undefined,
-		};
-	}
-
-	function opened(error: TableEditError) {
-		switch (error.name) {
-			case 'NoCanonicalForm':
-			case 'InvalidSource':
-				holdRepair(error.file, error.message);
-				return;
-			default:
-				if (repairTyped() && mode.kind === 'repair') {
-					mode = { ...mode, problem: error.message };
-					return;
+	function follow(current: WordEditor) {
+		if (following) return;
+		following = true;
+		void (async () => {
+			let landed = false;
+			for (;;) {
+				const { error: saveError } = await current.flush();
+				if (saveError !== null || editor !== current) break;
+				if (current.get().save.status !== 'saving') {
+					landed = true;
+					break;
 				}
-				mode = { kind: 'unavailable', message: error.message };
-		}
+			}
+			following = false;
+			if (!landed || ended !== undefined) return;
+			// A write replaced the file, so a delete without an answer did not remove it.
+			deletion = undefined;
+			goneOnRead = false;
+			await onSettled();
+			// Input admitted while the list was read is followed too.
+			if (current.get().save.status === 'saving') follow(current);
+		})();
 	}
 
-	/**
-	 * Open an editor on the word as it is now. Part of a tracked operation.
-	 * Repair text typed meanwhile keeps its owner: the new editor is let go.
-	 */
 	async function acquire(): Promise<void> {
-		if (mode.kind === 'closed') mode = { kind: 'opening' };
 		let result: Awaited<ReturnType<EntriesTable['edit']>>;
 		try {
 			result = await table.edit(id);
 		} catch (cause) {
-			if (retired) return;
-			const message = extractErrorMessage(cause);
-			if (repairTyped() && mode.kind === 'repair')
-				mode = { ...mode, problem: message };
-			else mode = { kind: 'unavailable', message };
-			return;
+			result = FileError.Io({
+				path: `entries/${id}.md`,
+				operation: 'read',
+				cause,
+			});
 		}
-		const { data: editor, error: editError } = result;
-		if (retired || repairTyped()) {
-			if (editError === null) await editor.dispose();
-			return;
-		}
-		if (editError !== null) opened(editError);
-		else attach(editor);
+		// Closed meanwhile: the editor is not kept.
+		if (ended !== undefined || editor !== undefined) return;
+		const { data: opened, error: openFailure } = result;
+		openError = openFailure ?? undefined;
+		if (openFailure === null) editor = opened;
 	}
 
-	/** Open the editor once; later calls join the work already pending. */
+	/** Open the editor once; a call while it opens joins that attempt. */
 	function open(): Promise<void> {
-		if (gated || mode.kind === 'editing') return idle();
-		if (mode.kind === 'opening') return idle();
-		return track(acquire);
-	}
-
-	/**
-	 * One save of the whole word, then a read of the file. Answers why it
-	 * did not land, or null.
-	 */
-	function save(editor: WordEditor): Promise<string | null> {
-		return track(async () => {
-			try {
-				const { data: receipt, error } = await editor.save();
-				if (error !== null) return error.message;
-				thrown = undefined;
-				const entry = entryOf(receipt);
-				if (entry !== undefined) onSaved(entry);
-				return null;
-			} catch (cause) {
-				// Storage that throws is not an answer. The note stays unsaved.
-				thrown = extractErrorMessage(cause);
-				return thrown;
-			} finally {
-				await editor.refresh();
-			}
+		if (ended !== undefined || fence !== undefined || editor !== undefined)
+			return opening ?? Promise.resolve();
+		opening ??= acquire().finally(() => {
+			opening = undefined;
 		});
+		return opening;
 	}
 
-	/** Why there is no editor to save with, when there is none. */
-	function unavailable(): string | null {
-		if (gated) return stopped();
-		switch (mode.kind) {
-			case 'repair':
-				return `This word's file needs repair before it can be edited: ${mode.reason}`;
-			case 'unavailable':
-				return mode.message;
-			default:
-				return null;
-		}
-	}
-
-	/** Why a stage does not save now: the latest read waits for a review. */
-	function held(): string | null {
-		if (deletion !== undefined)
-			return 'Deleting this word was not confirmed. Choose whether to keep it first.';
-		switch (review?.kind) {
-			case 'changed':
-				return 'This word changed in another tab while you were typing. Choose which note to keep first.';
-			case 'invalid':
-				return 'This word was changed in another tab into text Vocab cannot read as a word. Choose what to keep first.';
-			case 'unreadable':
-				return 'This word cannot be read just now. Your note is kept here.';
-			default:
-				return null;
-		}
-	}
-
-	/** Take the latest valid read in place of the local word, answering any outcome. */
-	function takeSaved(): string | null {
-		if (gated) return stopped();
-		if (mode.kind !== 'editing' || state === undefined) return null;
-		if (working > 0) return 'This word is being saved. Try again in a moment.';
-		const { observation, lastSave } = state;
-		if (observation.kind !== 'present')
-			return 'This word could not be read just now, so there is no saved word to go back to.';
-		const { error: adoptError } = mode.editor.adopt(observation.revision);
-		if (adoptError !== null) return adoptError.message;
-		acknowledged = lastSave;
-		thrown = undefined;
-		deletion = undefined;
-		pendingNote = undefined;
-		return null;
-	}
-
-	function dispose(): Promise<void> {
-		disposal ??= (async () => {
-			gated = true;
-			retired = true;
-			await idle();
-			if (mode.kind === 'editing') await mode.editor.dispose().catch(noop);
-		})();
-		return disposal;
-	}
+	/** Why there is no editor to save with. */
+	const unavailable = () =>
+		openError === undefined
+			? 'This word could not be opened.'
+			: describeOpenError(openError);
 
 	return {
 		id,
-		get mode() {
-			return mode;
+		/** The editor's row, tracked; `undefined` until the editor opens. */
+		get row(): WordRow | undefined {
+			return reactive()?.row;
 		},
-		/** The editor's state while it owns the text: document, baseline, latest read, last save. */
-		get state() {
-			return state;
+		/** The editor's save state, tracked; `undefined` until the editor opens. */
+		get save(): SaveState | undefined {
+			return reactive()?.save;
 		},
-		/** A save that did not land or whose answer was lost, until the learner answers it. */
-		get outcome() {
-			return outcome;
+		get opening() {
+			return opening !== undefined;
 		},
-		/** What the latest read of the file asks the learner to review first. */
-		get review() {
-			return review;
+		/** Why the latest attempt to open the word gave no editor. */
+		get openError() {
+			return openError === undefined ? undefined : describeOpenError(openError);
 		},
-		/** A note typed while no editor can hold it, such as while the file needs repair. */
-		get pendingNote() {
-			return pendingNote;
+		/** The word's file is known to be gone. Nothing saved here creates it again. */
+		get missing() {
+			return missing(reactive()?.save);
 		},
-		/** Drop a note that no editor could hold. */
-		discardNote() {
-			if (!gated) pendingNote = undefined;
+		/** An operation is under way, or the word is closed. */
+		get fenced() {
+			return fence !== undefined || ended !== undefined;
 		},
-		get saving() {
-			return working > 0 || state?.saving !== undefined;
+		/** A delete whose answer was lost, until the file is read or the word is let go. */
+		get deletion() {
+			return deletion;
 		},
-		/** Deletion or disposal is under way. */
-		get gated() {
-			return gated;
+		/** Note text the editor refused, and why, while it is kept in the field. */
+		get refusedNote() {
+			return refusedNote;
 		},
-		/** Whether anything typed here is not saved. */
+		/** Whether a save is running or failed, a note was refused, or a delete is in flight or unanswered. */
 		get unsettled() {
+			const save = editor?.get().save.status;
 			return (
-				dirty() ||
-				pendingNote !== undefined ||
-				repairTyped() ||
-				// An unanswered delete keeps even a clean word: letting it go is a choice.
+				refusedNote !== undefined ||
 				deletion !== undefined ||
-				working > 0 ||
-				state?.saving !== undefined
+				operation !== undefined ||
+				save === 'saving' ||
+				save === 'failed'
 			);
 		},
+		/** Whether a stage press can save now: the word is a valid row, or not opened yet, and its file is not known to be gone. */
+		get stageable(): boolean {
+			if (ended !== undefined || fence !== undefined) return false;
+			const editing = reactive();
+			if (missing(editing?.save)) return false;
+			return editing === undefined || editing.row.status === 'valid';
+		},
 		open,
-		/** Read the word again, if its editor is open. */
-		refresh: () =>
-			mode.kind === 'editing' && !gated
-				? mode.editor.refresh()
-				: Promise.resolve(),
-		/** Settles once no tracked operation is pending. */
-		idle,
 
-		/** The note the field shows: what is typed here, else `listed`. */
-		note(listed: string): string {
-			if (pendingNote !== undefined) return pendingNote;
-			const local = state?.document.fields.note;
-			if (mode.kind !== 'editing' || local === undefined) return listed;
-			// A value that is not text is shown as written, never hidden.
-			return typeof local === 'string' ? local : JSON.stringify(local);
-		},
-		/** The stage the controls show: this word's local one, else `listed`. */
-		stage(listed: Stage): unknown {
-			if (mode.kind !== 'editing' || state === undefined) return listed;
-			return state.document.fields.stage;
-		},
-		/** Problems with the word as it is held here, which a save would refuse. */
-		get issues(): string[] {
-			if (mode.kind !== 'editing' || state === undefined) return [];
-			const { reading } = state;
-			if (reading.parseError !== undefined) return [reading.parseError.message];
-			return reading.issues.map((issue) => issue.message);
-		},
+		// --- The note and the stage --------------------------------------
 
-		/**
-		 * Type the note. It is kept here even while nothing may save it. While
-		 * the word is being deleted or closed, nothing typed is taken.
-		 */
-		inputNote(text: string) {
-			if (gated) return;
-			if (mode.kind === 'editing') {
-				const { error: changeError } = mode.editor.change({
-					fields: { note: text },
-				});
-				if (changeError === null) {
-					pendingNote = undefined;
-					return;
-				}
-			}
-			pendingNote = text;
-			if (mode.kind === 'closed') void open();
+		/** The note the field shows: a refused note, else the editor's, else the listed one. */
+		note(): string {
+			if (refusedNote !== undefined) return refusedNote.text;
+			const row = reactive()?.row;
+			if (row?.status === 'valid') return lf(row.fields.note);
+			return editor === undefined ? lf(listed()?.note ?? '') : '';
+		},
+		/** The stage the controls show: the editor's, else the listed one. */
+		stage(): Stage | undefined {
+			const row = reactive()?.row;
+			if (row?.status === 'valid') return row.fields.stage;
+			return editor === undefined ? listed()?.stage : undefined;
 		},
 		/**
-		 * Leaving the field saves the word when it has unsaved text and nothing
-		 * waits for the learner. Leaving it while the editor opens saves once it
-		 * has. Answers why nothing was saved, or null.
+		 * Type the note: the whole word goes to the editor at once, with every
+		 * other field and the body as the row holds them. Taken only while the
+		 * row is valid. A note no row can hold is kept here as typed, with why,
+		 * and nothing is sent. Answers why nothing was taken, or null.
 		 */
-		async blur(): Promise<string | null> {
-			if (gated) return stopped();
-			// With nothing pending, this save starts now, with the note as it is.
-			if (tail) await idle();
-			if (gated) return stopped();
-			if (mode.kind !== 'editing')
-				return pendingNote === undefined ? null : unavailable();
-			if (!dirty() || outcome !== undefined || review !== undefined)
+		inputNote(text: string): string | null {
+			if (stopped() !== null || editor === undefined) return stopped();
+			const { row } = editor.get();
+			if (row.status !== 'valid') return null;
+			const { error: setError } = editor.set({
+				fields: {
+					...row.fields,
+					note: withFileNewlines(text, row.fields.note),
+				},
+				body: row.body,
+			});
+			if (setError !== null) {
+				refusedNote = { text, reason: setError.refusal.reason };
 				return null;
-			return save(mode.editor);
+			}
+			refusedNote = undefined;
+			follow(editor);
+			return null;
+		},
+		/** Drop a refused note; the field shows the word's own note again. */
+		discardRefusedNote() {
+			refusedNote = undefined;
 		},
 		/**
-		 * Press a stage: set it and save the whole word, with the note as typed.
-		 * Refused while something about the file waits for the learner's choice.
+		 * Press a stage: the whole word goes to the editor with it, and this
+		 * answers once its saves land. Answers why it was not saved, or null.
 		 */
 		async setStage(stage: Stage): Promise<string | null> {
-			if (gated) return stopped();
-			await open();
-			await idle();
-			if (gated) return stopped();
-			if (mode.kind !== 'editing') return unavailable();
-			const waiting = held();
-			if (waiting !== null) return waiting;
-			const { error: changeError } = mode.editor.change({ fields: { stage } });
-			if (changeError !== null) return changeError.message;
-			thrown = undefined;
-			return save(mode.editor);
-		},
-		/**
-		 * The learner's explicit save: keep my word over what was shown from
-		 * another tab, or try again after a failure or an unknown outcome. It
-		 * sends the whole word again, even when it reads as saved. A file that
-		 * cannot be read cannot be reviewed, so nothing is saved over it,
-		 * whatever an earlier save's outcome was.
-		 */
-		async saveMine(): Promise<string | null> {
-			if (gated) return stopped();
-			await idle();
-			if (gated) return stopped();
-			if (mode.kind !== 'editing') return unavailable();
-			if (review?.kind === 'unreadable')
-				return 'This word cannot be read just now, so it cannot be reviewed. Try again later.';
-			thrown = undefined;
-			// Saving it is the learner's answer to a delete whose answer was lost.
-			deletion = undefined;
-			return save(mode.editor);
-		},
-		/** Take the word as last read in place of the note typed here. */
-		keepSaved: takeSaved,
-		/**
-		 * Repair the file's text, exactly as the latest read found it, dropping
-		 * the note typed here. For a file changed elsewhere into one that is not
-		 * a valid word.
-		 */
-		async repairFile(): Promise<void> {
-			if (gated || review?.kind !== 'invalid' || working > 0) return;
-			if (mode.kind !== 'editing') return;
-			const { editor } = mode;
-			const { file, message } = review;
-			state = undefined;
-			pendingNote = undefined;
-			mode = {
-				kind: 'repair',
-				file: captureOf(file),
-				text: file.text,
-				reason: message,
-				problem: undefined,
-			};
-			await track(() => editor.dispose());
-		},
-
-		/** The exact text of a word that needs repair, as typed here. */
-		get repairText() {
-			return mode.kind === 'repair' ? mode.text : undefined;
-		},
-		get repairProblem() {
-			return mode.kind === 'repair' ? mode.problem : undefined;
-		},
-		inputRepair(text: string) {
-			if (!gated && mode.kind === 'repair')
-				mode = { ...mode, text, problem: undefined };
-		},
-		/**
-		 * Write the repair text exactly, only over the version that was shown,
-		 * then open the word again. A file changed meanwhile is shown, and the
-		 * text stays. Text typed while the repair was out stays, over what was
-		 * written, for another explicit repair.
-		 */
-		writeRepair(): Promise<void> {
-			if (gated || mode.kind !== 'repair') return Promise.resolve();
-			return track(async () => {
-				if (mode.kind !== 'repair') return;
-				const { file, text } = mode;
-				try {
-					const { data: replaced, error: replaceError } = await table.replace(
-						id,
-						text,
-						{ expectedSha256: file.sha256 },
-					);
-					if (replaceError === null) {
-						// The receipt names the bytes sent; the word is how they read.
-						const entry = readEntry({
-							...replaced,
-							...inspectRow(vocabFolder.tables.entries, replaced.text),
-						});
-						if (entry !== undefined) onSaved(entry);
-						if (mode.kind !== 'repair') return;
-						mode = { ...mode, file: captureOf(replaced), problem: undefined };
-						if (mode.text === text && !retired) await acquire();
-						return;
-					}
-					if (replaceError.name !== 'Conflict') {
-						if (mode.kind === 'repair')
-							mode = { ...mode, problem: replaceError.message };
-						return;
-					}
-					const { data: current, error: readError } = await table.get(id);
-					if (mode.kind !== 'repair') return;
-					if (readError !== null || current === undefined) {
-						mode = {
-							...mode,
-							problem:
-								readError?.message ??
-								'This word was removed in another tab, so your text was not saved.',
-						};
-						return;
-					}
-					mode = {
-						...mode,
-						file: captureOf(current),
-						problem:
-							'The file changed in another tab, so your text was not saved. Saving again replaces the version shown now.',
-					};
-				} catch (cause) {
-					if (mode.kind === 'repair')
-						mode = { ...mode, problem: extractErrorMessage(cause) };
-				}
+			if (stopped() !== null) return stopped();
+			if (editor === undefined) await open();
+			if (stopped() !== null) return stopped();
+			const current = editor;
+			if (current === undefined) return unavailable();
+			const { row } = current.get();
+			if (row.status !== 'valid')
+				return `This word’s file needs repair before its stage can change: ${describeRowError(row.error)}`;
+			const { error: setError } = current.set({
+				fields: { ...row.fields, stage },
+				body: row.body,
 			});
+			if (setError !== null)
+				return `This word cannot be saved: ${setError.refusal.reason}`;
+			follow(current);
+			const { error: saveError } = await current.flush();
+			return saveError === null ? null : describeSaveError(saveError);
 		},
 
+		// --- Repair as exact text ------------------------------------------
+
+		/** The text the repair field shows: the editor's exact text. */
+		repairText(): string {
+			const row = reactive()?.row;
+			return row === undefined ? '' : lf(row.text);
+		},
+		/** Type the file's exact text, saved in its own line endings. */
+		inputRepair(text: string) {
+			if (stopped() !== null || editor === undefined) return;
+			const { row } = editor.get();
+			editor.setText(withFileNewlines(text, row.text));
+			follow(editor);
+		},
+
+		// --- After a failed save ---------------------------------------------
+
+		/** Send the latest input again after a failed or unknown save. */
+		retry() {
+			if (stopped() !== null || editor === undefined) return;
+			editor.retry();
+			follow(editor);
+		},
 		/**
-		 * Delete the word with `remove`, after every operation already admitted.
-		 * No view of the word starts new work or takes typing meanwhile. Refused,
-		 * the word goes on with everything typed in it; done, it is disposed.
-		 * With no answer, thrown or `Unconfirmed`, the word may or may not be
-		 * gone: it is kept, usable, and nothing writes it until the learner saves
-		 * it back, takes the saved word, or lets it go.
+		 * Read the file and replace the input with it, the learner's way to
+		 * discard a failed change or see what another tab saved. The input stays
+		 * when the read fails or the learner types meanwhile. Answers why
+		 * nothing was replaced, or null.
 		 */
-		async remove<
+		async reload(): Promise<string | null> {
+			if (stopped() !== null) return stopped();
+			if (refusedNote !== undefined) return REFUSED_NOTE_HELD;
+			const current = editor;
+			if (current === undefined) {
+				await open();
+				return editor === undefined ? unavailable() : null;
+			}
+			fence = 'reloading';
+			try {
+				const { error: reloadError } = await current.reload();
+				if (editor !== current || ended !== undefined) return stopped();
+				if (reloadError !== null) {
+					if (reloadError.name === 'NotFound') goneOnRead = true;
+					return describeReloadError(reloadError);
+				}
+				deletion = undefined;
+				goneOnRead = false;
+				await onSettled();
+				return null;
+			} finally {
+				if (fence === 'reloading') fence = undefined;
+			}
+		},
+
+		// --- Deletion and closing --------------------------------------------
+
+		/**
+		 * Delete the word. The exact text this word's editor shows is fixed
+		 * when this is called, before anything waits. Input stops at once; the
+		 * saves already admitted settle; then `remove` decides, from that text
+		 * and what the caller fixed with it, whether the file as it is then
+		 * may go. Refused, the word goes on; done, it is closed. With no
+		 * answer, thrown or `Unconfirmed`, it is kept until the file is read or
+		 * the learner lets it go. `'busy'` while another delete holds the word;
+		 * `'held'` while a refused note waits to be corrected or discarded.
+		 */
+		remove<
 			T extends {
 				readonly error: {
 					readonly name: string;
 					readonly message: string;
 				} | null;
 			},
-		>(remove: () => Promise<T>): Promise<T> {
-			gated = true;
-			let removed: T;
-			try {
-				removed = await track(remove);
-			} catch (cause) {
-				if (!retired) gated = false;
-				deletion = extractErrorMessage(cause);
-				throw cause;
-			}
-			const { error: removeError } = removed;
-			if (removeError === null) {
-				await dispose();
+		>(
+			remove: (shown: string | undefined) => Promise<T>,
+		): Promise<T | 'busy' | 'held'> {
+			if (stopped() !== null) return Promise.resolve('busy');
+			if (refusedNote !== undefined) return Promise.resolve('held');
+			const shown = editor?.get().row.text;
+			fence = 'deleting';
+			const running = (async () => {
+				let removed: T;
+				try {
+					if (opening !== undefined) await opening;
+					// A failed save is left as it is; the delete is decided below.
+					await editor?.flush();
+					removed = await remove(shown);
+				} catch (cause) {
+					if (ended === undefined) deletion = extractErrorMessage(cause);
+					throw cause;
+				}
+				if (removed.error === null) {
+					ended = 'This word was deleted.';
+					editor = undefined;
+				} else if (removed.error.name === 'Unconfirmed' && ended === undefined)
+					deletion = removed.error.message;
 				return removed;
-			}
-			if (!retired) gated = false;
-			if (removeError.name === 'Unconfirmed') deletion = removeError.message;
-			return removed;
+			})();
+			operation = running;
+			const done = () => {
+				if (fence === 'deleting') fence = undefined;
+				if (operation === running) operation = undefined;
+			};
+			running.then(done, done);
+			return running;
 		},
-
 		/**
-		 * Close the gate and let go of the editor once every operation already
-		 * admitted has settled. Nothing starts afterwards. Repeated calls share
-		 * one disposal.
+		 * Stop the word for good: nothing typed is taken from now on, the
+		 * delete under way and the saves already admitted settle, and the
+		 * editor is let go.
 		 */
-		dispose,
+		async close(): Promise<void> {
+			fence = 'closing';
+			ended ??= 'This page is closing, so nothing more is saved here.';
+			if (opening !== undefined) await opening;
+			await operation?.catch(() => {});
+			await editor?.flush();
+			editor = undefined;
+		},
 	};
 }

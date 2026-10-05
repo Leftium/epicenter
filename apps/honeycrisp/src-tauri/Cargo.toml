@@ -38,6 +38,12 @@ specta-util = { git = "https://github.com/specta-rs/specta", rev = "3c535739ea7b
 [[example]]
 name = "harness"
 
+# Quits the real app through AppKit's terminate: on a fixture page, in a fresh
+# folder. macOS only; opens a window. Not part of the app.
+[[example]]
+name = "quit"
+path = "examples/quit/main.rs"
+
 [profile.release]
 panic = "abort"
 strip = true

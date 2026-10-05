@@ -9,19 +9,19 @@
  *
  * Key behaviors:
  * - A pull of changed remote content lands byte for byte, frontmatter the
- *   app does not declare and comments included; an open clean todo follows
- *   it, and a later save keeps the undeclared keys
+ *   app does not declare and comments included; an open todo shows it once
+ *   reloaded, and a later save keeps the undeclared keys
  * - An interrupted pull is reported and never resumed: status, refreshes,
  *   and reopening only read it. Commits, pulls, and merges wait; editing,
  *   saving, and fetching continue
  * - Recovery runs only when asked. A path in neither state is named, nothing
  *   is written, and the update stays pending until the person makes the file
- *   hold one of its versions; then recovery finishes and a clean todo
- *   follows the result
- * - Recovery waits for open edits: input that cannot save stops it before
- *   anything runs, and typing while it runs is held for review instead of
- *   saving over what the update wrote. A file still opening when recovery
- *   starts installs its editor first and is held with the rest
+ *   hold one of its versions; then recovery finishes and the open todo shows
+ *   the result
+ * - Recovery waits for open edits: a failed save stops it before anything
+ *   runs, and open todos refuse typing while it runs, then read what the
+ *   update wrote. A file still opening when recovery starts installs its
+ *   editor first and is held with the rest
  */
 import './svelte-modules.test-support.js';
 import { afterAll, afterEach, beforeAll, expect, test } from 'bun:test';
@@ -130,7 +130,7 @@ async function openDemo(
 		);
 		const todos = createTodos(adapt(folder));
 		opened.push(todos);
-		await todos.refreshAll();
+		await todos.check();
 		return todos;
 	};
 	return {
@@ -184,6 +184,12 @@ function todoEditor(todos: Todos) {
 	return selection.editor;
 }
 
+/** Wait for a todo's admitted writes. Answers why the latest did not land. */
+async function written(editor: ReturnType<typeof todoEditor>) {
+	const { error } = await editor.editor.flush();
+	return error === null ? undefined : error.message;
+}
+
 /**
  * A pull interrupted at the write of `todos/milk.md`: bread may have landed,
  * milk did not, and the update is pending.
@@ -205,12 +211,12 @@ async function interruptedPull(adapt?: (folder: TodosFolder) => TodosFolder) {
 	return { ...demo, before, pulled };
 }
 
-test('a pull of remote changes keeps undeclared frontmatter byte for byte, an open clean todo follows it, and a save keeps the undeclared keys', async () => {
+test('a pull of remote changes keeps undeclared frontmatter byte for byte, an open todo shows it once reloaded, and a save keeps the undeclared keys', async () => {
 	const { todos, session } = await openDemo();
 	await shareMilk(todos, session);
 	await todos.open(MILK);
 	const editor = todoEditor(todos);
-	expect(editor.state.document.fields.title).toBe('Buy milk');
+	expect(editor.title()).toBe('Buy milk');
 	await pushRemoteChanges(session);
 
 	const pulled = expectOk(await todos.pull());
@@ -224,9 +230,12 @@ test('a pull of remote changes keeps undeclared frontmatter byte for byte, an op
 		[MILK, 'Buy oat milk'],
 	]);
 
-	// The clean editor follows the pulled row; nothing was written for it.
-	await editor.refresh();
-	expect(editor.state.document).toEqual({
+	// The open todo still shows what it loaded until the person reloads it.
+	expect(editor.title()).toBe('Buy milk');
+	expect(await todos.reload(MILK)).toBeUndefined();
+	expect(editor.editor.row).toMatchObject({
+		status: 'valid',
+		text: MILK_REMOTE,
 		fields: {
 			title: 'Buy oat milk',
 			done: true,
@@ -239,8 +248,8 @@ test('a pull of remote changes keeps undeclared frontmatter byte for byte, an op
 	expect(await text(todos, MILK)).toBe(MILK_REMOTE);
 
 	// A save writes the standard form, and the undeclared keys stay.
-	editor.change({ body: 'Three cartons.\n' });
-	expect(await editor.save()).toBeUndefined();
+	editor.setNotes('Three cartons.\n');
+	expect(await written(editor)).toBeUndefined();
 	const saved = (await text(todos, MILK))!;
 	expect(saved).toContain('"owner": "sam"');
 	expect(saved).toContain('"labels"');
@@ -304,11 +313,12 @@ test('an interrupted pull is reported and never resumed: history waits, editing 
 	expectOk(await todos.folder.git.fetch());
 	expect(await todos.create('Call mom')).toBeUndefined();
 	const editor = todoEditor(todos);
-	editor.change({ body: 'Today.\n' });
-	expect(await editor.save()).toBeUndefined();
+	editor.setNotes('Today.\n');
+	expect(await written(editor)).toBeUndefined();
+	expect(editor.isIdle).toBe(true);
 
 	// Status and refreshes read the record; they resume nothing.
-	await todos.refreshAll();
+	await todos.check();
 	expectOk(await todos.folder.git.status());
 	expect(todos.git.pendingIncoming).toEqual(pending);
 	expect(await text(todos, MILK)).toBe(before);
@@ -325,7 +335,7 @@ test('an interrupted pull is reported and never resumed: history waits, editing 
 	expect([...opfs.files()].length).toBe(files);
 }, 60_000);
 
-test('recovery names a path in neither state and writes nothing, keeps the record until the person chooses a version, then finishes and a clean todo follows', async () => {
+test('recovery names a path in neither state and writes nothing, keeps the record until the person chooses a version, then finishes and the open todo shows the result', async () => {
 	const { todos, before } = await interruptedPull();
 	const pending = todos.git.pendingIncoming;
 	expect(pending?.state).toBe('recorded');
@@ -333,8 +343,8 @@ test('recovery names a path in neither state and writes nothing, keeps the recor
 	// Milk is still at its before state; the person edits it to a third one.
 	await todos.open(MILK);
 	const editor = todoEditor(todos);
-	editor.change({ body: 'My own note.\n' });
-	expect(await editor.save()).toBeUndefined();
+	editor.setNotes('My own note.\n');
+	expect(await written(editor)).toBeUndefined();
 	const third = (await text(todos, MILK))!;
 
 	const refused = await todos.recoverIncoming();
@@ -348,24 +358,19 @@ test('recovery names a path in neither state and writes nothing, keeps the recor
 	expect(todos.lastRecovery).toMatchObject(refused);
 	expect(todos.git.pendingIncoming).toEqual(pending);
 	expect(await text(todos, MILK)).toBe(third);
-	expect(editor.state.document.body).toBe('My own note.\n');
+	expect(editor.notes()).toBe('My own note.\n');
 
-	// The person chooses the version from before the update, in the source.
-	expect(await todos.editSource(MILK)).toBeUndefined();
-	await todos.open('elsewhere');
-	await todos.open(MILK);
-	const source = todos.selection;
-	if (source?.kind !== 'source') throw new Error('Expected the source editor');
-	source.editor.input(before);
-	await source.editor.save();
+	// The person chooses the version from before the update, in the source of
+	// the same todo editor.
+	expect(editor.editSource()).toBeUndefined();
+	editor.setText(before);
+	expect(await written(editor)).toBeUndefined();
 	expect(await text(todos, MILK)).toBe(before);
-	expect(await todos.editFields(MILK)).toBeUndefined();
-	await todos.open('elsewhere');
-	await todos.open(MILK);
-	const fields = todoEditor(todos);
-	expect(fields.state.document.fields.title).toBe('Buy milk');
+	expect(editor.editFields()).toBeUndefined();
+	expect(todoEditor(todos)).toBe(editor);
+	expect(editor.title()).toBe('Buy milk');
 
-	// Now the update finishes, and the clean todo follows what it wrote.
+	// Now the update finishes, and the open todo reads what it wrote.
 	const recovered = await todos.recoverIncoming();
 	expect(recovered).toMatchObject({
 		kind: 'ran',
@@ -373,17 +378,16 @@ test('recovery names a path in neither state and writes nothing, keeps the recor
 	});
 	expect(todos.git.pendingIncoming).toBeUndefined();
 	expect(await text(todos, MILK)).toBe(MILK_REMOTE);
-	expect(fields.state.document.fields.title).toBe('Buy oat milk');
-	expect(fields.isIdle).toBe(true);
-	expect(fields.isAwaitingReview).toBe(false);
-	expect(await text(todos, MILK)).toBe(MILK_REMOTE);
+	expect(editor.title()).toBe('Buy oat milk');
+	expect(editor.isIdle).toBe(true);
+	expect(editor.isFenced).toBe(false);
 	expect(incomingLine(todos.git)).toBeUndefined();
 	// History continues.
 	expect((await todos.commitAndPush()).commit.status).not.toBe('blocked');
 }, 60_000);
 
-test('a file still opening when recovery starts is held with the rest: typing in it never saves over the update', async () => {
-	const written = Promise.withResolvers<void>();
+test('a todo still opening when recovery starts is held with the rest: it refuses typing while the update runs, then shows what the update wrote', async () => {
+	const landed = Promise.withResolvers<void>();
 	const reply = Promise.withResolvers<void>();
 	// The folder writes the update, then its reply is held.
 	const { todos, before } = await interruptedPull((folder) => ({
@@ -395,7 +399,7 @@ test('a file still opening when recovery starts is held with the rest: typing in
 			},
 			async recoverIncoming() {
 				const recovered = await folder.git.recoverIncoming();
-				written.resolve();
+				landed.resolve();
 				await reply.promise;
 				return recovered;
 			},
@@ -418,16 +422,15 @@ test('a file still opening when recovery starts is held with the rest: typing in
 	opened.resolve();
 	await opening;
 	table.edit = edit;
-	await written.promise;
+	await landed.promise;
 
 	// The editor opened on the row from before the update and was settled
-	// and held. Clean, it follows what the update wrote; typing into it while
-	// the update's reply is held saves nothing.
+	// and held: typing into it while the update's reply is held is refused.
 	const editor = todoEditor(todos);
-	await editor.refresh();
-	expect(editor.state.document.fields.title).toBe('Buy oat milk');
-	editor.change({ body: 'typed while recovering\n' });
-	await Bun.sleep(650);
+	expect(editor.isFenced).toBe(true);
+	expect(editor.title()).toBe('Buy milk');
+	editor.setNotes('typed while recovering\n');
+	expect(editor.notes()).toBe('');
 	expect(todos.recovering).toBe(true);
 	expect(await text(todos, MILK)).toBe(MILK_REMOTE);
 
@@ -436,32 +439,33 @@ test('a file still opening when recovery starts is held with the rest: typing in
 		kind: 'ran',
 		result: { data: { status: 'completed' } },
 	});
-	// Once the hold lifts, the typing saves on top of the update: the old
-	// title from before it is never written back.
-	for (let tries = 0; tries < 200 && !editor.isIdle; tries++)
-		await Bun.sleep(5);
-	expect(editor.isIdle).toBe(true);
+	// Once the hold lifts, the todo shows what the update wrote, and typing
+	// writes on top of it: the old title from before it is never written back.
+	expect(editor.isFenced).toBe(false);
+	expect(editor.title()).toBe('Buy oat milk');
+	editor.setNotes('typed after recovering\n');
+	expect(await written(editor)).toBeUndefined();
 	const saved = (await text(todos, MILK))!;
 	expect(saved).not.toBe(before);
 	expect(saved).not.toContain('Buy milk"');
 	expect(inspectRow(todosDefinition.tables.todos, saved)).toMatchObject({
 		fields: { title: 'Buy oat milk', done: true },
-		body: 'typed while recovering\n',
+		body: 'typed after recovering\n',
 	});
 	expect(saved).toContain('"owner": "sam"');
 }, 60_000);
 
-test('recovery waits for open edits: input that cannot save stops it, and typing while it runs is held for review, not saved over the update', async () => {
+test('recovery waits for open edits: a failed save stops it, and typing while it runs is refused, not saved over the update', async () => {
 	const typing: { during?: () => void } = {};
-	const { todos, before } = await interruptedPull((folder) => ({
+	const { todos, before, opfs } = await interruptedPull((folder) => ({
 		...folder,
 		git: {
 			...folder.git,
 			get snapshot() {
 				return folder.git.snapshot;
 			},
-			// Typing arrives once the editors hold their saves, before the
-			// update writes the row they show.
+			// Typing arrives once the editors are held, before the update
+			// writes the row they show.
 			recoverIncoming() {
 				typing.during?.();
 				return folder.git.recoverIncoming();
@@ -472,39 +476,35 @@ test('recovery waits for open edits: input that cannot save stops it, and typing
 	await todos.open(MILK);
 	const editor = todoEditor(todos);
 
-	// Input that cannot save stops recovery before it runs.
-	editor.change({ fields: { done: 'soon' } });
+	// A save that failed stops recovery before it runs.
+	opfs.faults.write = (path) => {
+		if (!path.endsWith(`/${MILK}`)) return undefined;
+		opfs.faults.write = undefined;
+		return 'fail';
+	};
+	editor.setNotes('mine\n');
+	expect(await written(editor)).toBeDefined();
 	const unsettled = await todos.recoverIncoming();
 	expect(unsettled).toEqual({ kind: 'unsettled', paths: [MILK] });
+	expect(editor.notes()).toBe('mine\n');
 	expect(recoveryLine(unsettled).detail).toContain(MILK);
 	expect(todos.git.pendingIncoming).toEqual(pending);
 	expect(await text(todos, MILK)).toBe(before);
 
-	// Back to a clean draft; typing arrives while the update is written.
-	editor.change({ fields: { done: false } });
+	// Reload drops the failed input; typing arrives while the update is written.
+	expect(await todos.reload(MILK)).toBeUndefined();
 	expect(await editor.settle()).toBe(true);
 	expect(await text(todos, MILK)).toBe(before);
-	typing.during = () => editor.change({ body: 'typed during recovery\n' });
+	typing.during = () => editor.setNotes('typed during recovery\n');
 	const recovered = await todos.recoverIncoming();
 	expect(recovered).toMatchObject({
 		kind: 'ran',
 		result: { data: { status: 'completed' } },
 	});
 
-	// The typing was held, not saved over the row; the update wrote it. The
-	// update is another writer's change, so the typing waits for review.
-	expect(editor.isAwaitingReview).toBe(true);
-	expect(editor.externalChange?.kind).toBe('present');
-	expect(editor.state.document).toEqual({
-		fields: { title: 'Buy milk', done: false },
-		body: 'typed during recovery\n',
-	});
-	await Bun.sleep(450);
-	expect(await text(todos, MILK)).toBe(MILK_REMOTE);
-	expect(editor.state.lastSave).toBeUndefined();
-
-	// The person's choice: load the update into the controls, writing nothing.
-	expect(editor.adopt()).toBeUndefined();
-	expect(editor.state.document.fields.title).toBe('Buy oat milk');
+	// The typing was refused, not saved over the row; the todo shows the update.
+	expect(editor.title()).toBe('Buy oat milk');
+	expect(editor.notes()).toBe('Two cartons.\n');
+	expect(editor.isIdle).toBe(true);
 	expect(await text(todos, MILK)).toBe(MILK_REMOTE);
 }, 60_000);

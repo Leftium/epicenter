@@ -9,13 +9,14 @@
  * - Text is trimmed and otherwise exact, whatever its script or spelling
  * - A phrase with the exact text of a saved word writes nothing and leaves
  *   that word's note and stage alone
- * - Note and stage share one editor per word: a stage pressed while a note is
+ * - Note and stage share one editor per word: a stage pressed after a note is
  *   typed saves both, and each save writes the whole word
- * - A word read here after another tab's edit follows it when nothing is
- *   typed; a save overwrites an edit that was never read here
+ * - An open word reads another tab's edit only when it is reloaded; a save
+ *   overwrites an edit that was never read here
  * - A removal of a word that changed elsewhere is refused, and the other
  *   change is kept
- * - A word whose file cannot open as a row is repaired as exact text
+ * - A word whose file has no canonical form is repaired as exact text
+ *   through its own editor
  * - A closed folder answers with an error and lists nothing new
  * - A row file that cannot be read as a word is reported, never dropped
  */
@@ -25,9 +26,11 @@ import { expectErr, expectOk } from 'wellcrafted/testing';
 import {
 	createBrowser,
 	editWord,
+	entriesOf,
 	fileText,
 	gated,
 	tableFiles,
+	until,
 } from './folder.test-support.js';
 
 const { createEntriesState } = await import('./entries.svelte.js');
@@ -35,7 +38,7 @@ const { createEntriesState } = await import('./entries.svelte.js');
 async function setup() {
 	const browser = createBrowser();
 	const folder = await browser.open();
-	const entries = createEntriesState({ table: folder.tables.entries });
+	const entries = createEntriesState(entriesOf(folder));
 	await entries.refresh();
 	return {
 		browser,
@@ -43,9 +46,7 @@ async function setup() {
 		entries,
 		/** The words a reload would list, from a folder opened again. */
 		async reopened() {
-			const again = createEntriesState({
-				table: (await browser.open()).tables.entries,
-			});
+			const again = createEntriesState(entriesOf(await browser.open()));
 			await again.refresh();
 			return again;
 		},
@@ -138,8 +139,12 @@ test('a stage pressed while a note is typed saves both, from one editor shared b
 	card.inputNote('honest,\nand a second line: "quoted"');
 	expect(await entries.word(id).setStage('usable')).toBeNull();
 	// The stage did not reset the note, and the note was saved with it.
-	expect(card.note('')).toBe('honest,\nand a second line: "quoted"');
+	expect(card.note()).toBe('honest,\nand a second line: "quoted"');
 	expect(card.unsettled).toBe(false);
+	await until(
+		() => entries.entries[0]?.file.text === card.row?.text,
+		'the list to show the saved word',
+	);
 
 	const expected = [
 		{
@@ -156,24 +161,25 @@ test('a stage pressed while a note is typed saves both, from one editor shared b
 	expect(entries.entries[0]?.file.text).toBe(source);
 });
 
-test('a word read here after another tab’s edit follows it when nothing is typed, and a stage pressed here keeps that note', async () => {
+test('an open word reads another tab’s edit only when reloaded, and a stage pressed here then keeps that note', async () => {
 	await using context = await setup();
 	const { browser, entries } = context;
 	expectOk(await entries.add('nuance'));
 	const id = entries.entries[0]?.id ?? '';
 	await entries.word(id).open();
 
-	const otherTab = createEntriesState({
-		table: (await browser.open()).tables.entries,
-	});
+	const otherTab = createEntriesState(entriesOf(await browser.open()));
 	await otherTab.refresh();
 	expect(await editWord(otherTab, id, { note: 'a subtle difference' })).toBe(
 		null,
 	);
 
-	// The other tab's hint is read here.
+	// The other tab's hint is read into the list, not into the open word.
 	await entries.refresh();
-	expect(entries.word(id).note('')).toBe('a subtle difference');
+	expect(entries.entries[0]?.note).toBe('a subtle difference');
+	expect(entries.word(id).note()).toBe('');
+	expect(await entries.word(id).reload()).toBeNull();
+	expect(entries.word(id).note()).toBe('a subtle difference');
 	expect(await entries.word(id).setStage('recognized')).toBeNull();
 	expect(summary(await context.reopened())).toEqual([
 		{ text: 'nuance', note: 'a subtle difference', stage: 'recognized' },
@@ -187,9 +193,7 @@ test('a save here overwrites another tab’s edit that was never read here', asy
 	const id = entries.entries[0]?.id ?? '';
 	await entries.word(id).open();
 
-	const otherTab = createEntriesState({
-		table: (await browser.open()).tables.entries,
-	});
+	const otherTab = createEntriesState(entriesOf(await browser.open()));
 	await otherTab.refresh();
 	expect(await editWord(otherTab, id, { note: 'theirs' })).toBeNull();
 
@@ -208,9 +212,7 @@ test('removing deletes exactly the word shown, and refuses one that changed else
 	const byText = (text: string) =>
 		entries.entries.find((entry) => entry.text === text)?.id ?? '';
 
-	const otherTab = createEntriesState({
-		table: (await browser.open()).tables.entries,
-	});
+	const otherTab = createEntriesState(entriesOf(await browser.open()));
 	await otherTab.refresh();
 	expect(
 		await editWord(otherTab, byText('resilient'), { stage: 'usable' }),
@@ -263,13 +265,11 @@ test('a closed folder answers with an error for a new word, an edit, and a remov
 	await folder.close();
 
 	expect(expectErr(await entries.add('on the fence')).name).toBe('NotSaved');
-	// The note is kept, the failure is shown, and leaving again resends nothing.
+	// The failure is shown, and the note stays shown as the learner typed it.
 	word.inputNote('looking back');
-	expect(await word.blur()).not.toBeNull();
-	expect(word.outcome?.kind).toBe('failed');
-	expect(word.note('')).toBe('looking back');
+	await until(() => word.save?.status === 'failed', 'the save to fail');
+	expect(word.note()).toBe('looking back');
 	expect(word.unsettled).toBe(true);
-	expect(await word.blur()).toBeNull();
 	expect(expectErr(await entries.remove(id)).name).toBe('NotSaved');
 	expect(summary(entries)).toEqual([
 		{ text: 'in hindsight', note: '', stage: 'new' },
@@ -312,9 +312,7 @@ test('a row file that cannot be read as a word is reported with its path and lef
 test('adds of one text made together, in one tab or two, save one word', async () => {
 	await using context = await setup();
 	const { browser, folder, entries } = context;
-	const otherTab = createEntriesState({
-		table: (await browser.open()).tables.entries,
-	});
+	const otherTab = createEntriesState(entriesOf(await browser.open()));
 	await otherTab.refresh();
 
 	// None of these sees another's word in its list before it asks the folder.
@@ -354,9 +352,7 @@ test('a save that landed without its answer is found by the retry, with the note
 	expect(files).toHaveLength(1);
 
 	// Another tab, which read the folder, has since made the word its own.
-	const otherTab = createEntriesState({
-		table: (await browser.open()).tables.entries,
-	});
+	const otherTab = createEntriesState(entriesOf(await browser.open()));
 	await otherTab.refresh();
 	const id = otherTab.entries[0]?.id ?? '';
 	expect(
@@ -383,7 +379,7 @@ test('a different file where a new word belongs is refused and left as it is', a
 	const other = entries.entries[0]?.file.text.replace('lucid', 'lurid') ?? '';
 	expectOk(await folder.files.overwrite(path, other));
 
-	const stale = createEntriesState({ table: folder.tables.entries });
+	const stale = createEntriesState(entriesOf(folder));
 	expect(expectErr(await stale.add('lucid')).name).toBe('Taken');
 	expect(stale.entries).toEqual([]);
 	expect(await fileText(folder, path)).toBe(other);
@@ -413,9 +409,7 @@ test('a word another tab removed, with no hint yet read here, is saved again ins
 	expect(await tableFiles(folder, 'entries')).toHaveLength(2);
 
 	// Another tab removes both. This tab's list still shows them.
-	const otherTab = createEntriesState({
-		table: (await browser.open()).tables.entries,
-	});
+	const otherTab = createEntriesState(entriesOf(await browser.open()));
 	await otherTab.refresh();
 	for (const entry of otherTab.entries)
 		expectOk(await otherTab.remove(entry.id));
@@ -436,44 +430,14 @@ test('a word another tab removed, with no hint yet read here, is saved again ins
 	expect(byText(await context.reopened())).toEqual(fresh);
 });
 
-test('a stage is refused while another tab’s note, read here, waits for a choice about the note typed here', async () => {
-	await using context = await setup();
-	const { browser, entries } = context;
-	expectOk(await entries.add('candid'));
-	const id = entries.entries[0]?.id ?? '';
-	const word = entries.word(id);
-	await word.open();
-	const otherTab = createEntriesState({
-		table: (await browser.open()).tables.entries,
-	});
-	await otherTab.refresh();
-
-	word.inputNote('honest');
-	expect(await editWord(otherTab, id, { note: 'frank' })).toBeNull();
-	await entries.refresh();
-	expect(word.review?.kind).toBe('changed');
-	expect(await word.setStage('recognized')).toContain('changed in another tab');
-	expect(word.note('')).toBe('honest');
-	const kept = [{ text: 'candid', note: 'frank', stage: 'new' }];
-	expect(summary(await context.reopened())).toEqual(kept);
-
-	// Keeping the saved note takes the other tab's word; the stage then saves.
-	expect(word.keepSaved()).toBeNull();
-	expect(word.note('')).toBe('frank');
-	expect(await word.setStage('recognized')).toBeNull();
-	expect(summary(await context.reopened())).toEqual([
-		{ text: 'candid', note: 'frank', stage: 'recognized' },
-	]);
-});
-
-test('a word whose file cannot open as a row is repaired as exact text, and then edits again', async () => {
+test('a word whose file has no canonical form opens for repair as exact text through its own editor, and then edits again', async () => {
 	await using context = await setup();
 	const { folder, entries } = context;
 	expectOk(await entries.add('lucid'));
 	const id = entries.entries[0]?.id ?? '';
 	const path = `entries/${id}.md`;
 	// Another program adds a value with a custom tag: the fields still read,
-	// but the file has no canonical form, so it does not open in an editor.
+	// but the file has no canonical form, so its editor offers only its text.
 	const tagged =
 		(await fileText(folder, path))?.replace(
 			'\n---\n',
@@ -485,16 +449,17 @@ test('a word whose file cannot open as a row is repaired as exact text, and then
 
 	const word = entries.word(id);
 	await word.open();
-	expect(word.mode.kind).toBe('repair');
-	expect(word.repairText).toBe(tagged);
+	expect(word.row?.status).toBe('invalid');
+	expect(word.repairText()).toBe(tagged);
 	expect(await word.setStage('usable')).toContain('needs repair');
 	expect(await fileText(folder, path)).toBe(tagged);
 
+	// Each keystroke of the text goes to the same editor.
 	const repaired = tagged.replace('!book ', '');
 	word.inputRepair(repaired);
-	await word.writeRepair();
+	expect(word.row?.status).toBe('valid');
+	await until(() => word.save?.status === 'idle', 'the repair to save');
 	expect(await fileText(folder, path)).toBe(repaired);
-	expect(word.mode.kind).toBe('editing');
 	expect(await word.setStage('usable')).toBeNull();
 	// The repaired metadata Vocab does not declare is kept by the save.
 	expect(await fileText(folder, path)).toContain('"source": "Moby Dick"');

@@ -9,6 +9,19 @@ export function watch(read: () => void | (() => void)): () => void {
 	});
 }
 
+/** A value a mounted component reads as a prop, which a test can replace. */
+export function switchable<T>(initial: T): { value: T } {
+	let current = $state.raw(initial);
+	return {
+		get value() {
+			return current;
+		},
+		set value(next) {
+			current = next;
+		},
+	};
+}
+
 /** A derived over `read`, as a template's `{@const}` is. */
 export function constant<T>(read: () => T): { readonly current: T } {
 	const value = $derived.by(read);

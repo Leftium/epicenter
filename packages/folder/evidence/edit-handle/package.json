@@ -6,7 +6,7 @@
 		"dev": "bun dev.ts",
 		"build": "bun build.ts",
 		"check": "svelte-check --tsconfig ./tsconfig.json",
-		"test": "bun test ./edit-handle.test.ts ./folder-edits.test.ts ./server.test.ts"
+		"test": "bun test ./edit-handle.test.ts ./folder-edits.test.ts ./server.test.ts ./canonical-page.test.ts"
 	},
 	"dependencies": {
 		"@sveltejs/vite-plugin-svelte": "7.3.0",

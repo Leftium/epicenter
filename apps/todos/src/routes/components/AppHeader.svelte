@@ -93,6 +93,7 @@
 	const busy = $derived(
 		working !== undefined ||
 			todos.recovering ||
+			todos.departing ||
 			todos.git.activity.commit.active ||
 			todos.git.activity.push.active ||
 			todos.git.activity.pull.active ||
@@ -127,7 +128,7 @@
 	async function fetchRemote() {
 		working = 'fetch';
 		try {
-			const { data: fetched, error: fetchError } = await todos.folder.git.fetch();
+			const { data: fetched, error: fetchError } = await todos.fetch();
 			if (fetchError) toast.error('Fetch failed', { description: fetchError.message });
 			else if (fetched.oid === undefined) toast.info('The remote has no commits yet.');
 			else toast.success(`Fetched ${fetched.oid.slice(0, 7)}.`);
@@ -237,7 +238,7 @@
 				{/each}
 			</dl>
 			<div class="flex items-center gap-2 border-t px-3 py-2">
-				<Button variant="outline" size="sm" onclick={() => void todos.refreshAll()}>Check again</Button>
+				<Button variant="outline" size="sm" onclick={() => void todos.check()}>Check again</Button>
 				<Button
 					variant="ghost"
 					size="sm"

@@ -13,9 +13,10 @@
 //!   per-file history, and reveal.
 //!
 //! Drafts exist only in the page, so every way out asks it first: the
-//! window's close button, an exit request from the runtime, and the macOS
-//! Quit menu item. `close.rs` decides; nothing here approves a close for a
-//! page that holds its folder.
+//! window's close button, an exit request from the runtime, the macOS Quit
+//! menu item, and on macOS a quit from the system: the Dock, a logout, an
+//! Apple Event (`quit.rs`). `close.rs` decides; nothing here approves a close
+//! for a page that holds its folder.
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -23,7 +24,8 @@ use std::sync::Arc;
 #[cfg(target_os = "macos")]
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem, Submenu};
 use tauri::{
-    AppHandle, Manager, RunEvent, Runtime, Url, WebviewUrl, WebviewWindowBuilder, WindowEvent,
+    App, AppHandle, Manager, RunEvent, Runtime, Url, WebviewUrl, WebviewWindowBuilder,
+    WindowEvent, Wry,
 };
 use tauri_plugin_epicenter_folder::{Author, FolderConfig, FolderExt, ScopeConfig};
 
@@ -35,6 +37,8 @@ mod command_names;
 mod commands;
 mod history;
 mod process;
+#[cfg(target_os = "macos")]
+mod quit;
 mod reveal;
 mod root;
 mod terminal;
@@ -172,11 +176,25 @@ fn quit_menu(app: &AppHandle) -> tauri::Result<()> {
     Ok(())
 }
 
-#[cfg_attr(mobile, tauri::mobile_entry_point)]
-pub fn run() {
-    let app = shell(tauri::Builder::default())
-        .setup(|app| {
+/// The notes window's builder, before it is built.
+pub type NotesWindow<'a> = WebviewWindowBuilder<'a, Wry, App<Wry>>;
+
+/// The app `run` starts, built and not yet running. `window` receives the
+/// notes window's builder last, just before the window is built; `run` adds
+/// nothing. Public for `examples/quit`, which runs this same app on a
+/// fixture page; nothing else should call it.
+#[doc(hidden)]
+pub fn build<W>(window: W) -> tauri::Result<App<Wry>>
+where
+    W: for<'a> FnOnce(NotesWindow<'a>) -> NotesWindow<'a> + Send + 'static,
+{
+    shell(tauri::Builder::default())
+        .setup(move |app| {
             let handle = app.handle();
+            // First: a system quit must reach the gate before anything can
+            // hold a draft, and the app does not start without that.
+            #[cfg(target_os = "macos")]
+            quit::install(handle)?;
             #[cfg(target_os = "macos")]
             quit_menu(handle)?;
             let root = root::choose(std::env::var_os("HONEYCRISP_ROOT"), || {
@@ -186,23 +204,36 @@ pub fn run() {
                     .map_err(|cause| format!("resolve the home directory: {cause}"))
             })?;
             install(handle, root)?;
-            WebviewWindowBuilder::new(app, WINDOW, WebviewUrl::App("index.html".into()))
+            let notes = WebviewWindowBuilder::new(app, WINDOW, WebviewUrl::App("index.html".into()))
                 .title("Honeycrisp")
                 .inner_size(1280.0, 820.0)
                 .min_inner_size(900.0, 560.0)
-                .on_navigation(is_app_page)
-                .build()?;
+                .on_navigation(is_app_page);
+            window(notes).build()?;
             Ok(())
         })
         .build(context())
-        .expect("error while building the Honeycrisp application");
+}
 
-    app.run(|handle, event| {
-        // The folder plugin drains and unlocks the folder on exit itself.
-        if let RunEvent::ExitRequested { api, .. } = event {
-            if hold(handle) {
-                api.prevent_exit();
-            }
+/// Hold an exit request back while the page holds its folder; whether it was
+/// held. The folder plugin drains and unlocks the folder on exit itself.
+/// Public for `examples/quit`, like `build`.
+#[doc(hidden)]
+pub fn hold_exit(handle: &AppHandle, event: &RunEvent) -> bool {
+    match event {
+        RunEvent::ExitRequested { api, .. } if hold(handle) => {
+            api.prevent_exit();
+            true
         }
-    });
+        _ => false,
+    }
+}
+
+#[cfg_attr(mobile, tauri::mobile_entry_point)]
+pub fn run() {
+    build(|window| window)
+        .expect("error while building the Honeycrisp application")
+        .run(|handle, event| {
+            hold_exit(handle, &event);
+        });
 }

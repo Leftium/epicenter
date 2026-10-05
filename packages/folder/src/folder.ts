@@ -310,16 +310,10 @@ export function assembleFolder<TDefinition extends FolderDefinition>({
 	let closing: Promise<void> | undefined;
 
 	const storage = fenceStorage(suppliedStorage, controller.signal);
-	const onFilesChanged = (listener: (paths: readonly string[]) => void) =>
-		hints.subscribe(listener);
 	const tables: Record<string, FileTable<unknown>> = {};
 	// A table's key is its name and its directory.
 	for (const [name, table] of Object.entries(prepared.tables))
-		tables[name] = createTable<unknown>(
-			{ storage, onFilesChanged },
-			name,
-			table.fields,
-		);
+		tables[name] = createTable<unknown>({ storage }, name, table.fields);
 	const files = createFiles({ storage });
 	const git = createFolderGit(history);
 
@@ -329,7 +323,8 @@ export function assembleFolder<TDefinition extends FolderDefinition>({
 		files,
 		git,
 		location: Object.freeze(location),
-		onFilesChanged,
+		onFilesChanged: (listener: (paths: readonly string[]) => void) =>
+			hints.subscribe(listener),
 		terminal: (options) =>
 			createLocalTerminal({ storage, git, signal: controller.signal }, options),
 		signal: controller.signal,

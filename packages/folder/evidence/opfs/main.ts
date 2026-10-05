@@ -25,11 +25,17 @@
  *
  * The identity check writes a stray file into an unmarked directory, and a
  * ready marker naming another address into another, with the browser's own
- * OPFS API, and opens each. The editor check drives the public row editor.
+ * OPFS API, and opens each. The editor checks drive the public row editor:
+ * its ordered publication and observation, repair of text that opens
+ * invalid, and a row removed before its write, which is never made again.
+ * The stream probes use the browser's own OPFS API on a directory of their
+ * own: the lock an open write stream holds, and what a stream for a removed
+ * file does with and without the recheck the replacement makes.
  *
- * Not covered here: quota exhaustion, eviction, and a real crash during a
- * stream close. The Bun suites cover interruption at each step over an
- * in-memory stand-in.
+ * Not covered here: quota exhaustion, eviction, a real crash during a stream
+ * close, and a removal that lands between the replacement's handle and its
+ * stream through the folder itself. The Bun suites cover interruption at
+ * each step, and that removal, over an in-memory model of Chrome's OPFS.
  */
 import type { Result } from 'wellcrafted/result';
 import {
@@ -825,7 +831,7 @@ async function identity(id: string) {
 
 async function editing(id: string) {
 	await check(
-		'a row editor saves canonical text, follows an outside save while clean, and keeps input while dirty',
+		'a row editor accepts each input at once, saves the latest in order, and takes an outside save only on reload',
 		async () => {
 			const folder = await open(id);
 			const path = 'rows/plan.md';
@@ -836,62 +842,226 @@ async function editing(id: string) {
 				}),
 			);
 			const editor = ok(await folder.tables.rows.edit('plan'));
-			const states: string[] = [];
-			const stop = editor.subscribe((state) => {
-				states.push(
-					state.saving !== undefined
-						? 'saving'
-						: state.isDirty
-							? 'dirty'
-							: 'clean',
-				);
+			const { get, subscribe, set, flush, reload } = editor;
+			let calls = 0;
+			const stop = subscribe(() => {
+				calls += 1;
 			});
 			try {
-				ok(editor.change({ fields: { title: 'Edited: a colon' } }));
-				const receipt = ok(await editor.save());
+				assert(calls === 0, 'subscribe called its listener at once');
+				// Each input is the snapshot before `set` returns. The first
+				// write runs; each later input replaces the one waiting.
+				const titles = ['First', 'Second', 'Edited: a colon'];
+				for (const title of titles) {
+					ok(set({ fields: { title }, body: '' }));
+					const { row } = get();
+					assert(
+						row.status === 'valid' && row.fields.title === title,
+						`after set(${title}) the row is ${JSON.stringify(row)}`,
+					);
+				}
+				assert(
+					get().save.status === 'saving',
+					`save is ${get().save.status}`,
+				);
+				ok(await flush());
+				const accepted = get().row;
 				const stored = decoder.decode(await rawRead(id, path));
 				assert(
-					stored === receipt.canonical,
-					`stored ${JSON.stringify(stored)}, saved ${JSON.stringify(receipt.canonical)}`,
-				);
-				assert(
-					receipt.sha256 === (await hashBytes(encoder.encode(stored))),
-					'the receipt names other bytes',
+					accepted.status === 'valid' && stored === accepted.text,
+					`stored ${JSON.stringify(stored)}, accepted ${JSON.stringify(accepted)}`,
 				);
 
-				// An equivalent outside save in another layout: a clean editor follows.
+				// An outside save in another layout leaves the editor alone
+				// until reload replaces the accepted input with it, exactly.
 				const outside = "---\ntitle: 'From outside'\n---\n";
-				ok(await folder.files.overwrite(path, outside));
-				await editor.refresh();
-				const followed = editor.get();
+				ok(await folder.files.replace(ok(await folder.files.read(path)), outside));
+				assert(get().row === accepted, 'the editor followed the file by itself');
+				ok(await reload());
+				const followed = get().row;
 				assert(
-					!followed.isDirty &&
-						followed.document.fields.title === 'From outside' &&
-						followed.observation.kind === 'present' &&
-						followed.observation.revision.text === outside,
-					`clean editor holds ${JSON.stringify(followed.text)}`,
+					followed.status === 'valid' &&
+						followed.text === outside &&
+						followed.fields.title === 'From outside',
+					`after the outside save the row is ${JSON.stringify(followed)}`,
 				);
-
-				// A dirty editor keeps its input when the file changes again.
-				ok(editor.change({ fields: { title: 'Typed' } }));
-				const later = ok(await folder.files.read(path));
-				ok(
-					await folder.files.replace(
-						later,
-						'---\ntitle: Changed elsewhere\n---\n',
-					),
-				);
-				await editor.refresh();
-				const dirty = editor.get();
-				assert(
-					dirty.isDirty && dirty.document.fields.title === 'Typed',
-					`dirty editor holds ${JSON.stringify(dirty.text)}`,
-				);
-				return `saved ${JSON.stringify(receipt.canonical)}; followed ${JSON.stringify(followed.text)}; kept ${JSON.stringify(dirty.text)}; states ${[...new Set(states)].join(' → ')}`;
+				return `stored ${JSON.stringify(stored)}; followed ${JSON.stringify(outside)}; ${calls} invalidations`;
 			} finally {
 				stop();
-				await editor.dispose();
 			}
+		},
+	);
+
+	await check(
+		'malformed and schema-invalid text opens, and the same editor repairs it',
+		async () => {
+			const folder = await open(id);
+			ok(await folder.files.create('rows/broken.md', '---\ntitle: [\n---\n'));
+			ok(await folder.files.create('rows/untitled.md', '---\nowner: sam\n---\n'));
+			const broken = ok(await folder.tables.rows.edit('broken'));
+			const untitled = ok(await folder.tables.rows.edit('untitled'));
+			const brokenRow = broken.get().row;
+			const untitledRow = untitled.get().row;
+			assert(
+				brokenRow.status === 'invalid' &&
+					brokenRow.error.name === 'NoCanonicalForm',
+				`broken opened as ${JSON.stringify(brokenRow)}`,
+			);
+			assert(
+				untitledRow.status === 'invalid' &&
+					untitledRow.error.name === 'Nonconforming',
+				`untitled opened as ${JSON.stringify(untitledRow)}`,
+			);
+			const repaired = '---\ntitle: Repaired\n---\n';
+			broken.setText(repaired);
+			ok(await broken.flush());
+			const stored = decoder.decode(await rawRead(id, 'rows/broken.md'));
+			assert(stored === repaired, `stored ${JSON.stringify(stored)}`);
+			assert(broken.get().row.status === 'valid', 'the repair is not valid');
+			return `opened ${brokenRow.error.name} and ${untitledRow.error.name}; the raw repair saved ${JSON.stringify(stored)}`;
+		},
+	);
+
+	await check(
+		'a row removed before its write is NotFound and stays absent; a file made again keeps its text until reload discards the failed input',
+		async () => {
+			const folder = await open(id);
+			const path = 'rows/gone.md';
+			ok(await folder.files.create(path, '---\ntitle: Before\n---\n'));
+			const editor = ok(await folder.tables.rows.edit('gone'));
+			const { get, set, flush, reload } = editor;
+			ok(await folder.files.remove(ok(await folder.files.read(path))));
+			const typed = 'Typed after the removal';
+			ok(set({ fields: { title: typed }, body: '' }));
+			const { error: failed } = await flush();
+			assert(failed?.name === 'NotFound', `save ${JSON.stringify(failed)}`);
+			assert(!(await rawExists(id, path)), 'the write made the file again');
+			// A failed reload keeps the input in view.
+			const { error: missing } = await reload();
+			assert(missing?.name === 'NotFound', `reload ${JSON.stringify(missing)}`);
+			const kept = get().row;
+			assert(
+				kept.status === 'valid' && kept.fields.title === typed,
+				`while absent the row is ${JSON.stringify(kept)}`,
+			);
+
+			// An explicit create makes the file again with other text. The
+			// paused editor writes nothing over it; reload adopts it.
+			const recreated = '---\ntitle: Made again\n---\n';
+			ok(await folder.files.create(path, recreated));
+			const stored = decoder.decode(await rawRead(id, path));
+			assert(stored === recreated, `stored ${JSON.stringify(stored)}`);
+			ok(await reload());
+			const { row, save } = get();
+			assert(
+				row.status === 'valid' && row.text === recreated,
+				`after reload the row is ${JSON.stringify(row)}`,
+			);
+			assert(save.status === 'idle', `after reload the save is ${JSON.stringify(save)}`);
+			return `NotFound, nothing written; the made-again file keeps ${JSON.stringify(recreated)} until reload adopts it`;
+		},
+	);
+}
+
+/** The name of what a promise rejected with, or `done`. */
+const outcome = (promise: Promise<unknown>) =>
+	promise.then(
+		() => 'done',
+		(cause) => (cause instanceof Error ? cause.name : String(cause)),
+	);
+
+async function writeHandle(handle: FileSystemFileHandle, text: string) {
+	const writable = await handle.createWritable({ keepExistingData: false });
+	await writable.write(encoder.encode(text));
+	await writable.close();
+}
+
+/**
+ * What the OPFS replacement relies on, probed with the browser's own API in
+ * this run's directory: a stream's lock, and a stream for a removed file.
+ * The store's tests run a model of these behaviors; these probes are the
+ * browser itself.
+ */
+async function streams(id: string) {
+	used.add(id);
+	await check(
+		'an open write stream refuses removing its file and, recursively, a directory above it; a sibling stays',
+		async () => {
+			const top = await rawDirectory(id, true);
+			const directory = await top.getDirectoryHandle('locked', {
+				create: true,
+			});
+			const file = await directory.getFileHandle('x.md', { create: true });
+			await writeHandle(
+				await directory.getFileHandle('sibling.md', { create: true }),
+				'sibling',
+			);
+			const writable = await file.createWritable({ keepExistingData: false });
+			let fileRemoval: string;
+			let ancestorRemoval: string;
+			try {
+				fileRemoval = await outcome(directory.removeEntry('x.md'));
+				ancestorRemoval = await outcome(
+					top.removeEntry('locked', { recursive: true }),
+				);
+				await writable.write(encoder.encode('landed'));
+			} finally {
+				await writable.close();
+			}
+			assert(
+				fileRemoval !== 'done' && ancestorRemoval !== 'done',
+				`file removal ${fileRemoval}; ancestor removal ${ancestorRemoval}`,
+			);
+			const landed = await (await file.getFile()).text();
+			const sibling = await (
+				await (await directory.getFileHandle('sibling.md')).getFile()
+			).text();
+			assert(landed === 'landed', `the file holds ${JSON.stringify(landed)}`);
+			assert(sibling === 'sibling', `the sibling holds ${JSON.stringify(sibling)}`);
+			return `file removal ${fileRemoval}; ancestor removal ${ancestorRemoval}; the write landed and the sibling stayed`;
+		},
+	);
+
+	const directory = await (await rawDirectory(id, true)).getDirectoryHandle(
+		'removed',
+		{ create: true },
+	);
+	const exists = (name: string) =>
+		outcome(directory.getFileHandle(name)).then((found) => found === 'done');
+
+	// The hazard the recheck is for. Not an assertion: an engine that does
+	// not recreate the file only makes the recheck unnecessary.
+	const unchecked = await directory.getFileHandle('unchecked.md', {
+		create: true,
+	});
+	await writeHandle(unchecked, 'before');
+	await directory.removeEntry('unchecked.md');
+	const written = await outcome(writeHandle(unchecked, 'back'));
+	record(
+		'without a recheck, a stream for a file removed after its handle was taken',
+		'note',
+		written !== 'done'
+			? `refused: ${written}`
+			: (await exists('unchecked.md'))
+				? 'closing it made the file again'
+				: 'closing it left the path absent',
+	);
+
+	await check(
+		"with a getFile() recheck, a removed file's stream is aborted and the path stays absent",
+		async () => {
+			const handle = await directory.getFileHandle('rechecked.md', {
+				create: true,
+			});
+			await writeHandle(handle, 'before');
+			await directory.removeEntry('rechecked.md');
+			const writable = await handle.createWritable({ keepExistingData: false });
+			const recheck = await outcome(handle.getFile());
+			if (recheck === 'done') await writable.close();
+			else await writable.abort();
+			assert(recheck === 'NotFoundError', `the recheck found ${recheck}`);
+			assert(!(await exists('rechecked.md')), 'the path holds a file');
+			return 'getFile() was NotFoundError; after abort the path is absent';
 		},
 	);
 }
@@ -972,6 +1142,7 @@ async function main() {
 			await recovery(runId);
 			await identity(runId);
 			await editing(`${runId}-editor`);
+			await streams(`${runId}-streams`);
 			await closing(runId);
 		}
 	} catch (cause) {

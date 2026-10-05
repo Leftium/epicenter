@@ -3,6 +3,12 @@
 This experiment continues thread `01a10008-a12f-7b11-ada9-44a1bcb77278`.
 It modifies disposable demo data. It does not migrate production callers.
 
+Waves 1 through 7 are history. The editor they describe, with a draft, a
+baseline, an explicit save, adoption, and disposal, was replaced by the
+contract in [ADR 0504](../../../../docs/adr/0504-row-editors-own-complete-input-and-one-publication-queue.md);
+"Wave 8" at the end records how the current callers page moved to it. API
+names in earlier waves describe what existed then.
+
 ## The boundary that survived review
 
 A retained edit owns one file's draft, displayed baseline, observations, and
@@ -461,3 +467,62 @@ The native folder's hash check is best effort against outside writers. The
 other writer uses `node:fs`; the harness explicitly supplies its change hint.
 Lost replies are simulated. Browser observations do not establish a stronger
 native concurrency guarantee or production migration readiness.
+
+## Wave 8: the callers page on complete-row editing
+
+ADR 0504 replaced the editor of waves 6 and 7. The callers page moved to the
+replacement; `canonical-callers.md` describes it, and its history section
+keeps the earlier page.
+
+- Every structured handler reads the latest row and calls `set` with the
+  complete row; the source view calls `setText`. Each view's handlers return
+  unless the row still supports that view. There is no Save button: each
+  accepted input is published in order.
+- A schema-invalid value is saved and the row becomes `invalid`. The page
+  says so and shows the source for repair; the earlier promise that Save
+  refuses an invalid draft is gone, and no page-level validation stands in
+  for it.
+- Acquisition opens malformed and schema-invalid text. The repair panel that
+  overwrote files the editor refused to open is deleted; the "Another caller"
+  panel stays, labeled as a separate caller, with each write conditional on
+  the bytes it just read.
+- Vanilla renders `get()` after subscribing, because `subscribe` makes no
+  initial call. Solid uses `from`'s setter form with `get()` as its initial
+  value and on each invalidation. Svelte reads through `fromRowEditor`.
+- The owner keeps the editor; nothing disposes it. Leaving a row unmounts the
+  views, subscribes, waits while `save` is `saving`, and asks before dropping
+  input whose save failed. Discarding drops the editor; opening the row again
+  reads the file.
+- The page's header no longer offers "Save my draft", "Take this version",
+  or a clean or dirty state.
+
+Independent Codex and Opus reviews then found three defects in the page,
+all repaired:
+
+- The leave guard cleared before the action after it ran, so an Open during
+  Reset's writes installed an editor that Reset then replaced without a
+  drain. One transition now holds the page from release to its last step,
+  takes its row when the person asks, and only its last step installs an
+  editor.
+- Vanilla and Solid handlers kept on detached controls could still submit.
+  Each now returns once its view unmounts.
+- One shared presentation object collapsed the three views' modes on
+  remount. Each view now has its own, held by the owner.
+
+A focused second review found more, also repaired:
+
+- Svelte keeps its bindings' listeners on detached elements even with no
+  outro, so the Svelte setters now check an `onDestroy` flag; the status
+  panel's retry, read, and probe buttons check theirs.
+- A refused request cancelled the acquisition it interrupted. Now only Close
+  cancels one; other requests leave it running.
+- While a failed save waited for the person's choice, the raw file panel
+  already targeted the next row. The selector and panel now move only after
+  the release succeeds, and the panel names its target.
+
+`canonical-page.test.ts` drives the built page through each of these paths;
+undoing any one of the repairs fails it.
+
+Verification for this wave: the demo's `svelte-check`, the folder package
+typecheck, the Vite build, and the page journeys pass. Browser acceptance of
+the page is the integrating reviewer's to record; none is claimed here.

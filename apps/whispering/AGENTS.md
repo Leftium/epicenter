@@ -55,7 +55,11 @@ behavior and delivery status, and `ARCHITECTURE.md` for structure.
   answered without looking only after an opening has failed and everything it
   opened is closed; never while an opening is under way or a session exists.
   The close guard is created only after the session's first read and credential
-  check have settled: do not make it listen earlier.
+  check have settled: do not make it listen earlier. On macOS a system quit
+  reaches the handshake only through `src-tauri/src/quit.rs`, which always
+  cancels AppKit's quit and asks for an ordinary exit: do not answer
+  `NSTerminateNow` or `NSTerminateLater` from it, or mirror the handshake's
+  state there.
 - **A lost reply is not a refusal.** When a native service does not answer, the page
   does not know whether the endpoint was called. Report it as unknown, never
   as "not sent", and never send a provider request again without the person
@@ -107,9 +111,13 @@ behavior and delivery status, and `ARCHITECTURE.md` for structure.
 
 ## Checks
 
-From `apps/whispering`: `bun run typecheck`, `bun test --isolate`,
-`bun run build`. For shell changes also
-`cargo test --manifest-path src-tauri/Cargo.toml`. Tests establish logic and
+From `apps/whispering`: `bun run typecheck`, `bun run test` (which runs the
+mounted views under the browser runtime after the rest), `bun run build`. For
+shell changes also
+`cargo test --manifest-path src-tauri/Cargo.toml`. After a change to the shell's
+exit handling, or an upgrade of macOS, Tauri, or Tao, also run the probe and
+the three `bun run test:quit` scenarios in `evidence/native-quit/README.md`.
+Tests establish logic and
 what reaches disk. The TypeScript tests script the shell's replies or open the
 directory with the Bun opener; they never run the Rust owner. Only running
 `bun dev:whispering` establishes that the desktop app works.

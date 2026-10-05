@@ -1,23 +1,25 @@
 /**
  * Reread tests.
  * The real words list, chat list, and word editor run over Vocab's real
- * browser folder on an in-memory OPFS stand-in, with one listing held, or a save started
- * before more typing, so the order of a read and a receipt is fixed.
+ * browser folder on an in-memory OPFS stand-in, with one listing held so the
+ * order of a read and a receipt is fixed.
  *
  * Key behaviors:
  * - A listing made stale by this tab's own save is read again, so another
  *   tab's word or chat that it held is not lost
  * - Requests made while a read is out are answered by one more read, not one
  *   each, and none is dropped
- * - A note saved while typing goes on is what the word is then dirty
- *   against, so the learner's own save is never shown as a conflict
- * - A note another tab saved while typing, once read here, waits for the
- *   learner's choice; leaving the field does not save over it
+ * - The list follows the latest note once the saves made while typing land
  */
 import './svelte-modules.test-support.js';
 import { expect, test } from 'bun:test';
 import { expectOk } from 'wellcrafted/testing';
-import { createBrowser, editWord, gated } from './folder.test-support.js';
+import {
+	createBrowser,
+	entriesOf,
+	gated,
+	until,
+} from './folder.test-support.js';
 
 const { createEntriesState } = await import('./entries.svelte.js');
 const { createChatsState } = await import('./chat/chats.svelte.js');
@@ -31,9 +33,7 @@ test('a words listing made stale by this tab’s own save is read again and keep
 	const { gate, table } = gated(folder.tables.entries);
 	const entries = createEntriesState({ table });
 	await entries.refresh();
-	const otherTab = createEntriesState({
-		table: (await browser.open()).tables.entries,
-	});
+	const otherTab = createEntriesState(entriesOf(await browser.open()));
 
 	// The other tab adds a word. Its hint starts a read here, which lists the
 	// folder now and is delivered only after this tab's own save has landed.
@@ -59,9 +59,7 @@ test('requests made while a read is out are answered by one more read', async ()
 	const folder = await browser.open();
 	const { gate, table } = gated(folder.tables.entries);
 	const entries = createEntriesState({ table });
-	const otherTab = createEntriesState({
-		table: (await browser.open()).tables.entries,
-	});
+	const otherTab = createEntriesState(entriesOf(await browser.open()));
 
 	// A read lists the empty folder and is held. A word is saved elsewhere and
 	// three hints arrive before the held listing is delivered.
@@ -111,91 +109,25 @@ test('a chat listing made stale by this tab’s new chat is read again and keeps
 // A note while it is typed
 // ============================================================================
 
-/** One word, its editor as the card has it, and another tab on the same folder. */
-async function noteSetup() {
-	const browser = createBrowser();
-	const folder = await browser.open();
-	const entries = createEntriesState({ table: folder.tables.entries });
+test('the list follows the latest note once the saves made while typing land', async () => {
+	await using browser = createBrowser();
+	const entries = createEntriesState(entriesOf(await browser.open()));
 	expectOk(await entries.add('candid'));
 	const id = entries.entries[0]?.id ?? '';
 	const word = entries.word(id);
 	await word.open();
-	const otherTab = createEntriesState({
-		table: (await browser.open()).tables.entries,
-	});
-	await otherTab.refresh();
-	return {
-		entries,
-		id,
-		word,
-		otherTab,
-		saved: () => entries.entries[0]?.note,
-		/** The note a fresh read of the folder finds. */
-		async inFolder() {
-			await otherTab.refresh();
-			return otherTab.entries[0]?.note;
-		},
-		[Symbol.asyncDispose]: () => browser[Symbol.asyncDispose](),
-	};
-}
+	const listed = () => entries.entries[0]?.note;
 
-test('a note saved while typing goes on is what the word is then dirty against, not a conflict', async () => {
-	await using context = await noteSetup();
-	const { word } = context;
-
-	// Type, leave the field, and type more before the save lands.
 	word.inputNote('a');
-	const first = word.blur();
+	await until(() => listed() === 'a', 'the first note to be listed');
 	word.inputNote('ab');
-	expect(await first).toBeNull();
-	expect(context.saved()).toBe('a');
-	expect(word.note('')).toBe('ab');
-	expect(word.review).toBeUndefined();
-	expect(word.unsettled).toBe(true);
-
-	// Leaving again saves over the learner's own earlier save.
-	expect(await word.blur()).toBeNull();
-	expect(word.review).toBeUndefined();
-	expect(context.saved()).toBe('ab');
-	expect(await context.inFolder()).toBe('ab');
+	word.inputNote('abc');
+	await until(
+		() => listed() === 'abc' && word.save?.status === 'idle',
+		'the latest note to be listed',
+	);
 	expect(word.unsettled).toBe(false);
-});
-
-test('leaving the field again before the first save lands waits for it and is not a conflict either', async () => {
-	await using context = await noteSetup();
-	const { word } = context;
-
-	word.inputNote('a');
-	const first = word.blur();
-	word.inputNote('ab');
-	const second = word.blur();
-	expect(await first).toBeNull();
-	expect(await second).toBeNull();
-	expect(word.review).toBeUndefined();
-	expect(context.saved()).toBe('ab');
-	expect(await context.inFolder()).toBe('ab');
-});
-
-test('a note another tab saved while typing, once read here, waits for a choice, and saving mine replaces it', async () => {
-	await using context = await noteSetup();
-	const { word, entries, otherTab, id } = context;
-
-	word.inputNote('mine');
-	expect(await editWord(otherTab, id, { note: 'theirs' })).toBeNull();
-	// The other tab's hint is read here before the field is left.
-	await entries.refresh();
-	expect(await word.blur()).toBeNull();
-	const review = word.review;
-	expect(review?.kind === 'changed' && review.note).toBe('theirs');
-	expect(word.note('')).toBe('mine');
-	expect(await context.inFolder()).toBe('theirs');
-
-	// Leaving the field again does not save over it by itself.
-	expect(await word.blur()).toBeNull();
-	expect(await context.inFolder()).toBe('theirs');
-
-	expect(await word.saveMine()).toBeNull();
-	expect(word.review).toBeUndefined();
-	expect(await context.inFolder()).toBe('mine');
-	expect(context.saved()).toBe('mine');
+	const again = createEntriesState(entriesOf(await browser.open()));
+	await again.refresh();
+	expect(again.entries.map((entry) => entry.note)).toEqual(['abc']);
 });

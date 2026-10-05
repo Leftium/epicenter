@@ -18,7 +18,9 @@
 //! on its own judgement. A window close, Command-Q, or any other exit request
 //! is held back and turned into a question: the shell writes a close request to
 //! the host's standard input, the host asks the page, and the host prints an
-//! approval line when the window may close.
+//! approval line when the window may close. On macOS a quit from the system
+//! itself (the Dock, a logout, an Apple Event) is turned into such an exit
+//! request first; see `quit.rs`.
 //!
 //! A host that has stopped approves nothing: the page still holds its unsaved
 //! work. The shell then keeps the window, raises an event in the page, and
@@ -46,6 +48,9 @@ use tauri::{
     App, AppHandle, Manager, RunEvent, Runtime, WebviewUrl, WebviewWindowBuilder, WindowEvent,
 };
 use tauri_plugin_epicenter_folder::{Author, FolderConfig, FolderExt, ScopeConfig};
+
+#[cfg(target_os = "macos")]
+mod quit;
 
 const READY_TIMEOUT: Duration = Duration::from_secs(20);
 const SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(5);
@@ -94,6 +99,21 @@ fn context<R: Runtime>() -> tauri::Context<R> {
 }
 
 pub fn run() {
+    build(None)
+        .expect("failed to build Whispering")
+        .run(|app, event| {
+            on_run_event(app, &event);
+        });
+}
+
+/// The app, built and not yet running. Its setup (the quit guard first, then
+/// the menu, the folder and its owner, the host, and the window) runs once
+/// `App::run` starts the event loop, before Tauri sends `RunEvent::Ready`.
+///
+/// `page` is what the host serves as the page. `run` passes `None`, so the
+/// host serves the page it is built with. `examples/quit` passes its fixture
+/// page and changes nothing else.
+pub fn build(page: Option<PathBuf>) -> tauri::Result<App> {
     tauri::Builder::default()
         // Shuts the folder down when the app exits; see the module comment.
         .plugin(tauri_plugin_epicenter_folder::init())
@@ -107,10 +127,13 @@ pub fn run() {
                 }
             }
         })
-        .setup(|app| {
+        .setup(move |app| {
+            // First, before anything a quit could lose exists.
+            #[cfg(target_os = "macos")]
+            quit::install(app.handle())?;
             #[cfg(target_os = "macos")]
             install_menu(app)?;
-            match start(app) {
+            match start(app, page.as_deref()) {
                 Ok(started) => open_app_window(app, started.port, &started.token)?,
                 Err(error) => {
                     eprintln!("[whispering] could not start: {error}");
@@ -120,18 +143,28 @@ pub fn run() {
             Ok(())
         })
         .build(context())
-        .expect("failed to build Whispering")
-        .run(|app, event| match event {
-            // Command-Q, the Dock, and a system shutdown all arrive here.
-            RunEvent::ExitRequested { api, .. } => {
-                if !close_is_approved(app) {
-                    api.prevent_exit();
-                    request_close(app);
-                }
+}
+
+/// The app's handling of its run events. Returns whether it held back an exit
+/// request; `examples/quit` reports that.
+pub fn on_run_event(app: &AppHandle, event: &RunEvent) -> bool {
+    match event {
+        // Every `AppHandle::exit` arrives here, approved or not. On macOS a
+        // quit from the system does too, through `quit.rs`.
+        RunEvent::ExitRequested { api, .. } => {
+            if close_is_approved(app) {
+                return false;
             }
-            RunEvent::Exit => stop_host(app),
-            _ => {}
-        });
+            api.prevent_exit();
+            request_close(app);
+            true
+        }
+        RunEvent::Exit => {
+            stop_host(app);
+            false
+        }
+        _ => false,
+    }
 }
 
 /// Everything the page depends on, settled before the page exists: where the
@@ -140,9 +173,9 @@ pub fn run() {
 ///
 /// When any of it fails the host is stopped and no window is granted anything.
 /// The window that opens then is the failure page, which can reach no folder.
-fn start(app: &App) -> Result<StartedHost, String> {
+fn start(app: &App, page: Option<&Path>) -> Result<StartedHost, String> {
     let root = data_root(app)?;
-    let started = start_host(app, &root)?;
+    let started = start_host(app, &root, page)?;
     let granted = register_folder(app.handle(), root).and_then(|()| {
         app.add_capability(folder_capability(started.port))
             .map_err(|error| format!("let the window use the folder: {error}"))
@@ -368,9 +401,12 @@ struct StartedHost {
 /// Start the host with the folder the shell chose. The host is given that
 /// directory and reports only its port: where the folder is was never its to
 /// decide, so nothing it prints is read as a path.
-fn start_host(app: &App, root: &Path) -> Result<StartedHost, String> {
+fn start_host(app: &App, root: &Path, page: Option<&Path>) -> Result<StartedHost, String> {
     let token = launch_token()?;
     let mut command = host_command(app)?;
+    if let Some(page) = page {
+        command.env("WHISPERING_UI_DIST", page);
+    }
     command
         .env("WHISPERING_DATA_ROOT", root)
         .env("WHISPERING_HOST_TOKEN", &token)

@@ -119,7 +119,7 @@ function tableOf<TFields>(
 	const declared = prepared.tables[name];
 	if (declared === undefined) throw new Error(`no table '${name}'`);
 	return createTable<TFields>(
-		{ storage, onFilesChanged: () => () => {} },
+		{ storage },
 		name,
 		declared.fields,
 	);
@@ -1897,7 +1897,7 @@ test('a write receipt is not interpreted: create, replace, rename, and delete pu
 	// Interpreting source lists the table's fields, and that listing throws.
 	let failing = false;
 	const table = createTable<Todo>(
-		{ storage: s.storage, onFilesChanged: () => () => {} },
+		{ storage: s.storage },
 		'todos',
 		new Proxy(definition.tables.todos.fields, {
 			ownKeys(fields) {

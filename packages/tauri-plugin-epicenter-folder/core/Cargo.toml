@@ -19,3 +19,7 @@ serde_json = { version = "1", features = ["raw_value"] }
 sha2 = "0.10"
 specta = { version = "=2.0.0-rc.26", features = ["derive"] }
 unicode-normalization = "0.1"
+
+# Atomic replace-existing publication on Unix.
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"

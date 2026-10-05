@@ -8,8 +8,10 @@ Honeycrisp ships its own desktop shell and is built from `apps/honeycrisp`.
 trusted SPA source                 Epicenter build output
 
 apps/whispering/src  -----------> dist/whispering
+apps/capture/src     -----------> dist/capture
+apps/local-mail/ui   -----------> dist/mail
 apps/todos/src       -----------> dist/todos
-apps/epicenter/ui     -----------> dist/home
+apps/epicenter/src/ui -----------> dist/home
                                           |
                                           v
                               Bun loopback sidecar
@@ -18,22 +20,20 @@ apps/epicenter/ui     -----------> dist/home
                               apps/epicenter/src-tauri
 ```
 
-A compiled application is a `dist/<id>` build this release declares, served
-below `/apps/<id>/`. Whispering and Honeycrisp are the two. Each keeps its
-independently deployable browser build, and the variant Epicenter serves is
-selected at build time by the `epicenter-host` resolve condition.
+The host serves Home and four compiled applications: Whispering, Capture,
+Local Mail, and Todos. Application routes live below `/apps/<id>/`. The
+`epicenter-host` build condition selects each product's host integrations.
+Honeycrisp has a separate desktop shell.
 
-That condition does not decide where the data lives. Every build opens its own
-store, with no platform seam, and reaches one authority per signed-in account
-(ADR-0226, ADR-0227). The host serves bundles and brokers credentials; it owns
-no application data and constructs no database. What the condition still selects
-is the credential path (`#platform/auth`, `#platform/instance`), because the
-host really does broker a credential its windows cannot obtain.
+Capture and Todos reach native file folders through the shared Folder plugin.
+Local Mail uses its account-bound store and SQLite capability. The shared-host
+Whispering bundle currently has no supported folder bridge and refuses before
+acquiring a folder; its inclusion in the catalog does not establish usable
+hosted editing. Standalone Whispering owns its own folder and lifecycle.
 
-Todos is a compiled application of a different kind: its data is a folder of
-ordinary files, not a store. Its `epicenter-host` build selects
-`#platform/folder`, and its window reaches one directory through this host.
-See [The Todos folder](#the-todos-folder).
+The host brokers credentials and owns native resources. Product pages own
+unsaved input. The native Folder owner owns file publication, watching, and Git;
+the Bun sidecar serves product bundles without owning their row input.
 
 ## Configure the server
 
@@ -167,7 +167,8 @@ shared TypeScript code, while Rust owns file publication, Git, watching, and the
 cross-process lock.
 
 A window close hides the loaded page and preserves its drafts. Quitting or
-replacing the page loses unsaved typing. Native shutdown drains accepted saves
+restarting Epicenter asks the page first (see [Leaving Epicenter](#leaving-epicenter));
+reloading the page loses unsaved typing. Native shutdown drains accepted saves
 and commits; forced termination can leave saved files uncommitted. Two native
 processes cannot open the same directory. See Todos' [README](../todos/README.md)
 for version checks, terminal interleaving, and external-edit limits.
@@ -180,17 +181,124 @@ the body holds the original text and an ordered list under `## Thoughts`.
 The page edits that source, and its full-source editor exposes the same bytes.
 It opens without an Epicenter account.
 
-The host mounts Capture's own bridge from `@epicenter/capture-app/native` at
-`/_epicenter/capture`, behind the browser session and exact Origin checks.
-Native startup chooses the directory. Capture opens it on the first request;
-host shutdown drains admitted work and closes it. No request chooses a root.
-The browser build keeps a separate logical folder in IndexedDB.
+The Rust shell registers `so.epicenter.capture` for the `capture` window through
+the shared Folder plugin. The page opens that scope through Tauri commands;
+there is no Capture HTTP file bridge. First attach opens the directory, and
+native shutdown drains admitted work. Browser Capture keeps a separate folder
+in its origin's private file system (OPFS).
 
-Closing the native window hides it with its drafts intact. Before quitting,
-the host asks Capture to save or resolve its unsaved work. If the page cannot
-answer, the native dialog requires an explicit discard before exit. A stopped
-sidecar leaves the page open for recovering its text. Forced termination and
-Tauri's process restart do not wait for this handshake.
+Closing the native window hides it with its drafts intact. Quitting or
+restarting Epicenter asks the page first (see [Leaving Epicenter](#leaving-epicenter)).
+A stopped sidecar leaves the page open for recovering its text. Forced
+termination does not wait.
+
+## Leaving Epicenter
+
+Capture and Todos keep unsaved text in their pages, and the Folder plugin's
+exit drain sees only writes a page already submitted, not a draft still inside
+its 400 ms batch. So before the process quits, or restarts for an account
+change, the native host runs one departure round
+(`src-tauri/src/departure.rs`) and asks both windows. The pages own their
+drafts; the host owns the round and a generation for each page. Nothing else
+takes part: Whispering's shared-host build has no folder root, and Home, Mail,
+and admitted apps hold no file-backed drafts.
+
+- **Who is asked.** The `capture` and `todos` windows that exist when the round
+  starts, hidden ones included. No window joins later: while a round runs, a
+  participant window cannot be created.
+- **Every quit asks.** The round starts from `ExitRequested`. The tray's Quit
+  and `app.exit` raise it directly. AppKit's own quits (the app menu's Quit and
+  Cmd-Q, the Dock's Quit, logout, restart, shutdown, a `quit` Apple event) call
+  `terminate:`, which Tao's application delegate would let through without
+  `ExitRequested`. A quit guard (`src-tauri/src/departure/terminate.rs`) adds
+  `applicationShouldTerminate:` to Tao's delegate class at startup and fails
+  startup if it cannot. With no Capture or Todos window it lets AppKit
+  terminate as before. Otherwise it refuses and requests an ordinary exit,
+  which runs the round, so a logout or shutdown that reaches Epicenter is
+  cancelled, and the person retries it once the round has finished. Epicenter
+  does not resume a cancelled logout. Force Quit, a signal, or a crash still
+  skips the round. Letting AppKit terminate runs Tao's exit path, which takes
+  a lock Tao already holds during Tauri callbacks, so `terminate:` must never
+  be answered "now" from inside one: it would hang the main thread. AppKit's
+  own quits arrive from the run loop, and nothing in Epicenter calls
+  `terminate:`; code that wants to quit calls `app.exit`. While a modal
+  session runs, the nesting identified so far, the guard always takes the
+  ordinary exit instead. Other nested run loops are not ruled out.
+- **One owner.** The round and the participant windows belong to the main
+  thread. Bun frames, timers, dialog answers, and page answers are carried
+  there, and each hide or show happens inside the step that decided it, so
+  nothing from an ended round can show or hide a window in a newer one.
+- **Nothing pops up unasked.** Starting a round shows no window. A page that
+  answers `asking` is shown, even if the person had closed it, so it can ask
+  them; so is every undecided page when the person asks again.
+- **Agreeing never ends the page.** A page answers `ready` once its draft is
+  flushed, or once the person deliberately discards it in the page. Nothing is
+  closed, discarded, or reloaded. If any page answers `cancel` ("Keep working"),
+  every page the round held resumes, and every window the round showed or hid
+  goes back as the round found it, shown or hidden.
+- **Silence is not permission.** A page that has not answered after three
+  seconds is listed in a native dialog: "Keep open" (the default), "Discard
+  and quit" or "Discard and restart", and "Cancel". Only the discard button
+  lets the round go on; "Cancel", a dialog that fails, and any other answer
+  keep Epicenter open. The discarded window
+  is hidden, and confirmed hidden, before its vote counts, and nothing shows it
+  again until the round ends without leaving. A hide that was applied but not
+  confirmed ends the round with an error and shows the window again.
+- **Asking again.** Quitting during a quit or a restart round asks the
+  undecided pages again in the same round, with the same intent, so a page that
+  hung after `asking` reaches the dialog ("Discard and restart" during a
+  restart); a live page re-sends `asking` and shows its own prompt once. Quit
+  and restart never merge: a second restart is refused as busy, and quitting
+  while a restart is granted says so and leaves the grant to Bun.
+- **Restart is granted, then finished.** An account change asks over the
+  private Bun pipe (`prepare-relaunch`, protocol 8) and gets exactly one answer.
+  Granting hides every participant window, each confirmed hidden, and refuses
+  to show them; `relaunch` then calls `request_restart`, whose Exit lets the
+  Folder plugin drain admitted writes. `relaunch-abort`, or the Bun generation
+  ending, restores them. A page that reloads or closes while the round collects
+  ends the round: a restart gets its error, a quit says so. While granted it
+  only loses its vote, and every page stays fenced.
+- **The Window menu.** AppKit lists open windows in the Window menu and raises
+  the one chosen. Capture and Todos are left out of that list and get their
+  own Window-menu items instead, which open or show them through the same
+  checked path as Home's launcher, so the menu cannot show a discarded or
+  granted window.
+- **Bun stopping** leaves both windows and their native folders running, and
+  sends them `host-stopped`. Their HTTP session does not come back; they are
+  shown when no round is in progress.
+
+### The page wire
+
+[`src/departure-wire.ts`](src/departure-wire.ts), exported as
+`@epicenter/epicenter/departure`, is the published shape, with a strict reader
+the native harness uses. It imports nothing, so a browser bundle can take it.
+The app's own page code implements the rules there; the host ships no page
+framework.
+
+```text
+Rust -> page   emit_to(label, "departure-changed", ())     no payload
+               emit_to(label, "host-stopped", ())          no payload
+page -> Rust   departure_status() -> Status
+               departure_answer({ generation, round, answer: asking | ready | cancel }) -> Status
+Status = { version, generation, phase: idle | collecting | granted | leaving,
+           round?, intent?: quit | restart, vote?: none | asking | ready | discarded }
+```
+
+Rust identifies the caller by its window, never by a label the page sends. A
+stale generation or round changes nothing and returns the current status.
+`version` rises with every change. The `departure-*` capabilities grant both
+commands to `capture` and `todos` alone, and neither window holds a
+`core:window` grant, so a page cannot show itself.
+
+A page must, in this order: await registration of
+`getCurrentWebviewWindow().listen('departure-changed', ...)`; read status; and
+only on `idle` become editable. It drops any status older than the newest it
+applied, fences before its first await when a round arrives, answers `ready`
+directly when it holds nothing unsaved (`asking` shows its window), thaws only on an
+authoritative `idle` newer than its own answer, and stays fenced on `granted`,
+`leaving`, or `discarded`. A lost or rejected answer never thaws it. A global
+`listen` registers for every target and can hear the other window's nudge;
+that is harmless, because a nudge only means "read again".
 
 ## Install a local application release
 
@@ -232,7 +340,7 @@ bun run --cwd apps/epicenter desktop:build:remote
 # Typecheck the host and Home
 bun run --cwd apps/epicenter typecheck
 
-# Typecheck the host, Home, Whispering, Honeycrisp, Capture, and Todos
+# Typecheck the host, Home, Whispering, Capture, and Todos
 bun run --cwd apps/epicenter typecheck:desktop
 
 # Host, routing, sidecar, and window tests
@@ -240,11 +348,38 @@ bun test apps/epicenter/scripts apps/epicenter/src
 
 # Native command and fixture tests
 cargo test --manifest-path apps/epicenter/src-tauri/Cargo.toml
+
+# The departure round alone, with no dependencies
+rustc --edition 2021 --test apps/epicenter/src-tauri/src/departure/machine.rs -o apps/epicenter/src-tauri/target/departure-machine
+apps/epicenter/src-tauri/target/departure-machine
+
+# Twenty real restarts through a granted relaunch, and two departure rounds
+# through Capture- and Todos-labelled windows, in an isolated profile
+bun apps/epicenter/scripts/native-runtime-evidence.ts
 ```
+
+The runtime harness proves what the mock-runtime tests cannot: the restart
+reaches Exit and the Folder plugin's shutdown; a page's first read carries the
+generation of every page load before it; a window-scoped listener hears only
+its own label's nudge; AppKit leaves both windows out of its Window list; a
+grant hides both windows as `is_visible` reports and refuses the Window-menu
+items, and its abort leaves a window the person had closed hidden; the
+dialog's discard path hides a silent page, which the Window menu then cannot
+show; and Bun's withdrawal restores both. On macOS every process installs the
+quit guard on Tao's delegate, and the last one leaves through `[NSApp
+terminate:]`: refused into a quit round that one page cancels with its draft
+intact, then agreed and left through one Exit. A separate process with no
+participant window terminates through AppKit with no exit request. It drives
+the rounds natively, not through Bun's `prepare-relaunch`, which the port and
+authority tests cover. It schedules `terminate:` on the main run loop, as
+AppKit's own quits arrive, rather than pressing anything; it does not prove that an
+in-flight Folder write drains, and does not press Cmd-Q, use the Dock or
+tray, log out, click the dialog, or check whether a hidden window can still
+take input.
 
 The root `bun typecheck` runs each workspace's checks, including the apps checked
 by `typecheck:desktop`. Use `typecheck:desktop` for standalone verification of
-the host with Whispering and Honeycrisp.
+the host with Whispering, Capture, and Todos.
 
 ## Ownership rules
 

@@ -1,6 +1,6 @@
 /**
- * Actions the screens share: copy a path or some text, and delete with a
- * confirmation that names what will be removed.
+ * Actions the screens share: copy a path or some text, delete with a
+ * confirmation that names what will be removed, and textarea newlines.
  */
 
 import { basename } from '@epicenter/folder/file-browser';
@@ -29,6 +29,9 @@ export async function copyText(text: string, what: string) {
 		toast.error(`Could not copy ${what}`);
 	}
 }
+
+/** Text as a textarea reports it: LF only. Setters restore the file's own line endings. */
+export const lf = (text: string) => text.replace(/\r\n?/g, '\n');
 
 /** A saved time for display, or the raw value when it is not a time. */
 export function formatTime(value: unknown, style: 'short' | 'full' = 'full') {

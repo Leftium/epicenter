@@ -1,29 +1,62 @@
 /**
- * The shared editor's facts and review actions, in plain DOM: the baseline
- * the next comparison uses, the latest read, what a save writes, and how
- * saves ended. It lives as long as the editor, not as long as the three
- * views, so its receipt history survives remounting them.
+ * The shared editor's snapshot in plain DOM: the row as the editor shows
+ * it, the save chain, the exact accepted text, and the two explicit
+ * commands that are not typing: "Read the file again" (`reload`), which
+ * replaces the input with the file's text unless the input changed while it
+ * read, and, after a failed save, "Save this text again" (`retry`), which
+ * submits the latest input as a new attempt.
+ *
+ * It mounts and unmounts with the three views, because its commands change
+ * the input too. With all of them unmounted nothing subscribes to the row;
+ * the owner keeps the editor, and an admitted save still settles.
  */
-import type { RowSaveOutcome } from '../../../src/browser.js';
-import { h, shortSha } from './dom.js';
-import type { TodoEditor, TodoState } from './todo-editor.js';
+import { h } from './dom.js';
+import {
+	describeReadError,
+	describeSave,
+	describeSaveError,
+	sourceIssue,
+	type TodoEditor,
+	type TodoState,
+} from './todo-editor.js';
 
-export function mountEditorStatus(root: HTMLElement, editor: TodoEditor) {
-	const { subscribe, save, refresh, adopt } = editor;
+export function mountEditorStatus(
+	root: HTMLElement,
+	editor: TodoEditor,
+	log: (text: string) => void,
+) {
+	const { get, subscribe, retry, reload } = editor;
+	/**
+	 * Whether this panel is mounted. Its buttons are detached when it
+	 * unmounts, but a retained one can still be clicked by script or
+	 * assistive technology: no command runs after that. A retry or reload
+	 * could change input the owner is discarding, and the probe could
+	 * subscribe again.
+	 */
+	let mounted = true;
 	const facts = h('dl', { className: 'facts' });
-	const review = h('div', { className: 'review' });
-	const message = h('p', { className: 'message' });
-	const texts = h('div', { className: 'compare' });
-	const receipts = h('ol', { className: 'log' });
-	const readNow = h('button', { type: 'button' }, 'Read file now');
-	readNow.onclick = () => void refresh();
+	const text = h('pre', {});
+	const readNow = h('button', { type: 'button' }, 'Read the file again');
+	readNow.onclick = async () => {
+		if (!mounted) return;
+		const { error } = await reload();
+		if (error === null) log('Read the file again: its text replaced the input');
+		else if (error.name === 'InputChanged')
+			log('Read the file again: the input changed meanwhile, so it was kept');
+		else log(`Read the file again: ${describeReadError(error)}`);
+	};
+	const again = h('button', { type: 'button' }, 'Save this text again');
+	again.onclick = () => {
+		if (mounted) retry();
+	};
 
-	// A subscription that is not a view: the first call is the current state,
-	// later calls are changes. Unsubscribing it stops only this probe.
+	// A subscription that renders nothing: `subscribe` makes no initial call,
+	// so the first entry appears only after the snapshot changes.
 	const probeLog = h('ol', { className: 'log' });
 	const probe = h('button', { type: 'button' }, 'Subscribe probe');
 	let stopProbe: (() => void) | undefined;
 	probe.onclick = () => {
+		if (!mounted) return;
 		if (stopProbe !== undefined) {
 			stopProbe();
 			stopProbe = undefined;
@@ -33,138 +66,55 @@ export function mountEditorStatus(root: HTMLElement, editor: TodoEditor) {
 		}
 		let calls = 0;
 		probe.textContent = 'Unsubscribe probe';
-		stopProbe = subscribe((state) => {
+		stopProbe = subscribe(() => {
 			calls += 1;
-			probeLog.prepend(
-				h(
-					'li',
-					{},
-					`#${calls} ${calls === 1 ? 'current' : 'change'}: ${summarize(state)}`,
-				),
-			);
+			probeLog.prepend(h('li', {}, `#${calls}: ${summarize(get())}`));
 		});
+		probeLog.prepend(
+			h('li', {}, 'Subscribed: no call until the snapshot changes'),
+		);
 	};
 
 	root.replaceChildren(
 		facts,
-		review,
-		message,
-		h('div', { className: 'row' }, readNow),
-		texts,
-		h('h4', {}, 'Save outcomes, newest first'),
-		receipts,
+		h('div', { className: 'row' }, readNow, again),
+		h('h4', {}, 'Accepted text, exactly'),
+		text,
 		h('h4', {}, 'Subscription probe'),
 		probe,
 		probeLog,
 	);
 
-	let lastSeen: RowSaveOutcome | undefined;
+	let previousSave = get().save;
 
-	function render(state: TodoState) {
-		const { baseline, observation } = state;
-		const latest =
-			observation.kind === 'present' ? observation.revision : undefined;
+	function render() {
+		const { row, save } = get();
 		facts.replaceChildren(
-			...fact('Path', state.path),
-			...fact(
-				'Draft',
-				state.isDirty ? 'unsaved changes' : 'same content as the baseline',
-			),
-			...fact(
-				'Baseline',
-				`${shortSha(baseline.sha256)}${baseline.text === baseline.canonical ? ', canonical text' : ', formatted differently: an explicit save rewrites it canonically'}`,
-			),
-			...fact('Latest read', describeObservation(state)),
-			...fact(
-				'Saving',
-				state.saving === undefined
-					? 'no'
-					: 'yes: the draft as it was when Save was pressed',
-			),
-			...fact(
-				'Last save',
-				state.lastSave === undefined
-					? 'none yet'
-					: describeOutcome(state.lastSave),
-			),
+			...fact('Row', describeRow(get())),
+			...fact('Save', describeSave(save)),
 		);
-
-		// Review: a read the editor did not follow, because the draft is dirty
-		// or the file is no longer a valid row. Nothing here is automatic, and
-		// nothing is offered while a save is admitted: its reply decides first.
-		const canReview = state.saving === undefined && !state.isDisposed;
-		review.replaceChildren();
-		if (
-			canReview &&
-			state.isDirty &&
-			latest !== undefined &&
-			latest.sha256 !== baseline.sha256
-		) {
-			const take = h('button', { type: 'button' }, 'Take this version');
-			take.onclick = () => {
-				// Take the reviewed content; a formatting-only rewrite is equivalent.
-				const { error } = adopt(latest);
-				message.textContent = error === null ? '' : error.message;
-			};
-			review.append(
-				h(
-					'p',
-					{ className: 'warn' },
-					`The file changed to ${shortSha(latest.sha256)} while you have unsaved changes. Take it, or keep yours: Save overwrites it.`,
-				),
-				h('div', { className: 'row' }, take, saveButton('Keep mine: save')),
-			);
-		} else if (canReview && observation.kind !== 'present') {
-			review.append(
-				h(
-					'p',
-					{ className: 'warn' },
-					'The file is not a valid row right now. Your draft and baseline are kept; Save writes the draft over whatever is there.',
-				),
-				h('div', { className: 'row' }, saveButton('Save my draft')),
-			);
-		}
-
-		texts.replaceChildren(
-			h(
-				'div',
-				{},
-				h('h4', {}, `Baseline, exact text (${shortSha(baseline.sha256)})`),
-				h('pre', {}, baseline.text),
-			),
-			h(
-				'div',
-				{},
-				h('h4', {}, 'Latest read, exact text'),
-				h('pre', {}, observedText(state) ?? `(${observation.kind})`),
-			),
-			h(
-				'div',
-				{},
-				h('h4', {}, 'What Save writes (canonical draft)'),
-				h('pre', {}, state.text),
-			),
-		);
-
-		if (state.lastSave !== undefined && state.lastSave !== lastSeen) {
-			lastSeen = state.lastSave;
-			receipts.prepend(h('li', {}, describeOutcome(state.lastSave)));
+		text.textContent = row.text;
+		again.hidden = save.status !== 'failed';
+		if (save !== previousSave) {
+			if (save.status === 'failed')
+				log(`Save failed: ${describeSaveError(save.error)}`);
+			else if (previousSave.status === 'failed')
+				log(
+					save.status === 'saving'
+						? 'A new attempt started after the failed save'
+						: 'The failed input was replaced by the file',
+				);
+			previousSave = save;
 		}
 	}
 
-	function saveButton(label: string) {
-		const button = h('button', { type: 'button' }, label);
-		button.onclick = async () => {
-			const { error } = await save();
-			message.textContent = error === null ? '' : error.message;
-		};
-		return button;
-	}
-
-	const unsubscribe = subscribe(render);
+	const stop = subscribe(render);
+	render();
 	return () => {
-		unsubscribe();
+		mounted = false;
+		stop();
 		stopProbe?.();
+		stopProbe = undefined;
 		root.replaceChildren();
 	};
 }
@@ -173,69 +123,17 @@ function fact(term: string, detail: string) {
 	return [h('dt', {}, term), h('dd', {}, detail)];
 }
 
-function describeObservation({
-	observation,
-	baseline,
-	saving,
-}: TodoState): string {
-	switch (observation.kind) {
-		case 'present': {
-			const { sha256, text: source } = observation.revision;
-			if (sha256 === baseline.sha256)
-				return `${shortSha(sha256)}, the baseline`;
-			// Equal text is a content fact; it does not say which writer put it there.
-			if (saving !== undefined && source === saving.text)
-				return `${shortSha(sha256)}, the text the running save submitted, read before its reply`;
-			return `${shortSha(sha256)}, changed since the baseline`;
-		}
-		case 'missing':
-			return 'no file at this path';
-		case 'unreadable':
-			return `cannot be read: ${observation.error.message}`;
-		case 'unsupported':
-			return `${shortSha(observation.file.sha256)}, no canonical form: ${observation.refusal.reason}`;
-		case 'invalid': {
-			const { parseError, issues } = observation.reading;
-			return `${shortSha(observation.file.sha256)}, not a valid row: ${parseError?.message ?? issues.map((issue) => issue.message).join('; ')}`;
-		}
-		default:
-			return observation satisfies never;
-	}
-}
-
-function observedText({ observation }: TodoState): string | undefined {
-	switch (observation.kind) {
-		case 'present':
-			return observation.revision.text;
-		case 'unsupported':
+function describeRow({ row }: TodoState): string {
+	switch (row.status) {
+		case 'valid':
+			return 'valid: the fields are its complete parse, unknown keys included';
 		case 'invalid':
-			return observation.file.text;
+			return `invalid: ${sourceIssue(row)} Repair it as source in any view.`;
 		default:
-			return undefined;
+			return row satisfies never;
 	}
 }
 
-function describeOutcome(outcome: RowSaveOutcome): string {
-	switch (outcome.kind) {
-		case 'saved':
-			return `Saved: wrote ${shortSha(outcome.receipt.sha256)}`;
-		case 'unconfirmed':
-			return `Unknown: the reply was lost for the submitted draft. A later read cannot prove this save wrote it.`;
-		case 'failed':
-			return `Failed: ${outcome.error.message}`;
-		default:
-			return outcome satisfies never;
-	}
-}
-
-function summarize(state: TodoState): string {
-	return [
-		state.isDirty ? 'dirty' : 'clean',
-		`baseline ${shortSha(state.baseline.sha256)}`,
-		`read ${state.observation.kind}`,
-		state.saving !== undefined && 'saving',
-		state.isDisposed && 'disposed',
-	]
-		.filter(Boolean)
-		.join(', ');
+function summarize({ row, save }: TodoState): string {
+	return `row ${row.status}, save ${save.status}`;
 }

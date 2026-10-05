@@ -47,14 +47,11 @@ never by reconstructing from partial validated fields or implicitly merging
 disk keys. Last-publication-wins can replace another writer's intervening
 changes; Git only provides recovery for versions actually retained by commits.
 
-A storage read failure may hide the live editing interface while its owner
-retains already accepted input and publication outcomes. Hiding a view does not
-discard that input. Applications wanting continuing unsubmitted drafts retain
-them above the conditional view and own their validation and repair.
-The planned unreadable row variant exposes only error. The core privately
-retains accepted input until readability recovers or the application deliberately
-discards its owner. An application needing draft access during the outage keeps
-its own state before submission; no last-valid or standalone text getter is implied.
+A storage failure leaves accepted row input publicly accessible. Applications
+submit edits immediately to the owner rather than maintaining a second whole-row
+draft. Explicit reload adopts disk content; failure leaves the retained input
+and save outcome unchanged. A field-local buffer remains useful where a control
+holds input that a complete document cannot represent.
 
 **Partial workflows leave completed edits saved and report their outcomes.**
 Distinguish success, refusal, and uncertainty. Before adding a refusal,
@@ -76,12 +73,11 @@ that with the current reassignment to `null`, which clears membership. Reusing
 an old ID for a different folder would also reattach those notes. Choose and
 state the intended behavior before changing the operation and its dialog.
 
-This record introduces no new runtime contract. Structured `create` and
-`update` still validate supplied values, and the current `table.edit` still
-requires a canonical, conforming row. The planned complete-row replacement
-accepts readable invalid rows for raw repair and representable schema-invalid
-input for publication through one owner; it is not implemented yet.
-Raw-text operations provide the current broader repair path.
+This criterion does not make every operation unconditional. Structured `create`
+and `update` validate supplied values. Complete-row editors accept readable
+invalid rows for raw repair and representable schema-invalid input for
+publication through one owner. Ordinary source-preserving patches retain their
+separate contracts.
 Git preserves versions actually captured by commits; an automatic commit
 request does not establish a retained copy. Path, credential, and Git
 publication protections keep their existing owners.

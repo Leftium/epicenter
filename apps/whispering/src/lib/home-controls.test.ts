@@ -32,9 +32,9 @@ import { expectOk } from 'wellcrafted/testing';
 import type { ConnectionChange } from './connections.js';
 import { STARTER_TRANSFORMATIONS } from './definition.js';
 import { resolvePostProcessing } from './post-processing.js';
+import { editingOf } from './row-slot.test-support.js';
 import type { Session } from './session.svelte.js';
 import type { Workspace } from './workspace/types.js';
-import { formOf } from './row-slot.test-support.js';
 import {
 	deferred,
 	openTestWorkspace,
@@ -79,10 +79,10 @@ async function cleanup(session: Session, model?: string) {
 	expect(
 		await library.createTransformation(STARTER_TRANSFORMATIONS[0]!),
 	).toBeUndefined();
-	const editor = formOf(library.selectedTransformation?.slot);
+	const editor = editingOf(library.selectedTransformation?.slot);
 	if (model !== undefined) {
-		editor.change({ fields: { model } });
-		await editor.saveNow();
+		editor.setField('model', model);
+		expectOk(await editor.flush());
 		await library.refreshAll();
 	}
 	return library.transformations[0]!;

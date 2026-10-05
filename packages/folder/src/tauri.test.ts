@@ -466,7 +466,7 @@ test('a save keeps the place it was asked for in while it hashes, though a later
 	expect(first?.submission).toBeLessThan(later?.submission ?? 0);
 });
 
-test("a row editor's save is placed when save() is called, before a raw save made while it hashes", async () => {
+test("a row editor's capture is placed when its setter is called, before a raw save made while it hashes", async () => {
 	const folder = await attached();
 	const row = new TextEncoder().encode('---\ntitle: Take\ndone: false\n---\n');
 	replies.read = () => ({ bytes: [...row], sha256: 'a'.repeat(64) });
@@ -474,17 +474,23 @@ test("a row editor's save is placed when save() is called, before a raw save mad
 	const editor = expectOk(await folder.tables.todos.edit('take'));
 	const digest = holdNextDigest();
 
-	const saving = editor.save();
+	const edited = '---\ntitle: Taken\ndone: false\n---\n';
+	editor.setText(edited);
 	await digest.reached;
 	expectOk(await folder.files.overwrite('todos/take.md', 'raw'));
 	digest.release();
-	await saving;
+	expectOk(await editor.flush());
+	expect(editor.get().save.status).toBe('idle');
 
 	const [raw, saved] = applies();
 	expect(raw?.text).toBe('raw');
-	expect(saved?.text).not.toBe('raw');
+	expect(saved?.text).toBe(edited);
 	expect(saved?.submission).toBeLessThan(raw?.submission ?? 0);
-	await editor.dispose();
+	// An existing-row replacement, never an overwrite.
+	expect(
+		(sent('apply')[1]?.args.changes as { kind: string }[] | undefined)?.[0]
+			?.kind,
+	).toBe('replace');
 });
 
 test("two handles of one page share one order: a handle's held save is placed before the other's later one", async () => {

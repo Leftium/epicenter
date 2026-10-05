@@ -15,18 +15,23 @@
  * - Captured audio and its id survive a row write that fails after the
  *   audio landed, and an explicit retry finishes one recording
  * - A row that names no audio says so: nothing is guessed from a file's name
- * - Deleting a recording deletes its row and results and keeps its audio. A
- *   draft of one of its results that holds anything refuses the deletion;
- *   while it runs, those drafts take no typing and write nothing
+ * - Deleting a recording deletes its row and results and keeps its audio. An
+ *   editor of one of its results whose save is running or stopped refuses
+ *   the deletion; while it runs, those editors take no typing and write
+ *   nothing
  * - A rename and a deletion that share a path, as source or destination,
  *   never overlap: the later one is refused before it reads or writes
- * - A recording is edited through the folder's row editor; its Source shows
- *   what a save writes, and its whole text can be edited instead
- * - A clean editor follows an outside edit; a dirty one keeps both versions
+ * - A recording is edited through the folder's row editor, which saves the
+ *   whole row as it is typed; its Source shows what a save writes, and its
+ *   whole text can be edited instead
+ * - An outside edit is listed but not loaded into an open editor: reloading
+ *   takes it, and otherwise the next save writes over it. An editor holding
+ *   nothing whose file left the folder is put down; typing over a removed
+ *   file stays on screen and never creates it again
  * - A malformed row stays listed and selectable, is edited as its text, saves
  *   while malformed, and its source is untouched until the person changes it
- * - Typing with a field issue is held and says so; nothing with an issue is
- *   saved by the form
+ * - A field value that does not conform is saved as given, and the row is
+ *   repaired in its source
  * - A recording with an unusual file name is an ordinary recording at its
  *   literal ID: transcribed, edited, reviewed, and deleted like any other
  * - A recording is not deleted while a result cannot say which recording it
@@ -42,6 +47,7 @@
 import './svelte-modules.test-support.js';
 import { afterEach, expect, test } from 'bun:test';
 import { execFileSync } from 'node:child_process';
+import { chmodSync } from 'node:fs';
 import {
 	mkdir,
 	mkdtemp,
@@ -61,6 +67,8 @@ import { createFixtureDevice, toneWav } from './capture.js';
 import { whisperingDefinition } from './definition.js';
 import { describeDeletion } from './deletion-copy.js';
 import type { Library } from './library.svelte.js';
+import type { RowEditing } from './row-editing.svelte.js';
+import { editingOf } from './row-slot.test-support.js';
 import { needsRepair } from './rows.js';
 import {
 	commitLine,
@@ -70,7 +78,6 @@ import {
 	uncommittedLine,
 } from './status.js';
 import type { Workspace } from './workspace/types.js';
-import { formOf, textOf } from './row-slot.test-support.js';
 import {
 	openTestFolder,
 	TEST_BASE_URL,
@@ -228,8 +235,13 @@ function recordingSlot(library: Library) {
 	return selection.slot;
 }
 
-/** The selected recording's row editor. */
-const recordingEditor = (library: Library) => formOf(recordingSlot(library));
+/** The selected recording's one row editor: its fields and its source. */
+const recordingEditor = (library: Library) => editingOf(recordingSlot(library));
+
+/** Wait until the writes typing started have settled, and expect them saved. */
+async function saved<TFields>(editor: RowEditing<TFields>) {
+	expectOk(await editor.flush());
+}
 
 test('the first launch creates no files or history, and saving a connection writes nothing to the folder', async () => {
 	const { library, root, device } = await open({
@@ -465,142 +477,97 @@ test('a row write that fails after the audio landed keeps the capture and its id
 	]);
 });
 
-test('the title and notes are one row draft saved whole, and editing the text is the same file’s one draft', async () => {
+test('the title and notes are one row editor saved whole as they are typed, and its text is the same editor', async () => {
 	const { library, root } = await open();
 	await record(library);
 	const editor = recordingEditor(library);
 	const { path } = editor;
-	library.autosave.paused = true;
 
-	expect(editor.change({ fields: { title: 'Standup notes' } })).toBe(true);
-	expect(editor.change({ body: 'Typed as notes\n' })).toBe(true);
-	// Source shows exactly what a save will write.
-	expect(editor.state.text).toContain('"title": "Standup notes"');
-	expect(editor.state.text.endsWith('---\nTyped as notes\n')).toBe(true);
-	expect(editor.isDirty).toBe(true);
-	await editor.saveNow();
+	editor.setField('title', 'Standup notes');
+	editor.setBody('Typed as notes\n');
+	// The row is the latest input at once, and Source shows exactly what a save writes.
+	expect(editor.save.status).toBe('saving');
+	expect(editor.row.text).toContain('"title": "Standup notes"');
+	expect(editor.row.text.endsWith('---\nTyped as notes\n')).toBe(true);
+	await saved(editor);
 
 	expect(editor.status.kind).toBe('saved');
-	expect(await readFile(join(root, path), 'utf8')).toBe(editor.state.text);
+	expect(await readFile(join(root, path), 'utf8')).toBe(editor.row.text);
 	await library.refresh();
 	expect(library.entries[0]!.fields.title).toBe('Standup notes');
 	expect(library.entries[0]!.body).toBe('Typed as notes\n');
 	expect(await library.rename(path, 'other.md')).toContain('named by its ID');
 
-	// Editing the whole text puts the form down and holds the file's text instead.
-	expect(await library.editSource(path)).toBeUndefined();
-	const text = textOf(recordingSlot(library));
-	expect(text.buffer).toBe(await readFile(join(root, path), 'utf8'));
-	text.input(`${text.buffer}Typed in the source view\n`);
-	await text.save();
+	// Editing the whole text is the same editor, shown as its source.
+	expect(library.editSource(path)).toBeUndefined();
+	expect(recordingEditor(library)).toBe(editor);
+	expect(editor.sourceValue()).toBe(await readFile(join(root, path), 'utf8'));
+	editor.setText(`${editor.sourceValue()}Typed in the source view\n`);
+	await saved(editor);
 	expect(await readFile(join(root, path), 'utf8')).toContain(
 		'Typed in the source view',
 	);
-	// Back to the fields, which read the file as it is now.
-	expect(await library.useForm(path)).toBeUndefined();
-	expect(recordingEditor(library).state.document.body).toBe(
-		'Typed as notes\nTyped in the source view\n',
-	);
-});
-
-test('the text is not taken over while the form holds unsaved typing', async () => {
-	const { library } = await open();
-	await record(library);
-	const editor = recordingEditor(library);
-	library.autosave.paused = true;
-	editor.change({ fields: { title: 'Unsaved' } });
-
-	expect(await library.editSource(editor.path)).toContain('Save or discard');
-	expect(recordingEditor(library)).toBe(editor);
-	expect(editor.state.document.fields.title).toBe('Unsaved');
-});
-
-test('a clean editor follows an outside edit', async () => {
-	const { library, root } = await open();
-	await record(library);
-	const editor = recordingEditor(library);
-	const path = join(root, editor.path);
-
-	await writeFile(
-		path,
-		(await readFile(path, 'utf8')).replace(
-			/title: .*/,
-			'title: Edited outside',
-		),
-	);
-	await library.refreshAll();
-
-	expect(editor.status.kind).toBe('saved');
-	expect(editor.isDirty).toBe(false);
-	expect(editor.state.document.fields.title).toBe('Edited outside');
-	expect(library.entries[0]!.fields.title).toBe('Edited outside');
-});
-
-test('a dirty editor keeps both versions when the file changes outside, until a choice', async () => {
-	const { library, root } = await open();
-	await record(library);
-	const editor = recordingEditor(library);
-	const path = join(root, editor.path);
-	editor.change({ fields: { title: 'Mine' } });
-	expect(editor.isDirty).toBe(true);
-
-	const outside = (await readFile(path, 'utf8')).replace(
-		/title: .*/,
-		'title: Theirs',
-	);
-	await writeFile(path, outside);
-	await library.refreshAll();
-
-	expect(editor.status.kind).toBe('changed');
-	expect(editor.state.document.fields.title).toBe('Mine');
-	expect(editor.review).toMatchObject({
-		kind: 'changed',
-		current: { text: outside },
+	// Back to the fields of the same text.
+	expect(library.useForm(path)).toBeUndefined();
+	expect(editor.row).toMatchObject({
+		status: 'valid',
+		body: 'Typed as notes\nTyped in the source view\n',
 	});
-	// Nothing saves on its own while both versions stand; neither is written over.
-	expect(await editor.settle()).toBe(false);
-	expect(await library.prepareToLeave()).toBe(false);
-	expect(await readFile(path, 'utf8')).toBe(outside);
-	expect(library.saveProblems).toBe(1);
-	expect(library.unsavedWork).toEqual([
-		`${editor.path} has edits held in a conflict.`,
-	]);
-
-	const kept = expectOk(await library.keepDraftCopy(editor.path));
-	expect(editor.status.kind).toBe('saved');
-	expect(editor.state.baseline.text).toBe(outside);
-	expect(editor.state.document.fields.title).toBe('Theirs');
-	expect(await readFile(path, 'utf8')).toBe(outside);
-	expect(await readFile(join(root, kept), 'utf8')).toContain('"title": "Mine"');
 });
 
-test('choosing mine saves the whole draft over the reviewed outside version', async () => {
+test('rapid typing leaves the latest whole row, and switching to the text is only a view', async () => {
 	const { library, root } = await open();
 	await record(library);
 	const editor = recordingEditor(library);
 	const path = join(root, editor.path);
-	editor.change({ fields: { title: 'Mine' } });
-	await writeFile(
-		path,
-		(await readFile(path, 'utf8')).replace(/title: .*/, 'title: Theirs'),
-	);
+
+	editor.setField('title', 'T');
+	editor.setField('title', 'Ty');
+	editor.setField('title', 'Typed');
+	expect(editor.row).toMatchObject({ fields: { title: 'Typed' } });
+	// Nothing waits on a switch: the source shows the same latest input.
+	expect(library.editSource(editor.path)).toBeUndefined();
+	expect(editor.view).toBe('source');
+	expect(editor.sourceValue()).toContain('"title": "Typed"');
+	await saved(editor);
+	expect(await readFile(path, 'utf8')).toBe(editor.row.text);
+	expect(await readFile(path, 'utf8')).toContain('"title": "Typed"');
+	expect(library.useForm(editor.path)).toBeUndefined();
+	expect(editor.view).toBe('fields');
+	expect(recordingEditor(library)).toBe(editor);
+});
+
+test('an outside edit is listed but not loaded into an open recording, and the next save writes the whole row over it', async () => {
+	const { library, root } = await open();
+	await record(library);
+	const editor = recordingEditor(library);
+	const path = join(root, editor.path);
+	const opened = editor.row.text;
+	const { audioPath } = library.entries[0]!.fields;
+	await writeFile(path, opened.replace(/title: .*/, 'title: Edited outside'));
 	await library.refreshAll();
-	expect(editor.status.kind).toBe('changed');
 
-	await editor.saveNow();
-
+	expect(library.entries[0]!.fields.title).toBe('Edited outside');
+	expect(editor.row.text).toBe(opened);
 	expect(editor.status.kind).toBe('saved');
-	expect(await readFile(path, 'utf8')).toBe(editor.state.text);
+	expect(library.saveProblems).toBe(0);
+
+	editor.setField('title', 'Mine');
+	await saved(editor);
+
+	expect(await readFile(path, 'utf8')).toBe(editor.row.text);
 	await library.refresh();
-	expect(library.entries[0]!.fields.title).toBe('Mine');
+	expect(library.entries[0]!.fields).toMatchObject({
+		title: 'Mine',
+		audioPath,
+	});
 });
 
-test('discarding mine takes the outside version and writes nothing', async () => {
+test('reloading takes the outside version and writes nothing, and typing while it reads is not taken', async () => {
 	const { library, root } = await open();
 	await record(library);
 	const editor = recordingEditor(library);
 	const path = join(root, editor.path);
-	editor.change({ fields: { title: 'Mine' } });
 	const outside = (await readFile(path, 'utf8')).replace(
 		/title: .*/,
 		'title: Theirs',
@@ -608,32 +575,68 @@ test('discarding mine takes the outside version and writes nothing', async () =>
 	await writeFile(path, outside);
 	await library.refreshAll();
 
-	expect(await library.discardDraft(editor.path)).toBeUndefined();
+	const reloading = library.reloadRow(editor.path);
+	expect(editor.reloading).toBe(true);
+	editor.setField('title', 'Typed while it was read');
+	expect(await reloading).toBeUndefined();
 
-	expect(editor.isDirty).toBe(false);
-	expect(editor.state.document.fields.title).toBe('Theirs');
+	expect(editor.reloading).toBe(false);
+	expect(editor.row).toMatchObject({
+		status: 'valid',
+		text: outside,
+		fields: { title: 'Theirs' },
+	});
 	expect(await readFile(path, 'utf8')).toBe(outside);
 	expect(library.holdsUnsavedWork).toBe(false);
 });
 
-test('a row removed outside under unsaved typing is not written again on its own', async () => {
+test('an open recording whose file left the folder, holding nothing, is put down by the next listing and never written', async () => {
 	const { library, root } = await open();
 	await record(library);
 	const editor = recordingEditor(library);
 	const path = join(root, editor.path);
-	editor.change({ fields: { title: 'Mine' } });
 	await rm(path);
+
 	await library.refreshAll();
-	// Long enough for a save the typing would otherwise have scheduled.
-	await Bun.sleep(600);
+
+	expect(editor.released).toBe(true);
+	expect(library.selection).toBeUndefined();
+	expect(library.holdsUnsavedWork).toBe(false);
+	expect(await Bun.file(path).exists()).toBe(false);
+});
+
+test('typing in a row removed outside is kept on screen, and saving never creates the file again', async () => {
+	const { library, root } = await open();
+	await record(library);
+	const editor = recordingEditor(library);
+	const path = join(root, editor.path);
+	await rm(path);
+	editor.setField('title', 'Mine');
+	expect((await editor.flush()).error?.name).toBe('NotFound');
+	await library.refreshAll();
 
 	expect(editor.status.kind).toBe('removed');
-	expect(await Bun.file(path).exists()).toBe(false);
+	expect(recordingEditor(library)).toBe(editor);
+	expect(editor.view).toBe('fields');
+	expect(editor.row).toMatchObject({ fields: { title: 'Mine' } });
 	expect(library.unsavedWork).toEqual([
-		`${editor.path} has edits held in a conflict.`,
+		`${editor.path} has edits whose file is no longer in the folder.`,
 	]);
+	// Saving again, as the person may ask, fails the same way and creates nothing.
+	expect(editor.retry()).toBeUndefined();
+	expect((await editor.flush()).error?.name).toBe('NotFound');
+	expect(await Bun.file(path).exists()).toBe(false);
 
-	// Discarding drops the draft; there is no file to show.
+	// A failed Reload keeps input, including a scalar the row refused.
+	editor.setField('title', 'kept\uD800');
+	expect(await library.reloadRow(editor.path)).toContain(
+		'no longer in the folder',
+	);
+	expect(recordingEditor(library)).toBe(editor);
+	expect(editor.fieldText('title')).toBe('kept\uD800');
+	expect(library.holdsUnsavedWork).toBe(true);
+
+	// Discarding puts the editor down; there is no file to show.
 	expect(await library.discardDraft(editor.path)).toBeUndefined();
 	expect(library.selection).toBeUndefined();
 	expect(await Bun.file(path).exists()).toBe(false);
@@ -662,34 +665,37 @@ test('a malformed row stays listed and selectable, saves while malformed, and it
 	// A file that was read is never among the files that could not be.
 	expect(library.unreadable).toEqual([]);
 	await library.open('recordings/broken.md');
-	// It opens as its exact text: there are no fields to edit until it is repaired.
-	expect(textOf(recordingSlot(library)).buffer).toBe(broken);
-	expect(await library.useForm('recordings/broken.md')).toBeUndefined();
-	const editor = textOf(recordingSlot(library));
-	expect(editor.buffer).toBe(broken);
+	// It opens in its editor as its exact text: no fields to edit until it is repaired.
+	const editor = recordingEditor(library);
+	expect(editor.view).toBe('source');
+	expect(editor.sourceValue()).toBe(broken);
+	expect(library.useForm('recordings/broken.md')).toContain(
+		'still cannot be edited as fields',
+	);
+	expect(editor.view).toBe('source');
 	expect(await readFile(join(root, 'recordings', 'broken.md'), 'utf8')).toBe(
 		broken,
 	);
-	// The draft is read as typed, by the table's own interpreter.
+	// The editor's text is read by the table's own interpreter.
 	const inspect = (text: string) =>
 		inspectRow(whisperingDefinition.tables.recordings, text);
-	expect(entry).toMatchObject(inspect(editor.buffer));
+	expect(entry).toMatchObject(inspect(editor.row.text));
 
-	// Text that is still malformed saves, and its capture is the next baseline.
+	// Text that is still malformed saves exactly as typed.
 	const still = broken.replace('Still here', 'Still here, still broken');
-	editor.input(still);
-	await editor.save();
-	expect(editor.saveState).toEqual({ kind: 'saved' });
-	expect(editor.baseline.text).toBe(still);
-	expect(inspect(editor.baseline.text).parseError).toBeDefined();
+	editor.setText(still);
+	await saved(editor);
+	expect(editor.save.status).toBe('idle');
+	expect(editor.row).toMatchObject({ status: 'invalid', text: still });
+	expect(inspect(still).parseError).toBeDefined();
 	expect(await readFile(join(root, 'recordings', 'broken.md'), 'utf8')).toBe(
 		still,
 	);
 
-	editor.input(
+	editor.setText(
 		'---\ntitle: Repaired\nrecordedAt: 2026-01-02T03:04:05.000Z\ndurationMs: 1\ncapture: microphone\naudioPath: recordings/broken.wav\nmood: curious\n---\nStill here\n',
 	);
-	await editor.save();
+	await saved(editor);
 	await library.refresh();
 	const repaired = library.entries.find(
 		(item) => item.path === 'recordings/broken.md',
@@ -699,54 +705,62 @@ test('a malformed row stays listed and selectable, saves while malformed, and it
 		await readFile(join(root, 'recordings', 'broken.md'), 'utf8'),
 	).toContain('mood: curious');
 
-	// Repaired, it is edited as fields again, with its unknown field kept.
-	expect(await library.useForm('recordings/broken.md')).toBeUndefined();
-	expect(recordingEditor(library).state.document.fields).toMatchObject({
-		title: 'Repaired',
-		mood: 'curious',
+	// Repaired, the same editor shows its fields again, with its unknown field kept.
+	expect(library.useForm('recordings/broken.md')).toBeUndefined();
+	expect(recordingEditor(library)).toBe(editor);
+	expect(editor.row).toMatchObject({
+		status: 'valid',
+		fields: { title: 'Repaired', mood: 'curious' },
 	});
 });
 
-test('typing with a field issue is held and says so; the other fields still change and nothing with an issue is saved', async () => {
+test('a field value that does not conform is saved as given, the other fields stay, and the row is repaired in its source', async () => {
 	const { library, root } = await open();
 	await record(library);
-	const saved = library.entries[0]!;
-	await library.open(saved.path);
+	const recorded = library.entries[0]!;
+	await library.open(recorded.path);
 	const editor = recordingEditor(library);
 
-	expect(editor.change({ fields: { durationMs: 'long' } })).toBe(true);
-	const { reading } = editor.state;
-	expect(reading.parseError).toBeUndefined();
+	// No control of this page produces it; the row editor still saves it whole.
+	editor.setField('title', 'Renamed');
+	editor.setBody('Notes\n');
+	editor.setField('durationMs', 'long');
+	await saved(editor);
+
+	const reading = inspectRow(
+		whisperingDefinition.tables.recordings,
+		await readFile(join(root, recorded.path), 'utf8'),
+	);
 	expect(reading.issues.map((issue) => issue.field)).toEqual(['durationMs']);
-	// The other fields validated by themselves and are still there.
-	expect(reading.fields.title).toBe(saved.fields.title);
-	expect(reading.fields.audioPath).toBe(saved.fields.audioPath);
+	expect(reading.fields).toMatchObject({
+		title: 'Renamed',
+		audioPath: recorded.fields.audioPath,
+	});
+	expect(reading.body).toBe('Notes\n');
+	// The whole row is what the fields view needs, so its source is shown.
 	expect(editor.status.kind).toBe('invalid');
+	expect(editor.view).toBe('source');
+	const before = editor.row.text;
+	editor.setField('title', 'Again');
+	expect(editor.row.text).toBe(before);
+	expect(library.holdsUnsavedWork).toBe(false);
+	expect(library.saveProblems).toBe(0);
 
-	expect(editor.change({ fields: { title: 'Renamed' } })).toBe(true);
-	expect(editor.change({ body: 'Notes\n' })).toBe(true);
-	expect(editor.state.reading.fields.title).toBe('Renamed');
-	expect(editor.state.reading.body).toBe('Notes\n');
-	expect(editor.state.reading.issues.map((issue) => issue.field)).toEqual([
-		'durationMs',
-	]);
-	// The form saves nothing with an issue, on its own or when settled.
-	expect(await editor.settle()).toBe(false);
-	expect(await readFile(join(root, saved.path), 'utf8')).toBe(saved.text);
-	expect(library.holdsUnsavedWork).toBe(true);
-
-	// Fixed, it saves with everything typed since.
-	expect(editor.change({ fields: { durationMs: 1000 } })).toBe(true);
-	expect(await editor.settle()).toBe(true);
+	editor.setText(editor.sourceValue().replace('"long"', '1000'));
+	await saved(editor);
 	await library.refresh();
 	expect(library.entries[0]!.fields).toMatchObject({
 		title: 'Renamed',
 		durationMs: 1000,
 	});
 	expect(library.entries[0]!.body).toBe('Notes\n');
+	// Typed in Source, it stays in Source until the person chooses the fields.
+	expect(editor.view).toBe('source');
+	expect(library.useForm(recorded.path)).toBeUndefined();
+	expect(editor.view).toBe('fields');
 });
 
-test('a recording with an unusual file name is an ordinary recording: it is transcribed, edited, reviewed, and deleted at its literal ID', async () => {
+test('a recording with an unusual file name is an ordinary recording: it is transcribed, edited, reloaded, and deleted at its literal ID', async () => {
 	const { library, root, transcribed } = await open();
 	await record(library);
 	const recorded = library.entries[0]!;
@@ -772,20 +786,19 @@ test('a recording with an unusual file name is an ordinary recording: it is tran
 
 	await library.open(path);
 	const editor = recordingEditor(library);
-	library.autosave.paused = true;
-	editor.change({ fields: { title: 'Mine' } });
 	const outside = recorded.text.replace(/title: .*/, 'title: Theirs');
 	await writeFile(join(root, path), outside);
 	await library.refreshAll();
-	// The draft reads this row, not a neighbor and not nothing.
-	expect(editor.review).toMatchObject({
-		kind: 'changed',
-		current: { path, text: outside },
+	// The editor reloads this row, not a neighbor and not nothing.
+	expect(editor.path).toBe(path);
+	expect(await library.reloadRow(path)).toBeUndefined();
+	expect(editor.row).toMatchObject({
+		text: outside,
+		fields: { title: 'Theirs' },
 	});
-	expect(editor.state.document.fields.title).toBe('Mine');
-	expect(await readFile(join(root, path), 'utf8')).toBe(outside);
 
-	await editor.saveNow();
+	editor.setField('title', 'Mine');
+	await saved(editor);
 	expect(editor.status.kind).toBe('saved');
 	expect(await readFile(join(root, path), 'utf8')).toContain('"title": "Mine"');
 
@@ -1002,15 +1015,16 @@ test('a row written before audioPath names no audio: it needs repair, and no sam
 
 	// The person repairs it in Source by naming the audio: it opens as its text.
 	await library.open('recordings/old.md');
-	const editor = textOf(recordingSlot(library));
-	expect(editor.buffer).toBe(old);
-	editor.input(
+	const editor = recordingEditor(library);
+	expect(editor.view).toBe('source');
+	expect(editor.sourceValue()).toBe(old);
+	editor.setText(
 		old.replace(
 			'capture: fixture\n',
 			'capture: fixture\naudioPath: recordings/old.wav\n',
 		),
 	);
-	await editor.save();
+	await saved(editor);
 	await library.refresh();
 	const repaired = library.entries.find((item) => item.stem === 'old')!;
 	expect(needsRepair(repaired)).toBe(false);
@@ -1030,15 +1044,15 @@ test('a title edit changes frontmatter only: no file is renamed and the audio pa
 	const editor = recordingEditor(library);
 	const before = (await readdir(join(root, 'recordings'))).sort();
 
-	editor.change({ fields: { title: 'A new title' } });
-	await editor.saveNow();
+	editor.setField('title', 'A new title');
+	await saved(editor);
 	await library.refresh();
 
 	expect((await readdir(join(root, 'recordings'))).sort()).toEqual(before);
-	const saved = library.entries[0]!;
-	expect(saved.path).toBe(entry.path);
-	expect(saved.fields.title).toBe('A new title');
-	expect(saved.fields.audioPath).toBe(entry.fields.audioPath);
+	const listed = library.entries[0]!;
+	expect(listed.path).toBe(entry.path);
+	expect(listed.fields.title).toBe('A new title');
+	expect(listed.fields.audioPath).toBe(entry.fields.audioPath);
 });
 
 test('a recording cannot be deleted while its transcription runs, including one started after confirming', async () => {
@@ -1204,6 +1218,331 @@ test('a transcript whose file was not saved is reported as unsaved until it is',
 	expect(await readdir(join(root, 'transcriptions'))).toHaveLength(1);
 });
 
+// ============================================================================
+// A row path stays a row: never read or edited as an ordinary file
+// ============================================================================
+
+const ROW_FILES = {
+	recordings: {
+		path: 'recordings/take.md',
+		text: '---\ntitle: Take\nrecordedAt: 2026-10-01T00:00:00.000Z\ndurationMs: 1000\ncapture: fixture\naudioPath: recordings/take.wav\n---\nNotes.\n',
+	},
+	transcriptions: {
+		path: 'transcriptions/take-t1.md',
+		text: '---\nrecordingId: take\ncreatedAt: 2026-10-01T00:00:00.000Z\nmodel: m\nendpoint: http://127.0.0.1:18080/v1\n---\nThe words.\n',
+	},
+	transformations: {
+		path: 'transformations/clean.md',
+		text: '---\ntitle: Clean up\nmodel: null\nendpoint: null\n---\nTidy.\n',
+	},
+} as const;
+
+/**
+ * Refuse the next `times` acquisitions of a table's rows, as an editor whose
+ * read failed, while the file itself reads fine through `folder.files`; and
+ * record every path `folder.files.read` is asked for.
+ */
+function refuseAcquisition(
+	library: Library,
+	name: keyof typeof ROW_FILES,
+	times: number,
+) {
+	const table = library.folder.tables[name];
+	const { edit } = table;
+	const { files } = library.folder;
+	const { read } = files;
+	const state = { refusals: times, reads: [] as string[] };
+	Object.assign(table, {
+		edit: (...args: Parameters<typeof edit>) => {
+			if (state.refusals <= 0) return edit(...args);
+			state.refusals -= 1;
+			return Promise.resolve(
+				FileError.Io({
+					path: `${name}/${args[0]}.md`,
+					operation: 'read',
+					cause: new Error('the acquisition read failed'),
+				}),
+			);
+		},
+	});
+	Object.assign(files, {
+		read: (...args: Parameters<typeof read>) => {
+			state.reads.push(args[0]);
+			return read(...args);
+		},
+	});
+	return state;
+}
+
+/** The slot a row path's own lane shows, whichever lane it is. */
+function laneSlot(library: Library, name: keyof typeof ROW_FILES) {
+	if (name === 'transformations') return library.selectedTransformation?.slot;
+	const selection = library.selection;
+	if (name === 'recordings')
+		return selection?.kind === 'recording' ? selection.slot : undefined;
+	return selection?.kind === 'transcript' ? selection.slot : undefined;
+}
+
+for (const name of Object.keys(ROW_FILES) as (keyof typeof ROW_FILES)[])
+	test(`a ${name} row the folder refuses to open stays in its row lane: never read or edited as an ordinary file, and trying again opens it`, async () => {
+		const { library, root } = await open();
+		const { path, text } = ROW_FILES[name];
+		await mkdir(join(root, name), { recursive: true });
+		await writeFile(join(root, path), text);
+		await library.refreshAll();
+		const seen = refuseAcquisition(library, name, 2);
+
+		await library.open(path);
+
+		expect(laneSlot(library, name)).toMatchObject({
+			kind: 'unopened',
+			message: expect.stringContaining('the acquisition read failed'),
+		});
+		// The file reads fine, and nothing read it as an ordinary file.
+		expect(seen.reads).not.toContain(path);
+		expect(library.selection?.kind).not.toBe('file');
+		if (name === 'transformations')
+			expect(library.selectedPath).toBeUndefined();
+		else expect(library.selectedTransformationPath).toBeUndefined();
+
+		// Trying again fails again: the slot and its lane stay.
+		expect(await library.retryOpen(path)).toContain(
+			'the acquisition read failed',
+		);
+		expect(laneSlot(library, name)).toMatchObject({ kind: 'unopened' });
+		// Selecting it again from a list tries the row again, not a file.
+		const opened = refuseAcquisition(library, name, 0);
+		await library.open(path);
+		const slot = laneSlot(library, name);
+		expect(slot?.kind).toBe('open');
+		if (slot?.kind !== 'open') return;
+		expect(slot.editing.row).toMatchObject({ status: 'valid', text });
+		expect(slot.editing.view).toBe('fields');
+		expect([...seen.reads, ...opened.reads]).not.toContain(path);
+		expect(library.holdsUnsavedWork).toBe(false);
+	});
+
+test('a row that is not in the folder opens nothing, reads nothing as a file, and is never created', async () => {
+	const { library, root } = await open();
+	const seen = refuseAcquisition(library, 'recordings', 0);
+
+	await library.open('recordings/none.md');
+	await library.open('transformations/none.md');
+
+	expect(library.selectedPath).toBe('recordings/none.md');
+	expect(library.selection).toBeUndefined();
+	expect(library.selectedTransformationPath).toBe('transformations/none.md');
+	expect(library.selectedTransformation).toBeUndefined();
+	expect(seen.reads).toEqual([]);
+	expect(await Bun.file(join(root, 'recordings/none.md')).exists()).toBe(false);
+	expect(await Bun.file(join(root, 'transformations/none.md')).exists()).toBe(
+		false,
+	);
+	expect(library.holdsUnsavedWork).toBe(false);
+});
+
+test('a row file that is not text stays in its lane and can still be deleted as the exact bytes it holds', async () => {
+	const { library, root } = await open();
+	const path = 'recordings/broken.md';
+	await mkdir(join(root, 'recordings'), { recursive: true });
+	await writeFile(join(root, path), Uint8Array.from([0xff, 0xfe, 0x00]));
+	await library.refreshAll();
+
+	await library.open(path);
+	expect(laneSlot(library, 'recordings')).toMatchObject({ kind: 'unopened' });
+
+	const deletion = expectOk(await library.deletionFor(path));
+	expect(deletion).toMatchObject({
+		kind: 'unreadableRow',
+		table: 'recordings',
+		path,
+		recordingId: 'broken',
+	});
+	expect(await library.remove(deletion)).toBeUndefined();
+	expect(await Bun.file(join(root, path)).exists()).toBe(false);
+	expect(library.selection).toBeUndefined();
+});
+
+// A recording or transformation is deleted by what its file holds when it is
+// read after settling: not by the last listing, and not by whether it opened.
+
+/** A recorded take with one saved transcript, whose row then stops being text. */
+async function corruptedTake(
+	options: Parameters<typeof open>[0] = {},
+	bytes = [0xff, 0xfe],
+) {
+	const opened = await open(options);
+	const { library, root } = opened;
+	await record(library);
+	const entry = library.entries[0]!;
+	await library.transcribe(entry);
+	const transcript = library.resultsFor(entry.stem)[0]!;
+	await writeFile(join(root, entry.path), Uint8Array.from(bytes));
+	return { ...opened, entry, transcript };
+}
+
+test('a recording listed as readable whose file stops being text is removed alone, as those bytes, and its results are kept and said to be kept', async () => {
+	const { library, root, entry, transcript } = await corruptedTake();
+	// No listing since: the list still has it as a readable recording.
+	expect(library.isRecording(entry.path)).toBe(true);
+
+	const deletion = expectOk(await library.deletionFor(entry.path));
+
+	expect(deletion).toMatchObject({
+		kind: 'unreadableRow',
+		table: 'recordings',
+		path: entry.path,
+		recordingId: entry.stem,
+	});
+	const { description } = describeDeletion(deletion, library.recordingNaming);
+	expect(description).toContain('this deletes only that file');
+	expect(description).toContain(`name “${entry.stem}” are kept`);
+	expect(await library.remove(deletion)).toBeUndefined();
+	expect(await Bun.file(join(root, entry.path)).exists()).toBe(false);
+	expect(await Bun.file(join(root, transcript.path)).exists()).toBe(true);
+	expect(await Bun.file(join(root, entry.fields.audioPath!)).exists()).toBe(
+		true,
+	);
+});
+
+test('a row whose opening fails while a deletion waits for it to settle is captured as the file it is then', async () => {
+	const { library, root } = await open();
+	const { path, text } = ROW_FILES.recordings;
+	await mkdir(join(root, 'recordings'), { recursive: true });
+	await writeFile(join(root, path), text);
+	await library.refreshAll();
+	const acquiring = holdNext(library.folder.tables.recordings, 'edit');
+
+	const opening = library.open(path);
+	await acquiring.reached;
+	await writeFile(join(root, path), Uint8Array.from([0xff]));
+	const capturing = library.deletionFor(path);
+	acquiring.release();
+	await opening;
+	const deletion = expectOk(await capturing);
+
+	expect(laneSlot(library, 'recordings')).toMatchObject({ kind: 'unopened' });
+	expect(deletion).toMatchObject({ kind: 'unreadableRow', path });
+	expect(await library.remove(deletion)).toBeUndefined();
+	expect(await Bun.file(join(root, path)).exists()).toBe(false);
+});
+
+test('a transcription started after an unreadable recording’s deletion was captured refuses the removal, which then goes ahead once it ends', async () => {
+	const answer =
+		Promise.withResolvers<Awaited<ReturnType<Workspace['transcribe']>>>();
+	let held = false;
+	const { library, root, entry, transcript } = await corruptedTake({
+		transcribe: () =>
+			held ? answer.promise : Promise.resolve(Ok({ text: 'a steady tone' })),
+	});
+	const deletion = expectOk(await library.deletionFor(entry.path));
+	held = true;
+
+	// The list still offers it, so a transcription can start before confirming.
+	const running = library.transcribe(entry);
+	expect(await library.remove(deletion)).toContain('still running');
+	expect(await Bun.file(join(root, entry.path)).exists()).toBe(true);
+
+	answer.resolve(Ok({ text: 'another take' }));
+	await running;
+	expect(await library.remove(deletion)).toBeUndefined();
+	expect(await Bun.file(join(root, entry.path)).exists()).toBe(false);
+	// Both transcripts are kept: the earlier one and the one that just landed.
+	expect(await Bun.file(join(root, transcript.path)).exists()).toBe(true);
+	expect(
+		(await readdir(join(root, 'transcriptions'))).filter((name) =>
+			name.endsWith('.md'),
+		),
+	).toHaveLength(2);
+});
+
+test('a running transcription of an unreadable recording refuses its capture, and nothing starts for it while it is removed', async () => {
+	const answer =
+		Promise.withResolvers<Awaited<ReturnType<Workspace['transcribe']>>>();
+	let held = false;
+	const { library, root, entry, transcribed } = await corruptedTake({
+		transcribe: () =>
+			held ? answer.promise : Promise.resolve(Ok({ text: 'a steady tone' })),
+	});
+	held = true;
+	const running = library.transcribe(entry);
+	expect((await library.deletionFor(entry.path)).error).toContain(
+		'still running',
+	);
+	answer.resolve(Ok({ text: 'another take' }));
+	await running;
+	const asked = transcribed.length;
+
+	const deletion = expectOk(await library.deletionFor(entry.path));
+	const removal = holdNext(library.folder.files, 'remove');
+	const removing = library.remove(deletion);
+	await removal.reached;
+	await library.transcribe(entry);
+	expect(transcribed).toHaveLength(asked);
+	expect(library.transcriptionRun(entry.stem)).toBeUndefined();
+	removal.release();
+	expect(await removing).toBeUndefined();
+	expect(await Bun.file(join(root, entry.path)).exists()).toBe(false);
+});
+
+test('an unreadable recording whose bytes change after the person was asked is not removed', async () => {
+	const { library, root, entry } = await corruptedTake();
+	const deletion = expectOk(await library.deletionFor(entry.path));
+	await writeFile(join(root, entry.path), Uint8Array.from([0xfe, 0xff, 0x01]));
+
+	expect(await library.remove(deletion)).toContain('different content');
+	expect(await Bun.file(join(root, entry.path)).exists()).toBe(true);
+});
+
+test('a recording whose editor did not open but whose file reads is deleted as a recording, with its results', async () => {
+	const { library, root } = await open();
+	for (const name of ['recordings', 'transcriptions'] as const) {
+		await mkdir(join(root, name), { recursive: true });
+		await writeFile(join(root, ROW_FILES[name].path), ROW_FILES[name].text);
+	}
+	await library.refreshAll();
+	refuseAcquisition(library, 'recordings', 1);
+	await library.open(ROW_FILES.recordings.path);
+	expect(laneSlot(library, 'recordings')).toMatchObject({ kind: 'unopened' });
+
+	const deletion = expectOk(
+		await library.deletionFor(ROW_FILES.recordings.path),
+	);
+
+	expect(deletion.kind).toBe('recording');
+	if (deletion.kind !== 'recording') return;
+	expect(deletion.results.map((result) => result.path)).toEqual([
+		ROW_FILES.transcriptions.path,
+	]);
+	expect(await library.remove(deletion)).toBeUndefined();
+	for (const name of ['recordings', 'transcriptions'] as const)
+		expect(await Bun.file(join(root, ROW_FILES[name].path)).exists()).toBe(
+			false,
+		);
+});
+
+test('a transformation file that stops being text is removed alone, and results made with it are kept', async () => {
+	const { library, root } = await open();
+	const { path, text } = ROW_FILES.transformations;
+	await mkdir(join(root, 'transformations'), { recursive: true });
+	await writeFile(join(root, path), text);
+	await library.refreshAll();
+	await writeFile(join(root, path), Uint8Array.from([0xff]));
+
+	const deletion = expectOk(await library.deletionFor(path));
+
+	expect(deletion).toMatchObject({
+		kind: 'unreadableRow',
+		table: 'transformations',
+		recordingId: undefined,
+	});
+	expect(
+		describeDeletion(deletion, library.recordingNaming).description,
+	).toContain('Saved results made with it are kept');
+	expect(await library.remove(deletion)).toBeUndefined();
+	expect(await Bun.file(join(root, path)).exists()).toBe(false);
+});
+
 /**
  * Count every write a recording's publication can make, and refuse the
  * reads that open its row for showing while `seen.refuse` is set.
@@ -1334,9 +1673,13 @@ test('a confirmed publication is reported as saved with a separate observation p
 	expect(seen.writes).toBe(2);
 	expect(library.pending).toHaveLength(0);
 	expect(library.selectedPath).toBe(`recordings/${held.capture.id}.md`);
-	expect(recordingEditor(library).state.baseline.text).toBe(
-		await readFile(join(root, 'recordings', `${held.capture.id}.md`), 'utf8'),
-	);
+	expect(recordingEditor(library).row).toMatchObject({
+		status: 'valid',
+		text: await readFile(
+			join(root, 'recordings', `${held.capture.id}.md`),
+			'utf8',
+		),
+	});
 	expect(status(library).files.label).toBe('All changes saved to files');
 	expect(transcribed).toEqual([]);
 });
@@ -1370,10 +1713,11 @@ test('a published row that another writer replaced or edited is observed as it i
 	expect(seen.writes).toBe(2);
 	expect(library.pending).toHaveLength(0);
 	expect(await readFile(path, 'utf8')).toBe(edited);
-	// The foreign text was opened as text; that draft followed the file and holds nothing.
-	const editor = textOf(recordingSlot(library));
-	expect(editor.baseline.text).toBe(edited);
-	expect(editor.dirty).toBe(false);
+	// The foreign text opened in the row's editor, which held nothing and so
+	// took the file as it is when the person looked again.
+	const editor = recordingEditor(library);
+	expect(editor.row).toMatchObject({ status: 'valid', text: edited });
+	expect(editor.holds).toBe(false);
 	expect(library.entries[0]!.fields.title).toBe('Renamed since');
 });
 
@@ -2146,29 +2490,39 @@ function holdNext<TTarget extends object>(
 	return { reached: reached.promise, release: () => held.resolve() };
 }
 
-/** A recording with one transcript open in its draft. */
+/** A recording with one transcript open in its row editor. */
 async function openTranscript(library: Library) {
 	await record(library);
 	await library.transcribe(library.entries[0]!);
 	const transcript = library.resultsFor(library.entries[0]!.stem)[0]!;
 	await library.openTranscript(transcript.path);
-	return { transcript, draft: formOf(library.transcriptAt(transcript.path)) };
+	return {
+		transcript,
+		draft: editingOf(library.transcriptAt(transcript.path)),
+	};
 }
 
-test('typing taken while a transcript moves follows it to its new name, and nothing is written at the old one', async () => {
+/** Type a body into a row editor's fields; true when its row then has that body. */
+function typeBody<TFields>(editor: RowEditing<TFields>, body: string): boolean {
+	editor.setBody(body);
+	const { row } = editor;
+	return row.status === 'valid' && row.body === body;
+}
+
+test('a transcript’s editor is settled before it moves, takes no typing while it moves, and its file opens at the new name', async () => {
 	const { library, root } = await open();
 	const { transcript, draft } = await openTranscript(library);
-	draft.change({ body: 'Typed before the rename.\n' });
+	draft.setBody('Typed before the rename.\n');
 	const move = holdNext(library.folder.files, 'move');
 
 	const renaming = library.rename(transcript.path, 'renamed.md');
 	await move.reached;
-	// The draft was settled before the move.
+	// The editor's saves settled before the move.
 	expect(await readFile(join(root, transcript.path), 'utf8')).toContain(
 		'Typed before the rename.',
 	);
-	expect(draft.change({ body: 'Typed while it moved.\n' })).toBe(true);
-	await Bun.sleep(600);
+	expect(typeBody(draft, 'Typed while it moved.\n')).toBe(false);
+	expect(draft.save.status).toBe('idle');
 	// Nothing is written at the old path while the file moves.
 	expect(await readFile(join(root, transcript.path), 'utf8')).toContain(
 		'Typed before the rename.',
@@ -2178,19 +2532,15 @@ test('typing taken while a transcript moves follows it to its new name, and noth
 
 	const to = 'transcriptions/renamed.md';
 	expect(await Bun.file(join(root, transcript.path)).exists()).toBe(false);
-	expect(draft.state.isDisposed).toBe(true);
-	const moved = formOf(library.transcriptAt(to));
-	expect(moved.state.document.body).toBe('Typed while it moved.\n');
-	expect(moved.isDirty).toBe(true);
-	expect(await moved.settle()).toBe(true);
-	expect(await readFile(join(root, to), 'utf8')).toContain(
-		'Typed while it moved.',
-	);
+	expect(draft.released).toBe(true);
+	const moved = editingOf(library.transcriptAt(to));
+	expect(moved.row).toMatchObject({ body: 'Typed before the rename.\n' });
+	expect(moved.holds).toBe(false);
 	expect(await Bun.file(join(root, transcript.path)).exists()).toBe(false);
 	expect(library.holdsUnsavedWork).toBe(false);
 });
 
-test('a move the folder refuses leaves the draft at its file, and the typing taken meanwhile saves there', async () => {
+test('a move the folder refuses leaves the editor at its file, which takes typing and saves there again', async () => {
 	const { library, root } = await open();
 	const { transcript, draft } = await openTranscript(library);
 	await writeFile(join(root, 'transcriptions', 'taken.md'), 'Someone else\n');
@@ -2198,11 +2548,12 @@ test('a move the folder refuses leaves the draft at its file, and the typing tak
 
 	const renaming = library.rename(transcript.path, 'taken.md');
 	await move.reached;
-	expect(draft.change({ body: 'Typed while it did not move.\n' })).toBe(true);
+	expect(typeBody(draft, 'Typed while it did not move.\n')).toBe(false);
 	move.release();
 	expect(await renaming).toContain('already exists');
 
-	expect(await draft.settle()).toBe(true);
+	expect(typeBody(draft, 'Typed while it did not move.\n')).toBe(true);
+	await saved(draft);
 	expect(await readFile(join(root, transcript.path), 'utf8')).toContain(
 		'Typed while it did not move.',
 	);
@@ -2216,61 +2567,49 @@ test('a move the folder refuses leaves the draft at its file, and the typing tak
 
 const TYPED = 'Typed while it moved.\n';
 
-/** Rename with the move held, type, then pause admission and start preparing to leave. */
+/**
+ * Rename with the move held, try to type while it moves (`type` says whether
+ * the typing was taken, which `taken` expects), then pause admission and start
+ * preparing to leave.
+ */
 async function renameWhileClosing(
 	library: Library,
 	from: string,
 	name: string,
 	type: () => boolean,
 	move = holdNext(library.folder.files, 'move'),
+	taken = true,
 ) {
 	const renaming = library.rename(from, name);
 	await move.reached;
-	expect(type()).toBe(true);
+	expect(type()).toBe(taken);
 	library.pauseAdmission();
 	const leaving = library.prepareToLeave();
 	move.release();
 	return { said: await renaming, leaving: await leaving };
 }
 
-test('a transcript renamed while the page decides to close carries its typing to the new name, and the close waits for its save', async () => {
+test('a transcript renamed while the page decides to close takes its settled typing to the new name, and the close waits for the move', async () => {
 	const { library, root } = await open();
 	const { transcript, draft } = await openTranscript(library);
+	draft.setBody(TYPED);
 
 	const { said, leaving } = await renameWhileClosing(
 		library,
 		transcript.path,
 		'renamed.md',
-		() => draft.change({ body: TYPED }),
-	);
-
-	expect(said).toBeUndefined();
-	expect(leaving).toBe(true);
-	expect(
-		await readFile(join(root, 'transcriptions', 'renamed.md'), 'utf8'),
-	).toContain(TYPED);
-	expect(await Bun.file(join(root, transcript.path)).exists()).toBe(false);
-	expect(library.unsavedWork).toEqual([]);
-});
-
-test('with autosave paused, a transcript renamed while the page decides to close keeps its typing and the close asks', async () => {
-	const { library, root } = await open();
-	const { transcript, draft } = await openTranscript(library);
-	library.autosave.paused = true;
-
-	const { said, leaving } = await renameWhileClosing(
-		library,
-		transcript.path,
-		'renamed.md',
-		() => draft.change({ body: TYPED }),
+		() => typeBody(draft, 'Typed while it moved, refused.\n'),
+		undefined,
+		false,
 	);
 
 	const to = 'transcriptions/renamed.md';
 	expect(said).toBeUndefined();
-	expect(leaving).toBe(false);
-	expect(library.unsavedWork).toEqual([`${to} has unsaved edits.`]);
-	expect(formOf(library.transcriptAt(to)).state.document.body).toBe(TYPED);
-	expect(await readFile(join(root, to), 'utf8')).not.toContain(TYPED);
+	expect(leaving).toBe(true);
+	expect(await readFile(join(root, to), 'utf8')).toContain(TYPED);
+	expect(await Bun.file(join(root, transcript.path)).exists()).toBe(false);
+	expect(editingOf(library.transcriptAt(to)).holds).toBe(false);
+	expect(library.unsavedWork).toEqual([]);
 });
 
 test('a text file renamed while the page decides to close carries its typing to the new name', async () => {
@@ -2299,16 +2638,19 @@ test('a text file renamed while the page decides to close carries its typing to 
 	expect(await Bun.file(join(root, 'notes.md')).exists()).toBe(false);
 });
 
-test('a rename refused while the page decides to close leaves the typing at the file, and the close waits for its save', async () => {
+test('a rename refused while the page decides to close leaves the settled typing at the file', async () => {
 	const { library, root } = await open();
 	const { transcript, draft } = await openTranscript(library);
 	await writeFile(join(root, 'transcriptions', 'taken.md'), 'Someone else\n');
+	draft.setBody(TYPED);
 
 	const { said, leaving } = await renameWhileClosing(
 		library,
 		transcript.path,
 		'taken.md',
-		() => draft.change({ body: TYPED }),
+		() => typeBody(draft, 'Typed while it moved, refused.\n'),
+		undefined,
+		false,
 	);
 
 	expect(said).toContain('already exists');
@@ -2319,7 +2661,7 @@ test('a rename refused while the page decides to close leaves the typing at the 
 	);
 });
 
-test('a rename whose reply is lost while the page decides to close holds the typing, and the close asks', async () => {
+test('a transcript rename whose reply is lost while the page decides to close puts its editor down: it holds nothing, and the close proceeds', async () => {
 	const { library, root } = await open();
 	const { transcript, draft } = await openTranscript(library);
 	const { files } = library.folder;
@@ -2342,24 +2684,29 @@ test('a rename whose reply is lost while the page decides to close holds the typ
 					});
 		},
 	});
-	const before = await readFile(join(root, transcript.path), 'utf8');
+	draft.setBody(TYPED);
 
 	const { said, leaving } = await renameWhileClosing(
 		library,
 		transcript.path,
 		'renamed.md',
-		() => draft.change({ body: TYPED }),
+		() => typeBody(draft, 'Typed while it moved, refused.\n'),
 		{ reached: reached.promise, release: () => held.resolve() },
+		false,
 	);
 
+	// Everything the editor took was saved before the move, so nothing is held
+	// at a path the move may have left.
 	expect(said).toContain('did not confirm the rename');
-	expect(leaving).toBe(false);
-	expect(library.unsavedWork[0]).toContain('did not end as asked');
-	expect(draft.state.document.body).toBe(TYPED);
-	await Bun.sleep(600);
+	expect(leaving).toBe(true);
+	expect(library.unresolvedMoves).toEqual([]);
+	expect(library.unsavedWork).toEqual([]);
+	expect(draft.released).toBe(true);
+	expect(library.transcriptAt(transcript.path)).toBeUndefined();
+	// What moved is what was settled first; nothing was written after.
 	expect(
 		await readFile(join(root, 'transcriptions', 'renamed.md'), 'utf8'),
-	).toBe(before);
+	).toContain(TYPED);
 	expect(await Bun.file(join(root, transcript.path)).exists()).toBe(false);
 });
 
@@ -2399,47 +2746,55 @@ async function textDraft(library: Library, path: string) {
 	return selection.file.editor;
 }
 
-test('keeping held edits at a transcript whose own draft has typing is refused, and both drafts are kept with nothing written', async () => {
+/**
+ * The folder's next move writes the destination and cannot remove the
+ * source, so the file is at both paths and the rename did not end as asked.
+ */
+function bothPathsMove(library: Library) {
+	const { files } = library.folder;
+	const move = files.move;
+	Object.assign(files, {
+		async move(...args: Parameters<typeof move>) {
+			Object.assign(files, { move });
+			const [file, destination] = args;
+			const copied = expectOk(await files.read(file.path));
+			const written = expectOk(await files.create(destination, copied.bytes));
+			const { error: removeFailure } = FileError.Io({
+				path: file.path,
+				operation: 'remove',
+				cause: new Error('permission denied'),
+			});
+			return MoveError.SourceNotRemoved({
+				from: file.path,
+				to: destination,
+				moved: written,
+				cause: removeFailure,
+			});
+		},
+	});
+}
+
+test('a transcript rename that left the file at both paths puts its editor down, writes neither path, and either path opens as it is', async () => {
 	const { library, root } = await open();
 	const { transcript, draft } = await openTranscript(library);
-	library.autosave.paused = true;
 	const to = 'transcriptions/two.md';
-	const move = lostReplyMove(library);
-	const renaming = library.rename(transcript.path, 'two.md');
-	await move.reached;
-	draft.change({ body: TYPED });
-	move.release();
-	expect(await renaming).toContain('did not confirm the rename');
+	bothPathsMove(library);
+	expect(await library.rename(transcript.path, 'two.md')).toContain(
+		'both are in the folder now',
+	);
+
+	expect(draft.released).toBe(true);
+	expect(library.unresolvedMoves).toEqual([]);
+	expect(library.holdsUnsavedWork).toBe(false);
+	const before = await readFile(join(root, transcript.path), 'utf8');
+	expect(await readFile(join(root, to), 'utf8')).toBe(before);
 
 	await library.open(to);
-	const destination = formOf(library.transcriptAt(to));
-	expect(destination.change({ body: 'Typed at the destination.\n' })).toBe(
-		true,
-	);
-	const before = await readFile(join(root, to), 'utf8');
-
-	expect(
-		await library.resolveMove(transcript.path, 'keepAtDestination'),
-	).toContain('edits of its own');
-
-	expect(destination.state.document.body).toBe('Typed at the destination.\n');
-	expect(draft.state.isDisposed).toBe(false);
-	expect(draft.state.document.body).toBe(TYPED);
-	expect(library.unresolvedMoves).toHaveLength(1);
-	expect(library.unsavedWork).toEqual([
-		expect.stringContaining('did not end as asked'),
-		`${to} has unsaved edits.`,
-	]);
-	await Bun.sleep(600);
-	expect(await readFile(join(root, to), 'utf8')).toBe(before);
-	expect(await Bun.file(join(root, transcript.path)).exists()).toBe(false);
-
-	// Saving the held edits as a copy still works, and leaves the destination's typing alone.
-	const copy = expectOk(await library.copyHeldEdits(transcript.path));
-	expect(await readFile(join(root, copy), 'utf8')).toContain(TYPED);
-	expect(destination.state.document.body).toBe('Typed at the destination.\n');
-	expect(library.unresolvedMoves).toEqual([]);
-	expect(await readFile(join(root, to), 'utf8')).toBe(before);
+	const destination = editingOf(library.transcriptAt(to));
+	expect(destination.row.text).toBe(before);
+	await library.open(transcript.path);
+	expect(editingOf(library.transcriptAt(transcript.path))).not.toBe(draft);
+	expect(await readFile(join(root, transcript.path), 'utf8')).toBe(before);
 });
 
 test('keeping held edits at a text file whose own draft has typing is refused, and both drafts are kept with nothing written', async () => {
@@ -2472,6 +2827,33 @@ test('keeping held edits at a text file whose own draft has typing is refused, a
 	expect(await library.resolveMove('notes.md', 'discard')).toBeUndefined();
 	expect(destination.buffer).toBe('Typed at the destination.\n');
 	expect(library.unsavedWork).toEqual(['renamed.md has unsaved edits.']);
+});
+
+test('a text file’s held edits copied out while typing goes on keep the newer typing and the rename’s hold', async () => {
+	const { library, root } = await open();
+	await writeFile(join(root, 'notes.md'), 'original\n');
+	await library.refreshAll();
+	const source = await textDraft(library, 'notes.md');
+	library.autosave.paused = true;
+	bothPathsMove(library);
+	expect(await library.rename('notes.md', 'renamed.md')).toContain(
+		'both are in the folder now',
+	);
+	source.input('Copied.\n');
+	const create = holdNext(library.folder.files, 'create');
+
+	const copying = library.copyHeldEdits('notes.md');
+	await create.reached;
+	// A text draft takes typing while its file moves, so it may change here.
+	source.input('Typed after the copy began.\n');
+	create.release();
+	const copy = expectOk(await copying);
+
+	expect(await readFile(join(root, copy), 'utf8')).toBe('Copied.\n');
+	expect(source.buffer).toBe('Typed after the copy began.\n');
+	expect(library.unresolvedMoves).toHaveLength(1);
+	expect(library.holdsUnsavedWork).toBe(true);
+	expect(await readFile(join(root, 'notes.md'), 'utf8')).toBe('original\n');
 });
 
 test('a rename onto a name whose draft still holds edits is refused before anything moves', async () => {
@@ -2544,58 +2926,6 @@ test('typing into the new name’s draft while the file moves keeps both: the mo
 // Edits move only onto the file as it was: another program may write the
 // new name while its draft is being opened.
 
-test('keeping held edits at a transcript another program rewrote while its draft opened is refused, and its file is left as written', async () => {
-	const { library, root } = await open();
-	const { transcript, draft } = await openTranscript(library);
-	library.autosave.paused = true;
-	const to = 'transcriptions/two.md';
-	const move = lostReplyMove(library);
-	const renaming = library.rename(transcript.path, 'two.md');
-	await move.reached;
-	draft.change({ body: TYPED });
-	move.release();
-	expect(await renaming).toContain('did not confirm the rename');
-	const original = await readFile(join(root, to), 'utf8');
-	const foreign = original.replace(/model: .*/, 'model: someone-else');
-	// The draft at the new name opens after another program rewrote it.
-	const table = library.folder.tables.transcriptions;
-	const edit = table.edit;
-	Object.assign(table, {
-		async edit(...args: Parameters<typeof edit>) {
-			Object.assign(table, { edit });
-			await writeFile(join(root, to), foreign);
-			return edit(...args);
-		},
-	});
-
-	expect(
-		await library.resolveMove(transcript.path, 'keepAtDestination'),
-	).toContain('no longer holds the file as it was');
-
-	const destination = formOf(library.transcriptAt(to));
-	expect(destination.isDirty).toBe(false);
-	expect(destination.state.document.fields.model).toBe('someone-else');
-	expect(draft.state.isDisposed).toBe(false);
-	expect(draft.state.document.body).toBe(TYPED);
-	expect(library.unresolvedMoves).toEqual([
-		expect.objectContaining({
-			from: transcript.path,
-			found: { from: 'missing', to: 'different' },
-		}),
-	]);
-	await Bun.sleep(600);
-	await library.refreshAll();
-	expect(await readFile(join(root, to), 'utf8')).toBe(foreign);
-	expect(await Bun.file(join(root, transcript.path)).exists()).toBe(false);
-	expect(await library.prepareToLeave()).toBe(false);
-
-	// The held edits still leave as a copy; the rewritten file stays as written.
-	const copy = expectOk(await library.copyHeldEdits(transcript.path));
-	expect(await readFile(join(root, copy), 'utf8')).toContain(TYPED);
-	expect(await readFile(join(root, to), 'utf8')).toBe(foreign);
-	expect(library.unresolvedMoves).toEqual([]);
-});
-
 test('a file another program rewrites at the new name while a rename opens it there keeps the moved edits held at the old name', async () => {
 	const { library, root } = await open();
 	await writeFile(join(root, 'notes.md'), 'original\n');
@@ -2664,20 +2994,19 @@ test('a recording being deleted takes no typing, and nothing writes its row agai
 
 	const removing = library.remove(deletion);
 	await removal.reached;
-	expect(editor.change({ fields: { title: 'Typed while deleted' } })).toBe(
-		false,
-	);
-	await editor.saveNow();
+	const before = editor.row;
+	editor.setField('title', 'Typed while deleted');
+	expect(editor.row).toBe(before);
+	expect(editor.save.status).toBe('idle');
 	removal.release();
 	expect(await removing).toBeUndefined();
-	await Bun.sleep(600);
 
 	expect(await Bun.file(path).exists()).toBe(false);
-	expect(editor.state.isDisposed).toBe(true);
+	expect(editor.released).toBe(true);
 	expect(library.holdsUnsavedWork).toBe(false);
 });
 
-test('a deletion the folder refuses leaves the draft as it was, taking typing and saving again', async () => {
+test('a deletion the folder refuses leaves the editor as it was, taking typing and saving again', async () => {
 	const { library, root } = await open();
 	await record(library);
 	const editor = recordingEditor(library);
@@ -2694,12 +3023,12 @@ test('a deletion the folder refuses leaves the draft as it was, taking typing an
 
 	expect(await readFile(path, 'utf8')).toBe(outside);
 	await library.refreshAll();
-	expect(editor.change({ body: 'Typed after the refusal.\n' })).toBe(true);
-	expect(await editor.settle()).toBe(true);
+	expect(typeBody(editor, 'Typed after the refusal.\n')).toBe(true);
+	await saved(editor);
 	expect(await readFile(path, 'utf8')).toContain('Typed after the refusal.');
 });
 
-test('a recording is not deleted while a draft of one of its results holds typing or a save whose reply was lost', async () => {
+test('a recording is not deleted while a draft of one of its results holds typing or a save that is running or failed', async () => {
 	const { library, root } = await open();
 	const { transcript, draft } = await openTranscript(library);
 	const recording = library.entries[0]!;
@@ -2721,12 +3050,13 @@ test('a recording is not deleted while a draft of one of its results holds typin
 		]);
 	};
 
-	// Typing in the transcript's draft since the person was asked.
+	// A save of typing in the transcript, running since the person was asked.
 	let deletion = expectOk(await library.deletionFor(recording.path));
-	expect(draft.change({ body: 'Typed after confirming.\n' })).toBe(true);
+	expect(typeBody(draft, 'Typed after confirming.\n')).toBe(true);
+	expect(draft.save.status).toBe('saving');
 	expect(await library.remove(deletion)).toContain('Save or discard');
 	await kept();
-	expect(await draft.settle()).toBe(true);
+	await saved(draft);
 
 	// Typing in the transformation result, opened in Files as text.
 	const outputDraft = await textDraft(library, output.path);
@@ -2736,33 +3066,18 @@ test('a recording is not deleted while a draft of one of its results holds typin
 	await kept();
 	expect(await outputDraft.settle()).toBe(true);
 
-	// A save of the transcript whose reply was lost, and a read that finds
-	// the file holding its text: the save is still not known to have landed.
-	expect(await library.editSource(transcript.path)).toBeUndefined();
-	const source = textOf(library.transcriptAt(transcript.path));
-	const { files } = library.folder;
-	const replace = files.replace;
-	Object.assign(files, {
-		async replace(...args: Parameters<typeof replace>) {
-			Object.assign(files, { replace });
-			const written = await replace(...args);
-			const { error: replaceError } = written;
-			return replaceError !== null
-				? written
-				: FileError.Unconfirmed({
-						path: args[0].path,
-						operation: 'replace',
-						cause: 'reply lost after the write',
-					});
-		},
-	});
-	source.input(`${source.buffer}Saved, reply lost.\n`);
-	expect(await source.settle()).toBe(false);
-	await library.refreshAll();
-	expect(await readFile(join(root, transcript.path), 'utf8')).toContain(
-		'Saved, reply lost.',
-	);
+	// A save of the transcript's source that failed holds its draft: it is
+	// in question until the person saves again or discards it.
 	deletion = expectOk(await library.deletionFor(recording.path));
+	expect(library.editSource(transcript.path)).toBeUndefined();
+	chmodSync(join(root, 'transcriptions'), 0o555);
+	try {
+		draft.setText(`${draft.sourceValue()}Not saved.\n`);
+		expect((await draft.flush()).error).not.toBeNull();
+	} finally {
+		chmodSync(join(root, 'transcriptions'), 0o755);
+	}
+	expect(draft.status.kind).toBe('failed');
 	expect(await library.remove(deletion)).toContain('Save or discard');
 	await kept();
 });
@@ -2778,21 +3093,20 @@ test('a recording’s results take no typing while it is deleted, and nothing wr
 	const removing = library.remove(deletion);
 	await removal.reached;
 	// The recording's own file is still being deleted.
-	expect(
-		draft.change({ body: 'Typed while its recording is deleted.\n' }),
-	).toBe(false);
-	await draft.saveNow();
+	expect(typeBody(draft, 'Typed while its recording is deleted.\n')).toBe(
+		false,
+	);
+	expect(draft.save.status).toBe('idle');
 	removal.release();
 	expect(await removing).toBeUndefined();
-	await Bun.sleep(600);
 
 	expect(await Bun.file(join(root, transcript.path)).exists()).toBe(false);
 	expect(await readdir(join(root, 'transcriptions'))).toEqual([]);
-	expect(draft.state.isDisposed).toBe(true);
+	expect(draft.released).toBe(true);
 	expect(library.holdsUnsavedWork).toBe(false);
 });
 
-test('each file of a recording’s deletion stands alone: a refused one keeps its result’s draft, which takes typing and saves again', async () => {
+test('each file of a recording’s deletion stands alone: a refused one keeps its result’s editor, which takes typing and saves again', async () => {
 	const { library, root } = await open();
 	const { transcript, draft } = await openTranscript(library);
 	const recording = library.entries[0]!;
@@ -2809,8 +3123,8 @@ test('each file of a recording’s deletion stands alone: a refused one keeps it
 		),
 	);
 	expect(await library.remove(deletion)).toContain('different content');
-	expect(draft.change({ body: 'Typed after the refusal.\n' })).toBe(true);
-	expect(await draft.settle()).toBe(true);
+	expect(typeBody(draft, 'Typed after the refusal.\n')).toBe(true);
+	await saved(draft);
 	expect(await readFile(result, 'utf8')).toContain('Typed after the refusal.');
 
 	// Its result changed instead: the recording is deleted, and the result stays.
@@ -2826,10 +3140,12 @@ test('each file of a recording’s deletion stands alone: a refused one keeps it
 	);
 	expect(await Bun.file(row).exists()).toBe(false);
 	expect(await readFile(result, 'utf8')).toBe(outside);
-	expect(
-		draft.change({ body: 'Typed after its deletion was refused.\n' }),
-	).toBe(true);
-	expect(await draft.settle()).toBe(true);
+	// The editor takes typing again; not reloaded, it saves the whole row over
+	// the outside change.
+	await library.refreshAll();
+	expect(typeBody(draft, 'Typed after its deletion was refused.\n')).toBe(true);
+	await saved(draft);
+	expect(await readFile(result, 'utf8')).not.toContain('Changed outside.');
 	expect(await readFile(result, 'utf8')).toContain(
 		'Typed after its deletion was refused.',
 	);
@@ -2853,35 +3169,35 @@ test('a result being deleted with its recording is not renamed, and keeps taking
 	expect(await library.rename(transcript.path, 'renamed.md')).toContain(
 		'being moved or deleted',
 	);
-	expect(draft.change({ body: 'Typed after the renames.\n' })).toBe(false);
-	await draft.saveNow();
+	expect(typeBody(draft, 'Typed after the renames.\n')).toBe(false);
+	expect(draft.save.status).toBe('idle');
 	removal.release();
 	expect(await removing).toBeUndefined();
-	await Bun.sleep(600);
 
 	expect(await readdir(join(root, 'transcriptions'))).toEqual(['taken.md']);
-	expect(draft.state.isDisposed).toBe(true);
+	expect(draft.released).toBe(true);
 	expect(library.holdsUnsavedWork).toBe(false);
 });
 
-test('a recording whose result is being renamed is not deleted, and the typing taken meanwhile follows the result', async () => {
+test('a recording whose result is being renamed is not deleted, and the result’s settled typing moves with it', async () => {
 	const { library, root } = await open();
 	const { transcript, draft } = await openTranscript(library);
 	const recording = library.entries[0]!;
 	const deletion = expectOk(await library.deletionFor(recording.path));
+	draft.setBody('Typed before it moved.\n');
 	const move = holdNext(library.folder.files, 'move');
 
 	const renaming = library.rename(transcript.path, 'renamed.md');
 	await move.reached;
 	expect(await library.remove(deletion)).toContain('being moved or deleted');
-	expect(draft.change({ body: 'Typed while it moved.\n' })).toBe(true);
+	expect(typeBody(draft, 'Typed while it moved.\n')).toBe(false);
 	move.release();
 	expect(await renaming).toBeUndefined();
 
 	const to = 'transcriptions/renamed.md';
-	expect(await formOf(library.transcriptAt(to)).settle()).toBe(true);
+	expect(editingOf(library.transcriptAt(to)).holds).toBe(false);
 	expect(await readFile(join(root, to), 'utf8')).toContain(
-		'Typed while it moved.',
+		'Typed before it moved.',
 	);
 	expect(await Bun.file(join(root, recording.path)).exists()).toBe(true);
 

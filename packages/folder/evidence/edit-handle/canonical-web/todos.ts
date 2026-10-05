@@ -1,9 +1,10 @@
 /**
- * The definition, folder ID, and seed rows of the canonical editor demo.
+ * The definition, folder ID, and seed rows of the row editor demo.
  *
- * `title` has a minimum length so that typing toward a valid title shows
- * schema issues without erasing the draft: `A` stays drafted on the way to
- * `ABC`, and only `save` refuses it.
+ * `title` has a minimum length so that a schema-invalid value is easy to
+ * type: a one-letter title is still a row the editor can represent, so it is
+ * accepted and saved as typed. The row is then `invalid`, and every view
+ * shows its Markdown source with the issue until a person repairs it.
  */
 import {
 	type CreateRowOf,
@@ -38,11 +39,13 @@ export const definition = defineFolder({
 export type TodoRow = CreateRowOf<(typeof definition)['tables']['todos']>;
 
 /**
- * The rows a person can open. `plan` opens; the others show each way opening
- * can refuse, and the raw repair that follows.
+ * The rows a person can open. `plan` and `crlf` are valid; `tagged` and
+ * `urgent` open as invalid rows for repair in the same editor; `gone` has no
+ * file, so opening it returns `NotFound` and no editor.
  */
 export const STEMS = {
 	plan: 'Hand-formatted valid row',
+	crlf: 'Valid row with CRLF line endings',
 	tagged: 'Custom YAML tag: no canonical form',
 	urgent: 'Priority outside the declared options',
 	gone: 'No file',
@@ -51,21 +54,23 @@ export type Stem = keyof typeof STEMS;
 
 export const todoPath = (stem: string) => rowPath('todos', stem);
 
-/** The text of a new valid row, for creating a file that is not there. */
+/** The text the raw file panel writes for a path that has no seed text. */
 export const NEW_ROW =
 	'---\ntitle: New todo\ndone: false\npriority: normal\n---\n';
 
 /**
  * The rows a folder with no todos starts with, and what Reset writes back.
  * `plan.md` is valid but not canonical: a comment, single quotes, keys out of
- * declared order, and two keys the table does not declare. A canonical save
- * drops the comment and the quoting and keeps every value, `owner` and
- * `labels` included. `gone` is not seeded.
+ * declared order, and two keys the table does not declare. A structured edit
+ * writes the whole row canonically: the comment and the quoting go, and every
+ * value stays, `owner` and `labels` included. `crlf.md` uses CRLF line
+ * endings: a structured edit keeps them in the body and writes the header in
+ * LF, and a source edit writes CRLF on every line. `gone` is not seeded.
  */
 export const SEED: Readonly<Record<string, string>> = {
 	[todoPath('plan')]: [
 		'---',
-		'# Written by hand. A canonical save drops this comment.',
+		'# Written by hand. A structured edit drops this comment.',
 		'priority: normal',
 		'owner: sam',
 		"title: 'Plan the launch'",
@@ -77,6 +82,16 @@ export const SEED: Readonly<Record<string, string>> = {
 		'Draft the announcement and the checklist.',
 		'',
 	].join('\n'),
+	[todoPath('crlf')]: [
+		'---',
+		'title: Written on Windows',
+		'done: false',
+		'priority: low',
+		'---',
+		'First line.',
+		'Second line.',
+		'',
+	].join('\r\n'),
 	[todoPath('tagged')]: [
 		'---',
 		'title: Tagged owner',

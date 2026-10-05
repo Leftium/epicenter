@@ -1,42 +1,50 @@
 /**
  * Epicenter Host Leaf Tests
  *
- * The desktop leaf over the real `@epicenter/folder/tauri` adapter, with the shell's `invoke` and
- * events scripted. The scripted owner keeps files in memory and checks
- * versions the way the shell's owner does; it stands in for the reply shapes,
- * not for the owner's own guarantees.
+ * The desktop leaf over the real `@epicenter/folder/tauri` adapter and the
+ * folder's real row editor, with the shell's `invoke` and events scripted.
+ * The scripted owner keeps files in memory and checks versions and presence
+ * the way the shell's owner does; it stands in for the reply shapes and lets
+ * a test lose a reply or fail a read or a write. It does not run the owner.
  *
  * Key behaviors:
  * - Outside the shell, a refused window, an unregistered scope, and a missing
  *   plugin each fail the open with a reason, and leave no listener behind
- * - The page names the Capture scope and is told the directory
- * - A change event for this scope is a hint to reread; it carries no contents
- * - A shell that refuses the quit listener still opens the folder and states
- *   the problem; a lifetime that cannot be set up detaches the session
+ * - The page names the Capture scope and is told the directory; departure is
+ *   heard on this window only
  * - Closing detaches this page once, and a sibling page keeps saving
- * - Through the collection: a save sends the whole canonical file as one
- *   overwrite and keeps undeclared metadata, an edit this page never read is
- *   overwritten, a lost reply stays unknown even when a read finds its text
- *   and is sent again only by Try again, a failed save is not resent by
- *   typing, a hint never replaces a dirty draft, a failed commit is reported
- *   beside a saved file, and a closed folder is reported as stopped
- * - An import whose first save lost its reply writes nothing twice: the retry
- *   finds the identical file, finishes, and a further retry creates nothing
+ * - A save sends the whole canonical file as one replacement of the existing
+ *   file and keeps undeclared metadata; it never creates one
+ * - A lost reply is unknown, shown exactly, and never sent again by typing;
+ *   Try again sends exactly the latest accepted text
+ * - Failed A, then B, then C on disk: B and the failure stay; Discard my
+ *   changes reloads C through the same editor
+ * - A failed reload keeps the text and the failure; the next save replaces
+ *   whatever the file holds, a corrupt file included
+ * - A removed file is never written back by saving; putting it back is a
+ *   create, and a file that came back is replaced only by Try again
+ * - A change hint relists the folder and never reads into an open capture
+ * - Closing waits for every admitted save
+ * - A failed commit is reported beside a saved file; a closed folder is
+ *   reported as stopped
+ * - An import whose first save lost its reply is finished by a retry
  *
  * See also:
  * - `packages/folder/src/tauri.test.ts` for what the adapter decides
  * - `packages/folder/src/tauri-native.test.ts` for the real Rust owner
- * - `shell-lifetime.test.ts` for the quit protocol
+ * - `departure.test.ts` for the departure wire
  */
 import '../svelte-modules.test-support.js';
 import { afterEach, expect, mock, test } from 'bun:test';
 import { readLegacyBundle } from '@epicenter/capture/legacy';
+import {
+	DEPARTURE_CHANGED_EVENT,
+	DEPARTURE_STATUS_COMMAND,
+	HOST_STOPPED_EVENT,
+} from '@epicenter/epicenter/departure';
+import { expectOk } from 'wellcrafted/testing';
 import type { FileChange as Change } from '../../../../../packages/folder/src/native/bindings.gen.js';
 import fixture from '../../../fixtures/legacy-bundle.json';
-import {
-	QUIT_REQUESTED_EVENT,
-	SERVICE_STOPPED_EVENT,
-} from './shell-lifetime.js';
 import { CAPTURE_FOLDER_ID } from './types.js';
 
 const ROOT = '/Users/someone/Epicenter/so.epicenter.capture';
@@ -50,11 +58,9 @@ let calls: Call[] = [];
 /** Replaces the owner's reply to one command. Throw an `Error` to lose the reply. */
 let overrides: Record<string, (call: Call, reply: () => unknown) => unknown> =
 	{};
-/** Event names whose `listen` throws before returning a promise. */
-let brokenListens = new Set<string>();
-/** Event names the shell refuses to let this window hear. */
-let refusedListens = new Set<string>();
 const listeners = new Map<string, Set<(event: { payload: unknown }) => void>>();
+/** Events heard through this window only, by event name. */
+const windowListeners = new Map<string, Set<() => void>>();
 const files = new Map<string, Uint8Array>();
 const sessions = new Set<number>();
 let nextSession = 1;
@@ -135,7 +141,12 @@ function own({ cmd, args }: Call): unknown {
 						name: 'Refused',
 						error: { name: 'Exists', path: change.path },
 					});
-				if (change.kind === 'remove' && current === undefined)
+				// A replacement requires its file, guarded or not: nothing is put back.
+				if (
+					(change.kind === 'remove' || change.kind === 'replace') &&
+					current === undefined &&
+					change.expectedSha256 == null
+				)
 					return refuse({
 						name: 'Refused',
 						error: { name: 'NotFound', path: change.path },
@@ -172,28 +183,42 @@ function own({ cmd, args }: Call): unknown {
 	}
 }
 
+/** The departure status the host reports; this file only reads it. */
+const IDLE = { version: 1, generation: 1, phase: 'idle' };
+
 mock.module('@tauri-apps/api/core', () => ({
 	isTauri: () => inShell,
 	async invoke(name: string, args: Record<string, unknown> = {}) {
 		const call = { cmd: name.replace(PLUGIN, ''), args };
 		calls.push(call);
+		if (name === DEPARTURE_STATUS_COMMAND) return IDLE;
 		const override = overrides[call.cmd];
 		return override ? override(call, () => own(call)) : own(call);
 	},
 }));
 mock.module('@tauri-apps/api/event', () => ({
 	listen(name: string, callback: (event: { payload: unknown }) => void) {
-		if (brokenListens.has(name)) throw new Error(`${name} cannot be heard`);
-		if (refusedListens.has(name))
-			return Promise.reject(new Error('event.listen not allowed'));
 		const set = listeners.get(name) ?? new Set();
 		listeners.set(name, set);
 		set.add(callback);
 		return Promise.resolve(() => set.delete(callback));
 	},
 }));
+mock.module('@tauri-apps/api/webviewWindow', () => ({
+	getCurrentWebviewWindow: () => ({
+		label: 'capture',
+		listen(name: string, callback: () => void) {
+			const set = windowListeners.get(name) ?? new Set();
+			windowListeners.set(name, set);
+			set.add(callback);
+			return Promise.resolve(() => set.delete(callback));
+		},
+	}),
+}));
 
-const { openCaptureHost } = await import('./folder.epicenter-host.js');
+const { openCaptureHost, openDeparture } = await import(
+	'./folder.epicenter-host.js'
+);
 const { createCaptures } = await import('../captures.svelte.ts');
 
 function emit(name: string, payload?: unknown) {
@@ -204,38 +229,50 @@ const sent = (cmd: string) => calls.filter((call) => call.cmd === cmd);
 const listening = () =>
 	[...listeners.values()].reduce((count, set) => count + set.size, 0);
 const text = (path: string) => new TextDecoder().decode(files.get(path));
-const put = (path: string, source: string) =>
-	files.set(path, new TextEncoder().encode(source));
+const put = (path: string, source: string | Uint8Array) =>
+	files.set(
+		path,
+		typeof source === 'string' ? new TextEncoder().encode(source) : source,
+	);
 
 const SAVED =
 	'---\ncapturedAt: 2026-10-01T10:30:00+08:00\ncustom: kept\n---\n\nText\n\n## Thoughts\n\n- first\n  nested line\n';
 const PATH = 'captures/one.md';
+/** SAVED as a save writes it: canonical frontmatter, the body byte for byte. */
+const CANONICAL = SAVED.replace(
+	'capturedAt: 2026-10-01T10:30:00+08:00\ncustom: kept\n',
+	'"capturedAt": "2026-10-01T10:30:00+08:00"\n"custom": "kept"\n',
+);
+const withText = (body: string) => CANONICAL.replace('\nText\n', `\n${body}\n`);
+const LOST = 'the webview lost its IPC connection';
 
 async function opened() {
 	const host = await openCaptureHost();
-	const captures = createCaptures(host, { batchMs: 60_000 });
+	const captures = createCaptures(host);
 	await captures.refresh();
 	return { host, captures };
 }
 
-/** A draft once its editor has opened. */
-async function ready<TDraft extends { ready: Promise<void> }>(
-	draft: TDraft | undefined,
-): Promise<TDraft> {
+/** The open capture at PATH, once its editor has opened. */
+async function openOne(
+	captures: Awaited<ReturnType<typeof opened>>['captures'],
+) {
+	const draft = captures.open('one');
 	if (!draft) throw new Error('no draft');
 	await draft.ready;
 	return draft;
 }
 
 const encode = (source: string) => new TextEncoder().encode(source);
+const replaced = () =>
+	sent('apply').flatMap((call) => call.args.changes as Change[]);
 
 afterEach(() => {
 	inShell = true;
 	calls = [];
 	overrides = {};
-	brokenListens = new Set();
-	refusedListens = new Set();
 	listeners.clear();
+	windowListeners.clear();
 	files.clear();
 	sessions.clear();
 });
@@ -273,9 +310,9 @@ test.each([
 	[
 		'an attach that never reaches the shell',
 		() => {
-			throw new Error('the webview lost its IPC connection');
+			throw new Error(LOST);
 		},
-		'the webview lost its IPC connection',
+		LOST,
 	],
 ] as const)('%s fails the open with its reason and leaves no listener', async (_name, attach, reason) => {
 	overrides.attach = attach;
@@ -295,16 +332,10 @@ test('a plugin the shell did not install fails the open instead of opening anyth
 		(error: unknown) => error,
 	);
 
-	// The adapter's own refusal, with what the shell said kept as its cause.
 	expect(failure).toBeInstanceOf(Error);
 	expect((failure as Error).message).toBe(
 		'The folder could not be opened: epicenter-folder.attach not allowed',
 	);
-	expect((failure as Error).cause).toMatchObject({
-		name: 'Unavailable',
-		cause: 'epicenter-folder.attach not allowed',
-	});
-
 	expect(calls.map((call) => call.cmd)).toEqual(['attach']);
 	expect(listening()).toBe(0);
 });
@@ -317,10 +348,30 @@ test('the page names the Capture scope and is told the directory', async () => {
 		protocol: 6,
 	});
 	expect(host.location).toEqual({ kind: 'directory', root: ROOT });
-	expect(host.quitProtectionProblem).toBeUndefined();
-	expect(listeners.get(QUIT_REQUESTED_EVENT)?.size).toBe(1);
-	expect(listeners.get(SERVICE_STOPPED_EVENT)?.size).toBe(1);
 	await host.close();
+});
+
+test('departure is heard on this window only, registered before its first status read', async () => {
+	const departure = openDeparture();
+	if (!departure) throw new Error('the desktop leaf has a departure gate');
+	await departure.ready;
+	// Targeted at this window, not any window's global listener.
+	expect([...windowListeners.keys()].sort()).toEqual(
+		[DEPARTURE_CHANGED_EVENT, HOST_STOPPED_EVENT].sort(),
+	);
+	expect(listeners.has(DEPARTURE_CHANGED_EVENT)).toBe(false);
+	expect(calls.map((call) => call.cmd)).toEqual([DEPARTURE_STATUS_COMMAND]);
+	expect(departure.everIdle).toBe(true);
+
+	let stopped = 0;
+	departure.onHostStopped(() => stopped++);
+	for (const listener of windowListeners.get(HOST_STOPPED_EVENT) ?? [])
+		listener();
+	expect(stopped).toBe(1);
+	departure.close();
+	expect(
+		[...windowListeners.values()].reduce((count, set) => count + set.size, 0),
+	).toBe(0);
 });
 
 test('a change event for this scope is a hint to reread, and only for this scope', async () => {
@@ -334,44 +385,13 @@ test('a change event for this scope is a hint to reread, and only for this scope
 		paths: [PATH],
 	});
 	expect(hints).toEqual([]);
-	emit(FILES_CHANGED, {
-		scope: CAPTURE_FOLDER_ID,
-		revision: 2,
-		paths: [PATH],
-	});
+	emit(FILES_CHANGED, { scope: CAPTURE_FOLDER_ID, revision: 2, paths: [PATH] });
 	expect(hints).toEqual([[]]);
 
 	stop();
-	emit(FILES_CHANGED, {
-		scope: CAPTURE_FOLDER_ID,
-		revision: 3,
-		paths: [PATH],
-	});
+	emit(FILES_CHANGED, { scope: CAPTURE_FOLDER_ID, revision: 3, paths: [PATH] });
 	expect(hints).toHaveLength(1);
 	await host.close();
-});
-
-test('a shell that refuses the quit listener still opens the folder and states the problem', async () => {
-	refusedListens.add(QUIT_REQUESTED_EVENT);
-
-	const host = await openCaptureHost();
-
-	expect(host.quitProtectionProblem).toContain('event.listen not allowed');
-	put(PATH, SAVED);
-	const listed = await host.folder.tables.captures.list();
-	expect(listed.data?.map((item) => item.path)).toEqual([PATH]);
-	await host.close();
-	expect(listening()).toBe(0);
-});
-
-test('a lifetime that cannot be set up detaches the session it attached', async () => {
-	brokenListens.add(QUIT_REQUESTED_EVENT);
-
-	await expect(openCaptureHost()).rejects.toThrow('cannot be heard');
-
-	expect(calls.map((call) => call.cmd)).toEqual(['attach', 'detach']);
-	expect(sessions.size).toBe(0);
-	expect(listening()).toBe(0);
 });
 
 test('closing detaches this page once, and a sibling page keeps saving', async () => {
@@ -385,42 +405,27 @@ test('closing detaches this page once, and a sibling page keeps saving', async (
 
 	expect(calls).toEqual([{ cmd: 'detach', args: { session: mine } }]);
 	expect([...sessions]).toEqual([theirs]);
-	const saved = await second.folder.files.create(PATH, SAVED);
-	expect(saved.error).toBeNull();
+	expectOk(await second.folder.files.create(PATH, SAVED));
 	expect(text(PATH)).toBe(SAVED);
-	let hints = 0;
-	second.onExternalChange(() => hints++);
-	emit(FILES_CHANGED, {
-		scope: CAPTURE_FOLDER_ID,
-		revision: 1,
-		paths: [PATH],
-	});
-	expect(hints).toBe(1);
 	await second.close();
 	expect(listening()).toBe(0);
 });
 
-/** SAVED as a save writes it: canonical frontmatter, the body byte for byte. */
-const CANONICAL = SAVED.replace(
-	'capturedAt: 2026-10-01T10:30:00+08:00\ncustom: kept\n',
-	'"capturedAt": "2026-10-01T10:30:00+08:00"\n"custom": "kept"\n',
-);
-
-test('a save sends the whole canonical file as one overwrite and keeps metadata Capture does not declare', async () => {
+test('a save sends the whole canonical file as one replacement of the existing file and keeps metadata Capture does not declare', async () => {
 	put(PATH, SAVED);
 	const { host, captures } = await opened();
-	const draft = await ready(captures.open('one'));
+	const draft = await openOne(captures);
 	calls = [];
 
-	draft.newThought = 'second';
+	draft.inputNewThought('second');
 	expect(draft.addThought()).toBe(true);
-	await draft.save();
+	await draft.settle();
 
 	const expected = `${CANONICAL}- second\n`;
 	expect(text(PATH)).toBe(expected);
 	expect(sent('apply')).toHaveLength(1);
-	expect(sent('apply')[0]?.args.changes).toEqual([
-		{ kind: 'overwrite', path: PATH, bytes: Array.from(encode(expected)) },
+	expect(replaced()).toMatchObject([
+		{ kind: 'replace', path: PATH, bytes: Array.from(encode(expected)) },
 	]);
 	expect(draft.notice).toBeUndefined();
 	expect(draft.unsettled).toBe(false);
@@ -428,257 +433,263 @@ test('a save sends the whole canonical file as one overwrite and keeps metadata 
 	await host.close();
 });
 
-test('an edit made elsewhere that this page never read is overwritten by its save', async () => {
+test('an edit made elsewhere that this page never read is replaced by its save', async () => {
 	put(PATH, SAVED);
 	const { host, captures } = await opened();
-	const draft = await ready(captures.open('one'));
+	const draft = await openOne(captures);
 	put(PATH, `${SAVED}- from another window\n`);
 
 	draft.inputText('Mine');
-	await draft.save();
+	await draft.settle();
 
-	expect(text(PATH)).toBe(CANONICAL.replace('\nText\n', '\nMine\n'));
+	expect(text(PATH)).toBe(withText('Mine'));
 	expect(draft.unsettled).toBe(false);
 	await captures.close();
 	await host.close();
 });
 
-test('a save whose reply is lost stays unknown, even when a read finds its text, and only Try again sends it again', async () => {
+test('a save whose reply is lost stays unknown, shown exactly; only Try again sends again', async () => {
 	put(PATH, SAVED);
 	const { host, captures } = await opened();
-	const draft = await ready(captures.open('one'));
+	const draft = await openOne(captures);
 	calls = [];
+	const scratch =
+		'the displaced file was kept at .git/epicenter/scratch/one-1a2b';
 	overrides.apply = (_call, reply) => {
 		reply();
-		throw new Error('the webview lost its IPC connection');
+		return refuse({
+			name: 'Unconfirmed',
+			path: PATH,
+			operation: 'replace',
+			cause: scratch,
+		});
 	};
 
 	draft.inputText('Mine');
-	await draft.save();
-
+	await draft.settle();
+	delete overrides.apply;
 	expect(sent('apply')).toHaveLength(1);
 	const notice = draft.notice;
 	expect(notice?.kind).toBe('unconfirmed');
-	// The read after it found the text; that confirms nothing.
-	expect(notice?.kind === 'unconfirmed' && notice.fileHoldsMine).toBe(true);
-	expect(draft.text).toBe('Mine');
+	// The exact report, with where the displaced file was kept.
+	expect(notice?.kind === 'unconfirmed' && notice.message).toContain(scratch);
+	expect(text(PATH)).toBe(withText('Mine'));
 
-	// Typing more, saving, and settling send nothing again by themselves.
+	// Typing and settling send nothing again by themselves.
 	draft.inputText('Mine, more');
-	await draft.save();
-	expect(await captures.settleAll()).toBe(1);
+	expect(await captures.departure.settle()).toBe(1);
 	expect(sent('apply')).toHaveLength(1);
-	expect(draft.notice?.kind).toBe('unconfirmed');
 	expect(draft.text).toBe('Mine, more');
 
-	delete overrides.apply;
-	await draft.saveMine();
+	// Try again is a new attempt with the newest text.
+	draft.retry();
+	await draft.settle();
 	expect(sent('apply')).toHaveLength(2);
-	expect(text(PATH)).toBe(CANONICAL.replace('\nText\n', '\nMine, more\n'));
+	expect(text(PATH)).toBe(withText('Mine, more'));
 	expect(draft.notice).toBeUndefined();
 	expect(captures.unsettled).toBe(0);
 	await captures.close();
 	await host.close();
 });
 
-test('a failed save keeps the draft, is not resent by typing, and Try again sends it', async () => {
+test('Try again with nothing newer sends exactly the accepted text, Source comments and quoting included', async () => {
 	put(PATH, SAVED);
 	const { host, captures } = await opened();
-	const draft = await ready(captures.open('one'));
-	calls = [];
+	const draft = await openOne(captures);
+	const handWritten = SAVED.replace(
+		'custom: kept\n',
+		"# by hand\ncustom: 'kept, quoted'\n",
+	);
 	overrides.apply = () =>
-		refuse({ name: 'Refused', error: { name: 'Closed' } });
-
-	draft.inputText('Mine');
-	await draft.save();
-	expect(draft.notice?.kind).toBe('failed');
-	expect(text(PATH)).toBe(SAVED);
-
-	draft.inputText('Mine, more');
-	await draft.save();
-	expect(sent('apply')).toHaveLength(1);
-	expect(captures.unsettled).toBe(1);
-
-	delete overrides.apply;
-	await draft.saveMine();
-	expect(sent('apply')).toHaveLength(2);
-	expect(text(PATH)).toBe(CANONICAL.replace('\nText\n', '\nMine, more\n'));
-	expect(draft.notice).toBeUndefined();
-	await captures.close();
-	await host.close();
-});
-
-test('taking the saved file answers an unknown outcome so typing saves again; a matching read alone does not', async () => {
-	put(PATH, SAVED);
-	const { host, captures } = await opened();
-	const draft = await ready(captures.open('one'));
-	calls = [];
-	overrides.apply = (_call, reply) => {
-		reply();
-		throw new Error('the webview lost its IPC connection');
-	};
-	draft.inputText('Mine');
-	await draft.save();
-	delete overrides.apply;
-	expect(draft.notice?.kind).toBe('unconfirmed');
-
-	// The read after it holds this text, and still nothing is sent by typing.
-	draft.inputText('Mine, more');
-	await draft.save();
-	expect(sent('apply')).toHaveLength(1);
-
-	draft.discardMine();
-	expect(draft.text).toBe('Mine');
-	expect(draft.notice).toBeUndefined();
-	// The outcome stays what it was: unknown, never saved.
-	expect(draft.editor?.lastSave?.kind).toBe('unconfirmed');
-
-	draft.inputText('Mine, later');
-	await draft.save();
-	expect(sent('apply')).toHaveLength(2);
-	expect(text(PATH)).toBe(CANONICAL.replace('\nText\n', '\nMine, later\n'));
-	expect(draft.notice).toBeUndefined();
-	await captures.close();
-	await host.close();
-});
-
-test('taking the saved file after a failed save lets typing save again', async () => {
-	put(PATH, SAVED);
-	const { host, captures } = await opened();
-	const draft = await ready(captures.open('one'));
-	calls = [];
-	overrides.apply = () =>
-		refuse({ name: 'Refused', error: { name: 'Closed' } });
-	draft.inputText('Mine');
-	await draft.save();
-	delete overrides.apply;
-	expect(draft.notice?.kind).toBe('failed');
-
-	draft.discardMine();
-	expect(draft.text).toBe('Text');
-	expect(draft.notice).toBeUndefined();
-	expect(draft.editor?.lastSave?.kind).toBe('failed');
-
-	draft.inputText('Typed after');
-	await draft.save();
-	expect(sent('apply')).toHaveLength(2);
-	expect(text(PATH)).toBe(CANONICAL.replace('\nText\n', '\nTyped after\n'));
-	await captures.close();
-	await host.close();
-});
-
-for (const outcome of ['failed', 'unknown'] as const)
-	for (const [read, kind] of [
-		['a file that cannot be read', 'unreadable'],
-		['a file that is not a capture', 'invalid'],
-		['an edit made elsewhere', 'changed'],
-	] as const)
-		test(`after a ${outcome} save, ${read} still holds saving, and only its own choice writes`, async () => {
-			put(PATH, SAVED);
-			const { host, captures } = await opened();
-			const draft = await ready(captures.open('one'));
-			calls = [];
-			overrides.apply =
-				outcome === 'failed'
-					? () => refuse({ name: 'Refused', error: { name: 'Closed' } })
-					: (_call, reply) => {
-							reply();
-							throw new Error('the webview lost its IPC connection');
-						};
-			draft.inputText('Mine');
-			await draft.save();
-			delete overrides.apply;
-			const history = draft.editor?.lastSave;
-			expect(draft.outcome?.kind).toBe(
-				outcome === 'failed' ? 'failed' : 'unconfirmed',
-			);
-
-			// Typing goes on, then the file changes elsewhere and is read here.
-			draft.inputText('More');
-			if (kind === 'unreadable')
-				files.set(PATH, new Uint8Array([0xff, 0xfe, 0x00]));
-			else
-				put(
-					PATH,
-					kind === 'invalid'
-						? SAVED.replace('custom: kept', 'custom: !tag kept')
-						: `${SAVED}- from another program\n`,
-				);
-			await draft.check();
-			const before = sent('apply').length;
-
-			// The outcome is still shown, and so is what the read found.
-			expect(draft.outcome).toBeDefined();
-			expect(draft.review?.kind).toBe(kind);
-			await draft.save();
-			expect(await captures.settleAll()).toBe(1);
-			expect(sent('apply')).toHaveLength(before);
-			expect(draft.editor?.lastSave).toBe(history);
-
-			if (kind === 'unreadable') {
-				// It cannot be reviewed, so even the explicit save writes nothing.
-				await draft.saveMine();
-				expect(sent('apply')).toHaveLength(before);
-				expect(draft.refusal).toContain('cannot be read');
-			} else if (kind === 'changed') {
-				// Taking the saved file answers the outcome; typing then saves.
-				draft.loadSaved();
-				expect(draft.outcome).toBeUndefined();
-				expect(draft.editor?.lastSave).toBe(history);
-				draft.inputText('Later');
-				await draft.save();
-				expect(sent('apply')).toHaveLength(before + 1);
-				expect(text(PATH)).toContain('\nLater\n');
-			} else {
-				// Keeping my draft over the reviewed file is an explicit save.
-				await draft.saveMine();
-				expect(sent('apply')).toHaveLength(before + 1);
-				expect(text(PATH)).toContain('\nMore\n');
-				expect(draft.outcome).toBeUndefined();
-			}
-			await captures.close({ discard: true });
-			await host.close();
+		refuse({
+			name: 'Refused',
+			error: {
+				name: 'Io',
+				path: PATH,
+				operation: 'replace',
+				cause: 'disk full',
+			},
 		});
-
-test('save B admitted, typing C, then D written elsewhere: B is the receipt, C is kept, and D stops later saves', async () => {
-	put(PATH, SAVED);
-	const { host, captures } = await opened();
-	const draft = await ready(captures.open('one'));
-	calls = [];
-	const D = `${SAVED}- from another program\n`;
-	const landing = Promise.withResolvers<void>();
-	overrides.apply = async (_call, reply) => {
-		await landing.promise;
-		const replied = reply();
-		// Another program writes as soon as B is on disk.
-		put(PATH, D);
-		return replied;
-	};
-
-	draft.inputText('B');
-	const saving = draft.save();
-	draft.inputText('C');
-	landing.resolve();
-	await saving;
+	draft.setView('source');
+	draft.inputSource(handWritten);
+	await draft.settle();
+	expect(draft.notice).toMatchObject({ kind: 'failed', missing: false });
+	expect(text(PATH)).toBe(SAVED);
 	delete overrides.apply;
+	calls = [];
 
-	const B = CANONICAL.replace('\nText\n', '\nB\n');
-	const lastSave = draft.editor?.lastSave;
-	expect(lastSave?.kind === 'saved' && lastSave.receipt.text).toBe(B);
-	expect(draft.text).toBe('C');
-	const notice = draft.notice;
-	expect(notice?.kind === 'changed' && notice.revision.text).toBe(D);
-	expect(await captures.settleAll()).toBe(1);
-	expect(sent('apply')).toHaveLength(1);
-	expect(text(PATH)).toBe(D);
+	draft.retry();
+	await draft.settle();
+	expect(replaced()).toMatchObject([
+		{ kind: 'replace', path: PATH, bytes: Array.from(encode(handWritten)) },
+	]);
+	expect(text(PATH)).toBe(handWritten);
+	expect(draft.notice).toBeUndefined();
 	await captures.close();
 	await host.close();
 });
 
-test('closing waits for a save already sent, and nothing typed after it is sent', async () => {
+test('failed A, then B, then C on disk: B and the failure stay; discarding reloads C through the same editor', async () => {
 	put(PATH, SAVED);
 	const { host, captures } = await opened();
-	const draft = await ready(captures.open('one'));
+	const draft = await openOne(captures);
+	overrides.apply = () =>
+		refuse({ name: 'Refused', error: { name: 'Closed' } });
+
+	draft.inputText('A');
+	await draft.settle();
+	delete overrides.apply;
+	expect(draft.notice?.kind).toBe('failed');
+	draft.inputText('B');
+	const C = `${SAVED}- from another program\n`;
+	put(PATH, C);
+	await captures.refresh();
+
+	// B is shown with the failure; C is not taken, and nothing is sent.
+	expect(draft.text).toBe('B');
+	expect(draft.notice?.kind).toBe('failed');
+	expect(await captures.departure.settle()).toBe(1);
+	expect(text(PATH)).toBe(C);
+	expect(sent('apply')).toHaveLength(1);
+
+	expect(await draft.reload()).toBe(true);
+	expect(draft.notice).toBeUndefined();
+	expect(draft.unsettled).toBe(false);
+	expect(draft.source).toBe(C);
+	expect(draft.document.thoughts.map((thought) => thought.text)).toEqual([
+		'first\nnested line',
+		'from another program',
+	]);
+	expect(sent('apply')).toHaveLength(1);
+	await captures.close();
+	await host.close();
+});
+
+test('a failed reload keeps the text and the failure, and writes nothing', async () => {
+	put(PATH, SAVED);
+	const { host, captures } = await opened();
+	const draft = await openOne(captures);
+	const io = (operation: string) => ({
+		name: 'Io',
+		path: PATH,
+		operation,
+		cause: 'the disk went away',
+	});
+	overrides.apply = () => refuse({ name: 'Refused', error: io('replace') });
+
+	draft.inputText('Mine');
+	await draft.settle();
+	overrides.read = () => refuse(io('read'));
+	expect(await draft.reload()).toBe(false);
+	expect(draft.refusal).toContain('could not be read');
+	expect(draft.notice?.kind).toBe('failed');
+	expect(draft.source).toBe(withText('Mine'));
+	expect(sent('apply')).toHaveLength(1);
+	await captures.close();
+	await host.close();
+});
+
+test('a corrupt file is reported by Reload and replaced by the next save', async () => {
+	put(PATH, SAVED);
+	const { host, captures } = await opened();
+	const draft = await openOne(captures);
+	put(PATH, new Uint8Array([0xff, 0xfe, 0x00]));
+	expect(await draft.reload()).toBe(false);
+	expect(draft.refusal).toContain('could not be read');
+	expect(draft.source).toBe(SAVED);
+	expect(draft.notice).toBeUndefined();
+	expect(files.get(PATH)).toEqual(new Uint8Array([0xff, 0xfe, 0x00]));
+
+	// The person's next change replaces it whole: the latest save wins.
+	draft.inputText('Mine');
+	await draft.settle();
+	expect(text(PATH)).toBe(withText('Mine'));
+	expect(draft.structured).toBe(true);
+	expect(draft.notice).toBeUndefined();
+	await captures.close();
+	await host.close();
+});
+
+test('a removed file is never written back by saving: the failure says so, the text stays, and putting it back is a create', async () => {
+	put(PATH, SAVED);
+	const { host, captures } = await opened();
+	const draft = await openOne(captures);
+	files.delete(PATH);
+	draft.inputText('Mine');
+	await draft.settle();
+	expect(draft.notice).toMatchObject({ kind: 'failed', missing: true });
+	expect(files.has(PATH)).toBe(false);
+
+	draft.retry();
+	await draft.settle();
+	expect(files.has(PATH)).toBe(false);
+	expect(draft.source).toBe(withText('Mine'));
+	expect(replaced().every((change) => change.kind === 'replace')).toBe(true);
+
+	expect(await draft.restore()).toEqual({ ok: true });
+	expect(replaced().at(-1)).toMatchObject({ kind: 'create', path: PATH });
+	expect(text(PATH)).toBe(withText('Mine'));
+	expect(draft.notice).toBeUndefined();
+	await captures.close();
+	await host.close();
+});
+
+/** A file another program wrote where this window's save found none. */
+const C =
+	'---\ncapturedAt: 2026-10-01T00:00:00.000Z\nsource: other\n---\n\nC\n';
+
+/** Save B fails because the file is gone; another program then writes C. */
+async function cameBack() {
+	put(PATH, SAVED);
+	const { host, captures } = await opened();
+	const draft = await openOne(captures);
+	files.delete(PATH);
+	draft.inputText('Mine, B');
+	await draft.settle();
+	const { notice } = draft;
+	if (notice?.kind !== 'failed' || !notice.missing)
+		throw new Error('fixture: save B did not fail as missing');
+	put(PATH, C);
+	calls = [];
+	return { host, captures, draft, B: withText('Mine, B') };
+}
+
+test('failed B, then C on disk: putting it back writes nothing over C, and Try again replaces C with exactly B', async () => {
+	const { host, captures, draft, B } = await cameBack();
+	expect(await draft.restore()).toMatchObject({ ok: false });
+	expect(text(PATH)).toBe(C);
+	expect(draft.notice).toMatchObject({ kind: 'failed', missing: true });
+	expect(await captures.departure.settle()).toBe(1);
+	expect(text(PATH)).toBe(C);
+	expect(replaced().every((change) => change.kind === 'create')).toBe(true);
+
+	draft.retry();
+	await draft.settle();
+	expect(replaced().at(-1)).toMatchObject({
+		kind: 'replace',
+		path: PATH,
+		bytes: Array.from(encode(B)),
+	});
+	expect(text(PATH)).toBe(B);
+	expect(draft.notice).toBeUndefined();
+	await captures.close();
+	await host.close();
+});
+
+test('failed B, then C on disk: discarding takes C, metadata and all, and writes nothing', async () => {
+	const { host, captures, draft } = await cameBack();
+	expect(await draft.reload()).toBe(true);
+	expect(draft.source).toBe(C);
+	expect(draft.notice).toBeUndefined();
+	expect(sent('apply')).toEqual([]);
+	await captures.close();
+	await host.close();
+});
+
+test('closing waits for a save already sent and the latest text after it, and only then detaches', async () => {
+	put(PATH, SAVED);
+	const { host, captures } = await opened();
+	const draft = await openOne(captures);
 	calls = [];
 	const landing = Promise.withResolvers<void>();
 	overrides.apply = async (_call, reply) => {
@@ -687,44 +698,7 @@ test('closing waits for a save already sent, and nothing typed after it is sent'
 	};
 
 	draft.inputText('Submitted');
-	const saving = draft.save();
 	draft.inputText('Typed later');
-	let closed = false;
-	const closing = captures
-		.close({ discard: true })
-		.then(() => host.close())
-		.then(() => {
-			closed = true;
-		});
-	await Bun.sleep(5);
-	expect(closed).toBe(false);
-
-	landing.resolve();
-	await saving;
-	await closing;
-	expect(text(PATH)).toBe(CANONICAL.replace('\nText\n', '\nSubmitted\n'));
-	expect(sent('apply')).toHaveLength(1);
-	expect(draft.editor?.lastSave?.kind).toBe('saved');
-	expect(draft.text).toBe('Typed later');
-});
-
-test('closing waits for a raw write already sent before the folder is let go', async () => {
-	put(PATH, SAVED);
-	const { host, captures } = await opened();
-	const draft = await ready(captures.open('one'));
-	calls = [];
-	const landing = Promise.withResolvers<void>();
-	overrides.apply = async (_call, reply) => {
-		await landing.promise;
-		return reply();
-	};
-
-	const withKey = draft.source.replace(
-		'\n---\n',
-		'\n"unknownKey": "kept"\n---\n',
-	);
-	draft.inputSource(withKey);
-	const writing = draft.writeRaw();
 	let closed = false;
 	const closing = captures
 		.close()
@@ -737,24 +711,23 @@ test('closing waits for a raw write already sent before the folder is let go', a
 	expect(sent('detach')).toEqual([]);
 
 	landing.resolve();
-	await writing;
 	await closing;
-	expect(text(PATH)).toBe(withKey);
-	expect(sent('apply')).toHaveLength(1);
-	expect(sent('apply')[0]?.args.changes).toMatchObject([
-		{ kind: 'replace', path: PATH },
-	]);
+	expect(text(PATH)).toBe(withText('Typed later'));
+	expect(sent('apply')).toHaveLength(2);
 	expect(sent('detach')).toHaveLength(1);
 });
 
-test('a hint rereads: a clean draft follows the file, a dirty one is kept and nothing is written', async () => {
+test('a hint relists the folder and never reads into an open capture', async () => {
 	put(PATH, SAVED);
 	put('captures/two.md', SAVED);
 	const { host, captures } = await opened();
 	host.onExternalChange(() => void captures.refresh());
-	const clean = await ready(captures.open('one'));
-	const dirty = await ready(captures.open('two'));
-	dirty.inputText('typed here');
+	const clean = await openOne(captures);
+	const typed = captures.open('two');
+	if (!typed) throw new Error('fixture');
+	await typed.ready;
+	typed.inputText('typed here');
+	await typed.settle();
 	calls = [];
 
 	const outside = `${SAVED}- from another program\n`;
@@ -767,19 +740,22 @@ test('a hint rereads: a clean draft follows the file, a dirty one is kept and no
 	});
 	await captures.refresh();
 
-	expect(clean.source).toBe(`${CANONICAL}- from another program\n`);
-	expect(clean.dirty).toBe(false);
-	expect(dirty.text).toBe('typed here');
-	expect(dirty.notice?.kind).toBe('changed');
+	expect(clean.source).toBe(SAVED);
+	expect(clean.notice).toBeUndefined();
+	expect(typed.text).toBe('typed here');
+	expect(typed.notice).toBeUndefined();
 	expect(sent('apply')).toEqual([]);
 	expect(text('captures/two.md')).toBe(outside);
+	// Reloading is the person's choice.
+	expect(await clean.reload()).toBe(true);
+	expect(clean.source).toBe(outside);
 	await captures.close();
 	await host.close();
 });
 
 test('a failed commit is reported beside a saved file, and retried without rewriting it', async () => {
 	const { host, captures } = await opened();
-	captures.newCapture = 'Saved before history';
+	captures.inputNewCapture('Saved before history');
 	const created = await captures.create();
 	if (!created.ok) throw new Error(created.message);
 	const saved = text(`captures/${created.stem}.md`);
@@ -809,24 +785,19 @@ test('a failed commit is reported beside a saved file, and retried without rewri
 	await host.close();
 });
 
-test('a folder its owner closed is reported as stopped; a stopped service is not', async () => {
+test('a folder its owner closed is reported as stopped, and the text typed stays', async () => {
 	const { host, captures } = await opened();
-	host.onServiceStopped(() => captures.markServiceStopped());
-
-	emit(SERVICE_STOPPED_EVENT);
-	expect(captures.serviceStopped).toBe(true);
-	expect(captures.folderStopped).toBe(false);
-
 	emit(SNAPSHOT_CHANGED, {
 		scope: CAPTURE_FOLDER_ID,
 		sequence: 1,
 		snapshot: wireSnapshot({ closed: true }),
 	});
 	expect(captures.folderStopped).toBe(true);
+	expect(captures.serviceStopped).toBe(false);
 
 	overrides.apply = () =>
 		refuse({ name: 'Refused', error: { name: 'Closed' } });
-	captures.newCapture = 'typed after the folder closed';
+	captures.inputNewCapture('typed after the folder closed');
 	const created = await captures.create();
 	expect(created.ok).toBe(false);
 	expect(captures.newCapture).toBe('typed after the folder closed');
@@ -842,7 +813,7 @@ test('an import whose first save lost its reply is finished by a retry, and repe
 	overrides.apply = (_call, reply) => {
 		reply();
 		lost++;
-		throw new Error('the webview lost its IPC connection');
+		throw new Error(LOST);
 	};
 
 	// The export landed, but its reply did not: nothing is claimed.
@@ -862,15 +833,11 @@ test('an import whose first save lost its reply is finished by a retry, and repe
 	expect(retry.documents.map((document) => document.status)).toEqual(
 		Array.from({ length: 6 }, () => 'created'),
 	);
-	expect(retry.receipt.status).toBe('written');
 	expect(text(exported[0] as string)).toBe(original);
 
-	calls = [];
 	const again = await captures.importLegacy(read.bundle);
 	expect(again.documents).toEqual([]);
 	expect(again.alreadyImported).toHaveLength(6);
-	// The export and the report are found identical; nothing is replaced.
-	expect(text(exported[0] as string)).toBe(original);
 	expect(
 		[...files.keys()].filter((path) => path.startsWith('captures/')),
 	).toHaveLength(6);

@@ -1,7 +1,6 @@
 <script lang="ts">
 	import { Badge } from '@epicenter/ui/badge';
 	import { Button } from '@epicenter/ui/button';
-	import { Input } from '@epicenter/ui/input';
 	import { Spinner } from '@epicenter/ui/spinner';
 	import * as Tabs from '@epicenter/ui/tabs';
 	import { Textarea } from '@epicenter/ui/textarea';
@@ -18,13 +17,14 @@
 		type RecordingFields,
 		whisperingDefinition,
 	} from '$lib/definition.js';
-	import { withFileNewlines } from '@epicenter/folder/file-browser';
 	import type { Library, RecordingEntry, RowSlot } from '$lib/library.svelte.js';
 	import { committedState } from '$lib/status.js';
 	import AudioPlayer from './AudioPlayer.svelte';
-	import { confirmDelete } from './file-actions.js';
+	import { confirmDelete, lf } from './file-actions.js';
+	import LiveButton from './LiveButton.svelte';
+	import LiveInput from './LiveInput.svelte';
+	import LiveTextarea from './LiveTextarea.svelte';
 	import RowSaveStatus from './RowSaveStatus.svelte';
-	import SaveStatus from './SaveStatus.svelte';
 	import TranscriptCard from './TranscriptCard.svelte';
 
 	let {
@@ -37,7 +37,7 @@
 	}: {
 		library: Library;
 		path: string;
-		/** The one draft kept for the recording's file. */
+		/** The one row editor kept for the recording's file. */
 		slot: RowSlot<RecordingFields>;
 		/** The listed row, or undefined when the file left the folder. */
 		entry: RecordingEntry | undefined;
@@ -53,25 +53,24 @@
 	 * kept, one press away, under File details.
 	 */
 
-	/** The folder's row editor, when the file opens as fields. */
-	const form = $derived(slot.kind === 'form' ? slot.draft : undefined);
-	/** The file's text, when it is edited as text: to repair it, or by choice. */
-	const raw = $derived(slot.kind === 'raw' ? slot : undefined);
 	/**
-	 * How the draft reads, saved or not: the form's document, or the text on
-	 * screen by the recordings table's own interpreter. Every message below
-	 * describes it, never the file as last saved.
+	 * The one row editor kept for the file: its fields and its source. The
+	 * slot can be replaced under this view (the file is opened again after it
+	 * could not be read), so every binding reads `editing` when it runs.
 	 */
-	const draft = $derived(
-		form ? form.state.reading : inspectRow(whisperingDefinition.tables.recordings, raw?.editor.buffer ?? ''),
-	);
-	/** The values being typed, which may not conform yet. */
-	const typed = $derived(form?.state.document);
-	const title = $derived(
-		typeof typed?.fields.title === 'string' ? typed.fields.title : (draft.fields.title ?? ''),
-	);
-	// Fields and notes are edited in the form; text that is not a row is fixed in Source.
-	const fieldsEditable = $derived(form !== undefined);
+	const editing = $derived(slot.kind === 'open' ? slot.editing : undefined);
+	/**
+	 * How the person's text reads, by the recordings table's own interpreter.
+	 * Every message below describes it.
+	 */
+	const reading = $derived(inspectRow(whisperingDefinition.tables.recordings, editing?.row.text ?? ''));
+	const title = $derived(typeof reading.fields.title === 'string' ? reading.fields.title : '');
+	/*
+	 * The title and notes are live controls only while the fields are the
+	 * view, and the source only while it is. Each live control has its own
+	 * lifetime (LiveInput, LiveTextarea, LiveButton): one that is gone
+	 * delivers nothing, even after its view returns.
+	 */
 	const id = $derived(rowStemOf(RECORDINGS, path) ?? path);
 	const results = $derived(library.resultsFor(id));
 	const run = $derived(library.transcriptionRun(id));
@@ -92,14 +91,19 @@
 		return typeof value === 'number' ? `${(value / 1000).toFixed(1)} s` : 'Unknown';
 	}
 
-	async function editText() {
-		const problem = await library.editSource(path);
+	function editText() {
+		const problem = library.editSource(path);
 		if (problem) toast.error('The text was not opened for editing', { description: problem });
 	}
 
-	async function editFields() {
-		const problem = await library.useForm(path);
+	function editFields() {
+		const problem = library.useForm(path);
 		if (problem) toast.error('The fields were not opened', { description: problem });
+	}
+
+	async function retryOpen() {
+		const problem = await library.retryOpen(path);
+		if (problem) toast.error('The recording was not opened', { description: problem });
 	}
 </script>
 
@@ -110,14 +114,11 @@
 				<ArrowLeftIcon />
 			</Button>
 		{/if}
-		<Input
-			class="flex-1 text-base font-medium"
-			value={title}
-			placeholder="Title"
-			aria-label="Recording title"
-			disabled={!fieldsEditable}
-			oninput={(event) => form?.change({ fields: { title: event.currentTarget.value } })}
-		/>
+		{#if editing?.view === 'fields'}
+			<LiveInput class="flex-1 text-base font-medium" get={() => editing?.fieldText('title') ?? ''} set={(value) => editing?.setField('title', value)} placeholder="Title" aria-label="Recording title" />
+		{:else}
+			<h2 class="min-w-0 flex-1 truncate text-base font-medium" data-testid="recording-title-text">{title || id}</h2>
+		{/if}
 		{#if onClose}
 			<Button variant="ghost" size="icon-sm" tooltip="Close details" aria-label="Close details" onclick={onClose} data-testid="close-detail">
 				<XIcon />
@@ -125,28 +126,26 @@
 		{/if}
 	</div>
 
-	{#if form}
-		<RowSaveStatus {library} draft={form} />
-	{:else if raw}
-		<SaveStatus editor={raw.editor} autosavePaused={library.autosave.paused} onDiscardRemoved={() => void library.discardDraft(path)} />
+	{#if editing}
+		<RowSaveStatus {library} {editing} />
 	{/if}
 
-	{#if raw && draft.parseError}
+	{#if editing?.view === 'source' && reading.parseError}
 		<div class="border-b bg-destructive/5 px-4 py-2 text-xs" data-testid="needs-repair">
 			<p class="mb-1 flex flex-wrap items-center gap-2 font-medium">
 				<Badge variant="destructive">Needs repair</Badge>
-				{draft.parseError.message}. Edit the source to fix it.
+				{reading.parseError.message}. Edit the source to fix it.
 				{#if tab !== 'source'}
 					<Button size="xs" variant="outline" onclick={() => (tab = 'source')}>Edit Source</Button>
 				{/if}
 			</p>
 			<ul class="space-y-0.5 text-muted-foreground">
-				{#each draft.parseError.diagnostics as diagnostic, index (index)}
-					{#if diagnostic.message !== draft.parseError.message}<li>{diagnostic.message}</li>{/if}
+				{#each reading.parseError.diagnostics as diagnostic, index (index)}
+					{#if diagnostic.message !== reading.parseError.message}<li>{diagnostic.message}</li>{/if}
 				{/each}
 			</ul>
 		</div>
-	{:else if raw && draft.issues.length > 0}
+	{:else if editing?.view === 'source' && reading.issues.length > 0}
 		<div class="border-b bg-destructive/5 px-4 py-2 text-xs" data-testid="needs-repair">
 			<p class="mb-1 flex flex-wrap items-center gap-2 font-medium">
 				<Badge variant="destructive">Needs repair</Badge>
@@ -156,22 +155,20 @@
 				{/if}
 			</p>
 			<ul class="space-y-0.5 text-muted-foreground">
-				{#each draft.issues as issue, index (index)}
+				{#each reading.issues as issue, index (index)}
 					<li>{issue.message}</li>
 				{/each}
 			</ul>
-		</div>
-	{:else if raw?.reason}
-		<div class="border-b bg-destructive/5 px-4 py-2 text-xs" data-testid="needs-repair">
-			<p class="flex flex-wrap items-center gap-2 font-medium">
-				<Badge variant="destructive">Edited as text</Badge>
-				{raw.reason} Repair it in Source, or choose Edit the fields to check it again.
-			</p>
 		</div>
 	{/if}
 
 	{#if slot.kind === 'opening'}
 		<Loading class="flex-1" label="Opening the recording…" />
+	{:else if slot.kind === 'unopened'}
+		<div class="flex flex-1 flex-col items-start gap-2 px-4 py-4 text-sm" role="alert" data-testid="row-unopened">
+			<p>This recording’s file could not be opened: {slot.message}</p>
+			<LiveButton size="sm" variant="outline" onclick={() => void retryOpen()}>Try again</LiveButton>
+		</div>
 	{:else}
 
 	<Tabs.Root bind:value={tab} class="flex min-h-0 flex-1 flex-col px-3 py-3 sm:px-4">
@@ -238,15 +235,19 @@
 
 				<div class="flex flex-col gap-1.5">
 					<h3 class="text-sm font-medium">Notes</h3>
-					<Textarea
-						class="min-h-28 resize-y font-sans"
-						value={typed?.body ?? draft.body ?? ''}
-						placeholder="Notes in Markdown, saved in the recording’s file"
-						aria-label="Notes"
-						disabled={!fieldsEditable}
-						oninput={(event) =>
-							typed && form?.change({ body: withFileNewlines(event.currentTarget.value, typed.body) })}
-					/>
+					{#if editing?.view === 'fields'}
+						<LiveTextarea
+							class="min-h-28 resize-y font-sans"
+							get={() => editing?.bodyText() ?? ''}
+							set={(value) => editing?.setBody(value)}
+							placeholder="Notes in Markdown, saved in the recording’s file"
+							aria-label="Notes"
+						/>
+					{:else if editing?.view === 'source'}
+						<p class="text-sm text-muted-foreground" data-testid="notes-in-source">
+							The notes are edited in Source while it is shown, or until the file reads as a recording again.
+						</p>
+					{/if}
 				</div>
 
 				<Collapsible.Root>
@@ -261,14 +262,14 @@
 					<Collapsible.Content class="pt-2">
 					<dl class="grid grid-cols-[7rem_1fr] gap-x-3 gap-y-1.5 text-sm">
 						<dt class="text-muted-foreground">Recorded</dt>
-						<dd>{when(draft.fields.recordedAt)}</dd>
+						<dd>{when(reading.fields.recordedAt)}</dd>
 						<dt class="text-muted-foreground">Length</dt>
-						<dd>{seconds(draft.fields.durationMs)}</dd>
+						<dd>{seconds(reading.fields.durationMs)}</dd>
 						<dt class="text-muted-foreground">Captured from</dt>
 						<dd>
-							{#if draft.fields.capture === 'fixture'}
+							{#if reading.fields.capture === 'fixture'}
 								<Badge variant="outline">Fixture audio, not a microphone take</Badge>
-							{:else if draft.fields.capture === 'microphone'}
+							{:else if reading.fields.capture === 'microphone'}
 								Microphone
 							{:else}
 								Unknown
@@ -298,30 +299,29 @@
 			</div>
 		</Tabs.Content>
 		<Tabs.Content value="source" class="flex min-h-0 flex-1 flex-col gap-2">
-			{#if form}
+			{#if editing?.view === 'fields'}
 				<p class="text-xs text-muted-foreground">
 					What a save writes: the fields above in a fixed form, then the notes. Fields the app does not know are kept.
-					<Button size="xs" variant="outline" class="ml-1" onclick={() => void editText()} data-testid="edit-text">Edit the text</Button>
+					<LiveButton size="xs" variant="outline" class="ml-1" onclick={editText} data-testid="edit-text">Edit the text</LiveButton>
 				</p>
 				<Textarea
 					class="h-full min-h-40 flex-1 resize-none font-mono text-xs"
-					value={form.state.text}
+					value={lf(editing.row.text)}
 					aria-label="Markdown source"
 					readonly
 					spellcheck={false}
 				/>
-			{:else if raw}
-				{@const editor = raw.editor}
+			{:else if editing?.view === 'source'}
 				<p class="text-xs text-muted-foreground">
 					The file’s exact text. It saves as typed, readable or not.
-					<Button size="xs" variant="outline" class="ml-1" onclick={() => void editFields()} data-testid="edit-fields">Edit the fields</Button>
+					<LiveButton size="xs" variant="outline" class="ml-1" onclick={editFields} data-testid="edit-fields">Edit the fields</LiveButton>
 				</p>
-				<Textarea
+				<LiveTextarea
 					class="h-full min-h-40 flex-1 resize-none font-mono text-xs"
-					value={editor.buffer}
+					get={() => editing?.sourceValue() ?? ''}
+					set={(value) => editing?.setText(value)}
 					aria-label="Markdown source"
 					spellcheck={false}
-					oninput={(event) => editor.input(withFileNewlines(event.currentTarget.value, editor.buffer))}
 				/>
 			{/if}
 		</Tabs.Content>

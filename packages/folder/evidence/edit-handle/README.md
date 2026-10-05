@@ -1,14 +1,18 @@
 # Edit handle experiment
 
-Status: experimental evidence. The editor this experiment led to is now the
+Status: experimental evidence. The editor this experiment led to is the
 production `folder.tables.<name>.edit(stem, { signal })` in
-`@epicenter/folder` ("Editing a row" in the package README). Its design record
-is [canonical-editor-api.md](./canonical-editor-api.md), and the three
-framework callers over a real persisted folder are in
-[canonical-callers.md](./canonical-callers.md). Nothing in this directory is
-part of `@epicenter/folder`.
+`@epicenter/folder`: one owner of a row's accepted complete input and one
+queue that publishes it ("Editing a row" in the package README, and
+[ADR 0504](../../../../docs/adr/0504-row-editors-own-complete-input-and-one-publication-queue.md)).
+Nothing in this directory is part of `@epicenter/folder`.
 
-Run the row editor callers page from the repository root:
+The current callers are the row editor callers page, documented in
+[canonical-callers.md](./canonical-callers.md): vanilla DOM, Solid, and
+Svelte 5 views of one editor over a real persisted folder, the Svelte one
+through `fromRowEditor`. [canonical-editor-api.md](./canonical-editor-api.md)
+maps the retired editor's names to the current contract. Run the page from
+the repository root:
 
 ```sh
 bun packages/folder/evidence/edit-handle/canonical-dev.ts
@@ -18,10 +22,13 @@ Open `http://localhost:5181/`. The page opens a fixed demo folder in this
 browser's default storage with the production browser opener; its files
 persist across reloads and are shared by every tab of that origin.
 
-The rest of this README describes the preserved wave 4 comparison demo. Its
-conditional, source-preserving saves are historical evidence, not the current
-editor recommendation. Waves 6 and 7 in [ITERATIONS.md](./ITERATIONS.md)
-record the changed contract, review decisions, and production integration.
+Everything else in this directory is historical. The rest of this README
+describes the preserved wave 4 comparison demo: `edit-handle.ts`,
+`folder-edits.ts`, and `web/`. Its handle, with a draft, a baseline,
+conditional source-preserving saves, `keepDraft`, `takeObserved`, and
+`dispose`, is evidence of what was tried, not an API to build on.
+[ITERATIONS.md](./ITERATIONS.md) records the waves that followed, through
+the retired editor of waves 6 and 7 and the contract that replaced it.
 
 Boundaries: one handle edits one file, its fields, body, and raw source
 together. It is not a transaction across files. Saves and the demo's other

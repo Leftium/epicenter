@@ -884,7 +884,7 @@ describe.skipIf(!enabled)('tauri folder against the native owner', () => {
 		await a(() => second.close());
 	});
 
-	test("a row editor's save still hashing when a raw save lands is refused, and the raw save stays", async () => {
+	test("a row editor's capture still hashing when a raw save lands is refused, and the raw save stays", async () => {
 		const { folder, other } = await setup({ manual: true });
 		const created = expectOk(
 			await a(() =>
@@ -898,16 +898,19 @@ describe.skipIf(!enabled)('tauri folder against the native owner', () => {
 			await a(() => folder.tables.todos.edit(created.stem)),
 		);
 		const digest = holdNextDigest();
-		const saving = a(() => editor.save());
+		await a(async () =>
+			editor.setText('---\n"title": "Edited"\n"done": false\n---\n'),
+		);
 		await digest.reached;
 		expectOk(await a(() => folder.files.overwrite(created.path, 'raw')));
 		digest.release();
-		expect(expectErr(await saving).name).toBe('Unconfirmed');
-		// The editor keeps the save as unknown, never as failed or saved.
-		expect(editor.get().lastSave?.kind).toBe('unconfirmed');
+		for (let i = 0; i < 400 && editor.get().save.status === 'saving'; i += 1)
+			await new Promise((r) => setTimeout(r, 5));
+		// The editor reports the write as uncertain, never as saved.
+		const { save } = editor.get();
+		expect(save.status === 'failed' && save.error.name).toBe('Unconfirmed');
 		const current = expectOk(await b(() => other.files.read(created.path)));
 		expect(decoder.decode(current.bytes)).toBe('raw');
-		await a(() => editor.dispose());
 	});
 
 	test('an apply delivered after detach returns the owner refusal without writing or replay', async () => {

@@ -1,12 +1,21 @@
 /**
- * Raw file access, in plain DOM: the target file's bytes as text, and writes
- * through the same folder's `files` methods. These are real saves to the
- * persisted folder by a caller that is not the editor, so the editor hears
- * them as change hints like any other writer. Another tab is a separate
- * writer; this panel is the one-tab way to change the file under the editor.
+ * Another caller in the same tab, in plain DOM: the selected row's file read
+ * and written through `folder.files`, not through the editor. It is how one
+ * tab changes, removes, or recreates the file under an open editor, which
+ * hears these writes as change hints like any other writer's. It is not the
+ * editor's repair: an editor repairs its own row through its source view.
+ *
+ * Every write here is a file command conditional on the bytes it just read,
+ * so a change in between is a `Conflict` and writes nothing. Only "Write the
+ * seed text" creates a missing file, and only because a person pressed it.
  */
 import { parseDocument, stringify } from 'yaml';
-import { type Folder, frameRowText } from '../../../src/browser.js';
+import {
+	type CapturedFile,
+	type FileError,
+	type Folder,
+	frameRowText,
+} from '../../../src/browser.js';
 import { h } from './dom.js';
 import { type definition, NEW_ROW, SEED } from './todos.js';
 
@@ -25,11 +34,15 @@ export function mountRawFiles(
 	},
 ) {
 	const { files, onFilesChanged } = folder;
+	// Every button below writes to this path; it is named so no write lands
+	// on a row the person did not mean.
+	const where = h('p', { className: 'warn' });
 	const disk = h('pre', {});
 	const text = h('textarea', { rows: 8, className: 'source' });
 	const message = h('p', { className: 'message' });
 
 	root.replaceChildren(
+		where,
 		h('h4', {}, 'On disk now'),
 		disk,
 		h('h4', {}, 'Write as another caller'),
@@ -38,30 +51,35 @@ export function mountRawFiles(
 			'div',
 			{ className: 'row' },
 			button('Load disk text', async () => {
-				text.value = (await diskText()) ?? '';
+				const { data: current } = await files.read(target());
+				text.value = current === null ? '' : (decode(current) ?? '');
 			}),
-			button('Overwrite with this text', () =>
-				write('Overwrote it with the text above', text.value),
+			button('Replace the file with this text', () =>
+				replace('Replaced it with the text above', () => text.value),
 			),
-			button('Same values, reformatted', () => rewrite((fields) => fields)),
+			button('Same values, reformatted', () =>
+				replace('Rewrote it in another style', (source) =>
+					restyle(source, (fields) => fields),
+				),
+			),
 			button('Change the title', () =>
-				rewrite((fields) => ({
-					...fields,
-					title: `${String(fields.title ?? '')} (edited elsewhere)`,
-				})),
+				replace('Changed its title', (source) =>
+					restyle(source, (fields) => ({
+						...fields,
+						title: `${String(fields.title ?? '')} (edited elsewhere)`,
+					})),
+				),
 			),
 		),
 		h(
 			'div',
 			{ className: 'row' },
-			button('Remove file', remove),
-			button('Write seed text', () =>
-				write('Wrote its seed text', SEED[target()] ?? NEW_ROW),
-			),
-			button('Write invalid UTF-8', () =>
-				write(
+			button('Remove the file', remove),
+			button('Write the seed text (creates a missing file)', seed),
+			button('Write bytes that are not UTF-8', () =>
+				replace(
 					'Wrote three bytes that are not UTF-8',
-					Uint8Array.of(0x2d, 0xff, 0xfe),
+					() => Uint8Array.of(0x2d, 0xff, 0xfe),
 				),
 			),
 		),
@@ -76,72 +94,75 @@ export function mountRawFiles(
 		);
 	}
 
-	/** The target's text, `undefined` when absent; a description when unreadable. */
-	async function diskText(): Promise<string | undefined> {
-		const { data, error } = await files.read(target());
-		if (error !== null)
-			return error.name === 'NotFound' ? undefined : `(${error.message})`;
-		try {
-			return utf8.decode(data.bytes);
-		} catch {
-			return `(${data.bytes.length} bytes that are not UTF-8)`;
-		}
+	function report(path: string, what: string, error: FileError | null) {
+		message.textContent = error === null ? '' : `Not written: ${error.message}`;
+		if (error === null) log(`Another caller, ${path}: ${what}`);
 	}
 
-	async function write(what: string, content: string | Uint8Array) {
+	/**
+	 * Read the file, then replace it on the condition that it still holds the
+	 * bytes read. `next` gets their text, `undefined` when not UTF-8, and
+	 * returns the content to write, or a reason to write nothing.
+	 */
+	async function replace(
+		what: string,
+		next: (source: string | undefined) => string | Uint8Array | Refusal,
+	) {
 		const path = target();
-		const { error } = await files.overwrite(path, content);
-		message.textContent = error === null ? '' : `Not written: ${error.message}`;
-		if (error === null) log(`Raw write to ${path}: ${what}`);
+		const { data: current, error: readError } = await files.read(path);
+		if (readError !== null) {
+			message.textContent = `Not written: ${readError.message}`;
+			return;
+		}
+		const content = next(decode(current));
+		if (content instanceof Refusal) {
+			message.textContent = `Not written: ${content.reason}`;
+			return;
+		}
+		const { error } = await files.replace(current, content);
+		report(path, what, error);
+	}
+
+	/** The seed text over the file as it was read, or a new file when there is none. */
+	async function seed() {
+		const path = target();
+		const content = SEED[path] ?? NEW_ROW;
+		const { data: current, error: readError } = await files.read(path);
+		if (readError === null) {
+			const { error } = await files.replace(current, content);
+			report(path, 'Wrote its seed text', error);
+		} else if (readError.name === 'NotFound') {
+			const { error } = await files.create(path, content);
+			report(path, 'Created it with its seed text', error);
+		} else message.textContent = `Not written: ${readError.message}`;
 	}
 
 	async function remove() {
 		const path = target();
-		const { data: file, error: readError } = await files.read(path);
+		const { data: current, error: readError } = await files.read(path);
 		if (readError !== null) {
 			message.textContent = `Not removed: ${readError.message}`;
 			return;
 		}
-		// The removal is conditional on the bytes just read.
-		const { error } = await files.remove(file);
+		const { error } = await files.remove(current);
 		message.textContent = error === null ? '' : `Not removed: ${error.message}`;
-		if (error === null) log(`Raw removal of ${path}`);
-	}
-
-	/**
-	 * Write the target's current values in another program's style: keys in
-	 * reverse order, block YAML, and a comment. Equal values, other bytes.
-	 * Source this program cannot read exactly is left alone.
-	 */
-	async function rewrite(
-		edit: (fields: Record<string, unknown>) => Record<string, unknown>,
-	) {
-		const source = await diskText();
-		const frame = frameRowText(source ?? '');
-		if (source === undefined || frame.kind !== 'frontmatter') {
-			message.textContent = 'Not rewritten: the file has no frontmatter.';
-			return;
-		}
-		const yaml = parseDocument(source.slice(frame.yamlStart, frame.yamlEnd));
-		const problem = yaml.errors[0] ?? yaml.warnings[0];
-		if (problem !== undefined) {
-			message.textContent = `Not rewritten: ${problem.message}`;
-			return;
-		}
-		const values = (yaml.toJS() ?? {}) as Record<string, unknown>;
-		const fields = Object.fromEntries(Object.entries(edit(values)).reverse());
-		await write(
-			'Rewrote it in another style',
-			`---\n# Rewritten by another caller\n${stringify(fields)}---\n${source.slice(frame.bodyStart)}`,
-		);
+		if (error === null) log(`Another caller, ${path}: Removed it`);
 	}
 
 	let shown = 0;
 	/** Repaint from the folder: after a hint for the target, and when it changes. */
 	async function show() {
 		const request = ++shown;
-		const textNow = await diskText();
-		if (request === shown) disk.textContent = textNow ?? '(no file)';
+		where.textContent = `Target: ${target()}`;
+		const { data: current, error } = await files.read(target());
+		if (request !== shown) return;
+		disk.textContent =
+			error !== null
+				? error.name === 'NotFound'
+					? '(no file)'
+					: `(${error.message})`
+				: (decode(current) ??
+					`(${current.bytes.length} bytes that are not UTF-8)`);
 	}
 
 	const stop = onFilesChanged((paths) => {
@@ -149,4 +170,38 @@ export function mountRawFiles(
 	});
 	void show();
 	return { show, stop };
+}
+
+function decode(file: CapturedFile): string | undefined {
+	try {
+		return utf8.decode(file.bytes);
+	} catch {
+		return undefined;
+	}
+}
+
+/** Why a rewrite writes nothing. */
+class Refusal {
+	constructor(readonly reason: string) {}
+}
+
+/**
+ * The file in another program's style: keys in reverse order, block YAML,
+ * and a comment. An `edit` that changes nothing gives equal values in other
+ * bytes. Source this program cannot read exactly is left alone.
+ */
+function restyle(
+	source: string | undefined,
+	edit: (fields: Record<string, unknown>) => Record<string, unknown>,
+): string | Refusal {
+	if (source === undefined) return new Refusal('the file is not UTF-8 text');
+	const frame = frameRowText(source);
+	if (frame.kind !== 'frontmatter')
+		return new Refusal('the file has no frontmatter');
+	const yaml = parseDocument(source.slice(frame.yamlStart, frame.yamlEnd));
+	const problem = yaml.errors[0] ?? yaml.warnings[0];
+	if (problem !== undefined) return new Refusal(problem.message);
+	const values = (yaml.toJS() ?? {}) as Record<string, unknown>;
+	const fields = Object.fromEntries(Object.entries(edit(values)).reverse());
+	return `---\n# Rewritten by another caller\n${stringify(fields)}---\n${source.slice(frame.bodyStart)}`;
 }

@@ -1,491 +1,490 @@
 /**
  * Todo Editor Tests
  *
- * Drives the real todo editor runes module over the folder's own row editor
- * (`table.edit`) in a browser folder on an in-memory OPFS stand-in. The row editor owns
- * the canonical draft and its unconditional save; these tests pin the app's
- * policy around it: autosave, halting, review, and rename.
+ * Drives the real todo editor runes module over a real native row editor
+ * (`table.edit`) whose storage the test controls: replies can be held,
+ * writes can fail, reads can fail, and another writer can change the file.
+ * The native editor owns the row, its publication queue, and its pause after
+ * a failure; these tests pin what the app adds: complete rows from the
+ * fields view, the source preference, view gates, fences, and release.
  *
  * Key behaviors:
- * - Title, done, and notes change one draft, and autosave writes the
- *   complete canonical document once after a pause
- * - Fields that do not conform stay in the draft; nothing is saved, and
- *   fixing them saves
- * - A failed save halts autosave until an explicit save renews it
- * - A lost save reply, or a save whose storage threw (published or not),
- *   stays unknown after a read finds its text, keeps the throw's cause, and
- *   halts autosave the same way; disposal still resolves
- * - Another writer's change never replaces input and holds autosave; only
- *   an explicit save replaces their text, and discarding mine loads it
- *   without writing
- * - The read that predates the editor's own save receipt is not another
- *   writer's change: input typed during the save autosaves next
- * - A Svelte view of the editor shows Saving while a save runs and stops
- *   showing it once the save settles, including when the row editor's last
- *   state came before the save's own reply
- * - A removed file is written again by the draft's save
- * - A save captures the draft: input during it stays unsaved and saves next
- * - A save is refused while another runs, explicit or not: nothing queues
- *   behind a save whose reply may be lost
- * - A rename holds saves, carries input typed during the move to the
- *   destination's editor, disposes the old one, and writes nothing at the
- *   old path
+ * - Title, done, and notes each submit the complete row at once, unknown
+ *   metadata included; one write runs and the latest input follows it
+ * - A title change keeps the body byte for byte; textareas show LF and
+ *   setters write back the file's CRLF
+ * - Raw and fields modes share one native editor; omitted keys are deleted
+ * - A malformed row opens for raw repair, and raw mode stays after the
+ *   repair until the person chooses fields
+ * - Each setter admits input only while its own view's gate holds
+ * - A failed save keeps newer input on screen and writes nothing until
+ *   Try again, which writes the exact latest text, comments included
+ * - Another writer's change is not read in; Reload shows it and ends a
+ *   failure, and a read that fails keeps the input
+ * - A title or notes value the row cannot take stays in its field with why,
+ *   counts as unsaved through fences and departures, and clears on a valid
+ *   value or Reload; raw text UTF-8 cannot encode is held and fails on its
+ *   turn without a write
+ * - Fences refuse input and wait for admitted writes; a hold refuses input
+ *   while its work runs, then reads the row again
+ * - A released editor refuses input and commands for good; admitted writes
+ *   still publish
+ *
+ * The fixture table's title needs a character; Todos' own schema allows an
+ * empty title. Tests that rely on the stricter rule say so.
  *
  * See also:
- * - `editor.test.ts` for raw text and row source drafts
  * - `todos.test.ts` for the editors the app retains, renames, and closes
+ * - `packages/folder/src/editor.test.ts` for the native queue itself
  */
 import './svelte-modules.test-support.js';
 import { afterEach, expect, test } from 'bun:test';
-import type { RowEditor } from '@epicenter/folder';
-import { FileError, inspectRow } from '@epicenter/folder';
-import { openFolder } from '@epicenter/folder/browser';
-import { expectOk } from 'wellcrafted/testing';
-import { testBrowserStorage } from '../../../../packages/folder/src/browser-storage.test-support.js';
-import { type TodoFields, todosDefinition } from './definition.js';
+import { FileError, parseCanonicalDocument } from '@epicenter/folder';
+import {
+	openTodo,
+	todo as row,
+} from '../../../../packages/folder/src/svelte/row-storage.test-support.js';
 import type { TodoEditor } from './todo-editor.svelte.js';
 
-const { createTodoEditor } = await import('./todo-editor.svelte.ts');
-const { showing } = await import('./view.test-support.svelte.ts');
+const { BUSY, createTodoEditor, describeSaveError, RELEASED } = await import(
+	'./todo-editor.svelte.ts'
+);
 
-const ROW = '---\ntitle: Milk\ndone: false\n---\n';
-const PATH = 'todos/milk.md';
-let count = 0;
-const cleanup: (() => Promise<void>)[] = [];
+const PATH = 'todos/plan.md';
+const released: TodoEditor[] = [];
 
-afterEach(async () => {
-	for (const close of cleanup.splice(0).reverse()) await close();
+afterEach(() => {
+	for (const editor of released.splice(0)) editor.release();
 });
 
-type Row = RowEditor<TodoFields>;
-
-/**
- * A todo editor on `todos/milk.md`. `wrap` stands between the todo editor
- * and the folder's row editor, so a test can change what a save answers.
- */
-async function setup(wrap: (row: Row) => Row = (row) => row) {
-	const folder = expectOk(
-		await openFolder({
-			id: `todo-editor-test-${count++}`,
-			definition: todosDefinition,
-			browser: { commitOnEdit: false, ...testBrowserStorage() },
-		}),
-	);
-	cleanup.push(() => folder.close());
-	expectOk(await folder.files.create(PATH, ROW));
-	const table = folder.tables.todos;
-	const row = expectOk(await table.edit('milk'));
+/** A todo editor over a controlled native editor on `todos/plan.md`. */
+async function setup(initial?: string) {
+	const fake = await openTodo(initial);
 	const saved = { count: 0 };
-	const editor: TodoEditor = createTodoEditor(table, wrap(row), () => {
+	const todo = createTodoEditor(PATH, fake.editor, () => {
 		saved.count++;
 	});
-	cleanup.push(() => editor.dispose());
-	/** The file's text now, or undefined when nothing is at the path. */
-	async function text(path = PATH) {
-		const read = await folder.files.read(path);
-		return read.error ? undefined : new TextDecoder().decode(read.data.bytes);
-	}
-	/** How the file now reads as a todo. */
-	async function reading(path = PATH) {
-		return inspectRow(todosDefinition.tables.todos, (await text(path)) ?? '');
-	}
-	return { folder, table, row, editor, saved, text, reading };
+	released.push(todo);
+	return { fake, todo, saved };
 }
 
-/** Wait for an autosave the test did not request. The assertion follows the wait. */
+/** Wait for something the test did not request directly. The assertion follows the wait. */
 async function eventually(settled: () => boolean) {
 	for (let waited = 0; waited < 400 && !settled(); waited++) await Bun.sleep(5);
 }
 
-/** Longer than the typing batch, so a save that was going to start has started. */
-const pastTypingBatch = () => Bun.sleep(450);
+/** Wait for admitted writes. Answers why the latest did not land. */
+async function written(todo: TodoEditor) {
+	const { error } = await todo.editor.flush();
+	return error === null ? undefined : error.name;
+}
 
-test('title, done, and notes change one draft, and autosave writes the complete canonical document once', async () => {
-	const { editor, saved, text, reading } = await setup();
+/** The complete parse of the file's text now. */
+function parsed(text: string | undefined) {
+	const { data, error } = parseCanonicalDocument(text ?? '');
+	if (error !== null) throw new Error(`Not canonical: ${error.reason}`);
+	return data;
+}
 
-	expect(editor.change({ fields: { title: 'Oat milk' } })).toBeUndefined();
-	expect(editor.change({ fields: { done: true } })).toBeUndefined();
-	expect(editor.change({ body: 'Notes\n' })).toBeUndefined();
-	expect(editor.state.isDirty).toBe(true);
-	expect(await text()).toBe(ROW);
+const UNKNOWN = '"owner": "sam"\n"unknown": {"nested": ["one", "two"]}\n';
 
-	await eventually(() => editor.isIdle);
+test('title, done, and notes each submit the complete row at once, unknown metadata included; one write runs and the latest input follows', async () => {
+	const { fake, todo, saved } = await setup(row('Plan', 'Body.\n', UNKNOWN));
+	fake.holdReplies();
+
+	todo.setTitle('Plan B');
+	todo.setDone(true);
+	todo.setNotes('Notes\n');
+	// The native editor holds the latest input; the view shows it.
+	expect(todo.title()).toBe('Plan B');
+	expect(todo.done()).toBe(true);
+	expect(todo.notes()).toBe('Notes\n');
+	expect(todo.isSaving).toBe(true);
+	await eventually(() => fake.heldReplies() === 1);
+	expect(fake.writes).toHaveLength(1);
+
+	fake.releaseReplies();
+	expect(await written(todo)).toBeUndefined();
+	// The first write, then the latest input; the one between was superseded.
+	expect(fake.writes).toHaveLength(2);
 	expect(saved.count).toBe(1);
-	expect(await text()).toBe(editor.state.text);
-	expect(await reading()).toEqual({
-		fields: { title: 'Oat milk', done: true },
+	expect(parsed(fake.disk())).toEqual({
+		fields: {
+			title: 'Plan B',
+			done: true,
+			owner: 'sam',
+			unknown: { nested: ['one', 'two'] },
+		},
 		body: 'Notes\n',
-		parseError: undefined,
-		issues: [],
 	});
 });
 
-test('fields that do not conform stay in the draft and are not saved until fixed', async () => {
-	const { editor, text, reading } = await setup();
+test("a title change keeps the body byte for byte, and textareas show LF while saves keep the file's CRLF", async () => {
+	const body = 'Line one\r\nLine two\r\n';
+	const { fake, todo } = await setup(row('Plan', body));
+	expect(todo.notes()).toBe('Line one\nLine two\n');
 
-	expect(editor.change({ fields: { done: 'soon' } })).toBeUndefined();
-	expect(editor.state.document.fields.done).toBe('soon');
-	expect(editor.state.reading.issues.map((issue) => issue.field)).toEqual([
-		'done',
-	]);
-	expect(editor.hasProblem).toBe(true);
-	expect(await editor.save()).toContain('need fixing');
-	await pastTypingBatch();
-	expect(await editor.settle()).toBe(false);
-	expect(await text()).toBe(ROW);
-	expect(editor.state.document.fields.done).toBe('soon');
+	todo.setTitle('Plan B');
+	expect(await written(todo)).toBeUndefined();
+	expect(parsed(fake.disk()).body).toBe(body);
 
-	editor.change({ fields: { done: true } });
-	expect(await editor.settle()).toBe(true);
-	expect((await reading()).fields).toEqual({ title: 'Milk', done: true });
+	todo.setNotes('Line one\nLine two\nLine three\n');
+	expect(await written(todo)).toBeUndefined();
+	expect(parsed(fake.disk()).body).toBe(
+		'Line one\r\nLine two\r\nLine three\r\n',
+	);
+
+	// The source view shows LF and writes the file's convention back.
+	expect(todo.editSource()).toBeUndefined();
+	const shown = todo.text();
+	expect(shown).not.toContain('\r');
+	todo.setText(shown.replace('Line three', 'Line 3'));
+	expect(await written(todo)).toBeUndefined();
+	expect(fake.disk()).toBe(
+		shown.replace('Line three', 'Line 3').replace(/\n/g, '\r\n'),
+	);
 });
 
-test('a failed save halts autosave until an explicit save renews it', async () => {
-	let failures = 1;
-	const { editor, reading } = await setup((row) => ({
-		...row,
-		save: () =>
-			failures-- > 0
-				? Promise.resolve(
-						FileError.Io({
-							path: PATH,
-							operation: 'write',
-							cause: new Error('disk full'),
-						}),
-					)
-				: row.save(),
-	}));
+test('raw and fields edits share one native editor: unknown metadata stays, and an omitted key is deleted', async () => {
+	const { fake, todo } = await setup(row('Plan', 'Body.\n', UNKNOWN));
+	const { editor } = todo;
 
-	editor.change({ body: 'mine\n' });
-	expect(await editor.save()).toContain('disk full');
-	expect(editor.halt).toEqual({
-		kind: 'failed',
-		operation: 'save',
-		message: expect.stringContaining('disk full'),
+	expect(todo.editSource()).toBeUndefined();
+	expect(todo.rawMode).toBe(true);
+	todo.setText(
+		todo.text().replace('"owner": "sam"\n', '').replace('"Plan"', '"Plan B"'),
+	);
+	expect(await written(todo)).toBeUndefined();
+	expect(parsed(fake.disk()).fields).toEqual({
+		title: 'Plan B',
+		done: false,
+		unknown: { nested: ['one', 'two'] },
 	});
-	editor.change({ body: 'mine and more\n' });
-	await pastTypingBatch();
-	expect((await reading()).body).toBe('');
-	expect(editor.state.document.body).toBe('mine and more\n');
-	expect(editor.isDiscardable).toBe(true);
-	expect(await editor.settle()).toBe(false);
 
-	expect(await editor.save()).toBeUndefined();
-	expect(editor.halt).toBeUndefined();
-	expect(editor.isIdle).toBe(true);
-	expect((await reading()).body).toBe('mine and more\n');
-});
-
-test('a save whose storage threw halts as unknown with its cause, keeps the input, and disposal still resolves', async () => {
-	const { editor, reading } = await setup((row) => ({
-		...row,
-		save: () => Promise.reject(new Error('storage bug')),
-		// The folder's editor rejects its disposal after a save that threw.
-		dispose: async () => {
-			await row.dispose();
-			throw new Error('storage bug');
+	expect(todo.editFields()).toBeUndefined();
+	expect(todo.rawMode).toBe(false);
+	todo.setTitle('Plan C');
+	expect(await written(todo)).toBeUndefined();
+	expect(parsed(fake.disk())).toEqual({
+		fields: {
+			title: 'Plan C',
+			done: false,
+			unknown: { nested: ['one', 'two'] },
 		},
-	}));
-
-	editor.change({ body: 'mine\n' });
-	const message =
-		'The save ended with an error, so it may or may not be in the file: storage bug';
-	expect(await editor.save()).toBe(message);
-	expect(editor.halt).toEqual({ kind: 'unknown', operation: 'save', message });
-	expect(editor.isSaving).toBe(false);
-	expect(editor.state.document.body).toBe('mine\n');
-	await pastTypingBatch();
-	expect((await reading()).body).toBe('');
-	expect(await editor.settle()).toBe(false);
-	expect(await editor.dispose()).toBeUndefined();
+		body: 'Body.\n',
+	});
+	// Switching modes never replaced the owner.
+	expect(todo.editor).toBe(editor);
 });
 
-test('a save that published and then threw is unknown: a read of its bytes does not answer it, and only an explicit save ends it', async () => {
-	let thrown = 0;
-	const { folder, editor, reading } = await setup((row) => ({
-		...row,
-		async save() {
-			if (thrown++ > 0) return row.save();
-			// The bytes land, then storage throws instead of answering.
-			expectOk(await folder.files.overwrite(PATH, row.get().text));
-			throw new Error('connection reset');
-		},
-	}));
+test('a malformed row opens for raw repair; raw mode stays after the repair until the person chooses fields', async () => {
+	const { fake, todo } = await setup('---\ntitle: *missing\n---\n');
+	expect(todo.editor.row.status).toBe('invalid');
+	expect(todo.diagnostics()?.summary).toContain('cannot be edited as fields');
+	expect(todo.editFields()).toContain('does not read as a todo');
 
-	editor.change({ body: 'mine\n' });
-	expect(await editor.save()).toContain('may or may not');
-	expect(editor.halt?.kind).toBe('unknown');
-	expect(editor.halt?.message).toContain('connection reset');
-	await editor.refresh();
-	// The file holds the draft's content, so nothing is unsaved; that read
-	// cannot say who wrote it, so the save is still unknown.
-	expect(editor.state.isDirty).toBe(false);
-	expect(editor.halt?.kind).toBe('unknown');
-	expect(editor.isIdle).toBe(false);
+	// No fields view exists for an invalid row, so its setters admit nothing.
+	todo.setTitle('Typed');
+	todo.setDone(true);
+	expect(todo.text()).toBe('---\ntitle: *missing\n---\n');
 
-	editor.change({ body: 'more\n' });
-	await pastTypingBatch();
-	expect(await editor.settle()).toBe(false);
-	expect((await reading()).body).toBe('mine\n');
+	todo.setText('---\ntitle: Fixed\ndone: false\n---\n');
+	expect(todo.rawMode).toBe(true);
+	expect(await written(todo)).toBeUndefined();
+	expect(fake.disk()).toBe('---\ntitle: Fixed\ndone: false\n---\n');
+	expect(todo.editor.row.status).toBe('valid');
+	expect(todo.rawMode).toBe(true);
 
-	// "Save again" is the person's choice, and ends it.
-	expect(await editor.save()).toBeUndefined();
-	expect(editor.halt).toBeUndefined();
-	expect((await reading()).body).toBe('more\n');
+	expect(todo.editFields()).toBeUndefined();
+	expect(todo.title()).toBe('Fixed');
 });
 
-test('a lost save reply stays unknown after a read finds its text, and autosave waits for an explicit save', async () => {
-	let lose = 1;
-	const { folder, editor, reading } = await setup((row) => ({
-		...row,
-		async save() {
-			if (lose-- <= 0) return row.save();
-			// The bytes land, but the reply that would confirm them never arrives.
-			expectOk(await folder.files.overwrite(PATH, row.get().text));
-			return FileError.Unconfirmed({
-				path: PATH,
-				operation: 'write',
-				cause: new Error('the reply was lost'),
-			});
-		},
-	}));
-
-	editor.change({ body: 'mine\n' });
-	expect(await editor.save()).toContain('may or may not');
-	await editor.refresh();
-	// The file holds the draft's content, so nothing is unsaved. That read
-	// cannot say who wrote it, so the save is still unknown.
-	expect(editor.state.isDirty).toBe(false);
-	expect(editor.halt?.kind).toBe('unknown');
-	expect(editor.isIdle).toBe(false);
-	expect(editor.hasProblem).toBe(true);
-
-	editor.change({ body: 'more\n' });
-	await pastTypingBatch();
-	expect((await reading()).body).toBe('mine\n');
-
-	expect(await editor.save()).toBeUndefined();
-	expect(editor.halt).toBeUndefined();
-	expect((await reading()).body).toBe('more\n');
+test("under the fixture's stricter schema, where a title needs a character (the Todos schema allows an empty one), schema-invalid fields input is saved and the row moves to raw repair with no partial form", async () => {
+	const { fake, todo } = await setup();
+	// This fixture table's title needs at least one character; Todos' does not.
+	todo.setTitle('');
+	expect(await written(todo)).toBeUndefined();
+	expect(parsed(fake.disk()).fields.title).toBe('');
+	expect(todo.editor.row.status).toBe('invalid');
+	expect(todo.title()).toBe('');
+	expect(todo.diagnostics()?.details.length).toBeGreaterThan(0);
+	// The raw view takes the repair; the fields setters stay closed.
+	const before = todo.text();
+	todo.setTitle('ignored');
+	expect(todo.text()).toBe(before);
+	todo.setText(before.replace('"title": ""', '"title": "Back"'));
+	expect(await written(todo)).toBeUndefined();
+	expect(parsed(fake.disk()).fields.title).toBe('Back');
 });
 
-test("another writer's change never replaces input, holds autosave, and an explicit save replaces their text", async () => {
-	const { folder, editor, text } = await setup();
+test('a leaving view admits nothing: raw input outside raw mode, and fields input in raw mode', async () => {
+	const { fake, todo } = await setup();
+	const before = todo.editor.row.text;
 
-	editor.change({ body: 'mine\n' });
-	expectOk(await folder.files.overwrite(PATH, `${ROW}theirs\n`));
-	await editor.refresh();
-	expect(editor.state.document.body).toBe('mine\n');
-	expect(editor.externalChange?.kind).toBe('present');
-	expect(editor.isAwaitingReview).toBe(true);
-	expect(editor.hasProblem).toBe(true);
-	expect(editor.isDiscardable).toBe(true);
+	todo.setText('junk');
+	expect(todo.editor.row.text).toBe(before);
 
-	await pastTypingBatch();
-	expect(await editor.settle()).toBe(false);
-	expect(await text()).toBe(`${ROW}theirs\n`);
-
-	expect(await editor.save()).toBeUndefined();
-	expect(await text()).toBe(editor.state.text);
-	expect(await text()).not.toContain('theirs');
-	expect(editor.isAwaitingReview).toBe(false);
+	expect(todo.editSource()).toBeUndefined();
+	expect(todo.setTitle('ignored')).toBeUndefined();
+	todo.setNotes('ignored');
+	todo.setDone(true);
+	expect(todo.editor.row.text).toBe(before);
+	expect(fake.writes).toEqual([]);
 });
 
-test('its own save receipt with newer input is not a change made elsewhere: the newer input autosaves', async () => {
-	const { editor, reading } = await setup();
+test('a failed save keeps newer input on screen and writes nothing until Try again, which writes the latest input', async () => {
+	const { fake, todo } = await setup();
+	fake.script('io');
+	todo.setTitle('A');
+	expect(await written(todo)).toBe('Io');
+	expect(todo.hasProblem).toBe(true);
+	expect(fake.writes).toEqual([]);
 
-	editor.change({ body: 'A\n' });
-	const saving = editor.save();
-	editor.change({ body: 'A and B\n' });
-	expect(await saving).toBeUndefined();
-	// The latest read predates the receipt, so it has other bytes than the
-	// new baseline. The editor wrote them; it is not a review.
-	const { observation, baseline } = editor.state;
-	expect(
-		observation.kind === 'present' &&
-			observation.revision.sha256 !== baseline.sha256,
-	).toBe(true);
-	expect(editor.externalChange).toBeUndefined();
-	expect(editor.isAwaitingReview).toBe(false);
+	todo.setTitle('B');
+	expect(todo.title()).toBe('B');
+	expect(await written(todo)).toBe('Io');
+	expect(fake.writes).toEqual([]);
+	expect(await todo.toggle(true)).toContain('did not finish');
 
-	await eventually(() => editor.isIdle);
-	expect((await reading()).body).toBe('A and B\n');
+	expect(todo.retry()).toBeUndefined();
+	expect(await written(todo)).toBeUndefined();
+	expect(todo.isIdle).toBe(true);
+	expect(fake.writes.map((text) => parsed(text).fields.title)).toEqual(['B']);
 });
 
-test('discarding mine loads the latest read and writes nothing', async () => {
-	const { folder, editor, text } = await setup();
+test('Try again writes the exact text on screen: a comment and quoting stay', async () => {
+	const commented =
+		"---\n# kept by sam\ntitle: 'Plan'\ndone: false\n---\nBody.\n";
+	const { fake, todo } = await setup(commented);
+	expect(todo.editor.row.status).toBe('valid');
+	expect(todo.editSource()).toBeUndefined();
+	const typed = commented.replace("'Plan'", "'Plan B' # renamed");
+	fake.script('io');
+	todo.setText(typed);
+	expect(await written(todo)).toBe('Io');
+	expect(todo.editor.row).toMatchObject({ status: 'valid', text: typed });
 
-	editor.change({ body: 'mine\n' });
-	expectOk(await folder.files.overwrite(PATH, `${ROW}theirs\n`));
-	await editor.refresh();
-	expect(editor.adopt()).toBeUndefined();
-	expect(editor.state.document.body).toBe('theirs\n');
-	expect(editor.isIdle).toBe(true);
-	await pastTypingBatch();
-	expect(await text()).toBe(`${ROW}theirs\n`);
+	expect(todo.retry()).toBeUndefined();
+	expect(await written(todo)).toBeUndefined();
+	expect(fake.disk()).toBe(typed);
 });
 
-test('a draft whose file was removed elsewhere writes the row again when it saves', async () => {
-	const { folder, editor, text } = await setup();
-
-	editor.change({ body: 'mine\n' });
-	expectOk(await folder.files.remove(expectOk(await folder.files.read(PATH))));
-	await editor.refresh();
-	expect(editor.state.observation.kind).toBe('missing');
-	expect(editor.isDiscardable).toBe(true);
-
-	expect(await editor.save()).toBeUndefined();
-	expect(await text()).toBe(editor.state.text);
-	expect(editor.state.document.body).toBe('mine\n');
+test("an unconfirmed save is described as uncertain and keeps the folder's own detail", () => {
+	const error = FileError.Unconfirmed({
+		path: PATH,
+		operation: 'replace',
+		cause: new Error('displaced file kept at .git/epicenter/scratch/plan-1'),
+	}).error;
+	const message = describeSaveError(error);
+	expect(message).toContain('may or may not be in the file');
+	expect(message).toContain('.git/epicenter/scratch/plan-1');
 });
 
-// ============================================================================
-// What a view shows
-// ============================================================================
+test("another writer's change is not read in: the next edit writes the complete row over it, and Reload shows it instead", async () => {
+	const { fake, todo } = await setup();
+	fake.writeElsewhere(row('Theirs'));
+	expect(todo.title()).toBe('Plan');
+	todo.setNotes('mine\n');
+	expect(await written(todo)).toBeUndefined();
+	expect(parsed(fake.disk())).toMatchObject({
+		fields: { title: 'Plan' },
+		body: 'mine\n',
+	});
 
-/** The facts the save status shows, as a view of the editor reads them. */
-const status = (editor: TodoEditor) => ({
-	saving: editor.isSaving,
-	idle: editor.isIdle,
+	fake.writeElsewhere(row('Theirs again'));
+	expect(await todo.editor.reload()).toMatchObject({ error: null });
+	expect(todo.title()).toBe('Theirs again');
+	expect(fake.disk()).toBe(row('Theirs again'));
 });
 
-test('a view stops showing Saving once an explicit save or an autosave settles', async () => {
-	const { editor, reading } = await setup();
-	const view = showing(() => status(editor));
-	try {
-		expect(await view.current()).toEqual({ saving: false, idle: true });
+test('Reload after a failed save adopts the file and ends the failure; a read that fails keeps the input', async () => {
+	const { fake, todo } = await setup();
+	fake.script('io');
+	todo.setTitle('Mine');
+	expect(await written(todo)).toBe('Io');
 
-		editor.change({ body: 'explicit\n' });
-		expect(await view.current()).toEqual({ saving: false, idle: false });
-		expect(await editor.save()).toBeUndefined();
-		expect(await view.current()).toEqual({ saving: false, idle: true });
+	fake.failReads(
+		FileError.Io({ path: PATH, operation: 'read', cause: 'busy' }).error,
+	);
+	expect((await todo.editor.reload()).error?.name).toBe('Io');
+	expect(todo.title()).toBe('Mine');
+	expect(todo.hasProblem).toBe(true);
 
-		editor.change({ body: 'autosaved\n' });
-		await eventually(() => editor.isIdle);
-		expect((await reading()).body).toBe('autosaved\n');
-		expect(await view.current()).toEqual({ saving: false, idle: true });
-	} finally {
-		view.stop();
-	}
+	fake.failReads(undefined);
+	expect((await todo.editor.reload()).error).toBeNull();
+	expect(todo.title()).toBe('Plan');
+	expect(todo.isIdle).toBe(true);
+	expect(fake.writes).toEqual([]);
 });
 
-test('a view shows Saving while a delayed save runs, then the saved state when it settles', async () => {
-	const reply = Promise.withResolvers<void>();
-	const { editor, reading } = await setup((row) => ({
-		...row,
-		async save() {
-			const saved = row.save();
-			await reply.promise;
-			return saved;
-		},
-	}));
-	const view = showing(() => status(editor));
-	try {
-		editor.change({ body: 'mine\n' });
-		const saving = editor.save();
-		expect(await view.current()).toEqual({ saving: true, idle: false });
-		// The bytes land and the row editor publishes its receipt; the save's
-		// reply is still held, so it is still saving.
-		await Bun.sleep(20);
-		expect((await reading()).body).toBe('mine\n');
-		expect(await view.current()).toEqual({ saving: true, idle: false });
+test('a refused title or notes value stays in its field with why, other fields keep saving, and it counts as unsaved until a valid value or Reload', async () => {
+	const { fake, todo } = await setup();
+	expect(todo.setNotes('a\uD800b')).toContain('notes cannot be saved');
+	// The typed value stays in the field; the row itself took nothing.
+	expect(todo.notes()).toBe('a\uD800b');
+	expect(todo.refusals).toEqual([expect.stringContaining('lone surrogate')]);
+	expect(todo.editor.row.text).toBe(row('Plan'));
+	expect(todo.isIdle).toBe(false);
+	expect(todo.hasProblem).toBe(true);
+	expect(fake.writes).toEqual([]);
 
-		reply.resolve();
-		expect(await saving).toBeUndefined();
-		expect(await view.current()).toEqual({ saving: false, idle: true });
-		expect(view.shown.at(-1)).toEqual({ saving: false, idle: true });
-	} finally {
-		view.stop();
-	}
+	// Another field saves the accepted row; the refused notes stay on screen.
+	todo.setTitle('Plan B');
+	expect(await written(todo)).toBeUndefined();
+	expect(parsed(fake.disk())).toEqual({
+		fields: { title: 'Plan B', done: false },
+		body: 'Body.\n',
+	});
+	expect(todo.notes()).toBe('a\uD800b');
+
+	// Fences, settling, a departure, and the source view do not drop it.
+	expect(await todo.settle()).toBe(false);
+	expect(await todo.fence(async (settled) => settled)).toBe(false);
+	todo.prepareDeparture();
+	expect(await todo.drainDeparture()).toBe(false);
+	todo.resumeDeparture();
+	expect(todo.editSource()).toContain('cannot be saved');
+	expect(todo.rawMode).toBe(false);
+	expect(todo.notes()).toBe('a\uD800b');
+
+	// A corrected value is accepted and clears the refusal.
+	todo.setNotes('ab\n');
+	expect(todo.refusals).toEqual([]);
+	expect(await written(todo)).toBeUndefined();
+	expect(parsed(fake.disk()).body).toBe('ab\n');
+	expect(todo.isIdle).toBe(true);
+
+	// A deliberate Reload drops a refused title and shows the row.
+	expect(todo.setTitle('x\uD800')).toContain('title cannot be saved');
+	expect(todo.title()).toBe('x\uD800');
+	expect((await todo.reload()).error).toBeNull();
+	expect(todo.title()).toBe('Plan B');
+	expect(todo.refusals).toEqual([]);
+	expect(todo.isIdle).toBe(true);
 });
 
-test('a save captures the draft: input during it stays unsaved and saves next', async () => {
-	const reply = Promise.withResolvers<void>();
-	const { editor, reading } = await setup((row) => ({
-		...row,
-		async save() {
-			const saved = row.save();
-			await reply.promise;
-			return saved;
-		},
-	}));
+test('raw text UTF-8 cannot encode exactly is held by the native editor and fails on its turn without a write; a fix and Try again write it', async () => {
+	const { fake, todo } = await setup();
+	expect(todo.editSource()).toBeUndefined();
+	const valid = todo.text();
+	todo.setText(`${valid}\uD800`);
+	expect(await written(todo)).toBe('Unencodable');
+	expect(todo.editor.row).toMatchObject({
+		status: 'invalid',
+		error: { name: 'Unencodable' },
+	});
+	expect(todo.diagnostics()?.summary).toContain('cannot be saved exactly');
+	expect(fake.writes).toEqual([]);
 
-	editor.change({ body: 'A\n' });
-	const saving = editor.save();
-	editor.change({ body: 'A and B\n' });
-	reply.resolve();
-	expect(await saving).toBeUndefined();
-	expect((await reading()).body).toBe('A\n');
-	expect(editor.state.isDirty).toBe(true);
-
-	expect(await editor.settle()).toBe(true);
-	expect((await reading()).body).toBe('A and B\n');
+	todo.setText(`${valid}fixed\n`);
+	expect(await written(todo)).toBe('Unencodable');
+	expect(todo.retry()).toBeUndefined();
+	expect(await written(todo)).toBeUndefined();
+	expect(fake.disk()).toBe(`${valid}fixed\n`);
 });
 
-test('a second explicit save while one runs is refused and sends nothing, so the first lost reply stays unknown', async () => {
-	const reply = Promise.withResolvers<void>();
-	let saves = 0;
-	const { folder, editor, reading } = await setup((row) => ({
-		...row,
-		async save() {
-			if (saves++ > 0) return row.save();
-			// The bytes land; the reply, held, is then lost.
-			expectOk(await folder.files.overwrite(PATH, row.get().text));
-			await reply.promise;
-			return FileError.Unconfirmed({
-				path: PATH,
-				operation: 'write',
-				cause: new Error('the reply was lost'),
-			});
-		},
-	}));
+test('a fence refuses input and waits for admitted writes; a failure leaves it unsettled', async () => {
+	const { fake, todo } = await setup();
+	fake.holdReplies();
+	todo.setTitle('A');
+	let ran = false;
+	const fenced = todo.fence(async (settled) => {
+		ran = true;
+		return settled;
+	});
+	expect(todo.isFenced).toBe(true);
+	todo.setTitle('ignored');
+	expect(todo.title()).toBe('A');
+	expect(todo.retry()).toBe(BUSY);
+	await Bun.sleep(10);
+	expect(ran).toBe(false);
+	fake.releaseReplies();
+	expect(await fenced).toBe(true);
+	expect(todo.isFenced).toBe(false);
+	expect(parsed(fake.disk()).fields.title).toBe('A');
 
-	editor.change({ body: 'A\n' });
-	const first = editor.save();
-	editor.change({ body: 'A and B\n' });
-	const second = editor.save();
-	reply.resolve();
-	expect(await second).toBe('A save of this todo is already running.');
-	expect(await first).toContain('may or may not');
-	expect(saves).toBe(1);
-	expect(editor.halt?.kind).toBe('unknown');
-
-	// Neither a pause nor a settle sends the newer input on its own.
-	await pastTypingBatch();
-	expect(await editor.settle()).toBe(false);
-	expect(saves).toBe(1);
-	expect(editor.halt?.kind).toBe('unknown');
-	expect((await reading()).body).toBe('A\n');
-	expect(editor.state.document.body).toBe('A and B\n');
+	fake.script('io');
+	todo.setTitle('B');
+	expect(await todo.fence(async (settled) => settled)).toBe(false);
+	expect(todo.hasProblem).toBe(true);
+	// Newer input after the failure is not written by the fence either.
+	todo.setTitle('C');
+	expect(await todo.fence(async (settled) => settled)).toBe(false);
+	expect(parsed(fake.disk()).fields.title).toBe('A');
 });
 
-test('a rename holds saves, carries input typed during the move to the destination, and writes nothing at the old path', async () => {
-	const { table, row, editor, text, reading } = await setup();
-	const rename = table.rename.bind(table);
-	let release: (() => void) | undefined;
-	// The move lands; its reply is held.
-	table.rename = async (...args) => {
-		const renamed = await rename(...args);
-		await new Promise<void>((resolve) => {
-			release = resolve;
-		});
-		return renamed;
-	};
+test('a hold refuses input while its work runs, then reads the row the work wrote', async () => {
+	const { fake, todo } = await setup();
+	await todo.hold(async () => {
+		expect(todo.isFenced).toBe(true);
+		todo.setTitle('Typed during');
+		expect(todo.title()).toBe('Plan');
+		fake.writeElsewhere(row('Incoming'));
+	});
+	expect(todo.isFenced).toBe(false);
+	expect(todo.title()).toBe('Incoming');
+	expect(todo.isIdle).toBe(true);
+	expect(fake.writes).toEqual([]);
+});
 
-	const moving = editor.move('oat');
-	while (release === undefined) await Bun.sleep(1);
-	editor.change({ body: 'typed during\n' });
-	expect(await editor.save()).toBeUndefined();
-	await pastTypingBatch();
-	expect(await text(PATH)).toBeUndefined();
-	expect(await text('todos/oat.md')).toBe(ROW);
+test('release ends the subscription, and an admitted write still publishes', async () => {
+	const { fake, todo } = await setup();
+	expect(fake.subscriptions()).toBe(1);
+	fake.holdReplies();
+	todo.setTitle('A');
+	todo.release();
+	expect(fake.subscriptions()).toBe(0);
+	todo.setTitle('B');
+	fake.releaseReplies();
+	expect(await written(todo)).toBeUndefined();
+	expect(fake.writes.map((text) => parsed(text).fields.title)).toEqual(['A']);
+});
 
-	release();
-	expect(expectOk((await moving)!).row.path).toBe('todos/oat.md');
-	expect(editor.path).toBe('todos/oat.md');
-	expect(row.get().isDisposed).toBe(true);
-	expect(editor.state.document.body).toBe('typed during\n');
-	expect(await editor.settle()).toBe(true);
-	expect((await reading('todos/oat.md')).body).toBe('typed during\n');
-	expect(await text(PATH)).toBeUndefined();
+test('a released editor refuses input and commands for good, even after the fence around its release unwinds', async () => {
+	const { fake, todo } = await setup();
+	expect(todo.editSource()).toBeUndefined();
+	// Released inside a fence, as a rename releases the source's editor.
+	await todo.fence(async () => {
+		todo.release();
+	});
+	expect(todo.isFenced).toBe(true);
+	todo.setText('---\ntitle: Late\ndone: false\n---\n');
+	expect(todo.editFields()).toBe(RELEASED);
+	todo.setTitle('Late');
+	todo.setNotes('late\n');
+	todo.setDone(true);
+	expect(todo.retry()).toBe(RELEASED);
+	expect(await todo.toggle(true)).toBe(RELEASED);
+	expect(todo.editSource()).toBe(RELEASED);
+	expect(fake.writes).toEqual([]);
+	expect(todo.isIdle).toBe(true);
+});
+
+test('close refuses input, waits for the write, and ends the subscription', async () => {
+	const { fake, todo } = await setup();
+	fake.holdReplies();
+	todo.setTitle('Last');
+	const closing = todo.close();
+	todo.setTitle('ignored');
+	await Bun.sleep(10);
+	fake.releaseReplies();
+	expect(await closing).toBe(true);
+	expect(parsed(fake.disk()).fields.title).toBe('Last');
+	expect(fake.subscriptions()).toBe(0);
+});
+
+test('reload fences field controls while discarding refused input', async () => {
+	const { fake, todo } = await setup();
+	fake.holdReplies();
+	todo.setTitle('Saved title');
+	await eventually(() => fake.heldReplies() > 0);
+	todo.setNotes('bad\uD800');
+	const reloading = todo.reload();
+	expect(todo.isFenced).toBe(true);
+	todo.setTitle('late\uD800');
+	expect(todo.title()).toBe('Saved title');
+	fake.releaseReplies();
+	expect((await reloading).error).toBeNull();
+	expect(todo.isFenced).toBe(false);
+	expect(todo.refusals).toEqual([]);
 });

@@ -3,11 +3,20 @@
 	import { Checkbox } from '@epicenter/ui/checkbox';
 	import { Input } from '@epicenter/ui/input';
 	import { toast } from '@epicenter/ui/sonner';
+	import { onDestroy } from 'svelte';
 	import { needsRepair, type TodoEntry, type Todos } from '$lib/todos.svelte.js';
 
 	let { todos, onOpen }: { todos: Todos; onOpen?: () => void } = $props();
-	let draft = $state('');
 	let adding = $state(false);
+	/**
+	 * Whether this list is mounted. The new todo's typed title belongs to the
+	 * owner, which outlives the list on narrow screens; a field that left the
+	 * document must not change it.
+	 */
+	const view = { mounted: true };
+	onDestroy(() => {
+		view.mounted = false;
+	});
 
 	function titleOf(entry: TodoEntry) {
 		const title = entry.fields.title;
@@ -18,13 +27,14 @@
 
 	async function add(event: SubmitEvent) {
 		event.preventDefault();
-		const title = draft.trim();
+		if (!view.mounted) return;
+		const title = todos.newTitle.trim();
 		if (title === '' || adding) return;
 		adding = true;
+		// On success the owner clears the typed title itself.
 		const problem = await todos.create(title);
 		adding = false;
 		if (problem) toast.error('Could not add the todo', { description: problem });
-		else draft = '';
 	}
 
 	async function toggle(entry: TodoEntry) {
@@ -36,10 +46,10 @@
 <section class="flex h-full min-h-0 flex-col" aria-label="Todo list">
 	<form class="border-b p-3" onsubmit={add}>
 		<Input
-			bind:value={draft}
+			bind:value={() => todos.newTitle, (title) => view.mounted && (todos.newTitle = title)}
 			placeholder="Add a todo and press Enter"
 			aria-label="New todo title"
-			disabled={adding}
+			disabled={adding || todos.departing}
 		/>
 	</form>
 
@@ -60,7 +70,7 @@
 			>
 				<Checkbox
 					checked={done}
-					disabled={typeof entry.fields.done !== 'boolean'}
+					disabled={typeof entry.fields.done !== 'boolean' || todos.departing}
 					aria-label={done ? 'Mark as not done' : 'Mark as done'}
 					onCheckedChange={() => void toggle(entry)}
 				/>

@@ -39,6 +39,7 @@
 	} from '$lib/editor/rich-session.js';
 	import { noteSchema as schema } from '$lib/editor/schema.js';
 	import { richAvailability } from '$lib/note-source.js';
+	import Lifetime from './Lifetime.svelte';
 
 	let {
 		draft,
@@ -162,10 +163,15 @@
 			createRichSession(draft, { viewPlugins: [placeholder, taskCheckbox] }),
 		);
 		if (!opened) return;
+		/** Cleared with this view: a transaction it is handed afterwards changes nothing. */
+		let alive = true;
 		const created = new EditorView(element, {
 			state: opened.state,
 			attributes: { class: 'focus:outline-none', 'aria-label': 'Note text' },
 			dispatchTransaction(this: EditorView, transaction) {
+				// Something that kept this view, a command or a timer, can still
+				// dispatch after it was destroyed. Its document is not the draft's.
+				if (!alive || this.isDestroyed) return;
 				// The rich session decides. A refused transaction changes nothing on
 				// screen; an accepted one is already in the draft.
 				const next = opened.apply(transaction);
@@ -178,6 +184,7 @@
 		view = created;
 		readActive(opened.state);
 		return () => {
+			alive = false;
 			created.destroy();
 			view = undefined;
 			rich = undefined;
@@ -266,73 +273,83 @@
 {/snippet}
 
 {#if editable}
-	<div class="flex h-full min-h-0 flex-col">
-		<div class="flex flex-wrap items-center gap-1 border-b px-2 py-1.5" role="toolbar" aria-label="Formatting">
-			<Button variant="ghost" size="icon-sm" aria-label="Undo" title="Undo (⌘Z)" disabled={!active.canUndo} onclick={() => run(undo)}>
-				<UndoIcon />
-			</Button>
-			<Button variant="ghost" size="icon-sm" aria-label="Redo" title="Redo (⇧⌘Z)" disabled={!active.canRedo} onclick={() => run(redo)}>
-				<RedoIcon />
-			</Button>
-			<Separator orientation="vertical" class="mx-1 h-6" />
-			{@render toggle(active.bold, () => run(toggleMark(marks.strong)), BoldIcon, 'Bold')}
-			{@render toggle(active.italic, () => run(toggleMark(marks.em)), ItalicIcon, 'Italic')}
-			{@render toggle(active.strike, () => run(toggleMark(marks.strike)), StrikethroughIcon, 'Strikethrough')}
-			{@render toggle(active.code, () => run(toggleMark(marks.code)), CodeIcon, 'Inline code')}
-			<Popover.Root bind:open={linkOpen}>
-				<Popover.Trigger>
-					{#snippet child({ props })}
-						<Toggle {...props} size="sm" pressed={active.link} aria-label="Link" title="Link" onPressedChange={openLink}>
-							<LinkIcon class="size-4" />
-						</Toggle>
-					{/snippet}
-				</Popover.Trigger>
-				<Popover.Content class="w-80 p-2" align="start">
-					<form
-						class="flex items-center gap-2"
-						onsubmit={(event) => {
-							event.preventDefault();
-							applyLink();
-						}}
+	<!-- The toolbar's commands belong to this editable stretch: one kept from an
+	     earlier stretch does nothing to the editor of a later one. -->
+	<Lifetime>
+		{#snippet children(live)}
+			{@const act = (command: () => void) => () => {
+				if (live()) command();
+			}}
+			<div class="flex h-full min-h-0 flex-col">
+				<div class="flex flex-wrap items-center gap-1 border-b px-2 py-1.5" role="toolbar" aria-label="Formatting">
+					<Button variant="ghost" size="icon-sm" aria-label="Undo" title="Undo (⌘Z)" disabled={!active.canUndo} onclick={act(() => run(undo))}>
+						<UndoIcon />
+					</Button>
+					<Button variant="ghost" size="icon-sm" aria-label="Redo" title="Redo (⇧⌘Z)" disabled={!active.canRedo} onclick={act(() => run(redo))}>
+						<RedoIcon />
+					</Button>
+					<Separator orientation="vertical" class="mx-1 h-6" />
+					{@render toggle(active.bold, act(() => run(toggleMark(marks.strong))), BoldIcon, 'Bold')}
+					{@render toggle(active.italic, act(() => run(toggleMark(marks.em))), ItalicIcon, 'Italic')}
+					{@render toggle(active.strike, act(() => run(toggleMark(marks.strike))), StrikethroughIcon, 'Strikethrough')}
+					{@render toggle(active.code, act(() => run(toggleMark(marks.code))), CodeIcon, 'Inline code')}
+					<Popover.Root bind:open={linkOpen}>
+						<Popover.Trigger>
+							{#snippet child({ props })}
+								<Toggle {...props} size="sm" pressed={active.link} aria-label="Link" title="Link" onPressedChange={act(openLink)}>
+									<LinkIcon class="size-4" />
+								</Toggle>
+							{/snippet}
+						</Popover.Trigger>
+						<Popover.Content class="w-80 p-2" align="start">
+							<form
+								class="flex items-center gap-2"
+								onsubmit={(event) => {
+									event.preventDefault();
+									act(applyLink)();
+								}}
+							>
+								<Input class="h-8" placeholder="https://example.com" aria-label="Link address" bind:value={linkHref} />
+								<!-- The popover is outside the app's inert root. -->
+								<Button type="submit" size="sm" disabled={!admitting}>{linkHref.trim() === '' ? 'Remove' : 'Apply'}</Button>
+							</form>
+						</Popover.Content>
+					</Popover.Root>
+					<Separator orientation="vertical" class="mx-1 h-6" />
+					{@render toggle(active.heading === 1, act(() => toggleHeading(1)), Heading1Icon, 'Heading 1')}
+					{@render toggle(active.heading === 2, act(() => toggleHeading(2)), Heading2Icon, 'Heading 2')}
+					{@render toggle(active.heading === 3, act(() => toggleHeading(3)), Heading3Icon, 'Heading 3')}
+					<Separator orientation="vertical" class="mx-1 h-6" />
+					{@render toggle(active.list === 'bullet', act(() => toggleList('bullet')), ListIcon, 'Bullet list')}
+					{@render toggle(active.list === 'ordered', act(() => toggleList('ordered')), ListOrderedIcon, 'Numbered list')}
+					{@render toggle(active.list === 'task', act(() => toggleList('task')), ListChecksIcon, 'Task list')}
+					<Separator orientation="vertical" class="mx-1 h-6" />
+					{@render toggle(active.quote, act(() => run(toggleQuote)), QuoteIcon, 'Quote')}
+					{@render toggle(
+						active.codeBlock,
+						act(() => run(active.codeBlock ? setBlockType(nodes.paragraph) : setBlockType(nodes.code_block))),
+						SquareCodeIcon,
+						'Code block',
+					)}
+					<Button
+						variant="ghost"
+						size="icon-sm"
+						aria-label="Divider"
+						title="Divider"
+						onclick={act(() =>
+							run((state, dispatch) => {
+								dispatch?.(state.tr.replaceSelectionWith(nodes.horizontal_rule.create()).scrollIntoView());
+								return true;
+							}),
+						)}
 					>
-						<Input class="h-8" placeholder="https://example.com" aria-label="Link address" bind:value={linkHref} />
-						<!-- The popover is outside the app's inert root. -->
-						<Button type="submit" size="sm" disabled={!admitting}>{linkHref.trim() === '' ? 'Remove' : 'Apply'}</Button>
-					</form>
-				</Popover.Content>
-			</Popover.Root>
-			<Separator orientation="vertical" class="mx-1 h-6" />
-			{@render toggle(active.heading === 1, () => toggleHeading(1), Heading1Icon, 'Heading 1')}
-			{@render toggle(active.heading === 2, () => toggleHeading(2), Heading2Icon, 'Heading 2')}
-			{@render toggle(active.heading === 3, () => toggleHeading(3), Heading3Icon, 'Heading 3')}
-			<Separator orientation="vertical" class="mx-1 h-6" />
-			{@render toggle(active.list === 'bullet', () => toggleList('bullet'), ListIcon, 'Bullet list')}
-			{@render toggle(active.list === 'ordered', () => toggleList('ordered'), ListOrderedIcon, 'Numbered list')}
-			{@render toggle(active.list === 'task', () => toggleList('task'), ListChecksIcon, 'Task list')}
-			<Separator orientation="vertical" class="mx-1 h-6" />
-			{@render toggle(active.quote, () => run(toggleQuote), QuoteIcon, 'Quote')}
-			{@render toggle(
-				active.codeBlock,
-				() => run(active.codeBlock ? setBlockType(nodes.paragraph) : setBlockType(nodes.code_block)),
-				SquareCodeIcon,
-				'Code block',
-			)}
-			<Button
-				variant="ghost"
-				size="icon-sm"
-				aria-label="Divider"
-				title="Divider"
-				onclick={() =>
-					run((state, dispatch) => {
-						dispatch?.(state.tr.replaceSelectionWith(nodes.horizontal_rule.create()).scrollIntoView());
-						return true;
-					})}
-			>
-				<MinusIcon />
-			</Button>
-		</div>
-		<div bind:this={element} class="honeycrisp-editor min-h-0 flex-1 overflow-y-auto p-6"></div>
-	</div>
+						<MinusIcon />
+					</Button>
+				</div>
+				<div bind:this={element} class="honeycrisp-editor min-h-0 flex-1 overflow-y-auto p-6"></div>
+			</div>
+		{/snippet}
+	</Lifetime>
 {:else}
 	<div class="flex h-full flex-col items-start gap-3 overflow-y-auto p-6 text-sm" role="status">
 		<p class="font-medium">This note opens in Source only</p>

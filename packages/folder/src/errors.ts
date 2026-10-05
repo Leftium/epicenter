@@ -99,6 +99,14 @@ export type FileStep =
 	| { readonly kind: 'remove'; readonly path: string }
 	| { readonly kind: 'move'; readonly from: string; readonly to: string };
 
+/** Whether two steps name the same action on the same paths. */
+function sameStep(a: FileStep | undefined, b: FileStep): boolean {
+	if (a === undefined || a.kind !== b.kind) return false;
+	return a.kind === 'move' && b.kind === 'move'
+		? a.from === b.from && a.to === b.to
+		: a.kind !== 'move' && b.kind !== 'move' && a.path === b.path;
+}
+
 /**
  * Raw storage failures beyond one file's refusal. Internal: Git publication
  * and the native transport apply ordered changes, and the ordinary domain
@@ -110,6 +118,14 @@ export const ApplyError = defineErrors({
 	 * A native multi-file operation stopped partway. `applied` steps reached the
 	 * folder; nothing was rolled back. `failed` did not complete, and
 	 * `notAttempted` never started.
+	 *
+	 * `failed` may name the second half of a step whose first half is in
+	 * `applied`. A move whose destination landed but whose source stayed has
+	 * the destination write applied and `{ kind: 'remove', path: from }`
+	 * failed. A native replacement whose bytes landed but whose displaced entry
+	 * was not a regular file, or could not be inspected, has the same write in
+	 * both: the path holds the new bytes, and `error` is an `Io` naming where
+	 * the displaced entry was kept.
 	 */
 	Partial: ({
 		applied,
@@ -122,7 +138,9 @@ export const ApplyError = defineErrors({
 		error: FileError;
 		notAttempted: readonly FileStep[];
 	}) => ({
-		message: `${applied.length} of ${applied.length + 1 + notAttempted.length} file steps completed before a failure: ${error.message}`,
+		message: sameStep(applied.at(-1), failed)
+			? `${applied.length} of ${applied.length + notAttempted.length} file steps landed, and the last did not finish: ${error.message}`
+			: `${applied.length} of ${applied.length + 1 + notAttempted.length} file steps completed before a failure: ${error.message}`,
 		applied,
 		failed,
 		error,

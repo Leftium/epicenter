@@ -3,11 +3,14 @@
  * table.
  *
  * What is listed is what the folder has answered for: a word appears once
- * its file's receipt arrives, and an edit is listed once its receipt does.
- * Notes and stages are edited through one retained row editor per word (see
- * `word.svelte.ts`), shared by every view of that word; its saves write the
- * whole word. A removal is made against the capture of the file as it was
- * last read here, so a word that changed elsewhere is refused and read again.
+ * its file's receipt arrives, and an edit is listed once its saves land and
+ * the file is read. Notes and stages are edited through one row editor per
+ * word (see `word.svelte.ts`), opened when the word's card is shown and kept
+ * here, above every view of that word; its saves write the whole word.
+ * Reading the list again never reloads an open word's editor. A removal is
+ * fixed to the version shown when the learner asked, and made against a
+ * capture read once the word's saves have settled, only when that capture is
+ * that version; a word that changed elsewhere is refused and read again.
  *
  * A new word's file is named by the SHA-256 of its exact text, and creation
  * is exclusive. Two adds of one text, in one tab or two, or a retry after an
@@ -32,7 +35,7 @@ import {
 	vocabFolder,
 } from './data.js';
 import { createReread } from './reread.js';
-import { createWordDraft, type WordDraft } from './word.svelte.js';
+import { createWord, type Word } from './word.svelte.js';
 
 export const EntryError = defineErrors({
 	Empty: () => ({ message: 'There is no text to save.' }),
@@ -52,6 +55,16 @@ export const EntryError = defineErrors({
 	Unconfirmed: ({ cause }: { cause: unknown }) => ({
 		message: `The delete was sent, but no answer came back, so whether this word is gone is not known: ${extractErrorMessage(cause)}`,
 		cause,
+	}),
+	/** Another delete or a restoration of this word is under way. Nothing was sent. */
+	Busy: () => ({
+		message:
+			'This word is busy with another change. Nothing was deleted; try again once it finishes.',
+	}),
+	/** A note typed for the word could not be saved and is still shown. Nothing was sent. */
+	NoteHeld: () => ({
+		message:
+			'This word has a note that could not be saved. Correct it or discard it before deleting the word.',
 	}),
 	/** The folder did not confirm the save. */
 	NotSaved: ({ cause }: { cause: unknown }) => ({
@@ -85,7 +98,7 @@ export function createEntriesState({
 	// one before it left.
 	const queues = new Map<string, Promise<unknown>>();
 	/** The editors of words opened on this page, kept while they are needed. */
-	const words = new Map<string, WordDraft>();
+	const words = new Map<string, Word>();
 
 	const refresh = createReread(async () => {
 		const before = receipts;
@@ -97,22 +110,21 @@ export function createEntriesState({
 		}
 		const read = readRows(listing, readEntry);
 		const ids = new Set(read.rows.map((entry) => entry.id));
-		// A word removed elsewhere stays listed while a note typed here for it
-		// is unsaved; the next save writes it back. Otherwise its editor goes.
+		// A word removed elsewhere stays listed while its save is running or
+		// failed, or its delete is unanswered, so the learner sees their text
+		// until they let it go. Nothing writes the word back. Otherwise its
+		// editor goes.
 		const kept = rows.filter(
 			(entry) => !ids.has(entry.id) && words.get(entry.id)?.unsettled,
 		);
 		for (const [id, word] of words)
 			if (!ids.has(id) && !word.unsettled) {
 				words.delete(id);
-				void word.dispose();
+				void word.close();
 			}
 		rows = [...read.rows, ...kept];
 		unreadable = read.unreadable;
 		loadError = null;
-		// A change hint may never have reached an editor; each reads its word again.
-		if (!closing)
-			await Promise.all([...words.values()].map((word) => word.refresh()));
 		return true;
 	});
 
@@ -135,14 +147,41 @@ export function createEntriesState({
 		return next;
 	}
 
-	/** Delete the word's file as it is listed when this runs. */
-	async function deleteListed(
+	/**
+	 * Read the word's file now and list what it holds. A word whose file is
+	 * gone leaves the list unless its save is running or failed.
+	 */
+	async function relist(id: string): Promise<void> {
+		const { data: current, error: readError } = await table.get(id);
+		if (readError !== null) return;
+		const entry = current && readEntry(current);
+		if (entry !== undefined) receive(id, entry);
+		else if (current === undefined && !words.get(id)?.unsettled)
+			receive(id, undefined);
+	}
+
+	/**
+	 * Delete the word's file as it is now, only when that is what the learner
+	 * chose: `listed`, the capture the list showed when they pressed Delete,
+	 * or `shown`, the exact text the word's editor showed then. Both were
+	 * fixed at that moment; nothing read since can stand in for them. The
+	 * file is read after the word's saves settled, and the delete is
+	 * conditional on exactly that read.
+	 */
+	async function deleteChosen(
 		id: string,
+		listed: Entry['file'] | undefined,
+		shown: string | undefined,
 	): Promise<Result<undefined, EntryError>> {
-		const entry = rows.find((row) => row.id === id);
-		if (!entry) return EntryError.Gone();
-		const { error: deleteError } = await table.delete(entry.id, {
-			expectedSha256: entry.file.sha256,
+		if (listed === undefined && shown === undefined) return EntryError.Gone();
+		const { data: current, error: readError } = await table.get(id);
+		if (readError !== null) return EntryError.NotSaved({ cause: readError });
+		// Already removed elsewhere: the word is gone, which is what was asked.
+		if (current === undefined) return Ok(undefined);
+		if (current.sha256 !== listed?.sha256 && current.text !== shown)
+			return EntryError.Changed();
+		const { error: deleteError } = await table.delete(id, {
+			expectedSha256: current.sha256,
 		});
 		// Already removed elsewhere: the word is gone, which is what was asked.
 		const gone =
@@ -240,39 +279,49 @@ export function createEntriesState({
 		},
 
 		/**
-		 * The editor of one word's note and stage, opened on first use and
-		 * shared by every view of that word. The note and the stage are the
+		 * The editor of one word's note and stage, created on first use, opened
+		 * by its card or a stage press, and shared by every view of that word. The note and the stage are the
 		 * learner's: only their edits write them.
 		 */
-		word(id: string): WordDraft {
+		word(id: string): Word {
 			let word = words.get(id);
 			if (word === undefined) {
-				word = createWordDraft({
+				word = createWord({
 					table,
 					id,
-					onSaved: (entry) => receive(id, entry),
+					listed: () => rows.find((entry) => entry.id === id),
+					onSettled: () => relist(id),
 				});
 				words.set(id, word);
 				// After closing, a word is shown but starts no work.
-				if (closing) void word.dispose();
+				if (closing) void word.close();
 			}
 			return word;
 		},
 
 		/**
-		 * Remove the entry's file, if it is still the one shown here. The word's
-		 * own editor deletes it, after any of its work already admitted, and no
-		 * view of the word starts a save meanwhile. Done, its editor and any note
-		 * typed there go with it; refused, they stay.
+		 * Remove the entry's file, if it is still a version the learner was
+		 * shown when they asked. That choice is fixed at the call; the word's
+		 * input stops at once, its saves already admitted settle, and only
+		 * then is the file read and deleted on that read's condition. Done, its
+		 * editor and any note typed there go with it; refused, they stay.
 		 */
 		remove(id: string): Promise<Result<undefined, EntryError>> {
-			return queued(id, async () => {
-				const word = words.get(id);
+			// What the learner chose, fixed now: nothing listed or read after
+			// this press can widen it.
+			const listed = rows.find((row) => row.id === id)?.file;
+			const word = words.get(id);
+			const destroy = (shown: string | undefined) =>
+				queued(id, () => deleteChosen(id, listed, shown));
+			const removing = word ? word.remove(destroy) : destroy(undefined);
+			return (async () => {
 				let removed: Result<undefined, EntryError>;
 				try {
-					removed = word
-						? await word.remove(() => deleteListed(id))
-						: await deleteListed(id);
+					const answer = await removing;
+					// Another operation holds the word; it is left to finish.
+					if (answer === 'busy') return EntryError.Busy();
+					if (answer === 'held') return EntryError.NoteHeld();
+					removed = answer;
 				} catch (cause) {
 					// The folder threw instead of answering: the word may be gone.
 					// The learner is told, and the word stays as it is shown.
@@ -280,17 +329,21 @@ export function createEntriesState({
 				}
 				const { error: removeError } = removed;
 				if (removeError !== null) {
-					// The folder holds something other than what is shown: show that.
-					if (removeError.name === 'Changed') await refresh();
+					// The folder holds something other than what is shown: show that,
+					// in the word too unless its save is running or failed.
+					if (removeError.name === 'Changed') {
+						await refresh();
+						if (word?.save?.status === 'idle') await word.reload();
+					}
 					return removed;
 				}
 				if (words.get(id) === word) words.delete(id);
 				receive(id, undefined);
 				return removed;
-			});
+			})();
 		},
 
-		/** How many words hold typed text that is not saved, or work in flight. */
+		/** How many words have a save running or failed, or a delete in flight or unanswered. */
 		get unsettled() {
 			let count = 0;
 			for (const word of words.values()) if (word.unsettled) count++;
@@ -298,27 +351,29 @@ export function createEntriesState({
 		},
 
 		/**
-		 * The learner's choice after a delete whose answer was lost: let the
-		 * word go here. Its editor and anything typed in it go, nothing is
-		 * written, and the list shows what the folder holds.
+		 * The learner's choice for a word whose file is gone or whose delete
+		 * went unanswered: let the word go here. Its editor and any input it
+		 * holds go, nothing is written, and the list shows what the folder
+		 * holds.
 		 */
 		async letGo(id: string): Promise<void> {
 			const word = words.get(id);
 			words.delete(id);
-			await word?.dispose();
+			await word?.close();
 			receive(id, undefined);
 			await refresh();
 		},
 
 		/**
-		 * Stop every word before the page releases its folder: no view starts
-		 * new work, work already admitted settles, and every editor is let go.
-		 * Nothing typed is saved by closing.
+		 * Stop every word before the page releases its folder: no view takes
+		 * typing or starts new work, deletes and saves already admitted
+		 * settle, and every editor is let go.
 		 */
 		close(): Promise<void> {
-			closing ??= Promise.allSettled(
-				[...words.values()].map((word) => word.dispose()),
-			).then(() => undefined);
+			closing ??= Promise.allSettled([
+				...[...words.values()].map((word) => word.close()),
+				...queues.values(),
+			]).then(() => undefined);
 			return closing;
 		},
 	};
@@ -329,6 +384,6 @@ export type EntriesState = ReturnType<typeof createEntriesState>;
 /** Narrow a failed change to what the learner is told. */
 export function entryErrorMessage(error: EntryError): string {
 	return error.name === 'Changed'
-		? 'This word changed in another tab, so your change was not saved. It has been read again.'
+		? 'This word changed in another tab, so it was not deleted. It has been read again.'
 		: error.message;
 }

@@ -1,31 +1,101 @@
 # Row editor API (design record)
 
-Status: design record for the production API. `@epicenter/folder` ships
-`folder.tables.<name>.edit(stem, { signal })` in `src/editor.ts`, with the
-canonical codec in `src/canonical.ts`. The package README's "Editing a row"
-is the current contract; this page keeps the call-site reasoning and the
-tradeoffs left open. Behavior is covered by `src/editor.test.ts`,
-`src/canonical.test.ts`, and `src/editor.test-d.ts`:
+Status: the call-site design record for `folder.tables.<name>.edit(stem, {
+signal })`. Its current contract is "Editing a row" and "Editing a row in
+Svelte" in the package README, decided in
+[ADR 0504](../../../../docs/adr/0504-row-editors-own-complete-input-and-one-publication-queue.md)
+and implemented in `src/editor.ts` and `src/svelte/row-editor.svelte.ts`.
+Behavior is covered by `src/editor.test.ts`, `src/editor.test-d.ts`,
+`src/canonical.test.ts`, and the mounted Svelte tests in `src/svelte/`:
 
 ```sh
 bun test --isolate packages/folder/src/editor.test.ts packages/folder/src/canonical.test.ts
+bun run --cwd packages/folder test:svelte
 ```
 
-History: waves 5 and 6 exercised this API through an experimental wrapper,
-`createCanonicalEditors(folder, definition).tables.<name>.edit`, in
-`canonical-editor.ts` and `canonical-codec.ts`. Wave 7 deleted the wrapper,
-its codec, and their tests after every test moved to `src/` (see
-[ITERATIONS.md](./ITERATIONS.md)). The prototype names map to production as
-`CanonicalEditor` to `RowEditor`, `CanonicalEditorState` to
-`RowEditorState`, `CanonicalEditorError` to `RowEditorError`, `OpenError` to
-`TableEditError`, `ChangeError`/`SaveError`/`AdoptError` to
+The section "History: the retired editor" below keeps the earlier design,
+whose draft, baseline, explicit save, and adoption ADR 0504 replaced. Its
+names are history, not compatibility APIs.
+
+## Current call sites
+
+```ts
+const { data: editor, error } = await folder.tables.todos.edit(stem, { signal });
+if (error !== null) return showAcquisitionFailure(error); // Aborted, NotFound, InvalidUtf8, InvalidPath, Io, ...
+const { get, subscribe, set, setText, retry, flush, reload } = editor;
+
+const stop = subscribe(() => render(get())); // no initial call; reads nothing
+render(get());
+
+// Each handler reads the row at its own event and submits only while the
+// row still supports its own view.
+
+// A structured control submits the complete row from the latest valid row.
+function onTitle(title: string) {
+	const { row } = get();
+	if (row.status !== 'valid' || showingSource) return; // the fields view is not shown
+	const { error: setError } = set({ fields: { ...row.fields, title }, body: row.body });
+	if (setError !== null) showRefusal(setError); // Unrepresentable: nothing accepted
+}
+
+// The source view submits raw text, valid or not, through the same queue.
+function onSource(typed: string) {
+	const { row } = get();
+	if (row.status === 'valid' && !showingSource) return; // the fields view is shown
+	setText(withFileNewlines(typed, row.text)); // the textarea's LF in the file's line endings
+}
+
+// Explicit commands: nothing resumes a failed chain or reads the file otherwise.
+onRetry(() => retry()); // write the latest input again
+onReload(async () => {
+	const { error: reloadError } = await reload(); // InputChanged, NotFound, InvalidUtf8, Io, ...
+	if (reloadError !== null) showReloadFailure(reloadError); // the row and save state stay
+});
+const { error: saveError } = await flush(); // before leaving: wait for the chain; never retries
+```
+
+`canonical-callers.md` shows these in vanilla DOM, Solid, and Svelte views,
+and an owner that leaves a row by stopping input, then awaiting `flush`, and
+asking before it drops input whose save failed.
+
+## What replaced the retired editor
+
+| Retired | Now |
+| --- | --- |
+| `change({ fields })`, a partial merge into a draft | `set({ fields, body })`: the complete row; omitted keys are deleted |
+| `save()`, refusing schema-invalid drafts | Every accepted input is published in order; schema-invalid input is saved and the row is `invalid` |
+| One admitted save; `Saving` refused the next | One running write and the latest input after it; newer input replaces the waiting one |
+| `baseline`, `isDirty` | None. `get().row` is the accepted input; `save` says whether it is written |
+| `observation` beside the draft, `refresh()` | None. The editor never reads on its own; `reload()` adopts the file's text unless the input changed meanwhile, and a failed read changes nothing |
+| `adopt(reviewed)`, "Take this version" | `reload()` discards retained input and its failure on purpose |
+| `lastSave` outcomes | `save`: `idle`, `saving`, or `failed` with the error until `retry` or `reload` |
+| `dispose()` | None. Nothing watches; admitted writes settle whether or not anything holds the editor |
+| Acquisition refused `NoCanonicalForm` and `InvalidSource` | Readable text always opens; such a row is `invalid` and repaired with `setText` |
+| `subscribe(listener)` called with the state at once | `subscribe(invalidate)` makes no initial call; read the snapshot with `get` |
+| A save recreated a removed row | Every write replaces an existing row; a removed row is `NotFound` and stays absent |
+
+## History: the retired editor
+
+Everything below is the design record of the editor before ADR 0504, kept
+as it was written.
+
+History before that: waves 5 and 6 exercised this API through an
+experimental wrapper, `createCanonicalEditors(folder, definition).tables.<name>.edit`,
+in `canonical-editor.ts` and `canonical-codec.ts`. Wave 7 deleted the
+wrapper, its codec, and their tests after every test moved to `src/` (see
+[ITERATIONS.md](./ITERATIONS.md)). The prototype names mapped to wave 7's
+production names as `CanonicalEditor` to `RowEditor`, `CanonicalEditorState`
+to `RowEditorState`, `CanonicalEditorError` to `RowEditorError`, `OpenError`
+to `TableEditError`, `ChangeError`/`SaveError`/`AdoptError` to
 `RowChangeError`/`RowSaveError`/`RowAdoptError`, `Revision` to
 `RowRevision`, `Observation` to `RowObservation`, `SaveAttempt` to
 `RowSaveAttempt`, `SaveOutcome` to `RowSaveOutcome`, `DocumentChange` to
 `RowChange`, and the opening refusal `UnsupportedSource` to
-`NoCanonicalForm`.
+`NoCanonicalForm`. Of those, only `RowEditor`, `RowEditorState`,
+`RowEditorError`, `TableEditError`, and `RowSaveError` remain, with the
+meanings ADR 0504 gives them.
 
-## Open, edit, save
+### Open, edit, save
 
 ```ts
 const { data, error } = await folder.tables.todos.edit(stem, { signal });
@@ -91,7 +161,7 @@ folder.tables.todos
 The editor covers table rows only. It does not invent a structured schema for
 arbitrary files or treat audio bytes as form fields.
 
-## Lifetime
+### Lifetime
 
 ```ts
 let opening: AbortController | undefined;
@@ -148,7 +218,7 @@ async function show(stem: string) {
 There is no registry, autosave, or focus protocol. The app decides which
 views share an editor and when to call `save`.
 
-## Shape
+### Shape
 
 ```text
 folder.tables.<name>.edit(stem, { signal }) -> Promise<Result<RowEditor, TableEditError>>
@@ -180,7 +250,7 @@ RowRevision    = { path, sha256, source (exact text), document, canonical (text)
 RowSaveAttempt = { path, document, source (canonical text sent) }    no hash: not a capture
 ```
 
-## Rules
+### Rules
 
 - Open gate. `edit` opens only a file that has a canonical form and whose
   declared fields conform. A refusal carries the exact text when there is
@@ -230,7 +300,7 @@ RowSaveAttempt = { path, document, source (canonical text sent) }    no hash: no
   observation. `adopt` chooses the reviewed current content; it never
   restores a version the file no longer holds. "Keep mine" is `save()`.
 
-## Tradeoffs left open
+### Tradeoffs left open
 
 - `adopt` refuses reviewed content the file no longer holds. The other
   choice, putting the reviewed content back as the local document, would

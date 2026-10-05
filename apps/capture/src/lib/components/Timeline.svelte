@@ -6,8 +6,9 @@
 	import * as Field from '@epicenter/ui/field';
 	import * as Item from '@epicenter/ui/item';
 	import * as Modal from '@epicenter/ui/modal';
-	import { Textarea } from '@epicenter/ui/textarea';
+	import { onDestroy } from 'svelte';
 	import type { Captures } from '$lib/captures.svelte.js';
+	import BoundText from './BoundText.svelte';
 
 	let {
 		captures,
@@ -28,12 +29,17 @@
 	let creating = $state(false);
 	/** The capture just added is opening: focus goes there, not back to the button. */
 	let created = false;
+	/** Cleared on destroy: the collection outlives this view, and a held form must not submit to it. */
+	let mounted = true;
+	onDestroy(() => {
+		mounted = false;
+	});
 
 	// The text lives in `captures`, so closing the dialog keeps it and leaving
 	// the page asks first.
 	async function addCapture(event: SubmitEvent) {
 		event.preventDefault();
-		if (creating) return;
+		if (!mounted || creating) return;
 		if (captures.newCapture.trim() === '') {
 			createProblem = 'Write something first.';
 			return;
@@ -81,10 +87,16 @@
 		<form onsubmit={addCapture} class="flex flex-col gap-4 px-4 pb-4 md:p-0">
 			<Field.Field>
 				<Field.Label for="new-capture">Capture text</Field.Label>
-				<Textarea
+				<!-- Its own lifetime: the collection keeps the text after this view is gone. -->
+				<BoundText
 					id="new-capture"
-					bind:value={captures.newCapture}
-					oninput={() => (createProblem = '')}
+					readonly={captures.fenced}
+					read={() => captures.newCapture}
+					write={(value) => {
+						if (!mounted) return;
+						createProblem = '';
+						captures.inputNewCapture(value);
+					}}
 					onkeydown={(event) => {
 						if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
 							event.preventDefault();
@@ -101,7 +113,7 @@
 			</Field.Field>
 			<Modal.Footer class="flex-row justify-end gap-2 p-0">
 				<Button type="button" variant="outline" onclick={() => (dialogOpen = false)}>Close</Button>
-				<Button type="submit" disabled={creating}>{creating ? 'Saving…' : 'Add capture'}</Button>
+				<Button type="submit" disabled={creating || captures.fenced}>{creating ? 'Saving…' : 'Add capture'}</Button>
 			</Modal.Footer>
 		</form>
 	</Modal.Content>
@@ -122,9 +134,7 @@
 						{#if row.thoughtCount > 0} · {row.thoughtCount} {row.thoughtCount === 1 ? 'thought' : 'thoughts'}{/if}
 					</Item.Description>
 				</Item.Content>
-				{#if row.attention === 'removed'}<Badge variant="destructive">File removed, draft kept</Badge>
-				{:else if row.attention === 'unreadable'}<Badge variant="destructive">Cannot be read</Badge>
-				{:else if row.attention === 'changed' || row.attention === 'invalid'}<Badge variant="destructive">Changed elsewhere</Badge>
+				{#if row.attention === 'removed'}<Badge variant="destructive">File removed</Badge>
 				{:else if row.attention === 'failed'}<Badge variant="destructive">Save failed</Badge>
 				{:else if row.attention === 'unconfirmed'}<Badge variant="destructive">Save not confirmed</Badge>
 				{:else if row.attention === 'deletion'}<Badge variant="destructive">Delete not confirmed</Badge>

@@ -7,6 +7,21 @@
  * names of the wrong kind raise `TypeMismatchError`. `faults` interrupts a
  * close or a removal at a chosen path. Passing here does not show that a
  * browser behaves this way; `evidence/opfs` runs the same checks in one.
+ *
+ * Two behaviors come from Chromium's source and were observed by probes in
+ * Chrome 142, not from its documentation; no other engine was checked.
+ *
+ * - An open writable stream holds a lock on its file. `removeEntry` of that
+ *   file, or a recursive `removeEntry` of a directory above it, fails with
+ *   `NoModificationAllowedError` before removing anything: the file and its
+ *   siblings stay. Once the stream closes, all its bytes are published.
+ * - A stream opened without `keepExistingData` for a file removed after its
+ *   handle was taken still opens, while `getFile` on that handle is
+ *   `NotFoundError`. Writing and closing that stream succeeds and creates the
+ *   file again at the path; aborting it leaves the path absent.
+ *
+ * Here a close also fails when the file's directory is gone too; the probes
+ * did not cover that. `drop` acts below the API and takes no lock.
  */
 
 import type {
@@ -43,6 +58,8 @@ export type Faults = {
 	close?: (path: string) => CloseFault | undefined;
 	/** Asked before every removal; `'fail'` refuses it. */
 	remove?: (path: string) => 'fail' | undefined;
+	/** Runs when a stream is asked for, before it opens. */
+	open?: (path: string) => Promise<void> | void;
 };
 
 const fail = (name: string, message: string) => new DOMException(message, name);
@@ -69,6 +86,8 @@ export function memoryOpfs(): MemoryOpfs {
 	const root: DirectoryNode = { kind: 'directory', children: new Map() };
 	const faults: Faults = {};
 	let clock = 0;
+	/** Open writable streams, by file path. */
+	const streams = new Map<string, number>();
 
 	function resolve(path: readonly string[]): Node | undefined {
 		let node: Node = root;
@@ -121,12 +140,33 @@ export function memoryOpfs(): MemoryOpfs {
 				};
 			},
 			async createWritable(options) {
-				const node = fileAt(path);
-				let buffer = options?.keepExistingData
-					? node.bytes.slice()
-					: new Uint8Array();
+				const key = path.join('/');
+				await faults.open?.(key);
+				// A stream without the old bytes opens even where the file went.
+				const node =
+					resolve(path) === undefined && !options?.keepExistingData
+						? undefined
+						: fileAt(path);
+				let buffer =
+					node !== undefined && options?.keepExistingData
+						? node.bytes.slice()
+						: new Uint8Array();
 				let done = false;
+				streams.set(key, (streams.get(key) ?? 0) + 1);
+				const release = () => {
+					const open = (streams.get(key) ?? 1) - 1;
+					if (open === 0) streams.delete(key);
+					else streams.set(key, open);
+				};
 				const publish = (bytes: Uint8Array) => {
+					// Moving the stream's file into place creates it again if it went.
+					if (resolve(path) === undefined)
+						directoryAt(path.slice(0, -1)).children.set(path.at(-1)!, {
+							kind: 'file',
+							bytes: new Uint8Array(),
+							version: 0,
+							lastModified: 0,
+						});
 					const target = fileAt(path);
 					target.bytes = bytes;
 					target.version++;
@@ -135,7 +175,7 @@ export function memoryOpfs(): MemoryOpfs {
 				const writable: OpfsWritable = {
 					async write(data) {
 						if (done) throw new TypeError('The stream is closed');
-						if (faults.write?.(path.join('/')) === 'fail')
+						if (faults.write?.(key) === 'fail')
 							throw fail('QuotaExceededError', 'Injected write failure');
 						const next = new Uint8Array(buffer.byteLength + data.byteLength);
 						next.set(buffer);
@@ -145,7 +185,8 @@ export function memoryOpfs(): MemoryOpfs {
 					async close() {
 						if (done) throw new TypeError('The stream is closed');
 						done = true;
-						const fault = faults.close?.(path.join('/'));
+						release();
+						const fault = faults.close?.(key);
 						if (fault === 'fail')
 							throw fail('InvalidStateError', 'Injected close failure');
 						if (fault === 'lost') {
@@ -159,6 +200,7 @@ export function memoryOpfs(): MemoryOpfs {
 						publish(buffer);
 					},
 					async abort() {
+						if (!done) release();
 						done = true;
 					},
 				};
@@ -213,6 +255,16 @@ export function memoryOpfs(): MemoryOpfs {
 					throw fail('NotFoundError', `${name} was not found`);
 				if (faults.remove?.([...path, name].join('/')) === 'fail')
 					throw fail('InvalidStateError', 'Injected removal failure');
+				// The entry, or for a directory anything below it, has a stream open.
+				const removed = [...path, name].join('/');
+				const locked = [...streams.keys()].some(
+					(open) => open === removed || open.startsWith(`${removed}/`),
+				);
+				if (locked)
+					throw fail(
+						'NoModificationAllowedError',
+						`${name} is locked by an open writable stream`,
+					);
 				if (
 					existing.kind === 'directory' &&
 					existing.children.size > 0 &&

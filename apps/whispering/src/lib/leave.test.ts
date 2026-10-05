@@ -4,10 +4,10 @@
  *
  * Key behaviors:
  * - Nothing held: the page answers `proceed` with no prompt
- * - Typing that can be saved is saved first, then `proceed`
+ * - A row save still running is waited for, then `proceed`
  * - A pending capture, an unsaved transcript or transformation result, a live
- *   recording, or typing that cannot be saved: the page answers `asking` and
- *   shows its prompt
+ *   recording, or edits whose save stopped or whose file was removed: the
+ *   page answers `asking` and shows its prompt
  * - "Keep working" answers `cancel` and every held byte is still there
  * - "Discard and quit" answers `proceed`
  */
@@ -19,10 +19,11 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { FileError } from '@epicenter/folder/bun';
 import { Ok } from 'wellcrafted/result';
+import { expectOk } from 'wellcrafted/testing';
 import { createFixtureDevice, toneWav } from './capture.js';
 import type { Library } from './library.svelte.js';
+import { editingOf } from './row-slot.test-support.js';
 import type { CloseDecision, Workspace } from './workspace/types.js';
-import { formOf } from './row-slot.test-support.js';
 import {
 	openTestFolder,
 	testConnections,
@@ -232,21 +233,20 @@ test('with everything saved, a close request is acknowledged and proceeds withou
 	expect(guard.asking).toBe(false);
 });
 
-test('typing that can be saved is saved first, then the close proceeds', async () => {
+test('a row save still running is waited for, then the close proceeds', async () => {
 	const { library, guard, answers, ask, root } = await open();
 	await record(library);
 	const selection = library.selection;
 	if (selection?.kind !== 'recording') throw new Error('expected a recording');
-	const editor = formOf(selection.slot);
-	library.autosave.paused = false;
-	editor.change({ fields: { title: 'Typed just now' } });
-	expect(editor.isDirty).toBe(true);
+	const editor = editingOf(selection.slot);
+	editor.setField('title', 'Typed just now');
+	expect(editor.save.status).toBe('saving');
 
 	await ask();
 
 	expect(answers).toEqual(['asking', 'proceed']);
 	expect(guard.asking).toBe(false);
-	expect(editor.isDirty).toBe(false);
+	expect(editor.holds).toBe(false);
 	const saved = await Bun.file(join(root, editor.path)).text();
 	expect(saved).toContain('"title": "Typed just now"');
 });
@@ -349,7 +349,7 @@ test('a transformation result whose file was not saved blocks the close and is k
 		}),
 	).toBeUndefined();
 	const profile = library.selectedTransformation!;
-	formOf(profile.slot).change({ fields: { model: 'chat-model' } });
+	editingOf(profile.slot).setField('model', 'chat-model');
 	const transcript = library.resultsFor(library.entries[0]!.stem)[0]!;
 	expect(
 		await library.transform(transcript.path, profile.path),
@@ -373,38 +373,29 @@ test('a transformation result whose file was not saved blocks the close and is k
 	expect(answers).toEqual(['asking', 'cancel', 'asking', 'proceed']);
 });
 
-test('a transformation draft that cannot be saved blocks the close and stays in the editor', async () => {
-	const { library, guard, answers, ask } = await open();
-	await library.createTransformation({ title: 'Clean up', prompt: 'Tidy.\n' });
-	const editor = formOf(library.selectedTransformation?.slot);
-	library.autosave.paused = true;
-	editor.change({ body: 'A prompt typed and not saved.\n' });
-
-	await ask();
-
-	expect(answers).toEqual(['asking']);
-	expect(guard.held).toContain(`${editor.path} has unsaved edits.`);
-	await guard.stay();
-	expect(editor.state.document.body).toBe('A prompt typed and not saved.\n');
-	expect(editor.isDirty).toBe(true);
-});
-
-test('typing that cannot be saved blocks the close and stays in the editor', async () => {
-	const { library, guard, answers, ask } = await open();
+test('typing in a row whose file was removed blocks the close, stays in the editor, and never creates the file', async () => {
+	const { library, guard, answers, ask, root } = await open();
 	await record(library);
 	const selection = library.selection;
 	if (selection?.kind !== 'recording') throw new Error('expected a recording');
-	const editor = formOf(selection.slot);
-	library.autosave.paused = true;
-	editor.change({ fields: { title: 'Held back' } });
+	const editor = editingOf(selection.slot);
+	const path = join(root, editor.path);
+	await rm(path);
+	editor.setField('title', 'Typed after it was removed');
+	expect((await editor.flush()).error?.name).toBe('NotFound');
 
 	await ask();
 
 	expect(answers).toEqual(['asking']);
-	expect(guard.held).toContain(`${editor.path} has unsaved edits.`);
+	expect(guard.held).toContain(
+		`${editor.path} has edits whose file is no longer in the folder.`,
+	);
 	await guard.stay();
-	expect(editor.state.document.fields.title).toBe('Held back');
-	expect(editor.isDirty).toBe(true);
+	expect(editor.row).toMatchObject({
+		status: 'valid',
+		fields: { title: 'Typed after it was removed' },
+	});
+	expect(await Bun.file(path).exists()).toBe(false);
 });
 
 test('typing after a save that failed is not saved by the close: it is held until the person saves again', async () => {
@@ -412,18 +403,20 @@ test('typing after a save that failed is not saved by the close: it is held unti
 	await record(library);
 	const selection = library.selection;
 	if (selection?.kind !== 'recording') throw new Error('expected a recording');
-	const editor = formOf(selection.slot);
+	const editor = editingOf(selection.slot);
 	const path = join(root, editor.path);
 	const before = await Bun.file(path).text();
 	// The row's directory refuses writes, so the save fails and saving stops.
 	chmodSync(join(root, 'recordings'), 0o555);
 	try {
-		editor.change({ fields: { title: 'Typed before it failed' } });
-		await editor.saveNow();
-		expect(editor.status).toMatchObject({ kind: 'failed', inFile: false });
+		editor.setField('title', 'Typed before it failed');
+		expect((await editor.flush()).error).not.toBeNull();
+		expect(editor.status.kind).toBe('failed');
 	} finally {
 		chmodSync(join(root, 'recordings'), 0o755);
 	}
+	// Typing after the failure is shown and kept, and not saved on its own.
+	editor.setField('title', 'Typed after it failed');
 
 	await ask();
 
@@ -434,9 +427,15 @@ test('typing after a save that failed is not saved by the close: it is held unti
 	);
 	expect(await Bun.file(path).text()).toBe(before);
 	await guard.stay();
+	expect(editor.row).toMatchObject({
+		fields: { title: 'Typed after it failed' },
+	});
 
-	await editor.saveNow();
+	// Saving again is the person's choice, and saves the latest input.
+	expect(editor.retry()).toBeUndefined();
+	expectOk(await editor.flush());
 	expect(editor.status.kind).toBe('saved');
+	expect(await Bun.file(path).text()).toContain('Typed after it failed');
 	await ask();
 	expect(answers).toEqual(['asking', 'cancel', 'asking', 'proceed']);
 });
@@ -484,13 +483,16 @@ test('with the host gone, a close attempt keeps the window and the pending audio
 test('with the host gone the folder still saves: what is held shrinks as it is saved, and quitting stays an explicit choice', async () => {
 	const started = await open({ failAudioWrites: 1 });
 	const { library, guard, answers, root } = started;
-	// A capture that reached no file, and typing that is not saved.
+	// A capture that reached no file, and typing in a text file that is not saved.
 	await record(library);
 	const pending = library.pending[0]!;
-	await library.createTransformation({ title: 'Clean up', prompt: 'Tidy.\n' });
-	const editor = formOf(library.selectedTransformation?.slot);
+	expect(await library.createFile('', 'note.md')).toBeUndefined();
+	const selection = library.selection;
+	if (selection?.kind !== 'file' || selection.file.kind !== 'text')
+		throw new Error('expected the new text file open');
+	const editor = selection.file.editor;
 	library.autosave.paused = true;
-	editor.change({ body: 'Typed after the host stopped.\n' });
+	editor.input('Typed after the host stopped.\n');
 
 	started.askWithoutHost();
 
@@ -502,7 +504,7 @@ test('with the host gone the folder still saves: what is held shrinks as it is s
 	// The folder is not the host's. Both are saved through it now.
 	library.autosave.paused = false;
 	expect(await library.prepareToLeave()).toBe(false);
-	expect(editor.isDirty).toBe(false);
+	expect(editor.dirty).toBe(false);
 	expect(await Bun.file(join(root, editor.path)).text()).toContain(
 		'Typed after the host stopped.',
 	);
@@ -579,8 +581,8 @@ test('a capture or typing asked for while the approval is on its way is refused'
 	await record(library);
 	const selection = library.selection;
 	if (selection?.kind !== 'recording') throw new Error('expected a recording');
-	const editor = formOf(selection.slot);
-	const before = editor.state.text;
+	const editor = editingOf(selection.slot);
+	const before = editor.row.text;
 
 	// Nothing was held, so `proceed` is sent. It has not arrived yet.
 	await ask();
@@ -588,13 +590,13 @@ test('a capture or typing asked for while the approval is on its way is refused'
 	expect(guard.phase).toBe('quitting');
 
 	await library.startRecording();
-	expect(editor.change({ fields: { title: 'Typed after approval' } })).toBe(
-		false,
-	);
-	expect(editor.change({ body: 'typed straight into the draft' })).toBe(false);
+	editor.setField('title', 'Typed after approval');
+	editor.setBody('typed straight into the editor');
+	expect(editor.retry()).toBeDefined();
 
 	expect(library.recorder.phase).toBe('idle');
-	expect(editor.state.text).toBe(before);
+	expect(editor.row.text).toBe(before);
+	expect(editor.save.status).toBe('idle');
 	expect(library.holdsUnsavedWork).toBe(false);
 
 	delivered.resolve();
@@ -613,9 +615,9 @@ test('while the person decides nothing new starts, and keep working admits work 
 	await record(library);
 	const pending = library.pending[0]!;
 	await library.createTransformation({ title: 'Clean up', prompt: 'Tidy.\n' });
-	const editor = formOf(library.selectedTransformation?.slot);
-	library.autosave.paused = true;
-	editor.change({ body: 'Typed before the close.\n' });
+	const editor = editingOf(library.selectedTransformation?.slot);
+	editor.setBody('Typed before the close.\n');
+	expectOk(await editor.flush());
 
 	await ask();
 	expect(answers).toEqual(['asking']);
@@ -627,9 +629,12 @@ test('while the person decides nothing new starts, and keep working admits work 
 	await library.retryPending(pending.capture.id);
 	expect(library.pending[0]!.attempts).toBe(pending.attempts);
 	expect(library.pending[0]!.state.kind).toBe('audioNotSaved');
-	expect(editor.change({ body: 'typed while asked' })).toBe(false);
-	expect(editor.state.document.body).toBe('Typed before the close.\n');
-	expect(await library.editSource(editor.path)).toContain('closing');
+	editor.setBody('typed while asked');
+	expect(editor.retry()).toBeDefined();
+	expect(editor.row).toMatchObject({ body: 'Typed before the close.\n' });
+	expect(editor.save.status).toBe('idle');
+	expect(library.editSource(editor.path)).toContain('closing');
+	expect(await library.reloadRow(editor.path)).toContain('closing');
 	expect(await library.createFile('', 'note.md')).toContain('closing');
 	expect(await Bun.file(join(root, 'note.md')).exists()).toBe(false);
 	library.terminal.command = 'echo hi';
@@ -642,12 +647,13 @@ test('while the person decides nothing new starts, and keep working admits work 
 	expect(answers).toEqual(['asking', 'cancel']);
 	expect(library.admitting).toBe(true);
 	expect(library.pending[0]!.capture.bytes).toEqual(toneWav());
-	expect(editor.state.document.body).toBe('Typed before the close.\n');
-	expect(editor.isDirty).toBe(true);
-	expect(editor.change({ body: 'Typed before the close.\nMore.\n' })).toBe(
-		true,
-	);
-	expect(editor.state.document.body).toContain('More.');
+	expect(editor.row).toMatchObject({ body: 'Typed before the close.\n' });
+	editor.setBody('Typed before the close.\nMore.\n');
+	expect(editor.row).toMatchObject({
+		body: 'Typed before the close.\nMore.\n',
+	});
+	expectOk(await editor.flush());
+	expect(await Bun.file(join(root, editor.path)).text()).toContain('More.');
 	await library.startRecording();
 	expect(library.recorder.phase).toBe('recording');
 	library.cancelRecording();
@@ -706,7 +712,7 @@ test('a transformation whose reads were under way when the person quit is never 
 	await library.transcribe(library.entries[0]!);
 	await library.createTransformation({ title: 'Clean up', prompt: 'Tidy.\n' });
 	const profile = library.selectedTransformation!;
-	formOf(profile.slot).change({ fields: { model: 'chat-model' } });
+	editingOf(profile.slot).setField('model', 'chat-model');
 	const transcript = library.resultsFor(library.entries[0]!.stem)[0]!;
 	hold = Promise.withResolvers<void>();
 	const running = library.transform(transcript.path, profile.path);
@@ -734,7 +740,7 @@ test('a recipe run on pasted text whose read was under way when the person quit 
 	const { library, guard, answers, ask } = started;
 	await library.createTransformation({ title: 'Clean up', prompt: 'Tidy.\n' });
 	const profile = library.selectedTransformation!;
-	formOf(profile.slot).change({ fields: { model: 'chat-model' } });
+	editingOf(profile.slot).setField('model', 'chat-model');
 	hold = Promise.withResolvers<void>();
 	const running = library.transformText(profile.path, 'pasted words\n');
 
@@ -877,20 +883,19 @@ test('keep working while saves settle admits work again, and the finished prepar
 	expect(page.guard.phase).toBe('idle');
 });
 
-test('released library drafts cannot accept typing or resume admission', async () => {
+test('released row editors cannot accept typing or resume admission', async () => {
 	const { library, guard } = await open();
 	await record(library);
 	const selection = library.selection;
 	if (selection?.kind !== 'recording') throw new Error('expected a recording');
-	const editor = formOf(selection.slot);
-	const before = editor.state.text;
+	const editor = editingOf(selection.slot);
+	const before = editor.row;
 	guard.dispose();
 	await library.close();
 	library.resumeAdmission();
-	expect(editor.change({ fields: { title: 'Typed after release' } })).toBe(
-		false,
-	);
+	editor.setField('title', 'Typed after release');
+	expect(editor.retry()).toContain('no longer open');
 	expect(library.admitting).toBe(false);
-	expect(editor.state.text).toBe(before);
-	expect(editor.state.isDisposed).toBe(true);
+	expect(editor.row).toBe(before);
+	expect(editor.released).toBe(true);
 });

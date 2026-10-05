@@ -96,10 +96,12 @@ test('a folder is opened only by the two workspaces, each through its own entry'
 	const folderEntries = importers((specifier) =>
 		specifier.startsWith('@epicenter/folder'),
 	).map((found) => found.split(' imports ')[1]);
+	// `/svelte` reads a row editor the page was given; it opens nothing.
 	expect([...new Set(folderEntries)].sort()).toEqual([
 		'@epicenter/folder',
 		'@epicenter/folder/browser',
 		'@epicenter/folder/file-browser',
+		'@epicenter/folder/svelte',
 		'@epicenter/folder/tauri',
 	]);
 	// The bare specifier is built against the browser entry. It is the exact

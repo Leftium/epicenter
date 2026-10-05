@@ -1,7 +1,7 @@
 <script lang="ts">
 	import * as Alert from '@epicenter/ui/alert';
 	import { Button } from '@epicenter/ui/button';
-	import { confirmationDialog } from '@epicenter/ui/confirmation-dialog';
+	import * as Dialog from '@epicenter/ui/dialog';
 	import * as Empty from '@epicenter/ui/empty';
 	import { Loading } from '@epicenter/ui/loading';
 	import { toast } from '@epicenter/ui/sonner';
@@ -11,13 +11,20 @@
 	import { page } from '$app/state';
 	import type { Captures } from '$lib/captures.svelte.js';
 	import type { Notice } from '$lib/draft.svelte.js';
-	import type { CaptureHost } from '$lib/platform/types.js';
+	import type { Departure } from '$lib/platform/departure.svelte.js';
 	import CaptureDetail from './CaptureDetail.svelte';
 	import Recovery from './Recovery.svelte';
 	import TechnicalDetails from './TechnicalDetails.svelte';
 	import Timeline from './Timeline.svelte';
 
-	let { host, captures }: { host: CaptureHost; captures: Captures } = $props();
+	let {
+		captures,
+		departure,
+	}: {
+		captures: Captures;
+		/** The host's question before it quits or restarts; none in a browser. */
+		departure: Departure | undefined;
+	} = $props();
 
 	// One route, three views. The page and its drafts stay mounted across all
 	// of them, so moving between captures never drops unsaved input.
@@ -56,29 +63,10 @@
 			navigation.cancel();
 	});
 
-	$effect(() => host.onServiceStopped(() => captures.markServiceStopped()));
-	$effect(() =>
-		host.onQuitRequested(async (answer) => {
-			const remaining = await captures.settleAll();
-			if (remaining === 0) {
-				await answer('proceed');
-				return;
-			}
-			confirmationDialog.open({
-				title: `${remaining} ${remaining === 1 ? 'thing is' : 'things are'} not saved`,
-				description: captures.folderStopped
-					? 'Epicenter can no longer save from this window. Quitting discards the text still open here. Keep working to copy or download it first.'
-					: 'Some text could not be saved, or was typed and not added yet. Quitting now discards it. Keep working to finish, resolve, or copy it.',
-				confirm: { text: 'Discard and quit', variant: 'destructive' },
-				cancel: { text: 'Keep working' },
-				onConfirm: async () => {
-					await captures.close({ discard: true });
-					await answer('proceed');
-				},
-				onCancel: () => void answer('cancel'),
-			});
-		}),
-	);
+	$effect(() => departure?.onHostStopped(() => captures.markServiceStopped()));
+
+	/** Quitting or restarting, in the words the person chose. */
+	const leaving = $derived(departure?.intent === 'restart' ? 'restart' : 'quit');
 
 	// Recovery for a change hint that never arrived.
 	$effect(() => {
@@ -115,9 +103,7 @@
 		unconfirmed: 'Save not confirmed',
 		failed: 'Save failed',
 		deletion: 'Delete not confirmed',
-		changed: 'Changed elsewhere',
-		invalid: 'Changed elsewhere',
-		unreadable: 'Cannot be read',
+		removed: 'File removed',
 	} satisfies Record<Notice['kind'], string>;
 
 	const status = $derived.by((): { text: string; tone: 'quiet' | 'pending' | 'problem' } => {
@@ -126,7 +112,7 @@
 		if (draft?.notice) return { text: NOTICE_STATUS[draft.notice.kind], tone: 'problem' };
 		if (captures.unsettled > 0)
 			return {
-				text: draft?.dirty ? 'Unsaved changes' : `${captures.unsettled} not saved`,
+				text: draft?.unsettled ? 'Not saved yet' : `${captures.unsettled} not saved`,
 				tone: 'pending',
 			};
 		return { text: 'Saved', tone: 'quiet' };
@@ -172,6 +158,24 @@
 </header>
 
 <main class="mx-auto flex w-full max-w-3xl flex-col gap-4 px-4 pb-16 pt-6 sm:px-6">
+	{#if departure?.fenced && !departure.prompt}
+		<Alert.Root aria-label={leaving === 'restart' ? 'Restarting' : 'Quitting'}>
+			<Alert.Title>{leaving === 'restart' ? 'Epicenter is restarting' : 'Epicenter is quitting'}</Alert.Title>
+			<Alert.Description>
+				{#if departure.answered === 'cancel'}
+					You chose to keep working. Your text is kept; editing resumes once Epicenter confirms it is staying open.
+				{:else if departure.answered === 'ready' || departure.vote === 'discarded'}
+					Waiting for Epicenter to {leaving}. Nothing here is changed or discarded unless it does.
+				{:else}
+					Saving what saves on its own. Editing is paused until Epicenter {leaving === 'restart' ? 'restarts' : 'quits'} or stays open.
+				{/if}
+			</Alert.Description>
+			{#if departure.answerProblem}
+				<p role="status" class="mt-2 text-foreground">Epicenter did not receive this window's answer, so editing stays paused: {departure.answerProblem}</p>
+				<div class="mt-2"><Button variant="outline" size="sm" onclick={() => departure.retry()}>Check again</Button></div>
+			{/if}
+		</Alert.Root>
+	{/if}
 	{#if captures.folderStopped}
 		<Alert.Root variant="destructive">
 			<Alert.Title>Epicenter closed this folder</Alert.Title>
@@ -181,11 +185,6 @@
 		<Alert.Root>
 			<Alert.Title>Epicenter's background service stopped</Alert.Title>
 			<Alert.Description>Captures still save to the folder from this window. Reloading it, or exporting captures from an account, may not work until Epicenter restarts.</Alert.Description>
-		</Alert.Root>
-	{/if}
-	{#if host.quitProtectionProblem}
-		<Alert.Root>
-			<Alert.Description>{host.quitProtectionProblem}</Alert.Description>
 		</Alert.Root>
 	{/if}
 	{#if captures.listProblem}
@@ -209,7 +208,8 @@
 		{#if recovering}
 			<Recovery {captures} onOpen={(capture) => show({ capture })} />
 		{:else if stem !== null}
-			{#if draft && draft.mode.kind !== 'opening'}
+			{#if draft?.opened}
+				<!-- One view per capture; the draft above it keeps its editor across every view and state. -->
 				{#key draft}
 					<CaptureDetail {draft} {captures} {stem} focusNewThought={created === stem} onBack={() => show()} onOpen={(capture) => show({ capture })} />
 				{/key}
@@ -250,3 +250,26 @@
 		{/if}
 	</div>
 </main>
+
+{#if departure}
+	<!-- One question per round. Closing it is Keep working. -->
+	<Dialog.Root open={departure.prompt !== undefined} onOpenChange={(open) => { if (!open) departure.keepWorking(); }}>
+		<Dialog.Content class="sm:max-w-md">
+			{@const held = departure.prompt?.held ?? 0}
+			<Dialog.Header>
+				<Dialog.Title>{held} {held === 1 ? 'thing is' : 'things are'} not saved</Dialog.Title>
+				<Dialog.Description>
+					{#if captures.folderStopped}
+						Epicenter can no longer save from this window. {leaving === 'restart' ? 'Restarting' : 'Quitting'} now discards the text still open here. Keep working to copy or download it first.
+					{:else}
+						Some text could not be saved, or was typed and not added yet. {leaving === 'restart' ? 'Restarting' : 'Quitting'} now discards it. Keep working to finish, resolve, or copy it.
+					{/if}
+				</Dialog.Description>
+			</Dialog.Header>
+			<Dialog.Footer>
+				<Button variant="outline" onclick={() => departure.keepWorking()}>Keep working</Button>
+				<Button variant="destructive" onclick={() => departure.discard()}>{leaving === 'restart' ? 'Discard and restart' : 'Discard and quit'}</Button>
+			</Dialog.Footer>
+		</Dialog.Content>
+	</Dialog.Root>
+{/if}

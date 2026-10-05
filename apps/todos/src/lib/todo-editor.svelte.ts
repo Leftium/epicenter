@@ -1,604 +1,414 @@
 /**
- * The todo editor: one retained, structured draft of one todo row.
+ * The todo editor: one todo row's retained native row editor (`table.edit`)
+ * and the few rules the app keeps around it.
  *
- * The folder's row editor (`table.edit`) owns the draft: the local document,
- * the baseline it is compared against, the latest read of the file, and each
- * save attempt. Every save writes the complete canonical document over the
- * row's path, whatever the file holds. Nothing is conditional: a save after
- * another writer replaces their text, and a save after a removal writes the
- * row again. The title, done, and notes controls, and a toggle from the list,
- * all change this one draft.
+ * The native editor owns the row. Every field, notes, source, and checkbox
+ * change is a complete replacement handed to `set` or `setText` at once; it
+ * is the row the views show from then on and is written last-writer-wins
+ * over the existing file, one write at a time with the latest input next.
+ * A failed or unconfirmed write keeps the input and the error and pauses
+ * writing until the person tries again (`retry`) or reloads the file over
+ * their input (`reload`). The file is read when the editor opens and again
+ * only on `reload`; nothing adopts another writer's change on its own.
  *
- * This module is the app's policy around that draft:
+ * This module adds only:
  *
- * - Autosave. A change saves after a short pause, one save at a time, while
- *   the draft is unsaved and its fields conform. A draft whose fields do not
- *   conform keeps its input on screen and is not saved. No save, explicit or
- *   not, starts while one is running; it is refused, never queued.
- * - Halting. A save that failed, or whose reply was lost, stops autosave
- *   until the person saves explicitly. A save whose storage threw is unknown
- *   too: the throw cannot say whether the bytes landed. An unknown save stays
- *   unknown even when a later read finds the same text: that read cannot say
- *   who wrote it.
- * - Review. While the draft has unsaved input and the latest read shows a
- *   change this editor did not make (other bytes, a removal, a read that
- *   failed, or text that no longer reads as a todo), nothing saves on its
- *   own: no timer, settle, rename, delete, or close writes over what the
- *   person has not seen. The hold ends with their choice: save mine, which
- *   writes the whole draft over it or writes the row again, or discard mine.
- *   A clean draft still follows a valid read on its own. The read that
- *   predates this editor's own successful save is not a change made
- *   elsewhere; the reread that follows the save replaces it.
- * - Rename. A row editor is fixed to its path. A rename saves the draft,
- *   holds saves, moves the file, opens a row editor at the destination,
- *   carries over what was typed meanwhile, and disposes the old editor, so
- *   nothing is ever written at the path the row left. A move that landed
- *   its destination but kept its source leaves the draft at the source, which
- *   still holds the row. A move whose reply was lost halts autosave, since
- *   the row may already have left the path this editor writes.
- * - Delete. A delete holds saves too, after any running save finishes, so
- *   no save of this draft lands during it. A delete whose reply was lost, or
- *   that threw, halts the editor before the owner lets the path go, clean or
- *   not: nothing saves on its own, and no later read, of the row or of its
- *   absence, answers it. A delete that removed the row while input arrived
- *   halts the same way, so that input never writes the row back on its own.
- *   The person's explicit save writes the row (again); discarding drops it.
- *
- * Git outcomes never touch this state. The owner (`todos.svelte.ts`) decides
- * when an editor is retained and disposes it when it forgets the path or
- * closes.
+ * - The source preference. Fields and source are two views of the same row;
+ *   a raw edit keeps the source view after the text becomes valid, until the
+ *   person chooses Edit fields. It is view state, kept here so it outlives
+ *   the views and follows a rename.
+ * - Refused fields. A title or notes value the row cannot be written with
+ *   (it has no canonical form) is accepted by nothing, so this editor keeps
+ *   that one field's typed value and why, and the field shows it for
+ *   correction. It is not a second row: the rest of the row stays the
+ *   native editor's, other fields keep saving, and the next accepted value
+ *   of that field clears it. Only a deliberate reload drops it.
+ *   Until then it counts as unsaved input, so leaving, rename, delete,
+ *   close, and a departure treat it as not settled.
+ * - Fences. Rename, delete, a recovery of an incoming update, close, and a
+ *   departure refuse input while they run; rename, delete, and close first
+ *   wait for admitted writes and stop when one failed or a field is refused.
+ * - Release. The owner (`todos.svelte.ts`) retains one editor per path and
+ *   releases it when it forgets the path or a rename moves the row. A
+ *   released editor refuses input and commands for good. An editor's path
+ *   never changes.
  */
-import {
-	FileError,
-	type FileTable,
-	type RowChange,
-	type RowEditor,
-	type RowEditorState,
-	type RowRevision,
-	type RowSaveError,
-	rowPath,
-	rowStemOf,
-	type TableEditError,
-	type TableRenameError,
-	type TextCapture,
+import type {
+	CanonicalDocument,
+	RowEditor,
+	RowReloadError,
+	RowSaveError,
 } from '@epicenter/folder';
-import { Ok, type Result } from 'wellcrafted/result';
+import { withFileNewlines } from '@epicenter/folder/file-browser';
+import { fromRowEditor } from '@epicenter/folder/svelte';
 import type { TodoFields } from './definition.js';
-import { TYPING_BATCH_MS } from './editor.svelte.js';
 
-export type TodoEditorState = RowEditorState<TodoFields>;
+/** Textareas report LF, so views show LF and setters restore the file's convention. */
+const lf = (text: string) => text.replace(/\r\n?/g, '\n');
+
+/** Why an operation was refused because this editor is working on its file. */
+export const BUSY =
+	'Another change to this file is still in progress. Try again when it finishes.';
+
+/** Why a released editor refused: the owner let it go, after a rename, delete, or close. */
+export const RELEASED =
+	'This todo is no longer open here, so nothing was changed. Open it again.';
+
+/** Why input or a command was refused while Epicenter asks to quit or restart. */
+export const DEPARTING =
+	'Epicenter is asking to quit or restart, so nothing is changed now. Your edits are kept.';
 
 /**
- * Why autosave stopped, until the person's explicit save or discard. An
- * `unknown` outcome may or may not have reached the file: a save's bytes, a
- * rename's move, or a delete's removal. `deleted` is a delete that removed
- * the row while input arrived.
+ * What a person is told about a stopped save. An unconfirmed save may have
+ * landed; the folder's own message stays, since it can name where a
+ * displaced file was kept.
  */
-export type SaveHalt =
-	| {
-			readonly kind: 'failed' | 'unknown';
-			readonly operation: 'save' | 'rename' | 'delete';
-			readonly message: string;
-	  }
-	| {
-			readonly kind: 'deleted';
-			readonly operation: 'delete';
-			readonly message: string;
-	  };
-
-/** Where a rename left the row. */
-export type Moved = {
-	/**
-	 * The reviewed baseline, named at the new path. The move was guarded by
-	 * its hash at the old path; nothing read the destination, and a native
-	 * folder checks that guard only as well as other programs allow. So this
-	 * is what the person reviewed, not verified bytes at the new path; the
-	 * editor reopened there reads what the file holds.
-	 */
-	readonly row: TextCapture;
-	/**
-	 * Set when the destination did not open as a structured todo. The editor
-	 * is disposed; `typed` is its unsaved text, if any, for the owner to keep.
-	 */
-	readonly unopened?: {
-		readonly error: TableEditError;
-		readonly typed: string | undefined;
-	};
-};
-
-/** Whether the draft's fields conform, so its save would be admitted. */
-export function conforms(state: TodoEditorState): boolean {
-	return (
-		state.reading.parseError === undefined && state.reading.issues.length === 0
-	);
-}
-
-/** What a person is told when a row editor did not open. */
-export function describeEditError(error: TableEditError): string {
+export function describeSaveError(error: RowSaveError): string {
 	switch (error.name) {
-		case 'NotFound':
-			return 'This todo is no longer in the folder.';
-		case 'NoCanonicalForm':
-			return `This todo's text cannot be edited as fields: ${error.refusal.reason}. Fix it in its source.`;
-		case 'InvalidSource':
-			return 'This todo needs repair before its fields can be edited. Fix it in its source.';
-		case 'Aborted':
-			return 'Opening this todo was cancelled.';
-		default:
-			return error.message;
-	}
-}
-
-/** Why a save was refused while another one of the same todo runs. */
-export const SAVING = 'A save of this todo is already running.';
-
-/** What a person is told when a save did not happen or may not have. */
-function describeSaveError(error: RowSaveError): string {
-	switch (error.name) {
-		case 'InvalidDocument':
-			return 'Some fields need fixing, so this todo was not saved.';
-		case 'Saving':
-			return SAVING;
-		case 'Disposed':
-			return 'This todo is closed, so it was not saved.';
 		case 'Unconfirmed':
-			return 'The save was sent, but its reply was lost, so it may or may not be in the file.';
+			return `The save was sent, but nothing confirmed it, so it may or may not be in the file. ${error.message}`;
+		case 'NotFound':
+			return 'This todo is no longer in the folder, so it was not saved. Nothing was written.';
+		case 'Unencodable':
+			return 'The text contains a character that cannot be saved exactly, so it was not saved. Fix the text, then try again.';
 		default:
-			return error.message;
+			return `Not saved: ${error.message}`;
 	}
+}
+
+/** A field whose typed value is kept because the row could not take it. */
+type RefusedField = 'title' | 'notes';
+
+/** One refused field's typed value, as the field shows it, and why it was refused. */
+type Refusal = { readonly value: string; readonly message: string };
+
+/** What a person is told about a reload that kept their input, including a missing file. */
+export function describeReloadError(error: RowReloadError): string {
+	return error.name === 'InputChanged'
+		? 'You edited this todo while it was being read, so your edits stay. Reload again to replace them.'
+		: `This todo could not be read, so your edits stay: ${error.message}`;
 }
 
 export function createTodoEditor(
-	table: FileTable<TodoFields>,
-	opened: RowEditor<TodoFields>,
+	path: string,
+	native: RowEditor<TodoFields>,
 	onSaved: () => void,
+	options: { readonly rawMode?: boolean } = {},
 ) {
-	let row = opened;
-	let state = $state.raw<TodoEditorState>(opened.get());
-	/**
-	 * The latest read when this editor's last save succeeded. The row editor
-	 * keeps it until the reread that follows the save, so it may describe the
-	 * bytes that save replaced; it is never a change made elsewhere.
-	 */
-	let superseded = $state.raw<TodoEditorState['observation'] | undefined>();
-	let halt = $state.raw<SaveHalt | undefined>();
-	/** Why the last change was refused; the next accepted change clears it. */
-	let refusal = $state<string | undefined>();
-	let timer: ReturnType<typeof setTimeout> | undefined;
-	/**
-	 * The one save this editor started, until its outcome is applied. Set by
-	 * the call that admits it, before any await. Reactive: it is cleared after
-	 * the row editor's last state of the save, so a view reading `isSaving` or
-	 * `isIdle` must hear the clearing itself.
-	 */
-	let saving = $state.raw<Promise<string | undefined> | undefined>();
-	/** Pending while a rename owns the row's path; resolves when it settles. */
-	let moving: Promise<void> | undefined;
+	const editor = fromRowEditor(native);
+	let rawMode = $state(options.rawMode ?? false);
+	/** Rename, delete, recovery, or close is working on this file; input is refused. */
+	let fences = $state(0);
+	let released = $state(false);
+	/** Epicenter asks to quit or restart. Reversible, unlike a release. */
+	let departing = $state(false);
+	/** Typed title or notes values the row could not take; see the module comment. */
+	let refusals = $state.raw<Partial<Record<RefusedField, Refusal>>>({});
 
-	/**
-	 * Take the row editor's next state, noting each save of ours that it
-	 * settles. Input held for review saves on its own again once a read no
-	 * longer shows the change, as when the other writer puts it back.
-	 */
-	function receive(next: TodoEditorState) {
-		const wasAwaitingReview = isAwaitingReview();
-		if (next.lastSave !== state.lastSave && next.lastSave?.kind === 'saved')
-			superseded = next.observation;
-		state = next;
-		if (wasAwaitingReview && canSaveOnItsOwn()) schedule();
+	// Retained for this editor's lifetime: a write that settles refreshes the
+	// listings whether or not a view is open.
+	let wasSaving = native.get().save.status === 'saving';
+	const unsubscribe = native.subscribe(() => {
+		const { save } = native.get();
+		if (wasSaving && save.status === 'idle') onSaved();
+		wasSaving = save.status === 'saving';
+	});
+
+	/** Why this editor takes no input or command now, if it does not. */
+	function refused(): string | undefined {
+		if (released) return RELEASED;
+		if (departing) return DEPARTING;
+		if (fences > 0) return BUSY;
+		return undefined;
 	}
 
-	const isIdle = () =>
-		!state.isDirty && saving === undefined && halt === undefined;
-
-	/**
-	 * The latest read, when it shows a change this editor did not make: other
-	 * bytes than the baseline, no file, a failed read, or text that is not a
-	 * valid todo.
-	 */
-	function externalChange() {
-		const { observation, baseline } = state;
-		if (observation === superseded) return undefined;
-		if (
-			observation.kind === 'present' &&
-			observation.revision.sha256 === baseline.sha256
-		)
-			return undefined;
-		return observation;
+	/** Whether the fields view is the one taking input now. */
+	function fieldsOpen() {
+		return editor.row.status === 'valid' && !rawMode && refused() === undefined;
 	}
 
-	/** Unsaved input waits for the person to review a change made elsewhere. */
-	const isAwaitingReview = () =>
-		state.isDirty && externalChange() !== undefined;
+	/** Submit a complete row from the fields view. Answers why nothing was accepted. */
+	function setRow(
+		change: (row: CanonicalDocument, file: string) => CanonicalDocument,
+	): string | undefined {
+		const row = editor.row;
+		// A leaving fields view can still deliver input; it is not this view's row anymore.
+		if (row.status !== 'valid' || !fieldsOpen()) return undefined;
+		const { error } = editor.set(
+			change({ fields: row.fields, body: row.body }, row.text),
+		);
+		return error === null ? undefined : error.refusal.reason;
+	}
 
-	/** Whether input may save without the person asking. */
-	const canSaveOnItsOwn = () =>
-		state.isDirty &&
-		halt === undefined &&
-		conforms(state) &&
-		!isAwaitingReview() &&
-		!state.isDisposed;
+	/**
+	 * Submit one field's typed value. A refusal keeps the value and why for
+	 * that field; an accepted value clears that field's refusal.
+	 */
+	function setField(
+		field: RefusedField,
+		value: string,
+		change: (row: CanonicalDocument, file: string) => CanonicalDocument,
+	): string | undefined {
+		if (!fieldsOpen()) return undefined;
+		const reason = setRow(change);
+		const next = { ...refusals };
+		delete next[field];
+		const message =
+			reason === undefined
+				? undefined
+				: `The ${field} cannot be saved: ${reason}.`;
+		if (message !== undefined) next[field] = { value, message };
+		refusals = next;
+		return message;
+	}
 
-	// Subscribed once everything `receive` reads exists: it runs at once.
-	let unsubscribe = row.subscribe(receive);
+	function hasRefusals() {
+		return Object.keys(refusals).length > 0;
+	}
 
-	/** Follow another row editor; the previous one is the caller's to dispose. */
-	function bind(next: RowEditor<TodoFields>) {
+	/** Whether admitted writes all landed and no field is refused. Never retries. */
+	async function flushed(): Promise<boolean> {
+		const { error } = await editor.flush();
+		return error === null && !hasRefusals();
+	}
+
+	/** Stop retaining the native editor, at once and for good. Admitted writes still settle. */
+	function release() {
+		if (released) return;
+		released = true;
 		unsubscribe();
-		row = next;
-		superseded = undefined;
-		unsubscribe = next.subscribe(receive);
-	}
-
-	function schedule() {
-		clearTimeout(timer);
-		if (halt !== undefined || moving || state.isDisposed) return;
-		timer = setTimeout(() => {
-			if (saving === undefined && !moving && canSaveOnItsOwn()) void run();
-		}, TYPING_BATCH_MS);
-	}
-
-	/** One save of the document as it is now. Answers why it did not save. */
-	async function attempt(): Promise<string | undefined> {
-		// Every attempt is a renewed one; only its own outcome can halt again.
-		halt = undefined;
-		let saved: Result<RowRevision, RowSaveError>;
-		try {
-			saved = await row.save();
-		} catch (cause) {
-			// Storage that throws is a bug, but the draft must not stay saving.
-			// The throw says nothing about whether the bytes landed, so the
-			// outcome is unknown, never a definite failure; the cause is kept.
-			halt = {
-				kind: 'unknown',
-				operation: 'save',
-				message: `The save ended with an error, so it may or may not be in the file: ${cause instanceof Error ? cause.message : String(cause)}`,
-			};
-			return halt.message;
-		}
-		if (saved.error === null) {
-			onSaved();
-			return undefined;
-		}
-		const { error } = saved;
-		const message = describeSaveError(error);
-		switch (error.name) {
-			case 'InvalidDocument':
-			case 'Saving':
-			case 'Disposed':
-				return message;
-			default:
-				halt = {
-					kind: error.name === 'Unconfirmed' ? 'unknown' : 'failed',
-					operation: 'save',
-					message,
-				};
-				return message;
-		}
-	}
-
-	/**
-	 * Start a save now. Refused while one is running: nothing queues behind a
-	 * save whose reply is not yet known, since a second save would answer for
-	 * it. A caller that means to wait, waits for `saving` and checks again.
-	 */
-	async function run(): Promise<string | undefined> {
-		if (saving) return SAVING;
-		clearTimeout(timer);
-		const started = attempt();
-		saving = started;
-		try {
-			return await started;
-		} finally {
-			if (saving === started) saving = undefined;
-			// Input that arrived during the save is still unsaved; batch it again.
-			if (state.isDirty) schedule();
-		}
-	}
-
-	/**
-	 * Save until nothing is left that may save on its own, or a save does not
-	 * succeed. Input held for review stays unsaved.
-	 */
-	async function drain() {
-		clearTimeout(timer);
-		while (saving) await saving;
-		while (canSaveOnItsOwn()) if ((await run()) !== undefined) return;
 	}
 
 	return {
-		/** The row editor's state: draft, baseline, latest read, and save outcomes. */
-		get state() {
-			return state;
+		path,
+		/** Tracked `row` and `save` reads and the commands of the native editor. */
+		editor,
+		get rawMode() {
+			return rawMode;
 		},
-		get path() {
-			return state.path;
-		},
-		/** Set when a save failed or its outcome is unknown, until the next save starts. */
-		get halt() {
-			return halt;
-		},
-		get refusal() {
-			return refusal;
-		},
-		/** Nothing is unsaved, saving, or halted. */
-		get isIdle() {
-			return isIdle();
+		/**
+		 * Input and commands are refused: a rename, delete, recovery, close, or
+		 * departure is working on this file, or the owner released this editor.
+		 */
+		get isFenced() {
+			return refused() !== undefined;
 		},
 		get isSaving() {
-			return saving !== undefined;
+			return editor.save.status === 'saving';
 		},
-		/**
-		 * The latest read when it shows a change this editor did not make. A
-		 * clean draft follows a valid one, so with input it is a review.
-		 */
-		get externalChange() {
-			return externalChange();
+		/** Every accepted input is written. */
+		get isIdle() {
+			return editor.save.status === 'idle' && !hasRefusals();
 		},
-		/** Unsaved input waits for the person to save it over, or discard it for, a change made elsewhere. */
-		get isAwaitingReview() {
-			return isAwaitingReview();
-		},
-		/**
-		 * The input cannot save on its own: a save halted, its fields do not
-		 * conform, or it waits for review.
-		 */
+		/** A write failed or went unconfirmed, or a field is refused; it waits for the person. */
 		get hasProblem() {
-			return (
-				halt !== undefined ||
-				(state.isDirty && !conforms(state)) ||
-				isAwaitingReview()
-			);
+			return editor.save.status === 'failed' || hasRefusals();
 		},
-		/**
-		 * The person may drop the draft: it cannot save on its own, or the
-		 * file changed elsewhere. Discarding writes nothing.
-		 */
-		get isDiscardable() {
-			return (
-				halt !== undefined ||
-				(state.isDirty && !conforms(state)) ||
-				externalChange() !== undefined
-			);
+		/** Why each refused field's typed value was not taken, for display beside the fields. */
+		get refusals(): readonly string[] {
+			return Object.values(refusals).map((refusal) => refusal.message);
 		},
-		/**
-		 * Change declared fields or the notes. The draft may stop conforming; it
-		 * then is not saved, and keeps the input. Answers why a change was refused.
-		 */
-		change(requested: RowChange<TodoFields>): string | undefined {
-			const { error: changedError } = row.change(requested);
-			if (changedError !== null) {
-				refusal =
-					changedError.name === 'Unrepresentable'
-						? `This value cannot be saved: ${changedError.refusal.reason}.`
-						: 'This todo is closed, so the change was not applied.';
-				return refusal;
+
+		// --- Function bindings. Each guards its own view's gate. -----------
+
+		title(): string {
+			const row = editor.row;
+			if (row.status !== 'valid') return '';
+			if (refusals.title !== undefined) return refusals.title.value;
+			return typeof row.fields.title === 'string' ? row.fields.title : '';
+		},
+		setTitle(title: string) {
+			return setField('title', title, ({ fields, body }) => ({
+				fields: { ...fields, title },
+				body,
+			}));
+		},
+		done(): boolean {
+			const row = editor.row;
+			return row.status === 'valid' && row.fields.done === true;
+		},
+		setDone(done: boolean) {
+			const reason = setRow(({ fields, body }) => ({
+				fields: { ...fields, done },
+				body,
+			}));
+			return reason === undefined
+				? undefined
+				: `This value cannot be saved: ${reason}.`;
+		},
+		notes(): string {
+			const row = editor.row;
+			if (row.status !== 'valid') return '';
+			return refusals.notes?.value ?? lf(row.body);
+		},
+		setNotes(notes: string) {
+			return setField('notes', notes, ({ fields }, file) => ({
+				fields,
+				body: withFileNewlines(notes, file),
+			}));
+		},
+		/** The whole file as the source view shows it. */
+		text(): string {
+			return lf(editor.row.text);
+		},
+		setText(next: string) {
+			const row = editor.row;
+			// The raw view exists for an invalid row, or a valid one in raw mode.
+			if ((row.status === 'valid' && !rawMode) || refused() !== undefined)
+				return;
+			// Raw repair stays in the source after the text becomes valid.
+			rawMode = true;
+			editor.setText(withFileNewlines(next, row.text));
+		},
+		/** Why the text on screen does not read as a todo, when it does not. */
+		diagnostics():
+			| { readonly summary: string; readonly details: readonly string[] }
+			| undefined {
+			const row = editor.row;
+			if (row.status === 'valid') return undefined;
+			const { error } = row;
+			switch (error.name) {
+				case 'Nonconforming':
+					return {
+						summary:
+							'Some fields need fixing before they can be edited as fields.',
+						details: error.reading.issues.map((issue) => issue.message),
+					};
+				case 'NoCanonicalForm':
+					return {
+						summary: `This text cannot be edited as fields: ${error.refusal.reason}.`,
+						details: [],
+					};
+				case 'Unencodable':
+					return {
+						summary:
+							'The text contains a character that cannot be saved exactly.',
+						details: [],
+					};
 			}
-			refusal = undefined;
-			schedule();
+		},
+
+		// --- Commands ------------------------------------------------------
+
+		/** Show the source of a valid row. Writes nothing. */
+		editSource(): string | undefined {
+			const blocked = refused();
+			if (blocked !== undefined) return blocked;
+			// The source shows the row, which does not hold a refused value.
+			if (hasRefusals())
+				return 'Fix the value that cannot be saved, or reload, before editing the source.';
+			rawMode = true;
+			return undefined;
+		},
+		/** Show the fields of a valid row. Text that is not a valid todo stays in the source. */
+		editFields(): string | undefined {
+			const blocked = refused();
+			if (blocked !== undefined) return blocked;
+			if (editor.row.status === 'invalid')
+				return 'This text does not read as a todo yet. Fix it in the source first.';
+			rawMode = false;
+			return undefined;
+		},
+		/** The person's "Try again" after a failed or unconfirmed write: write the latest input. */
+		retry(): string | undefined {
+			const blocked = refused();
+			if (blocked !== undefined) return blocked;
+			editor.retry();
 			return undefined;
 		},
 		/**
-		 * Save the complete document now; refused while a save is running, so
-		 * a save is never sent before the last one's outcome is known. This is
-		 * the person's explicit save: it renews autosave after a halt, and it is
-		 * "save mine" in a review, writing the whole draft over a change made
-		 * elsewhere or writing a removed row again. It saves a draft with
-		 * nothing unsaved too. A rename holds saves: this returns at once, and
-		 * the input saves at the destination. Answers why nothing was saved.
+		 * The list's checkbox for this open todo: `done` in the complete row on
+		 * screen, written now. Answers why nothing was written. Refused while
+		 * the todo is edited as source, or writing waits for the person.
 		 */
-		async save(): Promise<string | undefined> {
-			if (moving) return undefined;
-			return run();
-		},
-		/** Read the file now; a clean draft follows it. */
-		refresh() {
-			return row.refresh();
-		},
-		/**
-		 * Discard the local draft and take the file as the latest read found
-		 * it. Nothing is written. Answers why it was refused.
-		 */
-		adopt(): string | undefined {
-			const latest = state.observation;
-			if (latest.kind !== 'present')
-				return 'There is no saved version to load.';
-			const { error: adoptedError } = row.adopt(latest.revision);
-			if (adoptedError !== null)
-				return adoptedError.name === 'Stale'
-					? 'The file changed again. Review it and try again.'
-					: describeSaveError(adoptedError);
-			clearTimeout(timer);
-			// A read of the row cannot answer what a delete did; only an
-			// explicit save or discard ends that halt.
-			if (halt?.operation !== 'delete') halt = undefined;
-			refusal = undefined;
-			return undefined;
+		async toggle(done: boolean): Promise<string | undefined> {
+			const blocked = refused();
+			if (blocked !== undefined) return blocked;
+			const row = editor.row;
+			if (row.status !== 'valid' || rawMode)
+				return 'This todo is open in its source editor. Change it there.';
+			if (editor.save.status === 'failed')
+				return 'This todo has a save that did not finish. Choose what to do in its editor first.';
+			const reason = setRow(({ fields, body }) => ({
+				fields: { ...fields, done },
+				body,
+			}));
+			if (reason !== undefined) return `This value cannot be saved: ${reason}.`;
+			const { error } = await editor.flush();
+			return error === null ? undefined : describeSaveError(error);
 		},
 		/**
-		 * Save pending input before a delete, a switch to the source editor, or
-		 * close. Waits for a running rename first. True when nothing is left
-		 * unsaved, saving, or halted.
+		 * The person's Reload: once admitted writes settle, read the file and
+		 * show it, replacing the todo's input, any failed save, and any refused
+		 * field. A read that fails, or input that arrives meanwhile, replaces
+		 * nothing.
 		 */
-		async settle(): Promise<boolean> {
-			while (moving) await moving;
-			await drain();
-			return isIdle();
-		},
-		/**
-		 * Rename the row to `nextStem`: a conditional table move of the file as
-		 * this editor last read or saved it.
-		 *
-		 * Pending input saves first, and no save starts until the editor is at
-		 * the destination, so nothing is written at the path the row leaves.
-		 * Changes are accepted throughout; those made during the move are
-		 * carried to the destination's editor and save there.
-		 *
-		 * On a refusal this editor stays at its path, which still holds the
-		 * row, and its input saves there. `SourceNotRemoved` is such a case:
-		 * the destination landed too, and both files stay as they are. An
-		 * `Unconfirmed` move may have taken the row away, so it halts autosave
-		 * as an unknown outcome; the input stays until the person saves.
-		 * Nothing is retried or removed.
-		 *
-		 * Returns `undefined` without moving when the input could not be saved
-		 * first or another rename is running.
-		 */
-		async move(
-			nextStem: string,
-		): Promise<Result<Moved, TableRenameError> | undefined> {
-			if (moving) return undefined;
-			const settled = Promise.withResolvers<void>();
-			moving = settled.promise;
+		async reload() {
+			// A refused scalar never reaches the native owner, so fence its
+			// control while deliberate reload discards the previous input.
+			fences += 1;
 			try {
-				await drain();
-				// The move captures the file as it is now; a clean draft follows it.
-				await row.refresh();
-				if (!isIdle()) return undefined;
-				const { baseline } = state;
-				const stem = rowStemOf(table.name, baseline.path);
-				if (stem === undefined) return undefined;
-				const renamed = await table.rename(stem, nextStem, {
-					expectedSha256: baseline.sha256,
-				});
-				if (renamed.error !== null) {
-					if (renamed.error.name === 'Unconfirmed')
-						halt = {
-							kind: 'unknown',
-							operation: 'rename',
-							message:
-								'The rename was sent, but its reply was lost, so this todo may now be at either name. Your edits stay here until you save them.',
-						};
-					return renamed;
-				}
-				// The reviewed baseline at its new address. The guard was checked
-				// at the old path; this is not a read of the destination.
-				const destination: TextCapture = Object.freeze({
-					path: rowPath(table.name, nextStem),
-					sha256: baseline.sha256,
-					text: baseline.text,
-				});
-				const { data: reopened, error: reopenedError } =
-					await table.edit(nextStem);
-				// The retired editor's draft, with every change made during the move.
-				const typed = state;
-				const retired = row;
-				if (reopenedError !== null) {
-					await retired.dispose();
-					return Ok({
-						row: destination,
-						unopened: {
-							error: reopenedError,
-							typed: typed.isDirty ? typed.text : undefined,
-						},
-					});
-				}
-				bind(reopened);
-				if (typed.isDirty) {
-					const { title, done } = typed.document.fields;
-					reopened.change({
-						fields: { title, done },
-						body: typed.document.body,
-					});
-				}
-				await retired.dispose();
-				return Ok({ row: destination });
+				const result = await editor.reload();
+				if (result.error === null) refusals = {};
+				return result;
 			} finally {
-				moving = undefined;
-				settled.resolve();
-				if (state.isDirty) schedule();
+				fences -= 1;
+			}
+		},
+		/** Wait for admitted writes, without fencing input. True when all landed. */
+		settle: flushed,
+		/**
+		 * Run `work` with input fenced: admitted writes finish first, and `work`
+		 * learns whether all landed. Input is refused until `work` settles.
+		 */
+		async fence<T>(work: (settled: boolean) => Promise<T>): Promise<T> {
+			fences += 1;
+			try {
+				return await work(await flushed());
+			} finally {
+				fences -= 1;
 			}
 		},
 		/**
-		 * Hold saves while `work` runs, as when an incoming update is recovered
-		 * and may write this row. A save already running finishes first, and
-		 * none starts until `work` settles. Changes are accepted throughout.
-		 * Before the hold lifts, the row is read again, so a row `work` changed
-		 * is the latest read: a clean draft follows it, and input waits for the
-		 * person's review instead of saving over it.
+		 * Refuse input while `work` runs, as when an incoming update is
+		 * recovered and may write this row, then read the row again so it shows
+		 * what `work` left. A read that fails keeps the row on screen.
 		 */
 		async hold<T>(work: () => Promise<T>): Promise<T> {
-			while (moving) await moving;
-			const settled = Promise.withResolvers<void>();
-			moving = settled.promise;
+			fences += 1;
 			try {
-				clearTimeout(timer);
-				while (saving) await saving;
+				await editor.flush();
 				const done = await work();
-				await row.refresh();
+				await editor.reload();
 				return done;
 			} finally {
-				moving = undefined;
-				settled.resolve();
-				if (state.isDirty) schedule();
+				fences -= 1;
 			}
 		},
-		/**
-		 * Delete the row. `run` removes the version the person confirmed. A save
-		 * already running finishes first, and none starts until `run` answers,
-		 * so no save of this draft lands during the delete. Changes are
-		 * accepted throughout.
-		 *
-		 * The outcome is recorded before this returns, so before the owner lets
-		 * the path go. A delete whose reply was lost, or that threw, halts this
-		 * editor as unknown whether or not it holds input. A delete that removed
-		 * the row while input arrived halts it as deleted. Either way nothing
-		 * saves on its own, and no read ends the halt: the person's explicit
-		 * save writes the row (again), or they discard the draft. A refusal
-		 * removed nothing, and input saves as usual.
-		 *
-		 * Returns `undefined` without running while input is unsaved or halted,
-		 * or another rename or delete is running.
-		 */
-		async remove(
-			run: () => Promise<Result<undefined, FileError>>,
-		): Promise<Result<undefined, FileError> | undefined> {
-			if (moving) return undefined;
-			const settled = Promise.withResolvers<void>();
-			moving = settled.promise;
-			try {
-				clearTimeout(timer);
-				while (saving) await saving;
-				if (!isIdle()) return undefined;
-				let removed: Result<undefined, FileError>;
-				try {
-					removed = await run();
-				} catch (cause) {
-					removed = FileError.Unconfirmed({
-						path: state.path,
-						operation: 'remove',
-						cause,
-					});
-				}
-				if (removed.error?.name === 'Unconfirmed')
-					halt = {
-						kind: 'unknown',
-						operation: 'delete',
-						message:
-							'The delete was sent, but its reply was lost, so this todo may or may not still be in the folder.',
-					};
-				else if (removed.error === null && state.isDirty)
-					halt = {
-						kind: 'deleted',
-						operation: 'delete',
-						message: 'This todo was deleted while you were editing it.',
-					};
-				return removed;
-			} finally {
-				moving = undefined;
-				settled.resolve();
-				if (state.isDirty) schedule();
-			}
+		/** Epicenter asks to quit or restart: refuse input and commands at once. */
+		prepareDeparture() {
+			departing = true;
+		},
+		/** Wait for admitted writes. True when nothing of the person's is unwritten. */
+		drainDeparture: flushed,
+		/** The round ended without leaving: take input again. */
+		resumeDeparture() {
+			departing = false;
 		},
 		/**
-		 * Stop watching the file and refuse input. A running save still settles
-		 * first. Never rejects: a save whose storage threw already reported that
-		 * to its own call, which recorded the halt.
+		 * Stop retaining the native editor: fence input for good, wait for
+		 * admitted writes, and release. Answers whether everything landed; a
+		 * failed write is neither retried nor replaced. Only the owner's
+		 * terminal close calls this.
 		 */
-		async dispose(): Promise<void> {
-			clearTimeout(timer);
-			await row.dispose().catch(() => undefined);
+		async close(): Promise<boolean> {
+			if (released) return true;
+			fences += 1;
+			const settled = await flushed();
+			release();
+			return settled;
 		},
+		release,
 	};
 }
 

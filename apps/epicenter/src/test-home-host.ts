@@ -12,7 +12,9 @@ export function createTestDesktopAuth() {
 			completed: new Promise(() => undefined),
 			async storeAuth() {},
 			async openAuthUrl() {},
-			relaunch() {},
+			async prepareRelaunch() {
+				return { relaunch() {}, abort() {} };
+			},
 			onAuthCallback(listener) {
 				callbackListeners.add(listener);
 				return () => callbackListeners.delete(listener);

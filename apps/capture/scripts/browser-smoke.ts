@@ -14,8 +14,8 @@
  */
 import assert from 'node:assert/strict';
 import { type ChildProcess, spawn } from 'node:child_process';
-import { dirname, join } from 'node:path';
 import { mkdirSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import { type Browser, chromium, type Page } from 'playwright';
 
 const root = join(import.meta.dir, '../../..');
@@ -148,13 +148,15 @@ try {
 		() => document.activeElement?.id === 'new-thought',
 	);
 	const captureUrl = first.url();
-	// Source shows the capture as a save writes it: canonical frontmatter.
+	// Source shows the file exactly as it was created; a save writes its
+	// frontmatter in the canonical form below.
 	const created = await source(first);
-	assert.match(
-		created,
-		/^---\n"capturedAt": "\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z"\n---\n\nDinner with Sebastian\nFriday at seven\nBring the invitation\.\n\n## Thoughts\n$/,
-	);
-	const head = created.slice(0, created.indexOf('\n\nDinner'));
+	const at =
+		/^---\ncapturedAt: (\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z)\n---\n\nDinner with Sebastian\nFriday at seven\nBring the invitation\.\n\n## Thoughts\n$/.exec(
+			created,
+		)?.[1];
+	assert(at, `unexpected created source:\n${created}`);
+	const head = `---\n"capturedAt": "${at}"\n---`;
 
 	// 3. Multiline thoughts: add, edit, reorder, delete. The file is the list.
 	for (const thought of [
@@ -187,17 +189,12 @@ try {
 		`${head}\n\n${text}\n\n## Thoughts\n\n- A question for next time\n- Moving to Singapore\n  A longer thought\n`,
 	);
 
-	// 4. Editing the source is editing the capture. A frontmatter change is
-	// written exactly, only when chosen.
+	// 4. Editing the source is editing the capture: it saves exactly as typed,
+	// frontmatter included.
 	await first.getByRole('tab', { name: 'Source' }).click();
 	const edited = `${head.replace(/\n---$/, '\n"unknownKey": "kept"\n---')}\n\n${text}\n\n## Thoughts\n\n- A question for next time\n  - nested point\n- Moving to Singapore\n  A longer thought\n- Typed in source\n\nTrailing note.\n`;
 	await first.getByLabel('Markdown source').fill(edited);
-	await first
-		.getByRole('button', { name: 'Save this source as the file' })
-		.click();
-	await first
-		.getByRole('alert', { name: 'Source not saved' })
-		.waitFor({ state: 'detached' });
+	await saved(first);
 	// The views are real tabs: the arrow keys move between them.
 	await first.getByRole('tab', { name: 'Source' }).press('ArrowLeft');
 	await first.getByLabel('Capture text').waitFor();
@@ -219,76 +216,56 @@ try {
 	await first.getByLabel('Thoughts', { exact: true }).waitFor();
 	assert.equal(await source(first), edited);
 
-	// 6. Another page edits the file. A clean draft follows it, writing nothing.
+	// 6. Another page edits the file. An open capture keeps what it opened
+	// with until the person reloads it.
 	const second = await context.newPage();
 	second.on('pageerror', (error) => errors.push(`second: ${error.message}`));
 	await second.goto(captureUrl);
 	await second.getByLabel('Capture text').waitFor();
 	await second.getByLabel('Capture text').fill('Changed in the other window');
 	await saved(second);
+	assert.equal(await first.getByLabel('Capture text').inputValue(), text);
+	const reloadFromFile = async (page: Page) => {
+		await page.getByRole('button', { name: 'More capture actions' }).click();
+		await page.getByRole('menuitem', { name: 'Reload from file' }).click();
+	};
+	await reloadFromFile(first);
 	await first.waitForFunction(
 		() =>
 			(document.querySelector('#capture-text') as HTMLTextAreaElement)
 				?.value === 'Changed in the other window',
 	);
 
-	// 7. A dirty draft is kept when the file changes, and nothing is overwritten.
-	// Playwright's clock is context-wide. Delay only this page's typing batch
-	// so the second page can still autosave into the shared OPFS folder.
-	await first.evaluate(() => {
-		const schedule = window.setTimeout.bind(window);
-		Object.defineProperty(window, 'setTimeout', {
-			value: (handler: TimerHandler, delay?: number, ...args: unknown[]) =>
-				schedule(handler, delay === 600 ? 60_000 : delay, ...args),
-		});
-	});
-	await first.getByLabel('Capture text').fill('My unsaved draft');
-	await second.getByLabel('Capture text').fill('Changed again elsewhere');
-	await saved(second);
-	const conflict = first.getByRole('alert', { name: 'Changed elsewhere' });
-	await conflict.waitFor();
+	// 7. The latest save wins over a change the page never read.
+	await first.getByLabel('Capture text').fill('Saved over it');
+	await saved(first);
 	assert.equal(
-		await first.getByLabel('Capture text').inputValue(),
-		'My unsaved draft',
+		await second.getByLabel('Capture text').inputValue(),
+		'Changed in the other window',
 	);
-	assert(
-		(await conflict.getByLabel('Saved file now').innerText()).includes(
-			'Changed again elsewhere',
-		),
+	await reloadFromFile(second);
+	await second.waitForFunction(
+		() =>
+			(document.querySelector('#capture-text') as HTMLTextAreaElement)
+				?.value === 'Saved over it',
 	);
-	assert((await source(second)).includes('Changed again elsewhere'));
 
-	// 8. Reloading with unsaved text asks first.
+	// 8. Unsent thought text holds a reload back.
 	let asked = 0;
 	first.on('dialog', (dialog) => {
 		asked++;
 		void dialog.dismiss();
 	});
-	await first.reload({ timeout: 5000 }).catch(() => {});
-	assert.equal(asked, 1, 'the leave warning was shown');
-	assert.equal(
-		await first.getByLabel('Capture text').inputValue(),
-		'My unsaved draft',
-	);
-
-	// 9. The explicit choice saves the draft over the version that was shown.
-	await conflict
-		.getByRole('button', { name: 'Save my draft over this version' })
-		.click();
-	await conflict.waitFor({ state: 'detached' });
-	await second.waitForFunction(
-		() =>
-			(document.querySelector('#capture-text') as HTMLTextAreaElement)
-				?.value === 'My unsaved draft',
-	);
-
-	// 10. Unsent thought text also holds a reload back.
 	await first.getByLabel('Add a thought').fill('typed, not added');
 	await first.reload({ timeout: 5000 }).catch(() => {});
-	assert.equal(asked, 2, 'unsent thought text is protected');
+	assert.equal(asked, 1, 'unsent thought text is protected');
+	assert.equal(
+		await first.getByLabel('Add a thought').inputValue(),
+		'typed, not added',
+	);
 	await first.getByLabel('Add a thought').fill('');
 
-	// 11. Text with its own Thoughts list stays source-only, and says why.
+	// 9. Text with its own Thoughts list stays source-only, and says why.
 	await second.getByRole('button', { name: 'Timeline' }).click();
 	await second.getByRole('button', { name: 'New capture' }).click();
 	await second
@@ -305,7 +282,7 @@ try {
 		),
 	);
 
-	// 12. Deleting reviews the saved file, then removes it.
+	// 10. Deleting reviews the saved file, then removes it.
 	await second.getByRole('button', { name: 'More capture actions' }).click();
 	await second.getByRole('menuitem', { name: 'Delete capture…' }).click();
 	const review = second.getByRole('dialog', {
@@ -325,7 +302,7 @@ try {
 		1,
 	);
 
-	// 13. Old captures come in from a bundle file, and a second import adds nothing.
+	// 11. Old captures come in from a bundle file, and a second import adds nothing.
 	await second
 		.getByRole('button', {
 			name: 'Bring in captures from before this version…',
@@ -355,7 +332,7 @@ try {
 		.getByText('2 thoughts')
 		.waitFor();
 
-	// 14. A narrow screen does not scroll sideways.
+	// 12. A narrow screen does not scroll sideways.
 	await second.setViewportSize({ width: 390, height: 844 });
 	assert(
 		await second.evaluate(
@@ -371,7 +348,7 @@ try {
 
 	assert.deepEqual(errors, []);
 	console.log(
-		'Capture browser check passed: no sign-in, exact saved Markdown, multiline thoughts added, edited, reordered, and deleted, source editing, reload persistence, clean refresh and dirty-draft conflict across two pages, leave warnings for unsaved and unsent text, a source-only capture, reviewed deletion, and an idempotent import from a bundle file.',
+		'Capture browser check passed: no sign-in, exact saved Markdown, multiline thoughts added, edited, reordered, and deleted, source editing, reload persistence, explicit Reload from file and latest-save-wins across two pages, a leave warning for unsent text, a source-only capture, reviewed deletion, and an idempotent import from a bundle file.',
 	);
 } catch (cause) {
 	console.error(cause);

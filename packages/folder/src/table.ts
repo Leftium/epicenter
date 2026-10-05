@@ -20,9 +20,9 @@
  * updates read current text once and always publish against that read;
  * complete replacements read no row while preparing, and the publisher
  * checks any condition against the current bytes. Each publishes once and returns a
- * conflict without retrying (ADR-0464). `edit` is the other save shape: a
- * retained canonical draft of one row whose save overwrites the complete
- * document unconditionally (`editor.ts`).
+ * conflict without retrying (ADR-0464). `edit` acquires a row editor: the
+ * accepted complete input of one row, published through one queue of
+ * existing-row replacements (`editor.ts`).
  *
  * A table reads and writes exactly one Markdown file per row (ADR-0480). A
  * sibling that shares a row's stem is an ordinary file: it is not part of the
@@ -57,6 +57,7 @@ import { ROW_EXTENSION, rowAddressProblem, rowPath } from './paths.js';
 import { type DeepReadonly, ownSupplied } from './reading.js';
 import {
 	composeRowText,
+	conformRowValues,
 	readRowText,
 	type TableReading,
 	unrepresentable,
@@ -206,11 +207,13 @@ export type FileTable<TFields> = {
 		options: TableWriteOptions,
 	): Promise<Result<undefined, TableDeleteError>>;
 	/**
-	 * Open a retained editor on the row at `stem`. It subscribes to change
-	 * hints, then reads once. It opens only a file that has a canonical form
-	 * and whose declared fields conform; a refusal carries the exact text
-	 * when there is one, for raw repair. `signal` governs opening only: once
-	 * the editor is returned, the caller owns it and ends it with `dispose`.
+	 * Acquire an editor on the existing row at `stem` from one read. Any
+	 * readable UTF-8 text opens, malformed or schema-invalid text included,
+	 * so the same editor can repair it. A missing row is `NotFound`; an
+	 * unreadable or non-UTF-8 file, an address the folder does not admit,
+	 * and an aborted signal open nothing. `signal` governs acquisition only.
+	 * The editor has no disposal: it never reads on its own, and its admitted
+	 * saves settle whether or not anything still holds it.
 	 */
 	edit(
 		stem: string,
@@ -377,19 +380,10 @@ async function tableFilenames(
 /**
  * The file table for one declared table. `name` is its key in the prepared
  * definition and its directory; `schemas` are its prepared fields, in
- * declared order. `onFilesChanged` is the folder's change hints, which an
- * editor watches.
+ * declared order.
  */
 export function createTable<TFields>(
-	{
-		storage,
-		onFilesChanged,
-	}: {
-		storage: FolderStorage;
-		onFilesChanged: (
-			listener: (paths: readonly string[]) => void,
-		) => () => void;
-	},
+	{ storage }: { storage: FolderStorage },
 	name: string,
 	schemas: FieldMap,
 ): FileTable<TFields> {
@@ -684,9 +678,9 @@ export function createTable<TFields>(
 				{
 					path,
 					storage,
-					onFilesChanged,
 					declaredKeys,
-					inspect,
+					conform: (values, body) =>
+						conformRowValues<TFields>(schemas, values, body),
 				},
 				options?.signal,
 			);

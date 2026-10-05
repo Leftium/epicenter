@@ -6,19 +6,23 @@
  * history checks use the real `git`. The folder is the folder package's
  * directory opener, with the same handle the desktop page receives from the
  * shell, and its own row editors, so these cover what Honeycrisp does with a
- * folder, not how the page reaches one. A note's save that waits or loses its
- * reply is in `row-session.test.ts`; the real editor cannot be made to.
+ * folder, not how the page reaches one. A note write that must wait or lose
+ * its reply runs over the real browser folder instead (`browserProduct`),
+ * whose storage stand-in takes those faults under the same row editor.
  *
  * Key behaviors:
  * - Reading or opening a note never rewrites it; a note's save writes the
  *   complete canonical document: unknown values stay, comments and spelling do not
  * - A Git failure is history, never a save error
- * - A dirty note survives another writer and keeps its draft until the person chooses
- * - A note file the row editor cannot hold is repaired as text, then opens as a note
- * - A path owns one session across selection, rename, and deletion; a renamed
- *   note's draft, typing during the move included, goes to an editor at the new path
- * - Rename and delete act on the capture the session holds, for notes and
- *   raw files alike
+ * - An open note keeps its text when another program writes, until the
+ *   person reloads; its next save replaces the file (the last writer wins)
+ * - A note whose text does not read as one opens its one editor and is
+ *   repaired in its file view; no note is handed to a text session
+ * - A path owns one session across selection, rename, and deletion; a rename
+ *   or delete settles the note, fences its input, and acts on the file as
+ *   captured after that
+ * - A deleted note is never written back by a save; creating it again is the
+ *   person's separate, exclusive choice
  * - A raw draft whose file was removed is saved back as the text it captured,
  *   and what another program writes afterwards stays that program's
  * - A change whose reply is lost is not confirmed, never "not saved". A raw
@@ -43,8 +47,7 @@ import { join } from 'node:path';
 import type { InstantString } from '@epicenter/definition';
 import { type FileCapture, FileError, inspectRow } from '@epicenter/folder';
 import { openFolder } from '@epicenter/folder/bun';
-import { Ok, type Result } from 'wellcrafted/result';
-import { expectOk } from 'wellcrafted/testing';
+import { expectErr, expectOk } from 'wellcrafted/testing';
 import {
 	honeycrispDefinition,
 	type NoteEntry,
@@ -52,6 +55,7 @@ import {
 	repairReason,
 } from './data.js';
 import type { FileSession } from './file-session.svelte.js';
+import { openNotesFolder } from './folder.test-support.js';
 import { noteBody } from './note-source.js';
 import type { NoteSession } from './notes.svelte.js';
 import { setUpFolder } from './platform/first-open.js';
@@ -59,6 +63,7 @@ import type { NotesFolder, NotesHost } from './platform/types.js';
 import { draftsLine } from './status.js';
 
 const { createNotes } = await import('./notes.svelte.ts');
+const { noteSaveProblem } = await import('./note-session.svelte.ts');
 const { watch } = await import('./effects.test-support.svelte.ts');
 
 // Real git processes; generous under a loaded machine.
@@ -159,14 +164,11 @@ async function product() {
 		// A write receipt carries no reading; the note is what a read returns.
 		return expectOk(await handle.tables.notes.get(stem)) as NoteEntry;
 	};
-	let repairs = 0;
-	/**
-	 * A note file whose text does not parse, so it opens as text to repair:
-	 * its draft is a raw session at a note path.
-	 */
-	const seedRepair = async () => {
-		repairs += 1;
-		const path = `notes/repair-${repairs}.md`;
+	let drafts = 0;
+	/** A text file that is not a note, so it opens as a raw session over its exact text. */
+	const seedText = async () => {
+		drafts += 1;
+		const path = `docs/draft-${drafts}.md`;
 		const source = '---\ntitle: [open\n---\nHello\n';
 		expectOk(await handle.files.create(path, source));
 		const sha256 = expectOk(await handle.files.read(path)).sha256;
@@ -175,6 +177,11 @@ async function product() {
 	/** The note files in the folder now. */
 	const notePaths = async () =>
 		expectOk(await handle.tables.notes.list()).map((item) => item.path);
+	/** The files in `docs` now. */
+	const textPaths = async () =>
+		expectOk(await handle.files.list())
+			.files.map((file) => file.path)
+			.filter((path) => path.startsWith('docs/'));
 	const state = createNotes(host);
 	cleanup.push(() => state.close());
 	await state.refreshAll();
@@ -185,14 +192,45 @@ async function product() {
 		root,
 		git,
 		seedNote,
-		seedRepair,
+		seedText,
 		notePaths,
+		textPaths,
 		ran,
 		state,
 	};
 }
 
 type State = Awaited<ReturnType<typeof product>>['state'];
+
+/**
+ * The notes state over Honeycrisp's real browser folder on the in-memory
+ * OPFS stand-in, for a note write that must wait, fail, or lose its reply.
+ * The production row editor writes through the stand-in's file streams,
+ * which take those faults; nothing wraps the editor.
+ */
+async function browserProduct() {
+	const fixture = await openNotesFolder();
+	const state = createNotes(fixture.host);
+	cleanup.push(() => state.close());
+	const seedNote = async (title = 'First') => {
+		const { stem } = expectOk(
+			await fixture.folder.tables.notes.create({
+				fields: {
+					folderId: null,
+					title,
+					pinned: false,
+					createdAt: '2026-10-01T00:00:00.000Z' as InstantString,
+					updatedAt: '2026-10-01T00:00:00.000Z' as InstantString,
+					deletedAt: null,
+				},
+				body: 'Hello\n',
+			}),
+		);
+		return expectOk(await fixture.folder.tables.notes.get(stem)) as NoteEntry;
+	};
+	await state.refreshAll();
+	return { ...fixture, state, seedNote };
+}
 
 /** A file opened in the notes state as text, with its raw session. */
 async function openedFile(state: State, path: string): Promise<FileSession> {
@@ -203,7 +241,10 @@ async function openedFile(state: State, path: string): Promise<FileSession> {
 	return session;
 }
 
-/** A note opened in the notes state, with its note session. */
+/**
+ * A note opened in the notes state, with its note session. Its editor read
+ * the file when it opened and never reads it again by itself.
+ */
 async function openedNote(state: State, path: string): Promise<NoteSession> {
 	await state.refresh();
 	await state.open(path);
@@ -215,6 +256,39 @@ async function openedNote(state: State, path: string): Promise<NoteSession> {
 /** Replace a note's body as its views do. */
 const typeBody = (session: NoteSession, body: string) =>
 	noteBody(() => session).input(body);
+
+/** The structured note as its views show it. */
+function shown(session: NoteSession) {
+	const { row } = session;
+	if (row.status !== 'valid' || session.rawMode)
+		throw new Error(`${session.path} does not show its fields`);
+	return row;
+}
+
+/** The whole text the note's views show now. */
+const textOf = (session: NoteSession): string => session.row.text;
+
+/** Wait for a note's admitted writes. Resolves why they did not end saved. */
+async function saved(session: NoteSession): Promise<string | undefined> {
+	const { error } = await session.flush();
+	return error === null ? undefined : noteSaveProblem(error);
+}
+
+/**
+ * Another program deletes an open note's file, then the person types: the
+ * save finds no file. Resolves the exact text the editor keeps.
+ */
+async function typedAfterDeletion(
+	session: NoteSession,
+	root: string,
+	body = 'Retained\n',
+): Promise<string> {
+	await rm(join(root, session.path));
+	expect(typeBody(session, body)).toBe(true);
+	expect(await saved(session)).toContain('not there');
+	expect(session.missing).toBe(true);
+	return textOf(session);
+}
 
 /** The drafts line as the header derives it. */
 const draftsLineOf = (state: State) =>
@@ -296,53 +370,6 @@ function loseNext(
 	};
 }
 
-/**
- * Loses the reply to the save of the next note editor the app opens. With
- * `landed`, the save is written first. `held` keeps the reply back until it
- * resolves. `land()` writes what the lost save submitted.
- */
-function loseNextSave(
-	folder: NotesFolder,
-	write: (path: string, source: string) => Promise<Result<unknown, unknown>>,
-	{ landed, held }: { landed: boolean; held?: Promise<void> },
-) {
-	const edit = folder.tables.notes.edit;
-	const asked = Promise.withResolvers<void>();
-	let lost: { path: string; source: string } | undefined;
-	let saves = 0;
-	folder.tables.notes.edit = async (stem, options) => {
-		const opened = await edit(stem, options);
-		if (opened.error !== null || lost !== undefined) return opened;
-		const editor = opened.data;
-		return Ok({
-			...editor,
-			async save() {
-				saves += 1;
-				const { path, text: source } = editor.get();
-				lost = { path, source };
-				asked.resolve();
-				await held;
-				if (landed) await editor.save();
-				return FileError.Unconfirmed({
-					path,
-					operation: 'publishing to',
-					cause: new Error('the webview lost its IPC connection'),
-				});
-			},
-		});
-	};
-	return {
-		asked: asked.promise,
-		get saves() {
-			return saves;
-		},
-		land() {
-			if (lost === undefined) throw new Error('No save was sent');
-			return write(lost.path, lost.source);
-		},
-	};
-}
-
 /** What another program leaves at a note's path: a whole, valid note. */
 const OUTSIDE = [
 	'---',
@@ -411,9 +438,10 @@ describe('notes are files', () => {
 		await folder.tables.notes.list();
 		await folder.files.read('notes/odd.md');
 		const session = await openedNote(state, 'notes/odd.md');
-		expect(session.dirty).toBe(false);
-		expect(session.state.reading.fields.title).toBe('Spaced');
-		expect(await session.settle()).toBe(true);
+		expect(session.unsettled).toBe(false);
+		expect(shown(session).fields.title).toBe('Spaced');
+		expect(await saved(session)).toBeUndefined();
+		expect(await state.settleAll()).toBe(0);
 		await state.refresh();
 		expect(Buffer.compare(await readFile(path), bytes)).toBe(0);
 		expect((await stat(path)).mtimeMs).toBe(before.mtimeMs);
@@ -442,11 +470,11 @@ describe('notes are files', () => {
 		await writeFile(file, source);
 		const session = await openedNote(state, 'notes/keep.md');
 		expect(typeBody(session, '\n# New\n\n- [x] done\n')).toBe(true);
-		expect(await session.settle()).toBe(true);
-		const saved = await readFile(file, 'utf8');
-		const updatedAt = session.state.reading.fields.updatedAt;
+		expect(await saved(session)).toBeUndefined();
+		const written = await readFile(file, 'utf8');
+		const updatedAt = shown(session).fields.updatedAt;
 		expect(updatedAt).not.toBe('2026-10-01T00:00:00.000Z');
-		expect(saved).toBe(
+		expect(written).toBe(
 			[
 				'---',
 				'"folderId": null',
@@ -465,14 +493,14 @@ describe('notes are files', () => {
 				'',
 			].join('\n'),
 		);
-		expect(inspectRow(honeycrispDefinition.tables.notes, saved).issues).toEqual(
-			[],
-		);
-		// Reading the saved file again agrees with it and writes nothing.
+		expect(
+			inspectRow(honeycrispDefinition.tables.notes, written).issues,
+		).toEqual([]);
+		// Listing the saved file again writes nothing.
 		const before = await stat(file);
 		await state.refresh();
 		expect(session.status).toBe('saved');
-		expect(session.dirty).toBe(false);
+		expect(session.unsettled).toBe(false);
 		expect((await stat(file)).mtimeMs).toBe(before.mtimeMs);
 	});
 
@@ -626,7 +654,7 @@ test('a Git failure leaves the file saved and is reported as history, not as a s
 	// The save finishes before an explicit app commit meets the branch lock.
 	await writeFile(join(root, '.git', 'refs', 'heads', 'main.lock'), '');
 	typeBody(session, 'Locked out\n');
-	expect(await session.saveNow()).toBeUndefined();
+	expect(await saved(session)).toBeUndefined();
 	expect(session.status).toBe('saved');
 	expect((await state.commitNow()).status).toBe('failed');
 	expect(state.git.lastCommit?.status).toBe('failed');
@@ -652,7 +680,7 @@ test('a Git failure leaves the file saved and is reported as history, not as a s
 // ============================================================================
 
 describe('a note save that fails', () => {
-	test('keeps the draft, stops saving by itself, and saves again when the person asks', async () => {
+	test('keeps the text editable, stops saving by itself, and saves again when the person tries again', async () => {
 		const { state, root, seedNote } = await product();
 		const note = await seedNote();
 		const session = await openedNote(state, note.path);
@@ -662,18 +690,20 @@ describe('a note save that fails', () => {
 			spawnSync('chmod', ['u+w', notes]);
 		});
 		typeBody(session, 'Not yet saved\n');
-		expect(await session.settle()).toBe(false);
+		expect(await saved(session)).toContain('Not saved');
 		expect(session.status).toBe('failed');
 		expect(state.notSaved).toBe(1);
-		expect(session.state.document.body).toBe('Not yet saved\n');
+		expect(shown(session).body).toBe('Not yet saved\n');
 		expect(await readFile(join(root, note.path), 'utf8')).toBe(note.text);
-		// More typing is kept, and nothing is sent by itself.
-		typeBody(session, 'Still not saved\n');
-		await new Promise((resolve) => setTimeout(resolve, 700));
+		// More typing is kept, and nothing is sent by itself, even once a write
+		// would succeed.
+		spawnSync('chmod', ['u+w', notes]);
+		expect(typeBody(session, 'Still not saved\n')).toBe(true);
+		expect(await saved(session)).toContain('Not saved');
 		expect(await readFile(join(root, note.path), 'utf8')).toBe(note.text);
 		expect(await state.settleAll()).toBe(1);
-		spawnSync('chmod', ['u+w', notes]);
-		expect(await session.saveNow()).toBeUndefined();
+		expect(session.retry()).toBeUndefined();
+		expect(await saved(session)).toBeUndefined();
 		expect(session.status).toBe('saved');
 		expect(await readFile(join(root, note.path), 'utf8')).toContain(
 			'Still not saved',
@@ -687,53 +717,49 @@ describe('a note save that fails', () => {
 // ============================================================================
 
 describe('other writers', () => {
-	test('a dirty draft survives an external edit, and saving over it is the person’s choice', async () => {
+	test('an open note keeps its text when another program writes, and its next save replaces the file', async () => {
 		const { state, root, seedNote } = await product();
 		const note = await seedNote();
 		const session = await openedNote(state, note.path);
 		typeBody(session, 'Mine\n');
+		expect(await saved(session)).toBeUndefined();
 		await writeFile(
 			join(root, note.path),
 			note.text.replace('Hello', 'Theirs'),
 		);
 		await state.refresh();
-		expect(session.status).toBe('conflict');
-		expect(session.state.document.body).toBe('Mine\n');
-		expect(session.external?.kind).toBe('present');
-		// Nothing saves by itself over the other program's text.
-		expect(await session.settle()).toBe(false);
-		expect(await readFile(join(root, note.path), 'utf8')).toContain('Theirs');
-		expect(await session.saveNow()).toBeUndefined();
+		// The listing shows their text; the open note shows its own.
+		expect(state.notes.find((entry) => entry.path === note.path)?.body).toBe(
+			'Theirs\n',
+		);
+		expect(shown(session).body).toBe('Mine\n');
 		expect(session.status).toBe('saved');
-		expect(await readFile(join(root, note.path), 'utf8')).toContain('Mine');
+		expect(await readFile(join(root, note.path), 'utf8')).toContain('Theirs');
+		// The last writer wins.
+		typeBody(session, 'Mine again\n');
+		expect(await saved(session)).toBeUndefined();
+		expect(await readFile(join(root, note.path), 'utf8')).toContain(
+			'Mine again',
+		);
 	});
 
-	test('a reviewed version is taken only while it is still the file’s content', async () => {
+	test('reloading shows the file as another program left it, and writes nothing', async () => {
 		const { state, root, seedNote } = await product();
 		const note = await seedNote();
 		const session = await openedNote(state, note.path);
-		typeBody(session, 'Mine\n');
-		await writeFile(join(root, note.path), note.text.replace('Hello', 'B'));
-		await state.refresh();
-		const reviewed = session.external;
-		if (reviewed?.kind !== 'present')
-			throw new Error('No conflict was recorded');
 		const newer = note.text.replace('Hello', 'C');
 		await writeFile(join(root, note.path), newer);
 		await state.refresh();
-		expect(session.adopt(reviewed.revision)).toBe(false);
-		expect(session.state.document.body).toBe('Mine\n');
-		const current = session.external;
-		if (current?.kind !== 'present')
-			throw new Error('No conflict was recorded');
-		expect(session.adopt(current.revision)).toBe(true);
-		expect(session.state.document.body).toBe('C\n');
+		expect(shown(session).body).toBe('Hello\n');
+		const before = await stat(join(root, note.path));
+		expect(await session.reload()).toBeUndefined();
+		expect(shown(session).body).toBe('C\n');
 		expect(session.status).toBe('saved');
-		// Taking the file wrote nothing.
 		expect(await readFile(join(root, note.path), 'utf8')).toBe(newer);
+		expect((await stat(join(root, note.path))).mtimeMs).toBe(before.mtimeMs);
 	});
 
-	test('a malformed file is still a note to select, saves while malformed, and is repaired as text, then opens as a note', async () => {
+	test('a malformed file is still a note to select, opens its one editor, saves while malformed, and is repaired there', async () => {
 		const { state, root } = await product();
 		const malformed = '---\ntitle: *missing\n---\nbody\n';
 		await writeFile(join(root, 'notes', 'bad.md'), malformed);
@@ -757,14 +783,15 @@ describe('other writers', () => {
 			'notes/binary.md',
 		]);
 
-		const session = await openedFile(state, 'notes/bad.md');
-		expect(state.noteAt('notes/bad.md')).toBeUndefined();
-		expect(state.selection?.kind).toBe('file');
-		expect(session.buffer).toBe(malformed);
-		// A structured change is refused and writes nothing: the text session
-		// owns the file, and a file not open is not a note the editor can hold.
+		// Text that does not read as a note opens the note's one editor, for repair.
+		const session = await openedNote(state, 'notes/bad.md');
+		expect(state.sessionAt('notes/bad.md')).toBeUndefined();
+		expect(state.selection?.kind).toBe('note');
+		expect(session.row).toMatchObject({ status: 'invalid', text: malformed });
+		// A structured change is refused and writes nothing: there are no fields
+		// to change, open or not.
 		expect(await state.patchNote('notes/bad.md', { pinned: true })).toContain(
-			'open as text',
+			'needs fixing',
 		);
 		expect(await state.patchNote('notes/plain.md', { pinned: true })).toContain(
 			'needs repair',
@@ -773,53 +800,67 @@ describe('other writers', () => {
 			'No frontmatter\n',
 		);
 		expect(await readFile(join(root, 'notes/bad.md'), 'utf8')).toBe(malformed);
-		// It is not a note yet.
-		expect(await state.openAsNote('notes/bad.md')).toContain(
-			'cannot be opened as a note',
-		);
+		expect(session.showFile(false)).toContain('cannot be opened as a note yet');
 		// Still malformed text saves as written, and stays selectable.
 		const still = malformed.replace('body', 'more body');
-		session.input(still);
-		await session.save();
+		expect(session.setText(still)).toBeUndefined();
+		expect(await saved(session)).toBeUndefined();
 		expect(session.status).toBe('saved');
 		expect(await readFile(join(root, 'notes/bad.md'), 'utf8')).toBe(still);
 		await state.refresh();
 		expect(listed('notes/bad.md')?.text).toBe(still);
 		expect(listed('notes/bad.md')?.parseError).toBeDefined();
 
-		session.input(OUTSIDE.replace('title: Outside', 'title: Fixed'));
-		await session.save();
+		const fixed = OUTSIDE.replace('title: Outside', 'title: Fixed');
+		session.setText(fixed);
+		expect(await saved(session)).toBeUndefined();
+		// Repaired text is written exactly as typed, comments and spelling included.
+		expect(await readFile(join(root, 'notes/bad.md'), 'utf8')).toBe(fixed);
 		await state.refresh();
 		const repaired = listed('notes/bad.md') as NoteEntry;
 		expect(repaired.fields.title).toBe('Fixed');
-		expect(await state.openAsNote('notes/bad.md')).toBeUndefined();
-		expect(state.sessionAt('notes/bad.md')).toBeUndefined();
-		expect(state.noteAt('notes/bad.md')?.state.reading.fields.title).toBe(
-			'Fixed',
-		);
-		expect(state.selection?.kind).toBe('note');
+		// The same editor shows its fields once the person asks.
+		expect(session.rawMode).toBe(true);
+		expect(session.showFile(false)).toBeUndefined();
+		expect(state.noteAt('notes/bad.md')).toBe(session);
+		expect(shown(session).fields.title).toBe('Fixed');
+
+		// Bytes that are not text open nothing: no editor and no text session.
+		await state.open('notes/binary.md');
+		expect(state.selection).toMatchObject({
+			kind: 'file',
+			file: { kind: 'failed' },
+		});
+		expect(state.sessionAt('notes/binary.md')).toBeUndefined();
+		expect(state.noteAt('notes/binary.md')).toBeUndefined();
 	});
 
 	test('a note can be edited as a file, for keys its controls do not show, and opened as a note again', async () => {
 		const { state, root, seedNote } = await product();
 		const note = await seedNote();
 		const session = await openedNote(state, note.path);
-		typeBody(session, 'Unsaved\n');
-		// Nothing typed is set aside: the draft is saved first.
-		expect(await state.editAsFile(note.path)).toBeUndefined();
-		expect(state.noteAt(note.path)).toBeUndefined();
-		const raw = state.sessionAt(note.path);
-		if (raw === undefined) throw new Error('The note did not open as text');
-		expect(raw.buffer).toBe(await readFile(join(root, note.path), 'utf8'));
-		expect(raw.buffer).toContain('Unsaved');
-		raw.input(
-			raw.buffer.replace('---\nUnsaved', '"owner": "sam"\n---\nUnsaved'),
-		);
-		await raw.save();
-		expect(await state.openAsNote(note.path)).toBeUndefined();
-		const again = state.noteAt(note.path);
-		expect(again?.state.document.fields.owner).toBe('sam');
+		typeBody(session, 'Typed\n');
+		// The file view is the same editor, with its text: nothing is handed to
+		// another session.
+		expect(session.showFile(true)).toBeUndefined();
+		expect(state.noteAt(note.path)).toBe(session);
 		expect(state.sessionAt(note.path)).toBeUndefined();
+		const whole = textOf(session);
+		expect(whole).toContain('Typed');
+		session.setText(whole.replace('---\nTyped', '"owner": "sam"\n---\nTyped'));
+		expect(await saved(session)).toBeUndefined();
+		expect(session.showFile(false)).toBeUndefined();
+		expect(shown(session).fields.owner).toBe('sam');
+		// A title change keeps the key the fields do not show, and the body.
+		expect(session.edit({ fields: { title: 'Again' } })).toBeUndefined();
+		expect(await saved(session)).toBeUndefined();
+		const written = await readFile(join(root, note.path), 'utf8');
+		expect(written).toContain('"title": "Again"');
+		expect(written).toContain('"owner": "sam"');
+		expect(written.endsWith('---\nTyped\n')).toBe(true);
+		// The file view again shows exactly what was saved.
+		expect(session.showFile(true)).toBeUndefined();
+		expect(textOf(session)).toBe(written);
 	});
 });
 
@@ -910,7 +951,7 @@ describe('kept sessions', () => {
 		await expect(stat(join(root, 'scratch.txt'))).rejects.toThrow();
 	});
 
-	test('renaming an edited note saves it, then an editor at the new name takes the draft and its place', async () => {
+	test('renaming an edited note saves it, then an editor at the new name takes its text and its place', async () => {
 		const { state, root, seedNote } = await product();
 		const note = await seedNote();
 		const session = await openedNote(state, note.path);
@@ -923,8 +964,11 @@ describe('kept sessions', () => {
 		expect(renamed).not.toBe(session);
 		// The view stays mounted, with its undo history, on the new session.
 		expect(state.selection?.kind === 'note' && state.selection.key).toBe(view);
-		expect(renamed.state.document).toEqual(session.state.document);
+		expect(shown(renamed).body).toBe('Edited before rename\n');
 		expect(renamed.status).toBe('saved');
+		// The old session takes nothing more.
+		expect(session.released).toBe(true);
+		expect(typeBody(session, 'Late\n')).toBe(false);
 		expect(state.selectedPath).toBe('notes/renamed.md');
 		expect(state.selection?.kind).toBe('note');
 		expect(state.notes.map((entry) => entry.path)).toEqual([
@@ -939,7 +983,7 @@ describe('kept sessions', () => {
 		);
 	});
 
-	test('typing during a rename goes to the editor at the new name, and nothing is written to the old one', async () => {
+	test('a rename takes no input while it runs, writes nothing to either path, and the editor at the new name takes over', async () => {
 		const { state, folder, root, seedNote } = await product();
 		const note = await seedNote();
 		const session = await openedNote(state, note.path);
@@ -947,19 +991,50 @@ describe('kept sessions', () => {
 		const renaming = state.rename(note.path, 'renamed.md');
 		await move.asked;
 		expect(session.status).toBe('saving');
-		expect(typeBody(session, 'Typed during the rename\n')).toBe(true);
-		await new Promise((resolve) => setTimeout(resolve, 700));
+		expect(session.admitting).toBe(false);
+		expect(typeBody(session, 'Typed during the rename\n')).toBe(false);
+		expect(session.retry()).toContain('rename or delete');
+		expect(await session.reload()).toContain('rename or delete');
 		expect(await readFile(join(root, note.path), 'utf8')).toBe(note.text);
 		move.release();
 		expect(await renaming).toBeUndefined();
 		const renamed = state.noteAt('notes/renamed.md');
 		if (renamed === undefined) throw new Error('No note at the new name');
-		expect(renamed.state.document.body).toBe('Typed during the rename\n');
-		expect(await renamed.settle()).toBe(true);
+		expect(shown(renamed).body).toBe('Hello\n');
+		// The old editor publishes nothing more at the old path.
+		expect(typeBody(session, 'Late\n')).toBe(false);
+		expect(typeBody(renamed, 'Typed after the rename\n')).toBe(true);
+		expect(await saved(renamed)).toBeUndefined();
 		expect(await readFile(join(root, 'notes/renamed.md'), 'utf8')).toContain(
-			'Typed during the rename',
+			'Typed after the rename',
 		);
 		await expect(stat(join(root, note.path))).rejects.toThrow();
+	});
+
+	test('input in the same turn a rename or delete is asked for is refused, and the person’s later choice works', async () => {
+		const { state, seedNote } = await product();
+		const note = await seedNote();
+		const session = await openedNote(state, note.path);
+		const renaming = state.rename(note.path, 'renamed.md');
+		// No await yet: the fence is already up.
+		expect(session.admitting).toBe(false);
+		expect(session.edit({ fields: { title: 'Same turn' } })).toContain(
+			'rename or delete',
+		);
+		expect(typeBody(session, 'Same turn\n')).toBe(false);
+		expect(await renaming).toBeUndefined();
+		const renamed = state.noteAt('notes/renamed.md');
+		if (renamed === undefined) throw new Error('No note at the new name');
+		expect(shown(renamed).fields.title).toBe('First');
+		expect(renamed.edit({ fields: { title: 'Later' } })).toBeUndefined();
+
+		const deletion = expectOk(await state.deletionFor('notes/renamed.md'));
+		const removing = state.remove(deletion);
+		expect(renamed.edit({ fields: { title: 'Same turn' } })).toContain(
+			'rename or delete',
+		);
+		expect(await removing).toBeUndefined();
+		expect(state.noteAt('notes/renamed.md')).toBeUndefined();
 	});
 
 	test('deleting an edited raw file captures its saved version and forgets only that session', async () => {
@@ -983,16 +1058,21 @@ describe('kept sessions', () => {
 	});
 
 	test('deleting an edited note saves it, captures that version, and forgets the note', async () => {
-		const { state, root, seedNote } = await product();
+		const { state, folder, root, seedNote } = await product();
 		const note = await seedNote();
 		const session = await openedNote(state, note.path);
 		typeBody(session, 'Saved before deleting\n');
 		const deletion = expectOk(await state.deletionFor(note.path));
+		// The capture is read after the save settled: the bytes the person is shown.
 		expect(deletion).toEqual({
 			kind: 'file',
-			file: { path: note.path, sha256: session.state.baseline.sha256 },
+			file: {
+				path: note.path,
+				sha256: expectOk(await folder.files.read(note.path)).sha256,
+			},
 			title: 'First',
 		});
+		expect(session.unsettled).toBe(false);
 		expect(await readFile(join(root, note.path), 'utf8')).toContain(
 			'Saved before deleting',
 		);
@@ -1035,94 +1115,87 @@ describe('kept sessions', () => {
 			expect(await state.remove(deletion)).toContain('The file changed');
 			expect(await readFile(join(root, note.path), 'utf8')).toBe(outside(note));
 		}
-		await session.refresh();
 		expect(state.noteAt(shown.path)).toBe(session);
-		expect(session.state.document.body).toBe('Written by another program\n');
+		expect(session.pathChange).toBeUndefined();
+		// The open note keeps its text until the person reloads.
+		expect(textOf(session)).toBe(shown.text);
+		expect(await session.reload()).toBeUndefined();
+		expect(session.row).toMatchObject({
+			body: 'Written by another program\n',
+		});
 		expect(state.pending).toEqual([]);
 	});
 
-	test('a raw file renamed into a note keeps its session, and opens as a note once it is one', async () => {
+	test('a raw file renamed into a note becomes a note: its one editor opens there and repairs it', async () => {
 		const { state, folder, root } = await product();
 		const source =
 			'---\ntitle: Before\n# keep this comment\nunknown: "keep"\n---\nBody\n';
 		expectOk(await folder.files.create('notes/raw.txt', source));
 		const session = await openedFile(state, 'notes/raw.txt');
 		expect(await state.rename('notes/raw.txt', 'raw.md')).toBeUndefined();
-		expect(state.sessionAt('notes/raw.md')).toBe(session);
-		expect(state.selection?.kind).toBe('file');
+		// The settled text session is let go; the note's row editor owns the path.
+		expect(state.sessionAt('notes/raw.md')).toBeUndefined();
+		expect(state.sessionAt('notes/raw.txt')).toBeUndefined();
+		const note = state.noteAt('notes/raw.md');
+		if (note === undefined) throw new Error('The note did not open');
+		expect(session.path).toBe('notes/raw.md');
+		expect(state.selection?.kind).toBe('note');
 		expect(state.isNote('notes/raw.md')).toBe(true);
-		// The text session owns it, so no structured change is made.
+		// Its fields need values first, so no structured change is made.
+		expect(note.row).toMatchObject({ status: 'invalid', text: source });
 		expect(await state.patchNote('notes/raw.md', { title: 'After' })).toContain(
-			'open as text',
+			'needs fixing',
 		);
-		session.input(
+		note.setText(
 			OUTSIDE.replace(
 				'title: Outside',
 				'# keep this comment\nunknown: "keep"\ntitle: Before',
 			),
 		);
-		await session.save();
-		expect(await state.openAsNote('notes/raw.md')).toBeUndefined();
+		expect(await saved(note)).toBeUndefined();
+		expect(note.showFile(false)).toBeUndefined();
 		expect(
 			await state.patchNote('notes/raw.md', { title: 'After' }),
 		).toBeUndefined();
-		const saved = await readFile(join(root, 'notes/raw.md'), 'utf8');
-		expect(saved).toContain('"title": "After"');
-		expect(saved).toContain('"unknown": "keep"');
-		expect(saved).not.toContain('# keep this comment');
+		const written = await readFile(join(root, 'notes/raw.md'), 'utf8');
+		expect(written).toContain('"title": "After"');
+		expect(written).toContain('"unknown": "keep"');
+		expect(written).not.toContain('# keep this comment');
 	});
 
-	test('a dirty note survives malformed external source, refuses rename, and its draft is discarded only by choice', async () => {
+	test('a note whose file turned malformed elsewhere keeps its text, refuses a rename, and reloads into the same editor for repair', async () => {
 		const { state, root, seedNote } = await product();
 		const note = await seedNote();
 		const session = await openedNote(state, note.path);
-		typeBody(session, 'my unsaved text\n');
-		await writeFile(
-			join(root, note.path),
-			'---\ntitle: [broken\n---\noutside\n',
-		);
+		typeBody(session, 'my text\n');
+		expect(await saved(session)).toBeUndefined();
+		const broken = '---\ntitle: [broken\n---\noutside\n';
+		await writeFile(join(root, note.path), broken);
 		await state.refresh();
 		expect(state.noteAt(note.path)).toBe(session);
-		expect(session.state.document.body).toBe('my unsaved text\n');
-		// Text that does not parse has no canonical form either.
-		const seen = session.external?.kind;
-		expect(seen === 'invalid' || seen === 'unsupported').toBe(true);
-		expect(await state.rename(note.path, 'renamed.md')).toBe(
-			'Save or discard the open edits first.',
+		expect(shown(session).body).toBe('my text\n');
+		expect(session.status).toBe('saved');
+		// The rename reads the file first and finds other text than the note's.
+		expect(await state.rename(note.path, 'renamed.md')).toContain(
+			'Reload the file',
 		);
-		expect(await readFile(join(root, note.path), 'utf8')).toContain('[broken');
-		// Discarding the draft opens the file to repair, as text.
-		state.discardDraft(note.path);
-		expect(state.noteAt(note.path)).toBeUndefined();
-		expect(state.sessionAt(note.path)?.buffer).toContain('[broken');
+		expect(await readFile(join(root, note.path), 'utf8')).toBe(broken);
+		expect(state.noteAt(note.path)).toBe(session);
+		// Reloading shows the file to repair, in the same editor.
+		expect(await session.reload()).toBeUndefined();
+		expect(state.noteAt(note.path)).toBe(session);
+		expect(state.sessionAt(note.path)).toBeUndefined();
+		expect(session.row).toMatchObject({ status: 'invalid', text: broken });
+		expect(state.selection?.kind).toBe('note');
 	});
 
-	test('a clean note whose file stops being one it can hold opens as text to repair', async () => {
-		const { state, root, seedNote } = await product();
-		const note = await seedNote();
-		await openedNote(state, note.path);
-		await writeFile(join(root, note.path), '---\ntitle: [broken\n---\n');
-		await state.refresh();
-		expect(state.noteAt(note.path)).toBeUndefined();
-		expect(state.sessionAt(note.path)?.buffer).toBe(
-			'---\ntitle: [broken\n---\n',
-		);
-		expect(state.selection?.kind).toBe('file');
-	});
-
-	test('metadata changes share the open session, with explicit deferred and immediate saves', async () => {
+	test('metadata changes share the open session: a typed field and a list action each save at once', async () => {
 		const { state, root, seedNote } = await product();
 		const note = await seedNote();
 		const session = await openedNote(state, note.path);
-		expect(
-			await state.patchNote(
-				note.path,
-				{ title: 'Typed title' },
-				{ save: 'later' },
-			),
-		).toBeUndefined();
-		expect(session.state.reading.fields.title).toBe('Typed title');
-		expect(await readFile(join(root, note.path), 'utf8')).toBe(note.text);
+		// What the title control does.
+		expect(session.edit({ fields: { title: 'Typed title' } })).toBeUndefined();
+		expect(shown(session).fields.title).toBe('Typed title');
 		expect(await state.patchNote(note.path, { pinned: true })).toBeUndefined();
 		const saved = await readFile(join(root, note.path), 'utf8');
 		expect(saved).toContain('"title": "Typed title"');
@@ -1195,47 +1268,6 @@ describe('kept sessions', () => {
 		expect(saved.body).toBe('Written by another program\n');
 	});
 
-	test('a listing captured before a save cannot roll a saved repair draft back after the save', async () => {
-		const { state, folder, root, seedRepair } = await product();
-		const repair = await seedRepair();
-		const session = await openedFile(state, repair.path);
-		const list = folder.tables.notes.list;
-		const started = Promise.withResolvers<void>();
-		const release = Promise.withResolvers<void>();
-		let held = false;
-		folder.tables.notes.list = async () => {
-			const result = await list();
-			if (!held) {
-				held = true;
-				started.resolve();
-				await release.promise;
-			}
-			return result;
-		};
-		const observed: string[] = [];
-		const stop = watch(() => {
-			observed.push(session.buffer);
-		});
-		const refreshing = state.refresh();
-		await started.promise;
-		session.input(`${repair.source}saved while listing waits\n`);
-		await session.save();
-		const saved = session.saved;
-		release.resolve();
-		await refreshing;
-		await new Promise((resolve) => setTimeout(resolve, 0));
-		stop();
-		expect(session.saved.sha256).toEqual(saved.sha256);
-		expect(session.buffer).toBe(saved.text);
-		expect(session.external).toBeUndefined();
-		// A second old value means the screen actually rolled back, even if the
-		// save's queued refresh eventually put the new value back.
-		expect(observed.filter((source) => source === repair.source)).toHaveLength(
-			1,
-		);
-		expect(await readFile(join(root, repair.path), 'utf8')).toBe(saved.text);
-	});
-
 	test('renaming a raw file refuses a destination with a kept removed-file draft', async () => {
 		const { state, folder, root } = await product();
 		expectOk(await folder.files.create('a.txt', 'A\n'));
@@ -1279,39 +1311,347 @@ describe('kept sessions', () => {
 		]);
 	});
 
-	test('a deleted note’s draft is kept, and saving it writes it back at its own path', async () => {
+	test('a deleted note keeps its text editable, nothing writes it back, and the person can create it again at its own path', async () => {
 		const { state, root, seedNote } = await product();
 		const note = await seedNote();
 		const session = await openedNote(state, note.path);
 		await rm(join(root, note.path));
 		typeBody(session, 'Retained\n');
+		expect(await saved(session)).toContain('not there');
 		await state.refresh();
+		// The listing no longer shows it; the open note keeps its editor.
 		expect(state.noteAt(note.path)).toBe(session);
-		expect(session.external?.kind).toBe('missing');
-		expect(await session.settle()).toBe(false);
+		expect(session.missing).toBe(true);
+		expect(session.status).toBe('failed');
+		expect(typeBody(session, 'Retained more\n')).toBe(true);
+		const typed = textOf(session);
+		// Try again does not create the file either.
+		expect(session.retry()).toBeUndefined();
+		expect(await saved(session)).toContain('not there');
 		await expect(stat(join(root, note.path))).rejects.toThrow();
-		expect(await session.saveNow()).toBeUndefined();
-		expect(await readFile(join(root, note.path), 'utf8')).toContain('Retained');
-		expect(session.status).toBe('saved');
+		// Creating it again is the person's separate choice, and only while the path is free.
+		expect(await state.recoverDraft(note.path)).toBeUndefined();
+		expect(await readFile(join(root, note.path), 'utf8')).toEqual(typed);
+		const again = state.noteAt(note.path);
+		if (again === undefined) throw new Error('The note did not open again');
+		expect(again).not.toBe(session);
+		expect(session.released).toBe(true);
+		expect(shown(again).body).toBe('Retained more\n');
+		expect(again.status).toBe('saved');
 	});
 
-	test('renaming a note also refuses a destination with a kept removed-note draft', async () => {
+	test('a deleted note whose path another program filled is saved as a new note, exactly, and that file stays', async () => {
+		const { state, root, seedNote, notePaths } = await product();
+		const note = await seedNote();
+		const session = await openedNote(state, note.path);
+		const view = state.selection?.kind === 'note' && state.selection.key;
+		expect(session.showFile(true)).toBeUndefined();
+		// Comments, quoting, and an unknown key: the text is kept as typed.
+		const typed = `${textOf(session).replace('---\n', "---\n# mine\nowner: 'sam'\n")}More\n`;
+		await rm(join(root, note.path));
+		expect(session.setText(typed)).toBeUndefined();
+		expect(await saved(session)).toContain('not there');
+		await state.refresh();
+		await writeFile(join(root, note.path), OUTSIDE);
+		expect(await state.recoverDraft(note.path)).toBeUndefined();
+		// The file another program put there is untouched.
+		expect(await readFile(join(root, note.path), 'utf8')).toBe(OUTSIDE);
+		const created = (await notePaths()).filter((path) => path !== note.path);
+		expect(created).toHaveLength(1);
+		const [at] = created;
+		if (at === undefined) throw new Error('No new note');
+		expect(await readFile(join(root, at), 'utf8')).toBe(typed);
+		// The view moves to the new note; the old session takes nothing more.
+		expect(state.selectedPath).toBe(at);
+		expect(state.selection?.kind === 'note' && state.selection.key).toBe(view);
+		expect(state.noteAt(at)?.row.text).toBe(typed);
+		expect(session.released).toBe(true);
+		expect(state.noteAt(note.path)).toBeUndefined();
+	});
+
+	test('a new note whose create got no reply stays pending, and no second copy of the text is made', async () => {
+		const { state, folder, root, seedNote, notePaths } = await product();
+		const note = await seedNote();
+		const session = await openedNote(state, note.path);
+		const typed = await typedAfterDeletion(session, root);
+		await state.refresh();
+		await writeFile(join(root, note.path), OUTSIDE);
+		const create = folder.files.create;
+		const asked: string[] = [];
+		folder.files.create = async (path, content) => {
+			asked.push(path);
+			// The note's own path answers for itself; a new one loses its reply.
+			if (path === note.path) return create(path, content);
+			return FileError.Unconfirmed({
+				path,
+				operation: 'publishing to',
+				cause: new Error('the reply was lost'),
+			});
+		};
+		expect(await state.recoverDraft(note.path)).toContain('not confirmed');
+		expect(asked).toHaveLength(2);
+		expect(state.pending).toMatchObject([{ kind: 'create', source: typed }]);
+		// Asking again sends nothing anywhere: that copy may still land.
+		expect(await state.recoverDraft(note.path)).toContain('not confirmed');
+		expect(asked).toHaveLength(2);
+		expect(await notePaths()).toEqual([note.path]);
+		expect(textOf(session)).toBe(typed);
+		expect(state.noteAt(note.path)).toBe(session);
+	});
+
+	test('a note whose own save back got no reply keeps that path pending and keeps its text', async () => {
+		const { state, folder, root, seedNote } = await product();
+		const note = await seedNote();
+		const session = await openedNote(state, note.path);
+		const typed = await typedAfterDeletion(session, root);
+		await state.refresh();
+		loseNext(folder.files, 'create', { landed: false });
+		expect(await state.recoverDraft(note.path)).toContain('not confirmed');
+		expect(state.pending).toMatchObject([{ kind: 'create', path: note.path }]);
+		// Nothing else is changed at that path while the record stands.
+		expect(await state.patchNote(note.path, { pinned: true })).toContain(
+			'not confirmed',
+		);
+		expect(state.noteAt(note.path)).toBe(session);
+		expect(session.released).toBe(false);
+		expect(textOf(session)).toBe(typed);
+	});
+
+	test('a deleted note with a refused title waiting in its field is not saved as a file until the title is fixed', async () => {
+		const { state, root, seedNote, notePaths } = await product();
+		const note = await seedNote();
+		const session = await openedNote(state, note.path);
+		await typedAfterDeletion(session, root);
+		// What the title control does with half of an emoji.
+		expect(
+			session.edit({ fields: { title: 'Half \uD800' } }, { keep: true }),
+		).toContain('lone surrogate');
+		const accepted = textOf(session);
+		expect(await state.recoverDraft(note.path)).toContain('not saved yet');
+		// Nothing was created, and the same session keeps the refused title.
+		expect(await notePaths()).toEqual([]);
+		expect(state.pending).toEqual([]);
+		expect(state.noteAt(note.path)).toBe(session);
+		expect(session.released).toBe(false);
+		expect(session.refused.title?.value).toBe('Half \uD800');
+		expect(textOf(session)).toBe(accepted);
+		// Once the title is fixed in its control, the note is saved as a file.
+		expect(
+			session.edit({ fields: { title: 'Half' } }, { keep: true }),
+		).toBeUndefined();
+		expect(session.refused.title).toBeUndefined();
+		expect(await state.recoverDraft(note.path)).toBeUndefined();
+		expect(await readFile(join(root, note.path), 'utf8')).toContain(
+			'"title": "Half"',
+		);
+		expect(session.released).toBe(true);
+		expect(state.noteAt(note.path)?.row).toMatchObject({
+			fields: { title: 'Half' },
+		});
+	});
+
+	test('a note whose text has an unpaired surrogate is never created as a file, and its exact text stays', async () => {
+		const { state, root, seedNote, notePaths } = await product();
+		const note = await seedNote();
+		const session = await openedNote(state, note.path);
+		session.showFile(true);
+		const typed = `${textOf(session)}half \uD800\n`;
+		session.setText(typed);
+		await session.flush();
+		expect(session.save).toMatchObject({
+			status: 'failed',
+			error: { name: 'Unencodable' },
+		});
+		await rm(join(root, note.path));
+		// The person's reload finds no file and keeps the text.
+		expect(await session.reload()).toContain('not in the folder');
+		expect(session.missing).toBe(true);
+		expect(await state.recoverDraft(note.path)).toContain('unpaired surrogate');
+		expect(await notePaths()).toEqual([]);
+		expect(state.pending).toEqual([]);
+		// Exactly what was typed, not the replacement character a write would make.
+		expect(textOf(session)).toBe(typed);
+	});
+
+	test('a note created again that then does not open keeps the person’s exact text, counted at close, until it opens', async () => {
+		for (const outside of ['replaced', 'removed'] as const) {
+			const { state, folder, root, seedNote } = await product();
+			const note = await seedNote();
+			const session = await openedNote(state, note.path);
+			const typed = await typedAfterDeletion(session, root);
+			await state.refresh();
+			const create = folder.files.create;
+			folder.files.create = async (path, content) => {
+				const created = await create(path, content);
+				// Another program acts between the create and the editor's read.
+				if (outside === 'replaced')
+					await writeFile(join(root, path), new Uint8Array([0xff, 0xfe]));
+				else await rm(join(root, path));
+				return created;
+			};
+			const problem = await state.recoverDraft(note.path);
+			expect(problem).toContain('could not be opened');
+			expect(session.released).toBe(true);
+			expect(state.selection).toMatchObject({
+				kind: 'file',
+				path: note.path,
+				file: { kind: 'unopened', text: typed },
+			});
+			expect(state.unsettled).toBe(1);
+			// A listing that fails, or no longer shows the file, drops nothing.
+			const list = folder.tables.notes.list;
+			folder.tables.notes.list = async () => {
+				throw new Error('the listing failed');
+			};
+			await state.refresh();
+			folder.tables.notes.list = list;
+			await state.refresh();
+			expect(state.selection).toMatchObject({
+				file: { kind: 'unopened', text: typed },
+			});
+			// Once the file reads again, the note opens over it.
+			await writeFile(join(root, note.path), typed);
+			expect(await state.reopen(note.path)).toBeUndefined();
+			expect(state.noteAt(note.path)?.row.text).toBe(typed);
+			expect(state.unsettled).toBe(0);
+		}
+	});
+
+	/**
+	 * A note whose file was deleted and whose path another program filled,
+	 * being saved as a new note, with the editor's read of that new note held
+	 * after the create was confirmed.
+	 */
+	async function heldHandOff() {
+		const made = await product();
+		const { state, folder, root, seedNote } = made;
+		const note = await seedNote();
+		const session = await openedNote(state, note.path);
+		const typed = await typedAfterDeletion(session, root);
+		await state.refresh();
+		await writeFile(join(root, note.path), OUTSIDE);
+		const edit = folder.tables.notes.edit;
+		const asked = Promise.withResolvers<string>();
+		const release = Promise.withResolvers<void>();
+		folder.tables.notes.edit = async (stem, options) => {
+			folder.tables.notes.edit = edit;
+			asked.resolve(stem);
+			await release.promise;
+			return edit(stem, options);
+		};
+		const recovering = state.recoverDraft(note.path);
+		return {
+			...made,
+			note,
+			session,
+			typed,
+			recovering,
+			/** The new note's path, once its editor was asked for. */
+			at: asked.promise.then((stem) => `notes/${stem}.md`),
+			release: () => release.resolve(),
+		};
+	}
+
+	test('saving a note as a new one fences its input and owns both paths until the new note opens', async () => {
+		const {
+			state,
+			root,
+			note,
+			session,
+			typed,
+			recovering,
+			at,
+			release,
+			notePaths,
+		} = await heldHandOff();
+		// The fence is up in the same turn, and stays up through the handoff.
+		expect(session.admitting).toBe(false);
+		const destination = await at;
+		expect(await readFile(join(root, destination), 'utf8')).toBe(typed);
+		expect(session.edit({ fields: { title: 'Late' } })).toContain(
+			'rename or delete',
+		);
+		expect(typeBody(session, 'Typed while it opens\n')).toBe(false);
+		// Neither asking again nor reloading nor opening the new note races it.
+		expect(await state.recoverDraft(note.path)).toContain('still running');
+		expect(await session.reload()).toContain('rename or delete');
+		await state.open(destination);
+		expect(state.noteAt(destination)).toBeUndefined();
+		expect(state.selection).toMatchObject({
+			kind: 'file',
+			file: { kind: 'failed' },
+		});
+		expect(await notePaths()).toHaveLength(2);
+		release();
+		expect(await recovering).toBeUndefined();
+		// One owner at the new note, holding exactly what was typed; one file made.
+		const opened = state.noteAt(destination);
+		expect(opened?.row.text).toBe(typed);
+		expect(opened?.released).toBe(false);
+		expect(session.released).toBe(true);
+		expect(state.noteAt(note.path)).toBeUndefined();
+		expect(await notePaths()).toHaveLength(2);
+		expect(await readFile(join(root, note.path), 'utf8')).toBe(OUTSIDE);
+	});
+
+	test('a close while a new note’s editor is being opened waits for it and installs nothing', async () => {
+		const { state, root, note, session, typed, recovering, at, release } =
+			await heldHandOff();
+		const destination = await at;
+		let closed = false;
+		const closing = state.close().then(() => {
+			closed = true;
+		});
+		await new Promise((resolve) => setTimeout(resolve, 20));
+		expect(closed).toBe(false);
+		release();
+		await closing;
+		await recovering;
+		expect(state.noteAt(destination)).toBeUndefined();
+		expect(state.noteAt(note.path)).toBe(session);
+		expect(session.released).toBe(true);
+		// The confirmed copy is in its file.
+		expect(await readFile(join(root, destination), 'utf8')).toBe(typed);
+	});
+
+	test('a close waits for a note being created again, and installs no editor after it', async () => {
+		const { state, folder, root, seedNote } = await product();
+		const note = await seedNote();
+		const session = await openedNote(state, note.path);
+		const typed = await typedAfterDeletion(session, root);
+		await state.refresh();
+		const held = holdNext(folder.files, 'create');
+		const recovering = state.recoverDraft(note.path);
+		await held.asked;
+		let closed = false;
+		const closing = state.close().then(() => {
+			closed = true;
+		});
+		await new Promise((resolve) => setTimeout(resolve, 20));
+		expect(closed).toBe(false);
+		held.release();
+		await closing;
+		await recovering;
+		expect(await readFile(join(root, note.path), 'utf8')).toBe(typed);
+		// The close released the session it found; no new editor replaced it.
+		expect(state.noteAt(note.path)).toBe(session);
+		expect(session.released).toBe(true);
+	});
+
+	test('renaming a note also refuses a destination whose deleted note is still open', async () => {
 		const { state, root, seedNote } = await product();
 		const a = await seedNote('A');
 		const b = await seedNote('B');
 		const aSession = await openedNote(state, a.path);
 		const bSession = await openedNote(state, b.path);
-		await rm(join(root, b.path));
-		typeBody(bSession, 'Retained B\n');
+		await typedAfterDeletion(bSession, root, 'Retained B\n');
 		await state.refresh();
-		expect(bSession.external?.kind).toBe('missing');
 		expect(await state.rename(a.path, `${b.stem}.md`)).toContain('draft');
 		expect(state.noteAt(a.path)).toBe(aSession);
 		expect(state.noteAt(b.path)).toBe(bSession);
-		expect(bSession.state.document.body).toBe('Retained B\n');
+		expect(textOf(bSession)).toContain('Retained B');
 		expect(await readFile(join(root, a.path), 'utf8')).toBe(a.text);
-		state.discardDraft(b.path);
-		expect(state.noteAt(b.path)).toBeUndefined();
+		await expect(stat(join(root, b.path))).rejects.toThrow();
 	});
 
 	test('a refresh awaiting a raw read cannot forget a session renamed while it waits', async () => {
@@ -1360,7 +1700,10 @@ describe('while input is fenced', () => {
 		const release = state.fenceInput();
 		expect(state.fenced).toBe(true);
 		expect(typeBody(session, 'typed late\n')).toBe(false);
-		expect(await session.saveNow()).toContain('closing');
+		expect(session.retry()).toContain('closing');
+		expect(session.showFile(true)).toContain('closing');
+		expect(await session.reload()).toContain('closing');
+		expect(await state.discardDraft(note.path)).toContain('closing');
 		expect(await state.patchNote(note.path, { pinned: true })).toContain(
 			'closing',
 		);
@@ -1369,7 +1712,6 @@ describe('while input is fenced', () => {
 		expect(await state.createFile('', 'new.txt')).toContain('closing');
 		expect(await state.createDirectory('', 'new')).toContain('closing');
 		expect(await state.rename(note.path, 'renamed.md')).toContain('closing');
-		expect(await state.editAsFile(note.path)).toContain('closing');
 		expect((await state.deletionFor(note.path)).error).toContain('closing');
 		expect(
 			await state.remove({
@@ -1378,14 +1720,6 @@ describe('while input is fenced', () => {
 				title: undefined,
 			}),
 		).toContain('closing');
-		expect(
-			(
-				await session.changePath(
-					(from) => ({ kind: 'move', from, to: 'notes/renamed.md' }),
-					async () => ({ kind: 'done', value: undefined }),
-				)
-			).kind,
-		).toBe('unsettled');
 		// What was already typed is still saved for the close.
 		expect(await state.settleAll()).toBe(0);
 		expect(await readFile(join(root, note.path), 'utf8')).toContain(
@@ -1423,17 +1757,19 @@ describe('rename and text the session has not seen', () => {
 		const { state, root, seedNote, notePaths } = await product();
 		const note = await seedNote();
 		const session = await openedNote(state, note.path);
-		expect(session.dirty).toBe(false);
-		// No refresh follows: the open session still holds the note as created.
+		expect(session.unsettled).toBe(false);
+		// Nothing reads the file after the outside write, so the editor still
+		// holds the note as created.
 		await writeFile(join(root, note.path), OUTSIDE);
 		expect(await state.rename(note.path, 'renamed.md')).toContain(
-			'The file changed',
+			'Reload the file',
 		);
-		await session.refresh();
 		expect(await notePaths()).toEqual([note.path]);
 		expect(await readFile(join(root, note.path), 'utf8')).toBe(OUTSIDE);
-		expect(session.state.document.body).toBe('Written by another program\n');
+		expect(shown(session).body).toBe('Hello\n');
 		expect(state.noteAt(note.path)).toBe(session);
+		expect(await session.reload()).toBeUndefined();
+		expect(shown(session).body).toBe('Written by another program\n');
 	});
 
 	test('renaming a raw file another program just rewrote is refused the same way', async () => {
@@ -1473,24 +1809,21 @@ describe('rename and text the session has not seen', () => {
 // ============================================================================
 
 /**
- * A dirty draft of a note file being repaired as text, whose file was
- * deleted outside, ready to be written back. `afterCreate` runs once that
- * exclusive creation has landed and before its reply reaches the session;
- * `afterRefusal` runs when a creation is refused.
+ * A dirty draft of a text file whose file was deleted outside, ready to be
+ * written back. `afterCreate` runs once that exclusive creation has landed
+ * and before its reply reaches the session.
  */
 async function removedRepairDraft({
 	afterCreate = () => {},
-	afterRefusal = () => {},
 }: {
 	afterCreate?: (at: {
 		session: FileSession;
 		file: string;
 	}) => void | Promise<void>;
-	afterRefusal?: (at: { session: FileSession }) => void;
 } = {}) {
 	const fixture = await product();
-	const { state, folder, root, seedRepair } = fixture;
-	const repair = await seedRepair();
+	const { state, folder, root, seedText } = fixture;
+	const repair = await seedText();
 	const session = await openedFile(state, repair.path);
 	const file = join(root, repair.path);
 	await rm(file);
@@ -1504,7 +1837,6 @@ async function removedRepairDraft({
 	const created: { path: string; content: string | Uint8Array }[] = [];
 	folder.files.create = async (path, content) => {
 		const result = await create(path, content);
-		if (result.error?.name === 'Exists') afterRefusal({ session });
 		if (result.error === null) {
 			created.push({ path, content });
 			if (created.length === 1) await afterCreate({ session, file });
@@ -1583,36 +1915,21 @@ describe('a removed repair draft', () => {
 		expect(await readFile(file, 'utf8')).toBe(`${admitted}${typed}`);
 	});
 
-	test('a draft refused at its own path is written to a new one as the text first captured', async () => {
-		const typed = 'Typed while the first path refused\n';
-		const { state, session, path, file, admitted, created, notePaths } =
-			await removedRepairDraft({
-				afterRefusal: ({ session }) => {
-					session.input(`${session.buffer}${typed}`);
-				},
-			});
-		// Another program put a file back before the draft was written back.
+	test('a draft whose path another program filled stays a draft, in conflict with that file', async () => {
+		const { state, session, path, file, admitted, created, textPaths } =
+			await removedRepairDraft();
 		await writeFile(file, OUTSIDE);
-		expect(await state.recoverDraft(path)).toBeUndefined();
-		const [written] = created;
-		if (written === undefined) throw new Error('Nothing was created');
-		expect(created).toHaveLength(1);
-		expect(written.path).not.toBe(path);
-		expect(written.content).toBe(admitted);
-		// The one session moved with its text, and the selection with it.
-		expect(state.sessionAt(written.path)).toBe(session);
-		expect(state.sessionAt(path)).toBeUndefined();
-		expect(state.selectedPath).toBe(written.path);
+		expect(await state.recoverDraft(path)).toContain('The file changed');
+		expect(created).toEqual([]);
+		expect(state.sessionAt(path)).toBe(session);
+		expect(session.buffer).toBe(admitted);
+		expect(session.external).toMatchObject({ current: { text: OUTSIDE } });
 		expect(await readFile(file, 'utf8')).toBe(OUTSIDE);
-		expect(await session.settle()).toBe(true);
-		expect(await readFile(join(file, '..', '..', written.path), 'utf8')).toBe(
-			`${admitted}${typed}`,
-		);
-		expect((await notePaths()).sort()).toEqual([path, written.path].sort());
+		expect(await textPaths()).toEqual([path]);
 	});
 
-	test('a write back that landed with its reply lost is the file’s content, stays not confirmed, and saving again makes no second note', async () => {
-		const { state, folder, session, path, file, admitted, notePaths } =
+	test('a write back that landed with its reply lost is the file’s content, stays not confirmed, and saving again makes no second file', async () => {
+		const { state, folder, session, path, file, admitted, textPaths } =
 			await removedRepairDraft();
 		loseNext(folder.files, 'create', { landed: true });
 		expect(await state.recoverDraft(path)).toContain('not confirmed');
@@ -1632,11 +1949,11 @@ describe('a removed repair draft', () => {
 		// Saving again is a new write over that text, at the same path.
 		expect(await state.recoverDraft(path)).toBeUndefined();
 		expect(session.status).toBe('saved');
-		expect(await notePaths()).toEqual([path]);
+		expect(await textPaths()).toEqual([path]);
 	});
 
 	test('a write back not yet in the folder stays unconfirmed, and saving again sends what is on screen to the same path', async () => {
-		const { state, folder, session, path, file, admitted, notePaths } =
+		const { state, folder, session, path, file, admitted, textPaths } =
 			await removedRepairDraft();
 		const land = loseNext(folder.files, 'create', { landed: false });
 		expect(await state.recoverDraft(path)).toContain('not confirmed');
@@ -1658,13 +1975,13 @@ describe('a removed repair draft', () => {
 		expect(session.saved.text).toBe(b);
 		expect(session.attempt).toBeUndefined();
 		// The first creation arrives late and is refused by its own condition.
-		expect((await land()).error?.name).toBe('Exists');
+		expect(expectErr(await land()).name).toBe('Exists');
 		expect(await readFile(file, 'utf8')).toBe(b);
-		expect(await notePaths()).toEqual([path]);
+		expect(await textPaths()).toEqual([path]);
 	});
 
-	test('a first creation that lands between two presses does not leave the draft in two notes, and stays not confirmed', async () => {
-		const { state, folder, session, path, file, admitted, notePaths } =
+	test('a first creation that lands between two presses does not leave the draft in two files, and stays not confirmed', async () => {
+		const { state, folder, session, path, file, admitted, textPaths } =
 			await removedRepairDraft();
 		const land = loseNext(folder.files, 'create', { landed: false });
 		await state.recoverDraft(path);
@@ -1673,7 +1990,7 @@ describe('a removed repair draft', () => {
 		expect(await readFile(file, 'utf8')).toBe(admitted);
 		const b = `${admitted}B\n`;
 		session.input(b);
-		// The occupant is the earlier text: no second note is made, and the
+		// The occupant is the earlier text: no second file is made, and the
 		// earlier save is still not known to be the one that put it there.
 		expect(await state.recoverDraft(path)).toContain('not confirmed');
 		expect(session.path).toBe(path);
@@ -1683,18 +2000,18 @@ describe('a removed repair draft', () => {
 		});
 		expect(session.saved.text).toBe(admitted);
 		expect(session.buffer).toBe(b);
-		expect(await notePaths()).toEqual([path]);
+		expect(await textPaths()).toEqual([path]);
 		// Nothing more is sent by itself.
 		expect(await session.settle()).toBe(false);
 		expect(await readFile(file, 'utf8')).toBe(admitted);
 		// The person saves again, over what the file holds.
 		expect(await state.recoverDraft(path)).toBeUndefined();
 		expect(await readFile(file, 'utf8')).toBe(b);
-		expect(await notePaths()).toEqual([path]);
+		expect(await textPaths()).toEqual([path]);
 	});
 
-	test('other text at the path while a write back is unconfirmed is shown beside it, and no second note is made', async () => {
-		const { state, folder, session, path, file, admitted, notePaths } =
+	test('other text at the path while a write back is unconfirmed is shown beside it, and no second file is made', async () => {
+		const { state, folder, session, path, file, admitted, textPaths } =
 			await removedRepairDraft();
 		const land = loseNext(folder.files, 'create', { landed: false });
 		await state.recoverDraft(path);
@@ -1709,9 +2026,9 @@ describe('a removed repair draft', () => {
 		});
 		expect(session.buffer).toBe(admitted);
 		expect(await readFile(file, 'utf8')).toBe(OUTSIDE);
-		expect(await notePaths()).toEqual([path]);
+		expect(await textPaths()).toEqual([path]);
 		// The first creation cannot land while the path is not empty.
-		expect((await land()).error?.name).toBe('Exists');
+		expect(expectErr(await land()).name).toBe('Exists');
 		expect(await readFile(file, 'utf8')).toBe(OUTSIDE);
 	});
 });
@@ -1722,14 +2039,14 @@ describe('a removed repair draft', () => {
 
 describe('a raw save whose reply is lost', () => {
 	/**
-	 * A repair draft whose save of `a` gets no reply. With `landed`, the file
+	 * A text draft whose save of `a` gets no reply. With `landed`, the file
 	 * was written first. Without it the file is unchanged until `land()` runs
 	 * that same conditional replace.
 	 */
 	async function unconfirmedSave({ landed }: { landed: boolean }) {
 		const fixture = await product();
-		const { state, folder, root, seedRepair } = fixture;
-		const note = await seedRepair();
+		const { state, folder, root, seedText } = fixture;
+		const note = await seedText();
 		const session = await openedFile(state, note.path);
 		const land = loseNext(folder.files, 'replace', { landed });
 		const a = `${note.source}A\n`;
@@ -1781,8 +2098,8 @@ describe('a raw save whose reply is lost', () => {
 	});
 
 	test('one holding an unpaired surrogate is kept as the text of the bytes it sent, and those bytes are the file’s content when they land', async () => {
-		const { state, folder, root, seedRepair } = await product();
-		const note = await seedRepair();
+		const { state, folder, root, seedText } = await product();
+		const note = await seedText();
 		const session = await openedFile(state, note.path);
 		const file = join(root, note.path);
 		const land = loseNext(folder.files, 'replace', { landed: false });
@@ -1841,7 +2158,7 @@ describe('a raw save whose reply is lost', () => {
 		expect(await readFile(file, 'utf8')).toBe(b);
 		expect(session.saved.text).toBe(b);
 		expect(session.attempt).toBeUndefined();
-		expect((await land()).error?.name).toBe('Conflict');
+		expect(expectErr(await land()).name).toBe('Conflict');
 		expect(await readFile(file, 'utf8')).toBe(b);
 	});
 
@@ -1888,7 +2205,7 @@ describe('a raw save whose reply is lost', () => {
 		await session.retry();
 		expect(await readFile(file, 'utf8')).toBe(OUTSIDE);
 		expect(session.attempt).toMatchObject({ source: a, state: 'unconfirmed' });
-		expect((await land()).error?.name).toBe('Conflict');
+		expect(expectErr(await land()).name).toBe('Conflict');
 		expect(await readFile(file, 'utf8')).toBe(OUTSIDE);
 	});
 });
@@ -1924,29 +2241,46 @@ describe('a rename or delete of an open note whose reply is lost', () => {
 		expect(draftsLineOf(state).label).toBe('1 change not confirmed');
 		await state.refresh();
 		expect(state.noteAt(note.path)).toBe(session);
-		// Typing is kept and saved nowhere; nothing else is done to either path.
-		expect(typeBody(session, 'typed after the rename\n')).toBe(true);
+		// The rename is not concluded, so nothing is typed or saved at the old
+		// path, and nothing else is done to either path.
+		expect(typeBody(session, 'typed after the rename\n')).toBe(false);
 		expect(await state.settleAll()).toBe(1);
-		expect(await session.saveNow()).toContain('not finished');
+		expect(session.retry()).toContain('not finished');
 		expect(await state.rename(note.path, 'other.md')).toBe(
 			'Save or discard the open edits first.',
 		);
 		expect((await state.deletionFor(note.path)).error).toBe(
 			'Save or discard the open edits first.',
 		);
-		expect(await state.editAsFile(note.path)).toBe(
-			'Save or discard the open edits first.',
-		);
-		state.discardDraft(note.path);
+		expect(await session.reload()).toContain('Stop tracking');
 		expect(state.noteAt(note.path)).toBe(session);
-		expect(session.state.document.body).toBe('typed after the rename\n');
 		expect(await readFile(join(root, 'notes/renamed.md'), 'utf8')).toBe(
 			note.text,
 		);
 		expect(await notePaths()).toEqual(['notes/renamed.md']);
 	});
 
-	test('a delete keeps the session and the draft, and changes nothing more, whether or not the file is gone', async () => {
+	test('a rename whose reply is lost before it lands takes no typing at the old path, so nothing publishes there', async () => {
+		const { state, folder, root, seedNote } = await product();
+		const note = await seedNote();
+		const session = await openedNote(state, note.path);
+		const land = loseNext(folder.files, 'move', { landed: false });
+		expect(await state.rename(note.path, 'renamed.md')).toContain(
+			'not confirmed',
+		);
+		expect(typeBody(session, 'typed after the rename\n')).toBe(false);
+		expect(await saved(session)).toBeUndefined();
+		expect(await readFile(join(root, note.path), 'utf8')).toBe(note.text);
+		expect(shown(session).body).toBe('Hello\n');
+		// The one move that was sent still lands on the bytes it named.
+		expectOk(await land());
+		await expect(stat(join(root, note.path))).rejects.toThrow();
+		expect(await readFile(join(root, 'notes/renamed.md'), 'utf8')).toBe(
+			note.text,
+		);
+	});
+
+	test('a delete keeps the session and its text, and changes nothing more, whether or not the file is gone', async () => {
 		for (const landed of [true, false]) {
 			const { state, folder, root, seedNote } = await product();
 			const note = await seedNote();
@@ -1963,7 +2297,8 @@ describe('a rename or delete of an open note whose reply is lost', () => {
 			await state.refresh();
 			expect(state.noteAt(note.path)).toBe(session);
 			expect(state.notSaved).toBe(0);
-			expect(typeBody(session, 'typed after\n')).toBe(true);
+			// Typing would publish at a path whose file is not known: none is taken.
+			expect(typeBody(session, 'typed after\n')).toBe(false);
 			expect(await state.settleAll()).toBe(1);
 			expect(await state.remove(deletion)).toBe(
 				'Save or discard the open edits first.',
@@ -2030,7 +2365,7 @@ describe('a change with no open file whose reply is lost', () => {
 		expect(await state.retryPending(change)).toBeUndefined();
 		expect(state.pending).toEqual([]);
 		expect(await notePaths()).toEqual([change.path]);
-		expect((await land()).error?.name).toBe('Exists');
+		expect(expectErr(await land()).name).toBe('Exists');
 		expect(await notePaths()).toEqual([change.path]);
 	});
 
@@ -2115,7 +2450,7 @@ describe('a change with no open file whose reply is lost', () => {
 		state.dismissPending(change);
 		// Accounted for by the person: the note opens and changes again.
 		const session = await openedNote(state, note.path);
-		expect(session.state.reading.fields.pinned).toBe(true);
+		expect(shown(session).fields.pinned).toBe(true);
 		expect(await state.trashNote(note.path)).toBeUndefined();
 	});
 
@@ -2334,37 +2669,23 @@ test('opening a note during a change with no editor refuses an editor before the
 	expect(state.noteAt(note.path)).toBeUndefined();
 });
 
-test('an uncertain recovery destination remains owned by the original draft', async () => {
-	const { state, folder, root, seedRepair } = await product();
-	const note = await seedRepair();
-	const session = await openedFile(state, note.path);
-	session.input(note.source.replace('Hello', 'Recovery typing'));
-	await rm(join(root, note.path));
+test('a deleted note created again with its reply lost stays pending, keeps the person’s text, and blocks a second creation', async () => {
+	const { state, folder, root, seedNote } = await product();
+	const note = await seedNote();
+	const session = await openedNote(state, note.path);
+	const typed = await typedAfterDeletion(session, root, 'Recovery typing\n');
 	await state.refresh();
-	expect(session.external?.kind).toBe('removed');
-	await writeFile(join(root, note.path), OUTSIDE);
-	const create = folder.files.create;
-	folder.files.create = async (path, source) => {
-		const answer = await create(path, source);
-		if (path !== note.path && answer.error === null)
-			return FileError.Unconfirmed({
-				path,
-				operation: 'publishing to',
-				cause: new Error('reply lost'),
-			});
-		return answer;
-	};
+	loseNext(folder.files, 'create', { landed: true });
 	expect(await state.recoverDraft(note.path)).toContain('not confirmed');
-	const attempt = session.attempt;
-	const target = attempt?.path;
-	if (attempt === undefined || target === undefined || target === note.path)
-		throw new Error('No alternate recovery was submitted');
-	await state.open(target);
-	expect(state.sessionAt(target)).toBeUndefined();
-	expect(state.noteAt(target)).toBeUndefined();
-	expect(state.sessionAt(note.path)).toBe(session);
-	expect(session.buffer).toContain('Recovery typing');
-	expect(await readFile(join(root, target), 'utf8')).toBe(attempt.source);
+	// The text landed; which request put it there is not known.
+	expect(await readFile(join(root, note.path), 'utf8')).toEqual(typed);
+	expect(state.pending).toMatchObject([
+		{ kind: 'create', path: note.path, source: typed },
+	]);
+	expect(state.noteAt(note.path)).toBe(session);
+	expect(textOf(session)).toBe(typed);
+	expect(await state.recoverDraft(note.path)).toContain('not confirmed');
+	expect(state.pending).toHaveLength(1);
 });
 
 test('close fences new changes and waits for a note creation already sent', async () => {
@@ -2396,11 +2717,11 @@ test('close waits for a note save already admitted, and nothing typed after the 
 	const note = await seedNote();
 	const session = await openedNote(state, note.path);
 	typeBody(session, 'Typed before the close\n');
-	const saving = session.saveNow();
+	expect(session.save.status).toBe('saving');
 	const closing = state.close();
 	expect(typeBody(session, 'Typed during the close\n')).toBe(false);
-	await saving;
 	await closing;
+	expect(session.released).toBe(true);
 	expect(await readFile(join(root, note.path), 'utf8')).toContain(
 		'Typed before the close',
 	);
@@ -2411,7 +2732,7 @@ test('close waits for a note save already admitted, and nothing typed after the 
 // ============================================================================
 
 describe('what a note session holds until the person chooses', () => {
-	test('a failed save stays held when another program writes the same text, and the note is not handed on', async () => {
+	test('a failed save stays failed when another program writes the same text, until the person reloads', async () => {
 		const { state, root, seedNote } = await product();
 		const note = await seedNote();
 		const session = await openedNote(state, note.path);
@@ -2421,22 +2742,19 @@ describe('what a note session holds until the person chooses', () => {
 			spawnSync('chmod', ['u+w', notes]);
 		});
 		typeBody(session, 'Mine\n');
-		expect(await session.settle()).toBe(false);
+		expect(await saved(session)).toContain('Not saved');
 		expect(session.status).toBe('failed');
-		// Another program writes exactly the draft, in place.
-		await writeFile(join(root, note.path), session.state.text);
+		// Another program writes exactly the text the editor holds, in place.
+		const text = textOf(session);
+		spawnSync('chmod', ['u+w', notes]);
+		await writeFile(join(root, note.path), text);
 		await state.refresh();
-		// The file holds the draft now. That answers nothing about the save.
-		expect(session.dirty).toBe(false);
-		expect(session.state.lastSave?.kind).toBe('failed');
+		// The file holds that text now. That answers nothing about the save.
+		expect(session.save.status).toBe('failed');
 		expect(session.status).toBe('failed');
-		expect(session.paused).toBe(true);
 		expect(session.unsettled).toBe(true);
 		expect(await state.settleAll()).toBe(1);
-		// Nothing hands the note to another owner past the hold.
-		expect(await state.editAsFile(note.path)).toBe(
-			'Save or discard the open edits first.',
-		);
+		// Nothing moves or removes the note past the failure.
 		expect(state.sessionAt(note.path)).toBeUndefined();
 		expect(state.noteAt(note.path)).toBe(session);
 		expect(await state.rename(note.path, 'renamed.md')).toBe(
@@ -2445,13 +2763,14 @@ describe('what a note session holds until the person chooses', () => {
 		expect((await state.deletionFor(note.path)).error).toBe(
 			'Save or discard the open edits first.',
 		);
-		// The person keeps the file as it is. The hold ends; the history stays.
-		const seen = session.state.observation;
-		if (seen.kind !== 'present') throw new Error('Expected a present file');
-		expect(session.adopt(seen.revision)).toBe(true);
-		expect(session.state.lastSave?.kind).toBe('failed');
+		// The person keeps the file as it is: reloading reads it into the same
+		// editor and ends the failure, writing nothing.
+		expect(await session.reload()).toBeUndefined();
+		expect(state.noteAt(note.path)).toBe(session);
+		expect(session.save.status).toBe('idle');
 		expect(session.unsettled).toBe(false);
 		expect(await state.settleAll()).toBe(0);
+		expect(await readFile(join(root, note.path), 'utf8')).toBe(text);
 	});
 
 	test('a clean text file whose unknown rename stopped being tracked stays held when its old path reads as missing', async () => {
@@ -2489,7 +2808,7 @@ describe('what a note session holds until the person chooses', () => {
 		expect(await readFile(join(root, 'renamed.txt'), 'utf8')).toBe('raw\n');
 	});
 
-	test('a clean note whose unknown rename stopped being tracked stays held when its old path reads as missing', async () => {
+	test('a clean note whose unknown rename stopped being tracked stays held, and nothing puts its file back at the old path', async () => {
 		const { state, folder, root, seedNote } = await product();
 		const note = await seedNote();
 		const session = await openedNote(state, note.path);
@@ -2498,62 +2817,61 @@ describe('what a note session holds until the person chooses', () => {
 		expect(state.stopTracking(note.path)).toBeUndefined();
 		await state.refresh();
 		expect(state.noteAt(note.path)).toBe(session);
-		expect(session.dirty).toBe(false);
 		expect(session.hold).toMatchObject({
 			kind: 'detached',
 			change: { kind: 'move', to: 'notes/renamed.md', state: 'unconfirmed' },
 		});
-		expect(session.state.observation.kind).toBe('missing');
 		expect(session.unsettled).toBe(true);
-		await new Promise((resolve) => setTimeout(resolve, 700));
+		// Nothing is typed or saved here until the person chooses.
+		expect(typeBody(session, 'typed\n')).toBe(false);
+		expect(session.retry()).toContain('stopped tracking');
 		await expect(stat(join(root, note.path))).rejects.toThrow();
-		// Saving at the old path is the person's explicit choice.
-		expect(await session.saveNow()).toBeUndefined();
-		expect(session.hold).toBeUndefined();
-		expect(await readFile(join(root, note.path), 'utf8')).toContain('Hello');
+		// Saving here is a replace, so it never puts the file back.
+		expect(session.saveHere()).toBeUndefined();
+		expect(await saved(session)).toContain('not there');
+		await expect(stat(join(root, note.path))).rejects.toThrow();
+		// A reload finds nothing there and keeps the text.
+		expect(await session.reload()).toContain('not in the folder');
+		expect(textOf(session)).toBe(note.text);
+		expect(state.noteAt(note.path)).toBe(session);
 		expect(await readFile(join(root, 'notes/renamed.md'), 'utf8')).toBe(
 			note.text,
 		);
 	});
 
-	test('a stuck rename can stop being tracked: the typing stays, both paths can be opened, and nothing is written', async () => {
+	test('a stuck rename can stop being tracked: the text stays, both paths can be opened, and nothing is written', async () => {
 		const { state, folder, root, seedNote } = await product();
 		const note = await seedNote();
 		const session = await openedNote(state, note.path);
-		loseNext(folder.files, 'move', { landed: true });
+		typeBody(session, 'Typed before the rename\n');
+		const land = loseNext(folder.files, 'move', { landed: false });
 		expect(await state.rename(note.path, 'renamed.md')).toContain(
 			'not confirmed',
 		);
-		expect(typeBody(session, 'Typed while it was unknown\n')).toBe(true);
-		// While it is tracked, the destination gets no editor and the draft
-		// cannot be discarded.
+		const typed = textOf(session);
+		// While it is tracked, the destination gets no editor and nothing is reloaded.
 		await state.open('notes/renamed.md');
 		expect(state.noteAt('notes/renamed.md')).toBeUndefined();
 		await state.open(note.path);
-		state.discardDraft(note.path);
+		expect(await session.reload()).toContain('Stop tracking');
 		expect(state.noteAt(note.path)).toBe(session);
 
 		expect(state.stopTracking(note.path)).toBeUndefined();
 		expect(session.pathChange).toBeUndefined();
 		expect(session.hold?.kind).toBe('detached');
-		expect(session.state.document.body).toBe('Typed while it was unknown\n');
+		expect(shown(session).body).toBe('Typed before the rename\n');
 		expect(session.unsettled).toBe(true);
-		// The destination opens, as what is there, when it is opened again.
+		// The move that was sent lands after all; the destination opens as what is there.
+		expectOk(await land());
 		await state.refresh();
 		await state.open('notes/renamed.md');
-		expect(state.noteAt('notes/renamed.md')?.state.document.body).toBe(
-			'Hello\n',
-		);
-		// Nothing was saved by itself, at either path.
-		await new Promise((resolve) => setTimeout(resolve, 700));
+		expect(state.noteAt('notes/renamed.md')?.row).toMatchObject({
+			body: 'Typed before the rename\n',
+		});
+		// Nothing was saved by itself, and the old path is not written back.
+		expect(await saved(session)).toBeUndefined();
 		await expect(stat(join(root, note.path))).rejects.toThrow();
-		expect(await readFile(join(root, 'notes/renamed.md'), 'utf8')).toBe(
-			note.text,
-		);
-		// The person discards the draft; nothing is written.
-		state.discardDraft(note.path);
-		expect(state.noteAt(note.path)).toBeUndefined();
-		await expect(stat(join(root, note.path))).rejects.toThrow();
+		expect(textOf(session)).toBe(typed);
 	});
 });
 
@@ -2633,152 +2951,144 @@ describe('field actions and what they were derived from', () => {
 		const { state, root, note, work, inHome } = await filed();
 		const session = await openedNote(state, note.path);
 		await writeFile(join(root, note.path), inHome);
-		// The clean editor follows the file; the list was read before it.
-		await session.refresh();
-		expect(session.state.document.fields.folderId).not.toBe(work.stem);
+		// The person reloads the file; the list was read before it.
+		expect(await session.reload()).toBeUndefined();
+		expect(shown(session).fields.folderId).not.toBe(work.stem);
 		expect(await state.deleteFolder(work)).toContain(
-			'changed after it was read',
+			'not in its file as listed',
 		);
 		expect(await readFile(join(root, note.path), 'utf8')).toBe(inHome);
 		expect(await readFile(join(root, work.path), 'utf8')).toContain('Work');
-		expect(session.dirty).toBe(false);
+		expect(session.unsettled).toBe(false);
 	});
 
-	test('an open member with typing is moved out through its draft, typing included', async () => {
+	test('an open member with typing is moved out through its editor, typing included', async () => {
 		const { state, root, note, work } = await filed();
 		const session = await openedNote(state, note.path);
 		typeBody(session, 'typed in the member\n');
+		// Until the list shows what the editor saved, the delete waits for it.
+		expect(await state.deleteFolder(work)).toContain('Let it save');
+		expect(await saved(session)).toBeUndefined();
+		await state.refresh();
 		expect(await state.deleteFolder(work)).toBeUndefined();
 		await expect(stat(join(root, work.path))).rejects.toThrow();
-		const saved = inspectRow(
+		const written = inspectRow(
 			honeycrispDefinition.tables.notes,
 			await readFile(join(root, note.path), 'utf8'),
 		);
-		expect(saved.fields.folderId).toBeNull();
-		expect(saved.body).toBe('typed in the member\n');
+		expect(written.fields.folderId).toBeNull();
+		expect(written.body).toBe('typed in the member\n');
 		expect(state.noteAt(note.path)).toBe(session);
 	});
 
-	test('an action on an open note whose file changed under its draft is refused before the draft changes', async () => {
+	test('a list action on an open note goes into its editor and saves over another program’s write', async () => {
 		const { state, root, seedNote } = await product();
 		const note = await seedNote();
 		const session = await openedNote(state, note.path);
-		typeBody(session, 'my unsaved text\n');
+		typeBody(session, 'my text\n');
+		expect(await saved(session)).toBeUndefined();
 		await writeFile(join(root, note.path), OUTSIDE);
 		await state.refresh();
-		expect(session.external?.kind).toBe('present');
-		expect(await state.trashNote(note.path)).toContain('changed elsewhere');
-		expect(await state.patchNote(note.path, { pinned: true })).toContain(
-			'changed elsewhere',
+		// The editor was not reloaded: the last writer wins.
+		expect(await state.patchNote(note.path, { pinned: true })).toBeUndefined();
+		const written = inspectRow(
+			honeycrispDefinition.tables.notes,
+			await readFile(join(root, note.path), 'utf8'),
 		);
-		expect(session.state.document.fields).toMatchObject({
-			deletedAt: null,
-			pinned: false,
-		});
-		expect(session.state.document.body).toBe('my unsaved text\n');
-		expect(await readFile(join(root, note.path), 'utf8')).toBe(OUTSIDE);
-		// Typing into the draft is still the person's to do.
-		expect(
-			await state.patchNote(note.path, { title: 'Mine' }, { save: 'later' }),
-		).toBeUndefined();
-		expect(session.state.document.fields.title).toBe('Mine');
+		expect(written.fields).toMatchObject({ title: 'First', pinned: true });
+		expect(written.body).toBe('my text\n');
+		expect(shown(session).fields.pinned).toBe(true);
 	});
 
 	test('an action on an open note whose save got no reply is refused, and the save is not sent again', async () => {
-		const { state, folder, handle, root, seedNote } = await product();
+		const { state, seedNote, loseReplies, writes, text } =
+			await browserProduct();
 		const note = await seedNote();
-		const lost = loseNextSave(
-			folder,
-			(path, source) => handle.files.overwrite(path, source),
-			{ landed: false },
-		);
 		const session = await openedNote(state, note.path);
+		loseReplies();
 		typeBody(session, 'typed before the lost save\n');
-		expect(await session.saveNow()).toBeDefined();
-		expect(session.hold?.kind).toBe('unconfirmed');
+		expect(await saved(session)).toContain('not confirmed');
+		expect(session.status).toBe('unconfirmed');
+		const sent = writes().length;
 		for (const act of [
 			() => state.trashNote(note.path),
 			() => state.patchNote(note.path, { pinned: true }),
 		])
 			expect(await act()).toContain('not settled');
-		expect(lost.saves).toBe(1);
-		expect(session.state.document.fields).toMatchObject({
+		expect(writes()).toHaveLength(sent);
+		expect(shown(session).fields).toMatchObject({
 			deletedAt: null,
 			pinned: false,
 		});
-		expect(session.state.document.body).toBe('typed before the lost save\n');
-		expect(await readFile(join(root, note.path), 'utf8')).toBe(note.text);
+		expect(shown(session).body).toBe('typed before the lost save\n');
+		// The lost write landed; that says what the file holds, not who wrote it.
+		expect(text(note.path)).toContain('typed before the lost save');
+		expect(session.save.status).toBe('failed');
 	});
 
-	test('an action while an open note has a save queued or running is refused, and a lost reply stays unknown', async () => {
-		const { state, folder, handle, root, seedNote } = await product();
+	test('an action while a save runs joins the queue behind it, and pauses with it when its reply is lost', async () => {
+		const { state, seedNote, hold, held, release, loseReplies, text, writes } =
+			await browserProduct();
 		const note = await seedNote();
-		const reply = Promise.withResolvers<void>();
-		const lost = loseNextSave(
-			folder,
-			(path, source) => handle.files.overwrite(path, source),
-			{ landed: false, held: reply.promise },
-		);
 		const session = await openedNote(state, note.path);
+		const start = writes().length;
+		hold();
+		loseReplies();
 		typeBody(session, 'typed\n');
-		const saving = session.saveNow();
-		// The same turn: the save is queued and has not reached the editor.
-		const sameTurn = state.patchNote(note.path, { pinned: true });
-		expect(session.state.saving).toBeUndefined();
-		expect(await sameTurn).toContain('still running');
-		await lost.asked;
-		expect(await state.trashNote(note.path)).toContain('still running');
-		reply.resolve();
-		expect(await saving).toBeDefined();
-		// No second save ended the unknown outcome, and no refused value is in the draft.
-		expect(session.hold?.kind).toBe('unconfirmed');
-		expect(lost.saves).toBe(1);
-		expect(session.state.document.fields).toMatchObject({
-			pinned: false,
-			deletedAt: null,
+		await until(() => held().length === 1, 'the first write');
+		// The action gives the editor the whole note behind the running write.
+		const pinning = state.patchNote(note.path, { pinned: true });
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		expect(shown(session).fields.pinned).toBe(true);
+		expect(session.save.status).toBe('saving');
+		release({ all: true });
+		expect(await pinning).toContain('not confirmed');
+		// The running write landed with its reply lost; the newer text waits,
+		// unsent, until the person tries again.
+		expect(writes()).toHaveLength(start + 1);
+		expect(text(note.path)).toContain('typed');
+		expect(text(note.path)).not.toContain('"pinned": true');
+		expect(shown(session)).toMatchObject({
+			fields: { pinned: true },
+			body: 'typed\n',
 		});
-		expect(session.state.document.body).toBe('typed\n');
-		expect(await readFile(join(root, note.path), 'utf8')).toBe(note.text);
-		// Input into the draft is still taken; it saves nothing by itself.
-		expect(
-			await state.patchNote(note.path, { title: 'Mine' }, { save: 'later' }),
-		).toBeUndefined();
-		expect(session.state.document.fields.title).toBe('Mine');
-		await new Promise((resolve) => setTimeout(resolve, 700));
-		expect(lost.saves).toBe(1);
+		expect(await saved(session)).toContain('not confirmed');
+		expect(writes()).toHaveLength(start + 1);
+		loseReplies(false);
+		expect(session.retry()).toBeUndefined();
+		expect(await saved(session)).toBeUndefined();
+		expect(text(note.path)).toContain('"pinned": true');
 	});
 
-	test('a folder is not deleted while an open member has an unsaved draft in another folder', async () => {
-		const { state, root, note, work, home, inWork } = await filed();
+	test('a folder is not deleted while an open member moved to another folder is not listed that way yet', async () => {
+		const { state, root, note, work, home } = await filed();
 		const session = await openedNote(state, note.path);
-		expect(
-			await state.patchNote(
-				note.path,
-				{ folderId: home.stem },
-				{ save: 'later' },
-			),
-		).toBeUndefined();
+		expect(session.edit({ fields: { folderId: home.stem } })).toBeUndefined();
 		expect(await state.deleteFolder(work)).toContain(
-			'moves it to another folder',
+			'not in its file as listed',
 		);
-		expect(session.state.document.fields.folderId).toBe(home.stem);
-		expect(await readFile(join(root, note.path), 'utf8')).toBe(inWork);
+		expect(shown(session).fields.folderId).toBe(home.stem);
 		expect(await readFile(join(root, work.path), 'utf8')).toContain('Work');
+		// Once the list shows the move, the folder goes and the note stays in Home.
+		expect(await saved(session)).toBeUndefined();
+		await state.refresh();
+		expect(await state.deleteFolder(work)).toBeUndefined();
+		const written = inspectRow(
+			honeycrispDefinition.tables.notes,
+			await readFile(join(root, note.path), 'utf8'),
+		);
+		expect(written.fields.folderId).toBe(home.stem);
 	});
 
-	test('a folder is not deleted while an open note outside it has an unsaved draft in it, and no member moves first', async () => {
+	test('a folder is not deleted while an open note outside it was just put in it, and no member moves first', async () => {
 		const { state, root, note, work, inWork, seedNote } = await filed();
 		const other = await seedNote('Other');
 		const session = await openedNote(state, other.path);
-		expect(
-			await state.patchNote(
-				other.path,
-				{ folderId: work.stem },
-				{ save: 'later' },
-			),
-		).toBeUndefined();
-		expect(await state.deleteFolder(work)).toContain('draft in this folder');
-		expect(session.state.document.fields.folderId).toBe(work.stem);
+		expect(session.edit({ fields: { folderId: work.stem } })).toBeUndefined();
+		expect(await state.deleteFolder(work)).toContain(
+			'not in its file as listed',
+		);
+		expect(shown(session).fields.folderId).toBe(work.stem);
 		expect(await readFile(join(root, note.path), 'utf8')).toBe(inWork);
 		expect(await readFile(join(root, work.path), 'utf8')).toContain('Work');
 	});
@@ -2818,62 +3128,37 @@ describe('field actions and what they were derived from', () => {
 		await expect(stat(join(root, work.path))).rejects.toThrow();
 	});
 
-	test('storage that throws while an open member is moved out keeps the folder and an unknown outcome', async () => {
-		const { state, folder, root, note, work, inWork } = await filed();
-		const edit = folder.tables.notes.edit;
-		folder.tables.notes.edit = async (stem, options) => {
-			const opened = await edit(stem, options);
-			if (opened.error !== null) return opened;
-			return Ok({
-				...opened.data,
-				save: async () => {
-					throw new Error('storage broke');
-				},
-			});
-		};
-		const session = await openedNote(state, note.path);
-		expect(await state.deleteFolder(work)).toContain('storage broke');
-		// A throw says nothing about whether the bytes landed.
-		expect(session.hold?.kind).toBe('unconfirmed');
-		expect(session.status).toBe('unconfirmed');
-		expect(await readFile(join(root, note.path), 'utf8')).toBe(inWork);
-		expect(await readFile(join(root, work.path), 'utf8')).toContain('Work');
-	});
-
-	test('a member save that lands before the read after it throws is not called failed, and the folder stays', async () => {
-		const { state, folder, root, note, work } = await filed();
-		const edit = folder.tables.notes.edit;
-		folder.tables.notes.edit = async (stem, options) => {
-			const opened = await edit(stem, options);
-			if (opened.error !== null) return opened;
-			const editor = opened.data;
-			let saved = false;
-			return Ok({
-				...editor,
-				async save() {
-					const reply = await editor.save();
-					saved = reply.error === null;
-					return reply;
-				},
-				async refresh() {
-					if (saved) {
-						saved = false;
-						throw new Error('read broke');
-					}
-					return editor.refresh();
-				},
-			});
-		};
-		const session = await openedNote(state, note.path);
-		expect(await state.deleteFolder(work)).toContain('read broke');
-		expect(session.hold?.kind).toBe('unconfirmed');
-		// The save did land; the session does not claim either way.
-		const saved = inspectRow(
-			honeycrispDefinition.tables.notes,
-			await readFile(join(root, note.path), 'utf8'),
-		);
-		expect(saved.fields.folderId).toBeNull();
-		expect(await readFile(join(root, work.path), 'utf8')).toContain('Work');
+	test('an open member whose write fails or loses its reply while it is moved out keeps the folder', async () => {
+		for (const fault of ['fail', 'lose'] as const) {
+			const { state, seedNote, text, failWrites, loseReplies } =
+				await browserProduct();
+			const note = await seedNote();
+			expect(await state.createFolder('Work')).toBeUndefined();
+			const [work] = state.folders;
+			if (work === undefined) throw new Error('The folder is not listed');
+			expect(
+				await state.patchNote(note.path, { folderId: work.stem }),
+			).toBeUndefined();
+			const session = await openedNote(state, note.path);
+			if (fault === 'fail') failWrites();
+			else loseReplies();
+			const refusal = await state.deleteFolder(work);
+			expect(refusal).toContain('could not be moved out');
+			expect(text(work.path)).toContain('Work');
+			const { save } = session;
+			if (save.status !== 'failed') throw new Error('Expected a stopped save');
+			if (fault === 'fail') {
+				expect(save.error.name).toBe('Io');
+				expect(session.status).toBe('failed');
+				expect(text(note.path)).not.toContain('"folderId": null');
+			} else {
+				// The write landed; its reply did not. It is uncertain, never failed.
+				expect(refusal).toContain('not confirmed');
+				expect(session.status).toBe('unconfirmed');
+				expect(state.notSaved).toBe(0);
+				expect(text(note.path)).toContain('"folderId": null');
+			}
+		}
 	});
 
 	test('a pending field change keeps the values asked for, whatever the caller does with its object', async () => {
@@ -2967,7 +3252,7 @@ describe('field actions and what they were derived from', () => {
 });
 
 describe('one owner per path', () => {
-	test('a note open as text owns its file: field changes are refused, and its typing is kept', async () => {
+	test('a note shown as its file takes no field action, and its typing is saved exactly as typed', async () => {
 		const { state, root, seedNote } = await product();
 		const note = await seedNote();
 		expect(await state.createFolder('Work')).toBeUndefined();
@@ -2976,51 +3261,49 @@ describe('one owner per path', () => {
 		expect(
 			await state.patchNote(note.path, { folderId: work.stem }),
 		).toBeUndefined();
-		await openedNote(state, note.path);
-		expect(await state.editAsFile(note.path)).toBeUndefined();
-		const raw = state.sessionAt(note.path);
-		if (raw === undefined) throw new Error('The note did not open as text');
+		const session = await openedNote(state, note.path);
+		expect(session.showFile(true)).toBeUndefined();
 		const filed = await readFile(join(root, note.path), 'utf8');
-		raw.input(raw.buffer.replace('Hello', 'Typed as text'));
+		expect(textOf(session)).toBe(filed);
+		session.setText(filed.replace('Hello', 'Typed as text'));
 		for (const ask of [
 			() => state.patchNote(note.path, { pinned: true }),
 			() => state.trashNote(note.path),
 			() => state.restoreNote(note.path),
 		])
-			expect(await ask()).toContain('open as text');
-		expect(await state.deleteFolder(work)).toContain('open as text');
+			expect(await ask()).toContain('open as a file');
+		expect(await state.deleteFolder(work)).toContain('open as a file');
 		expect(await readFile(join(root, work.path), 'utf8')).toContain('Work');
-		expect(raw.buffer).toContain('Typed as text');
-		expect(state.sessionAt(note.path)).toBe(raw);
-		expect(state.noteAt(note.path)).toBeUndefined();
-		// The typing is the text session's to save.
-		expect(await raw.settle()).toBe(true);
-		// Exactly the text session's bytes: nothing else rewrote the file.
-		const saved = await readFile(join(root, note.path), 'utf8');
-		expect(saved).toBe(filed.replace('Hello', 'Typed as text'));
+		expect(textOf(session)).toContain('Typed as text');
+		expect(state.noteAt(note.path)).toBe(session);
+		expect(state.sessionAt(note.path)).toBeUndefined();
+		expect(await saved(session)).toBeUndefined();
+		// Exactly the typed bytes: nothing else rewrote the file.
+		const written = await readFile(join(root, note.path), 'utf8');
+		expect(written).toBe(filed.replace('Hello', 'Typed as text'));
 		expect(
-			inspectRow(honeycrispDefinition.tables.notes, saved).fields,
+			inspectRow(honeycrispDefinition.tables.notes, written).fields,
 		).toMatchObject({ folderId: work.stem, pinned: false });
 	});
 
-	test('opening as a note keeps the text when another program wrote the file before a hint arrived', async () => {
-		const { state, root, seedRepair } = await product();
-		const repair = await seedRepair();
-		const raw = await openedFile(state, repair.path);
-		raw.input(OUTSIDE.replace('title: Outside', 'title: Mine'));
-		await raw.save();
-		expect(raw.status).toBe('saved');
-		// Another program writes; this folder does not hint at it.
-		await writeFile(join(root, repair.path), OUTSIDE);
-		expect(await state.openAsNote(repair.path)).toContain('changed while');
-		expect(state.noteAt(repair.path)).toBeUndefined();
-		expect(state.sessionAt(repair.path)).toBe(raw);
-		expect(await readFile(join(root, repair.path), 'utf8')).toBe(OUTSIDE);
+	test('switching between the fields and the file writes nothing and discards nothing', async () => {
+		const { state, root, seedNote } = await product();
+		const note = await seedNote();
+		const session = await openedNote(state, note.path);
+		typeBody(session, 'Typed in rich text\n');
+		expect(await saved(session)).toBeUndefined();
+		const before = await stat(join(root, note.path));
+		expect(session.showFile(true)).toBeUndefined();
+		expect(textOf(session)).toContain('Typed in rich text');
+		expect(session.showFile(false)).toBeUndefined();
+		expect(shown(session).body).toBe('Typed in rich text\n');
+		expect(session.save.status).toBe('idle');
+		expect((await stat(join(root, note.path))).mtimeMs).toBe(before.mtimeMs);
 	});
 });
 
 describe('closing', () => {
-	test('a note still opening when the page closes is abandoned: its editor is aborted or disposed, and nothing opens after', async () => {
+	test('a note still opening when the page closes is abandoned: its acquisition is aborted, an editor that answers anyway is not kept, and nothing opens after', async () => {
 		const { state, folder, seedNote } = await product();
 		const note = await seedNote();
 		await state.refresh();
@@ -3043,7 +3326,8 @@ describe('closing', () => {
 		expect(signal?.aborted).toBe(true);
 		release.resolve();
 		await opening;
-		expect(late?.data?.get().isDisposed).toBe(true);
+		// The late editor was opened; nothing keeps it or subscribed to it.
+		expect(late?.error).toBeNull();
 		expect(state.noteAt(note.path)).toBeUndefined();
 		// Nothing opens after the close, and its fence is not released.
 		folder.tables.notes.edit = edit;
@@ -3075,12 +3359,87 @@ describe('closing', () => {
 	});
 });
 
-test('a source handoff started before close cannot install a raw owner afterward', async () => {
-	const { state, seedNote } = await product();
-	const note = await seedNote();
-	await openedNote(state, note.path);
-	const changing = state.editAsFile(note.path);
-	await state.close();
-	expect(await changing).toBeDefined();
-	expect(state.sessionAt(note.path)).toBeUndefined();
+// ============================================================================
+// A save that found no file, and a file that came back
+// ============================================================================
+
+describe('a save that found no file', () => {
+	/**
+	 * A note whose text was being written when its file was removed, so the
+	 * write found no file; then another program put other text at the path.
+	 * Nothing reads the path again by itself.
+	 */
+	async function returned() {
+		const made = await browserProduct();
+		const { state, seedNote, hold, held, release, drop, put } = made;
+		const note = await seedNote();
+		const session = await openedNote(state, note.path);
+		hold();
+		typeBody(session, 'Mine\n');
+		await until(() => held().length === 1, 'the write');
+		drop(note.path);
+		release({ all: true });
+		expect(await saved(session)).toContain('not there');
+		const theirs = OUTSIDE.replace('Outside', 'Theirs');
+		put(note.path, theirs);
+		return { ...made, note, session, theirs };
+	}
+
+	test('a file that came back is not written over by itself, and a reload shows it in place of the person’s text', async () => {
+		const { state, note, session, text, theirs } = await returned();
+		expect(session.missing).toBe(true);
+		const mine = textOf(session);
+		expect(mine).toContain('Mine');
+		// More typing, a list action, and settling all write nothing.
+		expect(typeBody(session, 'Mine, more\n')).toBe(true);
+		expect(await state.patchNote(note.path, { pinned: true })).toContain(
+			'not settled',
+		);
+		expect(await state.settleAll()).toBe(1);
+		expect(text(note.path)).toBe(theirs);
+		// The person's reload is the one way the file's text replaces theirs.
+		expect(await session.reload()).toBeUndefined();
+		expect(textOf(session)).toBe(theirs);
+		expect(session.save.status).toBe('idle');
+		expect(session.missing).toBe(false);
+		expect(state.noteAt(note.path)).toBe(session);
+	});
+
+	test('the person’s text can be saved as a new note instead, leaving the file that came back', async () => {
+		const { state, note, session, text, theirs, paths } = await returned();
+		const mine = textOf(session);
+		expect(await state.recoverDraft(note.path)).toBeUndefined();
+		expect(text(note.path)).toBe(theirs);
+		const created = paths().filter(
+			(path) => path.startsWith('notes/') && path !== note.path,
+		);
+		expect(created).toHaveLength(1);
+		const [at] = created;
+		if (at === undefined) throw new Error('No new note');
+		expect(text(at)).toBe(mine);
+		expect(state.selectedPath).toBe(at);
+	});
+
+	test('a stopped-tracking rename whose old path is gone can save the person’s text as a note there', async () => {
+		const { state, folder, root, seedNote } = await product();
+		const note = await seedNote();
+		const session = await openedNote(state, note.path);
+		const land = loseNext(folder.files, 'move', { landed: false });
+		expect(await state.rename(note.path, 'renamed.md')).toContain(
+			'not confirmed',
+		);
+		const typed = textOf(session);
+		expect(state.stopTracking(note.path)).toBeUndefined();
+		expectOk(await land());
+		await state.refresh();
+		// The person's reload finds nothing at the old path and keeps the text.
+		expect(await session.reload()).toContain('not in the folder');
+		expect(session.missing).toBe(true);
+		expect(await state.recoverDraft(note.path)).toBeUndefined();
+		expect(await readFile(join(root, note.path), 'utf8')).toBe(typed);
+		expect(await readFile(join(root, 'notes/renamed.md'), 'utf8')).toBe(
+			note.text,
+		);
+		expect(state.noteAt(note.path)?.row.text).toBe(typed);
+	});
 });

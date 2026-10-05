@@ -1,6 +1,6 @@
 /**
- * Raw text editors (ADR-0465): the plain editor for any text file, and the
- * source editor that repairs a todo row the structured editor cannot open.
+ * Raw text editors (ADR-0465): the plain editor for any text file that is
+ * not a todo row.
  *
  * A draft's `buffer` is the text on screen, including unsaved typing.
  * `baseline` is the saved file the next conditional save is checked against. A
@@ -21,14 +21,13 @@
  * copy at the new path, keeps the draft at the old one. Git outcomes never
  * affect this state.
  *
- * Ordinary files save through raw conditional replacements; a row repair
- * saves its complete text through `table.replace`. Structured todo editing is
- * a different save shape: see `todo-editor.svelte.ts`.
+ * Ordinary files save through raw conditional replacements. A todo row's
+ * fields and source share one native row editor instead, whose writes
+ * replace the existing file last-writer-wins: see `todo-editor.svelte.ts`.
  */
-import type { FileTable, FolderFiles, TextCapture } from '@epicenter/folder';
-import { FileError, rowStemOf, submittedText } from '@epicenter/folder';
+import type { FolderFiles, TextCapture } from '@epicenter/folder';
+import { FileError, submittedText } from '@epicenter/folder';
 import { Err, Ok, type Result } from 'wellcrafted/result';
-import type { TodoFields } from './definition.js';
 import { readTextFile } from './files.js';
 
 /**
@@ -78,7 +77,7 @@ type DraftStore = {
 };
 
 /** Typing batches for this long before a save; the folder adds no Git delay. */
-export const TYPING_BATCH_MS = 400;
+const TYPING_BATCH_MS = 400;
 
 const messageOf = (cause: unknown) =>
 	cause instanceof Error ? cause.message : String(cause);
@@ -97,6 +96,12 @@ function createDraft(
 	let saving: Promise<void> | undefined;
 	/** Pending while a rename owns the file's path; resolves when it settles. */
 	let moving: Promise<void> | undefined;
+	/**
+	 * Epicenter asks to quit or restart: typing, the person's save choices, and
+	 * the typing timer stop until the round ends. Only the departure drain
+	 * saves. Reversible.
+	 */
+	let departing = $state(false);
 
 	const dirty = () => buffer !== baseline.text;
 
@@ -113,11 +118,12 @@ function createDraft(
 
 	function schedule() {
 		clearTimeout(timer);
-		if (isHeld() || moving) return;
+		if (isHeld() || moving || departing) return;
 		timer = setTimeout(() => void save(), TYPING_BATCH_MS);
 	}
 
 	function input(text: string) {
+		if (departing) return;
 		buffer = text;
 		schedule();
 	}
@@ -205,7 +211,7 @@ function createDraft(
 	 * saves when the move settles.
 	 */
 	async function save(): Promise<void> {
-		if (!moving) await drain();
+		if (!moving && !departing) await drain();
 	}
 
 	return {
@@ -267,6 +273,7 @@ function createDraft(
 		},
 		/** Conflict choice: discard my input and load the saved file. */
 		loadSaved() {
+			if (departing) return;
 			if (saveState.kind !== 'conflict' || saveState.current === undefined)
 				return;
 			baseline = saveState.current;
@@ -278,6 +285,7 @@ function createDraft(
 		},
 		/** Conflict choice: keep my input and save it over the version I reviewed. */
 		async keepMine() {
+			if (departing) return;
 			if (saveState.kind !== 'conflict' || saveState.current === undefined)
 				return;
 			baseline = saveState.current;
@@ -291,9 +299,33 @@ function createDraft(
 		 * removal an unknown delete did make, come back as a conflict to review.
 		 */
 		async retry() {
+			if (departing) return;
 			if (saveState.kind === 'failed' || saveState.kind === 'unknown')
 				saveState = { kind: 'saved' };
 			await save();
+		},
+		/** Typing and save choices are refused while Epicenter asks to quit or restart. */
+		get isFenced() {
+			return departing;
+		},
+		/** Epicenter asks to quit or restart: refuse typing and save choices at once. Reversible. */
+		prepareDeparture() {
+			departing = true;
+			clearTimeout(timer);
+		},
+		/**
+		 * Save pending typing under the usual rules and wait for it. True when
+		 * nothing is left unsaved, failed, unknown, or in conflict.
+		 */
+		async drainDeparture(): Promise<boolean> {
+			while (moving) await moving;
+			await drain();
+			return !dirty() && saveState.kind === 'saved';
+		},
+		/** The round ended without leaving: take typing again. */
+		resumeDeparture() {
+			departing = false;
+			if (dirty() && saveState.kind === 'saved') schedule();
 		},
 		/**
 		 * Settle pending input before the file is deleted or closed. Waits for a
@@ -448,43 +480,6 @@ export function createTextFileEditor(
 			},
 		},
 		file,
-		onSaved,
-	);
-}
-
-/**
- * The source editor for a todo row: complete text, saved exactly as typed
- * through the table's conditional replacement, whether or not it parses. It
- * repairs a row the structured editor refuses, and edits what that editor
- * cannot, such as frontmatter the table does not declare. The row is
- * addressed by its baseline's path, so it follows a rename.
- */
-export function createRowSourceEditor(
-	table: FileTable<TodoFields>,
-	row: SavedText,
-	onSaved: () => void,
-): TextFileEditor {
-	return createDraft(
-		{
-			async write(baseline, { text }) {
-				const stem = rowStemOf(table.name, baseline.path);
-				if (stem === undefined)
-					return FileError.InvalidPath({
-						path: baseline.path,
-						reason: `'${baseline.path}' is not a todo row`,
-					});
-				return table.replace(stem, text, {
-					expectedSha256: baseline.sha256,
-				});
-			},
-			async read(baseline) {
-				const stem = rowStemOf(table.name, baseline.path);
-				if (stem === undefined)
-					return Err({ message: `'${baseline.path}' is not a todo row` });
-				return table.get(stem);
-			},
-		},
-		row,
 		onSaved,
 	);
 }

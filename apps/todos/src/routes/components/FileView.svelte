@@ -74,6 +74,7 @@
 				value={editor.buffer}
 				aria-label="Contents of {name}"
 				spellcheck={false}
+				disabled={editor.isFenced}
 				oninput={(event) => editor.input(withFileNewlines(event.currentTarget.value, editor.buffer))}
 			/>
 		</div>
@@ -93,6 +94,7 @@
 	<FileNameBar
 		prefix={directory === '' ? '' : `${directory}/`}
 		{name}
+		disabled={todos.departing}
 		onRename={(next) => todos.rename(path, next)}
 		onDelete={() => void confirmDelete(todos, path)}
 	/>

@@ -12,12 +12,20 @@ import {
 } from '@epicenter/auth';
 import type { DesktopAuthBootstrap } from '@epicenter/auth/desktop';
 import { Ok, type Result } from 'wellcrafted/result';
-import type { NativeAuthPort } from './sidecar-runtime.ts';
+import type { NativeAuthPort, RelaunchGrant } from './sidecar-runtime.ts';
 
 const CALLBACK_TIMEOUT_MS = 10 * 60 * 1_000;
 const CALLBACK_URL = 'epicenter://auth/callback';
 
-/** One boot Account. Explicit authentication prepares credentials for a new process. */
+/**
+ * One boot Account. Explicit authentication prepares credentials for a new process.
+ *
+ * Changing accounts restarts every page the host serves, so it first asks Rust
+ * to settle Capture and Todos (`prepareRelaunch`). Until Rust grants that, the
+ * current authority, cell, and credential keep working, and a refusal costs
+ * only the candidate. After the grant the change is committed: dispose, write
+ * the cell, revoke the replaced credential, restart.
+ */
 export function createDesktopAuthAuthority({
 	authCell,
 	nativeAuthPort,
@@ -95,6 +103,18 @@ export function createDesktopAuthAuthority({
 		credentialUnreadable,
 	};
 	let disposed = false;
+	/**
+	 * A relaunch preparation is outstanding. Set before its first await, so one
+	 * account change at a time reaches Rust: synchronous disposal used to give
+	 * this serialization, and disposal now waits for the pages to agree.
+	 */
+	let replacing = false;
+	const anotherChange = () =>
+		new Error(
+			'Another account change is still in progress. Try again in a moment.',
+		);
+	const restartFirst = () =>
+		new Error('Restart Epicenter before changing accounts again.');
 	let attempt:
 		| {
 				controller: AbortController;
@@ -140,23 +160,28 @@ export function createDesktopAuthAuthority({
 	void nativeAuthPort.completed.then(dispose, dispose);
 	const revoke = (token: string) => revokeSession({ baseURL, token, fetch });
 
-	async function replaceProcess(next: ReturnType<typeof parsePersistedAuth>) {
-		if (disposed)
-			throw new Error('Restart Epicenter before changing accounts again.');
+	/** Commit an account change the pages agreed to. Runs once per process. */
+	async function replaceProcess(
+		next: ReturnType<typeof parsePersistedAuth>,
+		grant: RelaunchGrant,
+	) {
 		// Acceptance is synchronous. Disposal fences transport without writing storage.
 		// A prior verification write already entered writeTail or fails its owner check.
 		dispose();
 		try {
 			await writeCell(next === null ? null : JSON.stringify(next));
 		} catch (cause) {
-			// A failed write may have changed storage. Never resume or claim its contents.
+			// A failed write may have changed storage. Never resume or claim its
+			// contents: this process stays restart-required. The pages it held
+			// for the restart resume.
+			grant.abort();
 			const token = next?.token ?? bootCredential?.token;
 			if (token) await revoke(token);
 			throw cause;
 		}
 		if (bootCredential && bootCredential.token !== next?.token)
 			await revoke(bootCredential.token);
-		nativeAuthPort.relaunch();
+		grant.relaunch();
 	}
 
 	async function launch(signal: AbortSignal, reauthenticate: boolean) {
@@ -240,6 +265,10 @@ export function createDesktopAuthAuthority({
 					}),
 				);
 			if (attempt) return attempt.promise;
+			if (replacing)
+				return Promise.resolve(
+					AuthError.StartSignInFailed({ cause: anotherChange() }),
+				);
 			const pending = {
 				controller: new AbortController(),
 				...Promise.withResolvers<Result<undefined, AuthError>>(),
@@ -248,6 +277,7 @@ export function createDesktopAuthAuthority({
 			void (async () => {
 				let token: string | undefined;
 				let accepted = false;
+				let preparing = false;
 				try {
 					const signal = pending.controller.signal;
 					token = await launch(signal, reauthenticate);
@@ -262,15 +292,26 @@ export function createDesktopAuthAuthority({
 					if (sessionError) throw sessionError;
 					if (disposed || attempt !== pending)
 						throw new Error('Sign-in was superseded.');
+					if (replacing) throw anotherChange();
+					replacing = true;
+					preparing = true;
+					const grant = await nativeAuthPort.prepareRelaunch(signal);
+					// A cancellation or sign-out that won the race keeps the current
+					// authority: give the grant back before anything is accepted.
+					if (signal.aborted || disposed || attempt !== pending) {
+						grant.abort();
+						throw new Error('Sign-in was superseded.');
+					}
 					// Detach before disposal so cancellation cannot override an accepted result.
 					attempt = undefined;
 					accepted = true;
-					await replaceProcess({
-						token,
-						principalId: session.principalId,
-					});
+					await replaceProcess(
+						{ token, principalId: session.principalId },
+						grant,
+					);
 					pending.resolve(Ok(undefined));
 				} catch (cause) {
+					if (preparing && !accepted) replacing = false;
 					if (token && !accepted) await revoke(token);
 					pending.resolve(AuthError.StartSignInFailed({ cause }));
 				} finally {
@@ -280,8 +321,26 @@ export function createDesktopAuthAuthority({
 			return pending.promise;
 		},
 		async signOut() {
+			if (disposed) return AuthError.SignOutFailed({ cause: restartFirst() });
+			// Sign-out wins over a sign-in still in progress. One already asking
+			// Rust to restart is withdrawn, and this asks for a retry rather than
+			// run a second preparation beside it.
+			cancelAttempt();
+			if (replacing) return AuthError.SignOutFailed({ cause: anotherChange() });
+			replacing = true;
+			let grant: RelaunchGrant;
 			try {
-				await replaceProcess(null);
+				grant = await nativeAuthPort.prepareRelaunch();
+			} catch (cause) {
+				replacing = false;
+				return AuthError.SignOutFailed({ cause });
+			}
+			if (disposed) {
+				grant.abort();
+				return AuthError.SignOutFailed({ cause: restartFirst() });
+			}
+			try {
+				await replaceProcess(null, grant);
 				return Ok(undefined);
 			} catch (cause) {
 				return AuthError.SignOutFailed({ cause });

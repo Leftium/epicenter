@@ -52,10 +52,12 @@ A timer also compares each file's size and modification time, which recovers
 a change whose report never arrived. A
 change that is neither reported nor visible in size or time is not noticed
 until the next reread; returning to the window and "Check again" both reread.
-A reread never replaces what you have typed. A clean editor adopts the new
-text. A todo editor with unsaved input keeps it, stops saving, and waits for
-your choice; a plain or Source editor with unsaved typing keeps it and reports
-a conflict at its next save.
+A reread updates the list and the file browser and never replaces what you
+have typed. A plain editor with nothing unsaved shows the new text; one with
+unsaved typing keeps it and reports a conflict at its next save. An open todo
+reads its file when it opens and again only when you press **Reload** in its
+status bar; until then it shows what it loaded, and your next edit to it
+writes the whole todo over the change made elsewhere.
 
 ### Saving and committing
 
@@ -90,17 +92,19 @@ a conflict at its next save.
   path is refused when Todos opens; a link swapped in while it runs is not
   defended against.
 - The lock is between Epicenter processes. Other programs are not asked to
-  take it. A todo editor saves the todo's whole standard form over whatever
-  the file holds; it learns of another program's edit only by reading the
-  file, so an edit that lands between that read and the save is overwritten.
-  A plain or Source editor saves only if the file still has the version it
+  take it. A todo's fields and its source save the whole file over whatever
+  it holds, but only while the file exists: a todo deleted elsewhere is not
+  written back. The last write wins: the todo reads the file only when it
+  opens or you reload it, so another program's edit since then is
+  overwritten by your next edit. A plain editor saves only if the file still has the version it
   read, and checks again after staging the new bytes, immediately before
   replacing the file; an edit that lands in the instant between that last
   check and the replacement is overwritten. Neither is an operating-system
   compare-and-swap, and nothing merges.
 - A rename or delete of a todo changes one file, its Markdown file. A failure
   is reported as it happened: a refusal wrote nothing, and a reply that never
-  arrived says the change may have landed. Nothing is retried or rolled back.
+  arrived says the change may have landed, with the folder's own detail.
+  Nothing is retried or rolled back.
 - Todos refuses to open a directory whose `.git` is a symbolic link or a
   `gitdir:` file (a linked worktree or submodule), or whose
   `.git/epicenter/scratch` is linked elsewhere. It checks this when it opens
@@ -112,16 +116,47 @@ a conflict at its next save.
 
 ### Closing, quitting, and unsaved typing
 
-Unsaved typing lives only in the open window. Typing saves on its own after a
-short pause, so the cases below are about input that could not be saved: a
-conflict, a failed save, or text typed in the last moment.
+Unsaved typing lives only in the open window. A todo saves each edit as you
+make it, and a plain editor saves after a short pause, so the cases below are
+about input that could not be saved: a conflict, a failed save, or a save
+still running.
 
-- Closing the Todos window hides it. The page stays loaded, so drafts and the
-  terminal's output are still there when you open Todos again.
-- Quitting Epicenter, restarting it, a host restart after a crash, and
-  Epicenter's account reset all end the page. Drafts that were not saved are
-  lost, including a conflict you had not resolved. Nothing persists them.
-  Saved files are on disk and reopen as they were.
+- Closing the Todos window hides it. The page stays loaded, so unsaved input
+  and the terminal's output are still there when you open Todos again.
+- Quitting Epicenter, or restarting it for an account change, asks this page
+  first, over the host's departure wire (`@epicenter/epicenter/departure`).
+  From that moment the page takes no typing and starts no action, Git
+  command, or terminal command. A page holding nothing unsaved answers at
+  once. Otherwise it shows its window, saves what typing would have saved,
+  and waits for those saves to finish. If something still cannot be saved (a
+  failed or unconfirmed save, a todo value that cannot be saved, a plain
+  editor's conflict, or the title of a new todo you have not added), the
+  window lists it, names
+  whether Epicenter is quitting or restarting, and offers "Keep working" or
+  "Quit anyway" ("Restart anyway"). Nothing is added, retried, or discarded
+  for you; leaving anyway only tells Epicenter this window is ready. A choice
+  counts only for the quit or restart it was shown for.
+- A Git command or terminal command already running when Epicenter asks is
+  waited for. A pull or merge whose fetch finishes after the request applies
+  nothing and says so. The terminal keeps its typed command, history, and
+  output meanwhile, and Enter runs nothing; its typed command is not counted
+  as unsaved.
+- Todos opens its folder only once it is listening for a quit or restart and
+  has read from Epicenter whether one is running. If it cannot listen, or
+  cannot read that status, it shows "Todos is waiting for Epicenter" with
+  Retry, and nothing is open or editable meanwhile; returning to the window,
+  or a quit or restart beginning, also reads again.
+- If the quit or restart is cancelled, by you or by another window, the
+  page takes typing again with all unsaved input, failed saves, and typed
+  titles as they were. Quitting again during the same quit asks the page again, without a
+  second prompt. Until Epicenter says the quit is over, the page stays
+  waiting, even if an answer to Epicenter was lost.
+- A host restart after a crash, a forced kill, or a system shutdown that does
+  not ask Epicenter ends the page without asking. Input that was not saved
+  is lost. Nothing persists them. Saved files are on disk and reopen as they
+  were.
+- The browser demo has none of this: leaving the tab keeps its own leave
+  warning.
 - On quit, the Rust Folder owner fences new work, drains accepted local saves
   and commits, stops network work, and releases the directory lock. A forced
   kill can leave saved files uncommitted; the next commit includes them.
@@ -230,23 +265,23 @@ record.
   working.
 - **Recover incoming update** runs only when you press it. Open editors save
   their pending input first. If one has input it cannot save (a failed or
-  unanswered save, a change made elsewhere that waits for your choice, or
-  fields that need fixing), nothing runs and the button names those files.
-  While the update runs, editors hold their saves; afterwards each open todo
-  reads its file again. A todo with no unsaved input shows what the update
-  wrote; typing that arrived meanwhile is kept and waits for your choice, as
-  for any change made elsewhere. Nothing is saved over the update.
+  unanswered save, or a plain editor's conflict), nothing runs and the button
+  names those files. While the update runs, open todos take no typing, and
+  plain editors keep your typing and hold their saves; afterwards each open
+  todo reads its file again and shows what the update wrote, and a plain
+  editor's typing saves against the version it read, so a file the update
+  changed comes back as a conflict. Nothing is saved over the update.
 - Recovery finishes the update from the files as they are: each file still at
   its version from before the update gets the incoming version, and each file
   already at the incoming version is left alone. A file that holds neither,
   such as one you edited after the update stopped, is named with the reason,
   nothing is written, and the update stays pending with its record. Make each
-  named file hold one of its two versions (for example in its source editor,
-  or with `git show` in the terminal), then press the button again.
+  named file hold one of its two versions (for example in its source, or
+  with `git show` in the terminal), then press the button again.
 - Nothing is discarded, rolled back, or retried for you.
 
 Unsaved input lives only in this open page. Switching files keeps each
-editor's draft, but drafts are not stored anywhere else. In the browser, while
+editor's input, but it is not stored anywhere else. In the browser, while
 any editor has unsaved typing, a save in progress, a failed save, or a
 conflict, reloading or closing the tab asks first with the browser's leave
 warning. Leaving anyway discards that input; files already saved stay as
@@ -265,23 +300,31 @@ without the push.
    the last commit, and the remote separately. They say "Changes need
    checking" or "Check failed" instead of claiming a clean folder when the last
    observation is out of date or failed; focus and "Check again" check again.
-2. Edit the title or notes. Typing stays in the editor until it saves, and a
-   save writes the todo's whole standard form: keys quoted, values in JSON
-   spelling, keys Todos does not declare kept. When the todo editor reads a
-   change made elsewhere while you have unsaved input, it stops saving and
-   offers "Save mine over it" or "Discard mine and load saved". **Edit
-   source** in the Source tab edits the file's exact text instead; that save
-   lands only if the file is still the version it read, and a save that races
-   another writer offers the same two choices. A save that fails offers "Try
-   again" and "Discard mine"; only that choice drops the typing, and it writes
-   nothing. A save whose reply was lost, or that ended with an error, says it
-   may or may not be in the file; a later read that finds the same text does
-   not settle that, and nothing is sent again until you choose. A second save
-   is never sent while one is still running.
+2. Edit the title or notes. Each edit saves the todo's whole standard form
+   at once: keys quoted, values in JSON spelling, keys Todos does not
+   declare kept. A key you remove in the source is removed from the file.
+   **Edit source** in the Source tab edits the file's exact text through the
+   same todo; it stays in the source until you choose **Edit fields**. Saves
+   of one todo run one at a time, and the latest edit follows the save that
+   is running. The todo does not follow changes made elsewhere: **Reload**
+   reads the file and shows it, and otherwise your next edit writes over
+   them. A save that fails stops: newer typing stays on screen and nothing is
+   sent on its own until you choose "Try again" or "Discard mine and reload".
+   Trying again sends exactly the text the todo holds, comments and quoting
+   included. Discarding writes nothing and shows the file as it is now. A
+   save whose reply was lost says it may or may not be in the file, with the
+   folder's own detail, and offers "Save again". A todo whose file was
+   removed says so and offers "Close"; nothing recreates it. A title or notes
+   value the file cannot hold, such as text with a lone surrogate, stays in
+   its field with the reason while the rest of the todo keeps saving;
+   leaving, rename, delete, and quitting count it as unsaved until you fix it
+   or choose "Discard mine and reload".
 3. Open the file browser. Folders expand and collapse; a todo file opens its
-   todo editor, and any other text file opens in a plain editor with the
-   Source editor's save and conflict rules. File saves request automatic history without waiting
-   for Git. A file that is not UTF-8 text,
+   todo editor, and any other text file opens in a plain editor whose saves
+   land only if the file is still the version it read; a save that races
+   another writer offers "Save mine over it" or "Discard mine and load
+   saved". File saves request
+   automatic history without waiting for Git. A file that is not UTF-8 text,
    or is over 1 MB, shows its type and size and is never saved as text.
    Right-click a row, or use its "…" button, for Open, Rename, Copy path, and
    Delete; on a folder, New file and New folder. With a row focused, arrow
@@ -290,9 +333,11 @@ without the push.
    - Renaming or deleting a todo file changes that one Markdown file. A file
      with the same stem, such as an image or a recording, stays where it is.
      Any file is renamed or deleted only if it still has the version you saw.
-   - Rename and delete refuse while the file's editor has input that cannot be
-     saved, and the input stays in the editor. Typing during a rename is kept
-     and saves at the new name once the rename finishes.
+   - Rename and delete wait for the file's saves first, and refuse while its
+     editor has input that could not be saved; the input stays in the editor.
+     A todo takes no typing while it is being renamed or deleted, and opens
+     again at its new name. A plain editor keeps typing during a rename and
+     saves it at the new name once the rename finishes.
    - A rename onto a file that is open in an editor is refused, and so is a
      second change to a file while one is still in progress.
    - Delete always asks first, naming what it removes. Only empty folders can
@@ -325,14 +370,15 @@ without the push.
    It pulls, rewrites `todos/<stem>.md` with a YAML comment, a new title,
    `done: true`, and the keys `owner` and `labels`, which Todos does not
    declare, then commits and pushes with ordinary Git. Press **Pull** in the
-   browser: the todo shows the new title, an open todo with no unsaved input
-   follows it, and the file keeps the comment and keys byte for byte.
+   browser: the list shows the new title, an open todo shows it after
+   **Reload**, and the file keeps the comment and keys byte for byte.
    Checking the todo off in the list while it is not open changes only its
    `done` value and keeps every other byte. Saving it from its open editor
    writes its standard form, which keeps `owner` and `labels`. While the todo
    is open, the list's checkbox is a change to its editor and saves the same
-   way; it changes nothing while that editor is still saving or waits for
-   your choice.
+   way, with its latest title and notes, after any save already running; it
+   changes nothing while that todo is edited as source or has a save that
+   did not finish.
 7. `bun apps/todos/scripts/native.ts <checkout> status` prints the native
    folder's JSON status through `openFolder` from `@epicenter/folder/bun`.
    `create "<title>"`, `complete <stem>`, `commit-and-push`, `fetch`, and
@@ -341,12 +387,17 @@ without the push.
 
 Write a file whose text does not parse (for example `printf -- '---\ntitle: *missing\n---\n' > todos/bad.md`,
 or Markdown with no `---` lines at all) to see a row marked "Needs repair". It
-is still a todo you can select: its title, done, and notes controls are
-disabled, structured edits are refused, and you fix it in the Source tab.
-Saving text that still does not parse succeeds and keeps it marked. A todo
-that parses but has a bad field, such as `done: soon`, is marked the same way
-and keeps its other controls working. The messages shown describe the text on
-screen, saved or not.
+is still a todo you can select. It opens in its source, with no title, done,
+or notes controls, and says why; you fix it there. Saving text that still
+does not parse succeeds and keeps it marked. A todo that parses but has a bad
+field, such as `done: soon`, opens the same way. Once the text reads as a
+todo, **Edit fields** shows its controls again. The messages shown describe
+the text on screen. An open todo whose file becomes unreadable elsewhere keeps
+its controls and your input: **Reload** says why it could not read the file
+and changes nothing, and your next edit, or "Try again" after a failed save,
+writes your text over whatever the file holds. A todo file whose editor does
+not open is shown as that failure, never as a plain text editor; opening it
+again retries.
 
 Any file name works for a todo, including a leading dot, a trailing space,
 punctuation, and `todos/.md` itself. Only `.md` in lowercase makes a file a
@@ -357,9 +408,11 @@ todo; `todos/a.MD` is an ordinary file.
 | Path | Role |
 | --- | --- |
 | `src/lib/definition.ts` | The inert `defineFolder` declaration, written with the shared `defineTable` and `field` vocabulary. It names no folder. |
-| `src/lib/platform/` | The `#platform/folder` seam: `types.ts` is its contract and holds `TODOS_FOLDER_ID`, `folder.browser.ts` opens the OPFS folder through `@epicenter/folder/browser`, and `folder.epicenter-host.ts` opens the host's directory through `@epicenter/folder/tauri`. Each returns the folder or the refusal. The mounted page calls it; importing it opens nothing. |
-| `src/lib/editor.svelte.ts` | Raw text drafts: the plain editor for any text file and a todo row's source editor, with conditional saves and their conflict choice. |
-| `src/lib/todo-editor.svelte.ts` | The todo editor over the folder's row editor (`table.edit`): autosave, halts, review of changes made elsewhere, and the rename and delete holds. |
+| `src/lib/open-todos-page.ts` | How the mounted page opens its Todos owner: inside Epicenter only after a departure status is known, attached the moment it exists. |
+| `src/lib/departure.svelte.ts` | This page's answer when Epicenter asks to quit or restart: listens first, applies statuses in version order, fences the Todos owner, asks it to save, and answers or asks the person. It discards nothing. |
+| `src/lib/platform/` | The `#platform/departure` seam: the host leaf talks to this window over the departure wire and Tauri; the browser leaf has no port. And the `#platform/folder` seam: `types.ts` is its contract and holds `TODOS_FOLDER_ID`, `folder.browser.ts` opens the OPFS folder through `@epicenter/folder/browser`, and `folder.epicenter-host.ts` opens the host's directory through `@epicenter/folder/tauri`. Each returns the folder or the refusal. The mounted page calls it; importing it opens nothing. |
+| `src/lib/editor.svelte.ts` | The plain editor for any text file that is not a todo, with conditional saves and their conflict choice. |
+| `src/lib/todo-editor.svelte.ts` | The todo editor: one retained native row editor (`table.edit`) for a todo's fields and source, which every edit replaces whole at once; the source preference; and the fences that rename, delete, recovery, close, and a departure put on input. |
 | `src/lib/files.ts` | File browser rows, and which files open as editable text. |
 | `src/lib/todos.svelte.ts` | Todo and folder listings, path selection, retained editors, and file actions. |
 | `src/lib/terminal.svelte.ts` | The terminal session that outlives the terminal pane, over the folder's own `folder.terminal()`. |
@@ -371,8 +424,23 @@ todo; `todos/a.MD` is an ordinary file.
 | `scripts/remote-edit.ts` | Demo fixture: a hand edit with undeclared frontmatter, committed and pushed from the native checkout with ordinary Git. |
 | `scripts/module-graph.ts` | Lists the modules a build of one entry pulls in, resolved with the conditions and aliases `vite.config.ts` declares, for the seam test. |
 
+`TodoDetail` is one view reused as the selection moves between todos, and
+each todo's input lives in its retained editor, not in the view. Its function
+bindings are closures that read the current todo on every call, such as
+`bind:value={() => todo.title(), (title) => todo.setTitle(title)}`. Svelte
+evaluates a function binding's expressions once, when the block is created,
+so `bind:value={todo.title, todo.setTitle}` would keep showing and writing the
+first todo after the selection moves. A view can also leave while its todo
+stays retained, as on narrow screens, and a node that left the document keeps
+its input and submit listeners; `TodoDetail`, `TodoStatus`, and `FileNameBar`
+therefore act only while mounted, and an editor the owner released refuses
+input and commands for good.
+
 Checks: `bun run --cwd apps/todos typecheck` (both seam leaves and the Bun
-side), `bun run --cwd apps/todos test`, `bun run --cwd apps/todos build` for
+side), `bun run --cwd apps/todos test` (it builds the Folder's file exchange
+addon that the native harness needs, runs the tests on Svelte's server
+runtime, then `test:mounted`: the real `TodoDetail` mounted in jsdom under
+`--conditions=browser`), `bun run --cwd apps/todos build` for
 the browser demo, and `bun run --cwd apps/todos build:epicenter` for the build
 Epicenter serves. The two builds share SvelteKit's output directory, so run
 them one after the other.

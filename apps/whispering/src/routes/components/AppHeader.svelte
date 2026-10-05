@@ -199,7 +199,7 @@
 							onclick={() => (library.autosave.paused = !library.autosave.paused)}
 							data-testid="toggle-autosave"
 						>
-							{library.autosave.paused ? 'Autosave is paused: resume' : 'Pause autosave (keep typing unsaved)'}
+							{library.autosave.paused ? 'Autosave is paused: resume' : 'Pause autosave of text files (keep typing unsaved)'}
 						</Button>
 						{#if library.workspace.injection}
 							<Button size="sm" variant="outline" onclick={() => void arm({ rowWrites: (injection?.rowWrites ?? 0) + 1 })} data-testid="inject-row">

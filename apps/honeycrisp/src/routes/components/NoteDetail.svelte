@@ -6,45 +6,97 @@
 	import { Textarea } from '@epicenter/ui/textarea';
 	import HistoryIcon from '@lucide/svelte/icons/history';
 	import PinIcon from '@lucide/svelte/icons/pin';
-	import { folderLabel, type NoteFields } from '$lib/data.js';
 	import { withFileNewlines } from '@epicenter/folder/file-browser';
-	import { noteBody } from '$lib/note-source.js';
+	import { folderLabel, honeycrispDefinition, instantNow } from '$lib/data.js';
+	import { inspectRow } from '@epicenter/folder';
+	import { fieldDefaults, noteBody, repairFields } from '$lib/note-source.js';
+	import { problemsOf } from '$lib/note-session.svelte.js';
 	import type { NoteSession, Notes } from '$lib/notes.svelte.js';
 	import { confirmDelete } from './file-actions.js';
+	import Lifetime from './Lifetime.svelte';
 	import NoteHistory from './NoteHistory.svelte';
 	import RichEditor from './RichEditor.svelte';
 	import RowDraftStatus from './RowDraftStatus.svelte';
 
 	let { notes, session }: { notes: Notes; session: NoteSession } = $props();
 
-	/**
-	 * The body every view of this note edits. It follows `session`, which a
-	 * rename replaces, so the views and their undo history stay mounted.
+	/*
+	 * Every getter, setter, and handler below reads `session` when it runs: a
+	 * rename or a recovery hands this view a new session, and the view, with
+	 * its undo history, stays mounted. Each conditional block has its own
+	 * `Lifetime`: a control from a block that is gone delivers nothing, even
+	 * after the same kind of block mounts again.
 	 */
-	const draft = noteBody(() => session);
-	/**
-	 * How the draft reads. Every control and every message below describes the
-	 * document on screen, saved or not, and never the file as last saved.
-	 */
-	const reading = $derived(session.state.reading);
-	const fields = $derived(reading.fields);
-	const title = $derived(fields.title ?? '');
-	const pinned = $derived(fields.pinned === true);
-	/** The folder this draft names. `null` is no folder; an id may be the empty string. */
-	const folderId = $derived(fields.folderId ?? null);
-	const deleted = $derived(typeof fields.deletedAt === 'string');
 
-	/** Which view of the one draft is showing. Switching saves nothing and discards nothing. */
+	/** The note's one input, as its row editor holds it. */
+	const row = $derived(session.row);
+	/** The structured note, when its fields show. */
+	const note = $derived(row.status === 'valid' && !session.rawMode ? row : undefined);
+	const pinned = $derived(note?.fields.pinned === true);
+	/** The folder this note names. `null` is no folder; an id may be the empty string. */
+	const folderId = $derived(note?.fields.folderId ?? null);
+	const deleted = $derived(typeof note?.fields.deletedAt === 'string');
+	/** What the file view offers for text whose fields need values, read from the text on screen. */
+	const defaults = $derived.by(() => {
+		if (row.status === 'valid') return undefined;
+		return fieldDefaults(inspectRow(honeycrispDefinition.tables.notes, row.text), instantNow());
+	});
+
+	/** Which view of the structured note shows. Switching saves nothing and discards nothing. */
 	let tab = $state<'rich' | 'source'>('rich');
 	let historyOpen = $state(false);
 
-	function patch(changes: Partial<NoteFields>) {
-		void notes.patchNote(session.path, changes, { save: 'later' });
+	/** Textareas report LF; the setters restore the file's own line endings. */
+	const lf = (text: string) => text.replace(/\r\n?/g, '\n');
+
+	/** `command`, run only while the block it belongs to lives. */
+	const within = (live: () => boolean, command: () => unknown) => () => {
+		if (live()) void command();
+	};
+
+	function edit(fields: Parameters<NoteSession['edit']>[0]['fields']) {
+		const problem = session.edit({ fields });
+		if (problem) session.refuse(problem);
 	}
 
-	async function editAsFile() {
-		const problem = await notes.editAsFile(session.path);
-		if (problem) toast.error('Could not open the file as text', { description: problem });
+	/** The title as typed when the editor refused it, else the editor's. */
+	function title() {
+		const current = session.row;
+		return session.refused.title?.value ?? (current.status === 'valid' ? (current.fields.title ?? '') : '');
+	}
+	function setTitle(value: string) {
+		const problem = session.edit({ fields: { title: value } }, { keep: true });
+		if (problem) session.refuse(problem);
+	}
+
+	/** The Markdown source as typed when the editor refused it, else the editor's body. */
+	function body() {
+		const current = session.row;
+		return lf(session.refused.body?.value ?? (current.status === 'valid' ? current.body : ''));
+	}
+
+	/** The whole file, as the file view shows it. */
+	function source() {
+		return lf(session.row.text);
+	}
+	function setSource(value: string) {
+		const problem = session.setText(withFileNewlines(value, session.row.text));
+		if (problem) session.refuse(problem);
+	}
+
+	function showFile(on: boolean) {
+		const problem = session.showFile(on);
+		if (problem)
+			toast.error(on ? 'Could not show the file' : 'Could not open it as a note', { description: problem });
+	}
+
+	function fillDefaults() {
+		const current = session.row;
+		if (current.status !== 'invalid' || defaults === undefined) return;
+		const { data: repaired, error } = repairFields(current.text, defaults);
+		if (error !== null) return void toast.error('Could not set the fields', { description: error });
+		const problem = session.setText(repaired);
+		if (problem) session.refuse(problem);
 	}
 
 	/** A folder's option value. No folder is the empty value, so a folder id never is. */
@@ -53,147 +105,255 @@
 </script>
 
 <section class="flex h-full min-h-0 flex-col" aria-label="Note">
-	<div class="flex items-center gap-2 border-b px-3 py-2">
-		<Input
-			class="flex-1 text-base font-medium"
-			value={title}
-			placeholder="Title"
-			aria-label="Title"
-			oninput={(event) => patch({ title: event.currentTarget.value })}
-		/>
-		<select
-			class="h-9 max-w-40 rounded-md border bg-background px-2 text-sm"
-			aria-label="Folder"
-			value={optionOf(folderId)}
-			onchange={(event) => patch({ folderId: idOf(event.currentTarget.value) })}
-		>
-			<option value="">No folder</option>
-			{#each notes.folders as folder (folder.path)}
-				<option value={optionOf(folder.stem)}>{folderLabel(folder)}</option>
-			{/each}
-			{#if folderId !== null && !notes.folders.some((folder) => folder.stem === folderId)}
-				<option value={optionOf(folderId)}>{folderId} (missing)</option>
-			{/if}
-		</select>
-		<Button
-			variant={pinned ? 'secondary' : 'ghost'}
-			size="icon-sm"
-			aria-label={pinned ? 'Unpin' : 'Pin'}
-			aria-pressed={pinned}
-			tooltip={pinned ? 'Unpin' : 'Pin'}
-			onclick={() => patch({ pinned: !pinned })}
-		>
-			<PinIcon class={pinned ? 'fill-current' : ''} />
-		</Button>
-		{#if notes.host.history}
-			<Button variant="ghost" size="icon-sm" aria-label="History" tooltip="Git history of this note" onclick={() => (historyOpen = true)}>
-				<HistoryIcon />
-			</Button>
-		{/if}
-	</div>
+	{#if note}
+		<Lifetime>
+			{#snippet children(live)}
+				<div class="flex items-center gap-2 border-b px-3 py-2">
+					<Input
+						class="flex-1 text-base font-medium"
+						bind:value={
+							title,
+							(value) => {
+								if (live()) setTitle(value);
+							}
+						}
+						placeholder="Title"
+						aria-label="Title"
+					/>
+					<select
+						class="h-9 max-w-40 rounded-md border bg-background px-2 text-sm"
+						aria-label="Folder"
+						value={optionOf(folderId)}
+						onchange={(event) => {
+							if (live()) edit({ folderId: idOf(event.currentTarget.value) });
+						}}
+					>
+						<option value="">No folder</option>
+						{#each notes.folders as folder (folder.path)}
+							<option value={optionOf(folder.stem)}>{folderLabel(folder)}</option>
+						{/each}
+						{#if folderId !== null && !notes.folders.some((folder) => folder.stem === folderId)}
+							<option value={optionOf(folderId)}>{folderId} (missing)</option>
+						{/if}
+					</select>
+					<Button
+						variant={pinned ? 'secondary' : 'ghost'}
+						size="icon-sm"
+						aria-label={pinned ? 'Unpin' : 'Pin'}
+						aria-pressed={pinned}
+						tooltip={pinned ? 'Unpin' : 'Pin'}
+						onclick={within(live, () => edit({ pinned: !pinned }))}
+					>
+						<PinIcon class={pinned ? 'fill-current' : ''} />
+					</Button>
+					{#if notes.host.history}
+						<Button
+							variant="ghost"
+							size="icon-sm"
+							aria-label="History"
+							tooltip="Git history of this note"
+							onclick={within(live, () => (historyOpen = true))}
+						>
+							<HistoryIcon />
+						</Button>
+					{/if}
+				</div>
+			{/snippet}
+		</Lifetime>
+	{/if}
 
 	<RowDraftStatus
 		{session}
-		onDiscard={() => notes.discardDraft(session.path)}
 		onStopTracking={() => notes.stopTracking(session.path)}
+		onRecover={() => notes.recoverDraft(session.path)}
 	/>
 
-	{#if reading.issues.length > 0}
-		<!-- Input the note cannot save stays on screen; saving waits until it is fixed. -->
-		<div class="border-b bg-destructive/5 px-4 py-2 text-xs">
-			<p class="mb-1 flex flex-wrap items-center gap-2 font-medium">
-				<Badge variant="destructive">Not saved</Badge>
-				Some fields need fixing before this note can be saved.
-			</p>
-			<ul class="space-y-0.5 text-muted-foreground">
-				{#each reading.issues as issue, index (index)}
-					<li>{issue.message}</li>
-				{/each}
-			</ul>
-		</div>
-	{/if}
+	{#if note}
+		<Lifetime>
+			{#snippet children(live)}
+				{@const draft = noteBody(() => session, { mounted: live })}
+				<div class="flex items-center gap-1 border-b px-3 py-1.5" role="tablist" aria-label="View">
+					<Button
+						size="xs"
+						variant={tab === 'rich' ? 'secondary' : 'ghost'}
+						role="tab"
+						aria-selected={tab === 'rich'}
+						onclick={() => (tab = 'rich')}
+					>
+						Rich text
+					</Button>
+					<Button
+						size="xs"
+						variant={tab === 'source' ? 'secondary' : 'ghost'}
+						role="tab"
+						aria-selected={tab === 'source'}
+						onclick={() => (tab = 'source')}
+					>
+						Source
+					</Button>
+					<span class="ml-auto text-xs text-muted-foreground">Both views edit one note</span>
+				</div>
 
-	<div class="flex items-center gap-1 border-b px-3 py-1.5" role="tablist" aria-label="View">
-		<Button
-			size="xs"
-			variant={tab === 'rich' ? 'secondary' : 'ghost'}
-			role="tab"
-			aria-selected={tab === 'rich'}
-			onclick={() => (tab = 'rich')}
-		>
-			Rich text
-		</Button>
-		<Button
-			size="xs"
-			variant={tab === 'source' ? 'secondary' : 'ghost'}
-			role="tab"
-			aria-selected={tab === 'source'}
-			onclick={() => (tab = 'source')}
-		>
-			Source
-		</Button>
-		<span class="ml-auto text-xs text-muted-foreground">Both views edit one draft</span>
-	</div>
-
-	<!-- The rich-text view stays mounted while Source shows, so its undo history
-	     survives a look at the source that changes nothing. -->
-	<div class="min-h-0 flex-1" hidden={tab !== 'rich'}>
-		<RichEditor {draft} admitting={session.admitting} focusRequest={notes.focusRequest} onOpenSource={() => (tab = 'source')} />
-	</div>
-	{#if tab === 'source'}
-		<div class="flex min-h-0 flex-1 flex-col p-3">
-			<Textarea
-				class="min-h-40 flex-1 resize-none font-mono text-xs"
-				value={draft.body}
-				aria-label="Markdown source"
-				spellcheck={false}
-				oninput={(event) => draft.input(withFileNewlines(event.currentTarget.value, draft.body))}
-			/>
-		</div>
+				<!-- The rich-text view stays mounted while Source shows, so its undo history
+				     survives a look at the source that changes nothing. -->
+				<div class="min-h-0 flex-1" hidden={tab !== 'rich'}>
+					<RichEditor
+						{draft}
+						admitting={session.admitting}
+						focusRequest={notes.focusRequest}
+						onOpenSource={() => (tab = 'source')}
+					/>
+				</div>
+				{#if tab === 'source'}
+					<Lifetime>
+						{#snippet children(shown)}
+							<!-- A body the editor refuses stays here with the reason. -->
+							{@const markdown = noteBody(() => session, { mounted: shown, keep: true })}
+							<div class="flex min-h-0 flex-1 flex-col p-3">
+								<Textarea
+									class="min-h-40 flex-1 resize-none font-mono text-xs"
+									bind:value={
+										body,
+										(value) => {
+											if (shown()) markdown.input(withFileNewlines(value, markdown.body));
+										}
+									}
+									aria-label="Markdown source"
+									spellcheck={false}
+								/>
+							</div>
+						{/snippet}
+					</Lifetime>
+				{/if}
+			{/snippet}
+		</Lifetime>
+	{:else}
+		<!-- The whole file: for text that does not read as a note, and for keys the fields do not show. -->
+		<Lifetime>
+			{#snippet children(live)}
+				<div class="border-b px-4 py-2 text-xs {row.status === 'invalid' ? 'bg-destructive/5' : ''}">
+					<p class="flex flex-wrap items-center gap-2 font-medium">
+						{#if row.status === 'invalid'}
+							<Badge variant="destructive">Needs repair</Badge>
+							This text does not read as a note yet. Fix it below; it saves as it is.
+							{#if defaults}
+								<Button size="xs" variant="outline" disabled={!session.admitting} onclick={within(live, fillDefaults)}>
+									Set the missing fields to their defaults
+								</Button>
+							{/if}
+						{:else}
+							This note is open as a file.
+						{/if}
+						<Button
+							size="xs"
+							variant="outline"
+							disabled={row.status !== 'valid'}
+							onclick={within(live, () => showFile(false))}
+						>
+							Open as note
+						</Button>
+					</p>
+					{#if row.status === 'invalid'}
+						<ul class="mt-1 space-y-0.5 text-muted-foreground">
+							{#each problemsOf(row.error) as problem, index (index)}
+								<li>{problem}</li>
+							{/each}
+						</ul>
+					{/if}
+				</div>
+				<div class="flex min-h-0 flex-1 flex-col px-3 py-3 sm:px-4">
+					<Textarea
+						class="min-h-40 flex-1 resize-none font-mono text-xs"
+						bind:value={
+							source,
+							(value) => {
+								if (live()) setSource(value);
+							}
+						}
+						aria-label="Contents of {session.path}"
+						spellcheck={false}
+					/>
+				</div>
+			{/snippet}
+		</Lifetime>
 	{/if}
 
 	<div class="flex flex-wrap items-center gap-2 border-t px-4 py-2 text-xs text-muted-foreground">
 		<code class="font-mono">{session.path}</code>
-		<Button size="sm" variant="ghost" tooltip="Edit the whole file as text, including keys Honeycrisp does not show" onclick={editAsFile}>
-			Edit as file
-		</Button>
+		{#if note}
+			<Lifetime>
+				{#snippet children(live)}
+					<Button
+						size="sm"
+						variant="ghost"
+						tooltip="Edit the whole file as text, including keys Honeycrisp does not show"
+						onclick={within(live, () => showFile(true))}
+					>
+						Edit as file
+					</Button>
+				{/snippet}
+			</Lifetime>
+		{/if}
 		<div class="ml-auto flex items-center gap-1">
 			{#if deleted}
-				<Button
-					size="sm"
-					variant="outline"
-							onclick={async () => {
-						const problem = await notes.restoreNote(session.path);
-						if (problem) toast.error('Could not restore the note', { description: problem });
-					}}
-				>
-					Restore
-				</Button>
-				<Button size="sm" variant="ghost-destructive" onclick={() => void confirmDelete(notes, session.path)}>
-					Delete permanently
-				</Button>
-			{:else}
-				<Button
-					size="sm"
-					variant="ghost-destructive"
-					onclick={async () => {
-						const problem = await notes.trashNote(session.path);
-						if (problem) toast.error('Could not delete the note', { description: problem });
-					}}
-				>
-					Move to Recently Deleted
-				</Button>
+				<Lifetime>
+					{#snippet children(live)}
+						<Button
+							size="sm"
+							variant="outline"
+							onclick={within(live, async () => {
+								const problem = await notes.restoreNote(session.path);
+								if (problem) toast.error('Could not restore the note', { description: problem });
+							})}
+						>
+							Restore
+						</Button>
+					{/snippet}
+				</Lifetime>
+			{:else if note}
+				<Lifetime>
+					{#snippet children(live)}
+						<Button
+							size="sm"
+							variant="ghost-destructive"
+							onclick={within(live, async () => {
+								const problem = await notes.trashNote(session.path);
+								if (problem) toast.error('Could not delete the note', { description: problem });
+							})}
+						>
+							Move to Recently Deleted
+						</Button>
+					{/snippet}
+				</Lifetime>
+			{/if}
+			{#if deleted || row.status === 'invalid'}
+				<Lifetime>
+					{#snippet children(live)}
+						<Button
+							size="sm"
+							variant="ghost-destructive"
+							onclick={within(live, () => confirmDelete(notes, session.path))}
+						>
+							Delete permanently
+						</Button>
+					{/snippet}
+				</Lifetime>
 			{/if}
 		</div>
 	</div>
 </section>
 
 {#if notes.host.history && historyOpen}
-	<NoteHistory
-		history={notes.host.history}
-		path={session.path}
-		admitting={session.admitting}
-		onUse={(source) => notes.useVersion(session, source)}
-		bind:open={historyOpen}
-	/>
+	{@const history = notes.host.history}
+	<Lifetime>
+		{#snippet children(live)}
+			<NoteHistory
+				{history}
+				path={session.path}
+				admitting={session.admitting}
+				onUse={(source) => (live() ? notes.useVersion(session, source) : 'This history view was closed.')}
+				bind:open={historyOpen}
+			/>
+		{/snippet}
+	</Lifetime>
 {/if}

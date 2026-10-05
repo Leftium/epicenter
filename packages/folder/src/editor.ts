@@ -1,187 +1,73 @@
 /**
- * Row editors: one retained, canonical draft of one table row.
+ * Row editors: the accepted complete input of one table row and one queue
+ * that publishes it.
  *
  *     const { data: editor, error } = await folder.tables.todos.edit(stem, { signal });
  *     if (error !== null) return showOpenError(error);
- *     const { get, subscribe, change, save, refresh, adopt, dispose } = editor;
+ *     const { get, subscribe, set, setText, retry, flush, reload } = editor;
  *
  * The table that owns the row supplies its path, schema, and declared field
- * order, so an editor is opened only through `table.edit`. The editor keeps
- * three values apart:
+ * order, so an editor is acquired only through `table.edit`. Acquisition
+ * reads the row once. Readable text yields an editor whether or not it
+ * conforms, so malformed or schema-invalid text can be repaired through the
+ * same owner. A missing, unreadable, or non-UTF-8 file, an address the folder
+ * does not admit, and an aborted acquisition yield none.
  *
- * - `baseline`: the revision `isDirty` compares against. It moves when a
- *   clean editor follows a valid read, when a read matches the local
- *   document, on a save receipt, and on `adopt`.
- * - `document`: the local fields and body. Changes may make it schema
- *   invalid; a read never resets dirty input.
- * - `observation`: what the latest read found, present or not. The editor
- *   never invents one.
+ * A row is valid when its text has a canonical form and the complete parse's
+ * own declared fields conform. The `fields` a valid row exposes are the
+ * values that were checked.
  *
- * Dirty is semantic: the local document's canonical text differs from the
- * baseline's. External change is exact: a read's SHA-256 differs from the
- * baseline's. A save always overwrites the row's path with the complete
- * canonical document; nothing is conditional, retried, or queued. Change
- * hints are advisory: each one for the row's path requests a reread. The
- * application decides when to save and what a person reviews. Editing what
- * the editor refuses, such as unknown metadata or text with no canonical
- * form, is a raw repair through `files.overwrite` or `table.replace`.
+ * The snapshot holds two facts:
+ *
+ * - `row`: the latest accepted input, from acquisition, a setter, or a
+ *   successful `reload`. It is always shown; storage never hides it.
+ * - `save`: the publication chain. One write runs at a time, and the latest
+ *   input accepted while it runs follows it.
+ *
+ * `set` and `setText` accept input synchronously. Before either returns, the
+ * accepted text is the row snapshot and, unless the chain is paused, its
+ * save is admitted: `save` is `saving` from admission until the chain
+ * settles, with no idle gap between consecutive writes. Input that a newer
+ * setter supersedes before its turn is never submitted. A failed or
+ * unconfirmed write pauses the chain: newer input is kept and not attempted
+ * until `retry`. Every write replaces the existing row, so a row deleted
+ * before publication is `NotFound` and never recreated.
+ *
+ * The editor never reads storage on its own. It does not watch change hints,
+ * and subscribers hear only changes to the snapshot in memory. `reload` is
+ * the only read after acquisition. Publication never depends on a
+ * subscriber.
  *
  * Methods close over the editor; none reads `this`, so destructuring them is
  * safe. One editor may serve several views; each view subscribes on its own.
  */
 
 import { defineErrors, type InferErrors } from 'wellcrafted/error';
+import { createLogger } from 'wellcrafted/logger';
 import { Err, Ok, type Result } from 'wellcrafted/result';
 import type { FolderStorage, Submission } from './boundary.js';
 import {
 	type CanonicalDocument,
 	type CanonicalRefusal,
-	type CanonicalValue,
-	defineOwn,
 	formatCanonicalDocument,
 	parseCanonicalDocument,
 } from './canonical.js';
-import { hashBytes, ownBytes, type TextCapture } from './capture.js';
+import { hashBytes } from './capture.js';
 import { FileError, TableError, type TableReadError } from './errors.js';
 import { callObserver } from './observer.js';
 import { type DeepReadonly, freezeDeep } from './reading.js';
 import type { TableReading } from './row-text.js';
 import { applyOne, reserveSubmission } from './storage.js';
 
-/**
- * One exact version of the row: the bytes' hash and text, their document,
- * and that document's canonical text. A save receipt's `text` is its
- * `canonical`; a file another writer formatted differently is not.
- */
-export type RowRevision = {
-	readonly path: string;
-	readonly sha256: string;
-	/** The exact text of the whole file's bytes. */
-	readonly text: string;
-	readonly document: DeepReadonly<CanonicalDocument>;
-	/** The text a save of `document` writes. Equal canonical text is equal content. */
-	readonly canonical: string;
-};
-
-/**
- * What one read of the row found. Only `present` is a revision the editor
- * can follow or adopt: it has a canonical form and every declared field
- * conforms. The other kinds keep what is known for repair.
- */
-export type RowObservation<TFields> =
-	| { readonly kind: 'present'; readonly revision: RowRevision }
-	| { readonly kind: 'missing' }
-	| { readonly kind: 'unreadable'; readonly error: TableReadError }
-	/** The text has no canonical form, such as a custom tag or an unsafe integer. */
-	| {
-			readonly kind: 'unsupported';
-			readonly file: TextCapture;
-			readonly refusal: CanonicalRefusal;
-	  }
-	/** The text does not parse as a row, or a declared field does not conform. */
-	| {
-			readonly kind: 'invalid';
-			readonly file: TextCapture;
-			readonly reading: TableReading<TFields>;
-	  };
-
-/**
- * Exactly what one save sent: the document and its canonical text. It is
- * not a revision: nothing says these bytes were published, so it has no
- * hash. A receipt adds the SHA-256 of the bytes storage accepted; an unknown
- * outcome is compared with later reads by content, never by hash.
- */
-export type RowSaveAttempt = {
-	readonly path: string;
-	readonly document: DeepReadonly<CanonicalDocument>;
-	/** The canonical text sent, as UTF-8. */
-	readonly text: string;
-};
-
-/**
- * How the latest settled save ended. History, never upgraded: an
- * `unconfirmed` attempt stays unknown even after a read finds its bytes.
- */
-export type RowSaveOutcome =
-	| { readonly kind: 'saved'; readonly receipt: RowRevision }
-	| {
-			readonly kind: 'unconfirmed';
-			readonly attempt: RowSaveAttempt;
-			readonly error: FileError;
-	  }
-	| {
-			readonly kind: 'failed';
-			readonly attempt: RowSaveAttempt;
-			readonly error: FileError;
-	  };
-
-export type RowEditorState<TFields> = {
-	readonly path: string;
-	readonly baseline: RowRevision;
-	readonly document: DeepReadonly<CanonicalDocument>;
-	/** The canonical text of `document`: exactly what `save()` writes. */
-	readonly text: string;
-	/** How `text` reads. Issues here make `save()` refuse; they never block `change`. */
-	readonly reading: TableReading<TFields>;
-	/** `text` differs from the baseline's canonical text. */
-	readonly isDirty: boolean;
-	/**
-	 * The latest read that was applied. It may predate a save receipt until
-	 * the reread that follows every save settles.
-	 */
-	readonly observation: RowObservation<TFields>;
-	/**
-	 * The admitted save, from admission until its reply: the document and
-	 * text it captured when `save()` was called.
-	 */
-	readonly saving: RowSaveAttempt | undefined;
-	readonly lastSave: RowSaveOutcome | undefined;
-	readonly isDisposed: boolean;
-};
+const log = createLogger('folder/editor');
 
 export const RowEditorError = defineErrors({
-	/** The caller's signal aborted before the editor opened. Nothing stays subscribed. */
+	/** The caller's signal aborted before the editor was acquired. */
 	Aborted: ({ path }: { path: string }) => ({
 		message: `Opening '${path}' was aborted`,
 		path,
 	}),
-	/** The file has no canonical form. `file` is the exact text, for repair. */
-	NoCanonicalForm: ({
-		file,
-		refusal,
-	}: {
-		file: TextCapture;
-		refusal: CanonicalRefusal;
-	}) => ({
-		message: `'${file.path}' has no canonical form: ${refusal.reason}`,
-		file,
-		refusal,
-	}),
-	/** The file does not parse as a row or a declared field does not conform. */
-	InvalidSource: ({
-		file,
-		reading,
-	}: {
-		file: TextCapture;
-		reading: TableReading<unknown>;
-	}) => ({
-		message: `'${file.path}' is not a valid row: ${describeReading(reading)}`,
-		file,
-		reading,
-	}),
-	/** `save()` refused the local document; nothing was written. */
-	InvalidDocument: ({
-		path,
-		reading,
-	}: {
-		path: string;
-		reading: TableReading<unknown>;
-	}) => ({
-		message: `The document for '${path}' is not a valid row: ${describeReading(reading)}`,
-		path,
-		reading,
-	}),
-	/** A changed value has no canonical form. The document is unchanged. */
+	/** `set` was given a row with no canonical form. Input and publication are unchanged. */
 	Unrepresentable: ({
 		path,
 		refusal,
@@ -189,29 +75,52 @@ export const RowEditorError = defineErrors({
 		path: string;
 		refusal: CanonicalRefusal;
 	}) => ({
-		message: `The change to '${path}' cannot be saved: ${refusal.reason}`,
+		message: `The row for '${path}' cannot be saved: ${refusal.reason}`,
 		path,
 		refusal,
 	}),
-	/** One save is admitted at a time; this call wrote nothing. */
-	Saving: ({ path }: { path: string }) => ({
-		message: `A save of '${path}' is already running`,
+	/**
+	 * The text contains a lone surrogate, which UTF-8 cannot encode exactly.
+	 * The text is kept as it was given and never written.
+	 */
+	Unencodable: ({ path }: { path: string }) => ({
+		message: `The text for '${path}' contains a lone surrogate, which UTF-8 cannot encode exactly`,
 		path,
 	}),
-	/** The latest read's content is not the reviewed content. Review `latest` instead. */
-	Stale: ({
+	/** The text is readable but has no canonical form, such as malformed frontmatter or a custom tag. */
+	NoCanonicalForm: ({
 		path,
-		latest,
+		refusal,
 	}: {
 		path: string;
-		latest: RowObservation<unknown>;
+		refusal: CanonicalRefusal;
 	}) => ({
-		message: `The reviewed content of '${path}' is no longer the latest read`,
+		message: `'${path}' has no canonical form: ${refusal.reason}`,
 		path,
-		latest,
+		refusal,
 	}),
-	Disposed: ({ path }: { path: string }) => ({
-		message: `The editor for '${path}' is disposed`,
+	/**
+	 * The text has a canonical form, but a declared field of its complete
+	 * parse does not conform or is missing. `reading` lists every issue and
+	 * the declared fields that do conform; it never has a `parseError`.
+	 */
+	Nonconforming: ({
+		path,
+		reading,
+	}: {
+		path: string;
+		reading: TableReading<unknown>;
+	}) => ({
+		message: `'${path}' is not a valid row: ${describeReading(reading)}`,
+		path,
+		reading,
+	}),
+	/**
+	 * Input was accepted or a save was admitted while `reload` ran. The file's
+	 * text was not adopted; the newer input and its save state stand.
+	 */
+	InputChanged: ({ path }: { path: string }) => ({
+		message: `'${path}' changed in the editor while it was being reloaded`,
 		path,
 	}),
 });
@@ -222,542 +131,440 @@ type RowEditorErrorOf<TName extends RowEditorError['name']> = Extract<
 >;
 
 /**
- * Why `table.edit` opened no editor. An address the folder does not admit
+ * Why `table.edit` acquired no editor. An address the folder does not admit
  * is `InvalidPath` and an absent row is `NotFound`, both from `FileError`.
+ * Readable text that does not conform is not a refusal: it opens for repair.
  */
-export type TableEditError =
-	| TableReadError
-	| RowEditorErrorOf<'Aborted' | 'NoCanonicalForm' | 'InvalidSource'>;
-export type RowChangeError = RowEditorErrorOf<'Unrepresentable' | 'Disposed'>;
-export type RowSaveError =
-	| RowEditorErrorOf<'InvalidDocument' | 'Saving' | 'Disposed'>
-	| FileError;
-export type RowAdoptError = RowEditorErrorOf<'Stale' | 'Saving' | 'Disposed'>;
+export type TableEditError = TableReadError | RowEditorErrorOf<'Aborted'>;
+
+/** Why accepted input supports raw repair but no structured form. */
+export type RowError = RowEditorErrorOf<
+	'Unencodable' | 'NoCanonicalForm' | 'Nonconforming'
+>;
+
+/** Why `set` accepted nothing. */
+export type RowSetError = RowEditorErrorOf<'Unrepresentable'>;
 
 /**
- * A change to the local document. Each named declared field is set, or
- * removed with `undefined`; fields not named stay as they are, unknown keys
- * included.
- *
- * Keys are the table's declared fields, so a misspelled or undeclared key
- * does not compile; editing unknown metadata is a raw repair, not a
- * structured change. Values are any canonical value, not the field's type:
- * an intermediate value such as an empty title or an unlisted option must be
- * holdable while a person types. `reading` reports whether it conforms. The
- * runtime does not check keys, so untyped callers can still name any key; the
- * codec still refuses what has no canonical form.
+ * Why the publication chain stopped. `Unconfirmed` means the write may have
+ * landed: present it as uncertainty, never as a definite failure.
  */
-export type RowChange<TFields> = {
-	readonly fields?: {
-		readonly [K in keyof TFields & string]?: CanonicalValue | undefined;
-	};
-	readonly body?: string;
+export type RowSaveError = FileError | RowEditorErrorOf<'Unencodable'>;
+
+/** Why `reload` adopted nothing: the row could not be read, or the editor's input changed. */
+export type RowReloadError = TableReadError | RowEditorErrorOf<'InputChanged'>;
+
+/**
+ * The latest accepted input. Both variants derive wholly from one text;
+ * `valid` adds its complete parse, unknown metadata included.
+ */
+export type RowState<TFields> =
+	| {
+			readonly status: 'valid';
+			readonly text: string;
+			readonly fields: DeepReadonly<TFields> & CanonicalDocument['fields'];
+			readonly body: string;
+	  }
+	| {
+			readonly status: 'invalid';
+			readonly text: string;
+			readonly error: RowError;
+	  };
+
+/** The publication chain: `saving` from admission until it settles; `failed` until `retry` or `reload`. */
+export type SaveState =
+	| { readonly status: 'idle' }
+	| { readonly status: 'saving' }
+	| { readonly status: 'failed'; readonly error: RowSaveError };
+
+/** One immutable snapshot. `get` returns the same object until either part changes. */
+export type RowEditorState<TFields> = {
+	readonly row: RowState<TFields>;
+	readonly save: SaveState;
+};
+
+export type RowEditor<TFields> = {
+	/** The current snapshot, from memory. Never reads storage. */
+	get(): RowEditorState<TFields>;
+	/**
+	 * Call `invalidate` after the snapshot changes; read it with `get`.
+	 * There is no initial call, and subscribing reads and watches nothing.
+	 * Delivery is never reentrant, and what a listener throws is logged and
+	 * reaches no operation or other listener. Each call is its own
+	 * subscription; the returned function ends only that one.
+	 */
+	subscribe(invalidate: () => void): () => void;
+	/**
+	 * Accept a complete row: every field to keep and the body. Only `fields`
+	 * and `body` are read, so a valid row can be passed back with changes;
+	 * its `status` and `text` are ignored. Omitted keys are deleted; nothing
+	 * is merged from disk or earlier input. The values are formatted
+	 * canonically before this returns, so later changes to the caller's
+	 * objects change nothing held or queued. Schema-invalid values are
+	 * accepted and saved; `Unrepresentable` accepts nothing.
+	 */
+	set(next: CanonicalDocument): Result<undefined, RowSetError>;
+	/**
+	 * Accept raw text exactly as given, malformed frontmatter included. Text
+	 * UTF-8 cannot encode exactly is held as invalid input and fails its
+	 * publication turn with `Unencodable` instead of writing lossy bytes.
+	 */
+	setText(text: string): void;
+	/**
+	 * Resume a failed chain with the latest accepted input, even when it is
+	 * the text that failed. A new attempt never confirms an older uncertain
+	 * one. Does nothing unless `save` is `failed`.
+	 */
+	retry(): void;
+	/**
+	 * Wait for the running chain, including input admitted while it runs, to
+	 * settle. `Ok` when it ends idle; the chain's error when it ends failed or
+	 * was already failed. Never starts a write.
+	 */
+	flush(): Promise<Result<undefined, RowSaveError>>;
+	/**
+	 * Read the row again and adopt its text, discarding retained input and
+	 * any save failure. It first waits for the running chain to settle. A read
+	 * failure adopts nothing and leaves `row` and `save` as they are. Input
+	 * accepted or a save admitted after the call is `InputChanged`: the newer
+	 * input stands. When reloads overlap, the latest call decides, and the
+	 * earlier ones settle with its result.
+	 */
+	reload(): Promise<Result<undefined, RowReloadError>>;
 };
 
 /** What the table that owns a row gives the row's editor. */
 type EditedRow<TFields> = {
 	readonly path: string;
 	readonly storage: Pick<FolderStorage, 'read' | 'apply'>;
-	onFilesChanged(listener: (paths: readonly string[]) => void): () => void;
 	/** The table's declared field names, in declared order. */
 	readonly declaredKeys: readonly string[];
-	inspect(text: string): TableReading<TFields>;
+	/** Check already parsed, frozen values against the table's prepared fields. */
+	conform(
+		values: CanonicalDocument['fields'],
+		body: string,
+	): TableReading<TFields>;
 };
 
 const utf8 = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true });
+const encoder = new TextEncoder();
 
-/** Read the row once and classify what is there. Never throws. */
-async function readRow<TFields>(
+/** Read the row's text once. Never throws: a storage that throws is an `Io` failure. */
+async function readText<TFields>(
 	row: EditedRow<TFields>,
-): Promise<RowObservation<TFields>> {
+): Promise<Result<string, TableReadError>> {
 	const { path } = row;
 	let read: Awaited<ReturnType<FolderStorage['read']>>;
 	try {
 		read = await row.storage.read(path);
 	} catch (cause) {
-		// A read runs from a change hint with nobody awaiting it, so even a
-		// storage bug is kept as an observation instead of escaping.
-		return Object.freeze({
-			kind: 'unreadable',
-			error: FileError.Io({ path, operation: 'read', cause }).error,
-		});
+		return FileError.Io({ path, operation: 'read', cause });
 	}
 	const { data: current, error: readError } = read;
-	if (readError !== null) {
-		if (readError.name === 'NotFound')
-			return Object.freeze({ kind: 'missing' });
-		return Object.freeze({ kind: 'unreadable', error: readError });
-	}
-	let text: string;
+	if (readError !== null) return Err(readError);
 	try {
-		text = utf8.decode(current.bytes);
+		return Ok(utf8.decode(current.bytes));
 	} catch {
-		return Object.freeze({
-			kind: 'unreadable',
-			error: TableError.InvalidUtf8({ path, sha256: current.sha256 }).error,
-		});
+		return TableError.InvalidUtf8({ path, sha256: current.sha256 });
 	}
-	const file: TextCapture = Object.freeze({
-		path,
-		sha256: current.sha256,
-		text,
-	});
-	const { data: parsed, error: parseRefusal } = parseCanonicalDocument(text);
-	if (parseRefusal !== null)
-		return Object.freeze({ kind: 'unsupported', file, refusal: parseRefusal });
-	const { data: canonical, error: formatRefusal } = formatCanonicalDocument(
-		parsed,
-		row.declaredKeys,
-	);
-	if (formatRefusal !== null)
-		return Object.freeze({
-			kind: 'unsupported',
-			file,
-			refusal: formatRefusal,
-		});
-	const reading = row.inspect(text);
-	if (reading.parseError !== undefined || reading.issues.length > 0)
-		return Object.freeze({ kind: 'invalid', file, reading });
-	return Object.freeze({
-		kind: 'present',
-		revision: Object.freeze({
-			...file,
-			document: freezeDeep(parsed),
-			canonical,
-		}),
-	});
 }
 
-/**
- * Open an editor on a row: subscribe to change hints, then read once. Only
- * a file with a canonical form whose declared fields conform opens; a
- * refusal carries the exact text when there is one. `signal` governs opening
- * only: once the editor is returned, its `dispose` ends it.
- */
+/** Acquire an editor from one read. `signal` governs acquisition only. */
 export async function openRowEditor<TFields>(
 	row: EditedRow<TFields>,
 	signal: AbortSignal | undefined,
 ): Promise<Result<RowEditor<TFields>, TableEditError>> {
 	const { path } = row;
 	if (signal?.aborted) return RowEditorError.Aborted({ path });
-
-	// Subscribe before the first read so no change falls between them. A hint
-	// during opening is remembered and becomes a reread once the editor exists.
-	let hinted = false;
-	let onHint = () => {
-		hinted = true;
-	};
-	const stopWatching = row.onFilesChanged((paths) => {
-		if (paths.includes(path)) onHint();
-	});
 	const aborted = Promise.withResolvers<'aborted'>();
 	const onAbort = () => aborted.resolve('aborted');
 	signal?.addEventListener('abort', onAbort, { once: true });
-	let first: RowObservation<TFields> | 'aborted';
 	try {
-		first = await Promise.race([readRow(row), aborted.promise]);
+		const read = await Promise.race([readText(row), aborted.promise]);
+		if (read === 'aborted' || signal?.aborted)
+			return RowEditorError.Aborted({ path });
+		const { data: text, error: readError } = read;
+		if (readError !== null) return Err(readError);
+		return Ok(createRowEditor(row, text));
 	} finally {
 		signal?.removeEventListener('abort', onAbort);
 	}
-	if (first === 'aborted' || signal?.aborted) {
-		stopWatching();
-		return RowEditorError.Aborted({ path });
-	}
-	switch (first.kind) {
-		case 'present':
-			break;
-		case 'missing':
-			stopWatching();
-			return FileError.NotFound({ path });
-		case 'unreadable':
-			stopWatching();
-			return Err(first.error);
-		case 'unsupported':
-			stopWatching();
-			return RowEditorError.NoCanonicalForm(first);
-		case 'invalid':
-			stopWatching();
-			return RowEditorError.InvalidSource(first);
-		default:
-			first satisfies never;
-	}
-	const editor = createRowEditor(row, first, stopWatching);
-	onHint = () => void editor.refresh();
-	if (hinted) void editor.refresh();
-	return Ok(editor);
 }
+
+const IDLE: SaveState = Object.freeze({ status: 'idle' });
+const SAVING: SaveState = Object.freeze({ status: 'saving' });
 
 function createRowEditor<TFields>(
 	row: EditedRow<TFields>,
-	first: Extract<RowObservation<TFields>, { kind: 'present' }>,
-	stopWatching: () => void,
-) {
+	acquired: string,
+): RowEditor<TFields> {
 	type State = RowEditorState<TFields>;
 	const { path } = row;
-	const initial = first.revision;
 
-	let state: State = Object.freeze({
-		path,
-		baseline: initial,
-		document: initial.document,
-		text: initial.canonical,
-		reading: row.inspect(initial.canonical),
-		isDirty: false,
-		observation: first,
-		saving: undefined,
-		lastSave: undefined,
-		isDisposed: false,
-	});
-	/** One `subscribe` call: its listener and the state it was last given. */
-	type Subscription = {
-		readonly listener: (state: State) => void;
-		sent: State | undefined;
-	};
-	const subscriptions = new Set<Subscription>();
+	/**
+	 * The complete interpretation of one text. Valid fields and body come from
+	 * that text's own parse, so they always describe it. `canonical` skips
+	 * the format check for text `set` just formatted.
+	 */
+	function interpret(text: string, canonical = false): RowState<TFields> {
+		if (!text.isWellFormed())
+			return Object.freeze({
+				status: 'invalid',
+				text,
+				error: RowEditorError.Unencodable({ path }).error,
+			});
+		const { data: parsed, error: parseRefusal } = parseCanonicalDocument(text);
+		if (parseRefusal !== null)
+			return Object.freeze({
+				status: 'invalid',
+				text,
+				error: RowEditorError.NoCanonicalForm({ path, refusal: parseRefusal })
+					.error,
+			});
+		if (!canonical) {
+			// Valid input must survive a structured round trip through `set`.
+			const { error: formatRefusal } = formatCanonicalDocument(
+				parsed,
+				row.declaredKeys,
+			);
+			if (formatRefusal !== null)
+				return Object.freeze({
+					status: 'invalid',
+					text,
+					error: RowEditorError.NoCanonicalForm({
+						path,
+						refusal: formatRefusal,
+					}).error,
+				});
+		}
+		// The parse's own objects: freezing them touches nothing a caller holds,
+		// and conformance checks exactly the values a valid row exposes.
+		const fields = freezeDeep(parsed.fields);
+		const reading = row.conform(fields, parsed.body);
+		if (reading.issues.length > 0)
+			return Object.freeze({
+				status: 'invalid',
+				text,
+				error: RowEditorError.Nonconforming({ path, reading }).error,
+			});
+		return Object.freeze({
+			status: 'valid',
+			text,
+			fields: fields as DeepReadonly<TFields> & CanonicalDocument['fields'],
+			body: parsed.body,
+		});
+	}
+
+	// --- The snapshot ----------------------------------------------------
+
+	let state: State = Object.freeze({ row: interpret(acquired), save: IDLE });
+
+	const subscribers = new Set<{ readonly invalidate: () => void }>();
 	let delivering = false;
+	let redeliver = false;
 
-	function update(patch: Partial<State>) {
-		state = Object.freeze({ ...state, ...patch });
+	/** Install the next snapshot and invalidate subscribers if it changed. */
+	function commit(next: { row?: RowState<TFields>; save?: SaveState }) {
+		const { row: nextRow = state.row, save = state.save } = next;
+		if (nextRow === state.row && save === state.save) return;
+		state = Object.freeze({ row: nextRow, save });
 		deliver();
 	}
 
 	/**
-	 * Give every subscription the current state it has not been given yet.
-	 * Delivery is never reentrant: a listener that changes the state, or
-	 * subscribes, is not called back inside itself; this loop calls it again
-	 * afterward. So each subscription receives states in order, the current
-	 * one last, and never the same state twice. What a listener throws is
-	 * reported, never thrown into the operation that changed the state.
+	 * Call every subscriber once per round. A change during delivery starts
+	 * another round after the running one, so no listener runs inside itself.
 	 */
 	function deliver() {
-		if (delivering) return;
+		if (delivering) {
+			redeliver = true;
+			return;
+		}
 		delivering = true;
 		try {
-			let pending = true;
-			while (pending) {
-				pending = false;
-				for (const subscription of [...subscriptions]) {
-					if (!subscriptions.has(subscription)) continue;
-					if (subscription.sent === state) continue;
-					const sent = state;
-					subscription.sent = sent;
-					callObserver('row editor subscriber', subscription.listener, sent);
-					pending = true;
+			do {
+				redeliver = false;
+				for (const subscriber of [...subscribers]) {
+					if (!subscribers.has(subscriber)) continue;
+					callObserver(
+						'row editor subscriber',
+						subscriber.invalidate,
+						undefined,
+					);
 				}
-			}
+			} while (redeliver);
 		} finally {
 			delivering = false;
-			// Terminal delivery may add subscriptions; release them after it drains.
-			if (state.isDisposed && admitted === undefined) subscriptions.clear();
 		}
 	}
 
-	/** Make `revision` the baseline and the local document. */
-	function follow(revision: RowRevision): Partial<State> {
-		const same = revision.canonical === state.text;
-		return {
-			baseline: revision,
-			document: same ? state.document : revision.document,
-			text: revision.canonical,
-			reading: same ? state.reading : row.inspect(revision.canonical),
-			isDirty: false,
-		};
-	}
+	// --- Publication -----------------------------------------------------
 
 	/**
-	 * Bumped when a save settles. A read that started before may describe
-	 * the file before that write, so it is dropped and the read runs again.
+	 * The running chain, from admission until it settles idle or failed; the
+	 * promise is that outcome. Defined exactly while `save` is `saving`.
 	 */
-	let epoch = 0;
-	let rereadRequested = false;
-	let readLoop: Promise<void> | undefined;
-
-	function refresh(): Promise<void> {
-		if (state.isDisposed) return Promise.resolve();
-		rereadRequested = true;
-		readLoop ??= runReads();
-		return readLoop;
-	}
-
-	async function runReads() {
-		try {
-			while (rereadRequested && !state.isDisposed) {
-				rereadRequested = false;
-				const startedIn = epoch;
-				const observation = await readRow(row);
-				if (state.isDisposed) return;
-				if (startedIn === epoch) observe(observation);
-				else rereadRequested = true;
-			}
-		} finally {
-			readLoop = undefined;
-		}
-	}
-
-	/** Apply a read that is the latest knowledge of the file. */
-	function observe(observation: RowObservation<TFields>) {
-		const unchanged =
-			observation.kind === state.observation.kind &&
-			(observation.kind === 'missing' ||
-				(observation.kind !== 'unreadable' &&
-					shaOf(observation) === shaOf(state.observation)));
-		// Adoption waits for the save's reply; the reread after it decides.
-		if (state.saving !== undefined || observation.kind !== 'present') {
-			if (!unchanged) update({ observation });
-			return;
-		}
-		const { revision } = observation;
-		if (revision.sha256 === state.baseline.sha256) {
-			if (!unchanged) update({ observation });
-			return;
-		}
-		// A clean editor follows the file. A dirty one keeps its input; when
-		// the file already holds that content, it is no longer unsaved. That
-		// is a content fact: it does not say which writer put it there, so an
-		// unconfirmed `lastSave` stays unconfirmed.
-		if (!state.isDirty || revision.canonical === state.text) {
-			update({ ...follow(revision), observation });
-			return;
-		}
-		if (!unchanged) update({ observation });
-	}
-
-	function change(
-		requested: RowChange<TFields>,
-	): Result<undefined, RowChangeError> {
-		if (state.isDisposed) return RowEditorError.Disposed({ path });
-		const fields: Record<string, unknown> = { ...state.document.fields };
-		const named: { readonly [key: string]: CanonicalValue | undefined } =
-			requested.fields ?? {};
-		for (const [key, value] of Object.entries(named)) {
-			if (value === undefined) delete fields[key];
-			else defineOwn(fields, key, value);
-		}
-		const draft = {
-			fields: fields as CanonicalDocument['fields'],
-			body: requested.body ?? state.document.body,
-		};
-		const { data: formatted, error: formatRefusal } = formatCanonicalDocument(
-			draft,
-			row.declaredKeys,
-		);
-		if (formatRefusal !== null)
-			return RowEditorError.Unrepresentable({ path, refusal: formatRefusal });
-		if (formatted === state.text) return Ok(undefined);
-		// Reading the canonical text back gives the editor its own frozen copy,
-		// exactly the document a save writes.
-		const { data: owned, error: parseRefusal } =
-			parseCanonicalDocument(formatted);
-		if (parseRefusal !== null)
-			return RowEditorError.Unrepresentable({ path, refusal: parseRefusal });
-		update({
-			document: freezeDeep(owned),
-			text: formatted,
-			reading: row.inspect(formatted),
-			isDirty: formatted !== state.baseline.canonical,
-		});
-		return Ok(undefined);
-	}
-
+	let chain: PromiseWithResolvers<Result<undefined, RowSaveError>> | undefined;
 	/**
-	 * The admitted save, from admission until its reply is applied. It is set
-	 * before any listener hears `saving` and cleared before any listener hears
-	 * the outcome, so a listener that disposes, or starts the next save, finds
-	 * the right one.
+	 * The place in the page's order of saves reserved for the latest input
+	 * accepted while the chain runs. That input is `state.row.text`.
 	 */
-	let admitted:
-		| { readonly completion: Promise<Result<RowRevision, RowSaveError>> }
-		| undefined;
+	let queued: Submission | undefined;
+	// A retry can fail synchronously without changing the retained row.
+	let inputRevision = 0;
 
-	function save(): Promise<Result<RowRevision, RowSaveError>> {
-		if (state.isDisposed)
-			return Promise.resolve(RowEditorError.Disposed({ path }));
-		if (admitted !== undefined)
-			return Promise.resolve(RowEditorError.Saving({ path }));
-		const { reading } = state;
-		if (reading.parseError !== undefined || reading.issues.length > 0)
-			return Promise.resolve(RowEditorError.InvalidDocument({ path, reading }));
-		const attempt: RowSaveAttempt = Object.freeze({
-			path,
-			document: state.document,
-			text: state.text,
-		});
-		// Admission is synchronous and recorded before anyone hears of it: a
-		// second call, a disposal, and later input all see it at once. Its place
-		// among the page's saves is taken here too, so a save a listener starts
-		// on hearing `saving` comes after this one.
-		const submission = reserveSubmission();
-		const completion =
-			Promise.withResolvers<Result<RowRevision, RowSaveError>>();
-		const admission = { completion: completion.promise };
-		admitted = admission;
-		update({ saving: attempt });
-		submit(admission, attempt, submission).then(
-			completion.resolve,
-			completion.reject,
-		);
-		return completion.promise;
+	function accept(text: string, canonical: boolean) {
+		inputRevision += 1;
+		const accepted = interpret(text, canonical);
+		if (chain !== undefined) {
+			// Reserved now, so the capture keeps its place when accepted.
+			queued = reserveSubmission();
+			commit({ row: accepted });
+		} else if (state.save.status === 'failed') {
+			// Paused: kept, not attempted until `retry`.
+			commit({ row: accepted });
+		} else {
+			commit({ row: accepted, save: start(text, reserveSubmission()) });
+		}
 	}
 
-	/** Release the admission before anyone hears the outcome, and only if it is still this one. */
-	function release(admission: NonNullable<typeof admitted>) {
-		epoch += 1;
-		if (admitted === admission) admitted = undefined;
+	/** Start writing `text`, or fail at once when no bytes encode it exactly. */
+	function start(text: string, submission: Submission): SaveState {
+		if (!text.isWellFormed())
+			return Object.freeze({
+				status: 'failed',
+				error: RowEditorError.Unencodable({ path }).error,
+			});
+		chain ??= Promise.withResolvers();
+		void publish(text, submission).then(settle);
+		return SAVING;
 	}
 
-	async function submit(
-		admission: NonNullable<typeof admitted>,
-		attempt: RowSaveAttempt,
+	/** Write one capture over the existing row. Never throws. */
+	async function publish(
+		text: string,
 		submission: Submission,
-	): Promise<Result<RowRevision, RowSaveError>> {
+	): Promise<RowSaveError | null> {
+		let bytes: Uint8Array;
 		let sha256: string;
-		let applied: Result<undefined, FileError>;
 		try {
-			// Canonical text is well formed, so these bytes decode back to it.
-			const bytes = ownBytes(attempt.text);
+			// Well formed, so these bytes decode back to exactly this text.
+			bytes = encoder.encode(text);
 			sha256 = await hashBytes(bytes);
-			applied = await applyOne(
+		} catch (cause) {
+			return FileError.Io({ path, operation: 'prepare', cause }).error;
+		}
+		try {
+			const { error } = await applyOne(
 				row.storage,
-				{ kind: 'overwrite', path, bytes, sha256 },
+				{ kind: 'replace', path, bytes, sha256 },
 				submission,
 			);
-		} catch (thrown) {
-			// Storage reports failure as a Result, so a throw is a bug, not an
-			// outcome: it is not recorded as `unconfirmed`. The editor still
-			// releases the save, and the throw reaches `save()` and `dispose()`.
-			release(admission);
-			update({ saving: undefined });
-			void refresh();
-			throw thrown;
+			return error;
+		} catch (cause) {
+			// Storage reports outcomes as Results; a throw is a bug whose write
+			// may or may not have landed.
+			log.error(new Error(`Publishing '${path}' threw.`, { cause }));
+			return FileError.Unconfirmed({ path, operation: 'replace', cause }).error;
 		}
-		release(admission);
-		let outcome: RowSaveOutcome;
-		const { error: applyError } = applied;
-		if (applyError === null) {
-			const receipt: RowRevision = Object.freeze({
-				...attempt,
-				sha256,
-				canonical: attempt.text,
-			});
-			outcome = Object.freeze({ kind: 'saved', receipt });
-			update({
-				baseline: receipt,
-				isDirty: state.text !== receipt.canonical,
-				saving: undefined,
-				lastSave: outcome,
-			});
+	}
+
+	/** Settle the running write: continue with the latest input, or stop. */
+	function settle(error: RowSaveError | null) {
+		let save: SaveState;
+		if (error !== null) {
+			// Pause: the latest input stays accepted and is not attempted.
+			save = Object.freeze({ status: 'failed', error });
+		} else if (queued !== undefined) {
+			save = start(state.row.text, queued);
 		} else {
-			outcome = Object.freeze(
-				applyError.name === 'Unconfirmed'
-					? { kind: 'unconfirmed', attempt, error: applyError }
-					: { kind: 'failed', attempt, error: applyError },
-			);
-			update({ saving: undefined, lastSave: outcome });
+			save = IDLE;
 		}
-		// Every settlement is followed by a read against the new baseline.
-		void refresh();
-		return outcome.kind === 'saved' ? Ok(outcome.receipt) : Err(outcome.error);
+		queued = undefined;
+		const settled = save.status === 'saving' ? undefined : chain;
+		if (settled !== undefined) chain = undefined;
+		commit({ save });
+		settled?.resolve(outcome(save));
 	}
 
-	function adopt(
-		reviewed: Pick<RowRevision, 'path' | 'canonical'>,
-	): Result<undefined, RowAdoptError> {
-		if (state.isDisposed) return RowEditorError.Disposed({ path });
-		if (admitted !== undefined) return RowEditorError.Saving({ path });
-		const latest = state.observation;
-		if (
-			latest.kind !== 'present' ||
-			reviewed.path !== path ||
-			reviewed.canonical !== latest.revision.canonical
-		)
-			return RowEditorError.Stale({ path, latest });
-		update(follow(latest.revision));
-		return Ok(undefined);
+	function outcome(save: SaveState): Result<undefined, RowSaveError> {
+		return save.status === 'failed' ? Err(save.error) : Ok(undefined);
 	}
 
-	let disposal: Promise<void> | undefined;
+	// --- Reload ----------------------------------------------------------
+
+	/**
+	 * Wait for the running chain, then read the row, unless input changed
+	 * since the call. `before` is the snapshot the read began in.
+	 */
+	async function readAfterChain(
+		revision: number,
+	): Promise<Result<{ text: string; before: State }, RowReloadError>> {
+		// A failed chain is fine: adoption discards it explicitly.
+		if (chain !== undefined) await chain.promise;
+		if (inputRevision !== revision || chain !== undefined)
+			return RowEditorError.InputChanged({ path });
+		const before = state;
+		const { data: text, error } = await readText(row);
+		if (error !== null) return Err(error);
+		return Ok({ text, before });
+	}
+
+	/** The latest `reload` call. An earlier call that overlaps it settles with its result. */
+	let latestReload: Promise<Result<undefined, RowReloadError>> =
+		Promise.resolve(Ok(undefined));
 
 	return Object.freeze({
-		/** The current state. The same frozen object until the next change. */
 		get: (): State => state,
-		/**
-		 * Give `listener` the current state, then notify it when state changes.
-		 * Called from outside a notification, it is called before this returns;
-		 * called from inside one, it is called after the running listener
-		 * returns. Reentrant changes may coalesce intermediate states; delivery
-		 * always ends with the current state. Each call is its own
-		 * subscription, and the returned function stops only that one. What a
-		 * listener throws is logged and reaches no operation or other listener.
-		 * Disposal retains listeners until an admitted save settles, then
-		 * releases them. A terminal editor delivers its current snapshot to a
-		 * new subscriber once and retains no listener.
-		 */
-		subscribe(listener: (state: State) => void): () => void {
-			const subscription: Subscription = { listener, sent: undefined };
-			subscriptions.add(subscription);
-			deliver();
+		subscribe(invalidate: () => void): () => void {
+			const subscriber = { invalidate };
+			subscribers.add(subscriber);
 			return () => {
-				subscriptions.delete(subscription);
+				subscribers.delete(subscriber);
 			};
 		},
-		/**
-		 * Replace the local document. It may become schema invalid; `reading`
-		 * says how, and `save()` refuses it. A value with no canonical form,
-		 * such as `NaN`, is refused and the document is unchanged.
-		 */
-		change,
-		/**
-		 * Write the complete local document once, whatever the file holds, even
-		 * when it is clean. The document is captured now: input after this call
-		 * stays local and stays dirty against the receipt. The receipt describes
-		 * the submitted bytes, not a later read. `Unconfirmed` stays in
-		 * `lastSave` as unknown; nothing retries.
-		 */
-		save,
-		/** Read now. Reads run one at a time and coalesce; this settles after a read that started after the call. */
-		refresh,
-		/**
-		 * Take the file's current content in place of local input, after a
-		 * person reviewed it. Accepted only while the latest valid read has the
-		 * reviewed canonical content: another tool may have changed its
-		 * comments or quoting since, but not its content. The editor then
-		 * follows its own latest revision. Only `path` and `canonical` are read
-		 * from `reviewed`, so a supplied document, text, or hash never enters
-		 * the editor. This chooses the reviewed current content; it never
-		 * restores history.
-		 */
-		adopt,
-		/**
-		 * Stop watching and refuse new input, reads, saves, and adoptions. An
-		 * admitted save still settles into `lastSave`; the promise settles
-		 * after it, and rejects with the same error if the save threw.
-		 * Calling again returns the same promise.
-		 */
-		dispose(): Promise<void> {
-			if (disposal !== undefined) return disposal;
-			// Fixed before anyone hears `isDisposed`, so a listener that
-			// disposes again gets this same promise.
-			disposal =
-				admitted?.completion.then(() => undefined) ?? Promise.resolve();
-			stopWatching();
-			update({ isDisposed: true });
-			return disposal;
+		set(next: CanonicalDocument): Result<undefined, RowSetError> {
+			// The codec reads only fields and body, once each, so a public row's
+			// status and text are not input; it refuses any other shape.
+			const { data: text, error: refusal } = formatCanonicalDocument(
+				next,
+				row.declaredKeys,
+			);
+			if (refusal !== null)
+				return RowEditorError.Unrepresentable({ path, refusal });
+			accept(text, true);
+			return Ok(undefined);
+		},
+		setText(text: string): void {
+			accept(text, false);
+		},
+		retry(): void {
+			if (state.save.status !== 'failed') return;
+			inputRevision += 1;
+			commit({ save: start(state.row.text, reserveSubmission()) });
+		},
+		flush(): Promise<Result<undefined, RowSaveError>> {
+			return chain?.promise ?? Promise.resolve(outcome(state.save));
+		},
+		reload(): Promise<Result<undefined, RowReloadError>> {
+			const reloading: Promise<Result<undefined, RowReloadError>> =
+				readAfterChain(inputRevision).then(({ data: read, error }) => {
+					if (latestReload !== reloading) return latestReload;
+					if (error !== null) return Err(error);
+					// A setter changes `row`; `retry` changes `save`.
+					if (state !== read.before)
+						return RowEditorError.InputChanged({ path });
+					commit({
+						row:
+							read.text === state.row.text ? state.row : interpret(read.text),
+						save: IDLE,
+					});
+					return Ok(undefined);
+				});
+			latestReload = reloading;
+			return reloading;
 		},
 	});
-}
-
-export type RowEditor<TFields> = ReturnType<typeof createRowEditor<TFields>>;
-
-function shaOf(observation: RowObservation<unknown>): string | undefined {
-	switch (observation.kind) {
-		case 'present':
-			return observation.revision.sha256;
-		case 'unsupported':
-		case 'invalid':
-			return observation.file.sha256;
-		default:
-			return undefined;
-	}
 }
 
 function describeReading(reading: TableReading<unknown>): string {

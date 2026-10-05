@@ -8,10 +8,11 @@
  * change another program makes. A selection is a path; one draft is retained
  * per path so a selection change never discards typing. A recording,
  * transcript, or transformation is edited through the folder's row editor
- * (`table.edit`), which owns its document, baseline, reads, and save
- * outcomes; this module decides when it saves and what is reviewed
- * (`row-draft.svelte.ts`). Any other file, and a row that cannot be opened as
- * one, is edited as text.
+ * (`table.edit`), which owns its input and saves it as it is typed; one
+ * editor serves both its fields and its source (`row-editing.svelte.ts`).
+ * A refresh never reloads an open row: a change made elsewhere shows when
+ * the person reloads it, and otherwise the next save writes over it. Any
+ * other file is edited as text.
  *
  * Three things live only in this window until they reach the folder: unsaved
  * typing, a captured recording whose audio and row are not both in place, and
@@ -22,23 +23,19 @@
  * status cache of its own. A save and its commit are separate outcomes.
  */
 import type {
-	CanonicalDocument,
-	CanonicalValue,
 	CommitOutcome,
-	DeepReadonly,
 	FileError,
 	FileListing,
 	FileTable,
 	GitSnapshot,
 	KvSnapshot,
 	KvWriteError,
-	RowEditor,
 	TableEditError,
 	TableListing,
 	TableSnapshot,
 	TableWriteError,
 } from '@epicenter/folder';
-import { inspectRow, rowPath, rowStemOf } from '@epicenter/folder';
+import { hashBytes, inspectRow, rowPath, rowStemOf } from '@epicenter/folder';
 import {
 	ancestorsOf,
 	basename,
@@ -92,7 +89,7 @@ import {
 	type PublishOutcome,
 	publishRecording,
 } from './recordings/publish.js';
-import { createRowDraft, type RowDraft } from './row-draft.svelte.js';
+import { createRowEditing, type RowEditing } from './row-editing.svelte.js';
 import { createTerminalSession } from './terminal.svelte.js';
 import type { Workspace } from './workspace/index.js';
 
@@ -103,7 +100,10 @@ export type TransformationEntry = TableSnapshot<TransformationFields>;
 export type TransformationRunEntry = TableSnapshot<TransformationRunFields>;
 export type TextRunEntry = TableSnapshot<TextRunFields>;
 
-/** A raw file the person opened. Recording, transcript, and transformation rows open as rows instead. */
+/**
+ * A file the person opened that is not edited as a row: an ordinary file,
+ * or a row file the folder opened no editor for.
+ */
 export type OpenFile =
 	| { readonly kind: 'loading' }
 	| { readonly kind: 'failed'; readonly message: string }
@@ -112,20 +112,16 @@ export type OpenFile =
 	| { readonly kind: 'binary' | 'tooLarge'; readonly size: number };
 
 /**
- * The one draft kept for a recording, transcript, or transformation file:
- * the folder's row editor, or the file's text when it cannot be opened as a
- * row or the person chose to edit its source. A path never has both, so
- * every view of the file edits the same draft.
+ * The one row editor kept for a recording, transcript, or transformation
+ * file, serving the fields and the source alike, so every view of the file
+ * edits the same input. Readable text opens whether or not it is a valid
+ * row. `unopened` is a file that could not be read when it was opened: it
+ * stays shown, with why, until the person tries again.
  */
 export type RowSlot<TFields> =
 	| { readonly kind: 'opening'; readonly done: Promise<void> }
-	| { readonly kind: 'form'; readonly draft: RowDraft<TFields> }
-	| {
-			readonly kind: 'raw';
-			readonly editor: TextFileEditor;
-			/** Why it could not be opened as a row; undefined when the person chose its source. */
-			readonly reason: string | undefined;
-	  };
+	| { readonly kind: 'open'; readonly editing: RowEditing<TFields> }
+	| { readonly kind: 'unopened'; readonly message: string };
 
 export type Selection =
 	| {
@@ -162,6 +158,21 @@ export type Deletion =
 			readonly kind: 'file';
 			readonly path: string;
 			readonly sha256: string;
+	  }
+	/**
+	 * A recording or transformation file that is there and cannot be read as
+	 * a row: only that file is removed, conditional on the exact bytes read.
+	 * Results that name it are kept. `recordingId` is the recording its name
+	 * makes it, so no work for that recording runs beside its removal.
+	 */
+	| {
+			readonly kind: 'unreadableRow';
+			readonly table: typeof RECORDINGS | typeof TRANSFORMATIONS;
+			readonly path: string;
+			readonly sha256: string;
+			readonly recordingId: string | undefined;
+			/** Why it could not be read as a row. */
+			readonly problem: string;
 	  }
 	| { readonly kind: 'folder'; readonly path: string };
 
@@ -372,8 +383,10 @@ function isThisResult(
 export type PathState = 'matches' | 'different' | 'missing' | 'unreadable';
 
 /**
- * A rename whose reply was lost, or that left the file at both paths. The
- * draft at `from` holds the edits until the person chooses where they go.
+ * A rename whose reply was lost, or that left the file at both paths, while
+ * the text draft at `from` was open. The draft holds its edits until the
+ * person chooses where they go. A row's editor holds no edits of its own
+ * after settling, so a row is put down instead.
  */
 export type UnresolvedMove = {
 	readonly from: string;
@@ -405,36 +418,21 @@ type RowTable<TFields> = {
 };
 
 /**
- * What a refused `table.edit` leaves. A file whose text has no form the row
- * editor saves, or whose declared fields do not conform, is held as its text
- * for repair. A row that is gone, or a file that cannot be read as text,
- * keeps no draft.
+ * What a refused `table.edit` leaves. Readable text always opens, valid or
+ * not, so a refusal means there is no text to edit: the row is gone, or the
+ * file cannot be read as text, or opening was cancelled. None keeps a draft.
  */
 function rowRefusal(
 	error: TableEditError,
 ):
-	| { readonly kind: 'raw'; readonly file: SavedText; readonly reason: string }
 	| { readonly kind: 'missing' }
 	| { readonly kind: 'unopened'; readonly message: string } {
-	switch (error.name) {
-		case 'NoCanonicalForm':
-			return {
-				kind: 'raw',
-				file: error.file,
-				reason: `When opened, its text had no form the fields could be saved in: ${error.refusal.reason}.`,
-			};
-		case 'InvalidSource':
-			return {
-				kind: 'raw',
-				file: error.file,
-				reason: 'When opened, its fields could not be read.',
-			};
-		case 'NotFound':
-			return { kind: 'missing' };
-		default:
-			return { kind: 'unopened', message: error.message };
-	}
+	if (error.name === 'NotFound') return { kind: 'missing' };
+	return { kind: 'unopened', message: error.message };
 }
+
+/** The SHA-256 of text as a file holds it. */
+const textSha256 = (text: string) => hashBytes(new TextEncoder().encode(text));
 
 export function createLibrary(workspace: Workspace) {
 	const { folder } = workspace;
@@ -448,7 +446,6 @@ export function createLibrary(workspace: Workspace) {
 	 * settles as it would have.
 	 */
 	let admitting = $state(true);
-	const admits = () => admitting;
 	/**
 	 * Paths whose file is being moved or deleted. Their drafts write nothing
 	 * until that has an outcome, so no late save recreates the file or moves
@@ -458,18 +455,33 @@ export function createLibrary(workspace: Workspace) {
 	/** Paths whose file is being deleted. Their drafts take no typing either. */
 	const retiring = new Set<string>();
 	/**
+	 * Paths whose row is being settled and read for an operation that changes
+	 * the path. Their editors take no input, so nothing typed after the
+	 * operation began changes what it acts on; they still finish saving.
+	 */
+	const settling = new Set<string>();
+	/**
 	 * Paths a move or deletion owns, from its admission until it has an
 	 * outcome. Only that operation sets or clears their fences, so two of
 	 * them never release each other's (`owning`).
 	 */
 	const claimed = new Set<string>();
 	/**
-	 * Renames that did not end as asked, by the path whose draft holds the
-	 * edits. The draft takes typing and writes nothing, and holds the close,
-	 * its source, and its path, until the person chooses where the edits go.
+	 * Renames of ordinary files that did not end as asked, by the path whose
+	 * text draft holds the edits. The draft takes typing and writes nothing,
+	 * and holds the close, its source, and its path, until the person chooses
+	 * where the edits go.
 	 */
 	const unresolvedMoves = new SvelteMap<string, UnresolvedMove>();
+	/** A text draft takes typing while its file moves, and carries it to where it went. */
 	const typingAt = (path: string) => () => admitting && !retiring.has(path);
+	/**
+	 * A row's editor saves what it takes at once, so it takes no input at all
+	 * while its file is moved or deleted: the operation acts on what was
+	 * settled before it.
+	 */
+	const rowInputAt = (path: string) => () =>
+		admitting && !fenced.has(path) && !settling.has(path);
 	const writesAt = (path: string) => () =>
 		!fenced.has(path) && !unresolvedMoves.has(path);
 	/** Each caller owns its result; this promise joins accepted file commands. */
@@ -560,7 +572,7 @@ export function createLibrary(workspace: Workspace) {
 
 	/** Folders open in the file browser; kept while the browser is hidden. */
 	const expanded = new SvelteSet<string>([RECORDINGS]);
-	/** The rows edited in this window, by path, each with its one retained draft. */
+	/** The rows edited in this window, by path, each with its one retained editor. */
 	const recordingRows: RowTable<RecordingFields> = {
 		table,
 		rows: new SvelteMap(),
@@ -679,21 +691,19 @@ export function createLibrary(workspace: Workspace) {
 	const slotAt = (path: string): RowSlot<unknown> | undefined =>
 		withRowTable(path, ({ rows }) => rows.get(path) as RowSlot<unknown>);
 
-	/** Every row draft kept now, with its path. */
-	function rowDrafts(): RowDraft<unknown>[] {
-		const drafts: RowDraft<unknown>[] = [];
+	/** Every row editor kept now. */
+	function rowEditings(): RowEditing<unknown>[] {
+		const editings: RowEditing<unknown>[] = [];
 		for (const { rows } of rowTables)
 			for (const slot of rows.values())
-				if (slot.kind === 'form') drafts.push(slot.draft as RowDraft<unknown>);
-		return drafts;
+				if (slot.kind === 'open')
+					editings.push(slot.editing as RowEditing<unknown>);
+		return editings;
 	}
 
-	/** Every text draft kept now: open files, and rows edited as their text. */
+	/** Every text draft kept now: one per open ordinary file. */
 	function textEditors(): TextFileEditor[] {
 		const editors: TextFileEditor[] = [];
-		for (const { rows } of rowTables)
-			for (const slot of rows.values())
-				if (slot.kind === 'raw') editors.push(slot.editor);
 		for (const file of openFiles.values())
 			if (file.kind === 'text') editors.push(file.editor);
 		return editors;
@@ -703,16 +713,21 @@ export function createLibrary(workspace: Workspace) {
 	const textHolds = (editor: TextFileEditor) =>
 		editor.dirty || editor.saveState.kind !== 'saved';
 
-	/** The text draft kept for a path: an open file, or a row edited as its text. */
-	function textDraftAt(path: string): TextFileEditor | undefined {
+	/** The text draft kept for an ordinary file's path. */
+	const textDraftAt = textEditorAt;
+
+	/** The row editor kept for a path, once it is open. */
+	function rowEditingAt(path: string): RowEditing<unknown> | undefined {
 		const slot = slotAt(path);
-		return slot?.kind === 'raw' ? slot.editor : textEditorAt(path);
+		return slot?.kind === 'open' ? slot.editing : undefined;
 	}
 
 	/**
-	 * Settle the draft kept for a file, then say which saved version it
-	 * settled on: undefined when no draft is kept. A draft whose typing cannot
-	 * be saved without the person refuses.
+	 * Settle the draft kept for a file. For an ordinary file, say which saved
+	 * version it settled on; a row's editor exposes none, so a caller that
+	 * needs one reads the file after this. Undefined when no version is known.
+	 * A row whose save stopped, or a text draft whose input cannot be saved
+	 * without the person, refuses.
 	 */
 	async function settleDraft(
 		path: string,
@@ -724,9 +739,9 @@ export function createLibrary(workspace: Workspace) {
 			await slot.done;
 			return settleDraft(path);
 		}
-		if (slot?.kind === 'form') {
-			if (!(await slot.draft.settle())) return Err(UNSETTLED);
-			return Ok(slot.draft.state.baseline.sha256);
+		if (slot?.kind === 'open') {
+			const { error: flushError } = await slot.editing.flush();
+			return flushError === null ? Ok(undefined) : Err(UNSETTLED);
 		}
 		const editor = textDraftAt(path);
 		if (editor === undefined) return Ok(undefined);
@@ -742,20 +757,24 @@ export function createLibrary(workspace: Workspace) {
 	function draftHolds(path: string): boolean {
 		if (unresolvedMoves.has(path)) return true;
 		const slot = slotAt(path);
-		if (slot?.kind === 'form') return slot.draft.holds;
+		if (slot?.kind === 'open') return slot.editing.holds;
 		const editor = textDraftAt(path);
 		return editor !== undefined && textHolds(editor);
 	}
 
 	/**
-	 * Open the row at `path` into the one draft kept for it, and return it.
-	 * The folder's row editor holds it when the file reads as a row it can
-	 * save; otherwise its exact text is held for repair. A row that is gone,
-	 * or a file that cannot be read as text, keeps no draft and says so.
+	 * Open the row at `path` into the one editor kept for it, and return it.
+	 * Readable text opens, valid or not, and its fields and source are the
+	 * same editor. A row that is gone, or a file that cannot be read as text,
+	 * keeps no editor and says so; with `retain`, a file that cannot be read
+	 * keeps an `unopened` slot that says why, for the person to try again.
+	 * Trying a retained `unopened` slot again keeps that slot on another
+	 * failure.
 	 */
 	async function openRow<TFields>(
 		kind: RowTable<TFields>,
 		path: string,
+		options: { retain?: boolean } = {},
 	): Promise<
 		| RowSlot<TFields>
 		| { readonly kind: 'missing' }
@@ -767,7 +786,8 @@ export function createLibrary(workspace: Workspace) {
 			await known.done;
 			return rows.get(path) ?? { kind: 'missing' };
 		}
-		if (known !== undefined) return known;
+		if (known !== undefined && known.kind !== 'unopened') return known;
+		const retain = options.retain === true || known !== undefined;
 		const stem = rowStemOf(rowTable.name, path);
 		if (stem === undefined)
 			return { kind: 'unopened', message: `${path} is not a row.` };
@@ -779,29 +799,28 @@ export function createLibrary(workspace: Workspace) {
 			const { data: editor, error: editError } = await rowTable.edit(stem, {
 				signal: lifetime.signal,
 			});
-			// Forgotten, or the library closed, while it was opening: it belongs to no view.
+			// Forgotten, or the library closed, while it was opening: it belongs
+			// to no view. An editor that was given no input holds nothing.
 			if (rows.get(path) !== opening || closing) {
-				if (editError === null) void editor.dispose();
 				if (rows.get(path) === opening) rows.delete(path);
 				return rows.get(path) ?? { kind: 'missing' };
 			}
 			if (editError === null) {
 				const slot: RowSlot<TFields> = {
-					kind: 'form',
-					draft: draftOf(kind, path, editor),
+					kind: 'open',
+					editing: createRowEditing(editor, {
+						path,
+						admits: rowInputAt(path),
+						onSaved: refreshAfterSave,
+					}),
 				};
 				rows.set(path, slot);
 				return slot;
 			}
 			const refused = rowRefusal(editError);
-			if (refused.kind === 'raw') {
-				const slot: RowSlot<TFields> = {
-					kind: 'raw',
-					editor: rawEditorOf(refused.file),
-					reason: refused.reason,
-				};
-				rows.set(path, slot);
-				return slot;
+			if (refused.kind === 'unopened' && retain) {
+				rows.set(path, refused);
+				return refused;
 			}
 			rows.delete(path);
 			return refused;
@@ -810,25 +829,26 @@ export function createLibrary(workspace: Workspace) {
 		}
 	}
 
-	function draftOf<TFields>(
-		kind: RowTable<TFields>,
+	/** Open the row at `path` in whichever edited table it belongs to; undefined when it is not a row. */
+	function openRowAt(
 		path: string,
-		editor: RowEditor<TFields>,
-	): RowDraft<TFields> {
-		return createRowDraft(editor, {
-			files: folder.files,
-			autosave,
-			admits: typingAt(path),
-			writes: writesAt(path),
-			onSaved: () => void refresh(),
-			// Clean, with a file that is gone or no longer reads as a row: open it
-			// again as it is now. Nothing typed is dropped.
-			onIdleUnfollowable: () => void reopenRow(kind, path, { chosen: false }),
-		});
+		options?: { retain?: boolean },
+	):
+		| Promise<
+				| RowSlot<unknown>
+				| { readonly kind: 'missing' }
+				| { readonly kind: 'unopened'; readonly message: string }
+		  >
+		| undefined {
+		const opened = withRowTable(
+			path,
+			(kind) => openRow(kind, path, options) as Promise<unknown>,
+		);
+		return opened as ReturnType<typeof openRow<unknown>> | undefined;
 	}
 
-	/** A text draft of a file, under the same admission and write fences as every draft. */
-	function rawEditorOf(file: SavedText): TextFileEditor {
+	/** A text draft of an ordinary file, under the same admission and write fences as every draft. */
+	function textEditorOf(file: SavedText): TextFileEditor {
 		return createTextFileEditor(
 			folder.files,
 			file,
@@ -839,34 +859,29 @@ export function createLibrary(workspace: Workspace) {
 		);
 	}
 
-	/** Put a slot's draft down. A row save already sent still settles. */
-	async function disposeSlot(slot: RowSlot<unknown>) {
-		if (slot.kind === 'form') await slot.draft.dispose();
-		else if (slot.kind === 'raw') slot.editor.dispose();
-	}
-
 	/**
-	 * Drop the draft kept for a row and open the file again as it is now.
-	 * Only the person's choice (`chosen`) puts down a draft that holds
-	 * something: typing, a save still out, or a save that failed or was never
-	 * answered. Asked for on its own, as when a clean draft's file stops
-	 * reading as a row, a draft that holds anything stays as it is, with what
-	 * its read found shown as its review.
+	 * Take an open row's file as it is now, as the person asked: what its
+	 * editor holds, a stopped save included, is replaced by the file. Writes
+	 * already admitted settle first, and the editor takes no input while the
+	 * file is read. A read failure, a missing file included, keeps the row and its input
+	 * and says why. Discarding a missing row is a separate explicit choice.
 	 */
-	async function reopenRow<TFields>(
-		kind: RowTable<TFields>,
-		path: string,
-		{ chosen }: { chosen: boolean },
-	) {
-		const slot = kind.rows.get(path);
-		if (slot === undefined || slot.kind === 'opening' || closing) return;
-		// Its edits wait for the person's choice about where the file went.
-		if (unresolvedMoves.has(path)) return;
-		if (!chosen && draftHolds(path)) return;
-		kind.rows.delete(path);
-		const reopened = openRow(kind, path);
-		await disposeSlot(slot as RowSlot<unknown>);
-		await reopened;
+	async function reloadRow(path: string): Promise<string | undefined> {
+		if (!admitting) return LEAVING;
+		const editing = rowEditingAt(path);
+		if (editing === undefined) return undefined;
+		if (claimed.has(path) || settling.has(path))
+			return `"${basename(path)}" is being moved or deleted. Try again when that has finished. Nothing was changed.`;
+		const { error: reloadError } = await editing.reload();
+		if (reloadError === null) return undefined;
+		switch (reloadError.name) {
+			case 'NotFound':
+				return `"${basename(path)}" is no longer in the folder. Your edits are kept here.`;
+			case 'InputChanged':
+				return 'Something was typed while the file was being read, so it was kept and the file was not loaded.';
+			default:
+				return `"${basename(path)}" could not be read, so nothing was changed: ${reloadError.message}`;
+		}
 	}
 
 	/** Newest first; a row whose time cannot be read sorts by its file name. */
@@ -880,8 +895,8 @@ export function createLibrary(workspace: Workspace) {
 	}
 
 	/**
-	 * Show newer saved text in text drafts, open files' and rows' alike, and
-	 * put down clean ones whose files left the folder.
+	 * Show newer saved text in the text drafts of ordinary files, and put down
+	 * clean ones whose files left the folder.
 	 */
 	async function observeTextDrafts(current: FileListing, sequence: number) {
 		const present = new Map(
@@ -907,14 +922,6 @@ export function createLibrary(workspace: Workspace) {
 			else if (file.kind !== 'failed' && size !== file.size)
 				openFiles.set(path, { ...file, size });
 		}
-		for (const { rows } of rowTables)
-			for (const [path, slot] of rows)
-				if (slot.kind === 'raw')
-					drafts.push({
-						path,
-						editor: slot.editor,
-						putDown: () => rows.delete(path),
-					});
 		for (const { path, editor, putDown } of drafts) {
 			if (sequence !== refreshSequence) return;
 			// A draft held by an unresolved rename stays as it is until the person chooses.
@@ -938,41 +945,19 @@ export function createLibrary(workspace: Workspace) {
 	}
 
 	/**
-	 * Bring row drafts up to a listing of their table: a draft whose file the
-	 * listing read differently is read again, and a draft holding nothing
-	 * whose file left the folder is put down. A draft reads its own file; the
-	 * listing only says which to ask.
+	 * Put down the open rows of a table whose files its listing no longer
+	 * found and whose editors hold nothing: every input they took is saved,
+	 * and nothing creates the file again. An open row is never read again
+	 * here; what another program wrote shows when the person reloads it.
 	 */
-	function observeRowDrafts<TFields>(
+	function putDownMissingRows<TFields>(
 		kind: RowTable<TFields>,
 		listed: TableListing<TFields>,
-	): Promise<unknown> {
-		const versions = new Map(
-			listed.map(({ path, result: { data: entry, error: readError } }) => [
-				path,
-				readError === null ? entry.sha256 : undefined,
-			]),
-		);
-		const reads: Promise<void>[] = [];
-		for (const [path, slot] of kind.rows) {
-			if (slot.kind !== 'form' || unresolvedMoves.has(path)) continue;
-			const { draft } = slot;
-			if (!versions.has(path) && !draft.holds) {
+	) {
+		const present = new Set(listed.map((item) => item.path));
+		for (const [path, slot] of kind.rows)
+			if (slot.kind === 'open' && !present.has(path) && !slot.editing.holds)
 				forget(path);
-				continue;
-			}
-			const { observation } = draft.state;
-			const observed =
-				observation.kind === 'present'
-					? observation.revision.sha256
-					: observation.kind === 'invalid' || observation.kind === 'unsupported'
-						? observation.file.sha256
-						: undefined;
-			const version = versions.get(path);
-			if (version === undefined || version !== observed)
-				reads.push(draft.refresh());
-		}
-		return Promise.all(reads);
 	}
 
 	/** By title; a row whose title cannot be read sorts by its file name. */
@@ -993,6 +978,31 @@ export function createLibrary(workspace: Workspace) {
 		} finally {
 			reading -= 1;
 		}
+	}
+
+	/** The refresh a run of row saves asked for, while it runs. */
+	let savedRefresh: Promise<void> | undefined;
+	let refreshAgain = false;
+	/**
+	 * Refresh the lists after a run of row saves ended. Typing saves as it
+	 * goes, so runs end often: one refresh runs at a time, and the runs that
+	 * end meanwhile share one more after it.
+	 */
+	function refreshAfterSave() {
+		if (savedRefresh !== undefined) {
+			refreshAgain = true;
+			return;
+		}
+		savedRefresh = (async () => {
+			try {
+				do {
+					refreshAgain = false;
+					await refresh();
+				} while (refreshAgain && !closing);
+			} finally {
+				savedRefresh = undefined;
+			}
+		})();
 	}
 
 	/** Told the recording files a listing found, each time one is read. Never told of a listing that failed. */
@@ -1021,8 +1031,6 @@ export function createLibrary(workspace: Workspace) {
 			textOutputs.list(),
 		]);
 		if (sequence !== refreshSequence) return;
-		/** Row drafts reading their own files again; this refresh ends after them. */
-		const rowReads: Promise<unknown>[] = [];
 		// Results on pasted text name no recording, so a file here that cannot be
 		// read is reported where they are listed and never holds up a recording's
 		// deletion. A listing that failed keeps the last list and says so.
@@ -1043,7 +1051,7 @@ export function createLibrary(workspace: Workspace) {
 			const read = splitListing(profileListing);
 			transformations = sortTransformations(read.entries);
 			unreadableTransformations = read.failed;
-			rowReads.push(observeRowDrafts(transformationRows, profileListing));
+			putDownMissingRows(transformationRows, profileListing);
 		}
 		// A listing that failed keeps the previous observation, as the lists do.
 		if (outputListError === null) {
@@ -1061,7 +1069,7 @@ export function createLibrary(workspace: Workspace) {
 			const read = splitListing(recordingListing);
 			entries = sortEntries(read.entries);
 			unreadable = read.failed;
-			rowReads.push(observeRowDrafts(recordingRows, recordingListing));
+			putDownMissingRows(recordingRows, recordingListing);
 			const present = new Set(recordingListing.map((item) => item.path));
 			// Only a listing that was read says a file is gone; a failed one says nothing.
 			for (const listener of recordingsListed) listener(present);
@@ -1072,7 +1080,7 @@ export function createLibrary(workspace: Workspace) {
 			noteUnread(results.name, read.failed);
 			for (const [path, entry] of published)
 				if (unlistedResults.get(path) === entry) unlistedResults.delete(path);
-			rowReads.push(observeRowDrafts(transcriptRows, transcriptListing));
+			putDownMissingRows(transcriptRows, transcriptListing);
 		}
 		if (kvError !== null) settingsError = kvError.message;
 		else {
@@ -1086,7 +1094,6 @@ export function createLibrary(workspace: Workspace) {
 			listing = fileListing;
 			await observeTextDrafts(fileListing, sequence);
 		}
-		await Promise.all(rowReads);
 		if (sequence === refreshSequence) generation += 1;
 	}
 
@@ -1094,39 +1101,32 @@ export function createLibrary(workspace: Workspace) {
 		await Promise.all([refresh(), folder.git.status()]);
 	}
 
-	/** Whether a row opened into a slot, as opposed to being gone or not text. */
-	const isSlot = <TFields>(
-		opened: Awaited<ReturnType<typeof openRow<TFields>>>,
-	): opened is RowSlot<TFields> =>
-		opened.kind === 'opening' ||
-		opened.kind === 'form' ||
-		opened.kind === 'raw';
-
 	/**
 	 * Select a path: a recording, transcript, or transformation row opens its
 	 * one draft, audio opens a player, other files open as text or details. A
 	 * transformation has its own selection, so opening one leaves the selected
-	 * recording alone. A row file that cannot be read as text opens as a file.
+	 * recording alone.
+	 *
+	 * A row path stays a row whatever its file holds. When the folder opens no
+	 * editor for it because it cannot be read, its `unopened` slot says why
+	 * and offers to try again; it is never read or edited as an ordinary file,
+	 * which would be a second writer of the row. A row that is gone is
+	 * selected with nothing open, and nothing creates it.
 	 */
 	async function open(path: string) {
 		// Nothing is opened once the library is closing: an editor made now
 		// would outlive the folder it saves to.
 		if (closing) return;
 		for (const ancestor of ancestorsOf(path)) expanded.add(ancestor);
-		if (rowStemOf(TRANSFORMATIONS, path) !== undefined) {
-			if (isSlot(await openRow(transformationRows, path))) {
+		const row = openRowAt(path, { retain: true });
+		if (row !== undefined) {
+			if (rowStemOf(TRANSFORMATIONS, path) !== undefined)
 				selectedTransformationPath = path;
-				return;
-			}
-			if (closing) return;
-			// Not a row that can be read as text: show it as a file.
+			else selectedPath = path;
+			await row;
+			return;
 		}
 		selectedPath = path;
-		if (rowStemOf(RECORDINGS, path) !== undefined) {
-			if (isSlot(await openRow(recordingRows, path)) || closing) return;
-		} else if (rowStemOf(TRANSCRIPTIONS, path) !== undefined) {
-			if (isSlot(await openRow(transcriptRows, path)) || closing) return;
-		}
 		const known = openFiles.get(path);
 		if (known?.kind === 'text' || known?.kind === 'loading') return;
 		if (audioMimeTypeOf(path) !== undefined) {
@@ -1138,9 +1138,7 @@ export function createLibrary(workspace: Workspace) {
 	}
 
 	/**
-	 * Read a file into the one draft kept for its path. Files, and a
-	 * transcript edited beside its recording, both reach a file's text through
-	 * this draft, so typing in one is the typing in the other.
+	 * Read an ordinary file into the one draft kept for its path.
 	 *
 	 * No read is begun once the library is closing, and a read that answers
 	 * after closing began makes no draft: closing settles and disposes the
@@ -1165,21 +1163,21 @@ export function createLibrary(workspace: Workspace) {
 			readError !== null
 				? { kind: 'failed', message: readError.message }
 				: opened.kind === 'text'
-					? { kind: 'text', editor: rawEditorOf(opened.file) }
+					? { kind: 'text', editor: textEditorOf(opened.file) }
 					: opened,
 		);
 	}
 
 	/**
-	 * Put down every draft kept for a path, and its selection. A row save
-	 * already sent still settles; nothing waits for it here.
+	 * Put down every draft kept for a path, and its selection. A row write
+	 * already admitted still settles in its editor; nothing waits for it here.
 	 */
 	function forget(path: string) {
 		for (const { rows } of rowTables) {
 			const slot = rows.get(path);
 			if (slot === undefined) continue;
 			rows.delete(path);
-			void disposeSlot(slot as RowSlot<unknown>);
+			if (slot.kind === 'open') slot.editing.release();
 		}
 		if (selectedTransformationPath === path)
 			selectedTransformationPath = undefined;
@@ -1189,43 +1187,26 @@ export function createLibrary(workspace: Workspace) {
 		if (selectedPath === path) selectedPath = undefined;
 	}
 
-	/** Settle input, then read the saved recording row an operation acts on. */
-	async function recordingForOperation(
-		path: string,
-	): Promise<Result<RecordingEntry, string>> {
-		const { data: settledSha256, error: settleError } = await settleDraft(path);
-		if (settleError !== null) return Err(settleError);
-		const stem = rowStemOf(RECORDINGS, path);
-		if (stem === undefined) return Err(`${path} is not a recording.`);
-		const { data: recording, error: readError } = await table.get(stem);
-		if (readError !== null) return Err(readError.message);
-		if (recording === undefined)
-			return Err('This recording is no longer in the folder.');
-		if (settledSha256 !== undefined && recording.sha256 !== settledSha256)
-			return Err('The file changed after it was read. Check it and try again.');
-		return Ok(recording);
-	}
-
 	/**
-	 * Drop a draft's typing for the file as it is now, as the person chose.
-	 * A row draft takes the other version the file holds, or the file as it
-	 * is after a save that failed or was never answered, even with nothing
-	 * typed since; when the file is gone or no longer reads as a row, it is
-	 * opened again as it is. A text draft whose file is gone is put down.
-	 * Returns why nothing changed.
+	 * Drop a draft's input for the file as it is now, as the person chose. An
+	 * open row takes its file again (`reloadRow`). A row that could not be
+	 * opened, and a text draft whose file is gone, are put down. Returns why
+	 * nothing changed.
 	 */
 	async function discardDraft(path: string): Promise<string | undefined> {
 		if (!admitting) return LEAVING;
 		const slot = slotAt(path);
-		if (slot?.kind === 'form') {
-			const { review } = slot.draft;
-			if (review === undefined || review.kind === 'changed') {
-				const { error: takeError } = slot.draft.takeCurrent();
-				return takeError ?? undefined;
+		if (slot?.kind === 'open') {
+			if (claimed.has(path) || settling.has(path) || slot.editing.reloading)
+				return `"${basename(path)}" is still working. Nothing was discarded.`;
+			if (slot.editing.status.kind === 'removed') {
+				forget(path);
+				return undefined;
 			}
-			await withRowTable(path, (kind) =>
-				reopenRow(kind, path, { chosen: true }),
-			);
+			return reloadRow(path);
+		}
+		if (slot?.kind === 'unopened') {
+			forget(path);
 			return undefined;
 		}
 		const editor = textDraftAt(path);
@@ -1246,20 +1227,57 @@ export function createLibrary(workspace: Workspace) {
 		paths: readonly string[],
 		work: () => Promise<string | undefined>,
 	): Promise<string | undefined> {
-		const taken = paths.find((path) => claimed.has(path));
-		if (taken !== undefined)
-			return `"${basename(taken)}" is being moved or deleted. Try again when that has finished. Nothing was changed.`;
-		for (const path of paths) claimed.add(path);
+		const release = claim(paths);
+		if (typeof release === 'string') return release;
 		try {
 			return await work();
 		} finally {
-			for (const path of paths) claimed.delete(path);
+			release();
 		}
 	}
 
 	/**
+	 * Claim `paths` for one operation with nothing awaited: a function that
+	 * releases the claim, or why a path is taken.
+	 */
+	function claim(paths: readonly string[]): (() => void) | string {
+		const taken = paths.find((path) => claimed.has(path));
+		if (taken !== undefined)
+			return `"${basename(taken)}" is being moved or deleted. Try again when that has finished. Nothing was changed.`;
+		for (const path of paths) claimed.add(path);
+		return () => {
+			for (const path of paths) claimed.delete(path);
+		};
+	}
+
+	/** Join an accepted operation, so preparing to leave and closing wait for it. */
+	function track<T>(running: Promise<T>): Promise<T> {
+		fileChanges = Promise.allSettled([fileChanges, running]);
+		return running;
+	}
+
+	/**
+	 * Write a recovery copy of text under `conflicts/`, exclusively. Text a
+	 * file cannot hold exactly (a lone surrogate) is refused before anything
+	 * is written.
+	 */
+	async function writeRecoveryCopy(
+		path: string,
+		text: string,
+	): Promise<Result<string, string>> {
+		if (!text.isWellFormed())
+			return Err(
+				'Your edits contain a character a file cannot hold exactly (a lone surrogate), so no copy was written. They are kept here; fix that character, then copy them again.',
+			);
+		const copy = conflictCopyPath(path);
+		const { error: createError } = await folder.files.create(copy, text);
+		if (createError !== null) return Err(describeWriteError(createError));
+		return Ok(copy);
+	}
+
+	/**
 	 * Retire the draft at `path` for its file's deletion: from now until that
-	 * has an outcome it takes no typing and writes nothing. `release` or
+	 * has an outcome it takes no typing and writes nothing. `unfence` or
 	 * `deleteRetired` ends it.
 	 */
 	function retire(path: string) {
@@ -1271,7 +1289,7 @@ export function createLibrary(workspace: Workspace) {
 	 * Delete the file at `path` with its draft retired. The caller checked
 	 * that the draft holds nothing and, with nothing awaited since, retired it
 	 * or calls this; from then until the outcome it takes no typing and writes
-	 * nothing, so no late save recreates the file. A refusal changed nothing
+	 * nothing, so no late save reaches the file. A refusal changed nothing
 	 * and the draft goes on. A deletion whose reply was lost may or may not
 	 * have happened: the draft, which holds nothing, is put down, and what the
 	 * folder holds is shown when the person opens the file again.
@@ -1285,7 +1303,7 @@ export function createLibrary(workspace: Workspace) {
 		try {
 			removed = await remove();
 		} catch (cause) {
-			release(path);
+			unfence(path);
 			throw cause;
 		}
 		const { error: removeError } = removed;
@@ -1298,51 +1316,32 @@ export function createLibrary(workspace: Workspace) {
 				`The folder did not confirm the deletion of "${basename(path)}", so it may or may not be gone. Nothing else was deleted. Open it again to see what the folder holds.`,
 			);
 		}
-		release(path);
+		unfence(path);
 		return Err(describeWriteError(removeError));
 	}
 
-	/** Let the draft at `path` write again, and save what it held back meanwhile. */
-	function release(path: string) {
+	/** Let the draft at `path` take input and write again, and save what it held back meanwhile. */
+	function unfence(path: string) {
 		fenced.delete(path);
 		retiring.delete(path);
-		const slot = slotAt(path);
-		if (slot?.kind === 'form') slot.draft.resume();
-		else textDraftAt(path)?.resume();
-	}
-
-	/** What the draft kept for `path` holds beyond its file now: typing to carry along. */
-	function typedAt(path: string):
-		| {
-				readonly document: DeepReadonly<CanonicalDocument> | undefined;
-				readonly text: string;
-		  }
-		| undefined {
-		const slot = slotAt(path);
-		if (slot?.kind === 'form')
-			return slot.draft.isDirty
-				? { document: slot.draft.state.document, text: slot.draft.state.text }
-				: undefined;
-		const editor = textDraftAt(path);
-		return editor?.dirty
-			? { document: undefined, text: editor.buffer }
-			: undefined;
+		textDraftAt(path)?.resume();
 	}
 
 	/**
 	 * Carry the draft of a moved file to its new path: open a draft there,
-	 * hand it the typing the old draft already took, and only once the new
-	 * draft holds that typing, put the old one down. The typing was accepted
-	 * before, so it is carried even while new input is not admitted, as when
-	 * the page is deciding whether to close. Between reading that typing and
-	 * putting the old draft down nothing is awaited. Returns why the typing
-	 * could not be carried; the old draft is then kept with it, writing
+	 * hand it the typing the old text draft holds unsaved, and only once the
+	 * new draft holds it, put the old one down. A row's editor saved all its
+	 * input before the move, so it has nothing to carry and is put down. The
+	 * typing was taken before, so it is carried even while new input is not
+	 * admitted, as when the page is deciding whether to close. Between reading
+	 * that typing and putting the old draft down nothing is awaited. Returns
+	 * why it could not be carried; the old draft is then kept with it, writing
 	 * nothing and holding the close.
 	 *
 	 * A draft already kept at `to` belongs to whoever typed into it. It is
 	 * read again first, and the typing is carried into it only if, at the
-	 * moment of carrying, it holds nothing: no typing, no failed or unknown
-	 * save, no unresolved rename. Otherwise both drafts are kept as they are.
+	 * moment of carrying, it holds nothing: no input, no write running or
+	 * failed, no unresolved rename. Otherwise both drafts are kept as they are.
 	 */
 	async function handOff(
 		from: string,
@@ -1351,13 +1350,16 @@ export function createLibrary(workspace: Workspace) {
 		expected: string,
 	): Promise<string | undefined> {
 		const kept = slotAt(to) ?? openFiles.get(to);
-		const row = withRowTable(to, (kind) => openRow(kind, to));
+		const row = openRowAt(to);
 		if (row !== undefined) await row;
 		else if (openFiles.get(to)?.kind !== 'text') await load(to);
+		/** Whether a row editor kept at `to` could not read the file there again. */
+		let unread = false;
 		if (kept !== undefined && !draftHolds(to)) {
 			// It was opened before the file moved here: read what is there now.
-			const slot = slotAt(to);
-			if (slot?.kind === 'form') await slot.draft.refresh();
+			const editing = rowEditingAt(to);
+			if (editing !== undefined)
+				unread = (await editing.reload()).error !== null;
 			else {
 				const editor = textDraftAt(to);
 				const { data: opened, error: readError } = await readTextFile(
@@ -1372,90 +1374,88 @@ export function createLibrary(workspace: Workspace) {
 					editor.observe(opened.file);
 			}
 		}
-		// Nothing is awaited from here until the old draft is put down.
-		const typed = typedAt(from);
-		if (typed === undefined) {
-			forget(from);
-			return undefined;
-		}
-		if (draftHolds(to) || unresolvedMoves.has(to))
-			return `"${basename(to)}" has edits of its own open, so your edits from "${basename(from)}" were not moved there. Both are kept, and nothing is saved until you choose.`;
 		// The draft at `to` must have read the file as it was before it moved:
 		// another program may have written `to` while it was opened or read.
 		// This holds for that read; a write after it is not ruled out.
-		const destination = slotAt(to);
+		const destination = rowEditingAt(to);
+		const destinationText = destination?.row.text;
 		const read =
-			destination?.kind === 'form'
-				? destination.draft.state.baseline.sha256
-				: destination?.kind === 'raw'
-					? destination.editor.baseline.sha256
-					: textDraftAt(to)?.baseline.sha256;
-		if (read !== expected)
+			destination === undefined
+				? textDraftAt(to)?.baseline.sha256
+				: unread || destinationText === undefined
+					? undefined
+					: await textSha256(destinationText);
+		// Nothing is awaited from here until the old draft is put down.
+		const typed = textDraftAt(from);
+		if (typed === undefined || !typed.dirty) {
+			forget(from);
+			return undefined;
+		}
+		const text = typed.buffer;
+		if (draftHolds(to) || unresolvedMoves.has(to))
+			return `"${basename(to)}" has edits of its own open, so your edits from "${basename(from)}" were not moved there. Both are kept, and nothing is saved until you choose.`;
+		if (
+			read !== expected ||
+			(destination !== undefined && destination.row.text !== destinationText)
+		)
 			return `"${basename(to)}" no longer holds the file as it was, so your edits from "${basename(from)}" were not moved there. Both are kept, and nothing is saved until you choose.`;
 		const notCarried = `"${basename(from)}" was renamed to "${basename(to)}", and your typing could not be moved with it, so it stays in the old draft and is not saved.`;
-		const slot = slotAt(to);
-		if (slot?.kind === 'form' && typed.document !== undefined) {
-			// The whole typed document, so a field the typing removed goes too.
-			const fields: Record<string, CanonicalValue | undefined> = {};
-			for (const key of Object.keys(slot.draft.state.document.fields))
-				fields[key] = undefined;
-			Object.assign(fields, typed.document.fields);
-			if (!slot.draft.carry({ fields, body: typed.document.body }))
-				return notCarried;
-			forget(from);
-			return undefined;
-		}
-		if (slot?.kind === 'form') {
-			// The old draft was the file's text, so the new one is too.
-			const { baseline } = slot.draft.state;
-			const text = rawEditorOf({
-				path: to,
-				sha256: baseline.sha256,
-				text: baseline.text,
-			});
-			if (!text.carry(typed.text)) return notCarried;
-			withRowTable(to, ({ rows }) =>
-				rows.set(to, { kind: 'raw', editor: text, reason: undefined }),
-			);
-			void disposeSlot(slot);
-			forget(from);
-			return undefined;
-		}
-		const editor = textDraftAt(to);
-		if (editor === undefined || !editor.carry(typed.text)) return notCarried;
+		const carried =
+			destination !== undefined
+				? destination.carry(text)
+				: (textDraftAt(to)?.carry(text) ?? false);
+		if (!carried) return notCarried;
 		forget(from);
 		return undefined;
 	}
 
 	/**
-	 * Move a file to a new name in its folder. Its draft is settled first. While
-	 * the file moves, the draft still takes typing and writes nothing: a save at
-	 * the old path could recreate it, or make the move refuse. The draft and
-	 * that typing then follow the file to where it is.
+	 * Move a file to a new name in its folder. Its draft is settled first and
+	 * the file read after that, so the move is conditional on what was settled.
+	 * A row's editor takes no input from the start of settling until the move
+	 * has an outcome. An ordinary file's draft still takes typing while the file
+	 * moves and writes nothing: a save at the old path could recreate it, or
+	 * make the move refuse. The draft and that typing then follow the file to
+	 * where it is.
 	 */
 	async function renameFile(
 		from: string,
 		to: string,
 	): Promise<string | undefined> {
-		const { data: settledSha256, error: settleError } = await settleDraft(from);
-		if (settleError !== null) return settleError;
-		let expected = settledSha256;
-		if (expected === undefined) {
-			const { data: file, error: readError } = await folder.files.read(from);
-			if (readError !== null) return readError.message;
-			expected = file.sha256;
+		settling.add(from);
+		try {
+			const { data: settledSha256, error: settleError } =
+				await settleDraft(from);
+			if (settleError !== null) return settleError;
+			let expected = settledSha256;
+			if (expected === undefined) {
+				const { data: file, error: readError } = await folder.files.read(from);
+				if (readError !== null) return readError.message;
+				expected = file.sha256;
+			}
+			// A draft at the new name that holds edits is someone's work: nothing
+			// moves onto it. Nothing is awaited from this check to the move.
+			if (draftHolds(to) || unresolvedMoves.has(to))
+				return `"${basename(to)}" has edits open that are not saved. Save or discard them before renaming another file to that name. Nothing was renamed.`;
+			fenced.add(from);
+			return moveFenced(from, to, expected);
+		} finally {
+			settling.delete(from);
 		}
-		// A draft at the new name that holds edits is someone's work: nothing
-		// moves onto it. Nothing is awaited from this check to the move.
-		if (draftHolds(to) || unresolvedMoves.has(to))
-			return `"${basename(to)}" has edits open that are not saved. Save or discard them before renaming another file to that name. Nothing was renamed.`;
+	}
+
+	/** The move itself, with the draft at `from` fenced. */
+	async function moveFenced(
+		from: string,
+		to: string,
+		expected: string,
+	): Promise<string | undefined> {
 		const wasSelected = selectedPath === from;
-		fenced.add(from);
 		let moved: Awaited<ReturnType<typeof folder.files.move>>;
 		try {
 			moved = await folder.files.move({ path: from, sha256: expected }, to);
 		} catch (cause) {
-			release(from);
+			unfence(from);
 			throw cause;
 		}
 		const { error: moveError } = moved;
@@ -1491,7 +1491,7 @@ export function createLibrary(workspace: Workspace) {
 			moveError.name !== 'Unconfirmed' &&
 			moveError.name !== 'SourceNotRemoved'
 		) {
-			release(from);
+			unfence(from);
 			await refreshAll();
 			return describeWriteError(moveError);
 		}
@@ -1504,8 +1504,12 @@ export function createLibrary(workspace: Workspace) {
 			moveError.name === 'Unconfirmed'
 				? `The folder did not confirm the rename of "${basename(from)}" to "${basename(to)}", so it may or may not have happened.`
 				: describeWriteError(moveError);
-		// With no draft open there are no edits to hold: the message is all.
-		if (slotAt(from) === undefined && textDraftAt(from) === undefined) {
+		// With no text draft open there are no edits to hold: the message is
+		// all. A row's editor saved everything it took before the move, and is
+		// put down rather than kept on a path the move may have left; opening
+		// either path again shows what the folder holds.
+		if (textDraftAt(from) === undefined) {
+			forget(from);
 			fenced.delete(from);
 			await refreshAll();
 			return message;
@@ -1555,7 +1559,7 @@ export function createLibrary(workspace: Workspace) {
 		if (!admitting) return LEAVING;
 		const held = unresolvedMoves.get(from);
 		if (held === undefined) return 'There is no rename to finish.';
-		return owning([from, held.to], () => finishMove(held, choice));
+		return track(owning([from, held.to], () => finishMove(held, choice)));
 	}
 
 	async function finishMove(
@@ -1580,17 +1584,13 @@ export function createLibrary(workspace: Workspace) {
 					return `"${basename(from)}" does not hold the file as it was, so your edits were not kept there.`;
 				unresolvedMoves.delete(from);
 				// The draft reads its file again, then saves what it held back.
-				const slot = slotAt(from);
-				if (slot?.kind === 'form') await slot.draft.refresh();
-				else {
-					const { data: opened, error: readError } = await readTextFile(
-						folder.files,
-						from,
-					);
-					if (readError === null && opened.kind === 'text')
-						textDraftAt(from)?.observe(opened.file);
-				}
-				release(from);
+				const { data: opened, error: readError } = await readTextFile(
+					folder.files,
+					from,
+				);
+				if (readError === null && opened.kind === 'text')
+					textDraftAt(from)?.observe(opened.file);
+				unfence(from);
 				await refreshAll();
 				return undefined;
 			}
@@ -1626,33 +1626,45 @@ export function createLibrary(workspace: Workspace) {
 		}
 	}
 
-	/** The whole text a draft holds now, typed or not. */
-	function draftText(path: string): string | undefined {
-		const slot = slotAt(path);
-		if (slot?.kind === 'form') return slot.draft.state.text;
-		return textDraftAt(path)?.buffer;
-	}
-
 	/**
 	 * Write the edits held after an unresolved rename to a new file under
 	 * `conflicts/`, then stop tracking the rename. Neither path is written.
+	 * The draft takes no input while the copy is written, and is put down
+	 * only if it still holds exactly what was copied; anything newer, or a
+	 * copy that failed, keeps the draft, its edits, and the rename's hold.
 	 * Returns the copy's path.
 	 */
-	async function copyHeldEdits(from: string): Promise<Result<string, string>> {
-		if (!admitting) return Err(LEAVING);
+	function copyHeldEdits(from: string): Promise<Result<string, string>> {
+		if (closing || !admitting) return Promise.resolve(Err(LEAVING));
 		const held = unresolvedMoves.get(from);
-		const text = draftText(from);
-		if (held === undefined || text === undefined)
-			return Err('There is no rename to finish.');
-		const copy = conflictCopyPath(from);
-		const { error: createError } = await folder.files.create(copy, text);
-		if (createError !== null) return Err(describeWriteError(createError));
-		if (unresolvedMoves.get(from) === held) {
-			forget(from);
-			unresolvedMoves.delete(from);
-		}
-		await refreshAll();
-		return Ok(copy);
+		if (held === undefined)
+			return Promise.resolve(Err('There is no rename to finish.'));
+		const release = claim([from]);
+		if (typeof release === 'string') return Promise.resolve(Err(release));
+		fenced.add(from);
+		const editor = textDraftAt(from);
+		const buffer = editor?.buffer;
+		return track(
+			(async (): Promise<Result<string, string>> => {
+				try {
+					if (buffer === undefined)
+						return Err('There are no edits of yours to copy.');
+					const written = await writeRecoveryCopy(from, buffer);
+					if (written.error !== null) return written;
+					const still =
+						textDraftAt(from) === editor && editor?.buffer === buffer;
+					if (unresolvedMoves.get(from) === held && still) {
+						forget(from);
+						unresolvedMoves.delete(from);
+					}
+					await refreshAll();
+					return written;
+				} finally {
+					unfence(from);
+					release();
+				}
+			})(),
+		);
 	}
 
 	/** Everything held only in this window, in the words the leave prompt shows. */
@@ -1707,18 +1719,21 @@ export function createLibrary(workspace: Workspace) {
 			[...recipeRuns.values()].some((run) => run.state.kind === 'running')
 		)
 			held.push('A transformation is still running; its result would be lost.');
-		// A draft held by an unresolved rename was listed with the rename above.
-		for (const draft of rowDrafts())
-			if (draft.holds && !unresolvedMoves.has(draft.path))
+		for (const editing of rowEditings())
+			if (editing.holds) {
+				const { kind } = editing.status;
 				held.push(
-					draft.review !== undefined
-						? `${draft.path} has edits held in a conflict.`
-						: draft.status.kind === 'unconfirmed'
-							? `${draft.path} has edits whose last save was not confirmed.`
-							: draft.status.kind === 'failed'
-								? `${draft.path} has edits whose last save failed.`
-								: `${draft.path} has unsaved edits.`,
+					kind === 'unconfirmed'
+						? `${editing.path} has edits whose last save was not confirmed.`
+						: kind === 'removed'
+							? `${editing.path} has edits whose file is no longer in the folder.`
+							: kind === 'saving'
+								? `${editing.path} is still being saved.`
+								: kind === 'refused'
+									? `${editing.path} has a typed value that cannot be saved.`
+									: `${editing.path} has edits whose last save failed.`,
 				);
+			}
 		for (const editor of textEditors())
 			if (textHolds(editor) && !unresolvedMoves.has(editor.path))
 				held.push(
@@ -1743,10 +1758,12 @@ export function createLibrary(workspace: Workspace) {
 	}
 
 	/**
-	 * How a published recording's row reads now, through the one draft kept
-	 * for it: opened when none is kept, read again when one is. This only
-	 * reads. "This recording" is judged on the file as read, never on what the
-	 * receipts say was written.
+	 * How a published recording's row reads now. Looking is the person's
+	 * ask, so the row is opened into its editor when none is kept, and a kept
+	 * editor holding nothing takes the file as it is now. One whose save is
+	 * running or stopped keeps its input, and the file is read beside it.
+	 * This writes nothing. "This recording" is judged on the file as read,
+	 * never on what the receipts say was written.
 	 */
 	async function observeRecording(capture: PendingCapture): Promise<
 		| { readonly status: 'present' }
@@ -1765,48 +1782,33 @@ export function createLibrary(workspace: Workspace) {
 			status: 'missing',
 			message: `${path} is no longer in the folder. It was removed after this recording was saved.`,
 		} as const;
-		const kept = recordingRows.rows.get(path);
-		if (kept?.kind === 'form') await kept.draft.refresh();
-		const slot =
-			kept === undefined || kept.kind === 'opening'
-				? await openRow(recordingRows, path)
-				: kept;
 		let text: string;
-		switch (slot.kind) {
-			case 'missing':
-				return missing;
-			case 'unopened':
-				return unreadable(slot.message);
-			case 'opening':
-				return unreadable('it is still being opened');
-			case 'form': {
-				const { observation } = slot.draft.state;
-				if (observation.kind === 'missing') return missing;
-				if (observation.kind === 'unreadable')
-					return unreadable(observation.error.message);
-				text =
-					observation.kind === 'present'
-						? observation.revision.text
-						: observation.file.text;
-				break;
+		const kept = recordingRows.rows.get(path);
+		if (kept?.kind === 'open' && !kept.editing.holds) {
+			const { error: reloadError } = await kept.editing.reload();
+			if (reloadError?.name === 'NotFound') return missing;
+			if (reloadError !== null) return unreadable(reloadError.message);
+			text = kept.editing.row.text;
+		} else if (kept?.kind === 'open') {
+			const { data: entry, error: readError } = await table.get(capture.id);
+			if (readError !== null) return unreadable(readError.message);
+			if (entry === undefined) return missing;
+			text = entry.text;
+		} else {
+			const slot = await openRow(recordingRows, path);
+			switch (slot.kind) {
+				case 'missing':
+					return missing;
+				case 'unopened':
+					return unreadable(slot.message);
+				case 'opening':
+					return unreadable('it is still being opened');
+				case 'open':
+					text = slot.editing.row.text;
+					break;
+				default:
+					return slot satisfies never;
 			}
-			case 'raw': {
-				const { data: opened, error: readError } = await readTextFile(
-					folder.files,
-					path,
-				);
-				if (readError !== null)
-					return readError.name === 'NotFound'
-						? missing
-						: unreadable(readError.message);
-				if (opened.kind !== 'text')
-					return unreadable('it is not text the app can read');
-				slot.editor.observe(opened.file);
-				text = opened.file.text;
-				break;
-			}
-			default:
-				return slot satisfies never;
 		}
 		if (
 			isThisRecording(
@@ -2616,33 +2618,28 @@ export function createLibrary(workspace: Workspace) {
 			return (
 				[...runs.values()].some((run) => run.kind === 'unsaved') ||
 				[...recipeRuns.values()].some((run) => run.state.kind === 'unsaved') ||
-				rowDrafts().some((draft) => draft.holds) ||
+				rowEditings().some((editing) => editing.holds) ||
 				textEditors().some(textHolds)
 			);
 		},
 		get saving() {
 			return (
-				rowDrafts().some((draft) => draft.status.kind === 'saving') ||
+				rowEditings().some((editing) => editing.save.status === 'saving') ||
 				textEditors().some((editor) => editor.saveState.kind === 'saving')
 			);
 		},
 		/**
-		 * Drafts whose save needs the person: it failed, was not confirmed, or
-		 * the file changed under typing. A row draft whose failed or unknown
-		 * save a later read found the file holding is not counted here. That
-		 * read confirms nothing: the draft still holds, so `unsaved` and the
-		 * leave prompt still count it.
+		 * Drafts whose save needs the person: it failed, was not confirmed, its
+		 * file is gone, the file changed under unsaved typing, or the value
+		 * typed last has no form a file can hold.
 		 */
 		get saveProblems() {
-			const rows = rowDrafts().filter(({ status }) => {
-				switch (status.kind) {
+			const rows = rowEditings().filter((editing) => {
+				switch (editing.status.kind) {
 					case 'failed':
 					case 'unconfirmed':
-						return !status.inFile;
-					case 'changed':
 					case 'removed':
-					case 'unreadable':
-					case 'unrecognized':
+					case 'refused':
 						return true;
 					default:
 						return false;
@@ -2672,11 +2669,15 @@ export function createLibrary(workspace: Workspace) {
 			for (;;) {
 				const accepted = fileChanges;
 				await accepted;
-				if (!autosave.paused)
-					await Promise.all([
-						...rowDrafts().map((draft) => draft.settle()),
-						...textEditors().map((editor) => editor.settle()),
-					]);
+				// Row writes already admitted always finish, and a stopped one is
+				// never tried again for the person; with autosave paused, typing in
+				// text drafts is not saved for them either.
+				await Promise.all([
+					...rowEditings().map((editing) => editing.flush()),
+					...(autosave.paused
+						? []
+						: textEditors().map((editor) => editor.settle())),
+				]);
 				if (accepted === fileChanges) return unsavedWork().length === 0;
 			}
 		},
@@ -2695,10 +2696,11 @@ export function createLibrary(workspace: Workspace) {
 			await input.load();
 		},
 		discardDraft,
+		reloadRow,
 		/**
-		 * Renames that did not end as asked: the folder lost the reply, or left
-		 * the file at both paths. Each holds its draft's edits until the person
-		 * chooses with `resolveMove` or `copyHeldEdits`.
+		 * Renames of ordinary files that did not end as asked: the folder lost
+		 * the reply, or left the file at both paths. Each holds its draft's edits
+		 * until the person chooses with `resolveMove` or `copyHeldEdits`.
 		 */
 		get unresolvedMoves(): UnresolvedMove[] {
 			return [...unresolvedMoves.values()];
@@ -2714,70 +2716,29 @@ export function createLibrary(workspace: Workspace) {
 		resolveMove,
 		copyHeldEdits,
 		/** The whole text of the edits an unresolved rename holds, for copying out. */
-		heldText: draftText,
-		/**
-		 * Keep both versions of a row in question: write the typing to a copy
-		 * under `conflicts/`, then drop it from the draft as `discardDraft` does.
-		 * Returns the copy's path.
-		 */
-		async keepDraftCopy(path: string): Promise<Result<string, string>> {
-			const slot = slotAt(path);
-			if (slot?.kind !== 'form') return Err('There is no draft to copy.');
-			const copied = await slot.draft.keepCopy();
-			const { data: copyPath, error: copyError } = copied;
-			if (copyError !== null) return copied;
-			const discarded = await discardDraft(path);
-			if (discarded !== undefined)
-				return Err(
-					`Your edits were saved to ${copyPath}, and kept here: ${discarded}`,
-				);
-			return copied;
+		heldText: (from: string) => textDraftAt(from)?.buffer,
+		/** Edit a row's whole text instead of its fields, through the same editor. */
+		editSource(path: string): string | undefined {
+			if (!admitting) return LEAVING;
+			return rowEditingAt(path)?.showSource(true);
 		},
 		/**
-		 * Edit a row's whole text instead of its fields. Only a draft holding
-		 * nothing unsaved switches. The text is the file's as it is read now.
+		 * Edit a row's fields again after editing its text. Text that still is
+		 * not a valid row stays as text and says why.
 		 */
-		async editSource(path: string): Promise<string | undefined> {
+		useForm(path: string): string | undefined {
 			if (!admitting) return LEAVING;
-			const switched = await withRowTable(path, async (kind) => {
-				const slot = kind.rows.get(path);
-				if (slot?.kind !== 'form') return undefined;
-				const free = () => !draftHolds(path) && slot.draft.review === undefined;
-				if (!free()) return UNSETTLED;
-				const { data: opened, error: readError } = await readTextFile(
-					folder.files,
-					path,
-				);
-				if (readError !== null) return readError.message;
-				if (opened.kind !== 'text')
-					return 'This file is not text that can be edited here.';
-				// Typing or a reopening while it was read keeps the draft as it is.
-				if (kind.rows.get(path) !== slot || !free() || closing)
-					return UNSETTLED;
-				kind.rows.set(path, {
-					kind: 'raw',
-					editor: rawEditorOf(opened.file),
-					reason: undefined,
-				});
-				await disposeSlot(slot as RowSlot<unknown>);
-				return undefined;
-			});
-			return switched;
+			return rowEditingAt(path)?.showSource(false);
 		},
-		/**
-		 * Edit a row's fields again after editing its text. Only text with
-		 * nothing unsaved switches; when it still cannot be edited as fields,
-		 * it stays as text and says why.
-		 */
-		async useForm(path: string): Promise<string | undefined> {
-			if (!admitting) return LEAVING;
-			return withRowTable(path, async (kind) => {
-				const slot = kind.rows.get(path);
-				if (slot?.kind !== 'raw') return undefined;
-				if (draftHolds(path)) return UNSETTLED;
-				await reopenRow(kind, path, { chosen: true });
-				return undefined;
-			});
+		/** Open a row again that could not be read when it was opened. */
+		async retryOpen(path: string): Promise<string | undefined> {
+			if (closing) return LEAVING;
+			const opened = await openRowAt(path, { retain: true });
+			if (opened?.kind === 'missing') {
+				forget(path);
+				return `"${basename(path)}" is no longer in the folder.`;
+			}
+			return opened?.kind === 'unopened' ? opened.message : undefined;
 		},
 
 		async startRecording() {
@@ -3268,204 +3229,21 @@ export function createLibrary(workspace: Workspace) {
 		/**
 		 * Capture what deleting `path` would remove, for the person to confirm.
 		 * Pending typing is saved first; a draft that cannot save refuses, so no
-		 * deletion discards input. Only empty folders can be deleted.
+		 * deletion discards input. The file is read after that, and what was
+		 * read is what a confirmed deletion is conditional on. A row's editor
+		 * takes no input while this runs. Only empty folders can be deleted.
 		 */
 		async deletionFor(path: string): Promise<Result<Deletion, string>> {
-			if (listing?.directories.includes(path)) {
-				const prefix = `${path}/`;
-				const occupied =
-					listing.files.some((file) => file.path.startsWith(prefix)) ||
-					listing.directories.some((directory) => directory.startsWith(prefix));
-				if (occupied)
-					return Err(
-						'Only empty folders can be deleted here. Delete or move what is inside first.',
-					);
-				return Ok({ kind: 'folder', path });
+			if (slotAt(path) === undefined) return captureDeletion(path);
+			settling.add(path);
+			try {
+				return await captureDeletion(path);
+			} finally {
+				settling.delete(path);
 			}
-			if (recordingRows.rows.has(path) || rowPaths.has(path)) {
-				const { data: entry, error: entryError } =
-					await recordingForOperation(path);
-				if (entryError !== null) return Err(entryError);
-				const id = entry.stem;
-				const busy = recordingBusy(id);
-				if (busy !== undefined) return Err(busy);
-				// The person is told every result that goes with the recording, so
-				// every result has to be known to be this one's or another's.
-				const unknown = unknownResults();
-				if (unknown !== undefined) return Err(unknown);
-				// A result saved since the last listing is named from its
-				// publication; once listed, the listed row is the one named.
-				const listed = new Set(transcriptions.map((result) => result.path));
-				const listedOutputs = new Set(
-					transformationResults.map((result) => result.path),
-				);
-				return Ok({
-					kind: 'recording',
-					entry,
-					results: [
-						...transcriptions,
-						...[...unlistedResults.values()].filter(
-							(result) => !listed.has(result.path),
-						),
-					].filter((result) => result.fields.recordingId === id),
-					outputs: [
-						...transformationResults,
-						...[...unlistedOutputs.values()].filter(
-							(result) => !listedOutputs.has(result.path),
-						),
-					].filter((result) => result.fields.recordingId === id),
-				});
-			}
-			if (transformationRows.rows.has(path) || transformationPaths.has(path)) {
-				const { data: entry, error: entryError } =
-					await transformationForOperation(path);
-				if (entryError !== null) return Err(entryError);
-				const id = entry.stem;
-				return Ok({
-					kind: 'transformation',
-					entry,
-					results:
-						transformationResults.filter(
-							(result) => result.fields.transformationId === id,
-						).length +
-						textResults.filter(
-							(result) => result.fields.transformationId === id,
-						).length,
-				});
-			}
-			const { data: settledSha256, error: settleError } =
-				await settleDraft(path);
-			if (settleError !== null) return Err(settleError);
-			if (settledSha256 !== undefined)
-				return Ok({ kind: 'file', path, sha256: settledSha256 });
-			const { data: file, error: readError } = await folder.files.read(path);
-			if (readError !== null) return Err(readError.message);
-			return Ok({ kind: 'file', path, sha256: file.sha256 });
 		},
 		/** Delete exactly what was confirmed; a file that changed since is refused. */
-		remove: submitFileChange(
-			async (deletion: Deletion): Promise<string | undefined> => {
-				if (deletion.kind === 'folder') {
-					const { error: rmdirError } = await folder.files.rmdir(deletion.path);
-					await refresh();
-					return rmdirError !== null
-						? describeWriteError(rmdirError)
-						: undefined;
-				}
-				const path =
-					deletion.kind === 'file' ? deletion.path : deletion.entry.path;
-				// The confirmation is modal, but a save may have started or failed since the capture.
-				if (draftHolds(path)) return UNSETTLED;
-				if (deletion.kind !== 'recording')
-					return owning([path], async () => {
-						// A transformation's saved results are separate files and stay.
-						const { error: deleteError } = await deleteRetired(path, () =>
-							deletion.kind === 'transformation'
-								? profiles.delete(deletion.entry.stem, {
-										expectedSha256: deletion.entry.sha256,
-									})
-								: folder.files.remove({ path, sha256: deletion.sha256 }),
-						);
-						await refreshAll();
-						return deleteError ?? undefined;
-					});
-
-				// Work may have started or finished since the person was asked. A
-				// request that is running, or an answer not saved yet, would write a
-				// row naming this recording after it is gone; a result saved since is
-				// one the person did not agree to delete.
-				const id = deletion.entry.stem;
-				if (deleting.has(id)) return BEING_DELETED;
-				const busy = recordingBusy(id);
-				if (busy !== undefined) return busy;
-				// A result that stopped being readable since the person was asked
-				// could be this recording's and is not among those confirmed.
-				const unknown = unknownResults();
-				if (unknown !== undefined) return unknown;
-				const confirmed = new Set(
-					[...deletion.results, ...deletion.outputs].map((row) => row.path),
-				);
-				// A result saved since the last listing counts from its publication.
-				const unconfirmed = [
-					...transcriptions,
-					...unlistedResults.values(),
-					...transformationResults,
-					...unlistedOutputs.values(),
-				].some(
-					(row) => row.fields.recordingId === id && !confirmed.has(row.path),
-				);
-				if (unconfirmed)
-					return 'A new result was saved for this recording after you were asked. Check it, then delete the recording again.';
-				// Each result is deleted as its own file, under the recording's rule:
-				// a draft of it that holds anything refuses the whole deletion.
-				if ([...confirmed].some(draftHolds)) return UNSETTLED;
-				// The recording and every result it takes with it, so a rename of
-				// a result cannot run beside this deletion or release its fence.
-				return owning([path, ...confirmed], async () => {
-					// From here until the rows are gone, nothing new starts for it, and
-					// no draft of a result takes typing or writes: there is no await
-					// between the checks above and this.
-					deleting.add(id);
-					/** Results retired and not yet asked to be deleted. */
-					const waiting = new Set(confirmed);
-					waiting.forEach(retire);
-					try {
-						// The table removes the row file and nothing else. The audio the row
-						// names is an ordinary file; it stays, and Files can delete it.
-						const { error: deleteError } = await deleteRetired(path, () =>
-							table.delete(deletion.entry.stem, {
-								expectedSha256: deletion.entry.sha256,
-							}),
-						);
-						if (deleteError !== null) {
-							await refreshAll();
-							return deleteError;
-						}
-						// What failed for this recording held nothing, and has nothing left to retry against.
-						if (runs.get(id)?.kind === 'failed') runs.delete(id);
-						for (const run of transcriptRuns())
-							if (run.fields.recordingId === id && run.state.kind === 'failed')
-								recipeRuns.delete(run.id);
-						// One file at a time: a refusal keeps that file and its draft, and
-						// what was deleted before it stays deleted.
-						const leftovers: string[] = [];
-						for (const result of deletion.results) {
-							waiting.delete(result.path);
-							const { error: deleteError } = await deleteRetired(
-								result.path,
-								() =>
-									results.delete(result.stem, {
-										expectedSha256: result.sha256,
-									}),
-							);
-							if (deleteError !== null) leftovers.push(result.path);
-							else unlistedResults.delete(result.path);
-						}
-						for (const output of deletion.outputs) {
-							waiting.delete(output.path);
-							const { error: deleteError } = await deleteRetired(
-								output.path,
-								() =>
-									outputs.delete(output.stem, {
-										expectedSha256: output.sha256,
-									}),
-							);
-							if (deleteError !== null) leftovers.push(output.path);
-							else unlistedOutputs.delete(output.path);
-						}
-						await refreshAll();
-						return leftovers.length > 0
-							? `The recording was deleted, but these results could not be: ${leftovers.join(', ')}`
-							: undefined;
-					} finally {
-						// The recording was refused, or a deletion threw: what was not
-						// reached is unchanged, and its draft goes on.
-						waiting.forEach(release);
-						deleting.delete(id);
-					}
-				});
-			},
-		),
+		remove: submitFileChange(removeConfirmed),
 		/** Commit current saved files. Unsaved editor input is not included. */
 		commit(): Promise<CommitOutcome> {
 			if (!admitting)
@@ -3473,9 +3251,11 @@ export function createLibrary(workspace: Workspace) {
 			return folder.git.commit();
 		},
 		/**
-		 * Save what can still be saved, then release the folder. A draft that
-		 * cannot save and audio that could not be published end with the page;
-		 * the view asks before the page is left while either exists.
+		 * Save what can still be saved, then release the folder. Every row
+		 * write already admitted settles before its editor is put down, and a
+		 * stopped one is not tried again. Input that could not be saved, and
+		 * audio that could not be published, end with the page; the view asks
+		 * before the page is left while either exists.
 		 */
 		async close() {
 			closing = true;
@@ -3491,10 +3271,10 @@ export function createLibrary(workspace: Workspace) {
 			await input.saved();
 			// A row still opening is never handed a view: its opening is aborted.
 			lifetime.abort();
-			for (const draft of rowDrafts()) {
-				await draft.settle();
-				await draft.dispose();
-			}
+			await Promise.all(rowEditings().map((editing) => editing.flush()));
+			for (const editing of rowEditings()) editing.release();
+			// The lists a last save asked to refresh read the folder too.
+			await savedRefresh;
 			for (const editor of textEditors()) {
 				await editor.settle();
 				editor.dispose();
@@ -3505,4 +3285,281 @@ export function createLibrary(workspace: Workspace) {
 			await workspace.close();
 		},
 	};
+
+	/**
+	 * What deleting `path` would remove, captured after its draft settled.
+	 *
+	 * A recording or transformation path is decided by what its file holds
+	 * when it is read here, after settling; neither the last listing nor
+	 * whether its editor opened decides it. A row that reads is deleted as a
+	 * row: a recording with its results, a transformation without them. A
+	 * file that is there and does not read as a row (not text, say) is
+	 * removed alone, as the exact bytes read, and its results are kept: they
+	 * cannot be told to be this row's any better than before. For a
+	 * recording, the same guards hold by its name: nothing running for it,
+	 * and nothing new starting while it is removed.
+	 */
+	async function captureDeletion(
+		path: string,
+	): Promise<Result<Deletion, string>> {
+		if (listing?.directories.includes(path)) {
+			const prefix = `${path}/`;
+			const occupied =
+				listing.files.some((file) => file.path.startsWith(prefix)) ||
+				listing.directories.some((directory) => directory.startsWith(prefix));
+			if (occupied)
+				return Err(
+					'Only empty folders can be deleted here. Delete or move what is inside first.',
+				);
+			return Ok({ kind: 'folder', path });
+		}
+		const recordingStem = rowStemOf(RECORDINGS, path);
+		const transformationStem = rowStemOf(TRANSFORMATIONS, path);
+		if (recordingStem !== undefined || transformationStem !== undefined) {
+			const { error: settleError } = await settleDraft(path);
+			if (settleError !== null) return Err(settleError);
+		}
+		if (recordingStem !== undefined) {
+			const { data: entry, error: readError } = await table.get(recordingStem);
+			if (readError !== null)
+				return captureUnreadableRow(RECORDINGS, path, readError.message);
+			if (entry === undefined)
+				return Err('This recording is no longer in the folder.');
+			const id = entry.stem;
+			const busy = recordingBusy(id);
+			if (busy !== undefined) return Err(busy);
+			// The person is told every result that goes with the recording, so
+			// every result has to be known to be this one's or another's.
+			const unknown = unknownResults();
+			if (unknown !== undefined) return Err(unknown);
+			// A result saved since the last listing is named from its
+			// publication; once listed, the listed row is the one named.
+			const listed = new Set(transcriptions.map((result) => result.path));
+			const listedOutputs = new Set(
+				transformationResults.map((result) => result.path),
+			);
+			return Ok({
+				kind: 'recording',
+				entry,
+				results: [
+					...transcriptions,
+					...[...unlistedResults.values()].filter(
+						(result) => !listed.has(result.path),
+					),
+				].filter((result) => result.fields.recordingId === id),
+				outputs: [
+					...transformationResults,
+					...[...unlistedOutputs.values()].filter(
+						(result) => !listedOutputs.has(result.path),
+					),
+				].filter((result) => result.fields.recordingId === id),
+			});
+		}
+		if (transformationStem !== undefined) {
+			const { data: entry, error: readError } =
+				await profiles.get(transformationStem);
+			if (readError !== null)
+				return captureUnreadableRow(TRANSFORMATIONS, path, readError.message);
+			if (entry === undefined)
+				return Err('This transformation is no longer in the folder.');
+			const id = entry.stem;
+			return Ok({
+				kind: 'transformation',
+				entry,
+				results:
+					transformationResults.filter(
+						(result) => result.fields.transformationId === id,
+					).length +
+					textResults.filter((result) => result.fields.transformationId === id)
+						.length,
+			});
+		}
+		const { data: settledSha256, error: settleError } = await settleDraft(path);
+		if (settleError !== null) return Err(settleError);
+		if (settledSha256 !== undefined)
+			return Ok({ kind: 'file', path, sha256: settledSha256 });
+		const { data: file, error: readError } = await folder.files.read(path);
+		if (readError !== null) return Err(readError.message);
+		return Ok({ kind: 'file', path, sha256: file.sha256 });
+	}
+
+	/**
+	 * Capture a recording or transformation file that is there and does not
+	 * read as a row: its exact bytes, which the removal is conditional on.
+	 * A file that cannot be read at all cannot be captured, and says so. For
+	 * a recording, work running for the recording its name makes it refuses,
+	 * as it would for the row.
+	 */
+	async function captureUnreadableRow(
+		rowTable: typeof RECORDINGS | typeof TRANSFORMATIONS,
+		path: string,
+		problem: string,
+	): Promise<Result<Deletion, string>> {
+		const recordingId =
+			rowTable === RECORDINGS ? rowStemOf(RECORDINGS, path) : undefined;
+		const { data: file, error: readError } = await folder.files.read(path);
+		if (readError !== null)
+			return Err(
+				readError.name === 'NotFound'
+					? `${basename(path)} is no longer in the folder.`
+					: `${path} cannot be read, so it cannot be deleted from here: ${readError.message}`,
+			);
+		if (recordingId !== undefined) {
+			if (deleting.has(recordingId)) return Err(BEING_DELETED);
+			const busy = recordingBusy(recordingId);
+			if (busy !== undefined) return Err(busy);
+		}
+		return Ok({
+			kind: 'unreadableRow',
+			table: rowTable,
+			path,
+			sha256: file.sha256,
+			recordingId,
+			problem,
+		});
+	}
+
+	/** Delete exactly what was confirmed; a file that changed since is refused. */
+	async function removeConfirmed(
+		deletion: Deletion,
+	): Promise<string | undefined> {
+		if (deletion.kind === 'folder') {
+			const { error: rmdirError } = await folder.files.rmdir(deletion.path);
+			await refresh();
+			return rmdirError !== null ? describeWriteError(rmdirError) : undefined;
+		}
+		const path =
+			deletion.kind === 'file' || deletion.kind === 'unreadableRow'
+				? deletion.path
+				: deletion.entry.path;
+		// The confirmation is modal, but a save may have started or failed since the capture.
+		if (draftHolds(path)) return UNSETTLED;
+		if (deletion.kind === 'unreadableRow') {
+			// Work for the recording its name makes it may have started since
+			// the person was asked; its results would name a row that is gone.
+			const id = deletion.recordingId;
+			if (id !== undefined) {
+				if (deleting.has(id)) return BEING_DELETED;
+				const busy = recordingBusy(id);
+				if (busy !== undefined) return busy;
+			}
+			return owning([path], async () => {
+				// Nothing new starts for that recording until the removal has an
+				// outcome: there is no await between the checks above and this.
+				if (id !== undefined) deleting.add(id);
+				try {
+					// Only this file, as the exact bytes confirmed; its results stay.
+					const { error: deleteError } = await deleteRetired(path, () =>
+						folder.files.remove({ path, sha256: deletion.sha256 }),
+					);
+					await refreshAll();
+					return deleteError ?? undefined;
+				} finally {
+					if (id !== undefined) deleting.delete(id);
+				}
+			});
+		}
+		if (deletion.kind !== 'recording')
+			return owning([path], async () => {
+				// A transformation's saved results are separate files and stay.
+				const { error: deleteError } = await deleteRetired(path, () =>
+					deletion.kind === 'transformation'
+						? profiles.delete(deletion.entry.stem, {
+								expectedSha256: deletion.entry.sha256,
+							})
+						: folder.files.remove({ path, sha256: deletion.sha256 }),
+				);
+				await refreshAll();
+				return deleteError ?? undefined;
+			});
+
+		// Work may have started or finished since the person was asked. A
+		// request that is running, or an answer not saved yet, would write a
+		// row naming this recording after it is gone; a result saved since is
+		// one the person did not agree to delete.
+		const id = deletion.entry.stem;
+		if (deleting.has(id)) return BEING_DELETED;
+		const busy = recordingBusy(id);
+		if (busy !== undefined) return busy;
+		// A result that stopped being readable since the person was asked
+		// could be this recording's and is not among those confirmed.
+		const unknown = unknownResults();
+		if (unknown !== undefined) return unknown;
+		const confirmed = new Set(
+			[...deletion.results, ...deletion.outputs].map((row) => row.path),
+		);
+		// A result saved since the last listing counts from its publication.
+		const unconfirmed = [
+			...transcriptions,
+			...unlistedResults.values(),
+			...transformationResults,
+			...unlistedOutputs.values(),
+		].some((row) => row.fields.recordingId === id && !confirmed.has(row.path));
+		if (unconfirmed)
+			return 'A new result was saved for this recording after you were asked. Check it, then delete the recording again.';
+		// Each result is deleted as its own file, under the recording's rule:
+		// a draft of it that holds anything refuses the whole deletion.
+		if ([...confirmed].some(draftHolds)) return UNSETTLED;
+		// The recording and every result it takes with it, so a rename of
+		// a result cannot run beside this deletion or release its fence.
+		return owning([path, ...confirmed], async () => {
+			// From here until the rows are gone, nothing new starts for it, and
+			// no draft of a result takes typing or writes: there is no await
+			// between the checks above and this.
+			deleting.add(id);
+			/** Results retired and not yet asked to be deleted. */
+			const waiting = new Set(confirmed);
+			waiting.forEach(retire);
+			try {
+				// The table removes the row file and nothing else. The audio the row
+				// names is an ordinary file; it stays, and Files can delete it.
+				const { error: deleteError } = await deleteRetired(path, () =>
+					table.delete(deletion.entry.stem, {
+						expectedSha256: deletion.entry.sha256,
+					}),
+				);
+				if (deleteError !== null) {
+					await refreshAll();
+					return deleteError;
+				}
+				// What failed for this recording held nothing, and has nothing left to retry against.
+				if (runs.get(id)?.kind === 'failed') runs.delete(id);
+				for (const run of transcriptRuns())
+					if (run.fields.recordingId === id && run.state.kind === 'failed')
+						recipeRuns.delete(run.id);
+				// One file at a time: a refusal keeps that file and its draft, and
+				// what was deleted before it stays deleted.
+				const leftovers: string[] = [];
+				for (const result of deletion.results) {
+					waiting.delete(result.path);
+					const { error: deleteError } = await deleteRetired(result.path, () =>
+						results.delete(result.stem, {
+							expectedSha256: result.sha256,
+						}),
+					);
+					if (deleteError !== null) leftovers.push(result.path);
+					else unlistedResults.delete(result.path);
+				}
+				for (const output of deletion.outputs) {
+					waiting.delete(output.path);
+					const { error: deleteError } = await deleteRetired(output.path, () =>
+						outputs.delete(output.stem, {
+							expectedSha256: output.sha256,
+						}),
+					);
+					if (deleteError !== null) leftovers.push(output.path);
+					else unlistedOutputs.delete(output.path);
+				}
+				await refreshAll();
+				return leftovers.length > 0
+					? `The recording was deleted, but these results could not be: ${leftovers.join(', ')}`
+					: undefined;
+			} finally {
+				// The recording was refused, or a deletion threw: what was not
+				// reached is unchanged, and its draft goes on.
+				waiting.forEach(unfence);
+				deleting.delete(id);
+			}
+		});
+	}
 }

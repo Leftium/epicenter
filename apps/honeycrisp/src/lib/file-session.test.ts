@@ -1000,21 +1000,7 @@ test('a removed file leaves a dirty draft, which is saved back as it was capture
 	expect(session.status).toBe('dirty');
 });
 
-test('a path that holds other text sends the draft to another path, as the text first captured', async () => {
-	const { files, session, reviewed } = await conflicted(undefined);
-	files.external('other\n');
-	expect(await session.saveMine(reviewed, () => ELSEWHERE)).toBe(true);
-	expect(files.requests).toEqual([
-		{ create: PATH, source: 'mine\n' },
-		{ create: ELSEWHERE, source: 'mine\n' },
-	]);
-	expect(files.at()).toBe('other\n');
-	expect(files.at(ELSEWHERE)).toBe('mine\n');
-	expect(session.path).toBe(ELSEWHERE);
-	expect(session.status).toBe('saved');
-});
-
-test('without another path, a path that holds other text is a conflict to review', async () => {
+test('a path that holds other text is a conflict to review, and the draft goes nowhere else', async () => {
 	const { files, session, reviewed } = await conflicted(undefined);
 	files.external('other\n');
 	expect(await session.saveMine(reviewed)).toBe(true);
@@ -1029,13 +1015,8 @@ test('without another path, a path that holds other text is a conflict to review
 
 test('an unconfirmed save back is saved again at its own path only, and never sent elsewhere', async () => {
 	const { files, session, reviewed } = await conflicted(undefined);
-	let alternates = 0;
-	const elsewhere = () => {
-		alternates += 1;
-		return ELSEWHERE;
-	};
 	files.next({ kind: 'lose' });
-	await session.saveMine(reviewed, elsewhere);
+	await session.saveMine(reviewed);
 	expect(session.status).toBe('unconfirmed');
 	const sent = { kind: 'create' as const, path: PATH, source: 'mine\n' };
 	expect(session.attempt).toMatchObject(sent);
@@ -1047,7 +1028,6 @@ test('an unconfirmed save back is saved again at its own path only, and never se
 		{ create: PATH, source: 'mine\n' },
 		{ create: PATH, source: 'mine and more\n' },
 	]);
-	expect(alternates).toBe(0);
 	expect(files.paths()).toEqual([PATH]);
 	expect(session.path).toBe(PATH);
 	// The file holds the earlier text. Which write put it there is not known.
@@ -1065,15 +1045,10 @@ test('an unconfirmed save back is saved again at its own path only, and never se
 
 test('an unconfirmed save back whose path then holds other text stays as it was sent, and takes no other path', async () => {
 	const { files, session, reviewed } = await conflicted(undefined);
-	let alternates = 0;
 	files.next({ kind: 'defer' });
-	await session.saveMine(reviewed, () => {
-		alternates += 1;
-		return ELSEWHERE;
-	});
+	await session.saveMine(reviewed);
 	files.external('other\n');
 	await session.retry();
-	expect(alternates).toBe(0);
 	expect(files.paths()).toEqual([PATH]);
 	expect(files.at()).toBe('other\n');
 	expect(session.attempt).toMatchObject({

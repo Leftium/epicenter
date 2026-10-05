@@ -1,44 +1,39 @@
 /**
  * Capture Draft Tests
  *
- * Drives the real draft runes module over the real folder row editor, on a
+ * Drives the real draft runes module over the folder's real row editor, on a
  * directory folder in a temporary directory. Another program's edits are
- * plain writes to the file, and the draft is asked to read again, as a change
- * hint or a refresh would.
+ * plain writes to the file.
  *
  * Key behaviors:
- * - A save writes the whole canonical document as it was when the save
- *   started; typing during it stays dirty and saves next
- * - A clean draft follows a change made elsewhere and writes nothing; a dirty
- *   one keeps its text, stops saving, and each choice does one thing
- * - A file removed elsewhere is written back by the next save; a clean draft
- *   with nothing typed lets go of it
- * - A file changed into something that is not a capture stops saving, and
- *   can be taken into Source as a raw repair
- * - A file that cannot open as a row is raw source: written exactly, only on
- *   request, only over the version that was shown
- * - A Source edit below the frontmatter is a body change; a frontmatter edit
- *   is raw source that blocks structured edits until it is written or dropped
- * - Unsent thought text and refused capture text are unsettled
- * - A thought edit begun before the document changed is refused, text kept
+ * - Every change submits at once as the complete row: every field, keys
+ *   Capture does not declare included, and the body exactly
+ * - The latest input saves next; settling waits for it
+ * - An open draft keeps what it opened with until the person reloads, and
+ *   its next save replaces a change made elsewhere
+ * - A file removed elsewhere is never written back; putting it back is an
+ *   explicit exclusive create through the same editor
+ * - Source saves exactly as typed, frontmatter and malformed text included,
+ *   through the one editor; the Capture view returns once the text is valid
+ * - A failed save pauses saving until Try again; Reload drops the failed text
+ * - An operation that holds the capture takes no input through any path
  *
  * See also:
- * - `platform/folder.epicenter-host.test.ts` for failed and unconfirmed saves
+ * - `platform/folder.epicenter-host.test.ts` for failed and unconfirmed
+ *   saves over a scripted owner
  */
 import './svelte-modules.test-support.js';
 import { afterAll, expect, test } from 'bun:test';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { captureDefinition } from '@epicenter/capture';
+import { type CaptureFields, captureDefinition } from '@epicenter/capture';
+import type { RowEditor } from '@epicenter/folder';
 import { inspectRow, openFolder } from '@epicenter/folder/bun';
-import type { Draft, DraftStore } from './draft.svelte.ts';
+import { expectOk } from 'wellcrafted/testing';
+import type { DraftStore } from './draft.svelte.ts';
 
 const { createDraft } = await import('./draft.svelte.ts');
-
-/** The raw source the draft holds, when it holds raw source. */
-const rawOf = (draft: Draft) =>
-	draft.mode.kind === 'raw' ? draft.mode : undefined;
 
 const roots: string[] = [];
 afterAll(async () => {
@@ -58,321 +53,259 @@ const INVALID = A.replace(`capturedAt: ${AT}`, 'capturedAt: [open');
 async function setup(initial: string | undefined = A) {
 	const root = await mkdtemp(join(tmpdir(), 'capture-draft-'));
 	roots.push(root);
-	const opened = await openFolder({
-		root,
-		definition: captureDefinition,
-		git: {
-			author: { name: 'Test', email: 'test@localhost' },
-			commitOnEdit: false,
-		},
-	});
-	if (opened.error) throw new Error(opened.error.message);
-	const folder = opened.data;
+	const folder = expectOk(
+		await openFolder({
+			root,
+			definition: captureDefinition,
+			git: {
+				author: { name: 'Test', email: 'test@localhost' },
+				commitOnEdit: false,
+			},
+		}),
+	);
 	const table = folder.tables.captures;
 	const file = join(root, PATH);
 	await mkdir(join(root, 'captures'));
 	if (initial !== undefined) await writeFile(file, initial);
 
-	const read: DraftStore['read'] = async () => {
-		const found = await table.get('one');
-		if (found.error !== null)
-			return { kind: 'unreadable', message: found.error.message };
-		if (found.data === undefined) return { kind: 'removed' };
-		return { kind: 'present', entry: found.data };
-	};
-	/** Held before the next opening reads anything, or the next write throws. */
-	const next: { edit?: Promise<void>; writeThrows?: Error } = {};
+	/** Every editor the draft acquired, in order. */
+	const editors: RowEditor<CaptureFields>[] = [];
+	/** Held before the next acquisition reads anything. */
+	const next: { edit?: Promise<void> } = {};
+	const fence = { on: false };
+	const creates: string[] = [];
 	const store: DraftStore = {
 		inspect: (text) => inspectRow(captureDefinition.tables.captures, text),
 		async edit(signal) {
 			const held = next.edit;
 			next.edit = undefined;
 			await held;
-			return table.edit('one', { signal });
+			const opened = await table.edit('one', { signal });
+			if (opened.error === null) editors.push(opened.data);
+			return opened;
 		},
-		read,
-		async replace(capture, source) {
-			const written = await table.replace('one', source, {
-				expectedSha256: capture.sha256,
-			});
-			if (written.error !== null) return { data: null, error: written.error };
-			// The receipt names the bytes sent; the entry is how they read.
-			const entry = {
-				...written.data,
-				...inspectRow(captureDefinition.tables.captures, written.data.text),
-			};
-			return { data: entry, error: null };
+		async read() {
+			const found = await table.get('one');
+			if (found.error !== null)
+				return { kind: 'unreadable', message: found.error.message };
+			if (found.data === undefined) return { kind: 'removed' };
+			return { kind: 'present', entry: found.data };
 		},
 		async create(source) {
+			creates.push(source);
 			const created = await folder.files.create(PATH, source);
 			if (created.error !== null) return { data: null, error: created.error };
-			const current = await read();
-			if (current.kind !== 'present') throw new Error('not read back');
-			return { data: current.entry, error: null };
+			const found = expectOk(await table.get('one'));
+			if (found === undefined) throw new Error('not read back');
+			return { data: found, error: null };
 		},
-		async writing(work) {
-			const thrown = next.writeThrows;
-			next.writeThrows = undefined;
-			// A host that went away throws instead of answering.
-			if (thrown) throw thrown;
-			return work();
-		},
+		remove: (reviewed) =>
+			table.delete('one', { expectedSha256: reviewed.sha256 }),
+		fenced: () => fence.on,
 	};
-	/** The source of each write the draft reported, in order. */
-	const saved: string[] = [];
-	const draft = createDraft(
-		store,
-		{ path: PATH, stem: 'one' },
-		{ onSaved: (entry) => saved.push(entry.text), batchMs: 60_000 },
-	);
+	const draft = createDraft(store, { path: PATH, stem: 'one' });
 	await draft.ready;
 	return {
 		draft,
-		saved,
+		editors,
 		next,
 		store,
-		table,
+		creates,
 		disk: () => readFile(file, 'utf8'),
-		outside: (source: string | undefined) =>
+		exists: () => Bun.file(file).exists(),
+		outside: (source: string | Uint8Array | undefined) =>
 			source === undefined ? rm(file) : writeFile(file, source),
 		async done() {
-			await draft.dispose();
+			draft.retire();
 			await folder.close();
 		},
 	};
 }
 
-test('a save writes the document as it started; typing during it stays dirty and saves next', async () => {
+test('typing submits at once as the complete row: every field, unknown ones included, and the body exactly', async () => {
+	const withMetadata = `---\n# kept by hand\ncapturedAt: ${AT}\ncustom: 'single quoted'\nnested:\n  list: [1, 2]\n---\n\nA\n\n## Thoughts\n\n- first\n  nested line\n- second\n`;
+	const t = await setup(withMetadata);
+	// Opening writes nothing and shows the file exactly.
+	expect(t.draft.status).toBe('valid');
+	expect(t.draft.source).toBe(withMetadata);
+	expect(await t.disk()).toBe(withMetadata);
+
+	t.draft.inputText('B, café');
+	expect(t.draft.saving).toBe(true);
+	expect(t.draft.unsettled).toBe(true);
+
+	expect(await t.draft.settle()).toBe(true);
+	expect(await t.disk()).toBe(
+		`---\n"capturedAt": "${AT}"\n"custom": "single quoted"\n"nested": {"list": [1, 2]}\n---\n\nB, café\n\n## Thoughts\n\n- first\n  nested line\n- second\n`,
+	);
+	expect(t.draft.unsettled).toBe(false);
+	await t.done();
+});
+
+test('typing during a save is shown at once and saved next', async () => {
 	const t = await setup();
 	t.draft.inputText('B');
-	const saving = t.draft.save();
 	t.draft.inputText('BC');
-	await saving;
-
-	expect(t.saved).toEqual([canon('B'), canon('BC')]);
+	expect(t.draft.text).toBe('BC');
+	expect(t.draft.saving).toBe(true);
+	await t.draft.settle();
 	expect(await t.disk()).toBe(canon('BC'));
-	expect(t.draft.dirty).toBe(false);
+	expect(t.draft.notice).toBeUndefined();
 	expect(t.draft.unsettled).toBe(false);
 	await t.done();
 });
 
-test('opening writes nothing, and a clean draft follows a change made elsewhere without writing', async () => {
+test('an open draft keeps what it opened with until reloaded, and its next save replaces a change made elsewhere', async () => {
 	const t = await setup();
-	expect(t.draft.mode.kind).toBe('editing');
-	expect(t.draft.source).toBe(canon('A'));
-	expect(await t.disk()).toBe(A);
-
 	await t.outside(D);
-	await t.draft.check();
-	expect(t.draft.text).toBe('D from outside');
-	expect(t.draft.dirty).toBe(false);
+	expect(t.draft.text).toBe('A');
 	expect(t.draft.notice).toBeUndefined();
-	expect(t.saved).toEqual([]);
-	expect(await t.disk()).toBe(D);
-	await t.done();
-});
 
-test('a dirty draft keeps its text when the file changes elsewhere, stops saving, and each choice does one thing', async () => {
-	const t = await setup();
+	expect(await t.draft.reload()).toBe(true);
+	expect(t.draft.text).toBe('D from outside');
+	expect(await t.disk()).toBe(D);
+
+	await t.outside(A);
 	t.draft.inputText('mine');
-	await t.outside(D);
-	await t.draft.check();
-
-	const notice = t.draft.notice;
-	expect(notice?.kind).toBe('changed');
-	expect(notice?.kind === 'changed' && notice.revision.text).toBe(D);
-	expect(t.draft.text).toBe('mine');
-	// Typing does not save over it by itself.
-	await t.draft.save();
-	expect(t.saved).toEqual([]);
-	expect(await t.disk()).toBe(D);
-	expect(t.draft.unsettled).toBe(true);
-
-	// Keeping mine writes the whole draft over what was shown.
-	await t.draft.saveMine();
+	await t.draft.settle();
 	expect(await t.disk()).toBe(canon('mine'));
+	expect(t.creates).toEqual([]);
+	expect(t.editors).toHaveLength(1);
+	await t.done();
+});
+
+test('typing while a reload reads keeps the typing and loads nothing', async () => {
+	const t = await setup();
+	await t.outside(D);
+	const reloading = t.draft.reload();
+	t.draft.inputText('typed meanwhile');
+	expect(await reloading).toBe(false);
+	expect(t.draft.text).toBe('typed meanwhile');
+	expect(t.draft.refusal).toContain('typed while the file was being read');
+	await t.draft.settle();
+	expect(await t.disk()).toBe(canon('typed meanwhile'));
+	await t.done();
+});
+
+test('a file removed elsewhere is never written back; putting it back is an exclusive create through the same editor', async () => {
+	const t = await setup();
+	await t.outside(undefined);
+	t.draft.inputText('mine');
+	const mine = t.draft.source;
+	await t.draft.settle();
+
+	expect(t.draft.notice).toMatchObject({ kind: 'failed', missing: true });
+	expect(t.draft.source).toBe(mine);
+	expect(t.draft.unsettled).toBe(true);
+	// Neither settling nor Try again creates it.
+	t.draft.retry();
+	await t.draft.settle();
+	expect(await t.exists()).toBe(false);
+
+	expect(await t.draft.restore()).toEqual({ ok: true });
+	expect(t.creates).toEqual([mine]);
+	expect(await t.disk()).toBe(mine);
+	expect(t.editors).toHaveLength(1);
+	expect(t.draft.status).toBe('valid');
 	expect(t.draft.notice).toBeUndefined();
 	expect(t.draft.unsettled).toBe(false);
-
-	// Loading the saved file drops my input instead, and writes nothing.
-	t.draft.inputText('discard me');
-	await t.outside(D);
-	await t.draft.check();
-	t.draft.loadSaved();
-	expect(t.draft.text).toBe('D from outside');
-	expect(t.draft.dirty).toBe(false);
-	expect(await t.disk()).toBe(D);
 	await t.done();
 });
 
-test('a file removed elsewhere is written back by the next save; a clean draft lets it go', async () => {
-	const dirty = await setup();
-	dirty.draft.inputText('mine');
-	await dirty.outside(undefined);
-	await dirty.draft.check();
-	expect(dirty.draft.editor?.observation.kind).toBe('missing');
-	expect(dirty.draft.notice).toBeUndefined();
-	expect(dirty.draft.gone).toBe(false);
-	await dirty.draft.save();
-	expect(await dirty.disk()).toBe(canon('mine'));
-	await dirty.done();
-
-	const clean = await setup();
-	await clean.outside(undefined);
-	await clean.draft.check();
-	expect(clean.draft.gone).toBe(true);
-	expect(clean.draft.unsettled).toBe(false);
-	await clean.done();
-});
-
-test('a file changed elsewhere into one that is not a capture stops saving, and can be repaired as Source', async () => {
+test('a reload that finds no file says so and keeps the text; putting it back writes that text', async () => {
 	const t = await setup();
-	t.draft.inputText('mine');
-	await t.outside(INVALID);
-	await t.draft.check();
-	expect(t.draft.notice?.kind).toBe('invalid');
-	await t.draft.save();
-	expect(await t.disk()).toBe(INVALID);
-
-	await t.draft.repairFile();
-	expect(rawOf(t.draft)?.reason).toBeDefined();
-	expect(t.draft.source).toBe(INVALID);
-	expect(t.draft.unsettled).toBe(false);
-	t.draft.inputSource(D);
+	await t.outside(undefined);
+	expect(await t.draft.reload()).toBe(false);
+	expect(t.draft.notice).toEqual({ kind: 'removed' });
+	expect(t.draft.source).toBe(A);
 	expect(t.draft.unsettled).toBe(true);
-	await t.draft.writeRaw();
 
-	// Written exactly, then opened again as a capture.
-	expect(await t.disk()).toBe(D);
-	expect(t.draft.mode.kind).toBe('editing');
-	expect(t.draft.text).toBe('D from outside');
+	expect(await t.draft.restore()).toEqual({ ok: true });
+	expect(await t.disk()).toBe(A);
+	expect(t.draft.notice).toBeUndefined();
 	await t.done();
 });
 
-test('a file that cannot open as a row is raw source, written exactly and only over the version shown', async () => {
+test('a file that does not parse opens through the same editor as Source, and Source saves exactly as typed', async () => {
 	const t = await setup(INVALID);
-	expect(rawOf(t.draft)?.reason).toBeDefined();
+	expect(t.draft.status).toBe('invalid');
+	expect(t.draft.rowProblem).toBeDefined();
 	expect(t.draft.source).toBe(INVALID);
 	expect(t.draft.structured).toBe(false);
-	t.draft.newThought = 'a thought';
+	t.draft.inputNewThought('a thought');
 	expect(t.draft.addThought()).toBe(false);
-	t.draft.newThought = '';
+	expect(t.draft.newThought).toBe('a thought');
+	t.draft.inputNewThought('');
 
 	const edited = INVALID.replace('\nA\n', '\nA, edited\n');
 	t.draft.inputSource(edited);
-	// Raw source is written only when asked.
-	await t.draft.save();
-	expect(await t.disk()).toBe(INVALID);
-
-	// Another program changes the file first: nothing is written, and it is shown.
-	const other = INVALID.replace('\nA\n', '\nchanged outside\n');
-	await t.outside(other);
-	await t.draft.writeRaw();
-	expect(await t.disk()).toBe(other);
-	expect(rawOf(t.draft)?.text).toBe(edited);
-	expect(rawOf(t.draft)?.problem).toContain('changed outside this window');
-	const over = rawOf(t.draft)?.over;
-	expect(typeof over === 'object' && over.text).toBe(other);
-
-	// Saving again replaces the version that was shown, exactly as typed.
-	await t.draft.writeRaw();
+	await t.draft.settle();
 	expect(await t.disk()).toBe(edited);
-	expect(rawOf(t.draft)?.reason).toBeDefined();
+	expect(t.draft.status).toBe('invalid');
 	expect(t.draft.unsettled).toBe(false);
+
+	// A field that needs fixing is described for the text on screen.
+	t.draft.inputSource(edited.replace('[open', 'soon'));
+	expect(t.draft.reading.parseError).toBeUndefined();
+	expect(t.draft.reading.issues.map((issue) => issue.field)).toEqual([
+		'capturedAt',
+	]);
+	t.draft.inputSource(A);
+	await t.draft.settle();
+	expect(await t.disk()).toBe(A);
+	expect(t.draft.structured).toBe(true);
+	expect(t.editors).toHaveLength(1);
 	await t.done();
 });
 
-test('a Source edit below the frontmatter saves as typing; a frontmatter edit waits for an explicit write', async () => {
+test('a Source edit saves exactly, frontmatter included; a broken one stays repairable, and later structured saves keep keys Capture does not declare', async () => {
 	const t = await setup();
+	t.draft.setView('source');
 	t.draft.inputSource(t.draft.source.replace('\nA\n', '\nA, in Source\n'));
-	expect(t.draft.mode.kind).toBe('editing');
-	await t.draft.save();
-	expect(await t.disk()).toBe(canon('A, in Source'));
+	await t.draft.settle();
+	expect(await t.disk()).toBe(A.replace('\nA\n', '\nA, in Source\n'));
 
-	const withKey = t.draft.source.replace(
+	// Broken frontmatter saves as typed; the Capture view waits for a repair.
+	const broken = t.draft.source.replace(`capturedAt: ${AT}`, 'capturedAt: [');
+	t.draft.inputSource(broken);
+	await t.draft.settle();
+	expect(await t.disk()).toBe(broken);
+	expect(t.draft.structured).toBe(false);
+	t.draft.inputText('refused');
+	expect(t.draft.textIsPending).toBe(true);
+	t.draft.dropPendingText();
+
+	const withKey = A.replace('\nA\n', '\nA, in Source\n').replace(
 		'\n---\n',
-		'\n"unknownKey": "kept"\n---\n',
+		"\n# by hand\n'unknownKey': kept\n---\n",
 	);
 	t.draft.inputSource(withKey);
-	expect(rawOf(t.draft)?.text).toBe(withKey);
-	expect(t.draft.structured).toBe(false);
-	t.draft.newThought = 'blocked';
-	expect(t.draft.addThought()).toBe(false);
-	expect(t.draft.newThought).toBe('blocked');
-	t.draft.newThought = '';
-	await t.draft.save();
-	expect(await t.disk()).toBe(canon('A, in Source'));
-
-	await t.draft.writeRaw();
+	await t.draft.settle();
+	// Written exactly as typed: the comment and the quoting stay.
 	expect(await t.disk()).toBe(withKey);
-	expect(t.draft.mode.kind).toBe('editing');
+	expect(t.draft.structured).toBe(true);
 
-	// The key it does not declare is kept by every later save.
 	t.draft.inputText('B');
-	await t.draft.save();
+	await t.draft.settle();
 	expect(await t.disk()).toBe(
 		canon('B').replace('\n---\n\n', '\n"unknownKey": "kept"\n---\n\n'),
 	);
-	await t.done();
-});
-
-test('a frontmatter edit replaces only the version shown: a later change elsewhere is refused and shown, never overwritten', async () => {
-	const t = await setup();
-	t.draft.newThought = 'typed, not added';
-	const withKey = t.draft.source.replace(
-		'\n---\n',
-		'\n"unknownKey": "kept"\n---\n',
-	);
-	t.draft.inputSource(withKey);
-	await t.draft.idle();
-	// The text is raw now: nothing follows the file, and unsent input stays.
-	const shown = rawOf(t.draft)?.over;
-	expect(typeof shown === 'object' && shown.text).toBe(A);
-	expect(t.draft.newThought).toBe('typed, not added');
-
-	await t.outside(D);
-	await t.draft.check();
-	expect(rawOf(t.draft)?.text).toBe(withKey);
-	await t.draft.writeRaw();
-	expect(await t.disk()).toBe(D);
-	expect(rawOf(t.draft)?.problem).toContain('changed outside this window');
-	const now = rawOf(t.draft)?.over;
-	expect(typeof now === 'object' && now.text).toBe(D);
-	expect(rawOf(t.draft)?.text).toBe(withKey);
-	await t.done();
-});
-
-test('raw text typed while a raw write is out stays, over what was written, for another explicit write', async () => {
-	const t = await setup(INVALID);
-	const first = INVALID.replace('\nA\n', '\nfirst\n');
-	t.draft.inputSource(first);
-	const writing = t.draft.writeRaw();
-	const second = INVALID.replace('\nA\n', '\nsecond\n');
-	t.draft.inputSource(second);
-	await writing;
-
-	expect(await t.disk()).toBe(first);
-	expect(rawOf(t.draft)?.text).toBe(second);
-	const over = rawOf(t.draft)?.over;
-	expect(typeof over === 'object' && over.text).toBe(first);
-	expect(t.draft.unsettled).toBe(true);
-	await t.draft.save();
-	expect(await t.disk()).toBe(first);
-
-	await t.draft.writeRaw();
-	expect(await t.disk()).toBe(second);
+	// Choosing a view changes nothing saved.
+	t.draft.setView('capture');
+	expect(t.draft.unsettled).toBe(false);
+	expect(t.editors).toHaveLength(1);
 	await t.done();
 });
 
 test('unsent thought text and refused capture text are unsettled until resolved', async () => {
 	const t = await setup();
 	expect(t.draft.unsettled).toBe(false);
-	t.draft.newThought = 'not added yet';
+	t.draft.inputNewThought('not added yet');
 	expect(t.draft.unsettled).toBe(true);
 	expect(await t.draft.settle()).toBe(false);
 	expect(t.draft.addThought()).toBe(true);
 	expect(t.draft.newThought).toBe('');
-	await t.draft.save();
+	await t.draft.settle();
 	expect(await t.disk()).toBe(
 		canon('A', '- first\n- second\n- not added yet\n'),
 	);
@@ -383,62 +316,102 @@ test('unsent thought text and refused capture text are unsettled until resolved'
 	expect(t.draft.textIsPending).toBe(true);
 	expect(t.draft.text).toBe('A\n```\nopen');
 	expect(t.draft.refusal).toContain('would not read back');
-	expect(t.draft.dirty).toBe(false);
+	expect(t.draft.saving).toBe(false);
 	expect(t.draft.unsettled).toBe(true);
 	t.draft.inputText('A\n```\nopen\n```');
 	expect(t.draft.textIsPending).toBe(false);
 	expect(t.draft.document.text).toBe('A\n```\nopen\n```');
-
-	// Text the file cannot hold is refused by the editor and kept here.
-	t.draft.inputText('lone \uD800');
-	expect(t.draft.textIsPending).toBe(true);
-	expect(t.draft.refusal).toContain('lone surrogate');
 	await t.done();
 });
 
-test('storage that throws instead of answering is a failed save: typing does not resend it, Try again does', async () => {
+test('a failed save pauses saving: later text is shown and kept, and only Try again sends it', async () => {
 	const t = await setup();
-	t.next.writeThrows = new Error('Epicenter did not answer');
-	t.draft.inputText('mine');
-	await t.draft.save();
-	expect(t.draft.notice).toEqual({
-		kind: 'failed',
-		message: 'Epicenter did not answer',
-	});
+	t.draft.setView('source');
+	const lone = t.draft.source.replace('\nA\n', '\nlone \uD800\n');
+	t.draft.inputSource(lone);
+	await t.draft.settle();
+	// Accepted and shown, and its save failed instead of writing other bytes.
+	expect(t.draft.source).toBe(lone);
+	expect(t.draft.notice?.kind).toBe('failed');
 	expect(await t.disk()).toBe(A);
 
-	t.draft.inputText('mine, more');
-	await t.draft.save();
-	expect(t.saved).toEqual([]);
-	expect(await t.draft.settle()).toBe(false);
+	const fixed = A.replace('\nA\n', '\nfixed\n');
+	t.draft.inputSource(fixed);
+	await t.draft.settle();
+	expect(t.draft.source).toBe(fixed);
+	expect(t.draft.notice?.kind).toBe('failed');
+	expect(await t.disk()).toBe(A);
 
-	await t.draft.saveMine();
-	expect(await t.disk()).toBe(canon('mine, more'));
+	t.draft.retry();
+	await t.draft.settle();
 	expect(t.draft.notice).toBeUndefined();
+	expect(await t.disk()).toBe(fixed);
+	await t.done();
+});
+
+test('Reload after a failed save drops the failed text and shows the file', async () => {
+	const t = await setup();
+	t.draft.inputSource(t.draft.source.replace('\nA\n', '\nlone \uD800\n'));
+	await t.draft.settle();
+	expect(t.draft.notice?.kind).toBe('failed');
+	await t.outside(D);
+
+	expect(await t.draft.reload()).toBe(true);
+	expect(t.draft.notice).toBeUndefined();
+	expect(t.draft.source).toBe(D);
 	expect(t.draft.unsettled).toBe(false);
+	expect(await t.disk()).toBe(D);
+	expect(t.editors).toHaveLength(1);
+	await t.done();
+});
+
+test('a capture held by an operation takes no input and submits nothing through any path', async () => {
+	const t = await setup();
+	t.draft.inputNewThought('kept');
+	expect(await t.draft.reviewDeletion()).toBe(true);
+	expect(t.draft.deletionReview?.entry.text).toBe(A);
+	expect(t.draft.operation).toBe('deleting');
+	expect(t.draft.admitted).toBe(false);
+
+	const source = t.draft.source;
+	t.draft.inputText('typed during the delete');
+	t.draft.inputNewThought('typed during the delete');
+	t.draft.inputSource(`${source}typed during the delete\n`);
+	expect(t.draft.addThought()).toBe(false);
+	t.draft.retry();
+	t.draft.setView('source');
+	expect(await t.draft.reload()).toBe(false);
+	expect(t.draft.text).toBe('A');
+	expect(t.draft.newThought).toBe('kept');
+	expect(t.draft.source).toBe(source);
+	expect(t.draft.view).toBe('capture');
+	expect(t.draft.refusal).toContain('being deleted');
+	expect(t.editors).toHaveLength(1);
+	await t.draft.settle();
+	expect(await t.disk()).toBe(A);
+
+	t.draft.cancelDeletion();
+	t.draft.inputText('after');
+	expect(t.draft.text).toBe('after');
 	await t.done();
 });
 
 test('a draft let go while its editor opens takes no editor and saves nothing', async () => {
 	const t = await setup();
-	await t.draft.dispose();
+	t.draft.retire();
 	const opening = Promise.withResolvers<void>();
 	t.next.edit = opening.promise;
-	const late = createDraft(
-		t.store,
-		{ path: PATH, stem: 'one' },
-		{ onSaved: (entry) => t.saved.push(entry.text), batchMs: 60_000 },
-	);
-	late.newThought = 'typed while opening';
-	const disposing = late.dispose();
+	const late = createDraft(t.store, { path: PATH, stem: 'one' });
+	late.inputNewThought('typed while opening');
+	late.retire();
 	opening.resolve();
-	await disposing;
 	await late.ready;
 
-	expect(late.mode.kind).toBe('opening');
+	expect(late.status).toBeUndefined();
+	expect(late.loaded).toBe(false);
+	expect(late.retired).toBe(true);
+	late.inputText('after');
 	expect(late.addThought()).toBe(false);
-	await late.save();
-	expect(t.saved).toEqual([]);
 	expect(await t.disk()).toBe(A);
 	await t.done();
 });
@@ -447,11 +420,23 @@ test('a thought edit begun before the document changed is refused and its text k
 	const t = await setup();
 	const [first, second] = t.draft.document.thoughts;
 	if (!first || !second) throw new Error('fixture');
+	t.draft.startEditing(second);
+	const earlier = t.draft.editing?.id;
+	if (earlier === undefined) throw new Error('fixture');
+	t.draft.cancelEditing(earlier);
 	t.draft.startEditing(first);
-	t.draft.inputEditing('first, edited');
+	const edit = t.draft.editing?.id;
+	if (edit === undefined) throw new Error('fixture');
+	// Only the edit open now takes text, is saved, or is cancelled.
+	t.draft.inputEditing('not this one', earlier);
+	expect(t.draft.editing?.text).toBe('first');
+	expect(t.draft.commitEditing(earlier)).toBe(false);
+	t.draft.cancelEditing(earlier);
+	expect(t.draft.editing?.id).toBe(edit);
+	t.draft.inputEditing('first, edited', edit);
 	// Something else changes the document: a different parse.
 	t.draft.inputText('A changed');
-	expect(t.draft.commitEditing()).toBe(false);
+	expect(t.draft.commitEditing(edit)).toBe(false);
 	expect(t.draft.editing?.text).toBe('first, edited');
 	expect(t.draft.refusal).toContain('changed since this thought was shown');
 	expect(t.draft.document.thoughts.map((thought) => thought.text)).toEqual([

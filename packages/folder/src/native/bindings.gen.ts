@@ -110,6 +110,9 @@ export type ApplyError =
 /**
  *  The batch stopped partway. `applied` steps reached the folder; nothing
  *  was rolled back. `failed` did not complete, `notAttempted` never started.
+ *  `failed` may be the rest of a step in `applied`: a move's source
+ *  removal after its destination landed, or a replacement whose bytes
+ *  landed but whose displaced entry was kept, the same write in both.
  */
 { name: "Partial"; applied: FileStep[]; failed: FileStep; error: FileError; notAttempted: FileStep[] } |
 /**

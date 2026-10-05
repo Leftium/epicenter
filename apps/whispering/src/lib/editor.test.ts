@@ -1,8 +1,8 @@
 /**
  * Text Draft Tests
  *
- * The app's draft of an ordinary file, also used for a row file edited as its
- * text, over a real folder's own `files`. Replies are decided per save by
+ * The app's draft of an ordinary text file, over a real folder's own `files`.
+ * Replies are decided per save by
  * wrapping those files: a write that lands and whose reply is lost, a
  * refusal, a throw, or a reply held open.
  *
@@ -20,7 +20,7 @@
  * - conflict reads distinguish a missing file from an unreadable one
  *
  * See also:
- * - `row-draft.test.ts` for rows, which the folder's row editor holds
+ * - `row-editing.test.ts` for rows, which the folder's row editor holds
  * - `workspace/desktop.test.ts` for a row save whose reply the shell lost
  */
 import './svelte-modules.test-support.js';

@@ -170,7 +170,7 @@ visible, empty, from its creation until its stream closes.
 
 A page's saves to one folder land in the order the page asked for them,
 across every handle and reopening in that page. A save takes its place when
-its method is called (a row editor's when `save()` is called), before it
+its method is called (a row editor's when a setter or Retry admits input), before it
 hashes or waits for the lock. A save that reaches a path after a later save of
 the page already landed there, or whose outcome there was unknown, writes
 nothing and returns `Unconfirmed`; the later save's bytes stay. Other pages
@@ -233,11 +233,32 @@ This is a different opener: it takes the directory and the history settings
 explicitly, and this process records history itself with the `git` program. It
 is not the desktop adapter, and it does not watch the directory.
 
+Its replacements need a small Node-API addon, `addon/exchange.c`, on macOS
+and Linux, built before the process runs:
+
+```sh
+bun run --filter @epicenter/folder build:addon
+```
+
+`scripts/build-addon.ts` compiles it with `$CC` (else `cc`) against the
+`node-api-headers` development dependency into the ignored `addon/build/`;
+it does nothing on other platforms. These package scripts run it first: `test`
+here and in `apps/whispering`, `apps/capture`, `apps/todos`,
+`apps/honeycrisp`, and `packages/capture`; `test:native` in
+`apps/honeycrisp`; `native` in `apps/todos`; and `harness:recovery` in
+`apps/capture`. Anything else, including `bun test` run directly and other
+Bun tools, needs the command above first. Without a current build, a
+replacement fails as `Io`, writes nothing, and names that command; it lands
+once the build exists. An addon whose source cannot be read or whose build
+cannot be loaded fails the same way with the actual cause, which rebuilding
+may not fix. Nothing compiles at install time or at run time, and browser,
+server, and desktop builds never load the addon or need a compiler.
+
 ## The handle
 
 | Member | Contract |
 | --- | --- |
-| `tables.<name>` | Rows at `<name>/<stem>.md`. A snapshot is the captured file: its path, literal `stem`, exact whole-file `text`, and `sha256`, beside how that text reads: `fields`, `body`, `parseError`, and `issues`. `get(stem)` returns `undefined` only for absence. `list()` returns one `{ path, result }` for every row file. `create` is exclusive. `update`, `replace`, `rename`, and `delete` address the row by stem and take required options: `{}` acts on the current row, and `{ expectedSha256 }` is refused as `Conflict` when the bytes differ. `update(stem, change, options)` reads the current text once and conditionally publishes without retry. Interpreting text is `inspectRow(definition.tables.<name>, text)`, which needs no open folder. Each changes exactly one Markdown file. `edit(stem, { signal })` opens a retained canonical editor whose `save()` overwrites the complete row. See [Reading a row](#reading-a-row) and [Editing a row](#editing-a-row). |
+| `tables.<name>` | Rows at `<name>/<stem>.md`. A snapshot is the captured file: its path, literal `stem`, exact whole-file `text`, and `sha256`, beside how that text reads: `fields`, `body`, `parseError`, and `issues`. `get(stem)` returns `undefined` only for absence. `list()` returns one `{ path, result }` for every row file. `create` is exclusive. `update`, `replace`, `rename`, and `delete` address the row by stem and take required options: `{}` acts on the current row, and `{ expectedSha256 }` is refused as `Conflict` when the bytes differ. `update(stem, change, options)` reads the current text once and conditionally publishes without retry. Interpreting text is `inspectRow(definition.tables.<name>, text)`, which needs no open folder. Each changes exactly one Markdown file. `edit(stem, { signal })` opens a retained canonical editor whose setters submit complete rows. See [Reading a row](#reading-a-row) and [Editing a row](#editing-a-row). |
 | `kv` | Root `kv.json`, a sparse map of declared values. A snapshot is a text capture: `path`, exact `text`, and `sha256`, beside the stored `values` that validated, `parseError`, and `issues`. `get()` returns `undefined` only for absence; readable text that is not a JSON object is a snapshot with a `parseError`. `inspect(text)` interprets text without reading anything. `create(values)` saves a new file from the supplied values and refuses with `Exists` when one is there. `update(values)` reads the current text once, assigns the supplied keys, and conditionally publishes without retry; a missing file is `NotFound`. An update changes only the values it assigns: unknown keys, number spellings, and formatting stay exact. See [Reading and saving kv.json](#reading-and-saving-kvjson). |
 | `files` | Ordinary files at literal paths. See below. |
 | `git` | A status snapshot, `status()`, `commit()`, `commitAndPush()`, `push()`, `fetch()`, `pullFastForward()`, `mergeIncoming()` and `mergeUnsupported`, `recoverIncoming()`, and `paths()`, `stage()`, `commitStaged(message)`, `diff()`, `log()`. |
@@ -294,6 +315,31 @@ file at its path or source: a `replace` never creates a file and is never sent
 as an `overwrite`, and a move's destination must be empty. Browser OPFS, the
 Bun directory, and the desktop owner enforce this where they publish. There
 is no sentinel union mixing hashes with `'absent'` or `'any'`.
+
+A `replace` requires its file when its bytes land, not only at a check
+before, so a file another program removes is never put back: the save is
+`NotFound`, or `Conflict` with no actual hash when guarded. The Bun directory
+and the desktop owner exchange a staged file with the file in one system call
+on macOS and Linux (and, for the desktop owner, iOS and Android), and a
+filesystem there that cannot exchange fails the save as `Io`. The exchange is
+the only operation on the path. If what it displaced is not a regular file,
+or cannot be inspected, it stays where the exchange left it under
+`.git/epicenter/scratch`: the save landed, and is reported as `Unconfirmed`
+(a raw batch reports `Partial`) with a message that names that location.
+Inspect the file, and anything written to it since, before restoring from
+it. On Windows, and any other platform without an exchange, the Bun
+directory and the desktop owner have no `replace` until a mechanism that
+requires the file at publication is proven: the save is `Io` naming the
+platform, the staged copy is removed, and this operation does not change the
+destination. The caller keeps its input to copy or export; nothing retries.
+Creation, reads, overwrites, moves, and removals are unchanged by this repair;
+none is verified on Windows. Replace-based native suites are expected to fail
+there with `Io`. The desktop owner has not been built for Windows. Browser folders, in any browser on any
+operating system, are unaffected. OPFS opens the file without creating it
+and checks again once its writable stream holds the lock that, in Chromium,
+refuses removing the file or a directory above it; a Chrome 142 probe showed
+that, and other engines are unverified. Bytes another program writes in that
+last window are still replaced: the hash check stays best effort.
 
 `list()` inventories the whole folder; `children(directory)` lists one level
 and accepts `''` for the root. `open(path)` returns a stable `Blob` for
@@ -424,6 +470,94 @@ A reading leaves out every key the table does not declare and every field
 that did not conform, so serializing a reading is not a rewrite of the file
 it came from. Change an existing row with `update`, with `patchRowText` on its
 exact text, or with `replace` of edited text.
+
+### Complete-document editing
+
+`parseCanonicalDocument(text)` and `formatCanonicalDocument(document, declaredKeys)`
+are synchronous codecs with no storage or editor lifecycle. A
+`CanonicalDocument` contains every frontmatter field and the plain Markdown
+body. Unknown fields and representable values that fail the table's schema
+remain in the document. Schema validation belongs to `inspectRow`.
+
+A form that owns a row's complete input uses `table.edit`, which applies these
+codecs and the coordination below; see [Editing a row](#editing-a-row). Use
+the codecs directly for a complete-row command outside an editor, such as a
+script that rewrites a row canonically: read a snapshot, parse its exact
+`text`, change a copy of `fields` or the `body`, format it, and replace the
+file on the condition that it still holds the bytes read:
+
+```ts
+import {
+  formatCanonicalDocument,
+  parseCanonicalDocument,
+} from '@epicenter/folder';
+
+// Reuse this order for every draft and disk observation of this table.
+const declaredKeys = Object.keys(definition.tables.todos.fields);
+const { data: document, error: refusal } = parseCanonicalDocument(snapshot.text);
+if (refusal !== null) return showRawText(snapshot.text, refusal.reason);
+
+const next = {
+  ...document,
+  fields: { ...document.fields, done: true },
+};
+const { data: text, error: formatError } = formatCanonicalDocument(next, declaredKeys);
+if (formatError !== null) return show(formatError.reason);
+
+const { error: saveError } = await folder.tables.todos.replace(snapshot.stem, text, {
+  expectedSha256: snapshot.sha256,
+});
+if (saveError !== null) show(saveError.message); // Conflict: the row changed since the read
+```
+
+Canonical formatting quotes keys, fixes field order and normalizes YAML
+presentation, including removing frontmatter comments and the byte-order mark,
+and using LF in the header. The codec preserves the supplied body exactly.
+The first canonical save can therefore reformat a file created with `create`.
+A successful format does not mean the fields conform: for example, a string
+in a boolean field still formats and saves through `replace`.
+To remove a field, omit its key from the copied object; `undefined` has no
+canonical form. To compare two documents, format both with the same key
+order. Comparing canonical text with original text would mistake
+presentation differences for edits.
+
+Malformed YAML and values without an exact supported representation return a
+`CanonicalRefusal` (`reason`, `path`). A file may pass `inspectRow` and still
+have no canonical form. Keep its original text accessible and repair it with
+raw `replace`; never rebuild it from the partial fields inspection returned.
+
+`{ expectedSha256: snapshot.sha256 }` refuses external edits made since the
+snapshot as `Conflict`; `{}` replaces whatever row is there. A caller that
+keeps its input across saves chooses the guard by the bytes that input was
+reconciled with: the snapshot's hash, a later read's, or the last successful
+receipt's. After `Unconfirmed` there is no receipt to advance to; reread
+before choosing the next guarded save. `replace` requires an existing row and
+never creates one; [Files](#files) gives each platform's guarantee and its
+open defect. Missing files remain a visible outcome. To restore text on
+purpose, use `files.create(rowPath('todos', snapshot.stem), text)`.
+
+```text
+file --get--> exact text --parse--> complete fields + Markdown body --> UI
+                                      ^                            |
+                                      +---------- input -----------+
+                                      |
+                                    format --> text --replace--> file
+file-change hint --> reread --> app decides whether to adopt
+```
+
+An application that keeps complete input outside `table.edit` owns the
+coordination the editor otherwise provides; the codecs and file methods
+enforce no UI lifecycle. Change notifications are hints to reread,
+not new content. Subscribe before the initial read and prevent an older read
+from replacing newer input or observations. Drop or rerun a read that began
+before the latest local save settled.
+For eager autosave, serialize the application's writes: keep one in flight
+and at most one pending latest document. Rereading never triggers a save by
+itself. Adopting disk content discards pending drafts from before adoption;
+let already admitted writes settle, then reread before adopting. An
+`Unconfirmed` write remains uncertain: a read does not cancel it or prove it
+failed. The application chooses when its local save chain yields to disk.
+See [Hints](#hints) for each adapter's observation coverage.
 
 ### Names
 
@@ -643,119 +777,218 @@ the same moment can still race it.
 
 ### Editing a row
 
-The section below describes the current implementation. The agreed replacement
-is recorded in [Complete-row editing](../../docs/adr/0504-row-editors-own-complete-input-and-one-publication-queue.md)
-and its [execution plan](../../specs/20261005T015758-complete-row-editing.md).
-That target has complete setters, one structured/raw queue, a row eligibility
-union with text/fields/body directly on its valid variant, and tracked Svelte
-getters. Invalid exposes text/error; unreadable exposes only error. The target
-is not available in this implementation.
-
-`tables.<name>.edit(stem, { signal })` opens a retained editor on one row. The
-table supplies the row's path, schema, and declared field order. The editor
-holds a local draft, the baseline it compares the draft against, and the latest
-read. Its `save()` writes the complete draft in one canonical form, whatever
-the file holds.
+`tables.<name>.edit(stem, { signal })` acquires an editor fixed to one row.
+The table supplies the row's path, schema, and declared field order. The
+editor holds the row's accepted complete input and one queue that publishes
+it, for structured and raw input alike. [Complete-row editing](../../docs/adr/0504-row-editors-own-complete-input-and-one-publication-queue.md)
+records the decision. Applications move to this editor in a coordinated
+caller cutover; [the execution evidence](evidence/complete-row-editing.md)
+tracks it.
 
 ```ts
 const { data: editor, error } = await folder.tables.todos.edit(stem, { signal });
-if (error !== null) {
-  switch (error.name) {
-    case 'Aborted':
-      return;                                  // nothing stays subscribed
-    case 'NotFound':
-      return showMissing(error.path);
-    case 'NoCanonicalForm':
-    case 'InvalidSource':
-      return showRepair(error.file);           // exact text and SHA-256 for raw repair
-    default:
-      return showUnreadable(error);
-  }
+if (error !== null) return showOpenError(error);   // Aborted, NotFound, InvalidUtf8, Io, ...
+const { get, subscribe, set, setText, retry, flush, reload } = editor;
+
+const stop = subscribe(() => render(get()));          // no initial call: subscribe, then read
+render(get());
+
+const { row } = get();
+if (row.status === 'valid') {
+  const { error: setError } = set({ fields: { ...row.fields, title: 'Plan B' }, body: row.body });
+  if (setError !== null) show(setError.message);     // Unrepresentable: nothing was accepted
 }
-const { get, subscribe, change, save, refresh, adopt, dispose } = editor;
-
-const stop = subscribe((state) => render(state)); // the current state now, then changes
-const { error: changeError } = change({ fields: { title: 'Plan B', priority: undefined } }); // `undefined` removes a field
-if (changeError !== null) return show(changeError.message);   // nothing changed, so nothing to save
-const { error: saveError } = await save();
-if (saveError !== null) return show(saveError.message);       // the draft is kept
+setText(repairedText);                                // raw input joins the same queue
+retry();                                              // resume a failed chain with the latest input
+const { error: saveError } = await flush();           // wait for the running chain; never retries
+const { error: reloadError } = await reload();        // adopt the file's text, discarding input
 ```
-
-Every method closes over the editor and never reads `this`, so destructured
-methods behave like `editor.save()`. One form owns the editor and shares it
-among its views; each view subscribes on its own and stops with its own
-function. Only `dispose()` stops watching.
 
 ```text
-state
-|-- baseline: RowRevision     what isDirty compares against
-|-- document, text            local fields and body; text is the canonical text save writes
-|-- reading                   how text reads: issues make save refuse
-|-- isDirty                   text differs from baseline.canonical
-|-- observation               latest read: present | missing | unreadable | unsupported | invalid
-|-- saving: RowSaveAttempt    captured document while a save is admitted
-|-- lastSave                  saved{receipt} | unconfirmed{attempt} | failed{attempt}
-`-- isDisposed
-
-RowRevision    = { path, sha256, text (exact whole file), document, canonical }
-RowSaveAttempt = { path, document, text (canonical text sent) }    no hash: not a capture
+get(): { row, save }        one frozen snapshot, the same object until a part changes
+row                         the latest accepted input, always shown
+|-- valid       { text, fields, body }   the complete parse of text, unknown metadata included
+`-- invalid     { text, error }          Unencodable | NoCanonicalForm | Nonconforming
+save
+|-- idle
+|-- saving                               from admission until the chain settles
+`-- failed      { error }                FileError (Unconfirmed may have landed) | Unencodable
 ```
 
-- Opening. `edit` subscribes to `onFilesChanged` before its single read, so
-  a change during opening becomes a reread. It opens only a file that has a
-  canonical form and whose declared fields conform. `NoCanonicalForm` (a
-  custom tag, a timestamp, an unsafe integer) and `InvalidSource` carry the
-  exact text. `signal` governs opening only.
+- Acquisition. `edit` reads the row once. Readable text opens whether or not
+  it conforms, so malformed or schema-invalid text is repaired through the
+  same owner. A missing row is `NotFound`; an unreadable or non-UTF-8 file,
+  an address the folder does not admit, and an aborted `signal` open
+  nothing. `signal` governs acquisition only. There is no disposal.
+- Input. `set` takes a complete row: every field to keep and the body. It
+  reads only `fields` and `body`, so a valid row can be spread back with
+  changes. Omitted keys are deleted; nothing is merged from disk or earlier
+  input. It formats before returning, so later changes to the caller's
+  objects change nothing held or queued. Schema-invalid values are accepted
+  and saved; a value with no canonical form, such as `NaN`, is
+  `Unrepresentable` and accepts nothing. `setText` accepts raw text exactly,
+  malformed frontmatter included. Either way the accepted text is the row
+  snapshot before the setter returns.
 - Canonical form. Declared keys come first in declared order, other keys in
-  code unit order, every key quoted and every value in JSON flow style. Unknown
-  keys and nested values are kept; comments, quoting, and header line endings
-  are not. The body is kept byte for byte. Opening a differently formatted
-  file is clean, so opening writes nothing.
-- Local input. `change` names declared fields only, so a misspelled or unknown
-  key does not compile. Values are any canonical value, because a draft must
-  hold what the schema rejects; `reading` shows the issues and `save` refuses
-  with `InvalidDocument`, writing nothing. A value with no canonical form,
-  such as `NaN`, is refused as `Unrepresentable`. Editing unknown metadata or
-  text with no canonical form is a raw repair through `files.overwrite` or
-  `table.replace`.
-- Saves. One save is admitted at a time and captures the draft when `save()`
-  is called. It is one `overwrite` of the row's path, with no baseline
-  condition: a write by another program that lands first is replaced. Input
-  during a save stays dirty against the receipt. A clean draft is saved too;
-  an autosave that only wants unsaved work checks `isDirty` itself. Nothing
-  retries or queues. Storage that throws is a bug: the save is released,
-  nothing is recorded, and the throw reaches `save()` and `dispose()`.
-- Reads. Hints for the row's path request a reread; `refresh()` requests one
-  explicitly. A clean editor follows a valid read. A read never resets dirty
-  input, and a missing, unreadable, unsupported, or invalid read only updates
-  `observation`. A read that started before a save settled is dropped and run
-  again, so an older read cannot revert a receipt.
-- Unknown outcomes. `Unconfirmed` stays in `lastSave`. A later read whose
-  canonical content equals the draft makes `isDirty` false, because the file
-  holds that content, but never upgrades `lastSave`: the read cannot say
-  which writer put it there.
-- Review. `adopt(reviewed)` takes the latest read's content in place of the
-  draft while its canonical text is still the reviewed one; it reads only
-  `path` and `canonical` from what it is given. Different content is `Stale`
-  with the newer observation. "Keep mine" is `save()`.
-- Subscription. A listener gets the current state at once, then each change.
-  Delivery is never reentrant, and reentrant changes may coalesce: this is a
-  current-state subscription, not an event log. What a listener throws is
-  logged and reaches no operation or other listener.
-- Disposal. `dispose()` stops watching and refuses input, reads, saves, and
-  adoptions. An admitted save still settles into `lastSave`, and the returned
-  promise settles after it. Repeated calls return the same promise. Closing
-  the folder does not dispose an editor: its reads observe `Closed`, and a
-  save fails with `Closed` and keeps the draft.
+  code unit order, every key quoted and every value in JSON flow style.
+  Unknown keys and nested values are kept; comments, quoting, and header line
+  endings are not. The body is kept exactly. Acquisition and reload never
+  write.
+- Publication. One write runs at a time, and the latest input accepted while
+  it runs follows it; input a newer setter replaced first is never
+  submitted. A running write is never cancelled, and its receipt never
+  replaces newer input. Each write is an unguarded `replace` of the existing
+  row: independent writers are last-publication-wins. A deletion before
+  publication yields `NotFound` without recreating the row, where storage
+  holds `replace` to that: [Files](#files) names each platform's guarantee
+  and native replacement being unavailable on Windows.
+- Failure. A failed or `Unconfirmed` write pauses the chain. Newer input,
+  including typing after the failure, is accepted and shown but not
+  attempted until `retry()`, which writes the latest input as a new attempt,
+  even when it is the text that failed. `Unconfirmed` may have landed:
+  present it as uncertainty; no later read confirms it. Raw text with a lone
+  surrogate is held as invalid and fails its turn with `Unencodable` rather
+  than writing lossy bytes.
+- `flush()` waits for the running chain, including input admitted while it
+  runs, and returns `Ok` when it ends idle or its error when it ends failed.
+  When the chain is already failed it returns that error at once. It never
+  starts a write.
+- `reload()` is the only read after acquisition. It waits for the running
+  chain to settle, failed or not, then reads the row. On success the file's
+  text becomes the row and `save` becomes `idle`: retained input and its
+  failure are discarded on purpose. A failed read is its `TableReadError` and
+  changes nothing: the row stays visible and editable. Input accepted, or a
+  `retry` admitted, after the call makes it `InputChanged`, and the newer
+  input stands. When reloads overlap, the latest call decides and the earlier
+  ones settle with its result. Discarding a held `Unconfirmed` failure does
+  not confirm or cancel that earlier write; `idle` describes the new local
+  chain only.
+- Subscription. `subscribe(invalidate)` makes no initial call. It hears
+  changes to the snapshot in memory only: subscribing reads nothing and
+  watches no change hints, and the editor never follows the file by itself.
+  Delivery is never reentrant, and what a listener throws is logged and
+  reaches no operation or other listener.
+- Retention. Methods close over the editor and never read `this`, so they
+  can be destructured or passed as handlers. The application keeps the owner
+  through pending or failed publication. Before closing the folder or moving
+  the row, it stops input and awaits `flush()`; on failure it retries,
+  reloads, or releases the owner.
 
 `table.update` and `table.replace` keep their own conditional,
-text-preserving contracts; the editor is a separate save shape for forms
-that own a complete draft. `TableEditError` is the opening error union;
-`RowChangeError`, `RowSaveError`, and `RowAdoptError` are the editor's.
+text-preserving contracts; the editor is the save shape for forms that own
+complete input. `TableEditError` is the acquisition error union; `RowError`,
+`RowSetError`, `RowSaveError`, and `RowReloadError` are the editor's.
 
-`bun packages/folder/evidence/edit-handle/canonical-dev.ts` serves a page
-where vanilla DOM, Solid, and Svelte 5 views share one editor over a
-persisted browser folder; see `evidence/edit-handle/canonical-callers.md`.
+`evidence/edit-handle/canonical-web` shows this contract from vanilla DOM,
+Solid, and Svelte views of one editor, with an owner that leaves a row only
+after its saves settle; `evidence/edit-handle/canonical-callers.md` describes
+it. The rest of `evidence/edit-handle/` is an earlier, historical editor.
+
+### Editing a row in Svelte
+
+`@epicenter/folder/svelte` exports `fromRowEditor` and `ReactiveRowEditor`
+over the row editor's `get`, `subscribe`, `set`, `setText`, `retry`, `flush`,
+and `reload`.
+Svelte 5.9 or later is an optional peer; no other entry loads it.
+
+```svelte
+<script lang="ts">
+  import { withFileNewlines } from '@epicenter/folder/file-browser';
+  import { fromRowEditor } from '@epicenter/folder/svelte';
+
+  let { rowEditor } = $props();                  // retained above this view
+  const editor = $derived(fromRowEditor(rowEditor));
+  let rawMode = $state(false);
+  const lf = (text: string) => text.replace(/\r\n?/g, '\n'); // what textareas report
+
+  function title() {
+    const row = editor.row;
+    return row.status === 'valid' ? row.fields.title : '';
+  }
+  function setTitle(title: string) {
+    const row = editor.row;
+    if (row.status !== 'valid' || rawMode) return; // only while the fields view exists
+    const { error } = editor.set({ fields: { ...row.fields, title }, body: row.body });
+    if (error !== null) showRefusal(error);      // nothing was accepted
+  }
+  function text() {
+    return lf(editor.row.text);
+  }
+  function setText(next: string) {
+    const row = editor.row;
+    // Only while the raw view exists: invalid, or valid in raw mode.
+    if (row.status === 'valid' && !rawMode) return;
+    rawMode = true;
+    editor.setText(withFileNewlines(next, row.text));
+  }
+  async function reload() {
+    const { error } = await editor.reload();
+    if (error !== null) showReloadFailure(error); // the row and its save state stay
+  }
+</script>
+
+{#if editor.save.status === 'failed'}
+  <SaveFailure error={editor.save.error} />
+  <button onclick={editor.retry}>Retry</button>
+{/if}
+{#if editor.row.status === 'invalid' || rawMode}
+  <textarea aria-label="Markdown source" bind:value={text, setText}></textarea>
+{:else}
+  <input aria-label="Title" bind:value={title, setTitle} />
+{/if}
+<button onclick={reload}>Reload</button>
+```
+
+- Reads. `row` and `save` return the owner's current `get()` parts every
+  time; the wrapper copies nothing. A read inside an effect, or inside a
+  derived an effect reads, also subscribes through one `createSubscriber` to
+  the owner's in-memory snapshot; the subscription ends a microtask after
+  the last reading effect is destroyed. Subscribing reads no file and
+  watches nothing. Reads outside any effect or derived subscribe to nothing.
+  Read the native `rowEditor.get()` imperatively for nonreactive work. A
+  destructured `row` is a snapshot, not a tracked read.
+- Commands. `set`, `setText`, `retry`, `flush`, and `reload` are the owner's
+  own functions, safe to pass as handlers. Adapting the same owner again
+  returns the same wrapper. Switching a view to another owner ends the
+  subscription to the first; its admitted writes finish.
+- Binding guards are caller code. Each binding guards both directions against
+  its own view's gate: getters narrow `row`, and setters return unless the
+  row still supports their view. A leaving view keeps its input listener:
+  Svelte pauses an outroing view's effects rather than destroying them and
+  marks it `inert`. Ordinary typing stops in a browser, but a committing IME
+  composition, assistive technology, script, or a form reset can still
+  deliver input, and an unguarded setter then replaces the whole row. A
+  destroyed view keeps them too: Svelte never removes the listeners its
+  bindings add to an element, so a control something still holds can call a
+  setter after the view unmounts, with or without an outro. Where that
+  matters, a setter can also check a flag cleared in `onDestroy`, as the
+  callers page in `evidence/edit-handle/canonical-web` does. The adapter and
+  the native setters guard nothing.
+- Forms. Live-bound fields do not belong in a resettable form: a reset submits
+  each field's `defaultValue` through its setter. An application draft can
+  own reset instead.
+- Newlines. Textareas report LF. Getters normalize CRLF to LF, so Svelte never
+  sees a mismatch and rewrites the field; setters restore the file's
+  convention with `withFileNewlines`, for raw text and for body text,
+  trailing newlines included. A structured `set` writes the header in LF and
+  keeps the body's line endings. A raw setter whose reference text has any
+  CRLF writes CRLF on every line, header included, so a header a structured
+  save wrote in LF turns CRLF after a raw edit and LF again after the next
+  structured save. Text with mixed line endings comes back uniform from any
+  textarea edit; the textarea cannot report which line had which.
+- Refusal. A refused `set` accepts nothing. Where a control can hold input
+  the codec refuses, retain that field locally for correction. Ordinary row
+  bindings submit immediately to the owner and need no second whole-row draft.
+- Lifetime. Unmounting ends the subscription only. Admitted writes, a failed
+  save, and retained input belong to the owner, so keep it above conditional
+  views.
+
+`src/svelte/row-editor.svelte.test.ts` mounts compiled fixtures in jsdom over
+a real `table.edit` owner. It covers tracking, bindings, conditional views,
+and subscription lifetimes, not layout, focus, selection, IME, or storage
+latency. It dispatches input on leaving views directly, which jsdom permits
+because it implements no `inert`: that shows what a delivered event does, not
+that a person can type there.
 
 ### Reading and saving kv.json
 
@@ -859,8 +1092,9 @@ content independently. A checkbox can submit immediately and display confirmed
 data until success. A title input can bind to local state and save on blur,
 debounce, or an explicit action. A document can keep a complete-source buffer.
 The folder requires no timer, UI binding, or shared editor controller. A form
-that owns a complete draft of one row can use `table.edit`, which retains the
-draft and saves it unconditionally; see [Editing a row](#editing-a-row).
+that owns one row's complete input can use `table.edit`, which accepts each
+input at once and publishes it in order over the existing row; see
+[Editing a row](#editing-a-row).
 
 An application may replace local input whenever it reads external content,
 refresh only while clean, or keep its local draft. Following external content
@@ -1185,21 +1419,28 @@ dangle.
 | `src/index.ts`, `browser.ts`, `tauri.ts`, `bun.ts` | The entries. |
 | `src/browser-adapter.ts`, `tauri-adapter.ts` | The adapters the automatic entry loads lazily. The browser adapter also decides which OPFS directory is the folder. |
 | `src/folder.ts`, `table.ts`, `kv.ts`, `markdown.ts` | The handle and its interpretation of files, shared by every adapter. |
-| `src/editor.ts`, `canonical.ts` | The row editor `table.edit` opens, and the canonical document codec it holds and saves. |
+| `src/editor.ts`, `canonical.ts` | The optional row editor `table.edit` opens, and the public complete-document codec usable independently of it. |
+| `src/svelte/` | `@epicenter/folder/svelte`: tracked reads over a row editor, and its mounted jsdom tests and fixtures. The only code that loads Svelte. |
 | `src/reading.ts` | The diagnostics a table and KV reading share: `ParseError`, `FieldIssue`, `DeepReadonly`, and the ownership every checked value has: parsed values frozen and supplied values copied before a field sees them. |
 | `src/opfs-store.ts`, `git/opfs-git.ts`, `git/browser-backend.ts` | OPFS storage, private `.git`, and isomorphic-git. |
 | `src/native-store.ts`, `git/native-*.ts` | The directory entry's files and `git` program. "Native" here means an ordinary directory in Bun, not the desktop shell. |
+| `src/native-exchange.ts`, `addon/exchange.c`, `scripts/build-addon.ts` | The directory entry's atomic exchange for replacements: the Node-API addon, its loader and errno mapping, and the script that builds it. |
 | `src/native/bindings.gen.ts` | Commands and events generated from the `tauri-plugin-epicenter-folder` crate. Internal. Do not edit. |
-| `evidence/` | Tests that build real bundles and read real import closures, and `evidence/opfs`, a page that runs the browser checks in a real browser. |
+| `evidence/` | Tests that build real bundles and read real import closures; `evidence/opfs`, a page that runs the browser checks in a real browser; and `evidence/edit-handle/canonical-web`, vanilla, Solid, and Svelte callers of one row editor. The rest of `evidence/edit-handle` is historical. |
 
 ## Commands
 
 ```sh
-bun test --isolate        # everything except the real desktop owner and a real browser
-bun run typecheck
+bun run test              # build the addon, then native/core and mounted Svelte tests
+bun run build:addon       # compile the Bun directory's exchange addon
+bun run test:svelte       # only the mounted Svelte tests; they need --conditions=browser
+bun run bench             # per-keystroke acceptance cost, natively and through Svelte bindings
+bun run typecheck         # svelte-check: TypeScript and the .svelte test fixtures
+
 EPICENTER_FOLDER_BRIDGE=1 bun test --isolate src/tauri-native.test.ts   # against the Rust owner
 bun evidence/bundles/inspect.ts main tauri   # print the chunks a build emits
 bun evidence/opfs/serve.ts   # the OPFS page on 127.0.0.1:5181; --build only compiles it
+bun evidence/edit-handle/canonical-dev.ts   # the row editor callers page on localhost:5181
 ```
 
 The browser suites run on an in-memory OPFS stand-in

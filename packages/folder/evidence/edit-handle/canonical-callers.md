@@ -3,16 +3,21 @@
 Status: evidence page for the production row editor. It opens a real,
 persisted folder with the production browser opener and edits rows with
 `folder.tables.todos.edit`, from vanilla DOM, Solid, and Svelte 5 callers.
-The page is not part of `@epicenter/folder`; the wave 4 page in `web/` is
-unrelated and unchanged.
+The page is not part of `@epicenter/folder`; the wave 4 page in `web/` is a
+separate, historical experiment.
+
+The contract is "Editing a row" and "Editing a row in Svelte" in the package
+README, and [ADR 0504](../../../../docs/adr/0504-row-editors-own-complete-input-and-one-publication-queue.md)
+records the decision. This page shows callers of that contract; it adds no
+API of its own.
 
 ## Question under test
 
-Can one row editor, opened and disposed by its owner, serve three framework
-views through their native subscription primitives over the folder a real
-application gets? And do its baseline, observation, and save outcome stay
-honest when the file is reformatted, changed in another tab, removed, or
-cannot be opened as a form?
+Can one row editor, kept by its owner, serve three framework views through
+their native primitives over the folder a real application gets, with each
+input saved as the complete row? And do the views stay honest when the row
+becomes invalid, when the file is changed, removed, or made again by another
+caller, and when the owner leaves a row whose last save failed?
 
 ## Run it
 
@@ -33,11 +38,15 @@ OPFS directory. When the default backend changes, the page follows it
 without changes of its own.
 
 Storage belongs to the page's origin. Keep the same host and port to see the
-same files across reloads and tabs. Clearing site data for the origin removes
-the folder.
+same files across reloads and tabs: `localhost` and `127.0.0.1` are different
+origins. Clearing site data for the origin removes the folder.
 
 `dist-canonical/` is build output. The root `.gitignore` does not cover it, so
 delete it rather than staging it.
+
+The Svelte view imports the package's adapter from `src/svelte`. The Svelte
+Vite plugin dedupes `svelte`, so the adapter and the panel share this
+directory's Svelte runtime; a second copy would track nothing.
 
 ## What the page writes
 
@@ -47,55 +56,124 @@ delete it rather than staging it.
   is logged as occupied and left as it is; nothing overwrites it. Any other
   failure stops seeding at that path, and the rows created before it stay.
   A folder that has rows is never written on load, so a removed seed row
-  stays removed.
-- Opening a row never writes. A hand-formatted file stays byte for byte until
-  a person saves.
-- Saves come only from the editor's `save()` and from explicit raw actions:
-  the repair panel's overwrite and the raw file panel's writes, all through
-  `folder.files`.
+  stays removed. `crlf.md` joined the seed rows later: a folder seeded before
+  it gets it from Reset.
+- Acquiring an editor never writes. A hand-formatted file stays byte for byte
+  until a person edits it.
+- The editor writes each accepted input. Every write replaces the existing
+  row; none creates it.
+- The "Another caller" panel writes through `folder.files`, each write
+  conditional on the bytes it just read. Only "Write the seed text" creates
+  a missing file, as an explicit command.
 - "Reset the demo rows…" is a workflow for this disposable folder only. It
-  asks first, then calls `files.overwrite` for each seed row and
-  `files.remove` for `todos/gone.md` against the bytes it just read, one file
-  at a time. Other tabs hear each write. The first failure stops the reset:
-  the writes before it stay, and the events log names each completed write
-  and the path where it stopped. Replaced text is not guaranteed to be kept.
-  Automatic commits are best effort, so "Show recent commits" lists only the
-  versions history recorded.
+  asks first, releases the open editor as Close does, then calls
+  `files.overwrite` for each seed row and `files.remove` for `todos/gone.md`
+  against the bytes it just read, one file at a time. Other tabs hear each
+  write. The first failure stops the reset: the writes before it stay, and
+  the events log names each completed write and the path where it stopped.
+  Replaced text is not guaranteed to be kept. Automatic commits are best
+  effort, so "Show recent commits" lists only the versions history recorded.
 
-Nothing on the page simulates a fault. A held, lost, or throwing save reply,
-and a slow read during opening, are unit-test conditions in
-`src/editor.test.ts`, whose storage fake can hold reads and replies.
+Nothing on the page simulates a fault. A held, lost, or throwing write, a
+slow read during acquisition, and a removal that lands between an input and
+its write are unit-test conditions in `src/editor.test.ts`. The OPFS
+acceptance page (`../opfs/`) checks the removal against real browser storage.
 
 ## Call sites
 
-The owner (`canonical-web/main.tsx`) opens with a signal and checks the
-Result before it uses the editor:
+The owner (`canonical-web/main.tsx`) acquires as the last step of a
+transition, with a signal another request can abort, and checks the Result
+before it keeps the editor:
 
 ```ts
-const { data: next, error } = await folder.tables.todos.edit(stem, {
+const controller = new AbortController();
+step.acquiring = controller; // a request during this transition aborts it
+const { data: editor, error } = await folder.tables.todos.edit(stem, {
 	signal: controller.signal,
 });
-if (controller.signal.aborted) {
-	if (error === null) void next.dispose(); // opened after it was superseded
-	return;
-}
-if (error !== null) return mountRepair(slot('repair'), { error, path, files: folder.files, reopen });
+step.acquiring = undefined;
+if (error !== null) return showDiagnostic(error); // Aborted, NotFound, InvalidUtf8, InvalidPath, Io; no editor
+owner = { stem, editor, views: { vanilla: { raw: false }, solid: { raw: false }, svelte: { raw: false } } };
+showViews(owner);
 ```
+
+Text that does not conform, or has no canonical form, still opens: the row is
+`invalid`, and the same editor repairs it through its source view. A missing
+file opens nothing, and nothing on the page creates it on acquisition.
 
 Views destructure the methods they call; none reads `this`:
 
 | Caller | Subscription | Unmount |
 | --- | --- | --- |
-| `vanilla.ts` | `const unsubscribe = subscribe(render)` | `unsubscribe()` |
-| `SolidPanel.tsx` | `from({ subscribe }, get())` | Solid owner cleanup |
-| `SveltePanel.svelte` | `createSubscriber((update) => subscribe(update))` read with `get()` in a `$derived` | Svelte stops the subscriber when no effect reads it |
+| `vanilla.ts` | `const stop = subscribe(render); render()`: no initial call, so it renders `get()` itself | `stop()` |
+| `SolidPanel.tsx` | `from((publish) => subscribe(() => publish(() => get())), get())` | Solid owner cleanup |
+| `SveltePanel.svelte` | `fromRowEditor(rowEditor)` from `@epicenter/folder/svelte`; `editor.row` and `editor.save` read in the template | Svelte ends the subscription with the component |
+| `status.ts` | `subscribe(render); render()` | `stop()` |
 
-Every control calls `change`. Removing a field passes `undefined`. A refused
-change is repainted from `get()`. Each view's Save button calls `save()`.
-The status panel (`status.ts`) calls `refresh` and `adopt`, and its
-subscription probe shows that the first call is the current state and later
-calls are changes. Unsubscribing the probe stops only the probe. Only the
-owner calls `dispose`, on Close, Reset, or before opening another row.
+Solid's `from` has a `{ subscribe }` form, but it publishes the value its
+listener is called with, and the editor's `invalidate` is called with none.
+The setter form publishes `get()` at creation and after each invalidation.
+
+Every structured handler reads the latest row with `get()` (the Svelte
+setters read `editor.row`) and calls `set` with the complete row: every field
+to keep and the body. Removing the priority omits its key. A view's handler
+returns unless the row still supports that view: structured controls only
+while the row is valid and shown as fields, the source only while it is
+shown. A refused `set` accepts nothing; vanilla and
+Solid put the control back from `get()`, and a Svelte binding shows the
+accepted value again. Textareas show LF; setters restore the file's line
+endings with `withFileNewlines`, for the body and for the source. A
+structured save writes the header in LF and keeps the body's endings. The
+source setter writes CRLF on every line when the text has any CRLF, header
+included, so the header's endings follow whichever kind of edit came last.
+Mixed endings come back uniform from any textarea edit.
+
+Every input handler, in vanilla, Solid, Svelte, and the status panel, also
+returns once its view has unmounted: the controls are detached then, but a
+retained element can still receive an event from script or assistive
+technology. Svelte's `unmount` removes the view at once even with no
+transition, yet the listeners its bindings add to an element are never
+removed (`listen_to_event_and_reset_event` in the installed Svelte), so the
+Svelte setters check an `onDestroy` flag. A detached status retry or reload
+would otherwise change input the owner is discarding, and a detached probe
+would subscribe again.
+
+Each view keeps its own choice of fields or source in its own object, which
+the owner holds per editor. A view mounted again starts where it left off,
+and no view reads another's choice.
+
+The status panel shows the row, the save state, and the exact accepted text.
+"Read the file again" calls `reload`: the file's text replaces the input and
+clears a failed save, unless the read fails or the input changed while it
+read, and the events log says which. After a failed save it offers "Save
+this text again", which calls `retry`: a new attempt with the latest input.
+Nothing else resumes a failed chain; typing after the failure is kept and
+shown but not written. Its subscription probe shows that `subscribe` makes
+no initial call.
+
+### Leaving a row
+
+The page keeps the editor; nothing disposes it. Close, Open, choosing another
+row, and Reset are transitions. One runs at a time, from leaving the current
+row to its last step, such as Reset's writes and the acquisition after them.
+A request during one is refused and logged and leaves it running. Close is
+the exception while a transition waits for `table.edit`: it cancels that
+acquisition, which leaves no editor. The row a transition opens is the one
+selected when the person asked, but the selector and the "Another caller"
+panel move to it only after the release succeeds: while a failed save waits
+for "Keep editing" or "Discard", the panel still targets the row whose input
+failed, and it names its target path. Only `open`, as a transition's last
+step after the release left no editor, installs an editor.
+
+Leaving first unmounts every view, so no control can submit input. Then the
+owner awaits `flush()`. If the chain ended failed, the page asks: "Keep
+editing" mounts the views again over the same editor and ends the
+transition, and the other choice drops the editor and its input. Opening the
+row again reads the file; nothing adopts or overwrites anything on the way.
+
+"Unmount the views" ends every view's subscription. The editor stays, and an
+admitted write still settles; mounting again renders `get()`. Nothing reads
+the file until "Read the file again".
 
 ## Browser journeys
 
@@ -103,47 +181,106 @@ The page lists these too.
 
 1. Load. `todos/plan.md` is hand-formatted: a comment, single quotes, keys
    out of declared order, and the undeclared keys `owner` and `labels`. It
-   opens with no unsaved changes and nothing is written. The status says the
-   baseline is formatted differently, and "What Save writes" shows the
-   canonical text with `owner` and `labels`.
-2. Type `A` as the title in any view. All three show `A` and the issue "must
-   not have fewer than 3 characters". Save says the draft has issues and
-   writes nothing. Type on to `ABC`; the issue clears.
-3. Save with no edits. The disk text becomes canonical, with the comment gone
-   and `owner` and `labels` kept. The draft stays clean.
-4. Reload. The row reopens from the folder with the saved text. An unsaved
-   draft lived in the page and is gone.
-5. Second tab. Open the same address in another tab. Save in one tab; the
-   other tab's clean editor follows. Type in the other tab first, then save
-   in this one: the other keeps its draft and shows "Take this version" and
-   "Keep mine: save".
-6. Raw file panel, one tab. "Same values, reformatted" while clean: the
-   editor follows, stays clean, and the baseline is formatted differently.
-   With unsaved changes, "Change the title" shows the review.
-7. Unmount the three views, change the file, mount them again: they show the
-   same draft and the latest observation.
-8. "Remove file": the latest read is "no file"; draft and baseline stay.
-   "Save my draft" writes it back.
-9. Choose `tagged`. Opening refuses, writes nothing, and the repair panel
-   shows the exact text. Remove `!person`, then press "Overwrite the file with
-   this text"; the row opens. `urgent` repairs the same way. `gone` starts
-   from a new row. "Write invalid UTF-8" makes opening refuse with no text.
-10. "Reset the demo rows…" asks, then puts the seed rows back; the other tab
-    hears it.
+   opens valid, and nothing is written. The status panel shows its exact text.
+2. Edit the title in any view. The other views follow, and each input is
+   saved: the status panel shows the canonical text, with the comment gone
+   and `owner` and `labels` kept.
+3. Select the whole title and type `A`. A one-letter title is representable,
+   so it is accepted and saved as typed. The row is now invalid
+   (`Nonconforming`), and every view shows its Markdown source with the issue.
+   Fix the title there; the row is valid again, and that view keeps the source
+   until "Edit fields".
+4. Choose "(none: remove the field)" for the priority. The key is omitted, so
+   the saved row has no priority and is invalid until it is repaired.
+5. `crlf.md`: edit the body, then the source. A body edit keeps the body's
+   CRLF and writes the header in LF; a source edit then writes CRLF on every
+   line, header included.
+6. Choose `tagged` (`NoCanonicalForm`) or `urgent` (`Nonconforming`). Each
+   opens invalid; repair it in the source view of the same editor.
+7. Choose `gone`. Acquisition returns `NotFound` and no editor. "Write the
+   seed text" under "Another caller" creates the file on purpose; then "Try
+   opening again".
+8. With a row open, "Remove the file" under "Another caller". The views keep
+   the row. Type: the save fails with `NotFound`, the file stays absent, and
+   further typing is kept but not written. "Read the file again" reports the
+   file gone and keeps the input. "Write the seed text" makes it again;
+   "Read the file again" then shows the new file and clears the failure.
+9. Unmount the views, change the file as another caller, mount them again:
+   the views render the editor's snapshot, unchanged until "Read the file
+   again".
+10. Open the same address in a second tab. Typing in one tab reaches the
+    other when it reads the file again; concurrent typing in both is
+    last-publication-wins.
+11. "Write bytes that are not UTF-8": the views keep the row, "Read the file
+    again" reports `InvalidUtf8`, and acquiring it again returns no editor.
+12. "Reset the demo rows…" asks, releases the editor, then puts the seed rows
+    back; the other tab sees them when it reads again.
 
-## Wave 6 history
+`src/editor.test.ts` and the OPFS acceptance page also cover a write that
+fails, its retained input, and a file made again afterward.
 
-Everything below was recorded in wave 6, before production integration. The
-callers then ran against the experimental wrapper
+## Files
+
+| File | Role |
+| --- | --- |
+| `canonical-dev.ts` | Vite dev server on port 5181 and the shared Vite config |
+| `canonical-build.ts` | Builds the page to `dist-canonical/` as a compile check |
+| `canonical-web/todos.ts` | Demo definition (title with `minLength: 3`), folder ID, and seed rows |
+| `canonical-web/main.tsx` | Owner: open the folder, seed an empty one, acquire with abort, show acquisition failures, mount views, leave a row, reset |
+| `canonical-web/vanilla.ts`, `SolidPanel.tsx`, `SveltePanel.svelte` | The three callers |
+| `canonical-web/status.ts` | Row, save state, exact accepted text, reload, retry, subscription probe |
+| `canonical-web/raw-files.ts` | Another caller in the same tab: conditional reads and writes through `folder.files` |
+| `canonical-web/todo-editor.ts`, `dom.ts` | Shared types, complete-row builders, newline helpers, messages, DOM helper |
+| `canonical-page.journeys.ts`, `canonical-page.test.ts` | The built page in jsdom over the in-memory OPFS: detached view and status controls do nothing, each view keeps its own mode across a remount, a held Reset refuses a competing Open, the raw panel stays on a failed row until its input is discarded, and only Close cancels a held acquisition |
+
+## Checks
+
+```sh
+bun packages/folder/evidence/edit-handle/canonical-build.ts
+bun run --cwd packages/folder/evidence/edit-handle check
+bun run --cwd packages/folder typecheck
+bun test --isolate packages/folder/src/editor.test.ts packages/folder/src/canonical.test.ts
+bun test --isolate packages/folder/evidence/edit-handle/canonical-page.test.ts
+```
+
+`canonical-page.test.ts` runs `canonical-page.journeys.ts` in its own
+process, because under `bun test --isolate` an `import()` of the page's
+entry, which uses top-level await, returns at its first await and the rest
+never runs. The journeys build the page with this directory's Vite
+configuration, run its entry in jsdom over the in-memory OPFS, and act only
+through its DOM. They show what a delivered event does; jsdom has no layout,
+focus, IME, or assistive technology, and the memory OPFS is not a browser.
+
+Browser acceptance of the current page is recorded by the integrating
+reviewer; this document records none for it yet.
+
+## History: the retired editor
+
+Everything below describes the editor this page used before ADR 0504: a
+draft with a baseline, `change`, an explicit `save` that refused
+schema-invalid drafts, `adopt`, and `dispose`. That editor no longer exists,
+and its names are not compatibility APIs.
+
+### Wave 7
+
+Wave 7 moved the editor into `src/` and ran these callers over a real
+persisted folder with a Save button, a refusal of invalid drafts, a review
+of incoming changes ("Take this version", "Keep mine: save"), and a repair
+panel that overwrote files the editor refused to open. Its browser
+acceptance is recorded in `../opfs/ACCEPTANCE.md` as history.
+
+### Wave 6
+
+Everything in this section was recorded in wave 6, before production
+integration. The callers then ran against the experimental wrapper
 `createCanonicalEditors(folder, definition)` over an in-memory harness
 folder (`canonical-web/memory-folder.ts`) with hold-reply, lose-reply, and
 slow-read gates. Wave 7 deleted the wrapper, its codec and tests, and the
-harness; the findings and their regression tests now live in `src/` (see
-[ITERATIONS.md](./ITERATIONS.md)). The gated journeys below (held and lost
-replies, cancelling a slow open, close during a held save) are not
-reproducible on the current page.
+harness (see [ITERATIONS.md](./ITERATIONS.md)). The gated journeys below
+(held and lost replies, cancelling a slow open, close during a held save) are
+not reproducible on the current page.
 
-### Review findings and repairs
+#### Review findings and repairs
 
 The delegated consumer implementation exposed two engine bugs. Both were
 reproduced before repair and now have regression tests:
@@ -173,7 +310,7 @@ The subsequent review improved three boundaries:
   An unexpected throwing write releases admission and propagates the bug; it
   is not silently converted into an unknown transport outcome.
 
-### Ownership and ergonomics
+#### Ownership and ergonomics
 
 One form owns the editor. Each view owns its subscription. File watching starts
 before opening's first read and continues with zero view subscriptions until
@@ -200,7 +337,7 @@ The prototype repeated the definition in `createCanonicalEditors(folder,
 definition)`. Production `folder.tables.todos.edit(stem)` captures schema and
 declared order inside the table instead, and the current callers use it.
 
-### Observed browser evidence (wave 6, in-memory harness)
+#### Observed browser evidence (wave 6, in-memory harness)
 
 Computer use exercised the final engine in Chrome on 2026-10-04:
 
@@ -229,29 +366,3 @@ The `urgent` and `gone` menu journeys remain additional manual exercises;
 invalid and missing opening cases have engine coverage. Browser evidence uses
 an in-memory notification harness. It does not establish native watcher delivery
 or browser cross-tab persistence.
-
-## Files
-
-| File | Role |
-| --- | --- |
-| `canonical-dev.ts` | Vite dev server on port 5181 and the shared Vite config |
-| `canonical-build.ts` | Builds the page to `dist-canonical/` as a compile check |
-| `canonical-web/todos.ts` | Demo definition (title with `minLength: 3`), folder ID, and seed rows |
-| `canonical-web/main.tsx` | Owner: open the folder, seed an empty one, open rows with abort, repair on refusal, mount views, dispose, reset |
-| `canonical-web/vanilla.ts`, `SolidPanel.tsx`, `SveltePanel.svelte` | The three callers |
-| `canonical-web/status.ts` | Baseline, latest read, canonical output, outcomes, review, probe |
-| `canonical-web/raw-files.ts` | Real raw reads and writes through `folder.files`, as another caller in the same tab |
-| `canonical-web/repair.ts` | Raw repair when opening refuses |
-| `canonical-web/todo-editor.ts`, `dom.ts` | Shared types, draft values, messages, DOM helper |
-
-## Checks
-
-```sh
-bun packages/folder/evidence/edit-handle/canonical-build.ts
-bun run --cwd packages/folder/evidence/edit-handle check
-bun run --cwd packages/folder typecheck
-bun test --isolate packages/folder/src/editor.test.ts packages/folder/src/canonical.test.ts
-```
-
-Browser acceptance of the current page is recorded by the integrating
-reviewer; this document records none for it yet.

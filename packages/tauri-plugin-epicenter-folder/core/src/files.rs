@@ -5,9 +5,34 @@
 //! current bytes and replaces them only when they match the SHA-256 the caller
 //! captured; this is a best-effort check, not an operating-system-wide
 //! compare-and-swap against other programs. Creation and moves use hard links,
-//! which fail rather than overwrite an existing destination. Replacement
-//! writes a scratch file under `.git/epicenter/scratch`, checks the expected
-//! hash again, and renames the scratch file into place.
+//! which fail rather than overwrite an existing destination. A write stages
+//! its bytes in a scratch file under `.git/epicenter/scratch` first.
+//!
+//! A replacement checks the expected hash again, then exchanges the scratch
+//! file with the file at the path in one system call (`files/exchange.rs`).
+//! The exchange requires the file to exist at that moment, so a replacement
+//! never puts back a file another program removed, however late the removal:
+//! the outcome is `NotFound`, or `Conflict` when a hash was expected. Bytes
+//! another program wrote between the second check and the exchange are still
+//! displaced. Apple platforms, Linux, and Android exchange; a filesystem
+//! there that cannot is an `Io` failure and nothing is written. An overwrite
+//! renames on every platform; it may create the file.
+//!
+//! The exchange is the only operation on the path. What it displaced lands
+//! in scratch: a regular file is removed. Anything else (a directory, a
+//! link, a pipe, or an entry that cannot be inspected) is kept where it is,
+//! and the outcome is a `Partial` whose write is both applied and failed,
+//! with an `Io` error naming where the entry was kept. Nothing tries to put
+//! it back: by then the path may hold a third program's bytes.
+//!
+//! Windows, and every other target without an exchange, has no replacement
+//! here until a mechanism that requires the file at publication is proven:
+//! the exchange fails as `Unsupported` before touching either path, the
+//! staged copy is removed, and the outcome is an `Io` failure naming the
+//! platform, with nothing written. Nothing retries it. Creation, reads,
+//! overwrites, moves, and removals are unchanged by this repair; none is
+//! verified on Windows. Whether
+//! this crate builds or runs for Windows has not been checked here.
 //!
 //! A multi-file batch applies ordered steps. When a step fails, the result
 //! reports which steps reached the folder; nothing is rolled back.
@@ -25,6 +50,19 @@ use sha2::{Digest, Sha256};
 use specta::Type;
 
 use crate::paths::{ancestors, path_problem};
+
+mod exchange;
+
+#[cfg(test)]
+thread_local! {
+    /// Runs just before a replacement's exchange, on the thread applying it,
+    /// with the absolute path it replaces: another program's last move.
+    pub(crate) static BEFORE_EXCHANGE: std::cell::RefCell<Option<Box<dyn Fn(&Path)>>> =
+        std::cell::RefCell::new(None);
+    /// Runs just after a replacement's exchange succeeded, the same way.
+    pub(crate) static AFTER_EXCHANGE: std::cell::RefCell<Option<Box<dyn Fn(&Path)>>> =
+        std::cell::RefCell::new(None);
+}
 
 /// Lowercase hex SHA-256 of one file's exact bytes. Always computed here from
 /// bytes, never accepted from a caller as the hash of new content.
@@ -209,6 +247,9 @@ pub enum ApplyError {
     Refused { error: FileError },
     /// The batch stopped partway. `applied` steps reached the folder; nothing
     /// was rolled back. `failed` did not complete, `notAttempted` never started.
+    /// `failed` may be the rest of a step in `applied`: a move's source
+    /// removal after its destination landed, or a replacement whose bytes
+    /// landed but whose displaced entry was kept, the same write in both.
     #[serde(rename_all = "camelCase")]
     Partial {
         applied: Vec<FileStep>,
@@ -300,6 +341,31 @@ fn io(path: &str, operation: &str, cause: &io::Error) -> FileError {
         operation: operation.to_string(),
         cause: cause.to_string(),
     }
+}
+
+/// What a directory entry that is not a regular file is, for a message.
+/// Only a successful exchange displaces an entry, so only targets with an
+/// exchange (all Unix) ever inspect one; elsewhere this compiles unused in
+/// practice and names only what the standard library can tell.
+fn entry_kind(found: &fs::Metadata) -> &'static str {
+    let kind = found.file_type();
+    if kind.is_dir() {
+        return "a directory";
+    }
+    if kind.is_symlink() {
+        return "a symbolic link";
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::FileTypeExt;
+        if kind.is_fifo() {
+            return "a named pipe";
+        }
+        if kind.is_socket() {
+            return "a socket";
+        }
+    }
+    "a special file"
 }
 
 fn invalid(path: &str) -> Result<(), FileError> {
@@ -524,14 +590,14 @@ impl Files {
     }
 
     /// Stage the bytes in scratch, publish them with `publish`, and drop the
-    /// scratch file whichever way that went.
+    /// scratch file whichever way that went: the staged bytes, or nothing
+    /// after a rename. A replacement settles its scratch file itself.
     fn stage(
         &self,
         path: &str,
         bytes: &[u8],
         publish: impl FnOnce(&Path) -> Result<(), FileError>,
     ) -> Result<(), FileError> {
-        self.ensure_parent(path)?;
         let temporary = self
             .scratch_file(bytes)
             .map_err(|cause| io(path, "stage bytes for", &cause))?;
@@ -545,6 +611,7 @@ impl Files {
         if self.read_current(path)?.is_some() {
             return Err(Self::exists(path));
         }
+        self.ensure_parent(path)?;
         self.stage(path, bytes, |temporary| {
             // Exclusive creation: a link fails instead of replacing a newcomer.
             match fs::hard_link(temporary, self.absolute(path)) {
@@ -571,14 +638,99 @@ impl Files {
         }
     }
 
-    fn replace(&self, path: &str, bytes: &[u8], expected: Option<&str>) -> Result<(), FileError> {
+    /// When the bytes land but what they displaced is kept, `landed` receives
+    /// the write so the caller reports it instead of an ordinary error.
+    fn replace(
+        &self,
+        path: &str,
+        bytes: &[u8],
+        expected: Option<&str>,
+        landed: &mut Vec<FileStep>,
+    ) -> Result<(), FileError> {
         self.changeable(path)?;
         Self::replaceable(path, expected, self.current_sha256(path)?)?;
-        self.stage(path, bytes, |temporary| {
-            // Staging and parent creation took time. Check again so the only
-            // unchecked window left is this read to the rename below.
-            Self::replaceable(path, expected, self.current_sha256(path)?)?;
-            fs::rename(temporary, self.absolute(path)).map_err(|cause| io(path, "replace", &cause))
+        // The file, and so its parent, was just found: no parent is created,
+        // which would only leave an empty directory behind if it went since.
+        let temporary = self
+            .scratch_file(bytes)
+            .map_err(|cause| io(path, "stage bytes for", &cause))?;
+        // Staging took time. Check again so the only unchecked window left is
+        // this read to the exchange.
+        let checked = self
+            .current_sha256(path)
+            .and_then(|actual| Self::replaceable(path, expected, actual));
+        if let Err(error) = checked {
+            let _ = fs::remove_file(&temporary);
+            return Err(error);
+        }
+        self.publish_replacement(path, expected, &temporary, landed)
+    }
+
+    /// Put the staged file at `path` only if a file is there when it lands,
+    /// and settle `temporary`. Until the one exchange succeeds it holds the
+    /// staged bytes, removed on any failure. After it the write has landed
+    /// and `temporary` holds whatever the path held: a regular file is
+    /// removed; anything else, or an entry that cannot be inspected, stays
+    /// exactly there, `landed` receives the write, and the `Io` error names
+    /// where it is. Nothing touches the path again: another program may
+    /// already have written there since.
+    ///
+    /// This is the only way a replacement publishes, on every target. Where
+    /// there is no exchange, Windows included, the exchange fails before
+    /// touching either path, the staged copy is removed, and the outcome is
+    /// `Io` with nothing written.
+    fn publish_replacement(
+        &self,
+        path: &str,
+        expected: Option<&str>,
+        temporary: &Path,
+        landed: &mut Vec<FileStep>,
+    ) -> Result<(), FileError> {
+        let target = self.absolute(path);
+        #[cfg(test)]
+        BEFORE_EXCHANGE.with(|hook| {
+            if let Some(hook) = hook.borrow().as_ref() {
+                hook(&target);
+            }
+        });
+        if let Err(cause) = exchange::exchange(temporary, &target) {
+            // Nothing was exchanged: `temporary` holds only the staged bytes.
+            let missing = cause.kind() == ErrorKind::NotFound;
+            let staged = missing && fs::symlink_metadata(temporary).is_ok();
+            let _ = fs::remove_file(temporary);
+            if !missing {
+                return Err(io(path, "replace", &cause));
+            }
+            // Either path may be the missing one; the staged file never moves.
+            if !staged {
+                return Err(io(path, "stage bytes for", &cause));
+            }
+            return Self::replaceable(path, expected, None);
+        }
+        #[cfg(test)]
+        AFTER_EXCHANGE.with(|hook| {
+            if let Some(hook) = hook.borrow().as_ref() {
+                hook(&target);
+            }
+        });
+        let found = match fs::symlink_metadata(temporary) {
+            Ok(found) if found.file_type().is_file() => {
+                let _ = fs::remove_file(temporary);
+                return Ok(());
+            }
+            Ok(found) => format!("is {}, not a regular file", entry_kind(&found)),
+            Err(cause) => format!("could not be inspected ({cause})"),
+        };
+        landed.push(FileStep::Write {
+            path: path.to_string(),
+        });
+        Err(FileError::Io {
+            path: path.to_string(),
+            operation: "set aside what the replacement displaced from".to_string(),
+            cause: format!(
+                "The new bytes landed at '{path}', so the file there changed. What they displaced {found}, and it was left at '{}'. Inspect '{path}', and anything written there since, before restoring it.",
+                temporary.display()
+            ),
         })
     }
 
@@ -587,6 +739,8 @@ impl Files {
         // file there is replaced.
         self.changeable(path)?;
         self.read_current(path)?;
+        self.ensure_parent(path)?;
+        // A deliberate overwrite: create or replace, whatever is there.
         self.stage(path, bytes, |temporary| {
             fs::rename(temporary, self.absolute(path)).map_err(|cause| io(path, "replace", &cause))
         })
@@ -661,7 +815,7 @@ impl Files {
                 path,
                 bytes,
                 expected_sha256,
-            } => self.replace(path, bytes, expected_sha256.as_deref()),
+            } => self.replace(path, bytes, expected_sha256.as_deref(), landed),
             FileChange::Overwrite { path, bytes } => self.overwrite(path, bytes),
             FileChange::Remove {
                 path,
@@ -696,6 +850,8 @@ impl Files {
                 Ok(()) => applied.push(change.step()),
                 Err(error) => {
                     // A move whose destination landed failed at retiring its source.
+                    // A replacement whose bytes landed failed at settling what
+                    // they displaced: its write is both applied and failed.
                     let failed = match change {
                         FileChange::Move { from, .. } if !landed.is_empty() => {
                             FileStep::Remove { path: from.clone() }

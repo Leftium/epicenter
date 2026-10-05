@@ -97,9 +97,10 @@
 		void sources.then(({ account, connections }) => Promise.allSettled([account?.close(), connections?.close()]));
 	});
 
-	// A note typed and not yet saved, a word whose save waits for a choice, or
-	// repair text lives only in this page. Leaving it asks first; the open
-	// chat's unsaved message asks on its own.
+	// A word still saving, a failed save, a note that could not be saved, or an
+	// unanswered delete holds input that may be in this page alone. Leaving it asks first, and the browser's
+	// prompt lets the learner leave anyway; the open chat's unsaved message
+	// asks on its own.
 	beforeNavigate((navigation) => {
 		if (entries.unsettled === 0) return;
 		if (navigation.willUnload || navigation.to?.route.id !== page.route.id) navigation.cancel();

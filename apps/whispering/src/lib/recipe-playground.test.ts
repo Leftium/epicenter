@@ -31,17 +31,17 @@ import './svelte-modules.test-support.js';
 import { afterEach, expect, test } from 'bun:test';
 import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { FileError } from '@epicenter/folder/bun';
+import { FileError, inspectRow } from '@epicenter/folder/bun';
 import { Ok } from 'wellcrafted/result';
 import { expectOk } from 'wellcrafted/testing';
 import type { ConnectionInfo } from './connections.js';
-import { STARTER_TRANSFORMATIONS } from './definition.js';
+import { STARTER_TRANSFORMATIONS, whisperingDefinition } from './definition.js';
 import type { Library } from './library.svelte.js';
 import { resolvePostProcessing } from './post-processing.js';
 import { resolveRecipe } from './recipe.js';
+import { editingOf } from './row-slot.test-support.js';
 import { filesLineOf } from './status.js';
 import { TransformationError } from './transformation.js';
-import { formOf } from './row-slot.test-support.js';
 import {
 	deferred,
 	openTestWorkspace,
@@ -254,10 +254,13 @@ test('the Run check, the post-processing choice, the menu, and the run agree abo
 	for (const path of [fresh, matching, elsewhere]) {
 		const entry = library.transformations.find((item) => item.path === path)!;
 		const listed = library.resolve(entry);
-		// The draft on the recipe's page is read by the same resolver.
+		// The text on the recipe's page is read by the same resolver.
 		await library.open(path);
-		const draft = library.resolve(
-			formOf(library.selectedTransformation?.slot).state.reading,
+		const shown = library.resolve(
+			inspectRow(
+				whisperingDefinition.tables.transformations,
+				editingOf(library.selectedTransformation?.slot).row.text,
+			),
 		);
 		const chosen = resolvePostProcessing(
 			path,
@@ -267,7 +270,7 @@ test('the Run check, the post-processing choice, the menu, and the run agree abo
 		const before = transformed.length;
 		const problem = await library.transform(transcript.path, path);
 
-		expect(draft).toEqual(listed);
+		expect(shown).toEqual(listed);
 		expect(chosen.kind).toBe(listed.kind === 'ready' ? 'ready' : 'repair');
 		if (listed.kind === 'ready') {
 			expect(problem).toBeUndefined();
@@ -298,12 +301,13 @@ test('removing an earlier endpoint from a recipe lets it run with the text conne
 		endpoint: 'https://api.openai.com/v1',
 	});
 	await library.open(path);
-	const editor = formOf(library.selectedTransformation?.slot);
+	const editor = editingOf(library.selectedTransformation?.slot);
 	expect(await library.transform(transcript.path, path)).toContain(
 		'runs only at https://api.openai.com/v1',
 	);
 
-	expect(editor.change({ fields: { endpoint: null } })).toBe(true);
+	editor.setField('endpoint', null);
+	expect(editor.row).toMatchObject({ fields: { endpoint: null } });
 	expect(await library.transform(transcript.path, path)).toBeUndefined();
 
 	expect(transformed).toEqual([
@@ -405,28 +409,25 @@ test('a recipe runs on pasted text with no recordings; the answer is held until 
 	expect(library.textOutputsOf(stem)).toEqual([]);
 });
 
-test('what is saved is what was sent: edits to the recipe, its draft, or the connection while it runs change nothing', async () => {
+test('what is saved is what was sent: edits to the recipe or the connection while it runs change nothing', async () => {
 	const answer =
 		deferred<Awaited<ReturnType<Library['workspace']['transform']>>>();
 	const { library, transformed } = await open({
 		transform: () => answer.promise,
 	});
 	const path = await recipe(library);
-	const editor = formOf(library.selectedTransformation?.slot);
+	const editor = editingOf(library.selectedTransformation?.slot);
 	const stem = selectedStem(library);
-	library.autosave.paused = true;
-	editor.change({ body: 'Draft instructions.\n' });
+	editor.setBody('Draft instructions.\n');
 
 	const running = library.transformText(path, PASTED);
 	await new Promise((resolve) => setTimeout(resolve, 20));
-	// The draft was saved first, and that is what went out.
+	// Its save settled first, and the saved file is what went out.
 	expect(transformed[0]!.prompt).toBe('Draft instructions.\n');
 	const id = library.textRuns[0]!.id;
-	editor.change({
-		body: 'Edited while running.\n',
-		fields: { model: 'other' },
-	});
-	await editor.saveNow();
+	editor.setBody('Edited while running.\n');
+	editor.setField('model', 'other');
+	expectOk(await editor.flush());
 	expect(
 		await library.saveConnection('text', {
 			baseUrl: TEST_BASE_URL,

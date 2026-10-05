@@ -27,9 +27,9 @@
  * to keep theirs, take the saved one, or keep both.
  *
  * Rows of the recordings, transcriptions, and transformations tables are not
- * edited here: the folder's row editor holds them (`row-draft.svelte.ts`). A
- * text draft edits any other file, and a row file as raw text when it cannot
- * be opened as a row or the person asks to edit its source.
+ * edited here: one row editor holds each, its fields and its source alike,
+ * and saves input as it is typed (`row-editing.svelte.ts`). Autosave and its
+ * pause are this module's. A text draft edits any other file.
  */
 import type { FolderFiles, TextCapture } from '@epicenter/folder';
 import { submittedText } from '@epicenter/folder';

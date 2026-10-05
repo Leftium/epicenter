@@ -7,12 +7,12 @@
  *
  * - Every transaction that changes the document is checked before it is
  *   shown. If its Markdown would not parse back to an equivalent document,
- *   or the draft cannot or will not take it, the transaction is refused and
- *   the screen does not change. If it passes, the draft receives the Markdown
- *   in the same step. There is never text on screen that the draft does not
+ *   or the note's editor refuses it, the transaction is refused and the
+ *   screen does not change. If it passes, the editor receives the Markdown in
+ *   the same step. There is never text on screen that the editor does not
  *   hold.
  * - When the body changes from anywhere else (the Markdown view, a file the
- *   editor followed, a version the person chose), `sync` replaces the
+ *   person reloaded, a version the person chose), `sync` replaces the
  *   document and starts a new undo history, because the old history
  *   describes text that is gone.
  *
@@ -226,7 +226,7 @@ export function createRichSession(
 			// An edit Markdown has no spelling for (a new empty paragraph) leaves
 			// the body as it is, so it does not make the note newer.
 			if (body !== current) {
-				// Input that is not being taken is not shown either.
+				// Input the editor did not take is not shown either.
 				if (!draft.input(body)) return undefined;
 				syncedBody = draft.body;
 			}

@@ -1,39 +1,32 @@
 /**
- * One open capture: who owns its text, and every piece of work on its file.
+ * One open capture: the folder's row editor for its file, and the form text
+ * this window holds that is not part of the capture yet.
  *
- * Exactly one owner holds the capture's text at a time:
+ * The row editor (`table.edit`) owns the capture's input: the complete text
+ * it last accepted and the one queue that publishes it. This module acquires
+ * it once and keeps it, above every view, until the capture is let go. Its
+ * Svelte facade (`fromRowEditor`) is read through on every access; nothing
+ * here copies its row or its save state.
  *
- * - `editing`: the folder's row editor. It owns the structured draft, the
- *   baseline it is dirty against, the latest read of the file, and each save.
- *   A save writes the complete canonical file whatever the file holds, and
- *   input typed during it stays dirty against the receipt.
- * - `raw`: exact source this window holds instead, for a file that cannot
- *   open as a row or after a Source edit of the frontmatter. No editor runs,
- *   so nothing follows the file. A raw write replaces only the version of the
- *   file the person was shown, and only when they ask.
+ * Every change is submitted at once as a complete replacement. A structured
+ * change (the Capture view) is `set`: the fields the row has, keys Capture
+ * does not declare included, and the edited body. A Source edit is
+ * `setText`, exactly as typed, frontmatter and malformed text included. The
+ * editor writes the latest input over the existing file; a file changed
+ * elsewhere is overwritten by the next save, and is shown only when the
+ * person reloads.
  *
- * Every acquisition, save, raw write, settlement, deletion, and the final
- * disposal runs on one tracked chain, one at a time. Disposal and deletion
- * close a gate first, so no new work starts, then wait for the chain.
+ * A failed or unconfirmed save pauses publication. Input stays visible and
+ * accepted, and nothing is written until the person retries. Reloading reads
+ * the file and replaces the input with it.
  *
- * This module decides when to save and what a person is shown:
+ * This module holds only what the editor cannot: the new-thought text, a
+ * thought being edited, and capture text that could not be applied. Only
+ * Add, Save, or a clear lets them go.
  *
- * - Typing saves after a short pause. Saving stops, and the person chooses,
- *   while there is unsaved text and the file holds other content than this
- *   window saved or followed; while the file is not a valid capture or cannot
- *   be read; and after a save failed or was not confirmed. An unconfirmed save
- *   stays unknown even when a later read finds its text. Only the person's
- *   explicit choice releases the pause: Try again sends the document again,
- *   and taking the saved file acknowledges that outcome without calling it
- *   saved.
- * - A file removed elsewhere is written back by the next save.
- * - Structured controls change the body through `@epicenter/capture`. A Source
- *   edit that keeps the frontmatter is a body change too.
- *
- * Unsent input is draft state too: the new-thought text, a thought being
- * edited, capture text that could not be applied, and raw source not yet
- * written. They outlive changes of owner. `unsettled` counts all of it, so
- * leaving the page asks first.
+ * Deleting, restoring, and copying hold this capture: input stops at once,
+ * before anything is awaited, and their file work is the capture's one
+ * admitted operation, which leaving and closing wait for.
  */
 
 import {
@@ -51,21 +44,21 @@ import {
 	unparsedCapture,
 } from '@epicenter/capture';
 import {
-	type FileCapture,
 	frameRowText,
 	type RowEditor,
-	type RowEditorState,
-	type RowRevision,
-	type RowSaveOutcome,
+	type RowError,
 	type TableEditError,
 	type TableReading,
 	type TableSnapshot,
-	type TextCapture,
 } from '@epicenter/folder';
+import {
+	fromRowEditor,
+	type ReactiveRowEditor,
+} from '@epicenter/folder/svelte';
 import type { Result } from 'wellcrafted/result';
 
 export type CaptureEntry = TableSnapshot<CaptureFields>;
-export type CaptureEditor = RowEditor<CaptureFields>;
+type CaptureEditor = ReactiveRowEditor<CaptureFields>;
 
 /** What is at the draft's path now. */
 export type Current =
@@ -79,657 +72,435 @@ type Written =
 	| { readonly data: null; readonly error: Failure };
 
 /**
- * Where a draft opens its editor and writes raw source. Every method is
+ * Where a draft opens its editor and does its file work. Every method is
  * bound to the draft's own file. Any method may throw; the draft keeps its
  * input.
  */
 export type DraftStore = {
-	/** How the captures table reads text: `inspectRow` with its definition. It reads nothing. */
+	/** How the captures table reads text. It reads nothing. */
 	inspect(text: string): TableReading<CaptureFields>;
-	/** Open the row editor on the file. */
-	edit(signal: AbortSignal): Promise<Result<CaptureEditor, TableEditError>>;
-	/** The file now. */
+	/** Acquire the row editor on the file. */
+	edit(
+		signal: AbortSignal,
+	): Promise<Result<RowEditor<CaptureFields>, TableEditError>>;
+	/** The file now: a fresh capture of its bytes. */
 	read(): Promise<Current>;
-	/** Write exact source over the captured file, refused if it changed since. */
-	replace(file: FileCapture, source: string): Promise<Written>;
-	/** Write exact source where no file is. */
+	/**
+	 * Write exact source where no file is. Refused when anything is there, and
+	 * for text a file cannot hold exactly.
+	 */
 	create(source: string): Promise<Written>;
-	/** Run a write, so a listing taken while it runs is taken again. */
-	writing<T>(work: () => Promise<T>): Promise<T>;
+	/** Delete exactly the reviewed file. Refused if it changed since. */
+	remove(reviewed: CaptureEntry): Promise<{ readonly error: Failure | null }>;
+	/** Whether the whole collection is fenced: leaving, or closing. */
+	fenced(): boolean;
 };
 
-/** Who holds the capture's text now. */
-export type DraftMode =
-	| { readonly kind: 'opening' }
-	| { readonly kind: 'editing'; readonly editor: CaptureEditor }
-	| {
-			readonly kind: 'raw';
-			readonly text: string;
-			/**
-			 * The version of the file a write replaces, as the person was shown
-			 * it; `'absent'` when there is none. `'settling'` while a save
-			 * admitted before the raw edit finishes: its receipt, or the version
-			 * before it, is the version once it settles. Nothing is written
-			 * while settling.
-			 */
-			readonly over: TextCapture | 'absent' | 'settling';
-			/** Why the file could not open as a capture, when that is why it is raw. */
-			readonly reason: string | undefined;
-			/** Why the last raw write did not land. */
-			readonly problem: string | undefined;
-	  }
-	/** No editor could be opened and no raw text is held. */
-	| {
-			readonly kind: 'unavailable';
-			readonly missing: boolean;
-			readonly message: string;
-	  };
-
-/**
- * Work on the file whose result the person has not answered: a save that did
- * not land or whose answer was lost, or a delete whose answer was lost.
- */
-export type Outcome =
+/** Why saving waits for the person: work on the file whose result they have not answered. */
+export type Notice =
 	/** The last save's answer was lost: it may or may not have landed. */
+	| { readonly kind: 'unconfirmed'; readonly message: string }
 	| {
-			readonly kind: 'unconfirmed';
+			readonly kind: 'failed';
 			readonly message: string;
-			/** The latest read holds this window's text. It confirms nothing. */
-			readonly fileHoldsMine: boolean;
+			/** The file was gone when the save reached it. Saving never creates it. */
+			readonly missing: boolean;
 	  }
-	| { readonly kind: 'failed'; readonly message: string }
 	/**
 	 * A delete was sent and no answer came back: the file may be gone. A
 	 * later read showing it present or gone confirms nothing about the delete.
 	 */
-	| { readonly kind: 'deletion'; readonly message: string };
+	| { readonly kind: 'deletion'; readonly message: string }
+	/** A reload found no file. Saving never writes it back. */
+	| { readonly kind: 'removed' };
 
-/** What the latest read of the file asks the person to review before saving. */
-export type Review =
-	/** Unsaved text, and the file holds other content than it is based on. */
-	| { readonly kind: 'changed'; readonly revision: RowRevision }
-	/** The file was changed into something that is not a valid capture. */
-	| {
-			readonly kind: 'invalid';
-			readonly file: TextCapture;
-			readonly message: string;
-	  }
-	/** The file cannot be read, so nothing may be saved over it. */
-	| { readonly kind: 'unreadable'; readonly message: string };
+/** One edit of a thought, from Edit until it is saved or cancelled. */
+export type ThoughtEdit = {
+	/** The thought as shown, bound to the parse it came from. */
+	readonly thought: Thought;
+	readonly text: string;
+	/** This edit's identity: a later edit, of the same thought or another, has its own. */
+	readonly id: object;
+};
 
-/** Why saving stopped for a person's choice: an outcome or a review. */
-export type Notice = Outcome | Review;
+/** The file as the person reviews it before deleting it. */
+export type DeletionReview = {
+	readonly entry: CaptureEntry;
+	/** Why it is shown again: it changed since the last review. */
+	readonly problem: string | undefined;
+};
 
-/** Typing batches for this long before a save. */
-const TYPING_BATCH_MS = 600;
+export type DraftView = 'capture' | 'source';
+
+/** Why exact recovery text is not written: encoding would change it. */
+export const UNENCODABLE =
+	'This text has a character a file cannot hold exactly, so nothing was written. It is kept here; change that character, or copy the text out.';
 
 const describe = (cause: unknown) =>
 	cause instanceof Error ? cause.message : String(cause);
 
-const captureOf = ({ path, sha256, text }: TextCapture): TextCapture => ({
-	path,
-	sha256,
-	text,
-});
-
 const noop = () => {};
+
+/** Why readable text has no structured form. */
+export function describeRowError(error: RowError): string {
+	switch (error.name) {
+		case 'Nonconforming':
+			return error.reading.issues.map((issue) => issue.message).join('; ');
+		case 'NoCanonicalForm':
+			return error.refusal.reason;
+		case 'Unencodable':
+			return 'The text has a lone surrogate, which a file cannot hold exactly. It is kept here and not written.';
+		default:
+			return error satisfies never;
+	}
+}
+
+/**
+ * What holds this capture. While one does, nothing a person does is taken,
+ * and nothing is submitted but the operation's own steps.
+ */
+type Operation = 'opening' | 'deleting' | 'restoring' | 'copying';
+
+/** One parse per text: thoughts belong to the parse that produced them. */
+function memo<T>(compute: (text: string) => T) {
+	let last: { readonly text: string; readonly value: T } | undefined;
+	return (text: string): T => {
+		if (last?.text !== text) last = { text, value: compute(text) };
+		return last.value;
+	};
+}
 
 export type Draft = ReturnType<typeof createDraft>;
 
 export function createDraft(
 	store: DraftStore,
-	{
-		path,
-		stem,
-		initial,
-	}: {
-		readonly path: string;
-		readonly stem: string;
-		/** The listed file, shown until the editor opens. */
-		readonly initial?: CaptureEntry;
-	},
-	hooks: {
-		/** A save or a raw write reached the folder: this is what was written. */
-		onSaved(entry: CaptureEntry): void;
-		batchMs?: number;
-	},
+	{ path, stem }: { readonly path: string; readonly stem: string },
 ) {
-	let mode = $state.raw<DraftMode>({ kind: 'opening' });
-	/** The editor's state, only while the editor owns the text. */
-	let editorState = $state.raw<RowEditorState<CaptureFields> | undefined>();
-	/** Why the last structured change was refused; the next change clears it. */
-	let refusal = $state<string | undefined>();
+	/** The row editor, kept from acquisition until the capture is let go. */
+	let editor = $state.raw<CaptureEditor | undefined>();
+	/** Why acquisition gave no editor; `undefined` while one is open or opening. */
+	let refused = $state.raw<
+		{ readonly missing: boolean; readonly message: string } | undefined
+	>();
+	/** Acquisition settled. */
+	let opened = $state(false);
+	let operation = $state<Operation | undefined>();
+	/** File work admitted under a hold, until it settles; leaving and closing wait for all of it. */
+	const work = new Set<Promise<void>>();
+	let opening: AbortController | undefined;
+
 	let newThought = $state('');
 	/** The thought being edited, bound to the parse it was shown from. */
-	let editing = $state.raw<
-		{ readonly thought: Thought; readonly text: string } | undefined
-	>();
+	let editing = $state.raw<ThoughtEdit | undefined>();
 	/** Capture text typed but refused, kept until it applies or is dropped. */
 	let pendingText = $state<string | undefined>();
-	/** How many tracked operations are queued or running. */
-	let working = $state(0);
-	/** The folder threw instead of answering a save. */
-	let thrown = $state<string | undefined>();
+	/** Why the last change was not taken; the next change clears it. */
+	let refusal = $state<string | undefined>();
+	/** A reload found no file, and nothing was submitted since. */
+	let absent = $state(false);
 	/** A delete of this file was not answered; held until the person chooses. */
 	let deletion = $state<string | undefined>();
-	/**
-	 * The save outcome the person answered by taking the saved file. It stays
-	 * the editor's history; it only no longer holds saving back.
-	 */
-	let acknowledged = $state.raw<RowSaveOutcome | undefined>();
-	/** Deletion or disposal is under way: no new work starts. */
-	let gated = $state(false);
-	/** Disposal began: an editor opened from now on is let go at once. */
-	let retired = false;
+	/** The file as shown for deletion, kept above any view until confirmed or cancelled. */
+	let deletionReview = $state.raw<DeletionReview | undefined>();
+	/** Why the last deletion did not happen. */
+	let deletionProblem = $state<string | undefined>();
+	/** The confirmed delete is being sent: it is admitted and cannot be called off. */
+	let removing = $state(false);
+	/** Each review is its own; a review that comes back late is dropped. */
+	let reviewing: object | undefined;
+	let view = $state<DraftView>('capture');
+	/** Let go for good: nothing is taken or submitted again. */
+	let retired = $state(false);
 
-	let timer: ReturnType<typeof setTimeout> | undefined;
-	/** The last tracked operation, settled; `undefined` when none is pending. */
-	let tail: Promise<void> | undefined;
-	let opening: AbortController | undefined;
-	let disposal: Promise<void> | undefined;
-	const batchMs = hooks.batchMs ?? TYPING_BATCH_MS;
+	const documentOf = memo((text: string) => {
+		const { parseError } = store.inspect(text);
+		return parseError === undefined
+			? parseCapture(text)
+			: unparsedCapture(text, parseError.message);
+	});
+	const readingOf = memo((text: string) => store.inspect(text));
 
-	/**
-	 * Run `operation` after every operation before it. With nothing pending it
-	 * starts now, so a save captures the document as it is at the call.
-	 */
-	function track<T>(operation: () => Promise<T>): Promise<T> {
-		working++;
-		const start = async () => {
-			try {
-				return await operation();
-			} finally {
-				// The last one out leaves the chain idle before its caller resumes.
-				if (--working === 0) tail = undefined;
-			}
-		};
-		const result = tail === undefined ? start() : tail.then(start);
-		tail = result.then(noop, noop);
-		return result;
+	/** The editor's text now, valid or not: what Source shows and every view reads. */
+	const source = () => editor?.row.text ?? '';
+	const document = (): CaptureDocument => documentOf(source());
+
+	// --- Admission ------------------------------------------------------
+
+	/** Whether a person's input or action is taken now. */
+	const admitted = () => !retired && operation === undefined && !store.fenced();
+
+	/** Refuse a person's input, saying why when there is something to say. */
+	function fenced(): boolean {
+		if (admitted()) return false;
+		if (operation === 'deleting')
+			refusal = 'This capture is being deleted, so nothing typed is taken.';
+		return true;
 	}
 
-	async function idle() {
-		while (tail) await tail;
+	/**
+	 * Refuse input for the file itself while a delete is unanswered: the file
+	 * may be gone, and the person chooses what happens to it first.
+	 */
+	function undecided(): boolean {
+		if (fenced()) return true;
+		if (deletion === undefined) return false;
+		refusal =
+			'The delete was not confirmed. Choose what happens to this capture first.';
+		return true;
 	}
 
-	/** The text Source shows, and what a copy or a download holds. */
-	const source = $derived(
-		mode.kind === 'raw'
-			? mode.text
-			: (editorState?.text ??
-					(mode.kind === 'opening' ? (initial?.text ?? '') : '')),
-	);
-	/** How that text reads as a row. */
-	const reading = $derived(
-		mode.kind === 'editing' && editorState !== undefined
-			? editorState.reading
-			: store.inspect(source),
-	);
-	// Text and thoughts are read only from text that parses as a capture.
-	const document = $derived(
-		reading.parseError === undefined
-			? parseCapture(source)
-			: unparsedCapture(source, reading.parseError.message),
-	);
-
-	const dirty = () =>
-		mode.kind === 'editing' && (editorState?.isDirty ?? false);
-	/** Raw text this window holds that the file, as last shown, does not. */
-	const rawTyped = () =>
-		mode.kind === 'raw' &&
-		(typeof mode.over !== 'object' || mode.text !== mode.over.text);
-	// Any typed character counts, spaces included: only the person discards it.
 	const hasUnsentInput = () =>
 		newThought !== '' || editing !== undefined || pendingText !== undefined;
-	// An unanswered delete keeps even a clean draft: letting it go is a choice.
-	const unsettled = () =>
-		dirty() ||
-		hasUnsentInput() ||
-		rawTyped() ||
-		deletion !== undefined ||
-		working > 0 ||
-		editorState?.saving !== undefined;
 
-	// An outcome and a review are judged apart: an old outcome never hides
-	// what the latest read found, and that read never hides that a save did
-	// not land.
-	const outcome = $derived.by((): Outcome | undefined => {
+	function notice(): Notice | undefined {
 		if (deletion !== undefined) return { kind: 'deletion', message: deletion };
-		if (mode.kind !== 'editing' || editorState === undefined) return;
-		if (thrown !== undefined) return { kind: 'failed', message: thrown };
-		const { observation } = editorState;
-		// History: an answered outcome stays `lastSave`, and is no longer shown.
-		const lastSave =
-			editorState.lastSave === acknowledged ? undefined : editorState.lastSave;
-		if (lastSave?.kind === 'failed')
-			return { kind: 'failed', message: lastSave.error.message };
-		if (lastSave?.kind === 'unconfirmed')
+		const save = editor?.save;
+		if (save?.status === 'failed') {
+			const { error } = save;
+			if (error.name === 'Unconfirmed')
+				return { kind: 'unconfirmed', message: error.message };
 			return {
-				kind: 'unconfirmed',
-				message: lastSave.error.message,
-				fileHoldsMine:
-					observation.kind === 'present' &&
-					observation.revision.canonical === editorState.text,
+				kind: 'failed',
+				message: error.message,
+				missing: error.name === 'NotFound',
 			};
-	});
-	const review = $derived.by((): Review | undefined => {
-		if (mode.kind !== 'editing' || editorState === undefined) return;
-		const { observation, isDirty, baseline } = editorState;
-		switch (observation.kind) {
-			case 'present':
-				// A read from before this window's own save settled is not news.
-				if (working > 0 || editorState.saving !== undefined) return;
-				return isDirty && observation.revision.canonical !== baseline.canonical
-					? { kind: 'changed', revision: observation.revision }
-					: undefined;
-			case 'missing':
-				// The next save writes it back.
-				return;
-			case 'unreadable':
-				return { kind: 'unreadable', message: observation.error.message };
-			case 'unsupported':
-				return {
-					kind: 'invalid',
-					file: observation.file,
-					message: observation.refusal.reason,
-				};
-			case 'invalid':
-				return {
-					kind: 'invalid',
-					file: observation.file,
-					message:
-						observation.reading.parseError?.message ??
-						observation.reading.issues.map((issue) => issue.message).join('; '),
-				};
-			default:
-				return observation satisfies never;
 		}
-	});
-
-	/** Whether typing may save without asking. Read fresh in timers. */
-	const mayAutosave = () =>
-		!gated &&
-		mode.kind === 'editing' &&
-		outcome === undefined &&
-		review === undefined;
-
-	function schedule() {
-		clearTimeout(timer);
-		if (!mayAutosave()) return;
-		timer = setTimeout(() => void drain(), batchMs);
+		if (absent) return { kind: 'removed' };
+		return undefined;
 	}
 
-	function entryOf(revision: RowRevision): CaptureEntry {
-		return Object.freeze({
-			path: revision.path,
-			stem,
-			text: revision.text,
-			sha256: revision.sha256,
-			...store.inspect(revision.text),
-		});
+	const unsettled = () =>
+		hasUnsentInput() ||
+		notice() !== undefined ||
+		(operation !== undefined && operation !== 'opening') ||
+		editor?.save.status === 'saving';
+
+	/** Input went to the editor: what the last reload found is no longer the question. */
+	function tookInput() {
+		absent = false;
+		refusal = undefined;
 	}
 
-	/**
-	 * One save of the whole document, then a read of the file, so what the
-	 * file holds afterwards is known before saving is judged again. Resolves
-	 * whether it landed.
-	 */
-	function save(editor: CaptureEditor): Promise<boolean> {
-		clearTimeout(timer);
-		return track(async () => {
-			try {
-				const { data: receipt, error } = await store.writing(() =>
-					editor.save(),
-				);
-				if (error === null) {
-					thrown = undefined;
-					hooks.onSaved(entryOf(receipt));
-					return true;
-				}
-				// Refused before anything was sent; a failure is in `lastSave`.
-				if (error.name === 'InvalidDocument') refusal = error.message;
-				return false;
-			} catch (cause) {
-				// Storage that throws is not an answer. The document stays dirty.
-				thrown = describe(cause);
-				return false;
-			} finally {
-				await editor.refresh();
-			}
-		});
+	// --- The editor's lifetime -------------------------------------------
+
+	/** Run `task` as this capture's admitted file work. */
+	function admit<T>(task: () => Promise<T>): Promise<T> {
+		const running = task();
+		const tracked = running.then(noop, noop);
+		work.add(tracked);
+		void tracked.then(() => work.delete(tracked));
+		return running;
 	}
 
-	/** Save until nothing unsaved is left, or saving stops for a choice. */
-	async function drain(): Promise<void> {
-		clearTimeout(timer);
-		// With nothing pending, the save starts now, with the document as it is.
-		if (tail) await idle();
-		if (mode.kind !== 'editing' || !dirty() || !mayAutosave()) return;
-		if (await save(mode.editor)) return drain();
+	/** Wait until no admitted file work is running, including work admitted meanwhile. */
+	async function drainWork() {
+		while (work.size > 0) await Promise.all(work);
 	}
 
-	function attach(editor: CaptureEditor) {
-		mode = { kind: 'editing', editor };
-		// A new editor has no outcome to answer for; an old throw is history.
-		thrown = undefined;
-		acknowledged = undefined;
-		editor.subscribe((state) => {
-			// A former editor's last states are not news.
-			if (mode.kind === 'editing' && mode.editor === editor)
-				editorState = state;
-		});
-	}
-
-	/**
-	 * Hold a file that has no row form as raw source. Raw text typed here is
-	 * kept; untouched raw text becomes the file's.
-	 */
-	function holdRaw(file: TextCapture, reason: string) {
-		const kept = mode.kind === 'raw' && rawTyped() ? mode.text : file.text;
-		mode = {
-			kind: 'raw',
-			text: kept,
-			over: captureOf(file),
-			reason,
-			problem: mode.kind === 'raw' ? mode.problem : undefined,
-		};
-	}
-
-	function opened(error: TableEditError) {
-		switch (error.name) {
-			case 'NoCanonicalForm':
-			case 'InvalidSource':
-				holdRaw(error.file, error.message);
-				return;
-			default:
-				// Raw text typed here outlives a file that is gone or unreadable.
-				if (mode.kind === 'raw' && rawTyped()) {
-					mode = { ...mode, problem: error.message };
-					return;
-				}
-				mode = {
-					kind: 'unavailable',
-					missing: error.name === 'NotFound',
-					message: error.message,
-				};
-		}
-	}
-
-	/**
-	 * Open an editor on the file as it is now. Part of a tracked operation.
-	 * Raw text typed meanwhile keeps its owner: the new editor is let go.
-	 */
-	async function acquire(): Promise<void> {
-		opening?.abort();
+	/** Acquire the editor under the opening hold. A refusal stays visible. */
+	async function open(): Promise<void> {
+		operation = 'opening';
 		const controller = new AbortController();
 		opening = controller;
-		let result: Awaited<ReturnType<DraftStore['edit']>>;
 		try {
-			result = await store.edit(controller.signal);
-		} catch (cause) {
-			if (opening === controller) opening = undefined;
-			if (retired) return;
-			if (mode.kind === 'raw' && rawTyped())
-				mode = { ...mode, problem: describe(cause) };
-			else
-				mode = {
-					kind: 'unavailable',
-					missing: false,
-					message: describe(cause),
-				};
-			return;
+			await admit(async () => {
+				try {
+					const { data, error } = await store.edit(controller.signal);
+					// Let go while it opened: nothing is installed.
+					if (retired || controller.signal.aborted) return;
+					if (error !== null)
+						refused = {
+							missing: error.name === 'NotFound',
+							message: error.message,
+						};
+					else editor = fromRowEditor(data);
+				} catch (cause) {
+					if (!retired && !controller.signal.aborted)
+						refused = { missing: false, message: describe(cause) };
+				}
+			});
+		} finally {
+			opening = undefined;
+			if (operation === 'opening') operation = undefined;
+			opened = true;
 		}
-		const { data: editor, error } = result;
-		if (opening === controller) opening = undefined;
-		if (
-			retired ||
-			controller.signal.aborted ||
-			(mode.kind === 'raw' && rawTyped())
-		) {
-			if (error === null) await editor.dispose();
-			return;
-		}
-		if (error !== null) opened(error);
-		else attach(editor);
-	}
-
-	/** Let the editor go now: it stops following the file at once. */
-	function release(): Promise<void> | undefined {
-		if (mode.kind !== 'editing') return;
-		editorState = undefined;
-		return mode.editor.dispose();
-	}
-
-	/** Raw text that replaces the editor's, from a Source edit of the frontmatter. */
-	function enterRaw(editor: CaptureEditor, text: string) {
-		clearTimeout(timer);
-		mode = {
-			kind: 'raw',
-			text,
-			over: 'settling',
-			reason: undefined,
-			problem: undefined,
-		};
-		editorState = undefined;
-		const disposing = editor.dispose();
-		// The editor stopped following the file above. Once a save it had
-		// admitted settles, its baseline is the version this text replaces:
-		// that save's receipt, or the version before an outcome that is not one.
-		void track(async () => {
-			try {
-				await disposing;
-			} catch (cause) {
-				thrown = describe(cause);
-			}
-			const { baseline } = editor.get();
-			if (mode.kind === 'raw' && mode.over === 'settling')
-				mode = { ...mode, over: captureOf(baseline) };
-		});
 	}
 
 	/**
-	 * Write the raw source exactly over the version the person was shown, or
-	 * where nothing is. A file that changed meanwhile is shown, and the text
-	 * stays for another choice. Raw text typed during the write stays, now
-	 * over what was written, for another explicit write.
+	 * Hold the capture for `task`, its admitted file work. The hold begins
+	 * before anything is awaited. Resolves `undefined` when the capture is
+	 * busy or fenced.
 	 */
-	function writeRaw(): Promise<void> {
-		if (gated || mode.kind !== 'raw') return Promise.resolve();
-		return track(async () => {
-			if (mode.kind !== 'raw' || mode.over === 'settling') return;
-			const { text, over } = mode;
-			try {
-				const { data: written, error } =
-					over === 'absent'
-						? await store.create(text)
-						: await store.replace(over, text);
-				if (error === null) {
-					hooks.onSaved(written);
-					// The person chose to write the file; an unanswered delete is answered.
-					deletion = undefined;
-					if (mode.kind !== 'raw') return;
-					if (mode.text !== text) {
-						mode = {
-							...mode,
-							over: captureOf(written),
-							problem: undefined,
-						};
-						return;
-					}
-					mode = { ...mode, over: captureOf(written), problem: undefined };
-					if (!retired) await acquire();
-					return;
-				}
-				if (
-					error.name !== 'Conflict' &&
-					error.name !== 'Exists' &&
-					error.name !== 'NotFound'
-				) {
-					if (mode.kind === 'raw') mode = { ...mode, problem: error.message };
-					return;
-				}
-				const current = await store.read();
-				if (mode.kind !== 'raw') return;
-				if (current.kind === 'unreadable') {
-					mode = { ...mode, problem: current.message };
-					return;
-				}
-				mode = {
-					...mode,
-					over:
-						current.kind === 'present' ? captureOf(current.entry) : 'absent',
-					problem:
-						current.kind === 'present'
-							? 'The file changed outside this window, so this source was not saved. The file now is shown below; saving again replaces it.'
-							: 'The file was removed outside this window, so this source was not saved. Saving again writes it back.',
-				};
-			} catch (cause) {
-				if (mode.kind === 'raw') mode = { ...mode, problem: describe(cause) };
-			}
-		});
+	async function hold<T>(
+		kind: Exclude<Operation, 'opening' | 'deleting'>,
+		task: (current: CaptureEditor) => Promise<T>,
+	): Promise<T | undefined> {
+		const current = editor;
+		if (!admitted() || !current) return undefined;
+		operation = kind;
+		try {
+			return await admit(() => task(current));
+		} finally {
+			if (operation === kind) operation = undefined;
+		}
 	}
 
-	/** Apply a structured edit to the editor's body, or record why it was refused. */
+	// --- Deletion --------------------------------------------------------
+
+	/** Release the deletion hold, saying why when it did not delete. */
+	function endDeletion(problem?: string) {
+		deletionReview = undefined;
+		deletionProblem = problem;
+		reviewing = undefined;
+		if (operation === 'deleting') operation = undefined;
+	}
+
+	/** Read the file for review, unless this review was called off meanwhile. */
+	async function readForDeletion(
+		token: object,
+		problem: string | undefined,
+	): Promise<boolean> {
+		let current: Current;
+		try {
+			current = await store.read();
+		} catch (cause) {
+			if (reviewing === token) endDeletion(describe(cause));
+			return false;
+		}
+		if (reviewing !== token || retired) return false;
+		if (current.kind === 'present') {
+			deletionReview = { entry: current.entry, problem };
+			return true;
+		}
+		endDeletion(
+			current.kind === 'removed'
+				? 'This capture is already gone.'
+				: current.message,
+		);
+		return false;
+	}
+
+	// --- Structured input -------------------------------------------------
+
+	/**
+	 * Submit a structured edit at once as the complete row: the fields the row
+	 * has, unknown keys included, and the edited body. A refusal submits
+	 * nothing and says why.
+	 */
 	function apply(edit: Edit): boolean {
-		if (fenced()) return false;
-		if (mode.kind !== 'editing') {
-			refusal =
-				mode.kind === 'raw'
-					? 'Source has text that is not saved yet. Save or discard it first.'
-					: 'This capture cannot be edited here yet.';
+		if (undecided()) return false;
+		const current = editor?.row;
+		if (!editor || current?.status !== 'valid') {
+			refusal = 'This capture cannot be edited here now.';
 			return false;
 		}
 		if (!edit.ok) {
 			refusal = edit.refusal.message;
 			return false;
 		}
+		refusal = undefined;
+		if (edit.source === current.text) return true;
 		const frame = frameRowText(edit.source);
 		if (frame.kind !== 'frontmatter') {
 			refusal = 'The edited capture has no frontmatter.';
 			return false;
 		}
-		const { error: changedError } = mode.editor.change({
+		const { error } = editor.set({
+			fields: current.fields,
 			body: edit.source.slice(frame.bodyStart),
 		});
-		if (changedError !== null) {
-			refusal = changedError.message;
+		if (error !== null) {
+			refusal = error.message;
 			return false;
 		}
-		refusal = undefined;
-		schedule();
+		tookInput();
 		return true;
 	}
 
-	/** Take the latest valid read in place of the draft, answering any outcome. */
-	function takeSaved(): boolean {
-		if (mode.kind !== 'editing' || editorState === undefined) return false;
-		const { observation, lastSave } = editorState;
-		if (observation.kind !== 'present') {
-			refusal =
-				'The file could not be read as a capture just now, so there is nothing to go back to. Check again first.';
-			return false;
-		}
-		const { error: adoptedError } = mode.editor.adopt(observation.revision);
-		if (adoptedError !== null) {
-			refusal = adoptedError.message;
-			return false;
-		}
-		acknowledged = lastSave;
-		thrown = undefined;
-		deletion = undefined;
-		pendingText = undefined;
-		editing = undefined;
-		refusal = undefined;
-		return true;
+	/** Let go for good. Admitted saves finish without anything held here. */
+	function retire() {
+		if (retired) return;
+		retired = true;
+		opening?.abort();
+		editor = undefined;
 	}
 
-	/** While a delete owns the file, nothing typed is taken. Says so. */
-	function fenced(): boolean {
-		if (!gated || retired) return gated;
-		refusal = 'This capture is being deleted, so nothing typed is taken.';
-		return true;
-	}
-
-	/**
-	 * Close the gate and let go of the editor once every operation already
-	 * admitted has settled. The editor's last state stays readable.
-	 */
-	function dispose(): Promise<void> {
-		disposal ??= (async () => {
-			gated = true;
-			retired = true;
-			clearTimeout(timer);
-			opening?.abort();
-			await idle();
-			if (mode.kind === 'editing') await mode.editor.dispose().catch(noop);
-		})();
-		return disposal;
-	}
-
-	const ready = track(acquire);
+	const ready = open();
 
 	return {
 		path,
 		stem,
-		/** Settles once the first opening has an editor or a reason it has none. */
+		/** Settles once acquisition has an editor or a reason it has none. */
 		ready,
-		/** Settles once no tracked operation is pending. */
-		idle,
-		get mode() {
-			return mode;
+		/** Acquisition settled. */
+		get opened() {
+			return opened;
 		},
-		/** The editor's state while it owns the text: baseline, latest read, last save. */
-		get editor() {
-			return editorState;
+		/** The work holding this capture now, if any. */
+		get operation() {
+			return operation;
 		},
-		/** The text Source shows. */
+		/** Let go for good: nothing is taken again. */
+		get retired() {
+			return retired;
+		},
+		/** Whether a person's input is taken now. */
+		get admitted() {
+			return admitted();
+		},
+
+		/** Whether the editor is acquired: Capture and Source can show its row. */
+		get loaded() {
+			return editor !== undefined;
+		},
+		/** The editor's row status, or `undefined` while there is no editor. */
+		get status() {
+			return editor?.row.status;
+		},
+		/** Why readable text has no structured form, when it has none. */
+		get rowProblem(): string | undefined {
+			const current = editor?.row;
+			return current?.status === 'invalid'
+				? describeRowError(current.error)
+				: undefined;
+		},
+		/** Why there is no editor, when acquisition gave none. */
+		get refused() {
+			return refused;
+		},
+		/** The text Source shows, and what a copy or a download holds. */
 		get source() {
-			return source;
+			return source();
 		},
 		/** That text read as text and thoughts. Thoughts belong to this value. */
 		get document(): CaptureDocument {
-			return document;
+			return document();
 		},
 		/** That text read as a row: a parse failure, or its fields and their issues. */
 		get reading() {
-			return reading;
+			return readingOf(source());
 		},
-		/** Structured controls apply: the editor owns the text. */
+		/** The Capture view's controls apply: a valid row. */
 		get structured() {
-			return mode.kind === 'editing';
+			return editor?.row.status === 'valid';
 		},
-		/** A save that did not land or whose answer was lost, until the person answers it. */
-		get outcome() {
-			return outcome;
+		get view() {
+			return view;
 		},
-		/** What the latest read of the file asks the person to review first. */
-		get review() {
-			return review;
+		/** Choose Capture or Source. The choice outlives the view and changes nothing saved. */
+		setView(next: DraftView) {
+			if (fenced()) return;
+			view = next;
 		},
-		/** The outcome, else the review: what a status line names first. */
-		get notice(): Notice | undefined {
-			return outcome ?? review;
+		/** What saving waits on the person for. */
+		get notice() {
+			return notice();
 		},
 		get saving() {
-			return working > 0 || editorState?.saving !== undefined;
-		},
-		/** A delete or disposal owns the file: no work starts and nothing typed is taken. */
-		get gated() {
-			return gated;
+			return editor?.save.status === 'saving';
 		},
 		get refusal() {
 			return refusal;
-		},
-		get dirty() {
-			return dirty();
-		},
-		/** The file is gone and nothing here would be lost with it. */
-		get gone() {
-			if (unsettled()) return false;
-			if (mode.kind === 'unavailable') return mode.missing;
-			return (
-				mode.kind === 'editing' && editorState?.observation.kind === 'missing'
-			);
 		},
 		/** Whether leaving now would lose something. */
 		get unsettled() {
@@ -739,61 +510,14 @@ export function createDraft(
 			return hasUnsentInput();
 		},
 
-		/**
-		 * Type in Source. With the frontmatter as the editor has it, this is a
-		 * body change. Any other text makes the source raw, written only on request.
-		 */
+		/** Type in Source: submitted at once, exactly as typed, valid or not. */
 		inputSource(value: string) {
-			if (fenced()) return;
-			refusal = undefined;
-			if (mode.kind === 'raw') {
-				const next = fromTextarea(mode.text, value, document.newline);
-				if (next !== mode.text)
-					mode = { ...mode, text: next, problem: undefined };
-				return;
-			}
-			if (mode.kind !== 'editing' || editorState === undefined) return;
-			const current = editorState.text;
-			const next = fromTextarea(current, value, document.newline);
+			if (undecided() || !editor) return;
+			const current = source();
+			const next = fromTextarea(current, value, documentOf(current).newline);
 			if (next === current) return;
-			const head = frameRowText(current);
-			const frame = frameRowText(next);
-			if (
-				head.kind === 'frontmatter' &&
-				frame.kind === 'frontmatter' &&
-				next.slice(0, frame.bodyStart) === current.slice(0, head.bodyStart)
-			) {
-				const { error: changedError } = mode.editor.change({
-					body: next.slice(frame.bodyStart),
-				});
-				if (changedError === null) {
-					schedule();
-					return;
-				}
-				refusal = changedError.message;
-			}
-			enterRaw(mode.editor, next);
-		},
-		/** Write the raw source exactly. */
-		writeRaw,
-		/**
-		 * Drop raw source typed here: back to the file as it was shown, then
-		 * open it again as a capture when it is one.
-		 */
-		async discardRaw() {
-			if (gated || mode.kind !== 'raw' || mode.over === 'settling') return;
-			const { over } = mode;
-			refusal = undefined;
-			if (over === 'absent') {
-				mode = {
-					kind: 'unavailable',
-					missing: true,
-					message: 'The file is not in the folder.',
-				};
-				return;
-			}
-			mode = { ...mode, text: over.text, problem: undefined };
-			await track(acquire);
+			editor.setText(next);
+			tookInput();
 		},
 
 		/**
@@ -801,18 +525,15 @@ export function createDraft(
 		 * could not be applied, otherwise the document's text.
 		 */
 		get text() {
-			return pendingText ?? document.text ?? '';
+			return pendingText ?? document().text ?? '';
 		},
 		get textIsPending() {
 			return pendingText !== undefined;
 		},
-		/**
-		 * Type in the capture text box. Text that cannot be applied yet is kept.
-		 * While a delete owns the file, nothing typed is taken, kept or not.
-		 */
+		/** Type in the capture text box. Text that cannot be applied yet is kept. */
 		inputText(value: string) {
 			if (fenced()) return;
-			if (apply(setText(document, value))) pendingText = undefined;
+			if (apply(setText(document(), value))) pendingText = undefined;
 			else pendingText = value;
 		},
 		dropPendingText() {
@@ -824,13 +545,14 @@ export function createDraft(
 		get newThought() {
 			return newThought;
 		},
-		set newThought(value: string) {
+		inputNewThought(value: string) {
 			if (fenced()) return;
 			newThought = value;
 		},
 		/** Add the new-thought text as the last thought. The text stays if refused. */
 		addThought(): boolean {
-			if (!apply(addThought(document, newThought))) return false;
+			if (fenced()) return false;
+			if (!apply(addThought(document(), newThought))) return false;
 			newThought = '';
 			return true;
 		},
@@ -838,142 +560,232 @@ export function createDraft(
 		get editing() {
 			return editing;
 		},
+		/** Begin an edit of `thought`: a new edit, even of the thought edited before. */
 		startEditing(thought: Thought) {
 			if (fenced()) return;
-			editing = { thought, text: thought.text };
+			editing = { thought, text: thought.text, id: {} };
 			refusal = undefined;
 		},
-		inputEditing(text: string) {
-			if (fenced()) return;
-			if (editing) editing = { thought: editing.thought, text };
+		/** Type into the edit `id`; refused unless that is the edit open now. */
+		inputEditing(text: string, id: ThoughtEdit['id']) {
+			if (fenced() || editing?.id !== id) return;
+			editing = { ...editing, text };
 		},
-		/** Apply the edit. Refused, with the text kept, if the capture changed since it began. */
-		commitEditing(): boolean {
-			if (!editing) return false;
-			if (!apply(editThought(document, editing.thought, editing.text)))
+		/**
+		 * Apply the edit `id`. Refused unless that is the edit open now, and,
+		 * with the text kept, if the capture changed since it began.
+		 */
+		commitEditing(id: ThoughtEdit['id']): boolean {
+			if (fenced() || editing?.id !== id) return false;
+			if (!apply(editThought(document(), editing.thought, editing.text)))
 				return false;
 			editing = undefined;
 			return true;
 		},
-		cancelEditing() {
-			if (fenced()) return;
+		/** Drop the edit `id`, unless another edit is open now. */
+		cancelEditing(id: ThoughtEdit['id']) {
+			if (fenced() || editing?.id !== id) return;
 			editing = undefined;
 			refusal = undefined;
 		},
 		deleteThought: (thought: Thought) =>
-			apply(deleteThought(document, thought)),
+			!fenced() && apply(deleteThought(document(), thought)),
 		swapThoughts: (thought: Thought, neighbour: Thought) =>
-			apply(swapThoughts(document, thought, neighbour)),
+			!fenced() && apply(swapThoughts(document(), thought, neighbour)),
 
-		/** Save what typing would save, now. */
-		save: drain,
 		/**
-		 * The person's explicit save: a retry after a failure or an unknown
-		 * outcome, keeping this draft over a change made elsewhere that is
-		 * shown, or writing it back after a delete whose answer was lost. It
-		 * sends the whole document again, even when it reads as saved. A file
-		 * that cannot be read cannot be reviewed, so nothing is saved over it,
-		 * whatever an earlier outcome was.
+		 * Send the latest input again after a failed or unconfirmed save. A new
+		 * attempt over whatever the file holds; it never confirms an earlier
+		 * one, and a file that is gone is not created by it.
 		 */
-		async saveMine() {
-			if (gated) return;
-			await idle();
-			if (gated || mode.kind !== 'editing') return;
-			if (review?.kind === 'unreadable') {
-				refusal =
-					'The file cannot be read just now, so it cannot be reviewed and nothing is saved over it. Check again first.';
-				return;
+		retry() {
+			if (undecided() || !editor) return;
+			editor.retry();
+			tookInput();
+		},
+		/**
+		 * Read the file and show it, in place of this window's input. Waits for
+		 * a save being sent; a failed save's input is dropped. Input typed while
+		 * it reads is kept and nothing is loaded. Resolves whether it loaded.
+		 */
+		async reload(): Promise<boolean> {
+			const current = editor;
+			if (fenced() || !current) return false;
+			const { error } = await current.reload();
+			if (retired || editor !== current) return false;
+			if (error === null) {
+				absent = false;
+				deletion = undefined;
+				refusal = undefined;
+				return true;
 			}
-			thrown = undefined;
-			deletion = undefined;
-			if ((await save(mode.editor)) && dirty()) schedule();
-		},
-		/** Changed-elsewhere choice: drop my input and take the file as it is now. */
-		loadSaved() {
-			if (review?.kind === 'changed') takeSaved();
-		},
-		/**
-		 * Drop my input and take the file as last read, after a failed or
-		 * unknown save. The outcome stays what it was; it no longer holds
-		 * saving back.
-		 */
-		discardMine() {
-			if (!gated && working === 0) takeSaved();
+			if (error.name === 'NotFound') {
+				absent = true;
+				refusal = undefined;
+			} else if (error.name === 'InputChanged')
+				refusal =
+					'You typed while the file was being read, so it was not loaded. Your text is kept.';
+			else
+				refusal = `The file could not be read, so nothing was loaded. Your text is kept. ${error.message}`;
+			return false;
 		},
 		/**
-		 * Edit the file as raw source, exactly as the latest read found it,
-		 * dropping this window's draft. For a file changed into something that
-		 * is not a valid capture.
+		 * Put a file that is not in the folder back from the editor's text with
+		 * an exclusive create, then reload it. Text a file cannot hold exactly
+		 * is refused before anything is written. A file found there instead is
+		 * left as it is.
 		 */
-		async repairFile() {
-			if (gated || review?.kind !== 'invalid' || working > 0) return;
-			const { file, message } = review;
-			const disposing = release();
-			mode = {
-				kind: 'raw',
-				text: file.text,
-				over: captureOf(file),
-				reason: message,
-				problem: undefined,
-			};
-			pendingText = undefined;
-			editing = undefined;
-			refusal = undefined;
-			await track(async () => {
-				await disposing;
+		async restore(): Promise<{ ok: true } | { ok: false; message: string }> {
+			type Restored = { ok: true } | { ok: false; message: string };
+			const result = await hold(
+				'restoring',
+				async (current): Promise<Restored> => {
+					await current.flush();
+					const text = current.row.text;
+					if (!text.isWellFormed()) return { ok: false, message: UNENCODABLE };
+					let written: Written;
+					try {
+						written = await store.create(text);
+					} catch (cause) {
+						return { ok: false, message: describe(cause) };
+					}
+					if (written.error !== null)
+						return {
+							ok: false,
+							message:
+								written.error.name === 'Exists'
+									? 'A file is at this name, so nothing was written.'
+									: written.error.message,
+						};
+					// The file holds exactly this text; reloading takes it as saved.
+					absent = false;
+					deletion = undefined;
+					refusal = undefined;
+					const { error } = await current.reload();
+					if (error !== null)
+						return {
+							ok: false,
+							message: `The file was put back but could not be read again: ${error.message}`,
+						};
+					return { ok: true };
+				},
+			);
+			return result ?? { ok: false, message: 'This capture is busy.' };
+		},
+
+		/** The file as shown for deletion, while the person decides. */
+		get deletionReview() {
+			return deletionReview;
+		},
+		/** Why the last deletion did not happen. */
+		get deletionProblem() {
+			return deletionProblem;
+		},
+		/** A confirmed delete is being sent. */
+		get removing() {
+			return removing;
+		},
+		/**
+		 * Hold the capture, wait for its saves, and read its file as it is now
+		 * for the person to review before deleting it. The review is kept here,
+		 * above any view, until `confirmDeletion` or `cancelDeletion`. Resolves
+		 * whether there is a file to review.
+		 */
+		async reviewDeletion(): Promise<boolean> {
+			const current = editor;
+			if (!admitted() || !current) return false;
+			operation = 'deleting';
+			deletionProblem = undefined;
+			const token = {};
+			reviewing = token;
+			return admit(async () => {
+				await current.flush();
+				return readForDeletion(token, undefined);
 			});
 		},
-		/** Read the file again: through the editor, or by opening it again. */
-		async check() {
-			if (gated || mode.kind === 'opening') return;
-			if (mode.kind === 'editing') await mode.editor.refresh();
-			else if (!rawTyped()) await track(acquire);
+		/**
+		 * Delete exactly the file the person reviewed, without reading it first.
+		 * Refused while leaving or closing. Done, the capture is let go. If it
+		 * changed since, the file as it is now is shown for another review.
+		 * With no answer, the file may or may not be gone: the capture is kept
+		 * and nothing writes the file until the person chooses.
+		 */
+		async confirmDeletion(): Promise<boolean> {
+			const shown = deletionReview;
+			if (operation !== 'deleting' || shown === undefined || removing)
+				return false;
+			if (retired || store.fenced()) {
+				deletionReview = {
+					entry: shown.entry,
+					problem:
+						'Nothing is deleted while Epicenter is closing this window. Cancel, or wait.',
+				};
+				return false;
+			}
+			const token = reviewing ?? {};
+			removing = true;
+			return admit(async () => {
+				let failure: Failure;
+				try {
+					const { error } = await store.remove(shown.entry);
+					if (error === null) {
+						endDeletion();
+						retire();
+						return true;
+					}
+					failure = error;
+				} catch (cause) {
+					failure = { name: 'Unconfirmed', message: describe(cause) };
+				} finally {
+					removing = false;
+				}
+				if (failure.name === 'Conflict') {
+					await readForDeletion(
+						token,
+						'This capture changed since you reviewed it. Review it again before deleting.',
+					);
+					return false;
+				}
+				if (failure.name === 'Unconfirmed') {
+					deletion = failure.message;
+					endDeletion();
+					return false;
+				}
+				endDeletion(failure.message);
+				return false;
+			});
+		},
+		/** Keep the capture: the review is dropped and input is taken again. A delete being sent is not called off. */
+		cancelDeletion() {
+			if (operation !== 'deleting' || removing) return;
+			endDeletion();
 		},
 
 		/**
-		 * Delete the file with `remove`, after every operation already admitted.
-		 * No new work starts and nothing typed is taken meanwhile. Refused, the
-		 * draft goes on; done, it is disposed and does nothing more. With no
-		 * answer, thrown or `Unconfirmed`, the file may or may not be gone: the
-		 * draft is kept, usable, and nothing writes it until the person saves it
-		 * back, takes the file as it is, or lets the capture go.
+		 * Hold the capture for a copy of its text: wait for its saves, then run
+		 * `task` with the text as it is in Source. Resolves `undefined` when the
+		 * capture is busy.
 		 */
-		async remove<
-			T extends {
-				readonly error: {
-					readonly name: string;
-					readonly message: string;
-				} | null;
-			},
-		>(remove: () => Promise<T>): Promise<T> {
-			gated = true;
-			clearTimeout(timer);
-			let removed: T;
-			try {
-				removed = await track(remove);
-			} catch (cause) {
-				if (!retired) gated = false;
-				deletion = describe(cause);
-				throw cause;
-			}
-			if (removed.error === null) {
-				await dispose();
-				return removed;
-			}
-			if (!retired) gated = false;
-			if (removed.error.name === 'Unconfirmed')
-				deletion = removed.error.message;
-			else if (dirty()) schedule();
-			return removed;
+		copying<T>(task: (source: string) => Promise<T>): Promise<T | undefined> {
+			return hold('copying', async (current) => {
+				await current.flush();
+				return task(current.row.text);
+			});
 		},
 
-		/** Save what can be saved now. Resolves whether nothing is left unsettled. */
+		/**
+		 * For leaving and closing: wait for admitted file work, then for every
+		 * accepted write. A failed save is not sent again, and a choice waiting
+		 * for the person is not waited for. Resolves whether nothing here is
+		 * unsettled.
+		 */
 		async settle(): Promise<boolean> {
-			await drain();
-			await idle();
+			await drainWork();
+			await editor?.flush();
+			await drainWork();
 			return !unsettled();
 		},
-		/** Stop all work once what was admitted settles. Repeated calls share one disposal. */
-		dispose,
+		/** Let go for good: admitted saves finish, and nothing is taken or submitted again. */
+		retire,
 	};
 }

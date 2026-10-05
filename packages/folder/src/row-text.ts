@@ -92,17 +92,33 @@ export function readRowText<TFields>(
 			parseError,
 			issues: freezeIssues([]),
 		});
+	return conformRowValues(schemas, parsed.values, parsed.body);
+}
+
+/**
+ * The reading of frontmatter values a parser already produced: each declared
+ * field checked by itself through the shared conformance read. The values
+ * must be the parse's own; each declared value that is JSON is frozen before
+ * its field checks it. `readRowText` reads its own parse this way, and a row
+ * editor reads the complete canonical parse it exposes, so the fields judged
+ * valid are the fields shown.
+ */
+export function conformRowValues<TFields>(
+	schemas: FieldMap,
+	values: Readonly<Record<string, unknown>>,
+	body: string,
+): TableReading<TFields> {
 	const declared: Record<string, unknown> = {};
 	for (const key of Object.keys(schemas)) {
-		if (!Object.hasOwn(parsed.values, key)) continue;
-		const value = parsed.values[key];
+		if (!Object.hasOwn(values, key)) continue;
+		const value = values[key];
 		declared[key] = isJsonSafe(value) ? freezeDeep(value) : value;
 	}
 	const { conforming, issues } = conformance(schemas, declared);
 	return Object.freeze({
 		// Every value is frozen already; only the map that holds them is new.
 		fields: Object.freeze(conforming) as DeepReadonly<Partial<TFields>>,
-		body: parsed.body,
+		body,
 		parseError: undefined,
 		issues: freezeIssues(issues),
 	});

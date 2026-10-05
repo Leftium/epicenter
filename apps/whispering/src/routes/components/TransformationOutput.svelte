@@ -23,17 +23,13 @@
 		onOpenFile: (path: string) => void;
 	} = $props();
 
-	const entry = $derived(output.entry);
-	/** What the file states, field by field. A field that did not validate reads as unknown. */
-	const fields = $derived(entry.fields);
-	const text = $derived(entry.body);
 	const recording = $derived(
 		output.source === 'transcript'
 			? library.entries.find((item) => item.stem === output.entry.fields.recordingId)
 			: undefined,
 	);
 	const heading = $derived.by(() => {
-		if (naming === 'transformation') return fields.transformationTitle ?? 'Unknown transformation';
+		if (naming === 'transformation') return output.entry.fields.transformationTitle ?? 'Unknown transformation';
 		if (output.source === 'text') return 'Pasted text';
 		if (recording) return recordingTitle(recording);
 		return `Recording ${output.entry.fields.recordingId ?? 'unknown'} (no longer in the folder)`;
@@ -44,8 +40,8 @@
 			title: 'Delete this result?',
 			description:
 				output.source === 'text'
-					? `This deletes ${entry.path} from the folder. Committed versions stay in Git history.`
-					: `This deletes ${entry.path} from the folder. The transcript it was made from is not changed. Committed versions stay in Git history.`,
+					? `This deletes ${output.entry.path} from the folder. Committed versions stay in Git history.`
+					: `This deletes ${output.entry.path} from the folder. The transcript it was made from is not changed. Committed versions stay in Git history.`,
 			confirm: { text: 'Delete', variant: 'destructive' },
 			async onConfirm() {
 				const problem =
@@ -61,19 +57,19 @@
 <article class="rounded border bg-muted/30 p-3 text-sm" data-testid="transformation-result" data-result-source={output.source}>
 	<header class="mb-1.5 flex flex-wrap items-center gap-2 text-xs">
 		<span class="font-medium">{heading}</span>
-		{#if output.source === 'text' && naming === 'source' && fields.input}
-			<span class="min-w-0 flex-1 truncate text-muted-foreground" title={fields.input}>{fields.input.trim()}</span>
+		{#if output.source === 'text' && naming === 'source' && output.entry.fields.input}
+			<span class="min-w-0 flex-1 truncate text-muted-foreground" title={output.entry.fields.input}>{output.entry.fields.input.trim()}</span>
 		{/if}
-		{#if needsRepair(entry)}<Badge variant="destructive">Needs repair</Badge>{/if}
+		{#if needsRepair(output.entry)}<Badge variant="destructive">Needs repair</Badge>{/if}
 	</header>
-	<p class="whitespace-pre-wrap">{text?.trim() || '(empty result)'}</p>
+	<p class="whitespace-pre-wrap">{output.entry.body?.trim() || '(empty result)'}</p>
 	<footer class="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
-		<span>{formatTime(fields.createdAt) || 'Unknown time'} · {fields.model ?? 'unknown model'}</span>
-		<Button size="xs" variant="ghost" onclick={() => onOpenFile(entry.path)}>
-			<code class="font-mono">{entry.path}</code>
+		<span>{formatTime(output.entry.fields.createdAt) || 'Unknown time'} · {output.entry.fields.model ?? 'unknown model'}</span>
+		<Button size="xs" variant="ghost" onclick={() => onOpenFile(output.entry.path)}>
+			<code class="font-mono">{output.entry.path}</code>
 		</Button>
 		<span class="ml-auto flex items-center gap-1">
-			<Button size="xs" variant="ghost" onclick={() => void copyText(text ?? '', 'the result')}>Copy</Button>
+			<Button size="xs" variant="ghost" onclick={() => void copyText(output.entry.body ?? '', 'the result')}>Copy</Button>
 			<Button size="xs" variant="ghost-destructive" onclick={remove}>Delete</Button>
 		</span>
 	</footer>

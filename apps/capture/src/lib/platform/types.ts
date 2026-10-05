@@ -2,8 +2,9 @@
  * The seam between the Capture UI and where its folder lives.
  *
  * `#platform/folder` resolves at build time. The Epicenter host leaf attaches
- * to a real directory the desktop shell owns; the browser leaf opens a logical
- * folder in OPFS. Neither leaf imports the other's storage.
+ * to a real directory the desktop shell owns and answers the host when it
+ * quits or restarts; the browser leaf opens a logical folder in OPFS and has
+ * no such gate. Neither leaf imports the other's storage.
  */
 
 import type { CaptureFields } from '@epicenter/capture';
@@ -13,6 +14,7 @@ import type {
 	FolderGit,
 	FolderLocation,
 } from '@epicenter/folder';
+import type { Departure } from './departure.svelte.js';
 
 /**
  * The folder both leaves open. The browser names its scoped OPFS directory after
@@ -24,26 +26,23 @@ export const CAPTURE_FOLDER_ID = 'so.epicenter.capture';
 export type CaptureFolder = {
 	readonly tables: {
 		/**
-		 * `edit` opens the row editor an open capture is typed into; its saves
-		 * overwrite the whole file. `replace` writes a raw repair only over
-		 * the version that was read, and `delete` removes only the reviewed one.
+		 * `edit` acquires the row editor an open capture is typed into, valid
+		 * or not; each of its saves replaces the existing file whole and never
+		 * creates one. `delete` removes only the reviewed version.
 		 */
 		readonly captures: Pick<
 			FileTable<CaptureFields>,
-			'list' | 'get' | 'create' | 'replace' | 'delete' | 'edit'
+			'list' | 'get' | 'create' | 'delete' | 'edit'
 		>;
 	};
 	/**
-	 * Exact source at a literal path, for copies and imports. `create` needs
-	 * the path unoccupied and `replace` needs the file to be the one that was
-	 * read.
+	 * Exact source at a literal path, for copies, restores, and imports.
+	 * `create` needs the path unoccupied and `replace` needs the file to be the
+	 * one that was read.
 	 */
 	readonly files: Pick<FolderFiles, 'read' | 'create' | 'replace'>;
 	readonly git: Pick<FolderGit, 'snapshot' | 'subscribe' | 'commit'>;
 };
-
-/** The page's answer to a quit: go ahead, or stay open. */
-export type QuitAnswer = (answer: 'proceed' | 'cancel') => Promise<void>;
 
 export type CaptureHost = {
 	readonly folder: CaptureFolder;
@@ -55,25 +54,6 @@ export type CaptureHost = {
 	 */
 	onExternalChange(listener: () => void): () => void;
 	/**
-	 * Runs `listener` when the desktop app wants to quit. The app waits for
-	 * `answer`. A request that arrived before a listener was attached is
-	 * delivered when one is. A browser tab has no such request; its leave
-	 * warning covers it.
-	 */
-	onQuitRequested(listener: (answer: QuitAnswer) => void): () => void;
-	/**
-	 * Runs `listener` when the Epicenter service that served this page has
-	 * stopped. The folder is not that service's: saving carries on. What the
-	 * page can no longer do is load anything more from it, a reload included.
-	 * A folder that stops says so itself, as `closed` on its Git snapshot.
-	 */
-	onServiceStopped(listener: () => void): () => void;
-	/**
-	 * Why quitting the desktop app cannot ask this window first, when it
-	 * cannot. `undefined` when it can, and in a browser.
-	 */
-	readonly quitProtectionProblem: string | undefined;
-	/**
 	 * Let go of this page's use of the folder after the collection has finished
 	 * its intended saves. Calls that reach storage after this are refused.
 	 * On the desktop the folder stays open for the shell and its other windows.
@@ -82,3 +62,10 @@ export type CaptureHost = {
 };
 
 export type OpenCaptureHost = () => Promise<CaptureHost>;
+
+/**
+ * The host's question before it quits or restarts, for this window. Started
+ * before the folder opens, so no round is missed. `undefined` in a browser,
+ * where the leave warning covers a reload or a closed tab.
+ */
+export type OpenDeparture = () => Departure | undefined;

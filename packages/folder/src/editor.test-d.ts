@@ -2,22 +2,25 @@
  * Row editor call-site types. Checked by `tsc`, never run.
  *
  * The table owns its editor, so its row type comes from the definition the
- * folder was opened with. A structured change names declared fields only,
- * but holds any canonical value so intermediate input can be schema invalid.
- * The local document is not narrowed to the row type; `reading.fields` is
- * the validated view.
+ * folder was opened with. A valid row types its declared fields and keeps
+ * unknown metadata. `set` takes any complete unvalidated row, so a valid
+ * row's fields can be spread back with changes, and schema-invalid values
+ * can be held while a person types.
  */
 import { expectTypeOf } from 'bun:test';
 import type { Result } from 'wellcrafted/result';
 import {
+	type CanonicalValue,
 	type CreateRowOf,
 	defineFolder,
 	defineTable,
 	type Folder,
 	field,
 	type RowEditor,
-	type RowRevision,
+	type RowError,
+	type RowReloadError,
 	type RowSaveError,
+	type RowSetError,
 	type TableEditError,
 } from './contract.js';
 
@@ -45,45 +48,81 @@ export async function callSite() {
 	const { data: editor, error } = opened;
 	if (error !== null) {
 		switch (error.name) {
-			case 'NoCanonicalForm':
-			case 'InvalidSource':
-				// Both refusals carry the exact text for raw repair.
-				error.file.text satisfies string;
-				break;
 			case 'Aborted':
 			case 'NotFound':
+			case 'InvalidUtf8':
 				break;
 		}
 		return;
 	}
-	const { change, get, save } = editor;
+	const { get, set, setText, retry, flush, reload, subscribe } = editor;
 
-	// Declared fields with conforming values.
-	change({ fields: { title: 'Plan', done: true, priority: 'high' } });
-	// Declared fields holding values the schema rejects, while a person types.
-	change({ fields: { title: '' } });
-	change({ fields: { priority: 'urgent' } });
-	change({ fields: { done: 'yes' } });
-	// Removing a declared field.
-	change({ fields: { priority: undefined } });
-	change({ body: 'Body.\n' });
+	const { row, save } = get();
+	switch (row.status) {
+		case 'valid': {
+			row.fields.title satisfies string;
+			row.fields.priority satisfies 'low' | 'normal' | 'high';
+			// Unknown metadata is kept and readable as canonical values.
+			row.fields.owner satisfies CanonicalValue | undefined;
+			row.text satisfies string;
+			row.body satisfies string;
+			// A whole-row spread with one field changed.
+			set({ fields: { ...row.fields, title: 'Plan' }, body: row.body });
+			// A public valid row can be passed back; its status and text are ignored.
+			set(row);
+			// @ts-expect-error a snapshot is not writable
+			row.fields.title = 'Plan';
+			break;
+		}
+		case 'invalid':
+			row.error satisfies RowError;
+			setText(row.text);
+			// @ts-expect-error an invalid row has no structured fields
+			row.fields;
+			break;
+		default:
+			row satisfies never;
+	}
+	// Every row exposes its accepted text; storage never hides it.
+	row.text satisfies string;
+	// @ts-expect-error there is no unreadable row
+	row.status === 'unreadable';
+	if (save.status === 'failed') save.error satisfies RowSaveError;
 
-	// @ts-expect-error a misspelled field does not compile
-	change({ fields: { titel: 'Plan' } });
-	// @ts-expect-error unknown metadata is kept but not structured-editable
-	change({ fields: { owner: 'sam' } });
+	// Complete unvalidated input: schema-invalid and undeclared values hold.
+	expectTypeOf(
+		set({ fields: { title: '', priority: 'urgent', owner: 'sam' }, body: '' }),
+	).toEqualTypeOf<Result<undefined, RowSetError>>();
 	// @ts-expect-error a function has no canonical form
-	change({ fields: { title: () => 'Plan' } });
+	set({ fields: { title: () => 'Plan' }, body: '' });
+	// @ts-expect-error a complete row names its body
+	set({ fields: {} });
 
-	const { document, reading } = get();
-	// @ts-expect-error the local document is not guaranteed to conform
-	document.fields.title satisfies string;
-	reading.fields.title satisfies string | undefined;
-	reading.fields.priority satisfies 'low' | 'normal' | 'high' | undefined;
-	// @ts-expect-error state is a snapshot, not a writable store
-	get().isDirty = false;
+	expectTypeOf(setText('---\n---\n')).toEqualTypeOf<void>();
+	expectTypeOf(retry()).toEqualTypeOf<void>();
+	expectTypeOf(flush()).toEqualTypeOf<
+		Promise<Result<undefined, RowSaveError>>
+	>();
+	expectTypeOf(reload()).toEqualTypeOf<
+		Promise<Result<undefined, RowReloadError>>
+	>();
+	const { error: reloadError } = await reload();
+	if (reloadError !== null) {
+		switch (reloadError.name) {
+			case 'InputChanged':
+			case 'NotFound':
+			case 'InvalidUtf8':
+				break;
+		}
+	}
+	expectTypeOf(subscribe(() => {})).toEqualTypeOf<() => void>();
 
-	expectTypeOf(await save()).toEqualTypeOf<Result<RowRevision, RowSaveError>>();
+	// @ts-expect-error the retired protocol is gone
+	editor.change;
+	// @ts-expect-error reload replaced observation
+	editor.refresh;
+	// @ts-expect-error there is no disposal protocol
+	editor.dispose;
 
 	// @ts-expect-error only declared tables have editors
 	folder.tables.notes.edit('plan');

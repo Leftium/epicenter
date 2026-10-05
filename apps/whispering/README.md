@@ -96,8 +96,9 @@ shell starts it, with the folder it chose.
 Checks, from `apps/whispering`:
 
 ```sh
+bun run --filter @epicenter/folder build:addon   # once: the Bun opener's file exchange (macOS, Linux)
 bun run typecheck                 # the page, then the host
-bun test --isolate                # host, workspace, publication, and workflow tests
+bun run test                      # host, workspace, publication, and workflow tests, then the mounted row views
 bun run build                     # the page, into build/
 bun run build:sidecar             # the compiled host, for the desktop bundle
 cargo test --manifest-path src-tauri/Cargo.toml   # the shell: folder registration and window grant
@@ -137,7 +138,7 @@ page, is anything that is not saved yet.
 
 | Control | What it does |
 | --- | --- |
-| Start recording / Stop recording | On Home. Records, then saves the audio and its row to `recordings/`. On other pages the header has a microphone button to start, and while a recording runs it shows the elapsed time and Stop. |
+| Start recording / Stop recording (Space) | On Home. Records, then saves the audio and its row to `recordings/`. Space also starts and stops it on Home when focus is on the page or microphone. Fields, other controls, and open popovers keep their own keyboard behavior. On other pages the header has a microphone button to start, and while a recording runs it shows the elapsed time and Stop. |
 | Microphone input | On Home, under the recorder. Chooses the microphone the next recording uses: System default, or one by name. See [Under the recorder](#under-the-recorder). |
 | Transcription model | On Home, under the recorder. Shows the transcription connection in use and opens its part of Settings. |
 | Post-processing | On Home, under the recorder. Chooses one of your transformations, or None. Choosing sends nothing; **Run** on the latest transcript does. |
@@ -163,8 +164,8 @@ then close the pane to return that space to the collection. Search, sorting,
 selection, and typed drafts stay when you change pages or hide details.
 
 Edit transcript text beside playback. The transcript and its file in Files
-share one draft, with the same autosave and conflict handling. Copy uses the
-text shown; Transform first settles the draft and reads the saved transcript.
+share one editor, which saves as you type. Copy uses the text shown; Transform
+first waits for its saves and reads the saved transcript.
 Dates, file paths, capture information, endpoint, and history are under
 **File details**.
 
@@ -174,8 +175,8 @@ current browser preview could not be accessed for inspection.
 
 ### Under the recorder
 
-Three small controls sit under the microphone on Home. Each opens its own
-popover.
+Three small controls sit at the microphone's lower right on Home, or under it
+on a narrow window. Each opens its own popover.
 
 **Microphone input.** System default, or one microphone by name.
 
@@ -237,20 +238,28 @@ sent is the text connection in Settings, never the file.
   email) and an empty one. Nothing is created until you choose; the app never
   adds files on its own. A new transformation is written with `model: null`
   and `endpoint: null`: it uses the text connection and its model.
-- Edit the title, instructions, and an optional model in Details, or the whole
-  file in Source. Edits save like any other file here, with the same conflict
-  handling. A save from Details keeps fields the app does not know and writes
-  the frontmatter in the app's standard form; Source keeps the text exactly.
+- A transformation's page has three tabs. **Instructions** opens first and
+  edits the title and instructions; **Model and connection** below them holds
+  the optional model and where requests go. **Try it** runs it (below).
+  **Source** shows the file's text; **Edit the text** edits it there. The
+  fields and the text are one editor of the one file, and typing in either
+  saves as you type. A save from
+  Instructions keeps fields the app does not know and writes the frontmatter
+  in the app's standard form; Source keeps the text exactly.
 - A model typed in a transformation is used instead of the text connection's;
   leave it empty to use the connection's. Whispering keeps no list of
   providers or models.
 - A transformation an earlier version wrote names an endpoint. That file still
   reads and runs, but its endpoint is only a condition: it runs while the text
   connection is exactly that base URL, and otherwise says so and sends
-  nothing. **Remove the endpoint and use the text connection** on its page
-  sets it to `null`. The app never rewrites these files on its own.
-- Run one from a transcript's **Transform** menu on Recordings, from the
-  transformation's own page on a chosen transcript, or on pasted text (below).
+  nothing. Its page says so at the top of Instructions, and in Try it when the
+  endpoint is what stops it; **Remove the endpoint and use the text
+  connection** sets it to `null`. The app never rewrites these files on its
+  own.
+- Run one from a transcript's **Transform** menu on Recordings, or from Try it
+  on the transformation's page, on a chosen transcript or on pasted text
+  (below). When it cannot run, Try it says why and offers the fix it can:
+  the text connection's settings or Instructions.
   The Run button, the post-processing choice, the Transform menu, and the run
   itself all make the same decision about whether it can run and with what.
 
@@ -266,10 +275,10 @@ correctly after you edit or delete its transformation. Deleting a
 transformation keeps its results. Nothing here claims an endpoint answers the
 same way twice.
 
-**Pasted text.** A transformation's page has **A transcript** and **Pasted
-text**. Paste any text and press **Run on pasted text**; no recording is
-needed. The pasted text stays while you move between pages and
-transformations, and is never written anywhere.
+**Pasted text.** Try it has **A transcript** and **Pasted text**. Paste any
+text and press **Run on pasted text**; no recording is needed. The pasted text
+stays while you move between pages and transformations, and is never written
+anywhere.
 
 - Running saves open edits to the transformation first, then fixes the run
   before anything is sent: its file name and the exact instructions, text,
@@ -279,7 +288,10 @@ transformations, and is never written anywhere.
   and **Discard**. It is held in the window, not saved, until you press
   **Save**, which writes it to `text_runs/`. A held answer keeps the app from
   closing without asking, and the notice under the header points to it from
-  every page.
+  every page. Its **Open to save or discard** shows Try it, even when that
+  transformation is already open on Instructions or Source. The Try it tab shows
+  when a run is in progress, failed, or waiting to be saved. Reopening that
+  transformation starts on Try it.
 - One transformation holds one answer on pasted text at a time. While it runs,
   or while its answer waits, Run on pasted text sends nothing.
 - Saved results on pasted text are listed with the transformation's results as
@@ -419,8 +431,9 @@ the open window. They are not written anywhere else.
 
 ### Closing and quitting
 
-Closing the window (the close button or Command-W) and quitting (Command-Q or
-the Whispering menu) both ask the window first:
+Closing the window (the close button or Command-W) and quitting (Command-Q,
+the Whispering menu, or on macOS Quit in the Dock, a logout, restart, or
+shutdown) all ask the window first:
 
 - When nothing is held, typing that can still be saved is saved and the app
   closes with no prompt.
@@ -438,6 +451,11 @@ Transformations never does, because nothing is lost by it.
 The app closes only on an explicit answer from the window. A window that is
 busy or slow keeps the app open until it answers; closing again only asks
 again.
+
+A logout, restart, or shutdown is always stopped while Whispering is open,
+even when nothing is held: Whispering asks the window as for any quit, and the
+logout does not continue on its own. Start it again once Whispering has
+closed.
 
 If Whispering's host process stops while the window is open, the terminal,
 Reveal folder, and new transcription and transformation requests stop working
@@ -473,11 +491,22 @@ applies instead.
 The app notices changes to the folder from any program, usually at once and
 otherwise within a couple of seconds.
 
-- An editor with no unsaved typing shows the new content.
-- An editor with unsaved typing keeps it, stops saving, and shows a conflict.
-  **Show saved version** displays the file as it is now. Then choose: discard
-  yours and load the saved file, save yours over it, or **Keep both**, which
-  writes your text to `conflicts/<name>-<time>.md` and loads the saved file.
+- The lists show the new content. An open recording, transcript, or
+  transformation keeps showing what you see, and your next keystroke saves the
+  whole file over the change. **Reload from file** shows the file as it is now.
+- An open text file with no unsaved typing shows the new content. One with
+  unsaved typing keeps it, stops saving, and shows a conflict. **Show saved
+  version** displays the file as it is now. Then choose: discard yours and
+  load the saved file, save yours over it, or **Keep both**, which writes your
+  text to `conflicts/<name>-<time>.md` and loads the saved file.
+- A recording, transcript, or transformation file that is removed while it is
+  open is never created again by saving. Reload reports that it is missing and
+  keeps your input. **Copy mine** puts it on the clipboard; **Discard mine**
+  deliberately closes its editor.
+- A save that failed, or whose reply never arrived, keeps your text on screen
+  and stops saving, typing included, until you choose **Save again**, which
+  writes your latest text, or **Discard mine and load the file**. A reply that
+  never arrived is shown as not known, never as saved.
 
 A recording or transformation file whose text does not read as a row stays in
 its list marked "Needs repair" with its file untouched, and still opens. A row
@@ -488,8 +517,8 @@ malformed works.
 
 A row that reads but has a missing or bad field is marked the same way, and
 everything that does not need that field keeps working: a recording with a bad
-title still plays and transcribes, and one with no `audioPath` still takes
-notes. A transformation runs once its file reads without issues (title,
+title still plays and transcribes. Its fields are edited in Source until the
+whole row reads again; then the form returns. A transformation runs once its file reads without issues (title,
 model, and endpoint present, `null` allowed for the last two) and it has
 instructions. The messages shown describe the text on screen, saved or not.
 Fields the app does not know are kept. Saving a recording, transcript, or
@@ -552,7 +581,7 @@ A debug build has a bug-icon menu in the header:
 
 | Control | Effect |
 | --- | --- |
-| Pause autosave | Typing stays unsaved until "Save now", so an outside edit can be raced against a draft. |
+| Pause autosave | Typing in an ordinary text file stays unsaved until "Save now", so an outside edit can be raced against a draft. Recordings, transcripts, and transformations still save as you type. |
 | Fail the next recording file write | The next save lands the audio and fails the row, leaving audio with no recording file. Each press arms one more. |
 | Fail the next audio write | The next save of a new recording fails before anything is written. |
 | Lock the branch | Creates a lock on the branch ref, where an interrupted Git process leaves one, so commits fail while saves succeed. Press again to unlock. It never replaces a lock that already exists and only ever removes the lock it created. |
@@ -592,7 +621,8 @@ These are absent, not hidden behind a setting:
 - Git LFS.
 - System-wide dictation: global shortcuts, push-to-talk, voice-activated
   recording, and delivering text to the cursor or clipboard automatically. Copy
-  buttons are the only way text leaves the app.
+  buttons are the only way text leaves the app. Space on Home works only while
+  the app's window has focus.
 - Automatic transcription or transformation after a recording. Each is a button
   you press, so nothing is sent to a paid endpoint on its own.
 - On-device transcription models. Transcription needs an endpoint.

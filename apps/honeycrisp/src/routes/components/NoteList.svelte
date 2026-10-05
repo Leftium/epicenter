@@ -31,17 +31,16 @@
 	const reads = (note: NoteEntry, field: keyof NoteEntry['fields']) =>
 		note.parseError === undefined && Object.hasOwn(note.fields, field);
 
-	/** What the row shows: the open draft when there is one, else the saved file. */
+	/** What the row shows: the open note's editor when there is one, else the listed file. */
 	function shown(note: NoteEntry) {
-		const opened = notes.noteAt(note.path);
-		const raw = notes.sessionAt(note.path);
-		// A draft is read as it is typed, with the reader that reads saved files.
+		const row = notes.noteAt(note.path)?.row;
+		// An open note is shown as it is on screen, saved or not.
 		const reading =
-			opened?.dirty
-				? { fields: opened.state.reading.fields, body: opened.state.document.body }
-				: raw?.dirty
-					? inspectRow(honeycrispDefinition.tables.notes, raw.buffer)
-					: note;
+			row === undefined
+				? note
+				: row.status === 'valid'
+					? row
+					: inspectRow(honeycrispDefinition.tables.notes, row.text);
 		return {
 			title: displayTitle(reading.fields.title ?? note.fields.title, reading.body),
 			preview: previewText(reading.body),
@@ -127,7 +126,7 @@
 			<h3 class="px-2 pt-2 pb-1 text-xs font-medium text-muted-foreground">{group.label}</h3>
 			{#each group.entries as note (note.path)}
 				{@const row = shown(note)}
-				{@const session = notes.noteAt(note.path) ?? notes.sessionAt(note.path)}
+				{@const session = notes.noteAt(note.path)}
 				<ContextMenu.Root>
 					<ContextMenu.Trigger>
 						<button

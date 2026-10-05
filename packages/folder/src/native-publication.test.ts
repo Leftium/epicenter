@@ -7,8 +7,14 @@
  * Key behaviors:
  * - A writer that lands while the bytes are staged is caught: the write is a
  *   `Conflict`, the other writer's bytes stay, and no scratch file is left
- * - A writer that lands between the final check and the rename is still
- *   overwritten. This is the documented limit, pinned so it is never claimed
+ * - A file removed at any point before the publication, even after the final
+ *   check, is never put back: the replacement exchanges with the file, and an
+ *   exchange with nothing fails, so the write is `NotFound` or `Conflict`.
+ *   These cases need the exchange; where there is none, Windows included,
+ *   `native-unsupported.test.ts` shows the replacement refused instead
+ * - An exchange the filesystem refuses is `Io`; nothing falls back to rename
+ * - A writer that lands between the final check and the exchange is still
+ *   displaced. This is the documented limit, pinned so it is never claimed
  *   away: the check is best effort, not a compare-and-swap
  * - A move rechecks its source after preparing the destination
  * - A linked `.git`, a `gitdir:` file, and a linked scratch directory are
@@ -39,14 +45,19 @@ const {
 	writeFile,
 } = real;
 
-/** Runs at the two publication points of a native write, when set. */
+/** Runs at the publication points of a native write, when set. */
 let afterStage: (() => Promise<void>) | undefined;
 let beforeRename: (() => Promise<void>) | undefined;
+let beforeExchange: (() => Promise<void>) | undefined;
 let afterMkdir: ((path: string) => Promise<void>) | undefined;
+/** Scratch files renamed into the folder. */
+let renamed = 0;
 const SCRATCH = `${sep}.git${sep}epicenter${sep}scratch${sep}`;
+const exchange = await import('./native-exchange.js');
+const realExchange = exchange.exchangeFiles;
 
 // The native store reads these bindings at call time, so the hooks observe
-// the real staging write and the real rename without a production seam.
+// the real staging write, rename, and exchange without a production seam.
 mock.module('node:fs/promises', () => ({
 	...real,
 	default: real,
@@ -56,13 +67,23 @@ mock.module('node:fs/promises', () => ({
 		return written;
 	},
 	async rename(...args: Parameters<typeof real.rename>) {
-		if (String(args[0]).includes(SCRATCH)) await beforeRename?.();
+		if (String(args[0]).includes(SCRATCH)) {
+			await beforeRename?.();
+			renamed++;
+		}
 		return real.rename(...args);
 	},
 	async mkdir(...args: Parameters<typeof real.mkdir>) {
 		const made = await real.mkdir(...args);
 		await afterMkdir?.(String(args[0]));
 		return made;
+	},
+}));
+mock.module('./native-exchange.js', () => ({
+	...exchange,
+	async exchangeFiles(a: string, b: string) {
+		if (a.includes(SCRATCH)) await beforeExchange?.();
+		return realExchange(a, b);
 	},
 }));
 
@@ -95,7 +116,9 @@ afterAll(() => {
 afterEach(async () => {
 	afterStage = undefined;
 	beforeRename = undefined;
+	beforeExchange = undefined;
 	afterMkdir = undefined;
+	renamed = 0;
 	for (const name of REDIRECTS) delete process.env[name];
 	for (const root of roots.splice(0))
 		await rm(root, { recursive: true, force: true });
@@ -162,24 +185,128 @@ test('a file removed while the bytes are staged is a conflict, not a creation', 
 	).toBe(false);
 });
 
-test('a writer between the final check and the rename is still overwritten', async () => {
-	const folder = await root('native-rename-');
+const exists = (path: string) =>
+	stat(path).then(
+		() => true,
+		() => false,
+	);
+
+test.skipIf(!exchange.exchangeSupported)(
+	'a file removed after the final check is not put back',
+	async () => {
+		const folder = await root('native-exchange-removed-');
+		await writeFile(join(folder, 'note.md'), 'read');
+		const boundary = createNativeFileBoundary(folder);
+		let removed = false;
+		beforeExchange = async () => {
+			await rm(join(folder, 'note.md'));
+			removed = true;
+		};
+		const bytes = encoder.encode('mine');
+
+		const { error: applyError } = await boundary.apply([
+			{
+				kind: 'replace',
+				path: 'note.md',
+				bytes,
+				sha256: await hashBytes(bytes),
+			},
+		]);
+
+		expect(removed).toBe(true);
+		expect(applyError?.name).toBe('NotFound');
+		expect(await exists(join(folder, 'note.md'))).toBe(false);
+		expect(renamed).toBe(0);
+		expect(await scratchFiles(folder)).toEqual([]);
+	},
+);
+
+test.skipIf(!exchange.exchangeSupported)(
+	'a guarded replacement whose file is removed after the final check is a conflict with no actual sha256',
+	async () => {
+		const folder = await root('native-exchange-removed-guarded-');
+		await mkdir(join(folder, 'todos'));
+		await writeFile(join(folder, 'todos', 'x.md'), 'read');
+		const boundary = createNativeFileBoundary(folder);
+		beforeExchange = () => rm(join(folder, 'todos'), { recursive: true });
+
+		const { error: applyError } = await boundary.apply([
+			await replace('todos/x.md', 'read', 'mine'),
+		]);
+
+		expect(applyError?.name).toBe('Conflict');
+		if (applyError?.name !== 'Conflict') return;
+		expect(applyError.actualSha256).toBeUndefined();
+		// Neither the file nor the directory that held it comes back.
+		expect(await exists(join(folder, 'todos'))).toBe(false);
+		expect(await scratchFiles(folder)).toEqual([]);
+	},
+);
+
+test('an exchange the filesystem refuses is Io, and nothing renames instead', async () => {
+	const folder = await root('native-exchange-unsupported-');
 	await writeFile(join(folder, 'note.md'), 'read');
 	const boundary = createNativeFileBoundary(folder);
-	let landed = false;
-	beforeRename = async () => {
-		await writeFile(join(folder, 'note.md'), 'external');
-		landed = true;
+	beforeExchange = async () => {
+		throw Object.assign(new Error('ENOTSUP: renamex_np could not exchange'), {
+			code: 'ENOTSUP',
+		});
 	};
 
 	const { error: applyError } = await boundary.apply([
 		await replace('note.md', 'read', 'mine'),
 	]);
 
-	expect(landed).toBe(true);
-	// The remaining race: the check is not an OS-wide compare-and-swap, and
-	// nothing here merges. The write reports success and the other bytes are gone.
+	expect(applyError?.name).toBe('Io');
+	expect(applyError?.message).toContain('ENOTSUP');
+	expect(renamed).toBe(0);
+	expect(await readFile(join(folder, 'note.md'), 'utf8')).toBe('read');
+	expect(await scratchFiles(folder)).toEqual([]);
+});
+
+test.skipIf(!exchange.exchangeSupported)(
+	'a writer between the final check and the exchange is still displaced',
+	async () => {
+		const folder = await root('native-exchange-writer-');
+		await writeFile(join(folder, 'note.md'), 'read');
+		const boundary = createNativeFileBoundary(folder);
+		let landed = false;
+		beforeExchange = async () => {
+			await writeFile(join(folder, 'note.md'), 'external');
+			landed = true;
+		};
+
+		const { error: applyError } = await boundary.apply([
+			await replace('note.md', 'read', 'mine'),
+		]);
+
+		expect(landed).toBe(true);
+		// The remaining race: the check is not an OS-wide compare-and-swap, and
+		// nothing here merges. The write reports success and the other bytes are gone.
+		expect(applyError).toBeNull();
+		expect(await readFile(join(folder, 'note.md'), 'utf8')).toBe('mine');
+		expect(await scratchFiles(folder)).toEqual([]);
+	},
+);
+
+test('an overwrite still creates a file removed before it publishes', async () => {
+	const folder = await root('native-overwrite-removed-');
+	await writeFile(join(folder, 'note.md'), 'read');
+	const boundary = createNativeFileBoundary(folder);
+	beforeRename = () => rm(join(folder, 'note.md'));
+	const bytes = encoder.encode('mine');
+
+	const { error: applyError } = await boundary.apply([
+		{
+			kind: 'overwrite',
+			path: 'note.md',
+			bytes,
+			sha256: await hashBytes(bytes),
+		},
+	]);
+
 	expect(applyError).toBeNull();
+	expect(renamed).toBe(1);
 	expect(await readFile(join(folder, 'note.md'), 'utf8')).toBe('mine');
 });
 

@@ -25,10 +25,12 @@ export {
 	type KvOf,
 } from '@epicenter/definition';
 export type { FileListing } from './boundary.js';
-export type {
-	CanonicalDocument,
-	CanonicalRefusal,
-	CanonicalValue,
+export {
+	type CanonicalDocument,
+	type CanonicalRefusal,
+	type CanonicalValue,
+	formatCanonicalDocument,
+	parseCanonicalDocument,
 } from './canonical.js';
 export {
 	type CapturedFile,
@@ -44,17 +46,15 @@ export {
 	type PreparedFolderTable,
 } from './definition.js';
 export {
-	type RowAdoptError,
-	type RowChange,
-	type RowChangeError,
 	type RowEditor,
 	RowEditorError,
 	type RowEditorState,
-	type RowObservation,
-	type RowRevision,
-	type RowSaveAttempt,
+	type RowError,
+	type RowReloadError,
 	type RowSaveError,
-	type RowSaveOutcome,
+	type RowSetError,
+	type RowState,
+	type SaveState,
 	type TableEditError,
 } from './editor.js';
 export {

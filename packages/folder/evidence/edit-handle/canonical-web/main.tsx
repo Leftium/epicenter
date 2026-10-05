@@ -1,10 +1,18 @@
 /**
  * The demo page and the editor's owner. It opens the demo folder with the
  * production browser opener, which picks this browser's default storage, and
- * opens one row editor with `folder.tables.todos.edit`. The vanilla, Solid,
- * and Svelte views share that editor and subscribe and unsubscribe on their
- * own. The owner alone disposes it: on Close, on Reset, and before opening
- * another row. Unmounting the views does not.
+ * acquires one row editor with `folder.tables.todos.edit`. The vanilla,
+ * Solid, and Svelte views and the status panel share that editor; each
+ * subscribes on its own, and unmounting one ends only its observation. The
+ * page keeps the editor itself, so an admitted save settles whether or not
+ * any view is mounted. There is nothing to dispose.
+ *
+ * Close, Open, another row, and Reset are transitions, one at a time from
+ * start to finish. Each leaves the current editor first: it stops input by
+ * unmounting every view, then waits for the admitted saves to settle. A
+ * failed save keeps the editor: the person goes back to it, or discards its
+ * input on purpose. Discarding drops the editor; opening the row again reads
+ * the file. Only the last step of a transition installs an editor.
  *
  * The folder persists across reloads and is shared by every tab of this
  * origin. Loading writes nothing except the seed rows of a folder that has no
@@ -16,14 +24,19 @@ import { mount, unmount } from 'svelte';
 import {
 	type FolderLocation,
 	openFolder as openBrowserFolder,
+	type RowSaveError,
 } from '../../../src/browser.js';
 import { h } from './dom.js';
 import { mountRawFiles } from './raw-files.js';
-import { mountRepair } from './repair.js';
 import { SolidPanel } from './SolidPanel.js';
 import SveltePanel from './SveltePanel.svelte';
 import { mountEditorStatus } from './status.js';
-import type { TodoEditor } from './todo-editor.js';
+import {
+	describeOpenError,
+	describeSaveError,
+	type Presentation,
+	type TodoEditor,
+} from './todo-editor.js';
 import {
 	DEMO_FOLDER_ID,
 	definition,
@@ -105,27 +118,51 @@ async function seedEmptyFolder() {
 }
 await seedEmptyFolder();
 
-let stem: Stem = 'plan';
-/** The opening in progress; aborted by Close, Reset, or another Open. */
-let opening: AbortController | undefined;
-let editor: TodoEditor | undefined;
-let unmountStatus: (() => void) | undefined;
+/**
+ * The editor this page keeps, the row it edits, and each view's own choice
+ * of fields or source. The choices outlive the views, so a view mounted
+ * again starts where it left off; no view reads another's.
+ */
+type Owner = {
+	readonly stem: Stem;
+	readonly editor: TodoEditor;
+	readonly views: {
+		readonly vanilla: Presentation;
+		readonly solid: Presentation;
+		readonly svelte: Presentation;
+	};
+};
+
+/**
+ * One owner transition: leaving the current row, then what the person asked
+ * for, such as opening a row or resetting. Only one runs at a time, from the
+ * first step to the last, so nothing installs an owner past another one's
+ * drain. `acquiring` is set while it waits for `table.edit`; only Close
+ * aborts it.
+ */
+type Transition = { readonly action: string; acquiring?: AbortController };
+
+let owner: Owner | undefined;
+let transition: Transition | undefined;
 let unmountViews: (() => void) | undefined;
+/**
+ * The row the selector shows and the raw file panel targets: the owner's,
+ * or, once a transition has released it, the row that transition opens.
+ */
+let selectedStem: Stem = 'plan';
 
 const toggleViews = h(
 	'button',
 	{ type: 'button', disabled: true },
-	'Mount the three views',
+	'Mount the views again',
 );
 toggleViews.onclick = () => {
+	// During a transition the views stay unmounted: that is what stops input.
+	if (owner === undefined || transition !== undefined) return;
 	if (unmountViews !== undefined) {
-		unmountViews();
-		unmountViews = undefined;
-	} else if (editor !== undefined) mountViews(editor);
-	toggleViews.textContent =
-		unmountViews === undefined
-			? 'Mount the three views again'
-			: 'Unmount the three views';
+		hideViews();
+		session.textContent = `Views unmounted. Nothing observes ${todoPath(owner.stem)}; the page keeps its editor, and an admitted save still settles.`;
+	} else showViews(owner);
 };
 const stemSelect = h(
 	'select',
@@ -134,17 +171,28 @@ const stemSelect = h(
 		h('option', { value }, `${todoPath(value)}: ${label}`),
 	),
 );
-stemSelect.onchange = () => {
-	stem = stemSelect.value as Stem;
-	void rawFiles.show();
-	void open();
-};
+stemSelect.onchange = () => openRow(stemSelect.value as Stem);
 slot('owner').replaceChildren(
 	h('label', {}, 'Row ', stemSelect),
-	h('button', { type: 'button', onclick: () => void open() }, 'Open'),
-	h('button', { type: 'button', onclick: () => void close() }, 'Close'),
+	h(
+		'button',
+		{ type: 'button', onclick: () => openRow(stemSelect.value as Stem) },
+		'Open',
+	),
+	h('button', { type: 'button', onclick: close }, 'Close'),
 	toggleViews,
 );
+
+/** Open `stem`, the row chosen when the person asked, after leaving the current one. */
+function openRow(stem: Stem) {
+	void run(`Open ${todoPath(stem)}`, (step) => open(stem, step), stem);
+}
+
+function select(stem: Stem) {
+	selectedStem = stem;
+	stemSelect.value = stem;
+	void rawFiles.show();
+}
 slot('reset').replaceChildren(
 	h(
 		'button',
@@ -160,90 +208,187 @@ slot('reset').replaceChildren(
 
 const rawFiles = mountRawFiles(slot('raw'), {
 	folder,
-	target: () => todoPath(stem),
+	target: () => todoPath(selectedStem),
 	log,
 });
 
-async function open() {
-	opening?.abort();
-	const controller = new AbortController();
-	opening = controller;
-	await closeEditor();
-	if (controller.signal.aborted) return;
-	const path = todoPath(stem);
-	session.textContent = `Opening ${path}…`;
-	log(`Opening ${path}`);
-	const { data: next, error } = await folder.tables.todos.edit(stem, {
-		signal: controller.signal,
-	});
-	if (controller.signal.aborted) {
-		// Superseded. An editor that opened anyway is ours to end.
-		if (error === null) void next.dispose();
-		log(`Opening ${path} was superseded`);
-		return;
-	}
-	opening = undefined;
-	if (error !== null) {
-		log(`Opening ${path} refused: ${error.name}`);
-		session.textContent = `${path} did not open. Opening wrote nothing.`;
-		mountRepair(slot('repair'), {
-			error,
-			path,
-			files: folder.files,
-			reopen: () => void open(),
-		});
-		return;
-	}
-	editor = next;
-	log(`Opened ${path}`);
-	session.textContent = `Editing ${path}. Every view below shares this one editor.`;
-	unmountStatus = mountEditorStatus(slot('status'), next);
-	mountViews(next);
-}
-
-function mountViews(current: TodoEditor) {
-	const stopVanilla = mountVanillaPanel(slot('vanilla'), current);
+function showViews(current: Owner) {
+	hideViews();
+	const { editor, views } = current;
+	const stopVanilla = mountVanillaPanel(slot('vanilla'), editor, views.vanilla);
 	const stopSolid = render(
-		() => <SolidPanel editor={current} />,
+		() => <SolidPanel editor={editor} presentation={views.solid} />,
 		slot('solid'),
 	);
+	// Svelte removes the view at once, but not its bindings' listeners: the
+	// panel's setters check that it is still mounted.
 	const svelte = mount(SveltePanel, {
 		target: slot('svelte'),
-		props: { editor: current },
+		props: { rowEditor: editor, presentation: views.svelte },
 	});
+	const stopStatus = mountEditorStatus(slot('status'), editor, log);
 	unmountViews = () => {
 		stopVanilla();
 		stopSolid();
 		void unmount(svelte);
+		stopStatus();
 	};
 	toggleViews.disabled = false;
-	toggleViews.textContent = 'Unmount the three views';
+	toggleViews.textContent = 'Unmount the views';
+	session.textContent = `Editing ${todoPath(current.stem)}. Every view below shares this one editor.`;
 }
 
-/** Unmount everything that shows the editor, then dispose it. */
-async function closeEditor() {
-	const closing = editor;
-	editor = undefined;
+/** Unmount every view: no control can submit input after this returns. */
+function hideViews() {
 	unmountViews?.();
 	unmountViews = undefined;
-	toggleViews.disabled = true;
-	toggleViews.textContent = 'Mount the three views';
-	unmountStatus?.();
-	unmountStatus = undefined;
-	slot('repair').replaceChildren();
-	if (closing === undefined) return;
-	const { get, dispose } = closing;
-	if (get().saving !== undefined)
-		session.textContent = 'Closing: waiting for the admitted save to settle.';
-	await dispose();
-	log(`Disposed the editor for ${get().path}`);
+	toggleViews.disabled = owner === undefined;
+	toggleViews.textContent = 'Mount the views again';
 }
 
-async function close() {
-	opening?.abort();
-	opening = undefined;
-	await closeEditor();
-	session.textContent = 'Closed.';
+/**
+ * Run one transition: release the current editor, then `next`. Input stops
+ * first, then the admitted saves settle. When the last one failed, the
+ * person decides: back to the editor, with nothing released and `next` not
+ * run, or discard its input. The transition holds the page until `next`
+ * finishes, and a request during it is refused without disturbing it. The
+ * selector and the raw file panel move to `destination` only once the
+ * release succeeded, so while the choice is pending they still name the row
+ * whose input failed.
+ */
+async function run(
+	action: string,
+	next: (step: Transition) => void | Promise<void>,
+	destination?: Stem,
+) {
+	if (transition !== undefined) {
+		log(`${action}: refused while "${transition.action}" runs`);
+		select(selectedStem);
+		return;
+	}
+	const step: Transition = { action };
+	transition = step;
+	try {
+		if (await release(action)) {
+			if (destination !== undefined) select(destination);
+			await next(step);
+		} else if (owner !== undefined) select(owner.stem); // still editing the kept row
+	} finally {
+		transition = undefined;
+	}
+}
+
+/**
+ * Close. While a transition waits for `table.edit`, Close cancels that
+ * acquisition instead, which leaves no editor: the one request whose intent
+ * a cancellation fulfils. Any other request is refused and leaves the
+ * running one alone.
+ */
+function close() {
+	if (transition?.acquiring !== undefined) {
+		transition.acquiring.abort();
+		log(`Close: cancelled the acquisition for "${transition.action}"`);
+		return;
+	}
+	void run('Close', () => {
+		session.textContent = 'Closed. No editor is kept.';
+	});
+}
+
+async function release(action: string): Promise<boolean> {
+	slot('diagnostic').replaceChildren();
+	const current = owner;
+	if (current === undefined) return true;
+	hideViews();
+	const path = todoPath(current.stem);
+	if (current.editor.get().save.status === 'saving')
+		session.textContent = `${action}: input to ${path} has stopped; waiting for its admitted saves to settle.`;
+	const { error } = await current.editor.flush();
+	if (error !== null && !(await discardAfter(action, path, error))) {
+		showViews(current);
+		return false;
+	}
+	owner = undefined;
+	hideViews();
+	log(`Released the editor for ${path}`);
+	return true;
+}
+
+/** Ask whether to discard input whose save failed. Resolves `true` to discard. */
+function discardAfter(
+	action: string,
+	path: string,
+	error: RowSaveError,
+): Promise<boolean> {
+	const choice = slot('lifetime');
+	session.textContent = `${action} is waiting: the last save to ${path} failed.`;
+	return new Promise((resolve) => {
+		const decide = (discard: boolean) => {
+			choice.replaceChildren();
+			if (discard) log(`Discarded the input for ${path} that did not save`);
+			resolve(discard);
+		};
+		choice.replaceChildren(
+			h(
+				'p',
+				{ className: 'warn' },
+				`${describeSaveError(error)} ${action} would drop the editor and the input it kept.`,
+			),
+			h(
+				'div',
+				{ className: 'row' },
+				h(
+					'button',
+					{ type: 'button', onclick: () => decide(false) },
+					'Keep editing',
+				),
+				h(
+					'button',
+					{ type: 'button', onclick: () => decide(true) },
+					`Discard that input and ${action.toLowerCase()}`,
+				),
+			),
+		);
+	});
+}
+
+/**
+ * Acquire an editor for `stem` and keep it: the only place an owner is
+ * installed. It runs as the last step of a transition whose release left no
+ * owner. A refusal leaves no editor and writes nothing.
+ */
+async function open(stem: Stem, step: Transition) {
+	if (transition !== step || owner !== undefined)
+		throw new Error('An owner is installed only by its own transition');
+	const controller = new AbortController();
+	step.acquiring = controller;
+	const path = todoPath(stem);
+	session.textContent = `Opening ${path}…`;
+	log(`Opening ${path}`);
+	const { data: editor, error } = await folder.tables.todos.edit(stem, {
+		signal: controller.signal,
+	});
+	step.acquiring = undefined;
+	if (error !== null) {
+		log(`Opening ${path} returned ${error.name}`);
+		session.textContent = `${path} has no editor. Opening wrote nothing.`;
+		slot('diagnostic').replaceChildren(
+			h('p', { className: 'warn' }, `${error.name}: ${describeOpenError(error)}`),
+			h('button', { type: 'button', onclick: () => openRow(stem) }, 'Try opening again'),
+		);
+		return;
+	}
+	owner = {
+		stem,
+		editor,
+		views: {
+			vanilla: { raw: false },
+			solid: { raw: false },
+			svelte: { raw: false },
+		},
+	};
+	log(`Opened ${path}: the row is ${editor.get().row.status}`);
+	showViews(owner);
 }
 
 /**
@@ -253,17 +398,20 @@ async function close() {
  * writes before it stay, and the log names each one and the failing path.
  */
 async function reset() {
+	// The row to open afterward is the one selected when the person asked.
+	const stem = selectedStem;
 	const asked = window.confirm(
 		`Reset the demo rows in "${DEMO_FOLDER_ID}"?\n\n` +
 			`This overwrites ${Object.keys(SEED).join(', ')} with their seed text and removes ${todoPath('gone')}, one file at a time. ` +
-			'Unsaved drafts in this tab are discarded, and the replaced text is not kept anywhere this page guarantees. ' +
+			'The open editor is released first, and the replaced text is not kept anywhere this page guarantees. ' +
 			'"Show recent commits" lists the versions history recorded.',
 	);
 	if (!asked) return;
-	await close();
-	await resetFiles();
-	void rawFiles.show();
-	await open();
+	await run('Reset', async (step) => {
+		await resetFiles();
+		void rawFiles.show();
+		await open(stem, step);
+	});
 }
 
 /** Write the reset one file at a time; stop at the first failure and say where. */
@@ -310,4 +458,4 @@ async function showHistory() {
 	);
 }
 
-await open();
+openRow(selectedStem);

@@ -18,6 +18,12 @@ export function createTerminalSession(
 	terminal: FolderTerminal,
 	/** Shell writes are saved files; the app shows them and rechecks status. */
 	afterRun: () => Promise<void>,
+	/**
+	 * While true, typing, recall, and Enter change nothing: the command,
+	 * history, and output stay exactly as they are, as when Epicenter asks to
+	 * quit or restart.
+	 */
+	fenced: () => boolean = () => false,
 ) {
 	let runs = $state<TerminalRun[]>([]);
 	let command = $state('');
@@ -42,12 +48,17 @@ export function createTerminalSession(
 			return command;
 		},
 		set command(value: string) {
+			if (fenced()) return;
 			command = value;
+		},
+		/** Typing, recall, and Enter are refused. */
+		get isFenced() {
+			return fenced();
 		},
 		/** Run the typed command. `clear` empties the output without running. */
 		async run() {
 			const line = command.trim();
-			if (line === '' || running) return;
+			if (line === '' || running || fenced()) return;
 			command = '';
 			cursor = -1;
 			if (line === 'clear') {
@@ -74,7 +85,7 @@ export function createTerminalSession(
 		},
 		/** Step through earlier commands. Returns false when there is none to recall. */
 		recall(direction: 'previous' | 'next'): boolean {
-			if (history.length === 0) return false;
+			if (history.length === 0 || fenced()) return false;
 			if (direction === 'previous')
 				cursor = cursor < 0 ? history.length - 1 : Math.max(0, cursor - 1);
 			else

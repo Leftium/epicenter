@@ -1,11 +1,13 @@
 /**
- * Canonical row documents: the complete form a row editor holds and saves.
+ * Canonical row documents: complete fields and Markdown body for editing.
  *
  * A document is every frontmatter field as an unvalidated JSON value plus the
- * Markdown body as opaque text. Parsing walks the YAML syntax tree itself
- * instead of calling `toJS`, so anything that would convert lossily (custom
+ * Markdown body as opaque text. Parsing builds values by walking the YAML syntax tree,
+ * so anything that would convert lossily (custom
  * tags, binary, sets, timestamps, non-string keys, unsafe integers, non-finite
  * numbers, lone surrogates, cyclic aliases) is refused before a value exists.
+ * The ordinary reader's conversion also checks its alias limits on that same
+ * syntax tree; its converted values are discarded.
  *
  * Formatting writes one fixed text for a document and a declared key order:
  * declared keys first in declared order, other keys in UTF-16 code unit
@@ -24,7 +26,7 @@ import {
 	isSeq,
 	parseDocument,
 } from 'yaml';
-import { frameRowText } from './markdown.js';
+import { convertFrontmatter, frameRowText } from './markdown.js';
 
 /** A JSON value with an exact YAML and JSON form. */
 export type CanonicalValue =
@@ -73,7 +75,9 @@ type Walk = {
 
 /**
  * Parse framed Markdown into its complete document. Every field is kept,
- * declared or not. A refusal carries no partial document.
+ * declared or not, without schema validation. A refusal carries no partial
+ * document; keep the original text available for raw repair. Parsing does
+ * not retain frontmatter comments or presentation.
  */
 export function parseCanonicalDocument(
 	source: string,
@@ -106,6 +110,11 @@ export function parseCanonicalDocument(
 		nodes: 0,
 	});
 	if (fieldsError !== null) return Err(fieldsError);
+	// Ordinary row reads convert this same parse under yaml's alias bound,
+	// which can refuse what the count above allows. Refuse it here too, so
+	// text with a canonical form always reads as an ordinary row.
+	const { error: conversionError } = convertFrontmatter(document);
+	if (conversionError !== null) return refuse(conversionError);
 	return Ok({
 		fields: fields as CanonicalDocument['fields'],
 		body,
@@ -227,18 +236,28 @@ export function defineOwn(
  * The canonical text of a document: the same bytes for the same document
  * and declared keys, whatever source it was read from. Refused when a value
  * has no exact JSON and YAML form, or when the text would not parse back to
- * the document.
+ * the document. This checks representation, not field schemas, and writes
+ * nothing. Pass the definition's field keys to choose their order.
+ *
+ * Only `fields` and `body` are read, once each, so a value carrying other
+ * properties formats as its document. An untyped caller's document that is
+ * not an object, or whose body is not a string, is refused, not thrown.
  */
 export function formatCanonicalDocument(
 	document: CanonicalDocument,
 	declaredKeys: readonly string[],
 ): Result<string, CanonicalRefusal> {
-	if (!document.body.isWellFormed())
+	const supplied: unknown = document;
+	if (typeof supplied !== 'object' || supplied === null)
+		return refuse('The document is not an object');
+	const { fields, body } = supplied as Record<'fields' | 'body', unknown>;
+	if (typeof body !== 'string')
+		return refuse('The body is not a string', ['body']);
+	if (!body.isWellFormed())
 		return refuse('The body contains a lone surrogate', ['body']);
 	const declared = new Set(declaredKeys);
 	if (declared.size !== declaredKeys.length)
 		return refuse('A declared key is listed twice');
-	const fields: unknown = document.fields;
 	if (!isPlainRecord(fields))
 		return refuse('The fields are not a plain object');
 	const extra = Object.keys(fields)
@@ -260,11 +279,11 @@ export function formatCanonicalDocument(
 		if (quoteError !== null) return Err(quoteError);
 		header += `${quoted}: ${text}\n`;
 	}
-	const text = `---\n${header}---\n${document.body}`;
+	const text = `---\n${header}---\n${body}`;
 	const { data: reread, error: parseError } = parseCanonicalDocument(text);
 	if (parseError !== null)
 		return refuse(`The canonical text does not parse: ${parseError.reason}`);
-	if (reread.body !== document.body || !sameValue(reread.fields, fields))
+	if (reread.body !== body || !sameValue(reread.fields, fields))
 		return refuse('The canonical text does not read back as the document');
 	return Ok(text);
 }

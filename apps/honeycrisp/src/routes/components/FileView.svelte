@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { Badge } from '@epicenter/ui/badge';
 	import { Button } from '@epicenter/ui/button';
 	import * as Empty from '@epicenter/ui/empty';
 	import { Loading } from '@epicenter/ui/loading';
@@ -8,10 +7,7 @@
 	import CopyIcon from '@lucide/svelte/icons/copy';
 	import FileIcon from '@lucide/svelte/icons/file';
 	import TriangleAlertIcon from '@lucide/svelte/icons/triangle-alert';
-	import { inspectRow } from '@epicenter/folder';
-	import { honeycrispDefinition, instantNow, noteIdOf } from '$lib/data.js';
 	import { basename, dirname, withFileNewlines } from '@epicenter/folder/file-browser';
-	import { fieldDefaults, repairFields } from '$lib/note-source.js';
 	import type { Notes, OpenFile } from '$lib/notes.svelte.js';
 	import { confirmDelete, copyPath } from './file-actions.js';
 	import FileNameBar from './FileNameBar.svelte';
@@ -29,28 +25,14 @@
 
 	const name = $derived(basename(path));
 	const directory = $derived(dirname(path));
-	/**
-	 * How a note file open as text reads, from the text on screen and never
-	 * from the saved file. Undefined for any other file.
-	 */
-	const noteText = $derived(
-		file.kind === 'text' && noteIdOf(path) !== undefined
-			? inspectRow(honeycrispDefinition.tables.notes, file.session.buffer)
-			: undefined,
-	);
-	const defaults = $derived(noteText && fieldDefaults(noteText, instantNow()));
 
-	function fillDefaults() {
-		if (file.kind !== 'text' || defaults === undefined) return;
-		const { data: repaired, error: repairedError } = repairFields(file.session.buffer, defaults);
-		if (repairedError !== null)
-			return void toast.error('Could not set the fields', { description: repairedError });
-		file.session.input(repaired);
-	}
-
-	async function openAsNote() {
-		const problem = await notes.openAsNote(path);
-		if (problem) toast.error('Could not open it as a note', { description: problem });
+	async function copyText(text: string) {
+		try {
+			await navigator.clipboard.writeText(text);
+			toast.success('Copied your text');
+		} catch {
+			toast.error('Could not copy your text', { description: 'Select it below and copy it from there.' });
+		}
 	}
 
 	/** A file shown as details: its extension names the type, then its size. */
@@ -84,53 +66,43 @@
 			<Empty.Description>{file.message}</Empty.Description>
 			<Button variant="outline" size="sm" onclick={() => void notes.open(path)}>Try again</Button>
 		</Empty.Root>
+	{:else if file.kind === 'unopened'}
+		<!-- The person's text, kept exactly as it was saved until the note opens or they dismiss it. -->
+		<div class="flex flex-wrap items-center gap-2 border-b px-4 py-1.5 text-xs">
+			<span class="text-destructive" role="alert">{file.message} Your text is kept below, exactly as saved.</span>
+			<Button
+				size="xs"
+				variant="outline"
+				disabled={notes.fenced}
+				onclick={async () => {
+					const problem = await notes.reopen(path);
+					if (problem) toast.error('Could not open the note', { description: problem });
+				}}
+			>
+				Try opening again
+			</Button>
+			<Button size="xs" variant="ghost" onclick={() => void copyText(file.text)}>Copy text</Button>
+			<Button size="xs" variant="ghost-destructive" disabled={notes.fenced} onclick={() => notes.dismiss(path)}>
+				Stop keeping this text
+			</Button>
+		</div>
+		<div class="flex min-h-0 flex-1 flex-col px-3 py-3 sm:px-4">
+			<Textarea
+				class="min-h-40 flex-1 resize-none font-mono text-xs"
+				value={file.text}
+				readonly
+				aria-label="Your saved text, read-only"
+				spellcheck={false}
+			/>
+		</div>
 	{:else if file.kind === 'text'}
 		{@const session = file.session}
 		<DraftStatus
 			{session}
-			noun={noteText ? 'note' : 'file'}
 			onRecover={() => notes.recoverDraft(session.path)}
-			onDiscard={() => notes.discardDraft(session.path)}
+			onDiscard={() => void notes.discardDraft(session.path)}
 			onStopTracking={() => notes.stopTracking(session.path)}
 		/>
-		{#if noteText}
-			{@const repaired = noteText.parseError === undefined && noteText.issues.length === 0}
-			<!-- A note file open as text: what stands between this text and the note editor. -->
-			<div class="border-b px-4 py-2 text-xs {repaired ? '' : 'bg-destructive/5'}">
-				<p class="flex flex-wrap items-center gap-2 font-medium">
-					{#if noteText.parseError}
-						<Badge variant="destructive">Needs repair</Badge>
-						{noteText.parseError.message}. Fix the text below.
-					{:else if noteText.issues.length > 0}
-						<Badge variant="destructive">Needs repair</Badge>
-						Some fields need fixing.
-						{#if defaults}
-							<Button size="xs" variant="outline" onclick={fillDefaults}>Set these fields to their defaults</Button>
-						{/if}
-					{:else if file.refusal}
-						When it was opened, this note used text the note editor cannot rewrite ({file.refusal}).
-					{:else}
-						This note is open as a file.
-					{/if}
-					<Button size="xs" variant="outline" disabled={!repaired || session.status !== 'saved'} onclick={openAsNote}>
-						Open as note
-					</Button>
-				</p>
-				{#if noteText.parseError}
-					<ul class="mt-1 space-y-0.5 text-muted-foreground">
-						{#each noteText.parseError.diagnostics as diagnostic, index (index)}
-							{#if diagnostic.message !== noteText.parseError.message}<li>{diagnostic.message}</li>{/if}
-						{/each}
-					</ul>
-				{:else if noteText.issues.length > 0}
-					<ul class="mt-1 space-y-0.5 text-muted-foreground">
-						{#each noteText.issues as issue, index (index)}
-							<li>{issue.message}</li>
-						{/each}
-					</ul>
-				{/if}
-			</div>
-		{/if}
 		<div class="flex min-h-0 flex-1 flex-col px-3 py-3 sm:px-4">
 			<Textarea
 				class="min-h-40 flex-1 resize-none font-mono text-xs"

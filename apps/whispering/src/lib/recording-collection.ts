@@ -16,10 +16,10 @@
  */
 import { audioPathIn } from './definition.js';
 import { recordingTitle } from './deletion-copy.js';
-import type { RecordingEntry } from './library.svelte.js';
 import type {
 	Deletion,
 	Library,
+	RecordingEntry,
 	TranscriptionEntry,
 } from './library.svelte.js';
 import { needsRepair } from './rows.js';
@@ -393,7 +393,14 @@ export async function captureDeletions(
 		const { data: deletion, error: refusal } = await library.deletionFor(path);
 		if (refusal !== null) captured.refused.push({ title, reason: refusal });
 		else if (deletion.kind === 'recording') captured.deletions.push(deletion);
-		else captured.refused.push({ title, reason: 'It is not a recording.' });
+		else
+			captured.refused.push({
+				title,
+				reason:
+					deletion.kind === 'unreadableRow'
+						? `Its file cannot be read as a recording (${deletion.problem}). Delete it on its own from its page or Files.`
+						: 'It is not a recording.',
+			});
 	}
 	return captured;
 }

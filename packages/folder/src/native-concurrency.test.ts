@@ -29,18 +29,27 @@ import { GIT_ENV, scratch } from './git-http.test-support.js';
 const real = { ...realFs };
 const { readdir, readFile, realpath, rm, writeFile } = real;
 
-/** Runs before a staged file is renamed into the folder, when set. */
-let beforeRename: (() => Promise<void>) | undefined;
+/** Runs before a staged file is renamed or exchanged into the folder, when set. */
+let beforePublish: (() => Promise<void>) | undefined;
 const SCRATCH = `${sep}.git${sep}epicenter${sep}scratch${sep}`;
+const exchange = await import('./native-exchange.js');
+const realExchange = exchange.exchangeFiles;
 
-// The native store reads this binding at call time, so the hook observes the
-// real rename without a production seam.
+// The native store reads these bindings at call time, so the hook observes
+// the real rename and the real exchange without a production seam.
 mock.module('node:fs/promises', () => ({
 	...real,
 	default: real,
 	async rename(...args: Parameters<typeof real.rename>) {
-		if (String(args[0]).includes(SCRATCH)) await beforeRename?.();
+		if (String(args[0]).includes(SCRATCH)) await beforePublish?.();
 		return real.rename(...args);
+	},
+}));
+mock.module('./native-exchange.js', () => ({
+	...exchange,
+	async exchangeFiles(a: string, b: string) {
+		if (a.includes(SCRATCH)) await beforePublish?.();
+		return realExchange(a, b);
 	},
 }));
 
@@ -68,7 +77,7 @@ afterAll(() => {
 	else process.env.GIT_CONFIG_GLOBAL = originalGlobal;
 });
 afterEach(async () => {
-	beforeRename = undefined;
+	beforePublish = undefined;
 	for (const root of roots.splice(0))
 		await rm(root, { recursive: true, force: true });
 });
@@ -95,17 +104,17 @@ async function scratchFiles(folder: string) {
 }
 
 /**
- * Hold the first rename until a second publication reaches its own rename, so
+ * Hold the first publication until a second one reaches its own, so
  * both have passed their sha256 checks before either lands. A boundary that
  * runs one batch at a time never sends the second one there, so the timer
- * releases the first. `fail` makes that first rename throw once released.
+ * releases the first. `fail` makes that first publication throw once released.
  */
-function holdFirstRename({ fail = false } = {}) {
+function holdFirstPublication({ fail = false } = {}) {
 	let arrivals = 0;
 	let overlapped = false;
 	const { promise: second, resolve: secondArrived } =
 		Promise.withResolvers<void>();
-	beforeRename = async () => {
+	beforePublish = async () => {
 		if (++arrivals > 1) return secondArrived();
 		let timer: ReturnType<typeof setTimeout> | undefined;
 		overlapped = await Promise.race([
@@ -115,7 +124,7 @@ function holdFirstRename({ fail = false } = {}) {
 			}),
 		]);
 		clearTimeout(timer);
-		if (fail) throw new Error('rename refused');
+		if (fail) throw new Error('publication refused');
 	};
 	return {
 		get overlapped() {
@@ -128,7 +137,7 @@ test('two saves of one version through one boundary give one success and one con
 	const folder = await root('native-same-owner-');
 	await writeFile(join(folder, 'note.md'), 'read');
 	const boundary = createNativeFileBoundary(folder);
-	const held = holdFirstRename();
+	const held = holdFirstPublication();
 
 	const [first, second] = await Promise.all([
 		boundary.apply([await replace('note.md', 'read', 'first')]),
@@ -156,7 +165,7 @@ test('two raw writes of one version through an opened folder save once', async (
 	});
 	try {
 		const captured = expectOk(await opened.files.create('note.md', 'read'));
-		holdFirstRename();
+		holdFirstPublication();
 
 		const results = await Promise.all([
 			opened.files.replace(captured, 'first'),
@@ -190,7 +199,7 @@ test('racing current-row updates return a conflict without retrying', async () =
 				fields: { title: 'One', done: false },
 			}),
 		);
-		holdFirstRename();
+		holdFirstPublication();
 
 		const results = await Promise.all([
 			opened.tables.todos.update(
@@ -236,7 +245,7 @@ test('a save queued behind one that fails still publishes', async () => {
 	const folder = await root('native-same-owner-failure-');
 	await writeFile(join(folder, 'note.md'), 'read');
 	const boundary = createNativeFileBoundary(folder);
-	holdFirstRename({ fail: true });
+	holdFirstPublication({ fail: true });
 
 	const [first, second] = await Promise.all([
 		boundary.apply([await replace('note.md', 'read', 'first')]),
@@ -255,7 +264,7 @@ test('a save queued behind a partial batch still publishes', async () => {
 	const folder = await root('native-same-owner-partial-');
 	await writeFile(join(folder, 'note.md'), 'read');
 	const boundary = createNativeFileBoundary(folder);
-	holdFirstRename({ fail: true });
+	holdFirstPublication({ fail: true });
 	const created = encoder.encode('created');
 
 	const [first, second] = await Promise.all([

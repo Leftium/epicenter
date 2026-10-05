@@ -388,10 +388,27 @@ time.
 ## What is best effort
 
 - A `replace` checks that a file is there and, when `expectedSha256` is named,
-  that its bytes hash to it, once before staging and again before the rename.
-  Another program can still write, or remove the file, between that second
-  check and the rename. The owner orders its own windows; it does not lock files against
-  other programs.
+  that its bytes hash to it, once before staging and again before it
+  publishes. On macOS, iOS, Linux, and Android it publishes by exchanging the
+  staged file with the file at the path (`renamex_np(RENAME_SWAP)`,
+  `renameat2(RENAME_EXCHANGE)`), which fails when the file is gone, so a
+  removal at any point is `NotFound` (or `Conflict`) and is never undone. A
+  filesystem there that cannot exchange is an `Io` failure; nothing falls
+  back to a rename. Another program's write between the second check and the
+  exchange is still displaced. The exchange is the only operation on the
+  path: a displaced entry that is not a regular file, or cannot be
+  inspected, stays in `.git/epicenter/scratch`, and the save is `Partial`
+  with its write both applied and failed and an `Io` error naming where the
+  entry is. An incoming update that stops this way reports `Partial` and
+  keeps its record. Windows, and any other target without an exchange, has
+  no replacement until a mechanism that requires the file at publication is
+  proven: a `replace` there is an `Io` failure naming the platform, the
+  staged copy is removed, and this operation does not change the destination.
+  The caller keeps its bytes; nothing retries. Creation, reads,
+  overwrites, moves, and removals are unchanged by this repair; none is
+  verified on Windows. Whether
+  this crate builds or runs on Windows has not been checked. The owner
+  orders its own windows; it does not lock files against other programs.
 - A `remove` or `move` source check is the same: another program can change
   the source between the check and the step. A guarded `move` that reports
   its destination landed names the hash it was guarded by, which says what

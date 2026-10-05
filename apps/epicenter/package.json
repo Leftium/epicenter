@@ -5,7 +5,8 @@
 	"version": "0.0.1",
 	"type": "module",
 	"exports": {
-		".": "./src/host.ts"
+		".": "./src/host.ts",
+		"./departure": "./src/departure-wire.ts"
 	},
 	"scripts": {
 		"build": "bun run scripts/with-build-lock.ts bun run build:apps",

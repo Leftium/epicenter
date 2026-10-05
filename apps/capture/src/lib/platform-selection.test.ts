@@ -9,8 +9,10 @@
  * - The host leaf opens through the desktop folder adapter only: the browser
  *   leaf, the browser adapter and its OPFS store, any Git implementation,
  *   the directory opener, and every Node module are absent from its bundle
+ * - The host leaf carries the departure client and, of the host package, only
+ *   its browser-safe wire module
  * - The browser leaf carries the browser adapter and no desktop adapter, no
- *   generated native bindings, and no shell quit protocol
+ *   generated native bindings, and no departure gate
  * - Neither folder leaf loads the account recovery store
  */
 import { describe, expect, test } from 'bun:test';
@@ -47,7 +49,8 @@ describe('#platform/folder', () => {
 		const modules = await inputs(SEAM_ENTRY, 'epicenter-host');
 		for (const required of [
 			'platform/folder.epicenter-host.ts',
-			'platform/shell-lifetime.ts',
+			'platform/departure.svelte.ts',
+			'epicenter/src/departure-wire.ts',
 			'folder/src/tauri.ts',
 			'folder/src/tauri-adapter.ts',
 			'folder/src/native/bindings.gen.ts',
@@ -63,9 +66,15 @@ describe('#platform/folder', () => {
 		expect(
 			modules.filter((path) => /legacy\/|open-store\.ts$|@y[+/]/.test(path)),
 		).toEqual([]);
+		// Of the host package, only its browser-safe wire module: never the Bun host.
+		expect(modules.filter((path) => /epicenter\/src\//.test(path))).toEqual(
+			modules.filter((path) =>
+				path.endsWith('epicenter/src/departure-wire.ts'),
+			),
+		);
 	});
 
-	test('the browser build opens through the browser adapter, with no desktop adapter and no shell protocol', async () => {
+	test('the browser build opens through the browser adapter, with no desktop adapter and no departure gate', async () => {
 		const modules = await inputs(SEAM_ENTRY, 'browser');
 		for (const required of [
 			'platform/folder.browser.ts',
@@ -83,7 +92,7 @@ describe('#platform/folder', () => {
 			modules.filter((path) =>
 				// The browser adapter asks `isTauri()` so it can refuse there; that one
 				// module of the Tauri API is its only use of it.
-				/platform\/(folder\.epicenter-host|shell-lifetime)\.ts$|folder\/src\/(tauri|tauri-adapter|bun|native-store)\.ts$|folder\/src\/native\/|@tauri-apps\/api\/event|^bun:/.test(
+				/platform\/(folder\.epicenter-host\.ts|departure\.svelte\.ts)$|epicenter\/src\/|folder\/src\/(tauri|tauri-adapter|bun|native-store)\.ts$|folder\/src\/native\/|@tauri-apps\/api\/(event|webviewWindow)|^bun:/.test(
 					path,
 				),
 			),

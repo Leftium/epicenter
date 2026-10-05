@@ -33,10 +33,17 @@ yourself only to export old captures from a hosted account, described below.
   text, and Delete.
 - **Source** is the tab beside Capture. It names the file, shows it exactly,
   and edits it directly. Anything Markdown allows can go there, and the
-  Capture view follows it.
-- **More** holds Copy source, Download file, and **Delete capture**. Deleting
-  shows the saved file as it is now and deletes exactly that file. If it
-  changed since you reviewed it, it asks you to review again.
+  Capture view follows it. Which tab is shown is only a view choice; it
+  changes nothing saved.
+- **More** holds Copy source, Download file, Reload from file, and **Delete
+  capture**. Deleting first waits for saves already sent, then shows the
+  saved file as it is now and deletes exactly that file, without reading it
+  again. If it
+  changed since you reviewed it, nothing is deleted and the file as it is
+  now is shown for another review. The review stays open until you delete or
+  cancel, even if you move to another capture and back. Nothing is deleted
+  while Epicenter is quitting or the window is closing; a delete already sent
+  finishes first.
 
 Moving a thought to another capture has no control. Cut it from one capture
 and paste it into the other; each is its own file and its own save.
@@ -47,53 +54,79 @@ Source. Nothing is rewritten to make it fit.
 
 ## Saving
 
-Typing saves on its own after a short pause. The header shows the state, and
-shows it in red when saving is stopped or was not confirmed.
+Every change saves at once. The header shows the state, and shows it in red
+when saving is stopped or was not confirmed.
 
-- An open capture is edited through the folder's row editor. A save writes
-  the whole capture over the file: its frontmatter in the standard form
-  (keys quoted, values in JSON spelling, keys Capture does not declare kept)
-  and its text and thoughts exactly. It does not check what the file holds;
-  the window checks that by reading, below. Typing during a save stays
-  unsaved and saves next.
+- An open capture is edited through the folder's row editor, acquired once
+  per open file and kept for the Capture view and Source alike. Each change
+  is a complete replacement of the existing file. A change in the Capture
+  view writes the frontmatter in the standard form (keys quoted, values in
+  JSON spelling, keys Capture does not declare kept) and the text and
+  thoughts exactly. A Source edit writes exactly what is typed, frontmatter
+  and malformed text included. One save is sent at a time; the latest text
+  goes next.
+- **The latest save wins.** An open capture loads its file once. A change
+  made outside this window is not shown until you choose Reload from file,
+  and the next save from this window replaces it. Listing, focus, and change
+  hints refresh the timeline only; they never replace what an open capture
+  shows.
+- A save never creates a file. A capture removed outside this window is not
+  written back by saving; see below.
 - Opening, selecting, and listing captures write nothing.
-- **If the file changes outside this window** and you have nothing unsaved,
-  the window shows the new file. If you do have unsaved text, your text stays,
-  saving pauses, and the saved file is shown beside these choices:
+- **If a save fails or cannot be confirmed**, saving pauses and the notice
+  puts the choices first. Your text stays, and what you type after it stays
+  too, but nothing is sent until you choose. An unconfirmed save shows the
+  exact report, which names where a file it displaced was kept when there
+  was one; a failure keeps its report under "Show technical details". The
+  window does not claim the file is unchanged, because a write can reach the
+  disk and its answer still be lost. The choices:
 
-  | The saved file | Choices |
+  | The failure | Choices |
   | --- | --- |
-  | Changed | Load saved (discard my draft). Save my draft over this version. Save my draft as a copy. Download my draft. |
-  | Changed into text that is not a valid capture | Repair the saved file in Source (discard my draft). Save my draft over it. Save as a copy. Download. |
-  | Cannot be read | Check again. Save as a copy. Download. It cannot be overwritten, because it cannot be reviewed. |
+  | Failed or not confirmed | Try again. Save my text as a copy. Download my text. Discard my changes. |
+  | The file was removed | Put the file back. Try again. Save as a copy. Download. Let it go. |
 
-  A capture removed outside this window is written back by its next save.
-  "Save my draft over this version" replaces whatever the file holds when the
-  save lands, including a change made after you looked.
-- **If a save cannot be confirmed**, the notice puts the choices first and
-  keeps the exact failure under "Show technical details". Your text stays: Try again, Save as a
-  copy, Download, or Discard my changes. The window does not claim the file is
-  unchanged, because a write can reach the disk and its answer still be lost.
-  Try again sends the capture again; a later read that finds your text says
-  what the file holds, not that the earlier save landed.
-- **Source** holds the file's exact text. A Source edit that changes only the
-  text and thoughts goes back through the row editor; one that changes the
-  frontmatter, or a file that cannot open as a capture, is saved as exact
-  text and only over the version you were shown.
-- **Save as a copy** saves the capture as it is in Source. It is refused
-  while you have typed text that is not in the source yet (a new thought, a
-  thought you are editing, capture text that could not be applied), because
-  letting go of the draft would drop that text. Add it or clear it first.
+  Try again sends your newest text over whatever the file holds then.
+  Discard my changes reloads the file as it is now and drops your text.
+  "Put the file back" creates the file from your text exactly; if a file is
+  there again instead, nothing is written, and Try again is the way to write
+  over it. Let it go closes the capture without writing.
+- **Reload from file** waits for a save being sent, then reads the file and
+  shows it. If it cannot be read, your text and any failure stay. If you type
+  while it reads, your typing stays and nothing is loaded. If the file is
+  gone, the window says so and offers Put the file back, Save as a copy,
+  Download, Check again, and Let it go.
+- **A file that is not a valid capture** opens in Source with the reason. It
+  saves as you type it, so you can repair it there; the Capture view returns
+  once it is a valid capture.
+- **Save as a copy** saves the capture as it is in Source, as a new file that
+  must not exist yet, and leaves the original as it is. It is refused while
+  you have typed text that is not in the source yet (a new thought, a thought
+  you are editing, capture text that could not be applied), because letting
+  go of the capture would drop that text. Add it or clear it first.
+- A copy and putting a file back write your text exactly or not at all. Text
+  with a character a file cannot hold exactly (a lone surrogate) is refused
+  before anything is written, and stays here to change or to copy out.
+- Copying text out and downloading it change nothing, so they stay open
+  while Epicenter is asking about quitting.
+- **If a delete is not confirmed**, the file may or may not be gone. Typing
+  for that file is kept and not saved until you choose: Keep it as the file
+  is now, Keep it: put the file back, Save my text as a copy, Download, or
+  Let it go.
 - A capture whose file was removed stays on the timeline, marked, for as long
-  as this window holds text for it.
+  as this window holds text for it that is not saved.
+- Where the platform has no way to replace a file that requires it to still
+  be there (Windows, for the desktop owner and a Bun directory), a save fails
+  as an I/O error and your text stays; see
+  [the folder package](../../packages/folder/README.md#files).
 - **Git is separate.** A file that saved is saved. If the commit that records
   it fails, a "History was not recorded" notice says so and offers the commit
   again, with Git's own message under "Show technical details". It never undoes a save.
 
 ## Unsaved text is protected
 
-Unsaved text lives only in the open window: edits that have not saved yet,
-text in the New capture form, text in Add a thought, a thought being edited,
+Unsaved text lives only in the open window: a save still being sent or one
+that failed, text in the New capture form, text in Add a thought, a thought being edited,
 and capture text that could not be applied. Any typed character counts,
 spaces included, until you add it or clear it.
 
@@ -101,9 +134,14 @@ spaces included, until you add it or clear it.
 - Reloading, closing the tab, or leaving the app asks first while any of it
   exists. The reload shortcut is refused with a message.
 - On the desktop, closing the Capture window hides it; the page and its text
-  stay loaded. Using the Quit menu or Cmd-Q asks the window first. It waits
-  for actions already in progress and for every saveable draft. If everything
-  saves, it quits. Otherwise it offers **Keep working** or **Discard and quit**.
+  stay loaded. When Epicenter quits or restarts, it asks the window first.
+  The window stops taking input at once and waits for actions and saves
+  already in progress. A failed save is not sent again. If nothing is left, it
+  says so. Otherwise it offers **Keep working** or **Discard and quit** (or
+  **Discard and restart**). Text not added yet, such as a new thought, is
+  never added on its own because Epicenter is quitting. Neither choice
+  changes your text: if another window keeps Epicenter open, everything is
+  as it was.
 - If Epicenter closes the folder, the window says saving cannot be
   confirmed. Your text stays so you can copy or download it, and reloads are
   held back.
@@ -142,8 +180,9 @@ signing in.
 The captures are files in `so.epicenter.capture/captures` under Epicenter's
 working-copy directory (`~/Epicenter/so.epicenter.capture` in production).
 The timeline shows the directory. Edit the files with any program: Capture
-rereads when the shell reports a change, every 30 seconds while the window is
-visible, and when the window regains focus.
+relists the folder when the shell reports a change, every 30 seconds while
+the window is visible, and when the window regains focus. An open capture
+shows another program's edit only after Reload from file.
 
 The Epicenter desktop shell owns that directory, through the shared folder
 plugin in
@@ -154,18 +193,20 @@ means for Capture:
 - One Epicenter owns the directory at a time, through a lock file beside it,
   `.so.epicenter.capture.epicenter-lock`. A second one is refused with a
   message naming the directory.
-- Other programs are not asked to take the lock. An open capture's save
-  replaces the whole file; the window learns of another program's edit only
-  by reading, so an edit that lands between that read and the save is
-  overwritten. A repair in Source, a copy, and an import name the version the
-  window read, and the owner refuses them if the file is no longer that
-  version; an edit in the instant between the owner's last check and its
-  replacement of the file is still overwritten. Neither is an
-  operating-system compare-and-swap.
+- Other programs are not asked to take the lock. An open capture's save,
+  including a repair in Source, replaces the whole file without reading it
+  first, so another program's edit since the capture was opened or reloaded
+  is overwritten. A save requires the file to be there when
+  its bytes land, so a file another program removed is not put back. A copy
+  creates a file that must not exist; an import and a delete name the version
+  the window read, and the owner refuses them if the file is no longer that
+  version, though an edit in the instant between the owner's last check and
+  its change is still overwritten. None of these is an operating-system
+  compare-and-swap.
 - The owner watches the directory and also rechecks it on a timer, so a
   change the operating system did not report is still announced. A change
-  announced to the window is a hint to reread. It never carries file contents
-  and never replaces text you have typed.
+  announced to the window is a hint to relist. It never carries file contents
+  and never replaces what an open capture shows.
 - The owner makes one commit attempt after each save, whether or not a
   Capture window is still open. An attempt that finds Git busy is skipped,
   and the save stays uncommitted until a later save or an explicit commit.
@@ -208,13 +249,13 @@ specifier, which `@epicenter/capture` imports, at the same entry, so a build
 emits one adapter.
 
 Capture uses the folder's captures table, including `edit`, whose row editor
-overwrites the whole file on each save, and `replace` and `delete`, which act
-only on the version that was read; the Git snapshot and commit; and three
-file verbs for copies and imports under `captures/*.md` and `recovery/*`:
-`read`, `create` (refused when anything is at the path), and `replace`
-(refused unless the file is still the exact one that was read). It takes no
-raw verb that overwrites. That surface is the `CaptureFolder` type in
-`src/lib/platform/types.ts`. The plugin
+replaces the existing file whole on each save and never creates one, and
+`delete`, which acts only on the version that was reviewed; the Git snapshot
+and commit; and three file verbs for copies, restores, and imports under
+`captures/*.md` and `recovery/*`: `read`, `create` (refused when anything is
+at the path), and `replace` (refused unless the file is still the exact one
+that was read). It takes no raw verb that overwrites. That surface is the
+`CaptureFolder` type in `src/lib/platform/types.ts`. The plugin
 grants an authorized Capture window the whole Capture directory and nothing
 outside it; there is no per-call allowlist.
 
@@ -232,53 +273,76 @@ shows the reason.
 
 | Event | What happens |
 | --- | --- |
-| The page is destroyed or reloaded | `captures.close()` finishes the page's create, import, copy, delete, and draft saves before `host.close()` stops the quit listeners and change hints and detaches this page's session. Teardown does not overwrite failed or conflicted drafts. An explicit discard cancels later draft saves while waiting for saves already submitted. The folder stays open in the shell for its other windows. |
+| The page is destroyed or reloaded | `captures.close()` fences every input and waits for the page's create, import, copy, delete, and every accepted save before `host.close()` stops change hints and detaches this page's session. Teardown does not send a failed save again, and writes no unadded text. The folder stays open in the shell for its other windows. |
 | The Capture window is closed | The shell hides it. The page, its session, and its drafts stay loaded. |
 | The shell closes the folder | The folder's Git snapshot arrives with `closed`. The window says saving cannot be confirmed, keeps every draft, and holds reloads back. |
-| Epicenter's Bun service stops (`capture-host-stopped`) | A notice. The folder is the shell's, so saving carries on. The service served this page, so a reload may fail until Epicenter restarts. |
-| A reply to a save is lost | The draft is kept and marked not confirmed. Try again sends the capture again; a read that finds the text says what the file holds, not that the save landed. Nothing is sent twice automatically. |
+| Epicenter's Bun service stops (`host-stopped`, sent to this window) | A notice. The folder is the shell's, so saving carries on. The service served this page, so a reload may fail until Epicenter restarts. |
+| A reply to a save is lost | The capture keeps its text and is marked not confirmed, with the exact report. Saving pauses; Try again sends the latest text again. Nothing is sent twice automatically. |
 
-### Quitting
+### Quitting and restarting
 
-The Rust shell owns the quit handshake in
-`apps/epicenter/src-tauri/src/capture_lifetime.rs`. It accepts answers only
-from the Capture window for the current request. If the page does not
-acknowledge the request, a native dialog requires an explicit choice before
-discarding its text.
+Epicenter asks its windows before it quits, or restarts for an account
+change, over the departure wire that `@epicenter/epicenter/departure`
+publishes (`apps/epicenter/src/departure-wire.ts`). That module states the
+wire and its page rules; this page imports its names and its status parser,
+and nothing else from the host package. The host runs one round for every
+window it serves and decides; this page answers only for its own drafts.
 
-The handshake covers the Quit menu item and Cmd-Q, and nothing else. Dock
-Quit, an operating-system termination request, a forced termination, and the
-shell's own process restart bypass it, and unsaved text in the window is lost.
-
-The page side is in `src/lib/platform/shell-lifetime.ts`:
-
-| Shell to page | Page to shell |
+| Host to page | Page to host |
 | --- | --- |
-| Event `capture-quit-requested`, payload: a numeric request ID | `invoke('capture_quit_answer', { requestId, answer: 'asking' })` at once, then exactly one of `'proceed'` or `'cancel'` |
-| Event `capture-host-stopped` | None. The page shows the notice above. |
+| Event `departure-changed`, sent to this window: read the status again | `invoke('departure_status')`, which returns the status |
+| | `invoke('departure_answer', { generation, round, answer })`: `asking`, then `ready` or `cancel` |
+| Event `host-stopped`, sent to this window | None. The page shows the notice above. |
 
-A request that arrives before the page is listening is acknowledged and
-answered once it is. If the window cannot listen for quit requests, the page
-says so in a notice instead of quitting unprotected in silence. If the
-listeners cannot be set up at all, the page detaches the session it attached
-and shows the failure.
+The page side is `src/lib/platform/departure.svelte.ts`:
+
+- It registers its listener on this window, then reads the status. Until a
+  status is `idle` the page shows no input; if registration or that read
+  fails, it says so and offers Try again.
+- A round it has not handled fences every input and action before anything
+  is awaited, answers `asking`, then settles: every admitted save and action
+  finishes, and a failed save is not sent again. With nothing
+  left, it answers `ready`. Otherwise the person chooses Keep working
+  (`cancel`) or Discard and quit, or restart (`ready`). Neither choice
+  closes, discards, or changes what the page holds.
+- A round that arrives while the folder opens waits for it; a page whose
+  folder did not open answers `ready`, and its Try again stays disabled until
+  the round ends.
+- The same round with no vote means Quit was pressed again: a page still
+  deciding sends `asking` again, and never asks the person a second time. A
+  newer round is taken up while the page stays fenced.
+- Once the page has answered `ready` or `cancel` for a round, any read of that
+  round that does not show its answer (lost, or reset by Quit pressed again)
+  sends the same answer again, with no new question and nothing changed.
+- Only an `idle` status newer than the round gives the page back. `granted`,
+  `leaving`, and a `discarded` vote keep it fenced and close the question. A
+  lost or refused answer never gives it back; a nudge, Check again, or focus
+  while fenced reads the status again. Older statuses are ignored.
+- Settling waits for every action the page admitted (a create, an import, a
+  copy, a delete, a restore and the reload after it) and for every admitted
+  save. Closing the page waits for the same.
+
+Which quit paths the host routes through a round, and what it does for a
+window that stays silent, are the host's; see `apps/epicenter`.
 
 ## Layout
 
 | Path | Role |
 | --- | --- |
-| `src/lib/platform/` | The `#platform/folder` seam: `types.ts` is its contract, `folder.browser.ts` opens the OPFS folder, `folder.epicenter-host.ts` attaches to the shell's directory, and `shell-lifetime.ts` is the quit protocol. `auth.*.ts` is used only by the old-data export. |
-| `src/lib/draft.svelte.ts` | One open capture: its row editor or, for a file that cannot open as a row or a frontmatter edit in Source, its exact text; autosave, conflict choices, and unsent input. |
-| `src/lib/captures.svelte.ts` | The listing, the open drafts, and completion of create, import, copy, delete, and draft saves. |
+| `src/lib/platform/` | The `#platform/folder` seam: `types.ts` is its contract, `folder.browser.ts` opens the OPFS folder, `folder.epicenter-host.ts` attaches to the shell's directory and its departure wire, and `departure.svelte.ts` is the page's side of that wire. `auth.*.ts` is used only by the old-data export. |
+| `src/lib/draft.svelte.ts` | One open capture: the row editor acquired once and kept for its file, read through its Svelte facade and never copied, and the form text it does not have yet: unadded thoughts, a thought being edited, and capture text that could not be applied. Every change is submitted at once. Choices for failed saves, reload, removal, deletion, and copies. |
+| `src/lib/captures.svelte.ts` | The listing, the open drafts, the fence for leaving and closing, and completion of create, import, copy, delete, and draft saves. |
 | `src/lib/recovery/` | Opens the old account store for an export. Loaded only from the recovery screen. |
-| `src/lib/components/` | The timeline, a capture, the conflict choices, and the recovery screen, composed from `@epicenter/ui`. |
+| `src/lib/components/` | The timeline, a capture, its save and delete notices, and the recovery screen, composed from `@epicenter/ui`. Every binding reads the draft its view has at the call, and returns once its view is not the one shown or has been destroyed. |
 
 The package exports nothing. No host imports a part of this app.
 
 ## Checks
 
 ```sh
-bun test packages/capture apps/capture
+bun run --cwd packages/folder build:addon   # once: the exchange a directory folder replaces files with
+bun test packages/capture
+bun run --cwd apps/capture test             # unit tests, then the mounted components
 bun run --cwd packages/capture typecheck
 bun run --cwd apps/capture typecheck        # both seam leaves and the scripts
 bun run --cwd apps/capture build            # browser
@@ -287,13 +351,17 @@ bun scripts/check-ui-boundary.ts
 ```
 
 The two builds share SvelteKit's output directory, so run them one after the
-other.
+other. The mounted tests run with `--conditions=browser --conditions=svelte`
+(`test:mounted`), so Svelte and the UI kit resolve as a page build resolves
+them.
 
 | Test | What it checks |
 | --- | --- |
-| `src/lib/platform/folder.epicenter-host.test.ts` | The desktop leaf over the real folder adapter, with the shell's `invoke` and events scripted: refusals fail the open, closing detaches once, the collection keeps a draft through a conflict, a lost reply, and an outside change, and an import interrupted by a lost reply is finished by a retry. It does not run the Rust owner. |
-| `src/lib/platform-selection.test.ts` | Which leaf each build bundles: the desktop bundle has the desktop adapter and no browser adapter, browser storage, Git implementation, or Node module; the browser bundle has the browser adapter and no desktop adapter, generated bindings, or quit protocol. |
-| `src/lib/captures.test.ts`, `src/lib/draft.test.ts` | The collection and the draft over a real directory and a recorded store. |
+| `src/lib/platform/folder.epicenter-host.test.ts` | The desktop leaf over the real folder adapter and row editor, with the shell's `invoke` and events scripted: refusals fail the open, departure is heard on this window only, closing detaches once and waits for admitted saves, and the collection keeps a capture's text through a lost or failed reply, a failed reload, and a removed file; the next save replaces a corrupt or outside-changed file, and a change hint never reads into an open capture. Try again sends exactly the latest accepted text, and an import interrupted by a lost reply is finished by a retry. It does not run the Rust owner. |
+| `src/lib/platform/departure.test.ts` | The departure wire against a scripted host: registration before the first read, rounds that arrive while the folder opens, repeated and newer rounds, lost and reset answers sent again until idle, out-of-order statuses, discarded votes, and a real collection whose drafts come back unchanged after another page cancels. |
+| `src/lib/platform-selection.test.ts` | Which leaf each build bundles: the desktop bundle has the desktop adapter, the departure client, and of the host package only its wire module, and no browser adapter, browser storage, Git implementation, or Node module; the browser bundle has the browser adapter and no desktop adapter, generated bindings, or departure gate. |
+| `src/lib/captures.test.ts`, `src/lib/draft.test.ts` | The collection and the draft over a real directory and the folder's real row editor: complete-row saves submitted at once, latest save wins over an outside change, explicit reload, a failed save paused until Try again, removal without resurrection, restores waited for through their reload, a file that came back written over only by Try again, exact text or no copy, repair in Source with no other writer, reviewed deletion without a second read and none while leaving, copies, leaving, and closing. |
+| `src/lib/components/capture-detail.mounted.test.ts`, `timeline.mounted.test.ts` | The real capture view and timeline mounted in jsdom over real drafts and the real collection: a view kept mounted while its draft changes writes to the draft it has then; a text box whose view or block went away delivers nothing, even after the view makes a new one; a thought's editor writes only to that thought; a capture whose editor could not open says why and shows no text box; the deletion review outlives its view and deletes nothing while leaving; Source saves CRLF files exactly; and a fenced capture takes nothing. It shows what a delivered event does; jsdom has no layout, focus, selection, or IME. |
 
 The Rust owner, its watcher, its lock, and its history are tested in
 `packages/tauri-plugin-epicenter-folder` and in
@@ -302,5 +370,5 @@ checked by hand in the Epicenter shell.
 
 | Script | What it checks |
 | --- | --- |
-| `bun run --cwd apps/capture smoke:browser` | The browser build in Chromium, with two pages sharing one folder: exact saved Markdown, thought edits, keyboard submit and tab keys, source editing, reload, outside changes, leave warnings, deletion, and an import. Needs a free local port and `bun x playwright install chromium`. |
-| `bun apps/capture/scripts/recovery-harness.ts [dir] [bundle.json]` | A standalone tool, not the desktop backend: imports a bundle into a real directory twice, through `@epicenter/folder/bun` with an explicit author and no remote, and prints both reports. Exits nonzero if the retry creates anything. |
+| `bun run --cwd apps/capture smoke:browser` | The browser build in Chromium, with two pages sharing one folder: exact saved Markdown, thought edits, keyboard submit and tab keys, source editing, reload, Reload from file and latest save wins across pages, leave warnings, deletion, and an import. Needs a free local port and `bun x playwright install chromium`. |
+| `bun apps/capture/scripts/recovery-harness.ts [dir] [bundle.json]` | A standalone tool, not the desktop backend: imports a bundle into a real directory twice, through `@epicenter/folder/bun` with an explicit author and no remote, and prints both reports. Exits nonzero if the retry creates anything. Run `bun run --filter @epicenter/folder build:addon` first, or use `bun run harness:recovery` here, which does. |

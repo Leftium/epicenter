@@ -3,9 +3,12 @@
 	import { Checkbox } from '@epicenter/ui/checkbox';
 	import { Label } from '@epicenter/ui/label';
 	import { toast } from '@epicenter/ui/sonner';
-	import { Textarea } from '@epicenter/ui/textarea';
+	import { onDestroy, untrack } from 'svelte';
 	import { type Entry, STAGE_LABELS, STAGES } from '$lib/data.js';
 	import { type EntriesState, type EntryError, entryErrorMessage } from '$lib/entries.svelte.js';
+	import { describeRowError, describeSaveError } from '$lib/word.svelte.js';
+	import NoteField from './NoteField.svelte';
+	import RepairField from './RepairField.svelte';
 
 	let { entry, entries, chosen, canChoose, onToggle }: {
 		entry: Entry;
@@ -15,118 +18,117 @@
 		onToggle: () => void;
 	} = $props();
 
-	// The word's note and stage, shared with every other view of this word. It
-	// is kept by the words list, so a note being typed outlives this card.
+	// The word's row editor, shared with every other view of this word. It is
+	// kept by the words list, so input and a failed save outlive this card.
+	// Every command below reads `word` when it runs, so a card given another
+	// entry acts on that entry's word.
 	const word = $derived(entries.word(entry.id));
-	const outcome = $derived(word.outcome);
-	const review = $derived(word.review);
-	const stage = $derived(word.stage(entry.stage));
-	const busy = $derived(word.saving || word.gated);
+	const stage = $derived(word.stage());
+	const failure = $derived(word.save?.status === 'failed' ? word.save.error : undefined);
+	/**
+	 * The word whose file text the learner is editing. Only which view to show:
+	 * it keeps the text in view while it becomes a valid word mid-edit.
+	 */
+	let sourceOf = $state<string | undefined>();
+	const view = $derived(word.row?.status === 'invalid' || sourceOf === entry.id ? 'source' : 'fields');
 
-	function report(message: string | null) {
-		if (message !== null) toast.error('Not saved', { description: message });
+	// Open the shown word's editor as soon as the card shows it, so its note
+	// field is ready before the learner reaches it. Only a change of word runs
+	// this again: a failed attempt is retried by the learner, not by a loop.
+	$effect(() => {
+		const shown = word;
+		untrack(() => void shown.open());
+	});
+
+	/** Cleared on destroy: a button's listener outlives the card on a retained element. */
+	let mounted = true;
+	onDestroy(() => {
+		mounted = false;
+	});
+
+	/**
+	 * Run a command only while this card is mounted, and show what it
+	 * answered. Each message says what happened, refused or unknown, so no
+	 * title is put over it.
+	 */
+	async function act(command: () => Promise<string | null>) {
+		if (!mounted) return;
+		const message = await command();
+		if (message !== null) toast.error(message);
 	}
 	function reportEntry(error: EntryError | null) {
-		if (error !== null) toast.error('Not saved', { description: entryErrorMessage(error) });
+		if (error !== null) toast.error(entryErrorMessage(error));
 	}
 </script>
 
 <article class="rounded-lg border p-4">
 	<div class="flex items-center justify-between gap-2">
 		<Label class="min-h-11 text-base leading-normal select-text"><Checkbox aria-label="Choose {entry.text} for chat" checked={chosen} disabled={!canChoose} onCheckedChange={onToggle} />{entry.text}</Label>
-		<Button size="sm" variant="ghost" disabled={word.gated} onclick={async () => { const { error: removeError } = await entries.remove(entry.id); reportEntry(removeError); }}>Delete</Button>
+		<Button size="sm" variant="ghost" disabled={word.fenced} onclick={async () => { if (!mounted) return; const { error: removeError } = await entries.remove(entry.id); reportEntry(removeError); }}>Delete</Button>
 	</div>
-	{#if word.mode.kind === 'repair'}
-		<div role="alert" class="space-y-2 text-xs">
-			<p class="text-destructive">This word's file cannot be edited here until it is repaired: {word.mode.reason}</p>
-			<Textarea
-				class="min-h-24 font-mono text-xs"
-				aria-label="File text for {entry.text}"
-				readonly={word.gated}
-				bind:value={() => word.repairText ?? '', (text) => word.inputRepair(text)}
-			/>
-			{#if word.repairProblem}<p class="text-destructive">{word.repairProblem}</p>{/if}
-			<Button size="sm" variant="outline" disabled={busy} onclick={() => word.writeRepair()}>Save this text</Button>
-			{#if word.pendingNote !== undefined}
-				<p class="text-destructive">Your note is kept here, not saved. It is added once the file is repaired:</p>
-				<p class="rounded border p-2 whitespace-pre-wrap text-foreground">{word.pendingNote || '(empty)'}</p>
-				<Button size="sm" variant="ghost" disabled={word.gated} onclick={() => word.discardNote()}>Discard this note</Button>
+	{#if view === 'source'}
+		<!-- The file's exact text, through the same editor: each change is saved as typed. -->
+		<div class="space-y-2 text-xs">
+			{#if word.row?.status === 'invalid'}
+				<p role="alert" class="text-destructive">This word’s file is not a valid word, so its note and stage cannot be shown. Edit its text here; each change is saved. ({describeRowError(word.row.error)})</p>
+			{/if}
+			<RepairField {word} label="File text for {entry.text}" oninput={() => { sourceOf = entry.id; }} />
+			{#if word.row?.status === 'valid'}
+				<Button size="sm" variant="ghost" onclick={() => { sourceOf = undefined; }}>Show note and stage</Button>
 			{/if}
 		</div>
 	{:else}
-		<!-- The field always shows the word's own note: a choice made elsewhere replaces what it shows. -->
-		<Textarea
-			class="min-h-20"
-			aria-label="Your note for {entry.text}"
-			placeholder="Your note"
-			readonly={word.gated}
-			bind:value={() => word.note(entry.note), (text) => word.inputNote(text)}
-			onfocus={() => void word.open()}
-			onblur={() => void word.blur()}
-		/>
-		{#if word.mode.kind === 'unavailable' && word.unsettled}
-			<p role="alert" class="mt-2 text-xs text-destructive">Your note is not saved: {word.mode.message}</p>
+		<NoteField {word} label="Your note for {entry.text}" />
+		{#if word.refusedNote !== undefined}
+			<!-- The note as typed stays in the field above; nothing was sent. -->
+			<div role="alert" class="mt-2 space-y-2 text-xs text-destructive">
+				<p>Your note cannot be saved as typed, so nothing was sent. It stays in the field until you correct it or discard it. ({word.refusedNote.reason})</p>
+				<Button size="sm" variant="ghost" onclick={() => { if (mounted) word.discardRefusedNote(); }}>Discard this note</Button>
+			</div>
 		{/if}
-		{#if word.issues.length}
-			<p role="alert" class="mt-2 text-xs text-destructive">This word cannot be saved as it is: {word.issues.join('; ')}</p>
+		{#if word.openError !== undefined && !word.missing}
+			<div role="alert" class="mt-2 space-y-2 text-xs text-destructive">
+				<p>{word.openError}</p>
+				<Button size="sm" variant="outline" disabled={word.opening || word.fenced} onclick={() => { if (mounted) void word.open(); }}>Try opening again</Button>
+			</div>
 		{/if}
+		<div class="mt-2 flex flex-wrap gap-1" aria-label="Your stage for {entry.text}">
+			{#each STAGES as option}<Button size="sm" variant={stage === option ? 'default' : 'outline'} aria-pressed={stage === option} disabled={!word.stageable} onclick={() => act(() => word.setStage(option))}>{STAGE_LABELS[option]}</Button>{/each}
+		</div>
 	{/if}
-	{#if outcome?.kind === 'deletion'}
-		<!-- A delete with no answer: the word may be gone. Nothing writes it until a choice. -->
+	{#if word.missing}
+		<!-- No save creates a gone file. What the learner typed stays shown above until they let it go. -->
 		<div role="alert" class="mt-2 space-y-2 text-xs text-destructive">
-			<p>Deleting this word could not be confirmed, so it may or may not be gone. It stays here, and nothing is saved until you choose. ({outcome.message})</p>
+			<p>{word.deletion === undefined ? 'This word’s file is gone from the folder, so nothing here is saved to it.' : 'Deleting this word was not confirmed, and its file is now gone.'} What is shown stays here until you let it go.</p>
 			<div class="flex flex-wrap gap-1">
-				<Button size="sm" variant="outline" disabled={busy || review?.kind === 'unreadable'} onclick={async () => report(await word.saveMine())}>Keep it: save it</Button>
-				{#if word.state?.observation.kind === 'present'}
-					<Button size="sm" variant="ghost" disabled={busy} onclick={() => report(word.keepSaved())}>Keep it as it is saved</Button>
+				{#if word.row !== undefined}
+					<Button size="sm" variant="outline" disabled={word.fenced} onclick={() => act(() => word.reload())}>Check again</Button>
 				{/if}
-				<Button size="sm" variant="ghost" disabled={busy} onclick={() => void entries.letGo(entry.id)}>Let it go</Button>
+				<Button size="sm" variant="ghost" disabled={word.fenced} onclick={() => { if (mounted) void entries.letGo(entry.id); }}>Let it go</Button>
 			</div>
 		</div>
-	{:else if outcome}
-		<!-- What became of an earlier save. What the file holds now is shown below, on its own. -->
+	{:else if word.deletion !== undefined}
+		<!-- A delete with no answer: the word may be gone. -->
 		<div role="alert" class="mt-2 space-y-2 text-xs text-destructive">
-			<p>
-				{#if outcome.kind === 'unconfirmed'}
-					Your last change could not be confirmed. Whether it was saved is not known, and nothing is sent again until you choose.
-				{:else}
-					Your last change was not saved. Nothing is sent again until you choose.
-				{/if}
-				({outcome.message})
-			</p>
-			{#if review === undefined}
-				<div class="flex gap-1">
-					<Button size="sm" variant="outline" disabled={busy} onclick={async () => report(await word.saveMine())}>Try again</Button>
-					<Button size="sm" variant="ghost" disabled={busy} onclick={() => report(word.keepSaved())}>Keep the saved word</Button>
-				</div>
-			{/if}
-		</div>
-	{/if}
-	{#if review?.kind === 'changed'}
-		<div role="alert" class="mt-2 space-y-2 text-xs text-destructive">
-			<p>This word changed in another tab while you were typing, so your note is not saved. The saved note is now:</p>
-			<p class="rounded border p-2 whitespace-pre-wrap text-foreground">{typeof review.note === 'string' ? review.note || '(empty)' : JSON.stringify(review.note)}</p>
-			<div class="flex gap-1">
-				<Button size="sm" variant="outline" disabled={busy} onclick={async () => report(await word.saveMine())}>Save mine instead</Button>
-				<Button size="sm" variant="ghost" disabled={busy} onclick={() => report(word.keepSaved())}>Keep the saved note</Button>
-			</div>
-		</div>
-	{:else if review?.kind === 'invalid'}
-		<div role="alert" class="mt-2 space-y-2 text-xs text-destructive">
-			<p>This word was changed in another tab into text Vocab cannot read as a word ({review.message}). Your note is not saved over it until you choose. The file now:</p>
-			<pre class="max-h-40 overflow-auto rounded border p-2 whitespace-pre-wrap text-foreground">{review.file.text}</pre>
+			<p>Deleting this word could not be confirmed. ({word.deletion})</p>
 			<div class="flex flex-wrap gap-1">
-				<Button size="sm" variant="outline" disabled={busy} onclick={async () => report(await word.saveMine())}>Save my word over it</Button>
-				<Button size="sm" variant="ghost" disabled={busy} onclick={() => word.repairFile()}>Repair the file's text (discard my note)</Button>
+				<Button size="sm" variant="outline" disabled={word.fenced} onclick={() => act(() => word.reload())}>Check again</Button>
+				<Button size="sm" variant="ghost" disabled={word.fenced} onclick={() => { if (mounted) void entries.letGo(entry.id); }}>Let it go</Button>
 			</div>
 		</div>
-	{:else if review}
+	{:else if failure}
+		<!-- The learner's input stays shown above. Saving waits for their choice. -->
 		<div role="alert" class="mt-2 space-y-2 text-xs text-destructive">
-			<p>This word cannot be read just now, so nothing is saved over it. Your note is kept here. ({review.message})</p>
-			<Button size="sm" variant="outline" disabled={busy} onclick={() => word.refresh()}>Check again</Button>
+			<p>{describeSaveError(failure)} Your text stays here, and nothing is sent again until you choose.</p>
+			<div class="flex flex-wrap gap-1">
+				<Button size="sm" variant="outline" disabled={word.fenced} onclick={() => { if (mounted) word.retry(); }}>Try again</Button>
+				<Button size="sm" variant="ghost" disabled={word.fenced} onclick={() => act(() => word.reload())}>Discard mine and reload the file</Button>
+			</div>
+		</div>
+	{:else if word.row !== undefined}
+		<!-- The editor read the file once; another tab's change shows only when the learner asks. -->
+		<div class="mt-2">
+			<Button size="sm" variant="ghost" disabled={word.fenced || word.refusedNote !== undefined} onclick={() => act(() => word.reload())}>Reload file</Button>
 		</div>
 	{/if}
-	<div class="mt-2 flex flex-wrap gap-1" aria-label="Your stage for {entry.text}">
-		{#each STAGES as option}<Button size="sm" variant={stage === option ? 'default' : 'outline'} aria-pressed={stage === option} disabled={word.mode.kind === 'repair' || word.gated} onclick={async () => report(await word.setStage(option))}>{STAGE_LABELS[option]}</Button>{/each}
-	</div>
 </article>

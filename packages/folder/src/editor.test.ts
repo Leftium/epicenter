@@ -1,22 +1,20 @@
 /**
  * Row Editor Tests
  *
- * Most tests open `table.edit` over storage whose reads and save replies can
- * be held, so each race happens at an exact moment. That storage hints inside
- * the write, before its reply, as the desktop owner may. The last test opens
- * the same editor from a real `@epicenter/folder/bun` folder.
+ * Most tests acquire `table.edit` over storage whose reads and write replies
+ * can be held one at a time, so each race happens at an exact moment. The
+ * last test acquires the same editor from a real `@epicenter/folder/bun`
+ * folder.
  *
  * Key behaviors:
- * - watching starts before the first read and ends on dispose or a refused open
- * - an aborted open returns promptly and leaves nothing subscribed
- * - opening refuses missing, unsupported, and schema-invalid files, with the text for repair
- * - subscribers get the current state at once, then each change, never reentrantly
- * - a save is one unconditional overwrite of the complete canonical document
- * - local input may be schema invalid; save refuses it and writes nothing
- * - a clean editor follows valid reads; dirty input is never reset
- * - reads are dropped when a save settles under them, and rerun
- * - a lost reply stays unknown even when the file later holds its bytes
- * - adopting a reviewed revision is refused once a newer read replaced it
+ * - acquisition reads once; the editor never reads, watches, or adopts on its own
+ * - readable invalid text opens for repair; storage errors never hide input
+ * - setters install the complete accepted snapshot before they return
+ * - one running write and the latest input after it; receipts never roll input back
+ * - failure or uncertainty pauses the chain, newer input included, until `retry`
+ * - `flush` waits for the running chain and never retries
+ * - `reload` waits for the chain, then adopts the file unless input changed
+ * - every write replaces the existing row and never recreates it
  *
  * See also:
  * - `canonical.test.ts` for the codec the editor formats and parses with
@@ -34,8 +32,9 @@ import {
 	defineFolder,
 	defineTable,
 	field,
+	inspectRow,
 } from './contract.js';
-import type { RowEditorState } from './editor.js';
+import type { RowEditor, RowEditorState } from './editor.js';
 import { FileError } from './errors.js';
 import { GIT_ENV, scratch } from './git-http.test-support.js';
 import { createTable } from './table.js';
@@ -66,6 +65,7 @@ const definition = defineFolder({
 	},
 });
 type Todo = CreateRowOf<typeof definition.tables.todos>;
+type Editor = RowEditor<Todo>;
 type State = RowEditorState<Todo>;
 
 const PATH = 'todos/plan.md';
@@ -77,7 +77,7 @@ function row(title: string, body = 'Body.\n', extra = '') {
 	return `---\n"title": "${title}"\n"done": false\n"priority": "normal"\n${extra}---\n${body}`;
 }
 
-/** A valid row another tool wrote: a comment, an undeclared key, YAML spelling. */
+/** A valid row another tool wrote: a comment, undeclared keys, YAML spelling. */
 const STYLED = [
 	'---',
 	'# written by hand',
@@ -91,61 +91,115 @@ const STYLED = [
 	'',
 ].join('\n');
 
+const READ_FAILURE = FileError.Io({
+	path: PATH,
+	operation: 'read',
+	cause: 'EIO',
+}).error;
+
 async function flush() {
 	for (let i = 0; i < 10; i += 1) await new Promise((r) => setTimeout(r, 0));
 }
 
+async function until(condition: () => boolean) {
+	for (let i = 0; i < 200 && !condition(); i += 1)
+		await new Promise((r) => setTimeout(r, 5));
+	expect(condition()).toBe(true);
+}
+
+/** Whether `promise` has settled once queued work has run. */
+async function hasSettled(promise: Promise<unknown>) {
+	let done = false;
+	void promise.then(() => {
+		done = true;
+	});
+	await flush();
+	return done;
+}
+
+/** The title of a valid row, or the row's status. */
+function shown(editor: Editor): unknown {
+	const { row } = editor.get();
+	return row.status === 'valid' ? row.fields.title : row.status;
+}
+
+/** Record every snapshot an invalidation exposes. */
+function record(editor: Editor) {
+	const seen: State[] = [];
+	const stop = editor.subscribe(() => seen.push(editor.get()));
+	return { seen, stop, saves: () => seen.map((state) => state.save.status) };
+}
+
+type Outcome = 'ok' | 'unconfirmed' | 'io' | 'throw';
+
 /**
- * The todos table over one row file whose reads and save replies can be
- * held. Saves hint inside the write, before the reply.
+ * The todos table over one row file. Reads see the file as it was when they
+ * started and can be held or made to fail. A write lands, then waits for its
+ * reply when replies are held. A replace of a missing file is `NotFound` and
+ * writes nothing.
  */
-function createFakeTable(initial: string | undefined) {
+function createFakeTable(initial: string | Uint8Array | undefined) {
 	let content = initial;
-	const listeners = new Set<(paths: readonly string[]) => void>();
-	let subscriptions = 0;
+	let reads = 0;
 	let holdingReads = false;
+	let readFault: FileError | undefined;
 	const heldReads: PromiseWithResolvers<void>[] = [];
-	let reply: PromiseWithResolvers<void> | undefined;
-	let loseReply = false;
-	let throwOnReply: Error | undefined;
+	let holdingReplies = false;
+	const heldReplies: PromiseWithResolvers<void>[] = [];
+	const outcomes: Outcome[] = [];
 	const writes: string[] = [];
-	const changes: FileChange[] = [];
-	const hint = () => {
-		for (const listener of [...listeners]) listener([PATH]);
-	};
+	const applied: { change: FileChange; submission: number }[] = [];
 	const unused = () => {
 		throw new Error('A row editor does not call this storage method');
 	};
 	const storage: FolderStorage = {
 		async read(path) {
-			// What the read sees is fixed when it starts.
+			reads += 1;
 			const seen = content;
+			const fault = readFault;
 			if (holdingReads) {
 				const gate = Promise.withResolvers<void>();
 				heldReads.push(gate);
 				await gate.promise;
 			}
+			if (fault !== undefined) return { data: null, error: fault };
 			if (seen === undefined) return FileError.NotFound({ path });
-			const bytes = encoder.encode(seen);
+			const bytes = typeof seen === 'string' ? encoder.encode(seen) : seen;
 			return Ok({ bytes, sha256: await hashBytes(bytes) });
 		},
-		async apply(applied) {
-			changes.push(...applied);
-			for (const change of applied) {
-				if (change.kind !== 'overwrite')
-					throw new Error(`An editor applied a ${change.kind}`);
+		async apply(changes, submission) {
+			const outcome = outcomes.shift() ?? 'ok';
+			const [change] = changes;
+			if (
+				changes.length !== 1 ||
+				change?.kind !== 'replace' ||
+				change.expectedSha256 !== undefined
+			)
+				throw new Error('An editor applies one unguarded replace');
+			applied.push({ change, submission });
+			const missing = content === undefined;
+			if (!missing && outcome !== 'io') {
 				content = decoder.decode(change.bytes);
 				writes.push(content);
 			}
-			hint();
-			if (reply !== undefined) await reply.promise;
-			// A broken port: it should return a Result, never throw.
-			if (throwOnReply !== undefined) throw throwOnReply;
-			if (loseReply)
+			if (holdingReplies) {
+				const gate = Promise.withResolvers<void>();
+				heldReplies.push(gate);
+				await gate.promise;
+			}
+			if (missing) return FileError.NotFound({ path: PATH });
+			if (outcome === 'io')
+				return FileError.Io({
+					path: PATH,
+					operation: 'replace',
+					cause: 'disk full',
+				});
+			if (outcome === 'throw') throw new Error('a broken port');
+			if (outcome === 'unconfirmed')
 				return FileError.Unconfirmed({
 					path: PATH,
-					operation: 'overwrite',
-					cause: new Error('the reply was lost'),
+					operation: 'replace',
+					cause: 'the reply was lost',
 				});
 			return Ok(undefined);
 		},
@@ -157,30 +211,23 @@ function createFakeTable(initial: string | undefined) {
 		rmdir: unused,
 	};
 	const table = createTable<Todo>(
-		{
-			storage,
-			onFilesChanged(listener) {
-				subscriptions += 1;
-				listeners.add(listener);
-				return () => {
-					listeners.delete(listener);
-				};
-			},
-		},
+		{ storage },
 		'todos',
 		definition.tables.todos.fields,
 	);
 	return {
 		table,
 		writes,
-		changes,
+		applied,
 		disk: () => content,
-		watching: () => listeners.size,
-		subscriptions: () => subscriptions,
-		/** Another writer changes the file and the folder hints. */
-		writeElsewhere(text: string | undefined, { hinted = true } = {}) {
-			content = text;
-			if (hinted) hint();
+		reads: () => reads,
+		/** Another writer changes the file; `undefined` deletes it. */
+		writeElsewhere(next: string | Uint8Array | undefined) {
+			content = next;
+		},
+		/** Reads started from now return `error`; `undefined` stops it. */
+		failReads(error: FileError | undefined) {
+			readFault = error;
 		},
 		holdReads() {
 			holdingReads = true;
@@ -190,762 +237,872 @@ function createFakeTable(initial: string | undefined) {
 		releaseRead() {
 			heldReads.shift()?.resolve();
 		},
+		/** Let the newest held read finish. */
+		releaseNewestRead() {
+			heldReads.pop()?.resolve();
+		},
 		releaseReads() {
 			holdingReads = false;
 			for (const gate of heldReads.splice(0)) gate.resolve();
 		},
-		holdReply() {
-			reply = Promise.withResolvers<void>();
+		holdReplies() {
+			holdingReplies = true;
 		},
+		heldReplies: () => heldReplies.length,
+		/** Let the oldest held write reply. */
 		releaseReply() {
-			reply?.resolve();
-			reply = undefined;
+			heldReplies.shift()?.resolve();
 		},
-		loseReplies() {
-			loseReply = true;
+		releaseReplies() {
+			holdingReplies = false;
+			for (const gate of heldReplies.splice(0)) gate.resolve();
 		},
-		/** Make storage throw after the write lands, as a bug would; `undefined` stops it. */
-		throwOnReply(error: Error | undefined) {
-			throwOnReply = error;
+		/** The outcomes of the next writes, in order; later writes succeed. */
+		script(...next: Outcome[]) {
+			outcomes.push(...next);
 		},
 	};
 }
 
-async function openPlan(initial: string | undefined = STYLED) {
+async function openPlan(initial: string | undefined = row('A')) {
 	const fake = createFakeTable(initial);
 	const editor = expectOk(await fake.table.edit('plan'));
 	return { ...fake, editor };
 }
 
-// ============================================================================
-// Opening
-// ============================================================================
-
-test('watching starts before the first read, so a change during opening is read', async () => {
-	const fake = createFakeTable(row('A'));
-	fake.holdReads();
-	const opening = fake.table.edit('plan');
-	expect(fake.heldReads()).toBe(1);
-	expect(fake.watching()).toBe(1);
-
-	fake.writeElsewhere(row('B'));
-	fake.releaseReads();
-	const editor = expectOk(await opening);
-	// The open read saw A; the hint during it starts the reread that sees B.
+/** An editor whose first write failed with `outcome` while B waited behind it. */
+async function openFailed(outcome: 'io' | 'unconfirmed' = 'io') {
+	const fake = await openPlan();
+	const { editor } = fake;
+	fake.script(outcome);
+	fake.holdReplies();
+	editor.setText(row('A1'));
 	await flush();
-	expect(editor.get().document.fields.title).toBe('B');
-	expect(editor.get().isDirty).toBe(false);
-	await editor.dispose();
-	expect(fake.watching()).toBe(0);
+	editor.setText(row('B'));
+	fake.releaseReplies();
+	await until(() => editor.get().save.status !== 'saving');
+	const { save } = editor.get();
+	if (save.status !== 'failed') throw new Error('expected failed');
+	return { ...fake, save };
+}
+
+// ============================================================================
+// Acquisition
+// ============================================================================
+
+test('acquisition reads once; get, subscribers, and settled saves never read or adopt', async () => {
+	const fake = await openPlan();
+	const { editor } = fake;
+	expect(fake.reads()).toBe(1);
+
+	fake.writeElsewhere(row('Elsewhere'));
+	const calls: string[] = [];
+	const stop = editor.subscribe(() => calls.push('heard'));
+	editor.get();
+	await flush();
+	// No initial delivery, no read, no adoption.
+	expect(calls).toEqual([]);
+	expect(fake.reads()).toBe(1);
+	expect(shown(editor)).toBe('A');
+
+	editor.setText(row('Mine'));
+	await until(() => editor.get().save.status === 'idle');
+	stop();
+	fake.writeElsewhere(row('Elsewhere again'));
+	editor.subscribe(() => {})();
+	await flush();
+	// A settled save requests no read, and nothing follows the file.
+	expect(fake.reads()).toBe(1);
+	expect(shown(editor)).toBe('Mine');
+	expect(calls).toEqual(['heard', 'heard']);
 });
 
-test('an aborted open returns at once and leaves nothing subscribed', async () => {
+test('an aborted acquisition returns at once and opens nothing', async () => {
 	const fake = createFakeTable(row('A'));
 	const before = new AbortController();
 	before.abort();
-	const early = expectErr(
-		await fake.table.edit('plan', { signal: before.signal }),
-	);
-	expect(early.name).toBe('Aborted');
-	expect(fake.subscriptions()).toBe(0);
+	expect(
+		expectErr(await fake.table.edit('plan', { signal: before.signal })).name,
+	).toBe('Aborted');
+	expect(fake.reads()).toBe(0);
 
-	// Navigation: plan is still reading when the person moves to milk.
 	fake.holdReads();
-	const first = new AbortController();
-	const plan = fake.table.edit('plan', { signal: first.signal });
-	expect(fake.watching()).toBe(1);
-	first.abort();
+	const during = new AbortController();
+	const plan = fake.table.edit('plan', { signal: during.signal });
+	during.abort();
 	expect(expectErr(await plan).name).toBe('Aborted');
-	expect(fake.watching()).toBe(0);
-
-	// The abandoned read finishing later changes nothing.
 	fake.releaseReads();
 	await flush();
-	expect(fake.watching()).toBe(0);
+	expect(fake.reads()).toBe(1);
 });
 
-test('opening refuses missing, unsupported, and invalid files, keeping the text for repair', async () => {
+test('missing, unreadable, non-UTF-8, and invalid addresses acquire nothing', async () => {
 	const missing = createFakeTable(undefined);
 	expect(expectErr(await missing.table.edit('plan')).name).toBe('NotFound');
-	expect(missing.watching()).toBe(0);
 
-	const tagged = '---\ntitle: !custom Plan\ndone: false\npriority: low\n---\n';
-	const unsupported = createFakeTable(tagged);
-	const refusal = expectErr(await unsupported.table.edit('plan'));
-	if (refusal.name !== 'NoCanonicalForm') throw new Error(refusal.message);
-	expect(refusal.file.text).toBe(tagged);
-	expect(unsupported.watching()).toBe(0);
+	const failing = createFakeTable(row('A'));
+	failing.failReads(READ_FAILURE);
+	expect(expectErr(await failing.table.edit('plan')).name).toBe('Io');
 
-	const empty = '---\ntitle: ""\ndone: false\npriority: low\n---\n';
-	const invalid = createFakeTable(empty);
-	const issue = expectErr(await invalid.table.edit('plan'));
-	if (issue.name !== 'InvalidSource') throw new Error(issue.message);
-	expect(issue.file.text).toBe(empty);
-	expect(issue.reading.issues.map((i) => i.field)).toEqual(['title']);
+	const binary = createFakeTable(new Uint8Array([0xff, 0xfe]));
+	expect(expectErr(await binary.table.edit('plan')).name).toBe('InvalidUtf8');
 
 	const badStem = createFakeTable(row('A'));
 	expect(expectErr(await badStem.table.edit('../escape')).name).toBe(
 		'InvalidPath',
 	);
-	expect(badStem.subscriptions()).toBe(0);
+	expect(badStem.reads()).toBe(0);
 });
 
-// ============================================================================
-// Subscription
-// ============================================================================
+test('malformed, unsupported, and schema-invalid readable text opens for raw repair', async () => {
+	const cases = [
+		['---\ntitle: Plan\n', 'NoCanonicalForm'],
+		[
+			'---\ntitle: !custom Plan\ndone: false\npriority: low\n---\n',
+			'NoCanonicalForm',
+		],
+		['---\ntitle: ""\ndone: false\npriority: low\n---\n', 'Nonconforming'],
+	] as const;
+	for (const [text, name] of cases) {
+		const fake = await openPlan(text);
+		const { row: opened } = fake.editor.get();
+		if (opened.status !== 'invalid') throw new Error(`expected ${name}`);
+		expect(opened.text).toBe(text);
+		expect(opened.error.name).toBe(name);
+		expect(fake.editor.get().save.status).toBe('idle');
 
-test('methods work destructured, and subscribers get the current state at once', async () => {
-	const { editor, writes } = await openPlan();
-	const { get, subscribe, change, save, refresh, adopt, dispose } = editor;
-
-	const first: State[] = [];
-	const second: State[] = [];
-	const stopFirst = subscribe((state) => first.push(state));
-	subscribe((state) => second.push(state));
-	expect(first).toEqual([get()]);
-
-	expect(change({ fields: { title: 'Plan B' } }).error).toBeNull();
-	expect(first.at(-1)).toBe(get());
-	stopFirst();
-	expect(change({ body: 'New body.\n' }).error).toBeNull();
-	expect(first).toHaveLength(2);
-	expect(second.at(-1)).toBe(get());
-
-	expect((await save()).error).toBeNull();
-	await refresh();
-	const latest = get().observation;
-	if (latest.kind !== 'present') throw new Error('expected a present read');
-	expect(adopt(latest.revision).error).toBeNull();
-	await dispose();
-	expect(writes).toHaveLength(1);
-	expect(get().isDisposed).toBe(true);
+		// Raw repair through the same owner, saved over the existing row.
+		fake.editor.setText(row('Fixed'));
+		expect(shown(fake.editor)).toBe('Fixed');
+		await until(() => fake.editor.get().save.status === 'idle');
+		expect(fake.writes).toEqual([row('Fixed')]);
+	}
 });
 
-test('a listener that changes the document on its first call is called again only after it returns', async () => {
-	const { editor } = await openPlan(row('A'));
-	let depth = 0;
-	let maxDepth = 0;
-	const titles: unknown[] = [];
-	editor.subscribe((state) => {
-		depth += 1;
-		maxDepth = Math.max(maxDepth, depth);
-		titles.push(state.document.fields.title);
-		if (titles.length === 1) editor.change({ fields: { title: 'B' } });
-		depth -= 1;
-	});
-	expect(titles).toEqual(['A', 'B']);
-	expect(maxDepth).toBe(1);
-	await editor.dispose();
-});
-
-test('a subscription added during a notification starts after the running listener, once per state', async () => {
-	const { editor } = await openPlan(row('A'));
-	const order: string[] = [];
-	const title = (state: State) => String(state.document.fields.title);
-	let added = false;
-	editor.subscribe((state) => {
-		order.push(`outer ${title(state)}`);
-		if (title(state) !== 'B' || added) return;
-		added = true;
-		editor.subscribe((inner) => order.push(`inner ${title(inner)}`));
-		order.push('subscribed');
-	});
-	editor.change({ fields: { title: 'B' } });
-	editor.change({ fields: { title: 'C' } });
-	expect(order).toEqual([
-		'outer A',
-		'outer B',
-		'subscribed',
-		'inner B',
-		'outer C',
-		'inner C',
+test('validity is judged on the complete canonical parse: every declared field checked, unknown metadata kept out', async () => {
+	const fake = await openPlan(
+		'---\nowner: sam\ntitle: ""\ndone: true\nmeta: {a: 1}\n---\nBody.\n',
+	);
+	const opened = fake.editor.get().row;
+	if (opened.status !== 'invalid' || opened.error.name !== 'Nonconforming')
+		throw new Error('expected Nonconforming');
+	const { reading } = opened.error;
+	expect(reading.issues.map((issue) => issue.field)).toEqual([
+		'title',
+		'priority',
 	]);
-	await editor.dispose();
-});
+	expect(reading.fields).toEqual({ done: true });
+	expect(Object.isFrozen(reading.fields)).toBe(true);
+	expect(reading.body).toBe('Body.\n');
+	expect(reading.parseError).toBeUndefined();
+	expect(opened.error.message).toContain('title');
+	expect(opened.error.message).toContain('priority is missing');
 
-test('each subscribe call is its own subscription, stopped by its own function', async () => {
-	const { editor } = await openPlan(row('A'));
-	const titles: unknown[] = [];
-	const listener = (state: State) => titles.push(state.document.fields.title);
-	const stopFirst = editor.subscribe(listener);
-	editor.subscribe(listener);
-	expect(titles).toEqual(['A', 'A']);
-	stopFirst();
-	editor.change({ fields: { title: 'B' } });
-	expect(titles).toEqual(['A', 'A', 'B']);
-	await editor.dispose();
-});
+	// The ordinary row parser reads this title as the string "1", which a
+	// string field accepts. The canonical parse refuses the tag, so the row is
+	// never valid with fields the editor could not have checked.
+	const tagged = '---\ntitle: !!float 1\ndone: false\npriority: low\n---\n';
+	const partial = inspectRow(definition.tables.todos, tagged);
+	expect(partial.fields.title).toBe('1');
+	expect(partial.issues).toEqual([]);
+	const disagreement = await openPlan(tagged);
+	const read = disagreement.editor.get().row;
+	expect(read.status === 'invalid' && read.error.name).toBe('NoCanonicalForm');
 
-test('a listener that disposes when it hears the save waits for that save; disposing again is the same promise', async () => {
-	const fake = await openPlan(row('A'));
-	const { editor } = fake;
-	fake.holdReply();
-	editor.change({ fields: { title: 'B' } });
-	let disposing: Promise<void> | undefined;
-	let again: Promise<void> | undefined;
-	editor.subscribe((state) => {
-		if (state.saving !== undefined && disposing === undefined)
-			disposing = editor.dispose();
-		if (state.isDisposed && again === undefined) again = editor.dispose();
-	});
-	const saving = editor.save();
-	if (disposing === undefined) throw new Error('the listener did not dispose');
-	expect(again).toBe(disposing);
-
-	let settled = false;
-	void disposing.then(() => {
-		settled = true;
-	});
-	await flush();
-	expect(settled).toBe(false);
-	fake.releaseReply();
-	expectOk(await saving);
-	await disposing;
-	expect(settled).toBe(true);
-	expect(editor.get().lastSave?.kind).toBe('saved');
-	expect(fake.writes).toEqual([row('B')]);
-});
-
-test('a listener that starts the next save when the first settles keeps that admission', async () => {
-	const fake = await openPlan(row('A'));
-	const { editor } = fake;
-	fake.holdReply();
-	editor.change({ fields: { title: 'B' } });
-	let second: ReturnType<typeof editor.save> | undefined;
-	editor.subscribe((state) => {
-		if (state.lastSave?.kind !== 'saved' || second !== undefined) return;
-		editor.change({ fields: { title: 'C' } });
-		fake.holdReply();
-		second = editor.save();
-	});
-	const first = editor.save();
-	fake.releaseReply();
-	expectOk(await first);
-	if (second === undefined) throw new Error('the listener did not save');
-	await flush();
-
-	// The first save's continuation did not release the second admission.
-	expect(editor.get().saving?.text).toBe(row('C'));
-	expect(expectErr(await editor.save()).name).toBe('Saving');
-	const disposing = editor.dispose();
-	let settled = false;
-	void disposing.then(() => {
-		settled = true;
-	});
-	await flush();
-	expect(settled).toBe(false);
-	fake.releaseReply();
-	expectOk(await second);
-	await disposing;
-	expect(fake.writes).toEqual([row('B'), row('C')]);
-});
-
-test('a subscriber that throws does not turn a save that landed into a failure', async () => {
-	const { editor } = await openPlan();
-	editor.subscribe((state) => {
-		if (state.saving !== undefined) throw new Error('a broken view');
-	});
-	const heard: boolean[] = [];
-	editor.subscribe((state) => heard.push(state.saving !== undefined));
-	editor.change({ fields: { title: 'Saved anyway' } });
-	const receipt = expectOk(await editor.save());
-	expect(receipt.document.fields.title).toBe('Saved anyway');
-	expect(heard).toContain(true);
-	await editor.dispose();
+	// Aliases the ordinary reader refuses never make a valid row either.
+	const uses = Array.from({ length: 60 }, (_, i) => `u${i}: *a`).join('\n');
+	const weighted = `---\ntitle: Plan\ndone: false\npriority: low\na: &a x\n${uses}\nb: &b [*a]\nc: *b\nd: *b\n---\n`;
+	expect(
+		inspectRow(definition.tables.todos, weighted).parseError,
+	).toBeDefined();
+	const aliased = (await openPlan(weighted)).editor.get().row;
+	expect(aliased.status === 'invalid' && aliased.error.name).toBe(
+		'NoCanonicalForm',
+	);
 });
 
 // ============================================================================
-// Saving
+// Accepted input
 // ============================================================================
 
-test('a save is one unconditional overwrite of the complete canonical document, unknown fields kept', async () => {
-	const fake = await openPlan();
-	const { editor, writes } = fake;
-	// Opening a differently formatted file is clean: nothing local changed.
-	expect(editor.get().isDirty).toBe(false);
-	expect(editor.get().baseline.text).toBe(STYLED);
+test('a whole-row spread keeps unknown metadata and body; omitted keys are deleted', async () => {
+	const fake = await openPlan(STYLED);
+	const { editor } = fake;
+	const opened = editor.get().row;
+	if (opened.status !== 'valid') throw new Error('expected a valid row');
+	// The acquired text is exact; fields include unknown metadata.
+	expect(opened.text).toBe(STYLED);
+	expect(opened.fields).toEqual({
+		owner: 'sam',
+		title: 'Plan',
+		meta: { b: 1, a: [true, null] },
+		priority: 'normal',
+		done: false,
+	});
 
-	editor.change({ fields: { title: 'Plan B' } });
-	expect(editor.get().document.fields).toEqual({
+	fake.holdReplies();
+	const { owner: _dropped, ...kept } = opened.fields;
+	expectOk(
+		editor.set({ fields: { ...kept, title: 'Plan B' }, body: opened.body }),
+	);
+	const expected =
+		'---\n"title": "Plan B"\n"done": false\n"priority": "normal"\n"meta": {"a": [true, null], "b": 1}\n---\nBody A.\n';
+	// Public before the write settles, as one capture.
+	const accepted = editor.get();
+	expect(accepted.save.status).toBe('saving');
+	if (accepted.row.status !== 'valid') throw new Error('expected valid');
+	expect(accepted.row.text).toBe(expected);
+	expect(accepted.row.fields).toEqual({
 		title: 'Plan B',
 		done: false,
 		priority: 'normal',
 		meta: { a: [true, null], b: 1 },
-		owner: 'sam',
 	});
-	const receipt = expectOk(await editor.save());
-	const expected =
-		'---\n"title": "Plan B"\n"done": false\n"priority": "normal"\n"meta": {"a": [true, null], "b": 1}\n"owner": "sam"\n---\nBody A.\n';
-	expect(writes).toEqual([expected]);
-	// No baseline condition: the save replaces whatever is at the path.
-	expect(fake.changes).toHaveLength(1);
-	expect(fake.changes[0]).not.toHaveProperty('expectedSha256');
-	expect(fake.changes[0]).toMatchObject({ kind: 'overwrite', path: PATH });
-	expect(receipt.text).toBe(expected);
-	expect(receipt.sha256).toBe(await hashBytes(encoder.encode(expected)));
-	expect(editor.get().isDirty).toBe(false);
+	expect(accepted.row.body).toBe('Body A.\n');
+	expect(Object.isFrozen(accepted.row.fields)).toBe(true);
+	expect(Object.isFrozen(accepted)).toBe(true);
+	expect(editor.get()).toBe(accepted);
 
-	// A clean save writes the complete document again.
-	expectOk(await editor.save());
-	expect(writes).toEqual([expected, expected]);
-	await editor.dispose();
+	await flush();
+	fake.releaseReplies();
+	await until(() => editor.get().save.status === 'idle');
+	expect(fake.writes).toEqual([expected]);
+	// An existing-row replacement, unguarded, never an overwrite.
+	expect(fake.applied.map(({ change }) => change)).toMatchObject([
+		{ kind: 'replace', path: PATH },
+	]);
+	expect(fake.applied[0]?.change).not.toHaveProperty('expectedSha256');
 });
 
-test('schema-invalid input stays local and visible; save refuses it and writes nothing', async () => {
-	const { editor, writes } = await openPlan(row('A'));
-	editor.change({ fields: { title: '' } });
-	expect(editor.get().document.fields.title).toBe('');
-	expect(editor.get().reading.issues.map((i) => i.field)).toEqual(['title']);
-
-	const refused = expectErr(await editor.save());
-	expect(refused.name).toBe('InvalidDocument');
-	expect(writes).toHaveLength(0);
-	expect(editor.get().saving).toBeUndefined();
-	expect(editor.get().document.fields.title).toBe('');
-
-	// A value with no canonical form is refused before it reaches the document.
-	const nan = expectErr(editor.change({ fields: { done: Number.NaN } }));
-	expect(nan.name).toBe('Unrepresentable');
-	expect(editor.get().document.fields.done).toBe(false);
-
-	// Removing a declared field, or an option the field does not list, is
-	// held the same way.
-	editor.change({ fields: { title: 'AB', priority: undefined } });
-	expect(editor.get().document.fields).not.toHaveProperty('priority');
-	expect(editor.get().reading.issues.map((i) => i.field)).toEqual(['priority']);
-	editor.change({ fields: { priority: 'urgent' } });
-	expect(editor.get().document.fields.priority).toBe('urgent');
-	expect(expectErr(await editor.save()).name).toBe('InvalidDocument');
-	expect(writes).toHaveLength(0);
-
-	editor.change({ fields: { priority: 'high' } });
-	expect(editor.get().reading.issues).toEqual([]);
-	expect((await editor.save()).error).toBeNull();
-	expect(writes).toHaveLength(1);
-	await editor.dispose();
-});
-
-test('the own write read during a held reply is deferred; another writer afterward is followed', async () => {
-	const fake = await openPlan(row('A'));
+test('a caller mutating its objects after set changes neither held input nor queued bytes', async () => {
+	const fake = await openPlan();
 	const { editor } = fake;
-	editor.change({ fields: { title: 'B' } });
-	fake.holdReply();
-	const saving = editor.save();
-	await flush();
-	// Storage hinted inside the write; that read found the submitted bytes.
-	const during = editor.get();
-	expect(during.saving?.text).toBe(row('B'));
-	expect(during.observation.kind).toBe('present');
-	expect(during.baseline.canonical).toBe(row('A'));
-	expect(expectErr(await editor.save()).name).toBe('Saving');
-
-	fake.releaseReply();
-	const receipt = expectOk(await saving);
-	await flush();
-	// The reread finds the receipt's own bytes: nothing changed elsewhere.
-	expect(editor.get().baseline).toBe(receipt);
-	expect(editor.get().isDirty).toBe(false);
-
-	fake.writeElsewhere(row('C'));
-	await flush();
-	expect(editor.get().document.fields.title).toBe('C');
-	expect(editor.get().isDirty).toBe(false);
-	await editor.dispose();
+	fake.holdReplies();
+	editor.setText(row('A1'));
+	const tags = ['one'];
+	const fields = { title: 'B', done: false, priority: 'normal', tags };
+	expectOk(editor.set({ fields, body: 'Body.\n' }));
+	const accepted = editor.get().row;
+	fields.title = 'mutated';
+	tags.push('two');
+	expect(editor.get().row).toBe(accepted);
+	if (accepted.status !== 'valid') throw new Error('expected valid');
+	expect(accepted.fields.title).toBe('B');
+	expect(accepted.fields.tags).toEqual(['one']);
+	fake.releaseReplies();
+	await until(() => editor.get().save.status === 'idle');
+	expect(fake.writes.at(-1)).toBe(row('B', 'Body.\n', '"tags": ["one"]\n'));
 });
 
-test('typing during a save survives it and stays dirty against the receipt', async () => {
-	const fake = await openPlan(row('A'));
+test('set reads only fields and body: a passed-back row cannot inject its status or text', async () => {
+	const fake = await openPlan();
 	const { editor } = fake;
-	editor.change({ fields: { title: 'B' } });
-	fake.holdReply();
-	const saving = editor.save();
-	editor.change({ fields: { title: 'BC' } });
-	fake.releaseReply();
-	const receipt = expectOk(await saving);
-	await flush();
-	expect(receipt.document.fields.title).toBe('B');
-	expect(fake.disk()).toBe(row('B'));
-	expect(editor.get().document.fields.title).toBe('BC');
-	expect(editor.get().isDirty).toBe(true);
-	await editor.dispose();
-});
-
-// ============================================================================
-// Reads
-// ============================================================================
-
-test('dirty input is never reset by a read; invalid and missing files keep the document', async () => {
-	const fake = await openPlan(row('A'));
-	const { editor } = fake;
-
-	fake.writeElsewhere('---\ntitle: !custom X\n---\n');
-	await flush();
-	expect(editor.get().observation.kind).toBe('unsupported');
-	expect(editor.get().document.fields.title).toBe('A');
-
-	fake.writeElsewhere(undefined);
-	await flush();
-	expect(editor.get().observation.kind).toBe('missing');
-	expect(editor.get().document.fields.title).toBe('A');
-	expect(editor.get().isDirty).toBe(false);
-
-	// The file comes back: a clean editor follows it.
-	fake.writeElsewhere(row('Back'));
-	await flush();
-	expect(editor.get().document.fields.title).toBe('Back');
-
-	editor.change({ fields: { title: 'Mine' } });
-	fake.writeElsewhere(row('Theirs'));
-	await flush();
-	const { observation, document, isDirty } = editor.get();
-	expect(observation.kind === 'present' && observation.revision.canonical).toBe(
-		row('Theirs'),
-	);
-	expect(document.fields.title).toBe('Mine');
-	expect(isDirty).toBe(true);
-
-	// Deleted again, then saved: the save recreates the file.
-	fake.writeElsewhere(undefined);
-	await flush();
-	expect(editor.get().observation.kind).toBe('missing');
-	expectOk(await editor.save());
-	await flush();
-	expect(fake.disk()).toBe(row('Mine'));
-	expect(editor.get().observation.kind).toBe('present');
-	expect(editor.get().isDirty).toBe(false);
-	await editor.dispose();
-});
-
-test('a read that started before a save settled is dropped and read again', async () => {
-	const fake = await openPlan(row('A'));
-	const { editor } = fake;
-	// X lands without a hint; a read starts and is held with X.
-	fake.writeElsewhere(row('X'), { hinted: false });
-	fake.holdReads();
-	const reading = editor.refresh();
-	expect(fake.heldReads()).toBe(1);
-
-	editor.change({ fields: { title: 'L' } });
-	expectOk(await editor.save());
-	expect(editor.get().isDirty).toBe(false);
-
-	// X predates the write. Applied now, a clean editor would follow it.
-	fake.releaseRead();
-	await flush();
-	expect(editor.get().document.fields.title).toBe('L');
-	fake.releaseReads();
-	await reading;
-	await flush();
-	const { observation } = editor.get();
-	expect(observation.kind === 'present' && observation.revision.canonical).toBe(
-		row('L'),
-	);
-	expect(editor.get().document.fields.title).toBe('L');
-	await editor.dispose();
-});
-
-test('a lost reply stays unknown when the file later holds its bytes; the content stops being dirty', async () => {
-	const fake = await openPlan(row('A'));
-	const { editor } = fake;
-	fake.loseReplies();
-	editor.change({ fields: { title: 'B' } });
-	const lost = expectErr(await editor.save());
-	expect(lost.name).toBe('Unconfirmed');
-	const { lastSave } = editor.get();
-	if (lastSave?.kind !== 'unconfirmed') throw new Error('expected unknown');
-
-	await flush();
-	const after = editor.get();
-	if (after.observation.kind !== 'present') throw new Error('expected a read');
-	// The attempt has no hash of its own; the read is compared by content.
-	expect(lastSave.attempt).not.toHaveProperty('sha256');
-	expect(after.observation.revision.canonical).toBe(lastSave.attempt.text);
-	// The file holds the local content, so nothing is unsaved...
-	expect(after.isDirty).toBe(false);
-	// ...but which writer put it there is still unknown.
-	expect(after.lastSave).toBe(lastSave);
-	await editor.dispose();
-});
-
-test('a lost reply with newer typing keeps the typing dirty and the outcome unknown', async () => {
-	const fake = await openPlan(row('A'));
-	const { editor } = fake;
-	fake.loseReplies();
-	fake.holdReply();
-	editor.change({ fields: { title: 'B' } });
-	const saving = editor.save();
-	editor.change({ fields: { title: 'BC' } });
-	fake.releaseReply();
-	expect(expectErr(await saving).name).toBe('Unconfirmed');
-	await flush();
-	expect(editor.get().document.fields.title).toBe('BC');
-	expect(editor.get().isDirty).toBe(true);
-	expect(editor.get().baseline.canonical).toBe(row('A'));
-	expect(editor.get().lastSave?.kind).toBe('unconfirmed');
-	await editor.dispose();
-});
-
-// ============================================================================
-// Adoption
-// ============================================================================
-
-test('adopting a reviewed revision is refused once a newer read has different content', async () => {
-	const fake = await openPlan(row('A'));
-	const { editor } = fake;
-	editor.change({ fields: { title: 'Mine' } });
-	fake.writeElsewhere(row('B'));
-	await flush();
-	const shown = editor.get().observation;
-	if (shown.kind !== 'present') throw new Error('expected B');
-	const reviewed = shown.revision;
-
-	// C arrives while the person reviews B.
-	fake.writeElsewhere(row('C'));
-	await flush();
-	const stale = expectErr(editor.adopt(reviewed));
-	if (stale.name !== 'Stale') throw new Error(stale.message);
-	expect(
-		stale.latest.kind === 'present' && stale.latest.revision.canonical,
-	).toBe(row('C'));
-	expect(editor.get().document.fields.title).toBe('Mine');
-	expect(editor.get().isDirty).toBe(true);
-
-	const latest = editor.get().observation;
-	if (latest.kind !== 'present') throw new Error('expected C');
-	expect(editor.adopt(latest.revision).error).toBeNull();
-	expect(editor.get().document.fields.title).toBe('C');
-	expect(editor.get().isDirty).toBe(false);
-	await editor.dispose();
-});
-
-/** `row('Theirs')` as another tool might rewrite it: a comment, other quoting, other order. */
-const THEIRS_RESTYLED = [
-	'---',
-	'# reformatted by another tool',
-	"priority: 'normal'",
-	'title: Theirs',
-	'done: false',
-	'---',
-	'Body.',
-	'',
-].join('\n');
-
-test('adopting reviewed content succeeds after a formatting-only rewrite, following the latest revision', async () => {
-	const fake = await openPlan(row('A'));
-	const { editor } = fake;
-	editor.change({ fields: { title: 'Mine' } });
-	fake.writeElsewhere(row('Theirs'));
-	await flush();
-	const shown = editor.get().observation;
-	if (shown.kind !== 'present') throw new Error('expected B');
-	const reviewed = shown.revision;
-
-	fake.writeElsewhere(THEIRS_RESTYLED);
-	await flush();
-	const latest = editor.get().observation;
-	if (latest.kind !== 'present') throw new Error('expected C');
-	expect(latest.revision.sha256).not.toBe(reviewed.sha256);
-	expect(latest.revision.canonical).toBe(reviewed.canonical);
-
-	expect(editor.adopt(reviewed).error).toBeNull();
-	// The baseline is the latest read, not the reviewed object.
-	expect(editor.get().baseline).toBe(latest.revision);
-	expect(editor.get().baseline.text).toBe(THEIRS_RESTYLED);
-	expect(editor.get().document.fields.title).toBe('Theirs');
-	expect(editor.get().isDirty).toBe(false);
-	expect(fake.writes).toEqual([]);
-	await editor.dispose();
-});
-
-test('a supplied revision cannot inject its document, source, or hash through adopt', async () => {
-	const fake = await openPlan(row('A'));
-	const { editor } = fake;
-	editor.change({ fields: { title: 'Mine' } });
-	fake.writeElsewhere(THEIRS_RESTYLED);
-	await flush();
-	const latest = editor.get().observation;
-	if (latest.kind !== 'present') throw new Error('expected a read');
-
+	const current = editor.get().row;
+	if (current.status !== 'valid') throw new Error('expected valid');
 	const forged = {
-		path: latest.revision.path,
-		canonical: latest.revision.canonical,
-		sha256: '0'.repeat(64),
+		...current,
+		status: 'invalid',
 		text: '---\n"title": "Injected"\n---\n',
-		document: { fields: { title: 'Injected' }, body: 'Injected.\n' },
-	};
-	expect(editor.adopt(forged).error).toBeNull();
-	const after = editor.get();
-	expect(after.baseline).toBe(latest.revision);
-	expect(after.document).toBe(latest.revision.document);
-	expect(after.document.fields.title).toBe('Theirs');
-	expect(after.text).toBe(row('Theirs'));
-	expect(after.baseline.sha256).toBe(latest.revision.sha256);
-
-	// The same content at another path is not this file's content.
-	const elsewhere = { ...forged, path: 'todos/other.md' };
-	expect(expectErr(editor.adopt(elsewhere)).name).toBe('Stale');
-	expect(fake.writes).toEqual([]);
-	await editor.dispose();
+		error: 'ignored',
+	} as unknown as typeof current;
+	expectOk(editor.set(forged));
+	const accepted = editor.get().row;
+	expect(accepted.status).toBe('valid');
+	expect(accepted.text).toBe(row('A'));
+	await until(() => editor.get().save.status === 'idle');
+	expect(fake.writes).toEqual([row('A')]);
 });
 
-test('adopting the latest read while a newer read is in flight then follows the newer one', async () => {
-	const fake = await openPlan(row('A'));
+test('unrepresentable input is refused synchronously with no input or publication change', async () => {
+	const fake = await openPlan();
 	const { editor } = fake;
-	editor.change({ fields: { title: 'Mine' } });
-	fake.writeElsewhere(row('B'));
-	await flush();
-	const shown = editor.get().observation;
-	if (shown.kind !== 'present') throw new Error('expected B');
-
-	fake.holdReads();
-	fake.writeElsewhere(row('C'));
-	expect(fake.heldReads()).toBe(1);
-	expect(editor.adopt(shown.revision).error).toBeNull();
-	expect(editor.get().document.fields.title).toBe('B');
-
-	// Now clean, the editor follows the file when the read lands.
-	fake.releaseReads();
-	await flush();
-	expect(editor.get().document.fields.title).toBe('C');
-	await editor.dispose();
-});
-
-// ============================================================================
-// Disposal
-// ============================================================================
-
-test('dispose stops watching and input; an admitted save still settles; dispose is stable', async () => {
-	const fake = await openPlan(row('A'));
-	const { editor } = fake;
-	const { change, save, dispose, refresh, adopt, get } = editor;
-	change({ fields: { title: 'B' } });
-	fake.holdReply();
-	const saving = save();
-	await flush();
-	expect(adopt(get().baseline).error?.name).toBe('Saving');
-
-	const disposing = dispose();
-	expect(dispose()).toBe(disposing);
-	expect(fake.watching()).toBe(0);
-	expect(change({ fields: { title: 'C' } }).error?.name).toBe('Disposed');
-	expect(expectErr(await save()).name).toBe('Disposed');
-	await refresh();
-
-	let disposed = false;
-	void disposing.then(() => {
-		disposed = true;
+	const before = editor.get();
+	const nan = expectErr(
+		editor.set({ fields: { title: 'A', done: Number.NaN }, body: '' }),
+	);
+	expect(nan.name).toBe('Unrepresentable');
+	expect(nan.refusal.path).toEqual(['done']);
+	// The codec owns shape refusals of untyped input.
+	const body = expectErr(
+		editor.set({
+			fields: { title: 'A' },
+			body: 42,
+		} as unknown as Parameters<Editor['set']>[0]),
+	);
+	expect(body.name).toBe('Unrepresentable');
+	expect(body.refusal).toEqual({
+		reason: 'The body is not a string',
+		path: ['body'],
 	});
-	await flush();
-	expect(disposed).toBe(false);
-	fake.releaseReply();
-	expectOk(await saving);
-	await disposing;
-	expect(get().lastSave?.kind).toBe('saved');
-	expect(get().isDisposed).toBe(true);
-	expect(fake.writes).toEqual([row('B')]);
-});
-
-test('storage that throws is a bug: the save is released, nothing is recorded, and the throw reaches save and dispose', async () => {
-	const fake = await openPlan(row('A'));
-	const { editor } = fake;
-	editor.change({ fields: { title: 'B' } });
-	const bug = new Error('a broken port');
-	fake.throwOnReply(bug);
-	await expect(editor.save()).rejects.toBe(bug);
-	await flush();
-	expect(editor.get().saving).toBeUndefined();
-	expect(editor.get().lastSave).toBeUndefined();
-	// The reread after release found the local content on disk: a content
-	// fact, not a record that this save landed.
-	expect(editor.get().isDirty).toBe(false);
-
-	// Released: the next save is admitted, once, with no retry of the first.
-	fake.throwOnReply(undefined);
-	expectOk(await editor.save());
-	expect(fake.writes).toEqual([row('B'), row('B')]);
-
-	editor.change({ fields: { title: 'C' } });
-	fake.throwOnReply(bug);
-	fake.holdReply();
-	// Handlers attach now; `expect().rejects` would wait before the release.
-	const rejection = (promise: Promise<unknown>) =>
-		promise.then(
-			() => undefined,
-			(error: unknown) => error,
+	expect(
+		expectErr(
+			editor.set({ body: '' } as unknown as Parameters<Editor['set']>[0]),
+		).refusal.reason,
+	).toBe('The fields are not a plain object');
+	for (const missing of [null, undefined]) {
+		const refused = expectErr(
+			editor.set(missing as unknown as Parameters<Editor['set']>[0]),
 		);
-	const saving = rejection(editor.save());
-	const disposing = rejection(editor.dispose());
-	fake.releaseReply();
-	expect(await saving).toBe(bug);
-	expect(await disposing).toBe(bug);
+		expect(refused.name).toBe('Unrepresentable');
+		expect(refused.refusal.reason).toBe('The document is not an object');
+	}
+	expect(editor.get()).toBe(before);
 	await flush();
-	expect(editor.get().saving).toBeUndefined();
-	expect(editor.get().lastSave?.kind).toBe('saved');
+	expect(fake.applied).toHaveLength(0);
 });
 
-test('disposal delivers the admitted save outcome before releasing subscribers', async () => {
-	const fake = await openPlan(row('A'));
+test('a refusal while A is active and B pending leaves both the snapshot and the queue as they were', async () => {
+	const fake = await openPlan();
 	const { editor } = fake;
-	const heard: string[] = [];
-	editor.subscribe((state) => {
-		if (state.isDisposed) heard.push(state.lastSave?.kind ?? 'waiting');
-	});
-	editor.change({ fields: { title: 'B' } });
-	fake.holdReply();
-	const saving = editor.save();
+	fake.holdReplies();
+	editor.setText(row('A1'));
 	await flush();
-	const disposing = editor.dispose();
-	expect(heard).toEqual(['waiting']);
-	fake.releaseReply();
-	expectOk(await saving);
-	await disposing;
-	expect(heard).toEqual(['waiting', 'saved']);
+	editor.setText(row('B'));
+	const before = editor.get();
+	expectErr(editor.set({ fields: { title: 'X', done: Number.NaN }, body: '' }));
+	expectErr(editor.set(null as unknown as Parameters<Editor['set']>[0]));
+	expect(editor.get()).toBe(before);
+	fake.releaseReplies();
+	await until(() => editor.get().save.status === 'idle');
+	expect(fake.writes).toEqual([row('A1'), row('B')]);
 });
 
-test('a terminal subscription gets one snapshot, including subscriptions added during delivery', async () => {
-	const { editor } = await openPlan();
+test('schema-invalid representable input is accepted, saved, and kept for repair', async () => {
+	const fake = await openPlan();
+	const { editor } = fake;
+	expectOk(
+		editor.set({
+			fields: { title: '', done: false, priority: 'urgent' },
+			body: 'Body.\n',
+		}),
+	);
+	const held = editor.get().row;
+	if (held.status !== 'invalid') throw new Error('expected invalid');
+	expect(held.error.name).toBe('Nonconforming');
+	const saved =
+		'---\n"title": ""\n"done": false\n"priority": "urgent"\n---\nBody.\n';
+	expect(held.text).toBe(saved);
+	await until(() => editor.get().save.status === 'idle');
+	expect(fake.writes).toEqual([saved]);
+	expect(editor.get().row).toBe(held);
+});
+
+test('raw text is accepted exactly, interpreted completely, and published as given', async () => {
+	const fake = await openPlan();
+	const { editor } = fake;
+	editor.setText(STYLED);
+	const accepted = editor.get().row;
+	if (accepted.status !== 'valid') throw new Error('expected valid');
+	expect(accepted.text).toBe(STYLED);
+	expect(accepted.fields.owner).toBe('sam');
+	expect(accepted.body).toBe('Body A.\n');
+
+	editor.setText('---\nbroken: [\n---\n');
+	expect(editor.get().row.status).toBe('invalid');
+	await until(() => editor.get().save.status === 'idle');
+	expect(fake.writes).toEqual([STYLED, '---\nbroken: [\n---\n']);
+});
+
+// ============================================================================
+// Publication
+// ============================================================================
+
+test('A active, B then C pending: A publishes, then C; B is never submitted; no idle gap', async () => {
+	const fake = await openPlan();
+	const { editor } = fake;
+	const { saves } = record(editor);
+	fake.holdReplies();
+	editor.setText(row('A1'));
+	await flush();
+	editor.setText(row('B'));
+	editor.setText(row('C'));
+	expect(shown(editor)).toBe('C');
+	expect(fake.heldReplies()).toBe(1);
+
+	fake.releaseReply();
+	await until(() => fake.heldReplies() === 1);
+	expect(editor.get().save.status).toBe('saving');
+	fake.releaseReplies();
+	await until(() => editor.get().save.status === 'idle');
+	expect(fake.writes).toEqual([row('A1'), row('C')]);
+	expect(saves()).toEqual(['saving', 'saving', 'saving', 'idle']);
+});
+
+test("A's receipt with B public leaves B public: no rollback and no mixture", async () => {
+	const fake = await openPlan();
+	const { editor } = fake;
+	fake.holdReplies();
+	editor.setText(row('A1', 'A body.\n'));
+	await flush();
+	expectOk(
+		editor.set({
+			fields: { title: 'B', done: true, priority: 'high' },
+			body: 'B body.\n',
+		}),
+	);
+	const b = editor.get().row;
+	fake.releaseReply();
+	await until(() => fake.applied.length === 2);
+	expect(editor.get().row).toBe(b);
+	if (b.status !== 'valid') throw new Error('expected valid');
+	expect(b.text).toContain('"title": "B"');
+	expect(b.body).toBe('B body.\n');
+	fake.releaseReplies();
+	await until(() => editor.get().save.status === 'idle');
+	expect(editor.get().row).toBe(b);
+});
+
+for (const outcome of ['io', 'unconfirmed'] as const)
+	test(`A ${outcome === 'io' ? 'failing' : 'unconfirmed'} with B pending pauses the chain; newer typing waits for retry`, async () => {
+		const fake = await openFailed(outcome);
+		const { editor, save } = fake;
+		expect(save.error.name).toBe(outcome === 'io' ? 'Io' : 'Unconfirmed');
+		expect(shown(editor)).toBe('B');
+		await flush();
+		// B was retained, not attempted.
+		expect(fake.applied).toHaveLength(1);
+
+		// Typing after the failure is public at once and not attempted either.
+		const { seen } = record(editor);
+		editor.setText(row('C'));
+		expect(shown(editor)).toBe('C');
+		expect(seen).toHaveLength(1);
+		expect(editor.get().save).toBe(save);
+		await flush();
+		expect(fake.applied).toHaveLength(1);
+
+		// Only retry resumes, with the latest input.
+		editor.retry();
+		expect(editor.get().save.status).toBe('saving');
+		await until(() => editor.get().save.status === 'idle');
+		expect(fake.applied).toHaveLength(2);
+		expect(fake.disk()).toBe(row('C'));
+		// A retry while idle starts nothing.
+		editor.retry();
+		await flush();
+		expect(fake.applied).toHaveLength(2);
+	});
+
+test('retry after an uncertain write is a new attempt of the same text, never a confirmation', async () => {
+	const fake = await openPlan();
+	const { editor } = fake;
+	fake.script('unconfirmed', 'unconfirmed');
+	editor.setText(row('B'));
+	await until(() => editor.get().save.status !== 'saving');
+	const first = editor.get().save;
+	expect(first.status === 'failed' && first.error.name).toBe('Unconfirmed');
+	// The file holds B; the editor still reports uncertainty.
+	expect(fake.disk()).toBe(row('B'));
+
+	editor.retry();
+	await until(() => editor.get().save.status !== 'saving');
+	const second = editor.get().save;
+	expect(second).not.toBe(first);
+	expect(second.status === 'failed' && second.error.name).toBe('Unconfirmed');
+	editor.retry();
+	await until(() => editor.get().save.status === 'idle');
+	expect(fake.applied.map(({ change }) => change.kind)).toEqual([
+		'replace',
+		'replace',
+		'replace',
+	]);
+	expect(fake.writes).toEqual([row('B'), row('B'), row('B')]);
+});
+
+test('raw text UTF-8 cannot encode exactly is held, never written lossily, and pauses until retry', async () => {
+	const fake = await openPlan();
+	const { editor } = fake;
+	const lone = `${row('A')}\uD800`;
+	editor.setText(lone);
+	const held = editor.get();
+	if (held.row.status !== 'invalid') throw new Error('expected invalid');
+	expect(held.row.text).toBe(lone);
+	expect(held.row.error.name).toBe('Unencodable');
+	if (held.save.status !== 'failed') throw new Error('expected failed');
+	expect(held.save.error.name).toBe('Unencodable');
+	expectErr(await editor.flush());
+	await flush();
+	expect(fake.applied).toHaveLength(0);
+
+	// Retrying the same text fails again without writing.
+	editor.retry();
+	const again = editor.get().save;
+	expect(again.status === 'failed' && again.error.name).toBe('Unencodable');
+	expect(fake.applied).toHaveLength(0);
+
+	editor.setText(row('Fixed'));
+	expect(shown(editor)).toBe('Fixed');
+	expect(editor.get().save).toBe(again);
+	editor.retry();
+	await until(() => editor.get().save.status === 'idle');
+	expect(fake.writes).toEqual([row('Fixed')]);
+});
+
+test('A active with unencodable B pending: B is public; A stays saving; B fails on its turn with no idle gap', async () => {
+	const fake = await openPlan();
+	const { editor } = fake;
+	const { saves } = record(editor);
+	fake.holdReplies();
+	editor.setText(row('A1'));
+	await flush();
+	const lone = `${row('B')}\uDC00`;
+	editor.setText(lone);
+	const pending = editor.get();
+	expect(pending.row.text).toBe(lone);
+	expect(pending.save.status).toBe('saving');
+
+	fake.releaseReplies();
+	await until(() => editor.get().save.status !== 'saving');
+	const { save } = editor.get();
+	expect(save.status === 'failed' && save.error.name).toBe('Unencodable');
+	expect(fake.writes).toEqual([row('A1')]);
+	expect(saves()).toEqual(['saving', 'saving', 'failed']);
+});
+
+test("A failing before unencodable B's turn reports A's failure", async () => {
+	const fake = await openPlan();
+	const { editor } = fake;
+	fake.script('io');
+	fake.holdReplies();
+	editor.setText(row('A1'));
+	await flush();
+	editor.setText(`${row('B')}\uD800`);
+	fake.releaseReplies();
+	await until(() => editor.get().save.status !== 'saving');
+	const { save } = editor.get();
+	expect(save.status === 'failed' && save.error.name).toBe('Io');
+});
+
+test('storage that throws settles as uncertain, never stuck saving; retry admits the latest input', async () => {
+	const fake = await openPlan();
+	const { editor } = fake;
+	fake.script('throw');
+	editor.setText(row('B'));
+	await until(() => editor.get().save.status !== 'saving');
+	const { save } = editor.get();
+	if (save.status !== 'failed') throw new Error('expected failed');
+	expect(save.error.name).toBe('Unconfirmed');
+	editor.setText(row('C'));
+	editor.retry();
+	await until(() => editor.get().save.status === 'idle');
+	expect(fake.writes).toEqual([row('B'), row('C')]);
+});
+
+test('a row deleted before publication is NotFound, never recreated, and its input stays public', async () => {
+	const fake = await openPlan();
+	const { editor } = fake;
+	fake.writeElsewhere(undefined);
+	editor.setText(row('B'));
+	await until(() => editor.get().save.status !== 'saving');
+	const { save } = editor.get();
+	expect(save.status === 'failed' && save.error.name).toBe('NotFound');
+	expect(shown(editor)).toBe('B');
+
+	editor.retry();
+	await until(() => editor.get().save.status !== 'saving');
+	const again = editor.get().save;
+	expect(again.status === 'failed' && again.error.name).toBe('NotFound');
+	expect(fake.disk()).toBeUndefined();
+	expect(fake.writes).toEqual([]);
+	expect(shown(editor)).toBe('B');
+});
+
+test("each capture takes its place in the page's order when accepted, before a save a listener starts", async () => {
+	const fake = await openPlan();
+	const { editor } = fake;
+	let raw: ReturnType<typeof fake.table.replace> | undefined;
+	editor.subscribe(() => {
+		if (editor.get().save.status === 'saving' && raw === undefined)
+			raw = fake.table.replace('plan', row('Raw'), {});
+	});
+	fake.holdReplies();
+	editor.setText(row('A1'));
+	if (raw === undefined) throw new Error('the listener never heard saving');
+	editor.setText(row('C'));
+	const later = fake.table.replace('plan', row('Later'), {});
+	fake.releaseReplies();
+	expectOk(await raw);
+	expectOk(await later);
+	await until(() => editor.get().save.status !== 'saving');
+	const numberOf = (text: string) =>
+		fake.applied.find(
+			({ change }) =>
+				change.kind === 'replace' && decoder.decode(change.bytes) === text,
+		)?.submission ?? Number.NaN;
+	expect(numberOf(row('A1'))).toBeLessThan(numberOf(row('Raw')));
+	expect(numberOf(row('C'))).toBeLessThan(numberOf(row('Later')));
+});
+
+test('listener exceptions are isolated, never fail a save, and delivery is never reentrant', async () => {
+	const fake = await openPlan();
+	const { editor } = fake;
 	let depth = 0;
-	let maximumDepth = 0;
-	let nestedCalls = 0;
-	editor.subscribe((state) => {
-		if (!state.isDisposed) return;
+	let maxDepth = 0;
+	let thrown = 0;
+	const titles: unknown[] = [];
+	editor.subscribe(() => {
+		thrown += 1;
+		throw new Error('a broken view');
+	});
+	editor.subscribe(() => {
 		depth += 1;
-		maximumDepth = Math.max(maximumDepth, depth);
-		editor.subscribe((terminal) => {
-			depth += 1;
-			maximumDepth = Math.max(maximumDepth, depth);
-			expect(terminal.isDisposed).toBe(true);
-			nestedCalls += 1;
-			depth -= 1;
-		});
+		maxDepth = Math.max(maxDepth, depth);
+		titles.push(shown(editor));
+		if (titles.length === 1) editor.setText(row('Nested'));
 		depth -= 1;
 	});
-	await editor.dispose();
-	expect(maximumDepth).toBe(1);
-	expect(nestedCalls).toBe(1);
-	let calls = 0;
-	const unsubscribe = editor.subscribe((state) => {
-		expect(state.isDisposed).toBe(true);
-		calls += 1;
+	fake.holdReplies();
+	editor.setText(row('B'));
+	expect(maxDepth).toBe(1);
+	expect(titles.slice(0, 2)).toEqual(['B', 'Nested']);
+	fake.releaseReplies();
+	expectOk(await editor.flush());
+	expect(editor.get().save.status).toBe('idle');
+	expect(fake.writes).toEqual([row('B'), row('Nested')]);
+	// The broken view heard every change, on every turn of the chain.
+	expect(thrown).toBe(3);
+});
+
+test('unsubscribing ends only that subscription and leaves publication running', async () => {
+	const fake = await openPlan();
+	const { editor } = fake;
+	const calls: string[] = [];
+	const stopOne = editor.subscribe(() => calls.push('one'));
+	const stopTwo = editor.subscribe(() => calls.push('two'));
+	fake.holdReplies();
+	editor.setText(row('Mine'));
+	expect(calls).toEqual(['one', 'two']);
+	stopOne();
+	stopOne();
+	stopTwo();
+	fake.releaseReplies();
+	await until(() => editor.get().save.status === 'idle');
+	expect(calls).toEqual(['one', 'two']);
+	expect(fake.disk()).toBe(row('Mine'));
+});
+
+// ============================================================================
+// flush
+// ============================================================================
+
+test('flush resolves Ok at once when idle and waits for the whole chain, input admitted during it included', async () => {
+	const fake = await openPlan();
+	const { editor } = fake;
+	expectOk(await editor.flush());
+
+	fake.holdReplies();
+	editor.setText(row('A1'));
+	const flushing = editor.flush();
+	await flush();
+	editor.setText(row('B'));
+	fake.releaseReply();
+	// A settled, but B is running: the chain has not.
+	await until(() => fake.applied.length === 2);
+	expect(await hasSettled(flushing)).toBe(false);
+	fake.releaseReplies();
+	expectOk(await flushing);
+	expect(editor.get().save.status).toBe('idle');
+	expect(fake.disk()).toBe(row('B'));
+});
+
+test('flush returns the held failure and never retries, even with newer input', async () => {
+	const fake = await openPlan();
+	const { editor } = fake;
+	fake.script('io');
+	fake.holdReplies();
+	editor.setText(row('A1'));
+	const flushing = editor.flush();
+	await flush();
+	editor.setText(row('B'));
+	fake.releaseReplies();
+	const error = expectErr(await flushing);
+	expect(error.name).toBe('Io');
+	const { save } = editor.get();
+	expect(save.status === 'failed' && save.error).toBe(error);
+
+	editor.setText(row('C'));
+	expect(expectErr(await editor.flush())).toBe(error);
+	await flush();
+	expect(fake.applied).toHaveLength(1);
+	expect(shown(editor)).toBe('C');
+});
+
+// ============================================================================
+// reload
+// ============================================================================
+
+test('reload adopts the file over failed input and clears the failure without writing', async () => {
+	const fake = await openFailed();
+	const { editor } = fake;
+	fake.writeElsewhere(STYLED);
+	const reads = fake.reads();
+	expectOk(await editor.reload());
+	expect(fake.reads()).toBe(reads + 1);
+	const adopted = editor.get();
+	expect(adopted.save.status).toBe('idle');
+	if (adopted.row.status !== 'valid') throw new Error('expected valid');
+	// The exact text, with its comment and unknown metadata.
+	expect(adopted.row.text).toBe(STYLED);
+	expect(adopted.row.fields.owner).toBe('sam');
+	await flush();
+	expect(fake.applied).toHaveLength(1);
+
+	// The chain runs again from the adopted row.
+	editor.setText(row('Next'));
+	await until(() => editor.get().save.status === 'idle');
+	expect(fake.disk()).toBe(row('Next'));
+});
+
+test('reload adopts malformed text exactly for raw repair', async () => {
+	const fake = await openPlan();
+	const { editor } = fake;
+	const malformed = '---\nbroken: [\n---\n\r\nBody\r\n';
+	fake.writeElsewhere(malformed);
+	expectOk(await editor.reload());
+	const adopted = editor.get().row;
+	if (adopted.status !== 'invalid') throw new Error('expected invalid');
+	expect(adopted.text).toBe(malformed);
+	expect(adopted.error.name).toBe('NoCanonicalForm');
+});
+
+test('reload waits for the running chain, then reads the file it left', async () => {
+	const fake = await openPlan();
+	const { editor } = fake;
+	fake.holdReplies();
+	editor.setText(row('Mine'));
+	const reads = fake.reads();
+	const reloading = editor.reload();
+	await flush();
+	expect(fake.reads()).toBe(reads);
+	fake.writeElsewhere(row('Theirs'));
+	fake.releaseReplies();
+	expectOk(await reloading);
+	expect(fake.reads()).toBe(reads + 1);
+	expect(shown(editor)).toBe('Theirs');
+	expect(editor.get().save.status).toBe('idle');
+});
+
+test('a failed reload read leaves the row and save state exactly as they were', async () => {
+	const fake = await openFailed();
+	const { editor } = fake;
+	const before = editor.get();
+	for (const [lose, name] of [
+		[() => fake.failReads(READ_FAILURE), 'Io'],
+		[() => fake.writeElsewhere(undefined), 'NotFound'],
+		[() => fake.writeElsewhere(new Uint8Array([0xff])), 'InvalidUtf8'],
+	] as const) {
+		lose();
+		expect(expectErr(await editor.reload()).name).toBe(name);
+		// Readability never hides the input or its failure.
+		expect(editor.get()).toBe(before);
+		fake.failReads(undefined);
+	}
+	expect(fake.applied).toHaveLength(1);
+});
+
+test('typing during a reload read returns InputChanged; the typed input stands and saves', async () => {
+	const fake = await openPlan();
+	const { editor } = fake;
+	fake.writeElsewhere(row('Disk'));
+	fake.holdReads();
+	const reloading = editor.reload();
+	expect(fake.heldReads()).toBe(1);
+	editor.setText(row('Typed'));
+	fake.releaseReads();
+	expect(expectErr(await reloading).name).toBe('InputChanged');
+	expect(shown(editor)).toBe('Typed');
+	await until(() => editor.get().save.status === 'idle');
+	expect(fake.disk()).toBe(row('Typed'));
+});
+
+test('typing while reload waits for the chain returns InputChanged without reading', async () => {
+	const fake = await openPlan();
+	const { editor } = fake;
+	fake.holdReplies();
+	editor.setText(row('A1'));
+	const reads = fake.reads();
+	const reloading = editor.reload();
+	editor.setText(row('B'));
+	fake.releaseReplies();
+	expect(expectErr(await reloading).name).toBe('InputChanged');
+	expect(fake.reads()).toBe(reads);
+	expect(shown(editor)).toBe('B');
+	expect(fake.disk()).toBe(row('B'));
+});
+
+test('typing while paused, or a retry, during a reload read returns InputChanged and keeps the failure path', async () => {
+	for (const during of ['typing', 'retry'] as const) {
+		const fake = await openFailed();
+		const { editor, save } = fake;
+		fake.writeElsewhere(row('Disk'));
+		fake.holdReads();
+		const reloading = editor.reload();
+		if (during === 'typing') editor.setText(row('C'));
+		else editor.retry();
+		fake.releaseReads();
+		expect(expectErr(await reloading).name).toBe('InputChanged');
+		if (during === 'typing') {
+			expect(shown(editor)).toBe('C');
+			expect(editor.get().save).toBe(save);
+		} else {
+			await until(() => editor.get().save.status === 'idle');
+			expect(shown(editor)).toBe('B');
+			expect(fake.disk()).toBe(row('B'));
+		}
+	}
+});
+
+test('a synchronous failed retry while reload drains preserves input and prevents adoption', async () => {
+	const fake = await openPlan();
+	const { editor } = fake;
+	fake.holdReplies();
+	editor.setText(row('A'));
+	await until(() => fake.writes.length === 1);
+	editor.setText('\uD800');
+	const reloading = editor.reload();
+	let retried = false;
+	const unsubscribe = editor.subscribe(() => {
+		if (editor.get().save.status !== 'failed' || retried) return;
+		retried = true;
+		editor.retry();
 	});
+	const reads = fake.reads();
+	fake.releaseReplies();
+	expect(expectErr(await reloading).name).toBe('InputChanged');
+	expect(retried).toBe(true);
+	expect(editor.get().row.text).toBe('\uD800');
+	expect(editor.get().save.status).toBe('failed');
+	expect(fake.reads()).toBe(reads);
 	unsubscribe();
-	unsubscribe();
-	await editor.refresh();
-	expect(calls).toBe(1);
+});
+
+test('overlapping reloads: the latest call decides, and the earlier one settles with its result', async () => {
+	for (const order of ['earlier first', 'latest first'] as const) {
+		const fake = await openPlan();
+		const { editor } = fake;
+		fake.writeElsewhere(row('Older'));
+		fake.holdReads();
+		const earlier = editor.reload();
+		fake.writeElsewhere(row('Newer'));
+		const latest = editor.reload();
+		expect(fake.heldReads()).toBe(2);
+		if (order === 'earlier first') fake.releaseRead();
+		else fake.releaseNewestRead();
+		await flush();
+		// The earlier read never adopts, whichever finishes first.
+		expect(shown(editor)).toBe(order === 'earlier first' ? 'A' : 'Newer');
+		fake.releaseReads();
+		expectOk(await earlier);
+		expectOk(await latest);
+		expect(shown(editor)).toBe('Newer');
+	}
 });
 
 // ============================================================================
 // A real folder
 // ============================================================================
 
-/** Wait for the editor to apply a read the folder's own hint requested. */
-async function until(condition: () => boolean) {
-	for (let i = 0; i < 200 && !condition(); i += 1)
-		await new Promise((r) => setTimeout(r, 5));
-	expect(condition()).toBe(true);
-}
-
-test('over a real folder: open styled source, save canonically, follow hinted and explicit rereads', async () => {
+test('over a real folder: acquire styled source, replace canonically, ignore outside changes until reload, never recreate', async () => {
 	const root = await realpath(await scratch('epicenter-row-editor-'));
 	const folder = expectOk(
 		await openFolder({
@@ -960,38 +1117,56 @@ test('over a real folder: open styled source, save canonically, follow hinted an
 	try {
 		expectOk(await folder.files.create(PATH, STYLED));
 		const editor = expectOk(await folder.tables.todos.edit('plan'));
-		const heard: State[] = [];
-		editor.subscribe((state) => heard.push(state));
+		const stop = editor.subscribe(() => {});
 
-		editor.change({ fields: { title: 'Plan B', done: true } });
-		const receipt = expectOk(await editor.save());
+		const opened = editor.get().row;
+		if (opened.status !== 'valid') throw new Error('expected valid');
+		expectOk(
+			editor.set({
+				fields: { ...opened.fields, title: 'Plan B', done: true },
+				body: opened.body,
+			}),
+		);
+		expectOk(await editor.flush());
 		const disk = await readFile(join(root, PATH), 'utf8');
 		expect(disk).toBe(
 			'---\n"title": "Plan B"\n"done": true\n"priority": "normal"\n"meta": {"a": [true, null], "b": 1}\n"owner": "sam"\n---\nBody A.\n',
 		);
-		expect(receipt.text).toBe(disk);
-		const snapshot = expectOk(await folder.tables.todos.get('plan'));
-		expect(snapshot?.sha256).toBe(receipt.sha256);
+		expect(editor.get().row.text).toBe(disk);
 
-		// A save through this folder hints, and the clean editor follows it.
+		// A save through this folder hints; the editor does not follow it.
 		expectOk(await folder.files.overwrite(PATH, row('Hinted')));
-		await until(() => editor.get().document.fields.title === 'Hinted');
-		expect(editor.get().isDirty).toBe(false);
+		await flush();
+		expect(shown(editor)).toBe('Plan B');
+		expectOk(await editor.reload());
+		expect(shown(editor)).toBe('Hinted');
 
-		// node:fs is outside the folder, so the reread is requested explicitly.
 		await writeFile(join(root, PATH), row('From elsewhere'));
-		await editor.refresh();
-		expect(editor.get().document.fields.title).toBe('From elsewhere');
-		expect(editor.get().isDirty).toBe(false);
-		expect(heard.at(-1)).toBe(editor.get());
+		expectOk(await editor.reload());
+		expect(shown(editor)).toBe('From elsewhere');
 
-		// A closed folder refuses the save; the draft stays for the caller.
-		editor.change({ fields: { title: 'After close' } });
+		// Deleted outside the folder, then edited: replace refuses to recreate.
+		await rm(join(root, PATH));
+		editor.setText(row('Mine'));
+		const failure = expectErr(await editor.flush());
+		expect(failure.name).toBe('NotFound');
+		expect(expectOk(await folder.tables.todos.get('plan'))).toBeUndefined();
+		expect(expectErr(await editor.reload()).name).toBe('NotFound');
+		expect(shown(editor)).toBe('Mine');
+
+		// Recreated: reload adopts it and discards the held input and failure.
+		await writeFile(join(root, PATH), row('Recreated'));
+		expectOk(await editor.reload());
+		expect(shown(editor)).toBe('Recreated');
+		expect(editor.get().save.status).toBe('idle');
+
+		// A closed folder refuses the next attempt and the next read.
 		await folder.close();
-		expect(expectErr(await editor.save()).name).toBe('Closed');
-		expect(editor.get().lastSave?.kind).toBe('failed');
-		expect(editor.get().document.fields.title).toBe('After close');
-		await editor.dispose();
+		editor.setText(row('After close'));
+		expect(expectErr(await editor.flush()).name).toBe('Closed');
+		expect(expectErr(await editor.reload()).name).toBe('Closed');
+		expect(shown(editor)).toBe('After close');
+		stop();
 	} finally {
 		await folder.close();
 		await rm(root, { recursive: true, force: true });

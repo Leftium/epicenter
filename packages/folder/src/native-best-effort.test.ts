@@ -35,7 +35,7 @@ test('overlapping creates of one stem land one row and refuse the other, beside 
 			},
 		};
 		const table = createTable<{ title: string }>(
-			{ storage: boundary, onFilesChanged: () => () => {} },
+			{ storage: boundary },
 			'todos',
 			definition.tables.todos.fields,
 		);

@@ -92,10 +92,12 @@
         "@epicenter/auth": "workspace:*",
         "@epicenter/capture": "workspace:*",
         "@epicenter/constants": "workspace:*",
+        "@epicenter/epicenter": "workspace:*",
         "@epicenter/folder": "workspace:*",
         "@epicenter/ui": "workspace:*",
         "@tauri-apps/api": "catalog:",
         "buffer": "^6.0.3",
+        "wellcrafted": "catalog:",
       },
       "devDependencies": {
         "@epicenter/vite-config": "workspace:*",
@@ -103,6 +105,8 @@
         "@sveltejs/kit": "catalog:",
         "@sveltejs/vite-plugin-svelte": "catalog:",
         "@types/bun": "catalog:",
+        "@types/jsdom": "21.1.7",
+        "jsdom": "26.1.0",
         "playwright": "^1.61.1",
         "svelte": "catalog:",
         "svelte-check": "catalog:",
@@ -188,7 +192,9 @@
         "@tailwindcss/vite": "catalog:",
         "@tauri-apps/cli": "catalog:",
         "@types/bun": "catalog:",
+        "@types/jsdom": "21.1.7",
         "@types/markdown-it": "^14.0.0",
+        "jsdom": "26.1.0",
         "mode-watcher": "catalog:",
         "svelte": "catalog:",
         "svelte-check": "catalog:",
@@ -465,7 +471,9 @@
       "name": "@epicenter/todos",
       "version": "0.0.1",
       "dependencies": {
+        "@epicenter/epicenter": "workspace:*",
         "@epicenter/folder": "workspace:*",
+        "@tauri-apps/api": "catalog:",
         "buffer": "^6.0.3",
         "wellcrafted": "catalog:",
       },
@@ -546,6 +554,8 @@
         "@tauri-apps/api": "catalog:",
         "@tauri-apps/cli": "catalog:",
         "@types/bun": "catalog:",
+        "@types/jsdom": "21.1.7",
+        "jsdom": "26.1.0",
         "mode-watcher": "catalog:",
         "svelte": "catalog:",
         "svelte-check": "catalog:",
@@ -792,9 +802,20 @@
       },
       "devDependencies": {
         "@types/bun": "catalog:",
+        "@types/jsdom": "21.1.7",
+        "jsdom": "26.1.0",
+        "node-api-headers": "^1.9.0",
+        "svelte": "catalog:",
+        "svelte-check": "catalog:",
         "typescript": "catalog:",
         "vite": "catalog:",
       },
+      "peerDependencies": {
+        "svelte": "^5.9.0",
+      },
+      "optionalPeers": [
+        "svelte",
+      ],
     },
     "packages/matter-core": {
       "name": "@epicenter/matter-core",
@@ -2859,6 +2880,8 @@
     "node-abi": ["node-abi@3.96.0", "", { "dependencies": { "semver": "^7.3.5" } }, "sha512-rebQ/lz7i0EkoLzUVSrKRzA69zMkwLp95kKMWoMDkkM00Suxz0D7zEQPwRml5fQum24mj7bPvmlgLAmu2JCiYg=="],
 
     "node-addon-api": ["node-addon-api@8.9.2", "", {}, "sha512-VijLXbi3UACN69I0JVXJsX4tjACjNoQDgv2gTF6sx2wWEi8tkSg2eX8p5gSIFi8z2+DL3oHmY6OyKce38SDolg=="],
+
+    "node-api-headers": ["node-api-headers@1.9.0", "", {}, "sha512-2oNILP4jXwRB4ywnYKjVk1YyJ96n2D4EOVJO6S3oYZ5PtbJrw3Yt9TpAuX3nBLMuzn74rnfGQrv13pS9vC+YiA=="],
 
     "node-fetch-native": ["node-fetch-native@1.6.7", "", {}, "sha512-g9yhqoedzIUm0nTnTqAQvueMPVOuIY16bqgAJJC8XOOubYFNwz6IER9qs0Gq2Xd0+CecCKFjtdDTMA4u4xG06Q=="],
 

@@ -18,7 +18,10 @@ export function canonicalViteConfig(): InlineConfig {
 	return {
 		configFile: false,
 		root: join(import.meta.dir, 'canonical-web'),
-		// Solid compiles `.tsx`; Svelte compiles `.svelte`. Plain `.ts` is neither's.
+		// Solid compiles `.tsx`; Svelte compiles `.svelte` and `.svelte.ts`.
+		// The Svelte plugin dedupes `svelte`, so the package's adapter
+		// (`src/svelte`) runs on this directory's Svelte, the panel's runtime,
+		// rather than the repository's second copy.
 		plugins: [solid(), svelte()],
 		build: {
 			outDir: join(import.meta.dir, 'dist-canonical'),

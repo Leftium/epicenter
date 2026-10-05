@@ -5,12 +5,14 @@
  * `mock.module`, then opens the folder the way the desktop workspace does.
  *
  * Files live in a map. Each published change is applied as the Rust owner
- * applies one: exclusive creates, conditional replaces and removals, plain
- * overwrites, and moves to an absent path. A test decides when a change is
- * applied (`beforeApply`) and whether its reply is lost after it landed
- * (`loseReplies`): the adapter then sees no reply, which is the owner's
- * answer it reports as unknown. Nothing here is the Rust owner; it is a
- * stand-in for its replies, as `desktop.test.ts` scripts them.
+ * applies one: exclusive creates, replaces of an existing file (checked
+ * against a hash when one is sent), removals, plain overwrites, and moves to
+ * an absent path. A test decides when a change is applied (`beforeApply`),
+ * whether it is refused before it lands (`refuseNext`), and whether its reply
+ * is lost after it landed (`loseReplies`): the adapter then sees no reply,
+ * which is the owner's answer it reports as unknown. Nothing here is the
+ * Rust owner; it is a stand-in for its replies, as `desktop.test.ts`
+ * scripts them.
  */
 import { createHash } from 'node:crypto';
 
@@ -19,7 +21,12 @@ type Call = Record<string, unknown>;
 /** One change as the adapter sends it over the wire. */
 export type WireChange =
 	| { kind: 'create' | 'overwrite'; path: string; bytes: number[] }
-	| { kind: 'replace'; path: string; bytes: number[]; expectedSha256: string }
+	| {
+			kind: 'replace';
+			path: string;
+			bytes: number[];
+			expectedSha256?: string | null;
+	  }
 	| { kind: 'remove'; path: string; expectedSha256?: string | null }
 	| { kind: 'move'; from: string; to: string; expectedSha256?: string | null };
 
@@ -52,9 +59,15 @@ export function createScriptedOwner(root = '/scripted/whispering') {
 	const applied: WireChange[] = [];
 	const control = {
 		/** Runs before each change is applied; await in it to hold the change. */
-		beforeApply: undefined as ((change: WireChange) => Promise<void>) | undefined,
+		beforeApply: undefined as
+			| ((change: WireChange) => Promise<void>)
+			| undefined,
 		/** How many upcoming replies are lost after their change landed. */
 		loseReplies: 0,
+		/** How many upcoming changes the owner refuses with an I/O failure before anything lands. */
+		refuseNext: 0,
+		/** Paths whose reads fail with an I/O error, as a disk that cannot be read. */
+		failReads: new Set<string>(),
 	};
 
 	/** A refusal the owner answers with: the adapter reads it as the folder's own. */
@@ -65,21 +78,23 @@ export function createScriptedOwner(root = '/scripted/whispering') {
 	function apply(change: WireChange) {
 		switch (change.kind) {
 			case 'create':
-				if (disk.has(change.path)) refused({ name: 'Exists', path: change.path });
+				if (disk.has(change.path))
+					refused({ name: 'Exists', path: change.path });
 				disk.set(change.path, Uint8Array.from(change.bytes));
 				return;
 			case 'overwrite':
 				disk.set(change.path, Uint8Array.from(change.bytes));
 				return;
 			case 'replace': {
+				// A replacement never creates a file. With a hash, the bytes must match it.
 				const now = disk.get(change.path);
-				const actual = now === undefined ? null : sha256(now);
-				if (actual !== change.expectedSha256)
+				if (now === undefined) refused({ name: 'NotFound', path: change.path });
+				else if (change.expectedSha256 && sha256(now) !== change.expectedSha256)
 					refused({
 						name: 'Conflict',
 						path: change.path,
 						expectedSha256: change.expectedSha256,
-						actualSha256: actual,
+						actualSha256: sha256(now),
 					});
 				disk.set(change.path, Uint8Array.from(change.bytes));
 				return;
@@ -100,7 +115,8 @@ export function createScriptedOwner(root = '/scripted/whispering') {
 			case 'move': {
 				const now = disk.get(change.from);
 				if (now === undefined) refused({ name: 'NotFound', path: change.from });
-				else if (disk.has(change.to)) refused({ name: 'Exists', path: change.to });
+				else if (disk.has(change.to))
+					refused({ name: 'Exists', path: change.to });
 				else if (change.expectedSha256 && sha256(now) !== change.expectedSha256)
 					refused({
 						name: 'Conflict',
@@ -127,6 +143,13 @@ export function createScriptedOwner(root = '/scripted/whispering') {
 		return [...found].sort();
 	};
 	const read = (path: string) => {
+		if (control.failReads.has(path))
+			throw {
+				name: 'Io',
+				path,
+				operation: 'read',
+				cause: 'the disk could not be read',
+			};
 		const bytes = disk.get(path);
 		if (bytes === undefined) throw { name: 'NotFound', path };
 		return { bytes: [...bytes], sha256: sha256(bytes) };
@@ -139,13 +162,15 @@ export function createScriptedOwner(root = '/scripted/whispering') {
 			files: [...disk].map(([path, bytes]) => ({ path, size: bytes.length })),
 			directories: directories(),
 		}),
+		// Names within the directory, as the owner answers; the adapter joins them.
 		children: ({ directory }) => {
 			const prefix = directory === '' ? '' : `${directory}/`;
 			const below = (path: string) =>
 				path.startsWith(prefix) && !path.slice(prefix.length).includes('/');
+			const name = (path: string) => path.slice(prefix.length);
 			return {
-				files: [...disk.keys()].filter(below),
-				directories: directories().filter(below),
+				files: [...disk.keys()].filter(below).map(name),
+				directories: directories().filter(below).map(name),
 			};
 		},
 		read: ({ path }) => read(String(path)),
@@ -160,6 +185,15 @@ export function createScriptedOwner(root = '/scripted/whispering') {
 		async apply({ changes }) {
 			for (const change of changes as WireChange[]) {
 				await control.beforeApply?.(change);
+				if (control.refuseNext > 0) {
+					control.refuseNext -= 1;
+					refused({
+						name: 'Io',
+						path: 'path' in change ? change.path : change.from,
+						operation: change.kind,
+						cause: 'the disk refused the write',
+					});
+				}
 				apply(change);
 				applied.push(change);
 			}
@@ -184,8 +218,11 @@ export function createScriptedOwner(root = '/scripted/whispering') {
 			const bytes = disk.get(path);
 			return bytes === undefined ? undefined : new TextDecoder().decode(bytes);
 		},
-		write(path: string, text: string) {
-			disk.set(path, new TextEncoder().encode(text));
+		write(path: string, text: string | Uint8Array) {
+			disk.set(
+				path,
+				typeof text === 'string' ? new TextEncoder().encode(text) : text,
+			);
 		},
 		/** In place of Tauri's `invoke`. */
 		async invoke(cmd: string, args: Call = {}) {

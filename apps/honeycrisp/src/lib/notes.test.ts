@@ -15,9 +15,9 @@
 import './svelte-modules.test-support.js';
 import { expect, test } from 'bun:test';
 import { hashBytes } from '@epicenter/folder';
-import { inspectNote, listingOf, noteEntry } from './inspect.test-support.js';
+import { openNotesFolder } from './folder.test-support.js';
+import { listingOf, noteEntry } from './inspect.test-support.js';
 import type { NotesHost } from './platform/types.js';
-import { openFakeRowEditor } from './row-editor.test-support.js';
 
 const { createNotes } = await import('./notes.svelte.ts');
 const { constant, watch } = await import('./effects.test-support.svelte.ts');
@@ -44,24 +44,15 @@ async function open() {
 	const sha256 = await hashBytes(bytes);
 	let release = () => {};
 	let reads = 0;
+	// The note opens the folder's own row editor; nothing here saves it.
+	const real = await openNotesFolder();
+	await real.write(note.path, NOTE);
 	const host = {
 		folder: {
 			tables: {
 				notes: {
 					list: async () => ({ data: listingOf([note]), error: null }),
-					// The note opens its row editor; nothing here saves it.
-					edit: (stem: string) =>
-						openFakeRowEditor({
-							path: `notes/${stem}.md`,
-							declared: [],
-							inspect: inspectNote,
-							file: {
-								read: () => NOTE,
-								write: () => {
-									throw new Error('Nothing is saved in these tests');
-								},
-							},
-						}),
+					edit: real.folder.tables.notes.edit,
 				},
 				folders: {
 					list: async () => ({ data: listingOf([]), error: null }),

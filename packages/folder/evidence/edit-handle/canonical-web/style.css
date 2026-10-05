@@ -38,8 +38,7 @@ article {
 .columns.two {
 	grid-template-columns: repeat(2, minmax(0, 1fr));
 }
-.columns.three,
-.compare {
+.columns.three {
 	display: grid;
 	gap: 8px;
 	grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -51,15 +50,13 @@ article {
 	gap: 6px;
 	margin: 6px 0;
 }
-.panel label,
-#repair label {
+.panel label {
 	display: block;
 	margin-bottom: 8px;
 }
 .panel input:not([type="checkbox"]),
 .panel select,
-.panel textarea,
-#repair textarea {
+.panel textarea {
 	display: block;
 	width: 100%;
 	box-sizing: border-box;
@@ -95,13 +92,8 @@ button {
 	color: #666;
 	margin: 0;
 }
-.warn,
-.issues {
+.warn {
 	color: #9a4b00;
-}
-.issues {
-	padding-left: 18px;
-	min-height: 1em;
 }
 .message {
 	min-height: 1em;

@@ -87,6 +87,18 @@ export function describeDeletion(
 				}Committed versions stay in Git history.`,
 			};
 		}
+		case 'unreadableRow':
+			// Only the file goes; nothing is read from it, so nothing goes with it.
+			return {
+				title: `Delete ${basename(deletion.path)}?`,
+				description: `${deletion.path} cannot be read as a ${
+					deletion.table === 'recordings' ? 'recording' : 'transformation'
+				} (${deletion.problem}), so this deletes only that file, as it is now. ${
+					deletion.recordingId !== undefined
+						? `Transcripts and results that name “${deletion.recordingId}” are kept, and so is any audio. `
+						: 'Saved results made with it are kept. '
+				}Committed versions stay in Git history.`,
+			};
 		case 'folder':
 			return {
 				title: `Delete the folder ${basename(deletion.path)}?`,

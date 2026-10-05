@@ -30,6 +30,7 @@ function setup({
 	fetch: fetchOverride,
 	respond,
 	store,
+	prepare,
 	callbackUrl,
 }: {
 	authCell?: string | null;
@@ -41,9 +42,13 @@ function setup({
 	fetch?: AuthFetch;
 	respond?: (request: Request) => Promise<Response | undefined>;
 	store?: (serialized: string | null) => Promise<void>;
+	/** Rust's departure round. Resolves to grant; rejects to refuse. */
+	prepare?: (signal: AbortSignal | undefined) => Promise<void>;
 } = {}) {
 	const writes: Array<string | null> = [];
 	const events: string[] = [];
+	/** Every native and revocation step, in order. */
+	const timeline: string[] = [];
 	const urls: string[] = [];
 	const resources: string[] = [];
 	const revoked: string[] = [];
@@ -60,14 +65,28 @@ function setup({
 				await store?.(serialized);
 				writes.push(serialized);
 				events.push('stored');
+				timeline.push('stored');
 			},
 			async openAuthUrl(url) {
 				urls.push(url);
 				await open?.(url);
 			},
-			relaunch() {
-				events.push('relaunch');
-				relaunch?.();
+			async prepareRelaunch(signal) {
+				timeline.push('prepare');
+				signal?.addEventListener('abort', () => timeline.push('withdraw'), {
+					once: true,
+				});
+				await prepare?.(signal);
+				return {
+					relaunch() {
+						events.push('relaunch');
+						timeline.push('relaunch');
+						relaunch?.();
+					},
+					abort() {
+						timeline.push('abort');
+					},
+				};
 			},
 			onAuthCallback(next) {
 				listener = next;
@@ -95,6 +114,7 @@ function setup({
 					});
 				if (url.pathname === '/auth/sign-out') {
 					revoked.push(token);
+					timeline.push(`revoke:${token}`);
 					return new Response(null);
 				}
 				resources.push(token);
@@ -105,6 +125,7 @@ function setup({
 		authority,
 		writes,
 		events,
+		timeline,
 		urls,
 		resources,
 		revoked,
@@ -928,4 +949,180 @@ test('boot principal mismatch requires restart before the asynchronous clear fin
 	await until(() => context.writes.length === 1);
 	expect(context.writes).toEqual([null]);
 	expect(context.authority.restartRequired).toBe(true);
+});
+
+test('a granted sign-in disposes, writes, revokes the replaced credential, then restarts', async () => {
+	let disposedAtWrite: boolean | undefined;
+	using context = setup({
+		async store() {
+			disposedAtWrite = context.authority.restartRequired;
+		},
+	});
+	const boot = context.authority.account!;
+	const signingIn = context.authority.startSignIn();
+	await until(() => context.urls.length === 1);
+	context.finish('bob-2');
+	expectOk(await signingIn);
+	expect(context.timeline).toEqual([
+		'prepare',
+		'stored',
+		'revoke:alice-1',
+		'relaunch',
+	]);
+	expect(disposedAtWrite).toBe(true);
+	await expect(boot.fetch('/api/example')).rejects.toBeDefined();
+});
+
+test('a refused preparation revokes only the candidate and keeps the current account working', async () => {
+	let refuse = true;
+	using context = setup({
+		async prepare() {
+			if (refuse) throw new Error('Todos kept Epicenter open.');
+		},
+	});
+	const account = context.authority.account!;
+	const refused = context.authority.startSignIn();
+	await until(() => context.urls.length === 1);
+	context.finish('bob-2');
+	expectErr(await refused);
+	await until(() => context.revoked.includes('bob-2'));
+	expect(context.timeline).toEqual(['prepare', 'revoke:bob-2']);
+	expect(context.writes).toEqual([]);
+	expect(context.authority.restartRequired).toBe(false);
+	expect(context.authority.account).toBe(account);
+	await account.fetch('/api/example');
+	expect(context.resources).toEqual(['alice-1']);
+
+	refuse = false;
+	const retried = context.authority.startSignIn();
+	await until(() => context.urls.length === 2);
+	context.finish('bob-3');
+	expectOk(await retried);
+	expect(JSON.parse(context.writes.at(-1)!).auth.token).toBe('bob-3');
+});
+
+test('a refused sign-out writes nothing and can be retried', async () => {
+	let refuse = true;
+	using context = setup({
+		async prepare() {
+			if (refuse) throw new Error('Capture kept Epicenter open.');
+		},
+	});
+	const account = context.authority.account!;
+	expectErr(await context.authority.signOut());
+	expect(context.writes).toEqual([]);
+	expect(context.authority.restartRequired).toBe(false);
+	await account.fetch('/api/example');
+	expect(context.resources).toEqual(['alice-1']);
+	refuse = false;
+	expectOk(await context.authority.signOut());
+	expect(context.timeline).toEqual([
+		'prepare',
+		'prepare',
+		'stored',
+		'revoke:alice-1',
+		'relaunch',
+	]);
+});
+
+test('a grant that crosses a cancellation is given back before anything is disposed', async () => {
+	const granting = Promise.withResolvers<void>();
+	using context = setup({ prepare: () => granting.promise });
+	const account = context.authority.account!;
+	const signingIn = context.authority.startSignIn();
+	await until(() => context.urls.length === 1);
+	context.finish('bob-2');
+	await until(() => context.timeline.includes('prepare'));
+	expectOk(await context.authority.cancelConnection());
+	expectErr(await signingIn);
+	// Rust had already granted, and ignores the late withdrawal.
+	granting.resolve();
+	await until(() => context.revoked.includes('bob-2'));
+	expect(context.timeline).toEqual([
+		'prepare',
+		'withdraw',
+		'abort',
+		'revoke:bob-2',
+	]);
+	expect(context.writes).toEqual([]);
+	expect(context.authority.restartRequired).toBe(false);
+	await account.fetch('/api/example');
+	expect(context.resources).toEqual(['alice-1']);
+});
+
+test('a failed cell write after the grant gives it back and stays restart-required', async () => {
+	using context = setup({
+		async store() {
+			throw new Error('keychain refused the write');
+		},
+	});
+	const boot = context.authority.account!;
+	const signingIn = context.authority.startSignIn();
+	await until(() => context.urls.length === 1);
+	context.finish('bob-2');
+	expectErr(await signingIn);
+	// The pages resume; the credentials are not restored.
+	expect(context.timeline).toEqual(['prepare', 'abort', 'revoke:bob-2']);
+	expect(context.authority.restartRequired).toBe(true);
+	await expect(boot.fetch('/api/example')).rejects.toBeDefined();
+	expectErr(await context.authority.signOut());
+	expectErr(await context.authority.startSignIn());
+	expect(context.timeline.filter((step) => step === 'prepare')).toHaveLength(1);
+});
+
+test('sign-out during a sign-in preparation withdraws it and asks for a retry', async () => {
+	let calls = 0;
+	using context = setup({
+		async prepare(signal) {
+			if (++calls > 1) return;
+			await new Promise<void>((_, reject) =>
+				signal?.addEventListener(
+					'abort',
+					() => reject(new Error('withdrawn')),
+					{ once: true },
+				),
+			);
+		},
+	});
+	const signingIn = context.authority.startSignIn();
+	await until(() => context.urls.length === 1);
+	context.finish('bob-2');
+	await until(() => context.timeline.includes('prepare'));
+	// No second preparation runs beside the first.
+	expectErr(await context.authority.signOut());
+	expectErr(await signingIn);
+	await until(() => context.revoked.includes('bob-2'));
+	expect(context.writes).toEqual([]);
+	expect(context.authority.restartRequired).toBe(false);
+	expectOk(await context.authority.signOut());
+	expect(context.timeline).toEqual([
+		'prepare',
+		'withdraw',
+		'revoke:bob-2',
+		'prepare',
+		'stored',
+		'revoke:alice-1',
+		'relaunch',
+	]);
+});
+
+test('the replacement guard is set before the first await of a sign-out', async () => {
+	const deciding = Promise.withResolvers<void>();
+	using context = setup({ prepare: () => deciding.promise });
+	const signingOut = context.authority.signOut();
+	// Both calls start synchronously after sign-out and are refused visibly.
+	const signingIn = context.authority.startSignIn();
+	const secondSignOut = context.authority.signOut();
+	expectErr(await signingIn);
+	expectErr(await secondSignOut);
+	expect(context.urls).toEqual([]);
+	expect(context.authority.restartRequired).toBe(false);
+	deciding.resolve();
+	expectOk(await signingOut);
+	expect(context.timeline).toEqual([
+		'prepare',
+		'stored',
+		'revoke:alice-1',
+		'relaunch',
+	]);
 });

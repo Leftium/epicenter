@@ -16,9 +16,10 @@
 	import FolderTerminal from './FolderTerminal.svelte';
 	import TodoDetail from './TodoDetail.svelte';
 	import TodoList from './TodoList.svelte';
-	import TodoSource from './TodoSource.svelte';
+	import DepartureNotice from './DepartureNotice.svelte';
+	import type { Departure } from '$lib/departure.svelte.js';
 
-	let { todos }: { todos: Todos } = $props();
+	let { todos, departure }: { todos: Todos; departure?: Departure } = $props();
 
 	// Drafts live only in this open page. While any editor has typing, a save
 	// in flight, a failed save, or a conflict, leaving is cancelled; for a
@@ -70,9 +71,9 @@
 	}
 </script>
 
-<!-- Returning to the app is a refresh boundary for files and Git status. -->
+<!-- Returning to the app is a refresh boundary for the listings and Git status; open todos reload only when asked. -->
 <svelte:window
-	onfocus={() => void todos.refreshAll()}
+	onfocus={() => void todos.check()}
 	onkeydown={(event) => {
 		if ((event.metaKey || event.ctrlKey) && !event.altKey && !event.shiftKey && event.key.toLowerCase() === 'b') {
 			event.preventDefault();
@@ -87,9 +88,7 @@
 {#snippet detail(onBack: (() => void) | undefined)}
 	{@const selection = todos.selection}
 	{#if selection?.kind === 'todo'}
-		<TodoDetail {todos} editor={selection.editor} {onBack} />
-	{:else if selection?.kind === 'source'}
-		<TodoSource {todos} editor={selection.editor} reason={selection.reason} {onBack} />
+		<TodoDetail {todos} todo={selection.editor} {onBack} />
 	{:else if selection?.kind === 'file'}
 		<FileView {todos} path={selection.path} file={selection.file} {onBack} />
 	{:else}
@@ -116,6 +115,9 @@
 		onToggleFiles={toggleFiles}
 		onToggleTerminal={() => void toggleTerminal()}
 	/>
+	{#if departure}
+		<DepartureNotice {departure} />
+	{/if}
 	<IncomingBanner {todos} />
 
 	{#if wide.current}

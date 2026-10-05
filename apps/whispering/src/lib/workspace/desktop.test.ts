@@ -56,8 +56,7 @@ const { openWorkspace } = await import('./index.js');
 const { openBrowserWorkspace } = await import('./browser.js');
 const { openDesktopWorkspace } = await import('./desktop.js');
 const { mountSession } = await import('../session.svelte.ts');
-const { createRowDraft } = await import('../row-draft.svelte.ts');
-const { TYPING_BATCH_MS } = await import('../editor.svelte.ts');
+const { createRowEditing } = await import('../row-editing.svelte.ts');
 
 const ROOT = '/Users/someone/Epicenter/local/so.epicenter.whispering';
 const SCOPE = 'so.epicenter.whispering';
@@ -481,42 +480,42 @@ test('a row save whose reply the shell never sent stays unknown in the real row 
 	const editor = expectOk(
 		await workspace.folder.tables.transformations.edit('clean'),
 	);
-	const draft = createRowDraft(editor, {
-		files: workspace.folder.files,
-		autosave: { paused: false },
+	const editing = createRowEditing(editor, {
+		path: 'transformations/clean.md',
 		admits: () => true,
 		onSaved: () => {},
-		onIdleUnfollowable: () => {},
 	});
 
-	draft.change({ body: 'Tidy it.\n' });
-	expect(await draft.settle()).toBe(false);
+	editing.setBody('Tidy it.\n');
+	expect((await editing.flush()).error?.name).toBe('Unconfirmed');
 	expect(written).toHaveLength(1);
-	expect(draft.state.lastSave?.kind).toBe('unconfirmed');
+	expect(editing.status).toMatchObject({
+		kind: 'unconfirmed',
+		message: expect.stringContaining('the reply was lost'),
+	});
+	expect(editing.holds).toBe(true);
 
-	// The owner's file holds the draft. That is current content: the draft is
-	// clean, and the save it may have come from is still unknown.
-	await draft.refresh();
-	expect(draft.isDirty).toBe(false);
-	expect(draft.status).toMatchObject({ kind: 'unconfirmed', inFile: true });
-	expect(draft.unknown).toContain('the reply was lost');
-
-	// Typing after it is held: nothing is written by a pause or by settling.
-	draft.change({ body: 'Tidy it more.\n' });
-	await Bun.sleep(TYPING_BATCH_MS + 100);
-	expect(await draft.settle()).toBe(false);
-	expect(draft.holds).toBe(true);
+	// Typing after it is shown and kept, and nothing writes it on its own:
+	// another automatic write would be a retry the person did not ask for.
+	editing.setBody('Tidy it more.\n');
+	expect(editing.row).toMatchObject({
+		status: 'valid',
+		body: 'Tidy it more.\n',
+	});
+	expect((await editing.flush()).error?.name).toBe('Unconfirmed');
+	expect(editing.holds).toBe(true);
 	expect(written).toHaveLength(1);
 
-	// Saving again is the person's choice; its own reply confirms it.
+	// Saving again is the person's choice, and writes the latest input; its
+	// own reply confirms it.
 	loseReplies = false;
-	await draft.saveNow();
+	expect(editing.retry()).toBeUndefined();
+	expect((await editing.flush()).error).toBeNull();
 	expect(written).toHaveLength(2);
 	expect(written[1]).toContain('Tidy it more.');
-	expect(draft.status).toEqual({ kind: 'saved' });
-	expect(draft.unknown).toBeUndefined();
+	expect(editing.status).toEqual({ kind: 'saved' });
 
-	await draft.dispose();
+	editing.release();
 	await workspace.close();
 });
 

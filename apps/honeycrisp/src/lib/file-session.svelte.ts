@@ -1,8 +1,7 @@
 /**
  * One open raw file's editing session, and the folder calls every file change
- * goes through. A structured note is not a raw file: its row editor saves it
- * (`row-session.svelte.ts`). A note whose text the row editor cannot hold is
- * repaired here, as text.
+ * goes through. A note is never a raw file: its row editor holds it, its file
+ * view included, and repairs it (`note-session.svelte.ts`).
  *
  * A session keeps these facts apart:
  *
@@ -515,16 +514,11 @@ export function createFileSession(
 	 * record when this one wrote nothing or is unknown too, because it may
 	 * still land. A confirmed write supersedes it: the base it was conditional
 	 * on is gone.
-	 *
-	 * `alternate` names another path for a first exclusive write that found
-	 * its own path occupied by other text. A write sent after an unconfirmed
-	 * one never gets one: that earlier write may be the occupant.
 	 */
 	async function conclude(
 		sent: Submission,
 		answer: FileOutcome<FileCapture>,
 		prior: Attempt | undefined,
-		alternate?: () => string,
 	): Promise<void> {
 		if (answer.kind === 'done') {
 			// Only the submitted text is acknowledged, at the capture returned.
@@ -545,17 +539,6 @@ export function createFileSession(
 		} else if (answer.kind === 'refused') {
 			recheck = false;
 			const now = await read(sent.path);
-			const ours = now.kind === 'present' && now.file.text === sent.source;
-			if (
-				alternate !== undefined &&
-				prior === undefined &&
-				sent.kind === 'create' &&
-				!ours
-			) {
-				const elsewhere = { ...sent, path: alternate() };
-				await conclude(elsewhere, await send(elsewhere), undefined);
-				return;
-			}
 			attempt = prior;
 			const before = external;
 			const seen = sent.path === saved.path ? apply(now) : 'same';
@@ -814,10 +797,9 @@ export function createFileSession(
 		 * running.
 		 *
 		 * A reviewed `removed` or `unreadable` is saved as a new file at this
-		 * path. `alternate` names another path to use when this one turns out to
-		 * hold other text, unless an unconfirmed write may be the occupant.
+		 * path, and only while that path is free: other text there stays.
 		 */
-		saveMine(reviewed: External, alternate?: () => string): Promise<boolean> {
+		saveMine(reviewed: External): Promise<boolean> {
 			if (!admits() || reviewed !== external) return Promise.resolve(false);
 			clearTimeout(timer);
 			const text = buffer;
@@ -839,12 +821,7 @@ export function createFileSession(
 								expectedSha256: reviewed.current.sha256,
 							}
 						: { kind: 'create', path: saved.path, source };
-				await conclude(
-					sent,
-					await send(sent),
-					prior,
-					prior === undefined ? alternate : undefined,
-				);
+				await conclude(sent, await send(sent), prior);
 				return true;
 			});
 		},

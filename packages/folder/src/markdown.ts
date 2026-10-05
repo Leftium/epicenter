@@ -17,6 +17,7 @@
  */
 import { Err, Ok, type Result } from 'wellcrafted/result';
 import {
+	type Document,
 	isAlias,
 	isMap,
 	isNode,
@@ -172,9 +173,14 @@ const MAX_ALIAS_COUNT = 100;
  * Convert parsed frontmatter to plain values. Unresolvable aliases, excessive
  * alias expansion, and circular aliases become a refusal instead of a throw,
  * so the source stays readable and repairable.
+ *
+ * The canonical codec runs this on its own parsed document too, so text with
+ * a canonical form always converts as an ordinary row: yaml's alias bound
+ * weighs nested aliases by document-wide use, which the codec's own count of
+ * expansions does not.
  */
-function convertFrontmatter(
-	document: ReturnType<typeof parseFrontmatter>,
+export function convertFrontmatter(
+	document: Document.Parsed,
 ): Result<Record<string, unknown>, string> {
 	if (document.contents === null) return Ok({});
 	let value: unknown;

@@ -4,28 +4,27 @@
  * opens through the desktop entry only, which refuses outside the shell.
  *
  * The page names the folder by its ID and nothing else; the shell chose the
- * directory, the author, the history policy, and which windows may use it. The collection finishes its intended saves before closing detaches this
+ * directory, the author, the history policy, and which windows may use it.
+ * The collection finishes its intended saves before closing detaches this
  * page. The folder stays open for the shell and its other windows.
  *
  * A refused or missing plugin fails the open with its reason. There is no
  * browser folder to fall back to in this build.
+ *
+ * Quitting or restarting Epicenter asks this window first, through the
+ * host's departure wire, bound to this window: its events are heard only
+ * when sent to this window, and the host knows the caller by its window.
  */
 import { captureDefinition } from '@epicenter/capture';
 import { openFolder } from '@epicenter/folder/tauri';
 import { invoke } from '@tauri-apps/api/core';
-import { listen } from '@tauri-apps/api/event';
+import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow';
+import { createDeparture } from './departure.svelte.js';
 import {
-	createShellLifetime,
-	type ShellLifetime,
-	type ShellPort,
-} from './shell-lifetime.js';
-import { CAPTURE_FOLDER_ID, type OpenCaptureHost } from './types.js';
-
-const tauriPort: ShellPort = {
-	listen: (event, handler) =>
-		listen<unknown>(event, ({ payload }) => handler(payload)),
-	invoke: (command, args) => invoke(command, args),
-};
+	CAPTURE_FOLDER_ID,
+	type OpenCaptureHost,
+	type OpenDeparture,
+} from './types.js';
 
 /** Called from a mounted component; importing this module opens nothing. */
 export const openCaptureHost: OpenCaptureHost = async () => {
@@ -34,31 +33,23 @@ export const openCaptureHost: OpenCaptureHost = async () => {
 		definition: captureDefinition,
 	});
 	if (error) throw new Error(error.message, { cause: error });
-
-	let lifetime: ShellLifetime | undefined;
-	try {
-		lifetime = createShellLifetime(tauriPort);
-		await lifetime.ready;
-	} catch (cause) {
-		// The page gets no host, so nothing would ever detach this session.
-		lifetime?.close();
-		await folder.close();
-		throw cause;
-	}
-	const shell = lifetime;
-
 	return {
 		folder,
 		location: folder.location,
 		onExternalChange: (listener) => folder.onFilesChanged(() => listener()),
-		onQuitRequested: shell.onQuitRequested,
-		onServiceStopped: shell.onServiceStopped,
-		get quitProtectionProblem() {
-			return shell.quitProtectionProblem;
-		},
-		async close() {
-			shell.close();
-			await folder.close();
-		},
+		close: () => folder.close(),
 	};
+};
+
+/** Called from a mounted component, before the folder opens. */
+export const openDeparture: OpenDeparture = () => {
+	const window = getCurrentWebviewWindow();
+	return createDeparture({
+		listen: (event, handler) => window.listen(event, () => handler()),
+		invoke: (command, args) => invoke(command, args),
+		onFocus(listener) {
+			globalThis.addEventListener('focus', listener);
+			return () => globalThis.removeEventListener('focus', listener);
+		},
+	});
 };

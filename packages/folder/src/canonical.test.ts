@@ -10,17 +10,26 @@
  * - Declared keys come first in declared order; unknown keys are kept, sorted
  * - Anything without an exact JSON value is refused, never converted lossily
  * - The body is kept byte for byte; schema validation is not the codec's job
+ * - Public codecs compose with file publication and explicit restoration
  *
  * See also:
  * - `editor.test.ts` for the editor that holds and saves these documents
  */
 import { expect, test } from 'bun:test';
-import { expectErr, expectOk } from 'wellcrafted/testing';
 import {
 	type CanonicalDocument,
 	formatCanonicalDocument,
 	parseCanonicalDocument,
-} from './canonical.js';
+} from '@epicenter/folder';
+import {
+	defineFolder,
+	defineTable,
+	field,
+	inspectRow,
+	openFolder,
+} from '@epicenter/folder/browser';
+import { expectErr, expectOk } from 'wellcrafted/testing';
+import { testBrowserStorage } from './browser-storage.test-support.js';
 
 /** A todos table's declared field order. */
 const DECLARED = ['title', 'done', 'priority'] as const;
@@ -214,6 +223,41 @@ test('format refuses values that have no exact JSON form', () => {
 	}
 });
 
+test('format refuses a malformed document shape instead of throwing, and reads only fields and body', () => {
+	const malformed: unknown[] = [
+		null,
+		'---\n---\n',
+		{ fields: {} },
+		{ fields: {}, body: 42 },
+		{ body: '' },
+		{ fields: null, body: '' },
+	];
+	const reasons = malformed.map(
+		(document) =>
+			expectErr(formatCanonicalDocument(document as never, DECLARED)).reason,
+	);
+	expect(reasons).toEqual([
+		'The document is not an object',
+		'The document is not an object',
+		'The body is not a string',
+		'The body is not a string',
+		'The fields are not a plain object',
+		'The fields are not a plain object',
+	]);
+	expect(
+		expectErr(formatCanonicalDocument({ fields: {} } as never, DECLARED)).path,
+	).toEqual(['body']);
+
+	// Other properties, such as a public row's status and text, are not input.
+	const row = {
+		status: 'valid',
+		text: '---\n"title": "Injected"\n---\n',
+		fields: { title: 'Plan' },
+		body: 'Body.\n',
+	};
+	expect(format(row)).toBe('---\n"title": "Plan"\n---\nBody.\n');
+});
+
 test('safe aliases expand; alias expansion is bounded', () => {
 	const document = parse(
 		['---', 'base: &b {x: 1, y: [a]}', 'copy: *b', '---', ''].join('\n'),
@@ -234,6 +278,31 @@ test('safe aliases expand; alias expansion is bounded', () => {
 	laughs.push('---', '');
 	const result = parseCanonicalDocument(laughs.join('\n'));
 	expect(expectErr(result).reason).toContain('too many');
+});
+
+test("a canonical form honors the ordinary row reader's alias bound, so both accept the same aliases", () => {
+	const notes = defineFolder({
+		kv: {},
+		tables: { notes: defineTable({ fields: { title: field.string() } }) },
+	}).tables.notes;
+
+	// A large anchored list aliased a few times weighs little in both.
+	const items = Array.from({ length: 50 }, (_, i) => `i${i}`).join(', ');
+	const list = `---\ntitle: Plan\nlist: &l [${items}]\na: *l\nb: *l\nc: *l\n---\n`;
+	expect(parse(list).fields.c).toHaveLength(50);
+	expect(inspectRow(notes, list).parseError).toBeUndefined();
+
+	// yaml weighs `*b` by every earlier use of `*a` in the document: 2 x 61
+	// exceeds its bound, though only 64 aliases expand. The ordinary reader
+	// refuses it, so it has no canonical form either.
+	const uses = Array.from({ length: 60 }, (_, i) => `u${i}: *a`).join('\n');
+	const weighted = `---\ntitle: Plan\na: &a x\n${uses}\nb: &b [*a]\nc: *b\nd: *b\n---\n`;
+	expect(inspectRow(notes, weighted).parseError?.message).toContain(
+		'Excessive alias count',
+	);
+	expect(expectErr(parseCanonicalDocument(weighted)).reason).toContain(
+		'Excessive alias count',
+	);
 });
 
 test('a __proto__ key is an own field and never a prototype', () => {
@@ -308,4 +377,61 @@ test('a body that UTF-8 encoding would change is refused rather than rewritten',
 	expect(
 		expectErr(formatCanonicalDocument({ fields: {}, body }, DECLARED)).path,
 	).toEqual(['body']);
+});
+
+test('complete-document editing saves unknown and invalid fields and restores only explicitly', async () => {
+	const definition = defineFolder({
+		kv: {},
+		tables: {
+			todos: defineTable({
+				fields: { title: field.string(), done: field.boolean() },
+			}),
+		},
+	});
+	const folder = expectOk(
+		await openFolder({
+			id: 'so.epicenter.canonical-test',
+			definition,
+			browser: {
+				author: { name: 'Canonical', email: 'canonical@example.test' },
+				commitOnEdit: false,
+				...testBrowserStorage(),
+			},
+		}),
+	);
+	try {
+		const source =
+			'---\n# presentation\ntitle: Milk\ndone: invalid\nowner: {agent: alice}\n---\nBody\r\n';
+		expectOk(await folder.files.create('todos/milk.md', source));
+		const document = expectOk(parseCanonicalDocument(source));
+		const text = expectOk(
+			formatCanonicalDocument(
+				{
+					...document,
+					fields: { ...document.fields, title: 'Oat milk' },
+				},
+				Object.keys(definition.tables.todos.fields),
+			),
+		);
+		const receipt = expectOk(
+			await folder.tables.todos.replace('milk', text, {}),
+		);
+		expect(expectOk(parseCanonicalDocument(receipt.text))).toEqual({
+			fields: { title: 'Oat milk', done: 'invalid', owner: { agent: 'alice' } },
+			body: 'Body\r\n',
+		});
+		expect(
+			inspectRow(definition.tables.todos, receipt.text).issues,
+		).toHaveLength(1);
+		expect(expectOk(await folder.tables.todos.get('milk'))?.text).toBe(text);
+		expectOk(await folder.tables.todos.delete('milk', {}));
+		expect(
+			expectErr(await folder.tables.todos.replace('milk', text, {})).name,
+		).toBe('NotFound');
+		expect(expectOk(await folder.tables.todos.get('milk'))).toBeUndefined();
+		expectOk(await folder.files.create('todos/milk.md', text));
+		expect(expectOk(await folder.tables.todos.get('milk'))?.text).toBe(text);
+	} finally {
+		await folder.close();
+	}
 });

@@ -3,52 +3,54 @@
 	import * as DropdownMenu from '@epicenter/ui/dropdown-menu';
 	import { toast } from '@epicenter/ui/sonner';
 	import { Spinner } from '@epicenter/ui/spinner';
-	import { Textarea } from '@epicenter/ui/textarea';
 	import WandSparklesIcon from '@lucide/svelte/icons/wand-sparkles';
 	import { inspectRow } from '@epicenter/folder';
 	import { untrack } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { whisperingDefinition } from '$lib/definition.js';
-	import { withFileNewlines } from '@epicenter/folder/file-browser';
 	import type { Library, TranscriptionEntry } from '$lib/library.svelte.js';
 	import { transformationName } from '$lib/post-processing.js';
-	import { copyText, formatTime } from './file-actions.js';
+	import { copyText, formatTime, lf } from './file-actions.js';
+	import LiveButton from './LiveButton.svelte';
+	import LiveTextarea from './LiveTextarea.svelte';
 	import RowSaveStatus from './RowSaveStatus.svelte';
-	import SaveStatus from './SaveStatus.svelte';
 	import TransformationOutput from './TransformationOutput.svelte';
 
 	/**
 	 * One saved transcript of the recording that is open, edited where it is
 	 * read, beside the player. The text is the body of the transcript's own
-	 * file, through the one draft the library keeps for that file: the draft
-	 * Files shows for it, with the same saves and the same review. Nothing
-	 * here selects the transcript's file, so the recording stays open.
+	 * file, through the one row editor the library keeps for that file: the
+	 * one Files shows for it, with the same saves. Nothing here selects the
+	 * transcript's file, so the recording stays open.
 	 */
 	let { library, result }: { library: Library; result: TranscriptionEntry } = $props();
 
-	// Open the file's draft once for this path. The draft outlives this card:
-	// closing the details or changing page keeps what was typed.
+	// Open the file's editor once for this path. The editor outlives this
+	// card: closing the details or changing page keeps what was typed.
 	$effect(() => {
 		const path = result.path;
 		untrack(() => void library.openTranscript(path));
 	});
 	const slot = $derived(library.transcriptAt(result.path));
-	/** The folder's row editor, when the file opens as a transcript. */
-	const form = $derived(slot?.kind === 'form' ? slot.draft : undefined);
-	/** The file's text, when it is being repaired or edited as text in Files. */
-	const raw = $derived(slot?.kind === 'raw' ? slot.editor : undefined);
-	/** The text now, saved or not. Before the draft is open, the row as listed. */
-	const text = $derived(
-		form ? form.state.document.body : raw ? inspectRow(whisperingDefinition.tables.transcriptions, raw.buffer).body : result.body,
-	);
-	/** Only the row editor edits the text here; text that is not a transcript is fixed in Files. */
-	const editable = $derived(form !== undefined);
-	const unsettled = $derived(
-		form !== undefined
-			? form.status.kind !== 'saved' || form.refusal !== undefined
-			: raw !== undefined && (raw.dirty || raw.saveState.kind !== 'saved'),
-	);
+	/**
+	 * The one row editor kept for the transcript's file. It can be replaced
+	 * under this card (the file is opened again after it could not be read),
+	 * so the binding reads it when it runs.
+	 */
+	const editing = $derived(slot?.kind === 'open' ? slot.editing : undefined);
+	/** Only the fields view edits the text here; the whole file is edited in Files. */
+	const editable = $derived(editing?.view === 'fields');
+	/** The text now. Before the editor is open, the row as listed. */
+	const text = $derived.by(() => {
+		const row = editing?.row;
+		if (row === undefined) return result.body;
+		if (row.status === 'valid') return row.body;
+		return inspectRow(whisperingDefinition.tables.transcriptions, row.text).body;
+	});
+	const unsettled = $derived(editing !== undefined && editing.status.kind !== 'saved');
+	// The live textarea has its own lifetime (LiveTextarea): one that is gone
+	// delivers nothing, even after the fields view returns.
 
 	const outputs = $derived(library.outputsFor(result.stem));
 	const transforming = $derived(
@@ -71,24 +73,30 @@
 </script>
 
 <article class="flex flex-col gap-2 rounded border p-3 text-sm" data-testid="transcription-result">
-	<Textarea
-		class="min-h-32 resize-y font-sans"
-		value={text ?? ''}
-		placeholder={editable ? 'This transcript has no text.' : undefined}
-		aria-label="Transcript of {formatTime(result.fields.createdAt) || result.path}"
-		disabled={!editable}
-		oninput={(event) => form?.change({ body: withFileNewlines(event.currentTarget.value, text ?? '') })}
-		data-testid="transcript-text"
-	/>
-	{#if raw}
+	{#if editable}
+		<LiveTextarea
+			class="min-h-32 resize-y font-sans"
+			get={() => editing?.bodyText() ?? ''}
+			set={(value) => editing?.setBody(value)}
+			placeholder="This transcript has no text."
+			aria-label="Transcript of {formatTime(result.fields.createdAt) || result.path}"
+			data-testid="transcript-text"
+		/>
+	{:else if text !== undefined}
+		<p class="max-h-64 overflow-y-auto rounded border p-2 whitespace-pre-wrap" data-testid="transcript-text-readonly">{text}</p>
+	{/if}
+	{#if editing?.view === 'source'}
 		<p class="text-xs text-destructive" role="alert">
 			This transcript’s file is being edited as text, so its text cannot be edited here. Open it from Files.
 		</p>
+	{:else if slot?.kind === 'unopened'}
+		<p class="text-xs text-destructive" role="alert">
+			This transcript’s file could not be opened: {slot.message}
+			<LiveButton size="xs" variant="outline" class="ml-1" onclick={() => void library.retryOpen(result.path)}>Try again</LiveButton>
+		</p>
 	{/if}
-	{#if form && unsettled}
-		<RowSaveStatus {library} draft={form} />
-	{:else if raw && unsettled}
-		<SaveStatus editor={raw} autosavePaused={library.autosave.paused} onDiscardRemoved={() => void library.discardDraft(raw.path)} />
+	{#if editing && unsettled}
+		<RowSaveStatus {library} {editing} />
 	{/if}
 	<footer class="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
 		<span>{formatTime(result.fields.createdAt) || 'Unknown time'} · {result.fields.model ?? 'unknown model'}</span>

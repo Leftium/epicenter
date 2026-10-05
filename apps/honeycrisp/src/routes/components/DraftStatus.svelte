@@ -8,14 +8,11 @@
 
 	let {
 		session,
-		noun,
 		onRecover,
 		onDiscard,
 		onStopTracking,
 	}: {
 		session: FileSession;
-		/** What the file is called in the recovery button. */
-		noun: 'note' | 'file';
 		/** Save a draft whose file is gone or unreadable as a file again. */
 		onRecover: () => Promise<string | undefined>;
 		/** Forget a draft whose file is gone or unreadable, or whose rename or delete is no longer tracked. */
@@ -24,7 +21,6 @@
 		onStopTracking: () => void;
 	} = $props();
 
-	const external = $derived(session.external);
 	/** While the app answers a close, no choice here is taken. */
 	const held = $derived(!session.admitting);
 	/** A rename or delete whose outcome is not known, or a rename that left both files. */
@@ -39,13 +35,13 @@
 	 * has changed again.
 	 */
 	let reviewed = $state.raw<Extract<External, { kind: 'changed' }>>();
-	const superseded = $derived(reviewed !== undefined && external !== reviewed);
+	const superseded = $derived(reviewed !== undefined && session.external !== reviewed);
 	const diff = $derived(
 		reviewed === undefined ? [] : diffLines(reviewed.current.text, session.buffer),
 	);
 
 	function review() {
-		reviewed = external?.kind === 'changed' ? external : undefined;
+		reviewed = session.external?.kind === 'changed' ? session.external : undefined;
 	}
 
 	async function copyDraft() {
@@ -104,7 +100,7 @@
 				Renaming <code class="font-mono">{basename(stuck.from.path)}</code> to
 				<code class="font-mono">{basename(stuck.to)}</code> was not confirmed. The file may be under either name.
 			{/if}
-			This editor saves nothing more and changes neither file. Look in Files to see what is at each path.
+			({stuck.problem}) This editor saves nothing more and changes neither file. Look in Files to see what is at each path.
 			Stopping keeps your draft here and concludes nothing about where the file is.
 		</span>
 		<Button size="xs" variant="outline" onclick={copyDraft}>Copy draft</Button>
@@ -126,17 +122,17 @@
 				not confirmed. The file may be under either name.
 			{/if}
 			You stopped tracking it.
-			{#if external?.kind === 'removed'}
+			{#if session.external?.kind === 'removed'}
 				<code class="font-mono">{session.path}</code> is not there now.
-			{:else if external?.kind === 'changed'}
+			{:else if session.external?.kind === 'changed'}
 				<code class="font-mono">{session.path}</code> holds other text now.
-			{:else if external?.kind === 'unreadable'}
+			{:else if session.external?.kind === 'unreadable'}
 				<code class="font-mono">{session.path}</code> cannot be read as text now.
 			{:else}
 				<code class="font-mono">{session.path}</code> held the text this editor last read, when it was last read.
 			{/if}
 			Your draft is kept here, and nothing is saved by itself.
-			{#if external?.kind === 'removed'}
+			{#if session.external?.kind === 'removed'}
 				Saving writes <code class="font-mono">{session.path}</code> again{#if change.kind === 'move'}; <code
 						class="font-mono">{change.to}</code> may hold the file too{/if}.
 			{:else}
@@ -150,9 +146,9 @@
 		<Button size="xs" variant="outline" disabled={held} onclick={() => void session.retry()}>
 			Save at {basename(session.path)}
 		</Button>
-		{#if external?.kind === 'changed'}
+		{#if session.external?.kind === 'changed'}
 			<Button size="xs" variant="outline" disabled={held} onclick={review}>Compare and choose</Button>
-		{:else if external === undefined}
+		{:else if session.external === undefined}
 			<Button size="xs" variant="ghost" disabled={held} onclick={() => session.keepFile()}>
 				{session.dirty ? 'Discard my draft and keep the file' : 'Keep the file as it is'}
 			</Button>
@@ -161,44 +157,44 @@
 		<Button size="xs" variant="ghost" onclick={copyDraft}>Copy draft</Button>
 	{:else if session.attempt?.state === 'unconfirmed'}
 		<span class="text-warning" role="alert">
-			The last save was not confirmed, so the file may or may not have it. Your draft is kept here, and nothing
-			more is saved until you choose.
-			{#if external?.kind === 'changed'}
+			The last save was not confirmed, so the file may or may not have it: {session.attempt.problem}. Your draft is
+			kept here, and nothing more is saved until you choose.
+			{#if session.external?.kind === 'changed'}
 				The file holds other text now.
-			{:else if external !== undefined}
-				The file is {external.kind === 'removed' ? 'not there' : 'not readable as text'} now.
+			{:else if session.external !== undefined}
+				The file is {session.external.kind === 'removed' ? 'not there' : 'not readable as text'} now.
 			{:else if session.saved.text === session.attempt.source}
 				The file holds the text of that save now; that does not show which save put it there.
 			{/if}
 		</span>
 		<!-- Each choice is the person's: a new save of what is on screen, or the file as it is. -->
 		<Button size="xs" disabled={held} onclick={() => void session.retry()}>Save again</Button>
-		{#if external?.kind === 'changed'}
+		{#if session.external?.kind === 'changed'}
 			<Button size="xs" variant="outline" disabled={held} onclick={review}>Compare and choose</Button>
-		{:else if external === undefined}
+		{:else if session.external === undefined}
 			<Button size="xs" variant="outline" disabled={held} onclick={() => session.keepFile()}>
 				{session.dirty ? 'Discard my draft and keep the file' : 'Keep the file as it is'}
 			</Button>
 		{/if}
 		<Button size="xs" variant="ghost" onclick={copyDraft}>Copy draft</Button>
-	{:else if external?.kind === 'changed'}
+	{:else if session.external?.kind === 'changed'}
 		<span class="text-destructive" role="alert">
 			This file changed on disk while you were editing. Your draft is kept here and is not saved.
 		</span>
 		<Button size="xs" disabled={held} onclick={review}>Compare and choose</Button>
-	{:else if external?.kind === 'removed'}
+	{:else if session.external?.kind === 'removed'}
 		<span class="text-destructive" role="alert">
 			This file is no longer at this path. Your draft is kept here and is not saved.
 		</span>
 		<Button size="xs" variant="outline" onclick={copyDraft}>Copy draft</Button>
-		<Button size="xs" disabled={held} onclick={recover}>Save draft as a {noun}</Button>
+		<Button size="xs" disabled={held} onclick={recover}>Save draft as a file</Button>
 		<Button size="xs" variant="ghost-destructive" disabled={held} onclick={onDiscard}>Discard draft</Button>
-	{:else if external?.kind === 'unreadable'}
+	{:else if session.external?.kind === 'unreadable'}
 		<span class="text-destructive" role="alert">
-			This file can no longer be read as text ({external.message}). Your draft is kept here.
+			This file can no longer be read as text ({session.external.message}). Your draft is kept here.
 		</span>
 		<Button size="xs" variant="outline" onclick={copyDraft}>Copy draft</Button>
-		<Button size="xs" disabled={held} onclick={recover}>Save draft as a {noun}</Button>
+		<Button size="xs" disabled={held} onclick={recover}>Save draft as a file</Button>
 		<Button size="xs" variant="ghost-destructive" disabled={held} onclick={onDiscard}>Discard draft</Button>
 	{:else if session.status === 'failed'}
 		<span class="text-destructive" role="alert">
@@ -217,7 +213,7 @@
 	{:else}
 		<span class="text-muted-foreground">Saved to <code class="font-mono">{session.path}</code></span>
 	{/if}
-	{#if external !== undefined && session.failure && session.status === 'conflict'}
+	{#if session.external !== undefined && session.failure && session.status === 'conflict'}
 		<span class="text-destructive" role="status">The last save was refused: {session.failure}.</span>
 	{/if}
 	{#if session.refusal}

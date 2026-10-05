@@ -25,8 +25,6 @@ import {
 	syncEngineOf,
 } from './store.js';
 
-/** Wrap one application-document update the way the wire carries it. */
-
 const database = defineStore({
 	id: 'so.epicenter.honeycrisp',
 	kv: { theme: field.select(['light', 'dark']) },
@@ -120,7 +118,10 @@ async function reopen(sqlite: ReturnType<typeof createBunSqliteAdapter>) {
 }
 
 function titles(db: Awaited<ReturnType<typeof openFailable>>['db']): string[] {
-	return db.tables.notes.rows.map((row) => row.title as string).sort();
+	return db.tables.notes
+		.rows()
+		.map((row) => row.title as string)
+		.sort();
 }
 
 describe('acceptance is live, durability is a visible debt', () => {
@@ -249,7 +250,7 @@ describe('acceptance is live, durability is a visible debt', () => {
 		expect(seen).toEqual(['pending', 'blocked', 'pending', 'saved']);
 	});
 
-	test('an asynchronous engine reports pending, and mid-flight edits coalesce in order', async () => {
+	test('held commits keep sync silent until durable, and mid-flight edits coalesce in order', async () => {
 		// The browser shape: the port commits on its own schedule, and the
 		// store never waits for it. Reads follow acceptance.
 		const raw = new Database(':memory:');
@@ -278,25 +279,37 @@ describe('acceptance is live, durability is a visible debt', () => {
 		});
 		expectOk(await ready);
 		const db = view as unknown as DeclaredData<typeof database>;
+		const sync = syncEngineOf(store);
+		const offered: (number | undefined)[] = [];
+		sync.onSendable(() => offered.push(sync.coalesce()?.id));
 
 		db.tables.notes.create({ title: 'a' });
 		expect(store.persistence.get()).toBe('pending');
 		// Acceptance is not waiting on the flight: live reads already hold the
 		// row.
-		expect(db.tables.notes.rows.map((row) => row.title)).toEqual(['a']);
+		expect(db.tables.notes.rows().map((row) => row.title)).toEqual(['a']);
 
 		await new Promise<void>((resolve) => setImmediate(resolve));
 		// Two more accepted mid-flight; they must ride the NEXT batch together.
 		db.tables.notes.create({ title: 'b' });
 		db.tables.notes.create({ title: 'c' });
+		expect(sync.coalesce()).toBeUndefined();
+		expect(offered).toEqual([]);
 
 		const settled = store.persistence.flush();
-		release.shift()?.();
+		expect(release).toHaveLength(1);
+		release.shift()!();
 		await new Promise((resolve) => setTimeout(resolve, 0));
-		release.shift()?.();
+		// The next batch is still held: only the first durable edit is sendable.
+		expect(store.persistence.get()).toBe('pending');
+		expect(sync.coalesce()?.id).toBe(1);
+		expect(offered).toEqual([1]);
+		expect(release).toHaveLength(1);
+		release.shift()!();
 		await settled;
 
 		expect(store.persistence.get()).toBe('saved');
+		expect(offered).toEqual([1, 3]);
 		// Exactly one durable outbox entry per authored transaction, in order:
 		// nothing dropped, nothing reordered, nothing duplicated.
 		expect(
@@ -331,7 +344,7 @@ describe('owed work collapses so an offline chain stays bounded (ADR-0301)', () 
 		// And the document is intact across a restart, which is the only thing
 		// the merge is allowed to preserve.
 		const restarted = await reopen(replica.sqlite);
-		expect(restarted.db.tables.notes.rows.length).toBe(80);
+		expect(restarted.db.tables.notes.rows().length).toBe(80);
 	});
 
 	test('work already handed to the sender is not replaced under it', async () => {

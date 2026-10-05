@@ -1529,25 +1529,18 @@ export function createHistory({
 		let finishing: { head: string; incoming: string } | undefined;
 		let mergeStateWarning: string | undefined;
 		let result:
-			| Exclude<
-					Awaited<ReturnType<GitBackend['commitIndex']>>,
-					{ status: 'branchMoved' }
-			  >
+			| Awaited<ReturnType<GitBackend['commitIndex']>>
 			| Exclude<
 					Awaited<ReturnType<typeof currentMerge>>,
 					{ status: 'none' | 'finishing' }
 			  >
-			| {
-					readonly status: 'branchMoved';
-					readonly expected: string | undefined;
-					readonly actual: string | undefined;
-			  }
 			| { readonly status: 'pending'; readonly pending: PendingIncoming }
 			| { readonly status: 'blocked'; readonly reason: string };
 		try {
 			result = await exclusive(async () => {
 				const pending = await backend.pendingIncoming?.();
-				if (pending !== undefined) return { status: 'pending', pending } as const;
+				if (pending !== undefined)
+					return { status: 'pending', pending } as const;
 				const blocked = await backend.blocked();
 				if (blocked !== undefined)
 					return { status: 'blocked', reason: blocked } as const;
@@ -1563,8 +1556,6 @@ export function createHistory({
 					(path) => path.index !== ' ' && path.index !== '?',
 				).length;
 				const committed = await backend.commitIndex(message, author, pinned);
-				if (committed.status === 'branchMoved')
-					return { ...committed, expected: pinned?.head };
 				if (committed.status === 'committed' && pinned !== undefined)
 					try {
 						await backend.clearMerge();

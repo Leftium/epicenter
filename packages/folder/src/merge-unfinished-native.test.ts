@@ -30,6 +30,8 @@
  * - A staged commit finishes the merge only from `ORIG_HEAD`: a branch moved
  *   before or during the commit is refused, and the index, the branch, and
  *   the merge state stay as they were
+ * - The merge commit's tree is the one Git writes from the index: an
+ *   intent-to-add entry is left out, and a staged empty file is kept
  *
  * See also:
  * - `merge-unfinished.test.ts` for the browser and the terminal journeys
@@ -613,4 +615,36 @@ test('a branch moved during the staged commit is refused by its compare-and-swap
 	expect(await git(root, 'rev-parse', 'HEAD')).toBe(sibling);
 	expect(await readText(root, '.git/MERGE_HEAD')).toBe(`${sides.theirs}\n`);
 	expect(await real.readFile(join(root, '.git/index'))).toEqual(index);
+});
+
+test('a staged merge commit leaves intent-to-add entries out and keeps staged empty files', async () => {
+	const made = await resolved();
+	const { root, sides } = made;
+	await real.writeFile(join(root, 'empty.txt'), '');
+	await git(root, 'add', 'empty.txt');
+	await real.writeFile(join(root, 'planned.txt'), 'later\n');
+	await git(root, 'add', '--intent-to-add', 'planned.txt');
+	const index = await real.readFile(join(root, '.git/index'));
+
+	const committed = expectOk(await made.history.commitStaged('Merge'));
+
+	expect(await parentsOf(root, committed.oid)).toEqual([
+		sides.ours,
+		sides.theirs,
+	]);
+	expect(await real.readFile(join(root, '.git/index'))).toEqual(index);
+	expect(
+		await git(
+			root,
+			'ls-tree',
+			'--name-only',
+			committed.oid,
+			'--',
+			'planned.txt',
+		),
+	).toBe('');
+	expect(await git(root, 'show', `${committed.oid}:empty.txt`)).toBe('');
+	expect(await git(root, 'rev-parse', `${committed.oid}^{tree}`)).toBe(
+		await git(root, 'write-tree'),
+	);
 });

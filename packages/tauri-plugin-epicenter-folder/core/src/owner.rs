@@ -1868,14 +1868,16 @@ impl Inner {
                 .iter()
                 .filter(|path| path.index != " " && path.index != "?")
                 .count();
-            let result = match &finishing {
-                Some((head, incoming)) => {
-                    self.git
-                        .commit_merge_index(message, &self.config.author, head, incoming)
-                }
-                None => self.git.commit_index(message, &self.config.author),
-            }
-            .map_err(failed)?;
+            let result = self
+                .git
+                .commit_index(
+                    message,
+                    &self.config.author,
+                    finishing
+                        .as_ref()
+                        .map(|(head, incoming)| (head.as_str(), incoming.as_str())),
+                )
+                .map_err(failed)?;
             // The merge state goes only after the branch moved to the merge;
             // a failure is reported with the commit.
             let warning = match (&result, &finishing) {
@@ -1902,10 +1904,9 @@ impl Inner {
         self.emit();
         match result {
             IndexCommit::Nothing => Err(GitError::NothingToCommit),
-            IndexCommit::BranchMoved { actual } => Err(GitError::BranchMoved {
-                expected: finishing.map(|(head, _)| head),
-                actual,
-            }),
+            IndexCommit::BranchMoved { expected, actual } => {
+                Err(GitError::BranchMoved { expected, actual })
+            }
             IndexCommit::Committed { oid, parent } => Ok(StagedCommit {
                 oid,
                 parent,

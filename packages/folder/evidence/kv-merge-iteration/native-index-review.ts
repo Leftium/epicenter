@@ -18,7 +18,7 @@ try {
  await run(['update-index','--index-version=4']);
  const boundary=createNativeFileBoundary(root);
  const backend=await createNativeGitBackend({root,branch:'main',remote:{url:'http://unused.test/remote.git',branch:'main'},boundary});
- const nativeClean=await backend.indexMatchesHead();
+ const nativeClean=(await run(['diff','--cached','--quiet','--no-ext-diff'],{allowFailure:true})).code===0;
  history=createHistory({backend,boundary,author:{name:'Review',email:'review@localhost'},commitOnEdit:false});
  const outcome=await history.pullFastForward();
  console.log(JSON.stringify({indexVersion:new DataView((await readFile(join(root,'.git/index'))).buffer).getUint32(4),nativeClean,error:outcome.error?.name,message:outcome.error?.message}));

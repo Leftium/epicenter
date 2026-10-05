@@ -114,9 +114,16 @@ pub enum Cas {
 }
 
 pub enum IndexCommit {
-    Committed { oid: String, parent: Option<String> },
+    Committed {
+        oid: String,
+        parent: Option<String>,
+    },
     Nothing,
-    BranchMoved { actual: Option<String> },
+    /// The branch no longer named the pinned parent `expected`.
+    BranchMoved {
+        expected: Option<String>,
+        actual: Option<String>,
+    },
 }
 
 /// What the working files look like against the branch head.
@@ -241,6 +248,15 @@ pub struct Snapshot {
 impl Drop for Snapshot {
     fn drop(&mut self) {
         let _ = fs::remove_dir_all(&self.directory);
+    }
+}
+
+/// A private file of the Git directory, removed when dropped.
+struct Scratch(PathBuf);
+
+impl Drop for Scratch {
+    fn drop(&mut self) {
+        let _ = fs::remove_file(&self.0);
     }
 }
 
@@ -1300,33 +1316,81 @@ impl Git {
         Ok(())
     }
 
-    /// Commit the index onto the branch head with a user-authored message.
-    /// The caller has found no merge in progress; a merge is committed by
-    /// `commit_merge_index`.
-    pub fn commit_index(&self, message: &str, author: &Author) -> Result<IndexCommit, Failure> {
-        let parent = self.read_branch()?;
-        if self.index_matches_head()? {
-            return Ok(IndexCommit::Nothing);
+    /// The tree the index names now, by Git's own rules: an unmerged path
+    /// fails it, and an intent-to-add entry (`git add -N`) is left out.
+    /// `write-tree` runs on a private copy, because on the live index it
+    /// rewrites the cached trees: a commit the compare-and-swap refuses then
+    /// leaves the index byte for byte as it was.
+    fn index_tree(&self) -> Result<String, Failure> {
+        let copy = Scratch(self.gitdir.join(format!(
+            "index.epicenter-{}-{}",
+            std::process::id(),
+            SNAPSHOT_SEQUENCE.fetch_add(1, Ordering::SeqCst)
+        )));
+        match fs::copy(self.gitdir.join("index"), &copy.0) {
+            Ok(_) => {}
+            // No index is an empty one.
+            Err(cause) if cause.kind() == std::io::ErrorKind::NotFound => {}
+            Err(cause) => return Err(format!(".git/index could not be copied: {cause}")),
         }
-        let args = [
-            "commit",
-            "--quiet",
-            "--no-edit",
-            "--no-gpg-sign",
-            "--cleanup=verbatim",
-            "--file=-",
-        ];
-        let output = self.run(&args, Some(message.as_bytes()), &identity(author))?;
-        let head = self.read_branch()?;
-        if output.code != Some(0) {
-            if head != parent {
-                return Ok(IndexCommit::BranchMoved { actual: head });
+        let index_file = copy
+            .0
+            .to_str()
+            .ok_or_else(|| format!("{} is not a UTF-8 path", copy.0.display()))?;
+        // Keep the scratch index from creating an unreferenced shared index.
+        let output = self.ok(
+            &["-c", "core.splitIndex=false", "write-tree"],
+            None,
+            &[("GIT_INDEX_FILE", index_file)],
+        )?;
+        Ok(text(&output).trim().to_string())
+    }
+
+    /// Commit the index's tree onto parents pinned before anything is
+    /// written: the branch head, or, finishing a merge, `(head, incoming)`
+    /// whatever the branch names now. A merge commit is written even when
+    /// its tree is the head's; otherwise a tree equal to the parent's is
+    /// `Nothing`. The branch moves only from the first parent, by
+    /// compare-and-swap, so a commit it refuses leaves the index, the files,
+    /// and the merge state as they were. `git commit` would take whatever
+    /// `HEAD` names when it runs. Like a whole-folder commit, no commit hook
+    /// runs and nothing is signed.
+    pub fn commit_index(
+        &self,
+        message: &str,
+        author: &Author,
+        merge: Option<(&str, &str)>,
+    ) -> Result<IndexCommit, Failure> {
+        let parent = match merge {
+            Some((head, _)) => Some(head.to_string()),
+            None => self.read_branch()?,
+        };
+        let tree = self.index_tree()?;
+        if merge.is_none() {
+            let parent_tree = match &parent {
+                Some(parent) => self.tree_of(parent)?,
+                None => EMPTY_TREE.to_string(),
+            };
+            if tree == parent_tree {
+                return Ok(IndexCommit::Nothing);
             }
-            return Err(Self::failure(&args, &output));
         }
-        match head {
-            Some(oid) => Ok(IndexCommit::Committed { oid, parent }),
-            None => Err("git commit succeeded without a branch head".to_string()),
+        let parents: Vec<&str> = parent
+            .as_deref()
+            .into_iter()
+            .chain(merge.map(|(_, incoming)| incoming))
+            .collect();
+        let oid = self.write_commit_with_parents(&tree, &parents, message, author)?;
+        let reason = match merge {
+            Some(_) => "epicenter: merge",
+            None => "epicenter: commit",
+        };
+        match self.move_branch(parent.as_deref(), &oid, reason)? {
+            Cas::Moved => Ok(IndexCommit::Committed { oid, parent }),
+            Cas::Lost { actual } => Ok(IndexCommit::BranchMoved {
+                expected: parent,
+                actual,
+            }),
         }
     }
 
@@ -1481,39 +1545,6 @@ impl Git {
             .split_whitespace()
             .map(str::to_string)
             .collect())
-    }
-
-    /// Commit the index as a merge whose parents are exactly `head` and
-    /// `incoming`, moving the branch only from `head`. The tree is built from
-    /// a listing of the index, never by `git commit` or `write-tree`, which
-    /// would commit onto whatever `HEAD` names now and rewrite the index to
-    /// cache its trees: a commit the compare-and-swap refuses leaves the
-    /// index, the files, and the merge state exactly as they were.
-    pub fn commit_merge_index(
-        &self,
-        message: &str,
-        author: &Author,
-        head: &str,
-        incoming: &str,
-    ) -> Result<IndexCommit, Failure> {
-        let mut entries: BTreeMap<String, (String, String)> = BTreeMap::new();
-        for (path, stages) in self.index_stages()? {
-            match stages.get(&0) {
-                Some(entry) if stages.len() == 1 => {
-                    entries.insert(path, entry.clone());
-                }
-                _ => return Err(format!("{path} is still unmerged")),
-            }
-        }
-        let tree = self.write_entries_tree(&entries)?;
-        let oid = self.write_commit_with_parents(&tree, &[head, incoming], message, author)?;
-        match self.move_branch(Some(head), &oid, "epicenter: merge")? {
-            Cas::Moved => Ok(IndexCommit::Committed {
-                oid,
-                parent: Some(head.to_string()),
-            }),
-            Cas::Lost { actual } => Ok(IndexCommit::BranchMoved { actual }),
-        }
     }
 
     /// Replace a private file of the Git directory whole: a scratch file,

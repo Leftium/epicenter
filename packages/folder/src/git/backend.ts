@@ -285,8 +285,8 @@ export type GitBackend = {
 		candidates: readonly string[],
 		current: ReadonlyMap<string, Uint8Array>,
 	): Promise<ReadonlySet<string>>;
-	/** When supplied, checks these exact captured bytes against this pinned head. */
-	indexMatchesHead(captured?: CapturedIndex): Promise<boolean>;
+	/** Check these exact captured bytes against this pinned head. */
+	indexMatchesHead(captured: CapturedIndex): Promise<boolean>;
 	/** The index file's stored bytes, or `undefined` when there is none. */
 	readIndex(): Promise<Uint8Array | undefined>;
 	pathStatus(): Promise<PathStatus[]>;
@@ -297,12 +297,14 @@ export type GitBackend = {
 	 */
 	stage(paths: readonly string[] | 'all'): Promise<void>;
 	/**
-	 * Commit the index onto the pinned branch head. With `merge`, the commit
-	 * finishes that merge: its parents are `merge.head`, the head the merge
-	 * began from, and `merge.incoming`, whatever the branch names now, and it
-	 * is written even when its tree equals the head's. The branch moves only
-	 * if it still names `merge.head`; otherwise the result is `branchMoved`
-	 * and no ref, index entry, or merge state changes.
+	 * Commit the index's tree onto a parent pinned before anything is
+	 * written: the branch head when the commit starts, or, with `merge`,
+	 * `merge.head`, the head the merge began from, whatever the branch names
+	 * now. A merge's second parent is `merge.incoming`, and its commit is
+	 * written even when its tree equals the head's; without `merge`, a tree
+	 * equal to the parent's is `nothing`. The branch moves only if it still
+	 * names the pinned parent; otherwise the result is `branchMoved` and no
+	 * ref, index entry, or merge state changes.
 	 */
 	commitIndex(
 		message: string,
@@ -315,7 +317,11 @@ export type GitBackend = {
 				readonly parent: string | undefined;
 		  }
 		| { readonly status: 'nothing' }
-		| { readonly status: 'branchMoved'; readonly actual: string | undefined }
+		| {
+				readonly status: 'branchMoved';
+				readonly expected: string | undefined;
+				readonly actual: string | undefined;
+		  }
 	>;
 	diff(options: { staged: boolean; paths: readonly string[] }): Promise<string>;
 	log(depth: number): Promise<CommitSummary[]>;

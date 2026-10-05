@@ -17,6 +17,10 @@
 //! - Shutdown waits for an admitted commit and starts none of its own.
 //! - A branch moved by another Git process is reported, never retried or
 //!   overwritten; held ref and index locks fail or warn without losing files.
+//! - A staged commit is written on the parent it pinned or not at all: a
+//!   branch moved after the pin is refused and the index keeps its bytes.
+//!   Its tree is the one Git writes from the index, intent-to-add entries
+//!   left out.
 //! - Status writes nothing: no object, no index refresh, no lock file.
 //! - Commits hold the exact bytes on disk; responses carry no file bytes.
 //! - Push, fetch, and fast-forward follow the shared history's rules.
@@ -1082,6 +1086,172 @@ fn staged_authoring_is_refused_under_automatic_history_and_works_in_manual_mode(
     assert_eq!(log[0].parents, vec![oid]);
     assert_eq!(log[0].author.name, "Test Author");
     assert_eq!(owner.log(1).unwrap().len(), 1);
+}
+
+/// Index files the commit left in the Git directory: its private copy, or a lock.
+#[cfg(unix)]
+fn index_leftovers(root: &Path) -> Vec<String> {
+    std::fs::read_dir(root.join(".git"))
+        .unwrap()
+        .flatten()
+        .map(|entry| entry.file_name().to_string_lossy().into_owned())
+        .filter(|name| {
+            name.starts_with("index.")
+                || name.starts_with("sharedindex.")
+                || name.ends_with(".lock")
+        })
+        .collect()
+}
+
+#[cfg(unix)]
+#[test]
+fn a_branch_moved_after_a_staged_commit_pins_its_parent_is_refused_and_keeps_the_index() {
+    let temp = TempDir::new("staged-moved");
+    let root = temp.folder("manual");
+    let owner = manual(&root);
+    save(&owner, "a.md", "A");
+    owner.stage(None).unwrap();
+    let first = owner.commit_staged("First").unwrap().oid;
+    save(&owner, "b.md", "B");
+    owner.stage(None).unwrap();
+    // Enable split indexes after staging: the private write must not leave
+    // a shared index that no live index references.
+    git(&root, &["config", "core.splitIndex", "true"]);
+    // Another program commits beside the first commit, unpublished for now.
+    let first_tree = format!("{first}^{{tree}}");
+    let sibling = git(
+        &root,
+        &["commit-tree", &first_tree, "-p", &first, "-m", "outside"],
+    );
+    let index = std::fs::read(root.join(".git/index")).unwrap();
+    let listed = git(&root, &["ls-files", "--stage"]);
+
+    crate::testing::move_branch_before_commit_tree(&root, &sibling);
+    assert_eq!(
+        owner.commit_staged("Second"),
+        Err(GitError::BranchMoved {
+            expected: Some(first.clone()),
+            actual: Some(sibling.clone()),
+        })
+    );
+    assert_eq!(git(&root, &["rev-parse", "refs/heads/main"]), sibling);
+    assert_eq!(std::fs::read(root.join(".git/index")).unwrap(), index);
+    assert_eq!(git(&root, &["ls-files", "--stage"]), listed);
+    assert_eq!(index_leftovers(&root), Vec::<String>::new());
+
+    // The next commit is written on the branch as it is, and says so.
+    let committed = owner.commit_staged("Second").unwrap();
+    assert_eq!(committed.parent, Some(sibling.clone()));
+    assert_eq!(
+        git(&root, &["log", "-1", "--format=%P", &committed.oid]),
+        sibling
+    );
+    assert_eq!(git(&root, &["rev-parse", "refs/heads/main"]), committed.oid);
+}
+
+#[cfg(unix)]
+#[test]
+fn a_staged_commit_records_the_tree_git_writes_with_modes_deletions_and_empty_files() {
+    use std::os::unix::fs::{symlink, PermissionsExt};
+
+    let temp = TempDir::new("staged-tree");
+    let root = temp.folder("manual");
+    let owner = manual(&root);
+    save(&owner, "base.md", "base");
+    save(&owner, "gone.md", "gone");
+    owner.stage(None).unwrap();
+    let base = owner.commit_staged("Base").unwrap().oid;
+
+    // An intent-to-add entry alone is nothing to commit.
+    std::fs::write(root.join("planned.txt"), "later").unwrap();
+    git(&root, &["add", "--intent-to-add", "planned.txt"]);
+    assert_eq!(owner.commit_staged("Plan"), Err(GitError::NothingToCommit));
+
+    let executable = std::fs::Permissions::from_mode(0o755);
+    std::fs::write(root.join("tool.sh"), "#!/bin/sh\n").unwrap();
+    std::fs::set_permissions(root.join("tool.sh"), executable).unwrap();
+    symlink("base.md", root.join("link")).unwrap();
+    std::fs::write(root.join("empty.txt"), "").unwrap();
+    std::fs::remove_file(root.join("gone.md")).unwrap();
+    git(
+        &root,
+        &["add", "--", "tool.sh", "link", "empty.txt", "gone.md"],
+    );
+    let gitlink = format!("160000,{base},vendor/sub");
+    git(&root, &["update-index", "--add", "--cacheinfo", &gitlink]);
+    let index = std::fs::read(root.join(".git/index")).unwrap();
+
+    let committed = owner.commit_staged("Tools").unwrap();
+
+    assert_eq!(committed.parent, Some(base));
+    assert_eq!(std::fs::read(root.join(".git/index")).unwrap(), index);
+    let listed: Vec<String> = git(&root, &["ls-tree", "-r", &committed.oid])
+        .lines()
+        .map(|line| {
+            let (meta, path) = line.split_once('\t').unwrap();
+            let mut fields = meta.split(' ');
+            format!(
+                "{} {} {path}",
+                fields.next().unwrap(),
+                fields.next().unwrap()
+            )
+        })
+        .collect();
+    assert_eq!(
+        listed,
+        vec![
+            "100644 blob base.md",
+            "100644 blob empty.txt",
+            "120000 blob link",
+            "100755 blob tool.sh",
+            "160000 commit vendor/sub",
+        ]
+    );
+    assert_eq!(
+        git(
+            &root,
+            &["rev-parse", &format!("{}:empty.txt", committed.oid)]
+        ),
+        git(&root, &["hash-object", "-t", "blob", "/dev/null"])
+    );
+    assert_eq!(
+        git(
+            &root,
+            &["rev-parse", &format!("{}^{{tree}}", committed.oid)]
+        ),
+        git(&root, &["write-tree"])
+    );
+    // The intended file stays in the index, outside the commit.
+    assert_eq!(
+        git(&root, &["ls-files", "--", "planned.txt"]),
+        "planned.txt"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn built_in_staged_commits_run_no_commit_hooks_and_ignore_configured_signing() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let temp = TempDir::new("staged-no-hooks");
+    let root = temp.folder("manual");
+    let owner = manual(&root);
+    save(&owner, "a.md", "A");
+    owner.stage(None).unwrap();
+    let hook = root.join(".git/hooks/pre-commit");
+    std::fs::create_dir_all(hook.parent().unwrap()).unwrap();
+    std::fs::write(&hook, "#!/bin/sh\nprintf ran > hook-ran\nexit 1\n").unwrap();
+    std::fs::set_permissions(&hook, std::fs::Permissions::from_mode(0o755)).unwrap();
+    git(&root, &["config", "commit.gpgSign", "true"]);
+    git(
+        &root,
+        &["config", "gpg.program", "/nonexistent-folder-test-signer"],
+    );
+
+    let committed = owner.commit_staged("First").unwrap();
+
+    assert!(!root.join("hook-ran").exists());
+    assert!(!git(&root, &["cat-file", "commit", &committed.oid]).contains("\ngpgsig "));
 }
 
 // ============================================================================

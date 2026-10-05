@@ -522,13 +522,8 @@ export async function createStoredGitBackend<TSession extends GitFsSession>({
 			return new Set(candidates.filter((path) => ignored(path)));
 		},
 		async indexMatchesHead(captured) {
-			if (captured !== undefined)
-				return withObjects((access) =>
-					capturedIndexMatchesHead(access, captured),
-				);
-			const rows = await withObjects((access) => matrix(access));
-			return rows.every(([, head, , stage]) =>
-				head === 0 ? stage === 0 : stage === 1,
+			return withObjects((access) =>
+				capturedIndexMatchesHead(access, captured),
 			);
 		},
 		readIndex: () => store.readPrivate(indexKey),
@@ -632,7 +627,12 @@ export async function createStoredGitBackend<TSession extends GitFsSession>({
 			}
 			await session.flush();
 			const moved = await store.casRef(branchKey, parent, oid);
-			if (!moved.ok) return { status: 'branchMoved', actual: moved.actual };
+			if (!moved.ok)
+				return {
+					status: 'branchMoved',
+					expected: parent,
+					actual: moved.actual,
+				};
 			return { status: 'committed', oid, parent };
 		},
 		async diff({ staged, paths }) {

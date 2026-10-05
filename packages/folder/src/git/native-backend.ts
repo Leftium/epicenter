@@ -6,9 +6,9 @@
  * real `git` CLI, whose `index.lock` and ref locks other Git processes
  * respect: `update-ref` with an expected old value is the branch
  * compare-and-swap, `reset` and `update-index` update index entries, and
- * staging and staged commits run `git add` and `git commit`, except a
- * commit that finishes a merge (below). isomorphic-git never writes the
- * native index.
+ * staging runs `git add`. A staged commit is written as objects and moved
+ * onto the branch by compare-and-swap (below). isomorphic-git never writes
+ * the native index.
  *
  * A merge left unfinished is Git's own: `ORIG_HEAD`, `MERGE_MSG`, and
  * `MERGE_HEAD` beside the unmoved branch, files with markers, and an index
@@ -43,15 +43,23 @@
  *   and resets the index to abandon the merge while keeping working files.
  * No other record is kept.
  *
- * A staged commit that finishes a merge writes, as objects, the index's tree
- * and a commit whose parents are `ORIG_HEAD` and `MERGE_HEAD`, then moves
- * the branch from `ORIG_HEAD` by compare-and-swap. `git commit` would take
- * whatever `HEAD` names when it runs. Like a whole-folder commit, that
- * commit runs no hooks.
+ * A staged commit pins its parents first: the branch head, or `ORIG_HEAD`
+ * and `MERGE_HEAD` for a commit that finishes a merge. It then writes, as
+ * objects, the index's tree and a commit naming exactly those parents, and
+ * moves the branch from the first parent by compare-and-swap. `git commit`
+ * would take whatever `HEAD` names when it runs. Like a whole-folder commit,
+ * a staged commit runs no commit hooks and is not signed.
  */
 import { spawn } from 'node:child_process';
 import * as nodeFs from 'node:fs';
-import { readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
+import {
+	copyFile,
+	readFile,
+	rename,
+	rm,
+	stat,
+	writeFile,
+} from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import type * as git from 'isomorphic-git';
 import type { FileBoundary } from '../boundary.js';
@@ -74,11 +82,10 @@ import { nativeCheckpointProblem } from './native-checkpoint.js';
 import {
 	type CommitSummary,
 	commitTree,
+	EMPTY_TREE,
 	type ObjectAccess,
 	readTreeFiles,
-	type TreeFile,
 	writeCommitObject,
-	writeTreeFiles,
 } from './objects.js';
 
 const ZERO = '0000000000000000000000000000000000000000';
@@ -105,6 +112,7 @@ export type GitRun = (
 		input?: Uint8Array | string;
 		signal?: AbortSignal;
 		allowFailure?: boolean;
+		env?: Readonly<Record<string, string>>;
 	},
 ) => Promise<{ code: number | null; stdout: Uint8Array; stderr: string }>;
 
@@ -139,7 +147,7 @@ export function createGitRunner(root: string): GitRun {
 		new Promise((resolve, reject) => {
 			const child = spawn('git', [...args], {
 				cwd: root,
-				env: gitEnvironment(root),
+				env: { ...gitEnvironment(root), ...options.env },
 				stdio: ['pipe', 'pipe', 'pipe'],
 				signal: options.signal,
 			});
@@ -261,6 +269,30 @@ export async function createNativeGitBackend({
 			await rename(temporary, join(gitdir, name));
 		} finally {
 			await rm(temporary, { force: true }).catch(() => {});
+		}
+	}
+
+	/**
+	 * The tree the index names now, by Git's own rules: an unmerged path
+	 * fails it, and an intent-to-add entry (`git add -N`) is left out.
+	 * `write-tree` runs on a private copy, because on the live index it
+	 * rewrites the cached trees: a commit the compare-and-swap refuses then
+	 * leaves the index byte for byte as it was.
+	 */
+	async function indexTree(): Promise<string> {
+		const copy = join(gitdir, `index.tmp-${crypto.randomUUID()}`);
+		try {
+			await copyFile(join(gitdir, 'index'), copy).catch((cause: unknown) => {
+				// No index is an empty one.
+				if ((cause as { code?: string }).code !== 'ENOENT') throw cause;
+			});
+			// Keep the scratch index from creating an unreferenced shared index.
+			const written = await run(['-c', 'core.splitIndex=false', 'write-tree'], {
+				env: { GIT_INDEX_FILE: copy },
+			});
+			return text(written.stdout).trim();
+		} finally {
+			await rm(copy, { force: true }).catch(() => {});
 		}
 	}
 
@@ -520,22 +552,9 @@ export async function createNativeGitBackend({
 			return new Set(text(result.stdout).split('\0').filter(Boolean));
 		},
 		async indexMatchesHead(captured) {
-			if (captured !== undefined)
-				return backend.withObjects((access) =>
-					capturedIndexMatchesHead(access, captured),
-				);
-			const head = await resolve(branchRef);
-			const result = await run(
-				head === undefined
-					? ['ls-files', '--cached', '-z']
-					: ['diff', '--cached', '--quiet', '--no-ext-diff'],
-				{ allowFailure: true },
+			return backend.withObjects((access) =>
+				capturedIndexMatchesHead(access, captured),
 			);
-			if (head === undefined)
-				return result.code === 0 && result.stdout.byteLength === 0;
-			if (result.code === 0) return true;
-			if (result.code === 1) return false;
-			throw new GitCommandError(['diff'], result.code, result.stderr);
 		},
 		readIndex: () => readPrivate('index'),
 		async pathStatus() {
@@ -552,54 +571,33 @@ export async function createNativeGitBackend({
 			else await run([...literal, 'add', '--all', '--', ...paths]);
 		},
 		async commitIndex(message, author, merge) {
-			if (merge !== undefined) {
-				// Both parents are pinned. The tree is built from a listing of the
-				// index, which `write-tree` would rewrite to cache its trees, so a
-				// commit the compare-and-swap refuses leaves the index as it was.
-				const listed = await run(['ls-files', '--stage', '-z']);
-				const entries = new Map<string, TreeFile>();
-				for (const record of text(listed.stdout).split('\0')) {
-					const match = /^(\d{6}) ([0-9a-f]{40}) (\d)\t(.+)$/s.exec(record);
-					if (match === null) continue;
-					const [, mode, oid, stage, path] = match;
-					if (stage !== '0') throw new Error(`${path} is still unmerged`);
-					entries.set(path!, { mode: mode!, oid: oid! });
-				}
-				const tree = await writeTreeFiles(access, entries);
-				const oid = await writeCommitObject(access, {
-					tree,
-					parents: [merge.head, merge.incoming],
-					message,
-					author,
-				});
-				const moved = await backend.casBranch(merge.head, oid);
-				if (!moved.ok) return { status: 'branchMoved', actual: moved.actual };
-				return { status: 'committed', oid, parent: merge.head };
-			}
-			const parent = await resolve(branchRef);
-			if (await backend.indexMatchesHead()) return { status: 'nothing' };
-			const result = await run(
-				[
-					'-c',
-					`user.name=${author.name}`,
-					'-c',
-					`user.email=${author.email}`,
-					'commit',
-					'--quiet',
-					'--no-edit',
-					'--cleanup=verbatim',
-					'--file=-',
+			// Every parent is pinned before anything is written; the branch
+			// moves only from the first.
+			const parent = merge?.head ?? (await resolve(branchRef));
+			const tree = await indexTree();
+			if (
+				merge === undefined &&
+				tree ===
+					(parent === undefined ? EMPTY_TREE : await commitTree(access, parent))
+			)
+				return { status: 'nothing' };
+			const oid = await writeCommitObject(access, {
+				tree,
+				parents: [
+					...(parent === undefined ? [] : [parent]),
+					...(merge === undefined ? [] : [merge.incoming]),
 				],
-				{ input: message, allowFailure: true },
-			);
-			const head = await resolve(branchRef);
-			if (result.code !== 0) {
-				if (head !== parent) return { status: 'branchMoved', actual: head };
-				throw new GitCommandError(['commit'], result.code, result.stderr);
-			}
-			if (head === undefined)
-				throw new Error('git commit succeeded without a branch head');
-			return { status: 'committed', oid: head, parent };
+				message,
+				author,
+			});
+			const moved = await backend.casBranch(parent, oid);
+			if (!moved.ok)
+				return {
+					status: 'branchMoved',
+					expected: parent,
+					actual: moved.actual,
+				};
+			return { status: 'committed', oid, parent };
 		},
 		async diff({ staged, paths }) {
 			const result = await run([

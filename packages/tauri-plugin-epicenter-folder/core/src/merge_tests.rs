@@ -25,6 +25,9 @@
 //!   recovery never resolves a path, and refuses a marker file edited since.
 //! - Merge state left after its merge commit never becomes a second parent
 //!   again.
+//! - A branch moved after a staged merge commit pinned its parents is
+//!   refused, keeping files, index, and merge state; the commit's tree is the
+//!   one Git writes from the index, intent-to-add entries left out.
 
 use std::path::{Path, PathBuf};
 
@@ -801,6 +804,76 @@ fn a_staged_commit_keeps_orig_head_as_the_first_parent_or_refuses_without_writin
     assert_eq!(scene.parents(&committed.oid), format!("{ours} {theirs}"));
     assert_eq!(committed.parent.as_deref(), Some(ours.as_str()));
     assert!(!scene.root.join(".git/MERGE_HEAD").exists());
+}
+
+#[cfg(unix)]
+#[test]
+fn a_branch_moved_after_a_staged_merge_commit_pins_its_parents_is_refused_and_keeps_the_merge() {
+    let (scene, _, ours, theirs) = red_green("merge-moved-during");
+    scene.leave();
+    scene.resolve_green();
+    let tree = format!("{ours}^{{tree}}");
+    let sibling = scene.git(&["commit-tree", &tree, "-p", &ours, "-m", "outside"]);
+    let (files, index, _, merge_state) = scene.untouched();
+
+    crate::testing::move_branch_before_commit_tree(&scene.root, &sibling);
+    assert_eq!(
+        scene.owner().commit_staged("Merge"),
+        Err(GitError::BranchMoved {
+            expected: Some(ours.clone()),
+            actual: Some(sibling.clone()),
+        })
+    );
+
+    let (files_after, index_after, _, merge_state_after) = scene.untouched();
+    assert_eq!(files_after, files);
+    assert_eq!(index_after, index);
+    assert_eq!(merge_state_after, merge_state);
+    assert_eq!(scene.head(), sibling);
+    assert_eq!(
+        scene
+            .owner()
+            .snapshot()
+            .merging
+            .as_ref()
+            .map(|m| m.incoming.clone()),
+        Some(theirs)
+    );
+}
+
+#[test]
+fn a_staged_merge_commit_leaves_intent_to_add_entries_out_and_keeps_staged_empty_files() {
+    let (scene, _, ours, theirs) = red_green("merge-intent-to-add");
+    scene.leave();
+    scene.resolve_green();
+    put(&scene.root, "empty.txt", "");
+    scene.git(&["add", "empty.txt"]);
+    put(&scene.root, "planned.txt", "later\n");
+    scene.git(&["add", "--intent-to-add", "planned.txt"]);
+    let index = std::fs::read(scene.root.join(".git/index")).unwrap();
+
+    let committed = scene.owner().commit_staged("Merge").unwrap();
+
+    assert_eq!(scene.parents(&committed.oid), format!("{ours} {theirs}"));
+    assert_eq!(std::fs::read(scene.root.join(".git/index")).unwrap(), index);
+    assert_eq!(
+        scene.git(&[
+            "ls-tree",
+            "--name-only",
+            &committed.oid,
+            "--",
+            "planned.txt"
+        ]),
+        ""
+    );
+    assert_eq!(
+        scene.git(&["show", &format!("{}:empty.txt", committed.oid)]),
+        ""
+    );
+    assert_eq!(
+        scene.git(&["rev-parse", &format!("{}^{{tree}}", committed.oid)]),
+        scene.git(&["write-tree"])
+    );
 }
 
 #[test]

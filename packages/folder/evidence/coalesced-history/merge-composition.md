@@ -7,7 +7,25 @@ unfinished merge state. A blocked attempt does not capture files, push, or
 retry when a person clears the blocker. A newer completed save can request a
 new checkpoint.
 
-## Corrected acceptance on October 5, 2026
+## Subsequent Bun counterexample
+
+Bun acceptance is conditional after a later independent Claude review found
+an uncovered index-publication failure. Codex reproduced it against the same
+frozen snapshot: acquiring `index.lock` after authored files land makes merge
+publication return `IndexFailed`, while `MERGE_HEAD` is present with no
+unmerged stages. After removing the lock, `commitStaged` without a staging
+operation succeeds with the old local tree and both parents. It clears merge
+metadata and omits a clean incoming file from the recorded tree.
+
+The four probes and 80 tests below passed, but did not cover bare staged
+completion after failed index publication. Browser acceptance remains valid.
+The Git implementation thread is correcting publication order so intended
+index entries exist before merge metadata permits completion. The new
+reproduction and raw output are retained as `index-reproduction.log` beside
+the frozen corrected probes. Native Rust verification is separately owned by
+the Git thread.
+
+## Earlier acceptance on October 5, 2026
 
 Codex froze the corrected browser/Bun snapshot from
 `/tmp/git-browser-accepted-20261005/packages/folder/src` over the earlier frozen

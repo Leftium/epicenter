@@ -7,9 +7,47 @@ unfinished merge state. A blocked attempt does not capture files, push, or
 retry when a person clears the blocker. A newer completed save can request a
 new checkpoint.
 
-## Subsequent Bun counterexample
+## Final Bun acceptance
 
-Bun acceptance is conditional after a later independent Claude review found
+The final retention artifact closes the later Bun counterexample below.
+Publication prepares `ORIG_HEAD` and `MERGE_MSG`, atomically installs the
+complete intended index, writes `MERGE_HEAD`, then publishes authored files.
+An index failure returns `Refused` before files or the index change; an
+immediate staged commit returns `NothingToCommit`. Once the index is installed,
+later failures retain the prepared state and report `Partial`, including an
+empty applied-files list when no authored write landed. No rollback can erase
+another program's staged work. `MERGE_MSG` preserves the full incoming commit
+ID for repair if writing `MERGE_HEAD` fails and the tracking ref later moves.
+
+Codex independently ran five corrected probes: all passed, with 46 assertions.
+The combined five focused suites passed all 80 tests and 718 assertions. The
+native directory suite also proves that unrelated staged work survives failed
+marker and first-file publication, a repaired merge keeps its incoming clean
+file, and bare staged completion cannot silently finish a partial merge.
+
+The existing independent Codex reviewer accepted these repairs against the
+prior conditions and found no remaining grounded blocker in the bounded Bun
+review. Browser acceptance stands. Native Rust acceptance was separately
+established by the Git testbed thread and committed in `d18c4e8c1a`.
+
+The final frozen fixture, probes, logs, and all source hashes are retained at
+`/tmp/epicenter-coalesced-20261005/final-bun-acceptance/`. The same commands shown
+below run there; the added fifth probe covers index failure before publication.
+These three reviewed source files matched both the final stable artifact and
+the live checkout when the tests ran. The subsequent integration changes only
+repair wording: abandoning the merge also requires resetting the index, and
+manual metadata repair uses a system shell. The hashes below identify the
+actual frozen test inputs:
+
+| Path under `packages/folder/src` | SHA-256 |
+| --- | --- |
+| `git/backend.ts` | `a87c4fca11d4ed304aab92335a3adcff98f2d69d83c81ef281b8fbbda14dbcd0` |
+| `git/native-backend.ts` | `484d4114423c0f68cd9ca7c0c6fdc1950f8ab770df3034f65be4883bc4745233` |
+| `merge-unfinished-native.test.ts` | `7dd6b1113370465db2c36401e09ee070e6277817c75b0c02342695cbc1330cda` |
+
+## Counterexample that reopened Bun acceptance
+
+Bun acceptance became conditional after a later independent Claude review found
 an uncovered index-publication failure. Codex reproduced it against the same
 frozen snapshot: acquiring `index.lock` after authored files land makes merge
 publication return `IndexFailed`, while `MERGE_HEAD` is present with no
@@ -19,7 +57,7 @@ metadata and omits a clean incoming file from the recorded tree.
 
 The four probes and 80 tests below passed, but did not cover bare staged
 completion after failed index publication. Browser acceptance remains valid.
-The Git implementation thread is correcting publication order so intended
+The Git implementation thread corrected publication order so intended
 index entries exist before merge metadata permits completion. The new
 reproduction and raw output are retained as `index-reproduction.log` beside
 the frozen corrected probes. Native Rust verification is separately owned by

@@ -24,7 +24,7 @@ import {
 	SIDECAR_PROTOCOL_VERSION,
 	superviseSidecar,
 	watchParentPipe,
-} from './sidecar-runtime.ts';
+} from './sidecar-runtime.js';
 
 const TOKEN = 'valid_base64url-token';
 const CLOUD_SERVER = {
@@ -127,14 +127,6 @@ describe('runtime mode', () => {
 });
 
 describe('boot protocol', () => {
-	test('boot parsing preserves supplied Cloud and self-hosted server descriptors', () => {
-		for (const authServer of [CLOUD_SERVER, SELF_HOSTED_SERVER]) {
-			expect(
-				parseBootFrame(bootFrame({ authServer }), 'production').authServer,
-			).toEqual(authServer);
-		}
-	});
-
 	test('invalid server descriptors cannot enter the sidecar', () => {
 		for (const authServer of [
 			null,
@@ -168,7 +160,7 @@ describe('boot protocol', () => {
 		}
 	});
 
-	test('account management never rewrites native authority identity', () => {
+	test('boot preserves Cloud and self-hosted descriptors under either account management setting', () => {
 		for (const authServer of [
 			CLOUD_SERVER,
 			SELF_HOSTED_SERVER,

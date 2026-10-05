@@ -7,12 +7,12 @@
 	import * as Tabs from '@epicenter/ui/tabs';
 	import { Textarea } from '@epicenter/ui/textarea';
 	import ArrowLeftIcon from '@lucide/svelte/icons/arrow-left';
-	import { onDestroy } from 'svelte';
 	import { rowStemOf } from '@epicenter/folder';
 	import type { TodoEditor } from '$lib/todo-editor.svelte.js';
 	import type { Todos } from '$lib/todos.svelte.js';
 	import { confirmDelete } from './file-actions.js';
 	import FileNameBar from './FileNameBar.svelte';
+	import Lifetime from './Lifetime.svelte';
 	import TodoStatus from './TodoStatus.svelte';
 
 	let {
@@ -35,24 +35,19 @@
 	// each call. Svelte evaluates a function binding's expressions once, when
 	// its block is created; `bind:value={todo.title, todo.setTitle}` would keep
 	// the first todo's methods after this view is reused for another todo.
+	//
+	// A binding's input listener stays on a node after its block leaves the
+	// document, and the todo stays retained by the owner, so a delivered event
+	// could still reach its setter. Each conditional block has its own
+	// `Lifetime`: a control from a block that is gone takes nothing, even after
+	// the same kind of block mounts again.
 	const stem = $derived(rowStemOf(todos.folder.tables.todos.name, todo.path) ?? '');
 	const diagnostics = $derived(todo.diagnostics());
 	let tab = $state('notes');
 
-	/**
-	 * Whether this view is mounted. A binding's input listener stays on a node
-	 * after the view leaves the document, and the todo stays retained by the
-	 * owner, so a delivered event could still reach its setter. Cleared as the
-	 * view is destroyed; its setters and commands do nothing after that.
-	 */
-	const view = { mounted: true };
-	onDestroy(() => {
-		view.mounted = false;
-	});
-
-	/** Run a command of this view only while it is mounted. */
-	function command(title: string, run: () => string | undefined) {
-		if (!view.mounted) return;
+	/** Run a command only while the block it belongs to lives. */
+	function command(live: () => boolean, title: string, run: () => string | undefined) {
+		if (!live()) return;
 		const problem = run();
 		if (problem) toast.error(title, { description: problem });
 	}
@@ -66,24 +61,32 @@
 			</Button>
 		{/if}
 		{#if todo.editor.row.status === 'valid' && !todo.rawMode}
-			<Checkbox
-				aria-label="Done"
-				disabled={todo.isFenced}
-				bind:checked={() => todo.done(), (done) => view.mounted && todo.setDone(done)}
-			/>
-			<Input
-				class="flex-1 text-base font-medium"
-				placeholder="Title"
-				aria-label="Title"
-				disabled={todo.isFenced}
-				bind:value={() => todo.title(), (title) => view.mounted && todo.setTitle(title)}
-			/>
+			<Lifetime>
+				{#snippet children(live)}
+					<Checkbox
+						aria-label="Done"
+						disabled={todo.isFenced}
+						bind:checked={() => todo.done(), (done) => live() && todo.setDone(done)}
+					/>
+					<Input
+						class="flex-1 text-base font-medium"
+						placeholder="Title"
+						aria-label="Title"
+						disabled={todo.isFenced}
+						bind:value={() => todo.title(), (title) => live() && todo.setTitle(title)}
+					/>
+				{/snippet}
+			</Lifetime>
 		{:else}
 			<h2 class="min-w-0 flex-1 truncate text-base font-medium">{stem === '' ? todo.path : stem}</h2>
 			{#if todo.editor.row.status === 'valid'}
-				<Button size="sm" variant="outline" onclick={() => command('Could not edit the fields', todo.editFields)}>
-					Edit fields
-				</Button>
+				<Lifetime>
+					{#snippet children(live)}
+						<Button size="sm" variant="outline" onclick={() => command(live, 'Could not edit the fields', todo.editFields)}>
+							Edit fields
+						</Button>
+					{/snippet}
+				</Lifetime>
 			{/if}
 		{/if}
 	</div>
@@ -104,46 +107,55 @@
 				</ul>
 			</div>
 		{/if}
-		<div class="flex min-h-0 flex-1 flex-col px-3 py-3 sm:px-4">
-			<Textarea
-				class="min-h-40 flex-1 resize-none font-mono text-xs"
-				aria-label="Markdown source"
-				spellcheck={false}
-				disabled={todo.isFenced}
-				bind:value={() => todo.text(), (text) => view.mounted && todo.setText(text)}
-			/>
-		</div>
+		<Lifetime>
+			{#snippet children(live)}
+				<div class="flex min-h-0 flex-1 flex-col px-3 py-3 sm:px-4">
+					<Textarea
+						class="min-h-40 flex-1 resize-none font-mono text-xs"
+						aria-label="Markdown source"
+						spellcheck={false}
+						disabled={todo.isFenced}
+						bind:value={() => todo.text(), (text) => live() && todo.setText(text)}
+					/>
+				</div>
+			{/snippet}
+		</Lifetime>
 	{:else}
-		<Tabs.Root bind:value={tab} class="flex min-h-0 flex-1 flex-col px-3 py-3 sm:px-4">
-			<Tabs.List>
-				<Tabs.Trigger value="notes">Notes</Tabs.Trigger>
-				<Tabs.Trigger value="source">Source</Tabs.Trigger>
-			</Tabs.List>
-			<Tabs.Content value="notes" class="min-h-0 flex-1">
-				<Textarea
-					class="h-full min-h-40 resize-none font-sans"
-					placeholder="Notes in Markdown"
-					aria-label="Notes"
-					disabled={todo.isFenced}
-					bind:value={() => todo.notes(), (notes) => view.mounted && todo.setNotes(notes)}
-				/>
-			</Tabs.Content>
-			<Tabs.Content value="source" class="flex min-h-0 flex-1 flex-col gap-2">
-				<p class="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-					Saving the fields writes this text, the whole file, in one standard form.
-					<Button size="xs" variant="outline" onclick={() => command('Could not open the source', todo.editSource)}>
-						Edit source
-					</Button>
-				</p>
-				<Textarea
-					class="min-h-40 flex-1 resize-none font-mono text-xs"
-					value={todo.text()}
-					aria-label="Markdown source preview"
-					readonly
-					spellcheck={false}
-				/>
-			</Tabs.Content>
-		</Tabs.Root>
+		<!-- Tabs.Content keeps an inactive panel mounted and hidden, so the notes share this block's lifetime. -->
+		<Lifetime>
+			{#snippet children(live)}
+				<Tabs.Root bind:value={tab} class="flex min-h-0 flex-1 flex-col px-3 py-3 sm:px-4">
+					<Tabs.List>
+						<Tabs.Trigger value="notes">Notes</Tabs.Trigger>
+						<Tabs.Trigger value="source">Source</Tabs.Trigger>
+					</Tabs.List>
+					<Tabs.Content value="notes" class="min-h-0 flex-1">
+						<Textarea
+							class="h-full min-h-40 resize-none font-sans"
+							placeholder="Notes in Markdown"
+							aria-label="Notes"
+							disabled={todo.isFenced}
+							bind:value={() => todo.notes(), (notes) => live() && todo.setNotes(notes)}
+						/>
+					</Tabs.Content>
+					<Tabs.Content value="source" class="flex min-h-0 flex-1 flex-col gap-2">
+						<p class="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+							Saving the fields writes this text, the whole file, in one standard form.
+							<Button size="xs" variant="outline" onclick={() => command(live, 'Could not open the source', todo.editSource)}>
+								Edit source
+							</Button>
+						</p>
+						<Textarea
+							class="min-h-40 flex-1 resize-none font-mono text-xs"
+							value={todo.text()}
+							aria-label="Markdown source preview"
+							readonly
+							spellcheck={false}
+						/>
+					</Tabs.Content>
+				</Tabs.Root>
+			{/snippet}
+		</Lifetime>
 	{/if}
 
 	<FileNameBar

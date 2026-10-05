@@ -13,8 +13,10 @@
  *   carries A's into B; each input saves at its own path
  * - A todo removed elsewhere keeps its form and input when its write fails,
  *   and Close shows that it is gone
- * - Raw repair stays in raw mode after it validates until Edit fields, and
- *   the leaving raw textarea admits nothing
+ * - Raw repair stays in raw mode after it validates until Edit fields. A
+ *   control of a mode that left (source, Edit fields, title, notes,
+ *   checkbox, Edit source) admits nothing, even after that mode returns;
+ *   the returned mode's new controls edit the todo
  * - A failed save keeps the input on screen and pauses; disk C written by
  *   another writer replaces nothing, and Discard mine and reload shows C in
  *   the same editor
@@ -159,20 +161,22 @@ test('the reused view shows each todo its own input: A then B then A, and each i
 	await todos.open(pathA);
 	flushSync();
 	const title = get<HTMLInputElement>(TITLE);
+	const notes = get(NOTES);
 	const a = selected();
 	expect(title.value).toBe('A');
 	type(title, 'A typed');
 	expect(a.title()).toBe('A typed');
 
-	// The same view and the same field now belong to B.
+	// The same view and the same fields now belong to B.
 	await todos.open(pathB);
 	flushSync();
 	const b = selected();
 	expect(b).not.toBe(a);
 	expect(get<HTMLInputElement>(TITLE)).toBe(title);
+	expect(get(NOTES)).toBe(notes);
 	expect(title.value).toBe('B');
 	type(title, 'B typed');
-	type(get(NOTES), 'B notes\n');
+	type(notes, 'B notes\n');
 	expect(a.title()).toBe('A typed');
 	expect(a.notes()).toBe('');
 
@@ -216,8 +220,8 @@ test('a todo removed elsewhere keeps its form and input when its write fails, an
 	expect(await text(path)).toBeUndefined();
 });
 
-test('raw repair stays raw after it validates until Edit fields, and the leaving raw textarea admits nothing', async () => {
-	const { todos, target, get, find, selected, text } = await setup();
+test('raw repair stays raw after it validates until Edit fields, and controls of a mode that left stay inert after it returns', async () => {
+	const { todos, target, get, find, selected, text, reading } = await setup();
 	const broken = '---\ntitle: *missing\n---\n';
 	expectOk(await todos.folder.files.create('todos/bad.md', broken));
 	await todos.refresh();
@@ -237,14 +241,52 @@ test('raw repair stays raw after it validates until Edit fields, and the leaving
 	expect(get(SOURCE)).toBe(source);
 	expect(find(TITLE)).toBeNull();
 
+	const editFields = button(target, 'Edit fields');
 	click(target, 'Edit fields');
 	flushSync();
-	expect(get<HTMLInputElement>(TITLE).value).toBe('Fixed');
+	const title = get<HTMLInputElement>(TITLE);
+	expect(title.value).toBe('Fixed');
 	expect(find(SOURCE)).toBeNull();
 	type(source, 'junk from the leaving source');
 	expect(editor.editor.row.text).toBe(ROW('Fixed'));
 	await settle();
 	expect(await text('todos/bad.md')).toBe(ROW('Fixed'));
+
+	// The source returns as a new block. The first source and its Edit fields
+	// are gone for good: neither acts in the mode they belonged to.
+	const notes = get(NOTES);
+	const done = get<HTMLButtonElement>('button[aria-label="Done"]');
+	const editSource = button(target, 'Edit source');
+	expect(editor.editSource()).toBeUndefined();
+	flushSync();
+	expect(get(SOURCE)).not.toBe(source);
+	type(source, 'junk from the first source');
+	press(editFields);
+	flushSync();
+	expect(editor.editor.row.text).toBe(ROW('Fixed'));
+	expect(editor.rawMode).toBe(true);
+
+	// The fields return as new blocks. The first title, notes, checkbox, and
+	// Edit source take nothing; the new ones edit the todo.
+	click(target, 'Edit fields');
+	flushSync();
+	expect(get<HTMLInputElement>(TITLE)).not.toBe(title);
+	type(title, 'from the first title');
+	type(notes, 'from the first notes\n');
+	press(done);
+	press(editSource);
+	flushSync();
+	expect(editor.editor.row.text).toBe(ROW('Fixed'));
+	expect(editor.rawMode).toBe(false);
+
+	type(get<HTMLInputElement>(TITLE), 'Live');
+	type(get(NOTES), 'live notes\n');
+	press(get<HTMLButtonElement>('button[aria-label="Done"]'));
+	await eventually(() => editor.isIdle);
+	expect(await reading('todos/bad.md')).toMatchObject({
+		fields: { title: 'Live', done: true },
+		body: 'live notes\n',
+	});
 });
 
 test('a failed save keeps the input and pauses; disk C replaces nothing, and Discard mine and reload shows C in the same editor', async () => {

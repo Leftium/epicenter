@@ -504,6 +504,21 @@ describe('notes are files', () => {
 		expect((await stat(file)).mtimeMs).toBe(before.mtimeMs);
 	});
 
+	test("a note's own save reaches the list through the folder's hint, with no refresh asked", async () => {
+		const { state, seedNote } = await product();
+		const note = await seedNote();
+		const session = await openedNote(state, note.path);
+		const listed = () => state.notes.find((entry) => entry.path === note.path);
+
+		expect(session.edit({ fields: { title: 'Saved here' } })).toBeUndefined();
+		expect(await saved(session)).toBeUndefined();
+		await until(
+			() => listed()?.fields.title === 'Saved here',
+			'the list to show the save',
+		);
+		expect(listed()?.fields.title).toBe('Saved here');
+	});
+
 	test('assigning a note keeps its path, and deleting its folder clears the reference and removes the folder file', async () => {
 		const { state, root, seedNote } = await product();
 		const note = await seedNote();
@@ -3303,6 +3318,45 @@ describe('one owner per path', () => {
 });
 
 describe('closing', () => {
+	test('a hinted listing held when the page closes neither delays close nor changes state', async () => {
+		const { state, folder, seedNote } = await product();
+		await seedNote();
+		await state.refresh();
+		const { notes, listing, listError, listingError } = state;
+		const list = folder.tables.notes.list;
+		const started = Promise.withResolvers<void>();
+		const release = Promise.withResolvers<void>();
+		let reads = 0;
+		folder.tables.notes.list = async () => {
+			reads += 1;
+			const result = await list();
+			started.resolve();
+			await release.promise;
+			return result;
+		};
+		try {
+			expectOk(await folder.files.create('late.txt', 'Saved before close'));
+			await started.promise;
+			expectOk(
+				await folder.files.replace(
+					expectOk(await folder.files.read('late.txt')),
+					'Newest before close',
+				),
+			);
+			await state.close();
+			release.resolve();
+			await Bun.sleep(20);
+			expect(state.notes).toBe(notes);
+			expect(state.listing).toBe(listing);
+			expect(state.listError).toBe(listError);
+			expect(state.listingError).toBe(listingError);
+			expect(reads).toBe(1);
+		} finally {
+			release.resolve();
+			folder.tables.notes.list = list;
+		}
+	});
+
 	test('a note still opening when the page closes is abandoned: its acquisition is aborted, an editor that answers anyway is not kept, and nothing opens after', async () => {
 		const { state, folder, seedNote } = await product();
 		const note = await seedNote();

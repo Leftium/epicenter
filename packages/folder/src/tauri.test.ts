@@ -35,14 +35,14 @@
  * - `tauri-native.test.ts` for the same adapter against the real Rust owner
  */
 import { afterEach, expect, mock, spyOn, test } from 'bun:test';
+import { expectErr, expectOk } from 'wellcrafted/testing';
 import {
 	browserStorage,
 	createTestStorage,
 } from './browser-storage.test-support.js';
-import type { RecordedIncoming } from './git/backend.js';
-import { expectErr, expectOk } from 'wellcrafted/testing';
 import { hashBytes } from './capture.js';
 import { defineFolder, defineTable, field } from './contract.js';
+import type { RecordedIncoming } from './git/backend.js';
 
 type Call = { cmd: string; args: Record<string, unknown> };
 type Reply = (call: Call) => unknown;
@@ -933,6 +933,82 @@ test('file change events reach listeners until they stop listening', async () =>
 	});
 
 	expect(heard).toEqual([['a.md']]);
+});
+
+test("this page's own saves are announced without the owner's event; a definite refusal is not", async () => {
+	// The owner's change event is best effort. This scripted owner sends none.
+	const folder = await attached();
+	const heard: (readonly string[])[] = [];
+	folder.onFilesChanged(() => {
+		throw new Error('broken listener');
+	});
+	folder.onFilesChanged((paths) => heard.push(paths));
+	const sha256 = 'a'.repeat(64);
+
+	replies.apply = () => null;
+	expectOk(await folder.files.create('a.md', 'text'));
+	expectOk(await folder.files.move({ path: 'a.md', sha256 }, 'b.md'));
+	expect(heard).toEqual([['a.md'], ['a.md', 'b.md']]);
+
+	heard.length = 0;
+	replies.apply = () =>
+		refuse({
+			name: 'Refused',
+			error: {
+				name: 'Conflict',
+				path: 'a.md',
+				expectedSha256: sha256,
+				actualSha256: null,
+			},
+		});
+	expect(
+		expectErr(await folder.files.replace({ path: 'a.md', sha256 }, 'next'))
+			.name,
+	).toBe('Conflict');
+	expect(heard).toEqual([]);
+
+	// A lost reply or one the owner could not confirm may have changed the
+	// file: listeners are asked to reread, and the save stays Unconfirmed and
+	// is sent once.
+	replies.apply = () => {
+		throw new Error('the webview lost its IPC connection');
+	};
+	expect(expectErr(await folder.files.overwrite('c.md', 'lost')).name).toBe(
+		'Unconfirmed',
+	);
+	replies.apply = () =>
+		refuse({ name: 'Refused', error: { name: 'Superseded', path: 'd.md' } });
+	expect(expectErr(await folder.files.overwrite('d.md', 'late')).name).toBe(
+		'Unconfirmed',
+	);
+	expect(heard).toEqual([['c.md'], ['d.md']]);
+	expect(sent('apply')).toHaveLength(5);
+
+	// A partial report names what landed, and keeps its exact outcome.
+	heard.length = 0;
+	const report = {
+		name: 'Partial',
+		applied: [{ kind: 'write', path: 'b.md' }],
+		failed: { kind: 'remove', path: 'a.md' },
+		error: { name: 'Io', path: 'a.md', operation: 'retire', cause: 'busy' },
+		notAttempted: [],
+	};
+	replies.apply = () => refuse(report);
+	const kept = expectErr(
+		await folder.files.move({ path: 'a.md', sha256 }, 'b.md'),
+	);
+	expect(kept).toMatchObject({ name: 'SourceNotRemoved', from: 'a.md' });
+	expect(heard).toEqual([['b.md']]);
+
+	// After closing, nothing is announced to the listeners it dropped.
+	await folder.close();
+	heard.length = 0;
+	emit('folder-files-changed', {
+		scope: 'notes',
+		revision: 1,
+		paths: ['e.md'],
+	});
+	expect(heard).toEqual([]);
 });
 
 test('an observer that throws on an owner event silences no other observer, and closing from one fences the rest', async () => {

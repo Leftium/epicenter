@@ -17,7 +17,6 @@
  *   keeps the source shown until the person chooses the fields
  * - another writer's change is not loaded until the person reloads, and
  *   otherwise the next save writes over it
- * - a run of saves that ends saved is told once
  */
 import './svelte-modules.test-support.js';
 import { afterEach, expect, test } from 'bun:test';
@@ -49,13 +48,9 @@ async function open(
 	await Bun.write(join(root, PATH), text);
 	const folder = await openTestFolder(root, { commitOnEdit: false });
 	const native = expectOk(await folder.tables.transformations.edit('clean'));
-	const events = { saved: 0 };
 	const editing = createRowEditing(native, {
 		path: PATH,
 		admits: () => admitted.value,
-		onSaved: () => {
-			events.saved += 1;
-		},
 	});
 	cleanups.push(async () => {
 		editing.release();
@@ -63,11 +58,11 @@ async function open(
 		await rm(root, { recursive: true, force: true });
 	});
 	const file = () => readFile(join(root, PATH), 'utf8');
-	return { root, native, editing, events, file };
+	return { root, native, editing, file };
 }
 
-test('each input is the complete row at once: unknown fields stay, a removed field is deleted, and the run of saves is told once', async () => {
-	const { editing, file, events } = await open();
+test('each input is the complete row at once: unknown fields stay, and a removed field is deleted', async () => {
+	const { editing, file } = await open();
 
 	editing.setField('title', 'Tidy up');
 	editing.setField('model', undefined);
@@ -80,7 +75,6 @@ test('each input is the complete row at once: unknown fields stay, a removed fie
 	expectOk(await editing.flush());
 
 	expect(await file()).toBe(editing.row.text);
-	expect(events.saved).toBe(1);
 	expect(editing.holds).toBe(false);
 	// The row lacks a declared field now: saved, and it needs repair in Source.
 	expect(editing.status.kind).toBe('invalid');
@@ -195,7 +189,7 @@ test('a reload whose file is gone changes nothing, and the next save never creat
 });
 
 test('a row put down takes nothing, and a write it had admitted still settles', async () => {
-	const { editing, native, file, events } = await open();
+	const { editing, native, file } = await open();
 	editing.setBody('Admitted.\n');
 
 	editing.release();
@@ -209,8 +203,6 @@ test('a row put down takes nothing, and a write it had admitted still settles', 
 	expect(native.get().save.status).toBe('idle');
 	expect(await file()).toContain('Admitted.\n');
 	expect(await file()).not.toContain('Late.');
-	// It tells nothing more once put down.
-	expect(events.saved).toBe(0);
 });
 
 test('typed values no file can hold are kept per control: a second refusal keeps the first, and repairing or discarding one leaves the other', async () => {

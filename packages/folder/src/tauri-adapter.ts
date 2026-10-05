@@ -64,6 +64,7 @@ import {
 import {
 	assembleFolder,
 	createFileHints,
+	type FileHints,
 	type FolderHistory,
 } from './folder.js';
 import type {
@@ -492,7 +493,27 @@ function changeToWire(change: FileChange): WireFileChange {
 	}
 }
 
-function createBoundary(session: number): FolderStorage {
+const stepPaths = (step: FileStep | FileChange): string[] =>
+	step.kind === 'move' ? [step.from, step.to] : [step.path];
+
+/**
+ * The paths a save may have changed. A definite refusal changed none. A hint
+ * asks listeners to reread; it confirms nothing.
+ */
+function mayHaveChanged(
+	changes: readonly FileChange[],
+	error: FileError | ApplyError | null,
+): string[] {
+	if (error === null || error.name === 'Unconfirmed')
+		return changes.flatMap(stepPaths);
+	if (error.name !== 'Partial') return [];
+	return [
+		...error.applied.flatMap(stepPaths),
+		...(error.error.name === 'Unconfirmed' ? stepPaths(error.failed) : []),
+	];
+}
+
+function createBoundary(session: number, hints: FileHints): FolderStorage {
 	const unsent = (path: string, operation: string, cause: unknown) =>
 		FileError.Io({ path, operation, cause });
 
@@ -565,20 +586,25 @@ function createBoundary(session: number): FolderStorage {
 			const result = await call(
 				commands.apply(session, submission, changes.map(changeToWire)),
 			);
-			// No reply: the batch may have been published. It is sent once.
-			if (!result.sent)
-				return FileError.Unconfirmed({
-					path:
-						first === undefined
-							? ''
-							: first.kind === 'move'
-								? first.from
-								: first.path,
-					operation: 'publishing to',
-					cause: result.cause,
-				});
-			if (result.settled === 'refused') return Err(applyError(result.error));
-			return Ok(undefined);
+			const outcome: Result<undefined, FileError | ApplyError> = !result.sent
+				? // No reply: the batch may have been published. It is sent once.
+					FileError.Unconfirmed({
+						path:
+							first === undefined
+								? ''
+								: first.kind === 'move'
+									? first.from
+									: first.path,
+						operation: 'publishing to',
+						cause: result.cause,
+					})
+				: result.settled === 'refused'
+					? Err(applyError(result.error))
+					: Ok(undefined);
+			// The owner's change event is best effort, so this page announces
+			// its own saves too. A listener that throws changes no outcome.
+			hints.emit(mayHaveChanged(changes, outcome.error));
+			return outcome;
 		},
 		async mkdir(path) {
 			const result = await call(commands.mkdir(session, path));
@@ -998,7 +1024,8 @@ export const openFolder: OpenFolder = async ({ definition, id }) => {
 	let history: Snapshots | undefined;
 	let sequence = -1;
 	const early: { sequence: number; snapshot: WireGitSnapshot }[] = [];
-	// The owner announces every change, this window's included.
+	// The owner announces every change it can, this window's included. Its
+	// events are best effort; the boundary also announces this window's saves.
 	const hints = createFileHints();
 	const stopListening: (() => void)[] = [];
 	const stop = () => {
@@ -1070,7 +1097,7 @@ export const openFolder: OpenFolder = async ({ definition, id }) => {
 	return Ok(
 		assembleFolder<typeof definition>({
 			prepared,
-			storage: createBoundary(session),
+			storage: createBoundary(session, hints),
 			// Closing the folder fences `client` through this history: Git calls
 			// are refused, and running local ones are waited for, before
 			// `release` detaches the session they use.

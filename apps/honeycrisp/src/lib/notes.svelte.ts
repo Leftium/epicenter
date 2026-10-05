@@ -2,9 +2,10 @@
  * The Honeycrisp product state over one opened notes folder.
  *
  * Three observations refresh together: note rows, folder rows, and the file
- * listing the file browser shows. They refresh after saves and terminal
- * commands, when the window regains focus, and when the folder hints that
- * files changed. Every open text file's session is told what the refresh
+ * listing the file browser shows. They refresh when the folder hints that
+ * files changed, as it does for this page's own saves, after terminal
+ * commands and file changes, and when the window regains focus. Hints share
+ * one background pass. Every open text file's session is told what the refresh
  * found, so a clean one follows the file and a dirty one keeps its text. An
  * open note is not: its editor keeps its text until the person reloads it.
  *
@@ -393,8 +394,10 @@ export function createNotes(host: NotesHost) {
 	const unsubscribeGit = folder.git.subscribe((snapshot) => {
 		git = snapshot;
 	});
-	// A hint says to read again; it is never used as what was read.
-	const unsubscribeChanges = folder.onFilesChanged(() => void refreshAll());
+	// A hint says to read again; it is never used as what was read. The
+	// folder hints this page's own saves too, so a note's write reaches the
+	// list this way. Hints that arrive during a refresh share its next pass.
+	const unsubscribeChanges = folder.onFilesChanged(() => void refresh());
 
 	/** The raw session for an opened text file. */
 	function sessionAt(path: string): FileSession | undefined {
@@ -458,7 +461,6 @@ export function createNotes(host: NotesHost) {
 			path,
 			rawMode,
 			admits: () => !fenced,
-			onSaved: () => void refresh(),
 		});
 	}
 
@@ -714,12 +716,14 @@ export function createNotes(host: NotesHost) {
 						: change.kind === 'mkdir'
 							? (listing?.directories.includes(change.path) ?? false)
 							: false;
+			if (closing !== undefined) return;
 			if (reached) next.add(change);
 		}
 		found = next;
 	}
 
 	async function refreshOnce() {
+		if (closing !== undefined) return;
 		const opened = [...openFiles].map(([path, file]) => ({
 			path,
 			file,
@@ -736,9 +740,11 @@ export function createNotes(host: NotesHost) {
 			]);
 		} catch (cause) {
 			// The folder could not be reached. Keep what is on screen.
+			if (closing !== undefined) return;
 			listError = cause instanceof Error ? cause.message : String(cause);
 			return;
 		}
+		if (closing !== undefined) return;
 		const { data: rowEntries, error: rowsError } = rows;
 		const { data: folderEntries, error: foldersError } = folderRows;
 		const { data: fileEntries, error: filesError } = files;
@@ -770,6 +776,7 @@ export function createNotes(host: NotesHost) {
 		if (!rowsError && !foldersError && !filesError) await observePending();
 		const paths = new Set(fileEntries?.files.map((file) => file.path));
 		for (const { path, file, saved } of opened) {
+			if (closing !== undefined) return;
 			if (openFiles.get(path) !== file) continue;
 			// Text kept for the person stays whatever a listing shows. An open
 			// note keeps its editor's text until the person reloads it.
@@ -790,12 +797,14 @@ export function createNotes(host: NotesHost) {
 				? await file.session.reread()
 				: file.session.observe({ kind: 'removed' });
 			// The path may have been renamed or explicitly discarded during the read.
+			if (closing !== undefined) return;
 			if (outcome === 'gone' && openFiles.get(path) === file) forget(path);
 		}
 	}
 
 	/** One refresh at a time; a request during one runs once more afterwards. */
 	function refresh(): Promise<void> {
+		if (closing !== undefined) return Promise.resolve();
 		if (refreshing !== undefined) {
 			refreshAgain = true;
 			return refreshing;
@@ -804,8 +813,11 @@ export function createNotes(host: NotesHost) {
 			try {
 				do {
 					refreshAgain = false;
-					await refreshOnce();
-				} while (refreshAgain);
+					await Promise.all([
+						refreshOnce(),
+						folder.git.status().catch(() => undefined),
+					]);
+				} while (refreshAgain && closing === undefined);
 			} finally {
 				refreshing = undefined;
 			}
@@ -813,8 +825,8 @@ export function createNotes(host: NotesHost) {
 		return refreshing;
 	}
 
-	async function refreshAll() {
-		await Promise.all([refresh(), folder.git.status().catch(() => undefined)]);
+	function refreshAll() {
+		return refresh();
 	}
 
 	/**
@@ -1976,6 +1988,7 @@ export function createNotes(host: NotesHost) {
 		close(): Promise<void> {
 			closing ??= (async () => {
 				fenced = true;
+				unsubscribeChanges();
 				// An opening that answers anyway is not kept where it lands.
 				for (const controller of opening) controller.abort();
 				await Promise.all(working.keys());
@@ -1988,7 +2001,6 @@ export function createNotes(host: NotesHost) {
 					session.release();
 				}
 				unsubscribeGit();
-				unsubscribeChanges();
 				await host.close();
 			})();
 			return closing;

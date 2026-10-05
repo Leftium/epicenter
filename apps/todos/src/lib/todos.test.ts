@@ -516,8 +516,66 @@ async function openFailingNextWrite() {
 			return 'fail';
 		};
 	};
-	return { todos, path, failNext };
+	return { todos, path, failNext, faults };
 }
+
+test("a todo's own saves reach the listings through the folder's hint, with no refresh asked: a malformed source is listed exactly, and when one save lands and the queued one fails, the list shows the landed one and the failed input stays without a retry", async () => {
+	const { todos, path, faults } = await openFailingNextWrite();
+	const editor = todoEditor(todos);
+	const listed = () => todos.entries.find((entry) => entry.path === path);
+
+	editor.setTitle('Oat milk');
+	expect(await written(editor)).toBeUndefined();
+	await eventually(() => listed()?.fields.title === 'Oat milk');
+	expect(listed()?.fields.title).toBe('Oat milk');
+
+	// Source that does not read as a todo is saved and listed exactly.
+	expect(editor.editSource()).toBeUndefined();
+	const malformed =
+		'---\ntitle: [unclosed\ndone: false\n---\nkept   as typed\n';
+	editor.setText(malformed);
+	expect(await written(editor)).toBeUndefined();
+	await eventually(() => listed()?.text === malformed);
+	expect(listed()).toMatchObject({ text: malformed });
+	expect(await text(todos, path)).toBe(malformed);
+
+	// The first save holds as its file opens; the next input queues behind it
+	// and fails when its turn comes.
+	const landed = '---\ntitle: Landed\ndone: false\n---\n';
+	const queued = '---\ntitle: Queued\ndone: false\n---\n';
+	const opening = Promise.withResolvers<void>();
+	let opens = 0;
+	faults.open = async (file) => {
+		if (!file.endsWith(`/${path}`)) return;
+		opens += 1;
+		if (opens === 1) await opening.promise;
+	};
+	faults.close = (file) =>
+		file.endsWith(`/${path}`) && opens === 2 ? 'fail' : undefined;
+	try {
+		editor.setText(landed);
+		await eventually(() => opens === 1);
+		editor.setText(queued);
+		opening.resolve();
+		expect(await written(editor)).toBeDefined();
+
+		await eventually(() => listed()?.text === landed);
+		expect(listed()).toMatchObject({ text: landed });
+		expect(await text(todos, path)).toBe(landed);
+		expect(editor.editor.save.status).toBe('failed');
+		expect(editor.text()).toBe(queued);
+		// Nothing sends the failed input again: not the hint, not its reread.
+		await Bun.sleep(20);
+		expect(opens).toBe(2);
+		expect(editor.editor.save.status).toBe('failed');
+		expect(editor.text()).toBe(queued);
+		expect(await text(todos, path)).toBe(landed);
+	} finally {
+		opening.resolve();
+		faults.open = undefined;
+		faults.close = undefined;
+	}
+});
 
 test('a failed save keeps the input and stops writing: later typing stays on screen until Try again, and Reload replaces it with the file', async () => {
 	const { todos, path, failNext } = await openFailingNextWrite();
@@ -1957,7 +2015,7 @@ test('a folder is deleted from the browser only when it is empty', async () => {
  */
 async function openWithAnotherTab() {
 	const id = `todos-test-${count++}`;
-	const storage = testBrowserStorage({ BroadcastChannel });
+	const storage = createTestStorage({ BroadcastChannel });
 	const handle = async () =>
 		expectOk(
 			await openFolder({
@@ -1966,14 +2024,14 @@ async function openWithAnotherTab() {
 				browser: {
 					author: { name: 'Test', email: 'test@example.test' },
 					commitOnEdit: false,
-					...storage,
+					...browserStorage(storage),
 				},
 			}),
 		);
 	const todos = createTodos(await handle());
 	opened.push(todos);
 	await todos.check();
-	return { todos, other: await handle() };
+	return { todos, other: await handle(), faults: opfsOf(storage).faults };
 }
 
 test('a hint from another tab rereads the folder: new rows are listed and a clean editor adopts the saved text', async () => {
@@ -2007,6 +2065,41 @@ test('a hint from another tab rereads the folder: new rows are listed and a clea
 		await editor.save();
 		expect(editor.saveState).toEqual({ kind: 'saved' });
 		expect(await text(todos, 'notes.txt')).toBe('mine after theirs');
+	} finally {
+		await other.close();
+	}
+});
+
+test("another tab's change is listed while an open todo's failed save keeps its input, its error, and its pause", async () => {
+	const { todos, other, faults } = await openWithAnotherTab();
+	try {
+		await todos.create('Milk');
+		const path = todos.selectedPath!;
+		const saved = await text(todos, path);
+		const editor = todoEditor(todos);
+		faults.write = (file) => (file.endsWith(`/${path}`) ? 'fail' : undefined);
+		editor.setTitle('Mine');
+		const problem = await written(editor);
+		expect(problem).toBeDefined();
+		faults.write = undefined;
+
+		expectOk(
+			await other.tables.todos.create({
+				stem: 'bread',
+				fields: { title: 'Bread', done: false },
+			}),
+		);
+		// Nothing here asks the app to refresh.
+		await eventually(() => todos.isTodo('todos/bread.md'));
+		expect(todos.entries.map((entry) => entry.path)).toContain(
+			'todos/bread.md',
+		);
+		expect(todos.selectedPath).toBe(path);
+		expect(todoEditor(todos)).toBe(editor);
+		expect(editor.title()).toBe('Mine');
+		expect(editor.editor.save.status).toBe('failed');
+		expect(await written(editor)).toBe(problem);
+		expect(await text(todos, path)).toBe(saved);
 	} finally {
 		await other.close();
 	}

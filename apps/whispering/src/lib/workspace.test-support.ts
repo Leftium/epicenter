@@ -324,7 +324,9 @@ export async function openTestWorkspace({
 			load: async () => ({ name: 'tone.wav', bytes: toneWav() }),
 		}),
 		captureNotice: undefined,
-		onExternalChange: () => () => {},
+		// The folder's own hints, this window's saves included, as the real
+		// workspaces relay them.
+		onExternalChange: (listener) => folder.onFilesChanged(() => listener()),
 		reveal: undefined,
 		// Each stub decides the connection as the host does, at entry, and only a
 		// request that would go out is counted as sent.

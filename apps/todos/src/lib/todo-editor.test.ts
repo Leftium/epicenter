@@ -60,12 +60,9 @@ afterEach(() => {
 /** A todo editor over a controlled native editor on `todos/plan.md`. */
 async function setup(initial?: string) {
 	const fake = await openTodo(initial);
-	const saved = { count: 0 };
-	const todo = createTodoEditor(PATH, fake.editor, () => {
-		saved.count++;
-	});
+	const todo = createTodoEditor(PATH, fake.editor);
 	released.push(todo);
-	return { fake, todo, saved };
+	return { fake, todo };
 }
 
 /** Wait for something the test did not request directly. The assertion follows the wait. */
@@ -89,7 +86,7 @@ function parsed(text: string | undefined) {
 const UNKNOWN = '"owner": "sam"\n"unknown": {"nested": ["one", "two"]}\n';
 
 test('title, done, and notes each submit the complete row at once, unknown metadata included; one write runs and the latest input follows', async () => {
-	const { fake, todo, saved } = await setup(row('Plan', 'Body.\n', UNKNOWN));
+	const { fake, todo } = await setup(row('Plan', 'Body.\n', UNKNOWN));
 	fake.holdReplies();
 
 	todo.setTitle('Plan B');
@@ -107,7 +104,6 @@ test('title, done, and notes each submit the complete row at once, unknown metad
 	expect(await written(todo)).toBeUndefined();
 	// The first write, then the latest input; the one between was superseded.
 	expect(fake.writes).toHaveLength(2);
-	expect(saved.count).toBe(1);
 	expect(parsed(fake.disk())).toEqual({
 		fields: {
 			title: 'Plan B',
@@ -427,13 +423,13 @@ test('a hold refuses input while its work runs, then reads the row the work wrot
 	expect(fake.writes).toEqual([]);
 });
 
-test('release ends the subscription, and an admitted write still publishes', async () => {
+test('release refuses later input, holds no subscription, and an admitted write still publishes', async () => {
 	const { fake, todo } = await setup();
-	expect(fake.subscriptions()).toBe(1);
+	// The editor watches no save of its own; the listings hear the folder.
+	expect(fake.subscriptions()).toBe(0);
 	fake.holdReplies();
 	todo.setTitle('A');
 	todo.release();
-	expect(fake.subscriptions()).toBe(0);
 	todo.setTitle('B');
 	fake.releaseReplies();
 	expect(await written(todo)).toBeUndefined();
@@ -460,7 +456,7 @@ test('a released editor refuses input and commands for good, even after the fenc
 	expect(todo.isIdle).toBe(true);
 });
 
-test('close refuses input, waits for the write, and ends the subscription', async () => {
+test('close refuses input, waits for the write, and leaves no subscription', async () => {
 	const { fake, todo } = await setup();
 	fake.holdReplies();
 	todo.setTitle('Last');

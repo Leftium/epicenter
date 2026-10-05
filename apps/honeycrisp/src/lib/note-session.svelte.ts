@@ -136,15 +136,12 @@ export function createNoteSession(
 	{
 		path,
 		admits = () => true,
-		onSaved = () => {},
 		rawMode = false,
 	}: {
 		/** The row's path. The editor is fixed to it. */
 		path: string;
 		/** Whether the person's input is being taken. False while a close is answered. */
 		admits?: () => boolean;
-		/** After a write settled with nothing left waiting. */
-		onSaved?: () => void;
 		/** Whether the note starts in its file view. */
 		rawMode?: boolean;
 	},
@@ -163,14 +160,6 @@ export function createNoteSession(
 	let operating = $state(0);
 	let reloading = $state(false);
 	let released = $state(false);
-	let saving = editor.get().save.status === 'saving';
-
-	const stopListening = editor.subscribe(() => {
-		const { save } = editor.get();
-		const settled = saving && save.status === 'idle';
-		saving = save.status === 'saving';
-		if (settled) onSaved();
-	});
 
 	/** Why no input or choice is taken now, or undefined. */
 	function fenced(): string | undefined {
@@ -497,7 +486,6 @@ export function createNoteSession(
 		release() {
 			if (released) return;
 			released = true;
-			stopListening();
 			refused = {};
 		},
 	};

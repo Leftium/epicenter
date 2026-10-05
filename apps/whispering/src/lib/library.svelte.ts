@@ -4,9 +4,11 @@
  * Everything shown is an observation of the folder's current files: the
  * recording rows, their transcription results, the transformations and their
  * results, the settings in `kv.json`, and the listing the file browser shows.
- * They refresh together after saves, terminal commands, window focus, and any
- * change another program makes. A selection is a path; one draft is retained
- * per path so a selection change never discards typing. A recording,
+ * They refresh together when the folder hints that files changed, as it does
+ * for this window's saves and any other program's, after terminal commands
+ * and file changes, and on window focus. Hints share one background pass.
+ * A selection is a path; one draft is retained per path so a selection
+ * change never discards typing. A recording,
  * transcript, or transformation is edited through the folder's row editor
  * (`table.edit`), which owns its input and saves it as it is typed; one
  * editor serves both its fields and its source (`row-editing.svelte.ts`).
@@ -661,7 +663,7 @@ export function createLibrary(workspace: Workspace) {
 	const unsubscribe = folder.git.subscribe((snapshot) => {
 		git = snapshot;
 	});
-	const unwatch = workspace.onExternalChange(() => void refreshAll());
+	const unwatch = workspace.onExternalChange(rereadHinted);
 
 	function textEditorAt(path: string): TextFileEditor | undefined {
 		const file = openFiles.get(path);
@@ -811,7 +813,6 @@ export function createLibrary(workspace: Workspace) {
 					editing: createRowEditing(editor, {
 						path,
 						admits: rowInputAt(path),
-						onSaved: refreshAfterSave,
 					}),
 				};
 				rows.set(path, slot);
@@ -898,7 +899,7 @@ export function createLibrary(workspace: Workspace) {
 	 * Show newer saved text in the text drafts of ordinary files, and put down
 	 * clean ones whose files left the folder.
 	 */
-	async function observeTextDrafts(current: FileListing, sequence: number) {
+	async function observeTextDrafts(current: FileListing, stale: () => boolean) {
 		const present = new Map(
 			current.files.map((file) => [file.path, file.size]),
 		);
@@ -923,7 +924,7 @@ export function createLibrary(workspace: Workspace) {
 				openFiles.set(path, { ...file, size });
 		}
 		for (const { path, editor, putDown } of drafts) {
-			if (sequence !== refreshSequence) return;
+			if (stale()) return;
 			// A draft held by an unresolved rename stays as it is until the person chooses.
 			if (unresolvedMoves.has(path)) continue;
 			if (!present.has(path)) {
@@ -938,7 +939,7 @@ export function createLibrary(workspace: Workspace) {
 				folder.files,
 				path,
 			);
-			if (sequence !== refreshSequence) return;
+			if (stale()) return;
 			if (readError === null && opened.kind === 'text')
 				editor.observe(opened.file);
 		}
@@ -980,27 +981,34 @@ export function createLibrary(workspace: Workspace) {
 		}
 	}
 
-	/** The refresh a run of row saves asked for, while it runs. */
-	let savedRefresh: Promise<void> | undefined;
-	let refreshAgain = false;
+	/** Whether a pass that hints asked for is running. */
+	let hinted = false;
+	let hintedAgain = false;
 	/**
-	 * Refresh the lists after a run of row saves ended. Typing saves as it
-	 * goes, so runs end often: one refresh runs at a time, and the runs that
-	 * end meanwhile share one more after it.
+	 * Read the folder and Git's status again after a change hint: a save of
+	 * this window's, the terminal's, or another program's. Typing saves as it
+	 * goes, so hints come often: one pass runs at a time, and the hints that
+	 * arrive meanwhile share one more after it. An explicit refresh does not
+	 * wait for it. Nothing starts once the library is closing, and close does
+	 * not wait for a pass.
 	 */
-	function refreshAfterSave() {
-		if (savedRefresh !== undefined) {
-			refreshAgain = true;
+	function rereadHinted() {
+		if (closing) return;
+		if (hinted) {
+			hintedAgain = true;
 			return;
 		}
-		savedRefresh = (async () => {
+		hinted = true;
+		void (async () => {
 			try {
 				do {
-					refreshAgain = false;
-					await refresh();
-				} while (refreshAgain && !closing);
+					hintedAgain = false;
+					await refreshAll();
+				} while (hintedAgain && !closing);
+			} catch {
+				// A failed pass keeps what is shown; the next hint reads again.
 			} finally {
-				savedRefresh = undefined;
+				hinted = false;
 			}
 		})();
 	}
@@ -1010,6 +1018,8 @@ export function createLibrary(workspace: Workspace) {
 
 	async function readFolder() {
 		const sequence = ++refreshSequence;
+		// A newer read, or closing, makes this one's answer old.
+		const stale = () => closing || sequence !== refreshSequence;
 		// Published before this read began, so this read's listing accounts for them.
 		const published = new Map(unlistedResults);
 		const publishedOutputs = new Map(unlistedOutputs);
@@ -1030,7 +1040,7 @@ export function createLibrary(workspace: Workspace) {
 			outputs.list(),
 			textOutputs.list(),
 		]);
-		if (sequence !== refreshSequence) return;
+		if (stale()) return;
 		// Results on pasted text name no recording, so a file here that cannot be
 		// read is reported where they are listed and never holds up a recording's
 		// deletion. A listing that failed keeps the last list and says so.
@@ -1092,9 +1102,9 @@ export function createLibrary(workspace: Workspace) {
 		} else {
 			listingError = undefined;
 			listing = fileListing;
-			await observeTextDrafts(fileListing, sequence);
+			await observeTextDrafts(fileListing, stale);
 		}
-		if (sequence === refreshSequence) generation += 1;
+		if (!stale()) generation += 1;
 	}
 
 	async function refreshAll() {
@@ -3273,8 +3283,6 @@ export function createLibrary(workspace: Workspace) {
 			lifetime.abort();
 			await Promise.all(rowEditings().map((editing) => editing.flush()));
 			for (const editing of rowEditings()) editing.release();
-			// The lists a last save asked to refresh read the folder too.
-			await savedRefresh;
 			for (const editor of textEditors()) {
 				await editor.settle();
 				editor.dispose();

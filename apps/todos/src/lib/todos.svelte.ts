@@ -326,8 +326,13 @@ export function createTodos(folder: TodosFolder) {
 	let rereading: Promise<void> | undefined;
 	let rereadAgain = false;
 	// Subscribed here, before the first read, so no change falls between them.
+	// The folder hints this page's own saves too, so a todo editor's write
+	// reaches the listings this way.
 	const stopListening = folder.onFilesChanged(() => void reread());
-	/** Every editor's saves refresh the listings; the save never waits for it. */
+	/**
+	 * A text file editor's saves refresh the listings, so it can adopt what
+	 * the folder holds now; the save never waits for it.
+	 */
 	const onSaved = () => void refresh();
 
 	/**
@@ -398,7 +403,7 @@ export function createTodos(folder: TodosFolder) {
 		native: Parameters<typeof createTodoEditor>[1],
 		rawMode = false,
 	) {
-		const editor = createTodoEditor(path, native, onSaved, { rawMode });
+		const editor = createTodoEditor(path, native, { rawMode });
 		// Opened while Epicenter asks to leave: refusing like the rest.
 		if (departing) editor.prepareDeparture();
 		retained.set(path, { kind: 'todo', editor });

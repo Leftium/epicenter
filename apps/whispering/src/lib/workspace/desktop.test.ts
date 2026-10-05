@@ -483,7 +483,6 @@ test('a row save whose reply the shell never sent stays unknown in the real row 
 	const editing = createRowEditing(editor, {
 		path: 'transformations/clean.md',
 		admits: () => true,
-		onSaved: () => {},
 	});
 
 	editing.setBody('Tidy it.\n');

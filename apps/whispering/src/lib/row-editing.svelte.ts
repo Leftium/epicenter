@@ -25,7 +25,9 @@
  *   discards it, or a reload takes the file. Others are kept meanwhile, and
  *   the source is not shown over them. It is never a second copy of the row.
  * - One line of status, most pressing first.
- * - Telling the library when a run of saves ends, so its lists catch up.
+ *
+ * The library's lists catch up with a save from the folder's change hint,
+ * not from here.
  */
 import type {
 	CanonicalDocument,
@@ -130,13 +132,10 @@ export function createRowEditing<TFields>(
 	{
 		path,
 		admits,
-		onSaved,
 	}: {
 		path: string;
 		/** Whether the library takes the person's input and actions for this path now. */
 		admits: Admits;
-		/** A run of saves ended with the last one saved: the folder changed. */
-		onSaved: () => void;
 	},
 ) {
 	const editor = fromRowEditor(native);
@@ -200,14 +199,6 @@ export function createRowEditing<TFields>(
 			});
 	}
 
-	let previous = native.get().save;
-	const stop = native.subscribe(() => {
-		const { save } = native.get();
-		if (save === previous) return;
-		if (previous.status === 'saving' && save.status === 'idle') onSaved();
-		previous = save;
-	});
-
 	return {
 		path,
 		/** The editor's row: valid, or invalid with why. Always the latest input. */
@@ -234,7 +225,8 @@ export function createRowEditing<TFields>(
 		},
 		get status(): RowStatus {
 			if (editor.save.status === 'saving') return { kind: 'saving' };
-			if (editor.save.status === 'failed') return saveProblem(editor.save.error);
+			if (editor.save.status === 'failed')
+				return saveProblem(editor.save.error);
 			if (holding()) {
 				const controls = [...held.fields.keys()];
 				if (held.body !== undefined) controls.push('body');
@@ -363,14 +355,13 @@ export function createRowEditing<TFields>(
 		/** Wait for the writes already admitted. Never saves anything again. */
 		flush: (): Promise<Result<undefined, RowSaveError>> => native.flush(),
 		/**
-		 * Put the row down: it takes no input and tells nothing more. A write
-		 * already admitted still settles in the editor.
+		 * Put the row down: it takes no input. A write already admitted still
+		 * settles in the editor.
 		 */
 		release() {
 			if (released) return;
 			released = true;
 			held = NONE;
-			stop();
 		},
 	};
 }

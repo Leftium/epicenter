@@ -183,9 +183,15 @@ async function open({
 			load: async () => ({ name: 'tone.wav', bytes: toneWav() }),
 		}),
 		captureNotice: undefined,
+		// The folder's own hints, this window's saves included, as the real
+		// workspaces relay them, and the settings stand-in's changes.
 		onExternalChange(listener) {
 			changeListeners.add(listener);
-			return () => changeListeners.delete(listener);
+			const stop = folder.onFilesChanged(() => listener());
+			return () => {
+				changeListeners.delete(listener);
+				stop();
+			};
 		},
 		reveal: undefined,
 		async transcribe(request) {
@@ -561,6 +567,139 @@ test('an outside edit is listed but not loaded into an open recording, and the n
 		title: 'Mine',
 		audioPath,
 	});
+});
+
+/** Wait for what the test did not request directly. The assertion follows the wait. */
+async function until(settled: () => boolean) {
+	for (let waited = 0; waited < 400 && !settled(); waited++) await Bun.sleep(5);
+}
+
+const OUTSIDE_ROW =
+	'---\ntitle: Outside\nrecordedAt: 2026-01-02T03:04:05.000Z\ndurationMs: 1\ncapture: microphone\naudioPath: recordings/outside.wav\n---\n';
+
+test("a row's own saves reach the list through the folder's hint, with no refresh asked, and a malformed source is listed exactly", async () => {
+	const { library, root } = await open();
+	await record(library);
+	const editor = recordingEditor(library);
+	const { path } = editor;
+	const listed = () => library.entries.find((entry) => entry.path === path);
+
+	editor.setField('title', 'Standup notes');
+	await saved(editor);
+	await until(() => listed()?.fields.title === 'Standup notes');
+	expect(listed()?.fields.title).toBe('Standup notes');
+
+	expect(library.editSource(path)).toBeUndefined();
+	const malformed = editor
+		.sourceValue()
+		.replace(/"title": .*\n/, '"title": [unclosed\n');
+	editor.setText(malformed);
+	await saved(editor);
+	expect(await readFile(join(root, path), 'utf8')).toBe(malformed);
+	await until(() => listed()?.text === malformed);
+	expect(listed()).toMatchObject({ text: malformed });
+	expect(listed() && needsRepair(listed()!)).toBe(true);
+	// The listing did not load anything into the editor.
+	expect(editor.row.text).toBe(malformed);
+	expect(editor.view).toBe('source');
+});
+
+test('hints during a slow read share one more pass that lists the latest, and an explicit refresh does not wait for the held read', async () => {
+	let hint = () => {};
+	const { library, root } = await open({
+		kv: (real, externalChange) => {
+			hint = externalChange;
+			return real;
+		},
+	});
+	await record(library);
+	await until(() => !library.refreshing);
+	const table = library.folder.tables.recordings;
+	const list = table.list;
+	const held = Promise.withResolvers<void>();
+	let lists = 0;
+	table.list = async () => {
+		lists += 1;
+		const listed = await list.call(table);
+		if (lists === 1) await held.promise;
+		return listed;
+	};
+	try {
+		hint();
+		await until(() => lists === 1);
+		await writeFile(join(root, 'recordings', 'outside.md'), OUTSIDE_ROW);
+		for (let count = 0; count < 5; count++) hint();
+		await Bun.sleep(10);
+		// The storm waits for the running pass; nothing else lists meanwhile.
+		expect(lists).toBe(1);
+
+		// The person's refresh reads now, past the held pass.
+		await library.refresh();
+		expect(lists).toBe(2);
+		const latest = library.entries;
+		expect(latest.map((entry) => entry.path)).toContain(
+			'recordings/outside.md',
+		);
+
+		// The held pass answers late with the older listing and changes nothing;
+		// the hints it held share exactly one more pass.
+		held.resolve();
+		await until(() => lists === 3 && !library.refreshing);
+		await Bun.sleep(10);
+		expect(lists).toBe(3);
+		expect(library.entries.map((entry) => entry.path)).toEqual(
+			latest.map((entry) => entry.path),
+		);
+	} finally {
+		held.resolve();
+		table.list = list;
+	}
+});
+
+test('a hinted pass still reading when the library closes neither delays close nor changes what is shown', async () => {
+	let hint = () => {};
+	const { library, root } = await open({
+		kv: (real, externalChange) => {
+			hint = externalChange;
+			return real;
+		},
+	});
+	await record(library);
+	await until(() => !library.refreshing);
+	const table = library.folder.tables.recordings;
+	const list = table.list;
+	const held = Promise.withResolvers<void>();
+	let lists = 0;
+	table.list = async () => {
+		lists += 1;
+		const listed = await list.call(table);
+		await held.promise;
+		return listed;
+	};
+	const { entries, generation } = library;
+	try {
+		await writeFile(join(root, 'recordings', 'outside.md'), OUTSIDE_ROW);
+		hint();
+		await until(() => lists === 1);
+		hint();
+
+		opened.splice(opened.indexOf(library), 1);
+		let closed = false;
+		void library.close().then(() => {
+			closed = true;
+		});
+		await until(() => closed);
+		expect(closed).toBe(true);
+
+		held.resolve();
+		await Bun.sleep(20);
+		expect(library.entries).toBe(entries);
+		expect(library.generation).toBe(generation);
+		expect(lists).toBe(1);
+	} finally {
+		held.resolve();
+		table.list = list;
+	}
 });
 
 test('reloading takes the outside version and writes nothing, and typing while it reads is not taken', async () => {

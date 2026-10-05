@@ -92,7 +92,6 @@ export function describeReloadError(error: RowReloadError): string {
 export function createTodoEditor(
 	path: string,
 	native: RowEditor<TodoFields>,
-	onSaved: () => void,
 	options: { readonly rawMode?: boolean } = {},
 ) {
 	const editor = fromRowEditor(native);
@@ -104,15 +103,6 @@ export function createTodoEditor(
 	let departing = $state(false);
 	/** Typed title or notes values the row could not take; see the module comment. */
 	let refusals = $state.raw<Partial<Record<RefusedField, Refusal>>>({});
-
-	// Retained for this editor's lifetime: a write that settles refreshes the
-	// listings whether or not a view is open.
-	let wasSaving = native.get().save.status === 'saving';
-	const unsubscribe = native.subscribe(() => {
-		const { save } = native.get();
-		if (wasSaving && save.status === 'idle') onSaved();
-		wasSaving = save.status === 'saving';
-	});
 
 	/** Why this editor takes no input or command now, if it does not. */
 	function refused(): string | undefined {
@@ -178,7 +168,6 @@ export function createTodoEditor(
 	function release() {
 		if (released) return;
 		released = true;
-		unsubscribe();
 	}
 
 	return {

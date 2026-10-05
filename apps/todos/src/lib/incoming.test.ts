@@ -190,7 +190,7 @@ function todoEditor(todos: Todos) {
 
 /** Wait for a todo's admitted writes. Answers why the latest did not land. */
 async function written(editor: ReturnType<typeof todoEditor>) {
-	const { error } = await editor.editor.flush();
+	const { error } = await editor.editor.waitForSaves();
 	return error === null ? undefined : error.message;
 }
 
@@ -528,7 +528,7 @@ test('recovery fences each todo before it waits for the next: input that failed 
 		readonly release: PromiseWithResolvers<void>;
 	};
 	let gate: Gate | undefined;
-	const holdNextFlush = (): Gate => {
+	const holdNextWait = (): Gate => {
 		gate = {
 			reached: Promise.withResolvers<void>(),
 			release: Promise.withResolvers<void>(),
@@ -543,14 +543,14 @@ test('recovery fences each todo before it waits for the next: input that failed 
 		const native = result.data;
 		return Ok({
 			...native,
-			async flush() {
+			async waitForSaves() {
 				const armed = gate;
 				gate = undefined;
 				if (armed !== undefined) {
 					armed.reached.resolve();
 					await armed.release.promise;
 				}
-				return native.flush();
+				return native.waitForSaves();
 			},
 		});
 	};
@@ -567,7 +567,7 @@ test('recovery fences each todo before it waits for the next: input that failed 
 		return 'fail';
 	};
 	milk.setNotes('mine\n');
-	let held = holdNextFlush();
+	let held = holdNextWait();
 	let recovering = todos.recoverIncoming();
 	await held.reached.promise;
 
@@ -589,7 +589,7 @@ test('recovery fences each todo before it waits for the next: input that failed 
 	// no save of it can fail and then be replaced by what the update wrote.
 	expect(await todos.reload(MILK)).toBeUndefined();
 	expect(milk.isIdle).toBe(true);
-	held = holdNextFlush();
+	held = holdNextWait();
 	recovering = todos.recoverIncoming();
 	await held.reached.promise;
 	let attempted = false;

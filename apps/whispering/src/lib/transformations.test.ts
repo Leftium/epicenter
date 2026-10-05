@@ -105,7 +105,7 @@ async function cleanupProfile(library: Library) {
 
 /** Wait until the writes typing started have settled, and expect them saved. */
 async function saved<TFields>(editor: RowEditing<TFields>) {
-	expectOk(await editor.flush());
+	expectOk(await editor.waitForSaves());
 }
 
 // ============================================================================
@@ -499,7 +499,7 @@ test('a transcript whose save failed refuses, and the edits stay in its editor',
 	chmodSync(join(root, 'transcriptions'), 0o555);
 	try {
 		source.setBody('Mine.\n');
-		expect((await source.flush()).error).not.toBeNull();
+		expect((await source.waitForSaves()).error).not.toBeNull();
 	} finally {
 		chmodSync(join(root, 'transcriptions'), 0o755);
 	}

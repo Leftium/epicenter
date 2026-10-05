@@ -896,7 +896,7 @@ describe.skipIf(!enabled)('tauri folder against the native owner', () => {
 		await digest.reached;
 		expectOk(await a(() => folder.files.overwrite(created.path, 'raw')));
 		digest.release();
-		expectOk(await a(() => editor.flush()));
+		expectOk(await a(() => editor.waitForSaves()));
 		const current = expectOk(await b(() => other.files.read(created.path)));
 		expect(decoder.decode(current.bytes)).toBe(edited);
 	});

@@ -72,7 +72,7 @@ test('each input is the complete row at once: unknown fields stay, and a removed
 		'---\n"title": "Tidy up"\n"endpoint": null\n"owner": {"name": "me"}\n---\nTidy.\n',
 	);
 
-	expectOk(await editing.flush());
+	expectOk(await editing.waitForSaves());
 
 	expect(await file()).toBe(editing.row.text);
 	expect(editing.holds).toBe(false);
@@ -87,7 +87,7 @@ test('a body typed in a textarea keeps the file’s own line endings, and the vi
 	const { editing, file } = await open(crlf);
 
 	editing.setBody('One.\nTwo.\nThree.\n');
-	expectOk(await editing.flush());
+	expectOk(await editing.waitForSaves());
 
 	expect(await file()).toBe(
 		'---\n"title": "Clean up"\n"model": null\n"endpoint": null\n---\nOne.\r\nTwo.\r\nThree.\r\n',
@@ -95,7 +95,7 @@ test('a body typed in a textarea keeps the file’s own line endings, and the vi
 	expect(editing.showSource(true)).toBeUndefined();
 	expect(editing.sourceValue()).not.toContain('\r');
 	editing.setText(`${editing.sourceValue()}Four.\n`);
-	expectOk(await editing.flush());
+	expectOk(await editing.waitForSaves());
 	expect(await file()).toContain('Three.\r\nFour.\r\n');
 });
 
@@ -129,7 +129,7 @@ test('a malformed file opens in the same editor as its source; typing there is e
 	const repaired =
 		"---\n# fixed by hand\ntitle: 'Repaired'\nmodel: null\nendpoint: null\n---\nBody.\n";
 	editing.setText(repaired);
-	expectOk(await editing.flush());
+	expectOk(await editing.waitForSaves());
 	expect(await file()).toBe(repaired);
 	// Valid now, and the source the person typed in stays shown until they choose.
 	expect(editing.row.status).toBe('valid');
@@ -149,7 +149,7 @@ test('another writer’s change is not loaded, and the next save writes the whol
 	expect(editing.status.kind).toBe('saved');
 
 	editing.setBody('Mine.\n');
-	expectOk(await editing.flush());
+	expectOk(await editing.waitForSaves());
 	expect(await file()).toBe(editing.row.text);
 	expect(await file()).toContain('Mine.\n');
 	expect(await file()).not.toContain('Theirs.');
@@ -182,7 +182,7 @@ test('a reload whose file is gone changes nothing, and the next save never creat
 	expect(editing.row.text).toBe(SEED);
 
 	editing.setBody('Mine.\n');
-	expect((await editing.flush()).error?.name).toBe('NotFound');
+	expect((await editing.waitForSaves()).error?.name).toBe('NotFound');
 	expect(editing.status.kind).toBe('removed');
 	expect(editing.row).toMatchObject({ body: 'Mine.\n' });
 	expect(await Bun.file(join(root, PATH)).exists()).toBe(false);
@@ -199,7 +199,7 @@ test('a row put down takes nothing, and a write it had admitted still settles', 
 	editing.setBody('Late.\n');
 	expect(editing.retry()).toContain('no longer open');
 	expect(editing.carry('Carried.\n')).toBe(false);
-	expectOk(await native.flush());
+	expectOk(await native.waitForSaves());
 	expect(native.get().save.status).toBe('idle');
 	expect(await file()).toContain('Admitted.\n');
 	expect(await file()).not.toContain('Late.');
@@ -228,7 +228,7 @@ test('typed values no file can hold are kept per control: a second refusal keeps
 
 	// Repairing the title takes it and lets go of it alone.
 	editing.setField('title', 'Whole title');
-	expectOk(await editing.flush());
+	expectOk(await editing.waitForSaves());
 	expect(await file()).toContain('"title": "Whole title"');
 	expect(editing.fieldText('title')).toBe('Whole title');
 	expect(editing.bodyText()).toBe(body);
@@ -244,7 +244,7 @@ test('typed values no file can hold are kept per control: a second refusal keeps
 
 	// A setter of another field does not take the held body.
 	editing.setField('model', 'other');
-	expectOk(await editing.flush());
+	expectOk(await editing.waitForSaves());
 	expect(editing.bodyText()).toBe(body);
 	expect(await file()).toContain('Tidy.\n');
 
@@ -259,14 +259,14 @@ test('a missing file keeps input on screen and later typing saves after the file
 	const { root, editing, file } = await open();
 	await rm(join(root, PATH));
 	editing.setBody('First.\n');
-	expect((await editing.flush()).error?.name).toBe('NotFound');
+	expect((await editing.waitForSaves()).error?.name).toBe('NotFound');
 	expect(editing.row).toMatchObject({ status: 'valid', body: 'First.\n' });
 	expect(editing.bodyText()).toBe('First.\n');
 	expect(editing.status.kind).toBe('removed');
 	expect(editing.holds).toBe(true);
 	await Bun.write(join(root, PATH), SEED);
 	editing.setBody('Second.\n');
-	expectOk(await editing.flush());
+	expectOk(await editing.waitForSaves());
 	expect(await file()).toContain('Second.\n');
 });
 
@@ -274,10 +274,10 @@ test('carried text lands only in an editor whose saves are idle, shown as its so
 	const { editing, file } = await open();
 	editing.setBody('Own.\n');
 	expect(editing.carry(`${SEED}Carried.\n`)).toBe(false);
-	expectOk(await editing.flush());
+	expectOk(await editing.waitForSaves());
 
 	expect(editing.carry(`${SEED}Carried.\n`)).toBe(true);
 	expect(editing.view).toBe('source');
-	expectOk(await editing.flush());
+	expectOk(await editing.waitForSaves());
 	expect(await file()).toBe(`${SEED}Carried.\n`);
 });

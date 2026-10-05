@@ -428,7 +428,7 @@ export function createNoteSession(
 		 * Wait for every write already admitted and report the last outcome.
 		 * Waiting never resubmits a failed write.
 		 */
-		flush: native.flush,
+		waitForSaves: native.waitForSaves,
 		/** Run `work` with input fenced: a rename, a delete, a departure. */
 		async operate<T>(work: () => Promise<T>): Promise<T> {
 			operating += 1;

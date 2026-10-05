@@ -842,7 +842,7 @@ async function editing(id: string) {
 				}),
 			);
 			const editor = ok(await folder.tables.rows.edit('plan'));
-			const { get, subscribe, set, flush, reload } = editor;
+			const { get, subscribe, set, waitForSaves, reload } = editor;
 			let calls = 0;
 			const stop = subscribe(() => {
 				calls += 1;
@@ -864,7 +864,7 @@ async function editing(id: string) {
 					get().save.status === 'saving',
 					`save is ${get().save.status}`,
 				);
-				ok(await flush());
+				ok(await waitForSaves());
 				const accepted = get().row;
 				const stored = decoder.decode(await rawRead(id, path));
 				assert(
@@ -914,7 +914,7 @@ async function editing(id: string) {
 			);
 			const repaired = '---\ntitle: Repaired\n---\n';
 			broken.setText(repaired);
-			ok(await broken.flush());
+			ok(await broken.waitForSaves());
 			const stored = decoder.decode(await rawRead(id, 'rows/broken.md'));
 			assert(stored === repaired, `stored ${JSON.stringify(stored)}`);
 			assert(broken.get().row.status === 'valid', 'the repair is not valid');
@@ -929,11 +929,11 @@ async function editing(id: string) {
 			const path = 'rows/gone.md';
 			ok(await folder.files.create(path, '---\ntitle: Before\n---\n'));
 			const editor = ok(await folder.tables.rows.edit('gone'));
-			const { get, set, flush, reload } = editor;
+			const { get, set, waitForSaves, reload } = editor;
 			ok(await folder.files.remove(ok(await folder.files.read(path))));
 			const typed = 'Typed after the removal';
 			ok(set({ fields: { title: typed }, body: '' }));
-			const { error: failed } = await flush();
+			const { error: failed } = await waitForSaves();
 			assert(failed?.name === 'NotFound', `save ${JSON.stringify(failed)}`);
 			assert(!(await rawExists(id, path)), 'the write made the file again');
 			// A failed reload keeps the input in view.

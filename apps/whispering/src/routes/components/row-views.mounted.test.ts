@@ -137,8 +137,8 @@ test('typing in the one file view lands in the editor of the path it shows now, 
 		fields: { recordingId: 'one' },
 	});
 	expect(b.row).toMatchObject({ body: 'Beta, typed.\n' });
-	expectOk(await a.flush());
-	expectOk(await b.flush());
+	expectOk(await a.waitForSaves());
+	expectOk(await b.waitForSaves());
 	expect(await readFile(join(root, A), 'utf8')).toBe(a.row.text);
 	expect(await readFile(join(root, B), 'utf8')).toBe(b.row.text);
 });
@@ -162,7 +162,7 @@ test('the whole-file source of a reused view edits the path it shows now, and it
 		bodyField(target, 'b.md'),
 		transcript('Beta, as text.\n').replace('model: m', 'model: n'),
 	);
-	expectOk(await editorAt(library, B).flush());
+	expectOk(await editorAt(library, B).waitForSaves());
 
 	expect(await readFile(join(root, B), 'utf8')).toBe(
 		transcript('Beta, as text.\n').replace('model: m', 'model: n'),
@@ -203,7 +203,7 @@ test('a control kept after its view is gone, or after the component is destroyed
 	unmountHost();
 	type(again, 'Typed after it was destroyed.\n');
 	expect(editor.row).toMatchObject({ body: 'Typed in the new view.\n' });
-	expectOk(await editor.flush());
+	expectOk(await editor.waitForSaves());
 });
 
 test('after a failed save later typing saves again, and Discard loads the file into the same view', async () => {
@@ -215,7 +215,7 @@ test('after a failed save later typing saves again, and Discard loads the file i
 	chmodSync(join(root, 'transcriptions'), 0o555);
 	try {
 		type(field, 'Typed before it failed.\n');
-		expect((await editor.flush()).error).not.toBeNull();
+		expect((await editor.waitForSaves()).error).not.toBeNull();
 		flushSync();
 		expect(saveState(target)).toBe('failed');
 		// The view stays, with the typing, and takes more of it.
@@ -227,7 +227,7 @@ test('after a failed save later typing saves again, and Discard loads the file i
 
 	type(field, 'Typed after it failed.\n');
 	expect(editor.row).toMatchObject({ body: 'Typed after it failed.\n' });
-	expectOk(await editor.flush());
+	expectOk(await editor.waitForSaves());
 	flushSync();
 	expect(await readFile(join(root, A), 'utf8')).toContain(
 		'Typed after it failed.',
@@ -238,7 +238,7 @@ test('after a failed save later typing saves again, and Discard loads the file i
 	chmodSync(join(root, 'transcriptions'), 0o555);
 	try {
 		type(field, 'Typed and then discarded.\n');
-		expect((await editor.flush()).error).not.toBeNull();
+		expect((await editor.waitForSaves()).error).not.toBeNull();
 	} finally {
 		chmodSync(join(root, 'transcriptions'), 0o755);
 	}
@@ -254,7 +254,7 @@ test('after a failed save later typing saves again, and Discard loads the file i
 	);
 	expect(saveState(target)).toBe('saved');
 	type(bodyField(target, 'a.md'), 'Typed into the loaded file.\n');
-	expectOk(await editor.flush());
+	expectOk(await editor.waitForSaves());
 	expect(await readFile(join(root, A), 'utf8')).toContain(
 		'Typed into the loaded file.',
 	);
@@ -301,7 +301,7 @@ test('a transformation’s title and source are one editor, and its source prefe
 		target.querySelector('[data-testid="transformation-title-text"]')
 			?.textContent,
 	).toBe('Tidy up');
-	expectOk(await editor.flush());
+	expectOk(await editor.waitForSaves());
 	expect(await readFile(join(root, RECIPE), 'utf8')).toBe(
 		'---\n"title": "Tidy up"\n"model": null\n"endpoint": null\n"owner": "me"\n---\nTidy.\n',
 	);
@@ -417,7 +417,7 @@ test('a recording’s title and notes stay live, with the typing on screen, afte
 	chmodSync(join(root, 'recordings'), 0o555);
 	try {
 		type(notes, 'Typed notes.\n');
-		expect((await editor.flush()).error).not.toBeNull();
+		expect((await editor.waitForSaves()).error).not.toBeNull();
 	} finally {
 		chmodSync(join(root, 'recordings'), 0o755);
 	}
@@ -434,7 +434,7 @@ test('a recording’s title and notes stay live, with the typing on screen, afte
 		body: 'Typed notes.\n',
 		fields: { title: 'Retitled' },
 	});
-	expectOk(await editor.flush());
+	expectOk(await editor.waitForSaves());
 	expect(await readFile(join(root, RECORDING), 'utf8')).toContain('Retitled');
 	expect(await readFile(join(root, RECORDING), 'utf8')).toContain('Typed notes.');
 });
@@ -475,7 +475,7 @@ test('a recording’s Source edits the same editor, and a source control from an
 	type(source, recording('From an earlier source view', 'Notes.\n'));
 	expect(editor.row.text).toBe(recording('Take', 'Notes.\n'));
 	type(sourceAgain, recording('Typed as text', 'Notes.\n'));
-	expectOk(await editor.flush());
+	expectOk(await editor.waitForSaves());
 	expect(await readFile(join(root, RECORDING), 'utf8')).toBe(
 		recording('Typed as text', 'Notes.\n'),
 	);

@@ -163,7 +163,7 @@ export function createWord({
 		void (async () => {
 			let landed = false;
 			for (;;) {
-				const { error: saveError } = await current.flush();
+				const { error: saveError } = await current.waitForSaves();
 				if (saveError !== null || editor !== current) break;
 				if (current.get().save.status !== 'saving') {
 					landed = true;
@@ -332,7 +332,7 @@ export function createWord({
 			if (setError !== null)
 				return `This word cannot be saved: ${setError.refusal.reason}`;
 			follow(current);
-			const { error: saveError } = await current.flush();
+			const { error: saveError } = await current.waitForSaves();
 			return saveError === null ? null : describeSaveError(saveError);
 		},
 
@@ -421,7 +421,7 @@ export function createWord({
 				try {
 					if (opening !== undefined) await opening;
 					// A failed save is left as it is; the delete is decided below.
-					await editor?.flush();
+					await editor?.waitForSaves();
 					removed = await remove(shown);
 				} catch (cause) {
 					if (ended === undefined) deletion = extractErrorMessage(cause);
@@ -452,7 +452,7 @@ export function createWord({
 			ended ??= 'This page is closing, so nothing more is saved here.';
 			if (opening !== undefined) await opening;
 			await operation?.catch(() => {});
-			await editor?.flush();
+			await editor?.waitForSaves();
 			editor = undefined;
 		},
 	};

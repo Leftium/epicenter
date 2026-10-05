@@ -303,7 +303,7 @@ async function release(action: string): Promise<boolean> {
 	const path = todoPath(current.stem);
 	if (current.editor.get().save.status === 'saving')
 		session.textContent = `${action}: input to ${path} has stopped; waiting for its admitted saves to settle.`;
-	const { error } = await current.editor.flush();
+	const { error } = await current.editor.waitForSaves();
 	if (error !== null && !(await discardAfter(action, path, error))) {
 		showViews(current);
 		return false;

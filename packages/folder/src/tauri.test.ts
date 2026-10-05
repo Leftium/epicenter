@@ -451,7 +451,7 @@ test("a row editor's write still hashing is sent after a raw save made meanwhile
 	await digest.reached;
 	expectOk(await folder.files.overwrite('todos/take.md', 'raw'));
 	digest.release();
-	expectOk(await editor.flush());
+	expectOk(await editor.waitForSaves());
 	expect(editor.get().save.status).toBe('idle');
 
 	expect(applies()).toEqual(['raw', edited]);

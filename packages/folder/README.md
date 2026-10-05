@@ -778,8 +778,8 @@ the same moment can still race it.
 
 `tables.<name>.edit(stem, { signal })` acquires an editor fixed to one row.
 The table supplies the row's path, schema, and declared field order. The
-editor holds the row's accepted complete input and one queue that publishes
-it, for structured and raw input alike. [Complete-row editing](../../docs/adr/0504-row-editors-own-complete-input-and-one-publication-queue.md)
+editor holds the row's latest complete input and saves it with one running
+write and at most one waiting text, for structured and raw input alike. [Complete-row editing](../../docs/adr/0504-row-editors-own-complete-input-and-one-publication-queue.md)
 records the decision. Applications move to this editor in a coordinated
 caller cutover; [the execution evidence](evidence/complete-row-editing.md)
 tracks it.
@@ -787,7 +787,7 @@ tracks it.
 ```ts
 const { data: editor, error } = await folder.tables.todos.edit(stem, { signal });
 if (error !== null) return showOpenError(error);   // Aborted, NotFound, InvalidUtf8, Io, ...
-const { get, subscribe, set, setText, retry, flush, reload } = editor;
+const { get, subscribe, set, setText, retry, waitForSaves, reload } = editor;
 
 const stop = subscribe(() => render(get()));          // no initial call: subscribe, then read
 render(get());
@@ -795,17 +795,17 @@ render(get());
 const { row } = get();
 if (row.status === 'valid') {
   const { error: setError } = set({ fields: { ...row.fields, title: 'Plan B' }, body: row.body });
-  if (setError !== null) show(setError.message);     // Unrepresentable: nothing was accepted
+  if (setError !== null) show(setError.message);     // Unrepresentable: nothing changed
 }
-setText(repairedText);                                // raw input joins the same queue
+setText(repairedText);                                // raw input saves the same way
 retry();                                              // after a failure: save the current text again
-const { error: saveError } = await flush();           // wait until no write runs; never retries
+const { error: saveError } = await waitForSaves();    // wait until no write runs; never retries
 const { error: reloadError } = await reload();        // adopt the file's text, discarding input
 ```
 
 ```text
 get(): { row, save }        one frozen snapshot, the same object until a part changes
-row                         the latest accepted input, always shown
+row                         the latest input, always shown
 |-- valid       { text, fields, body }   the complete parse of text, unknown metadata included
 `-- invalid     { text, error }          Unencodable | NoCanonicalForm | Nonconforming
 save
@@ -823,24 +823,25 @@ save
   reads only `fields` and `body`, so a valid row can be spread back with
   changes. Omitted keys are deleted; nothing is merged from disk or earlier
   input. It formats before returning, so later changes to the caller's
-  objects change nothing held or queued. Schema-invalid values are accepted
+  objects change nothing held or waiting. Schema-invalid values are kept
   and saved; a value with no canonical form, such as `NaN`, is
-  `Unrepresentable` and accepts nothing. `setText` accepts raw text exactly,
-  malformed frontmatter included. Either way the accepted text is the row
-  snapshot before the setter returns.
+  `Unrepresentable` and changes nothing. `setText` takes raw text exactly,
+  malformed frontmatter included. Either way the text is the row snapshot
+  before the setter returns.
 - Canonical form. Declared keys come first in declared order, other keys in
   code unit order, every key quoted and every value in JSON flow style.
   Unknown keys and nested values are kept; comments, quoting, and header line
   endings are not. The body is kept exactly. Acquisition and reload never
   write.
-- Publication. One write runs at a time, and the latest input accepted while
-  it runs is written when it settles, whether it saved or failed; input a
-  newer setter replaced first is never written. A running write is never
+- Writes. One write runs at a time. Only the latest text set while it runs
+  waits, and it is written when the running write completes, whether that
+  saved or failed; text a newer setter replaced first is never written. A
+  running write is never
   cancelled, and its receipt never replaces newer input. Each write is an
   unguarded `replace` of the existing row. Nothing orders it against other
   editors, handles, or pages: the last save to land stays, and a write that
   hashed or travelled longer can land after a save asked for later. A
-  deletion before publication yields `NotFound` without recreating the row,
+  deletion before the write yields `NotFound` without recreating the row,
   where storage holds `replace` to that: [Files](#files) names each
   platform's guarantee and native replacement being unavailable on Windows.
 - Failure. `save` reports the latest attempt. A failure with input waiting
@@ -851,18 +852,18 @@ save
   `Unconfirmed` may have landed: present it as uncertainty; no later read
   confirms it. Raw text with a lone surrogate is held as invalid and fails
   its turn with `Unencodable` rather than writing lossy bytes.
-- `flush()` waits until no write runs or waits, through every write of input
-  accepted meanwhile, a subscriber's included. It returns `Ok` when the last
-  attempt saved and its error when it failed, at once when nothing is
+- `waitForSaves()` waits until no write runs or waits, through every write
+  of input set meanwhile, a subscriber's included. It returns `Ok` when the
+  last attempt saved and its error when it failed, at once when nothing is
   writing. It never starts a write.
-- `reload()` is the only read after acquisition. It waits as `flush` does,
-  then reads the row. On success the file's text becomes the row and `save`
+- `reload()` is the only read after acquisition. It waits as `waitForSaves`
+  does, then reads the row. On success the file's text becomes the row and `save`
   becomes `idle`: retained input and its failure are discarded on purpose.
   A failed read is its `TableReadError` and changes nothing: the row stays
-  visible and editable. Input accepted after the call, the same text
-  included, or a `retry`, makes it `InputChanged`, and the newer input
-  stands. When reloads overlap, the latest call decides and the earlier
-  ones settle with its result. Discarding a held `Unconfirmed` failure does
+  visible and editable. A setter after the call, the same text included, or
+  a `retry`, makes it `InputChanged`, and the newer input stands. When
+  reloads overlap, the latest call decides and the earlier ones resolve with
+  its result. Discarding a held `Unconfirmed` failure does
   not confirm or cancel that earlier write; `idle` describes later writes
   only.
 - Subscription. `subscribe(invalidate)` makes no initial call. It hears
@@ -873,7 +874,7 @@ save
 - Retention. Methods close over the editor and never read `this`, so they
   can be destructured or passed as handlers. The application keeps the owner
   through pending or failed writes. Before closing the folder or moving the
-  row, it stops input and awaits `flush()`; on failure it retries, reloads,
+  row, it stops input and awaits `waitForSaves()`; on failure it retries, reloads,
   or releases the owner.
 
 `table.update` and `table.replace` keep their own conditional,
@@ -889,8 +890,8 @@ it. The rest of `evidence/edit-handle/` is an earlier, historical editor.
 ### Editing a row in Svelte
 
 `@epicenter/folder/svelte` exports `fromRowEditor` and `ReactiveRowEditor`
-over the row editor's `get`, `subscribe`, `set`, `setText`, `retry`, `flush`,
-and `reload`.
+over the row editor's `get`, `subscribe`, `set`, `setText`, `retry`,
+`waitForSaves`, and `reload`.
 Svelte 5.9 or later is an optional peer; no other entry loads it.
 
 ```svelte
@@ -909,7 +910,7 @@ Svelte 5.9 or later is an optional peer; no other entry loads it.
   function setTitle(title: string) {
     if (editor.row.status !== 'valid' || rawMode) return; // only while the fields view exists
     const { error } = editor.set({ fields: { ...editor.row.fields, title }, body: editor.row.body });
-    if (error !== null) showRefusal(error);      // nothing was accepted
+    if (error !== null) showRefusal(error);      // nothing changed
   }
   function text() {
     return lf(editor.row.text);
@@ -948,7 +949,7 @@ Svelte 5.9 or later is an optional peer; no other entry loads it.
   watches nothing. Reads outside any effect or derived subscribe to nothing.
   Read the native `rowEditor.get()` imperatively for nonreactive work. A
   destructured `row` is a snapshot, not a tracked read.
-- Commands. `set`, `setText`, `retry`, `flush`, and `reload` are the owner's
+- Commands. `set`, `setText`, `retry`, `waitForSaves`, and `reload` are the owner's
   own functions, safe to pass as handlers. Adapting the same owner again
   returns the same wrapper. Switching a view to another owner ends the
   subscription to the first; its admitted writes finish.
@@ -977,7 +978,7 @@ Svelte 5.9 or later is an optional peer; no other entry loads it.
   save wrote in LF turns CRLF after a raw edit and LF again after the next
   structured save. Text with mixed line endings comes back uniform from any
   textarea edit; the textarea cannot report which line had which.
-- Refusal. A refused `set` accepts nothing. Where a control can hold input
+- Refusal. A refused `set` changes nothing. Where a control can hold input
   the codec refuses, retain that field locally for correction. Ordinary row
   bindings submit immediately to the owner and need no second whole-row draft.
 - Lifetime. Unmounting ends the subscription only. Admitted writes, a failed
@@ -1093,8 +1094,8 @@ content independently. A checkbox can submit immediately and display confirmed
 data until success. A title input can bind to local state and save on blur,
 debounce, or an explicit action. A document can keep a complete-source buffer.
 The folder requires no timer, UI binding, or shared editor controller. A form
-that owns one row's complete input can use `table.edit`, which accepts each
-input at once and publishes it in order over the existing row; see
+that owns one row's complete input can use `table.edit`, which takes each
+input at once and writes the latest over the existing row; see
 [Editing a row](#editing-a-row).
 
 An application may replace local input whenever it reads external content,

@@ -22,7 +22,7 @@ names are history, not compatibility APIs.
 ```ts
 const { data: editor, error } = await folder.tables.todos.edit(stem, { signal });
 if (error !== null) return showAcquisitionFailure(error); // Aborted, NotFound, InvalidUtf8, InvalidPath, Io, ...
-const { get, subscribe, set, setText, retry, flush, reload } = editor;
+const { get, subscribe, set, setText, retry, waitForSaves, reload } = editor;
 
 const stop = subscribe(() => render(get())); // no initial call; reads nothing
 render(get());
@@ -35,10 +35,10 @@ function onTitle(title: string) {
 	const { row } = get();
 	if (row.status !== 'valid' || showingSource) return; // the fields view is not shown
 	const { error: setError } = set({ fields: { ...row.fields, title }, body: row.body });
-	if (setError !== null) showRefusal(setError); // Unrepresentable: nothing accepted
+	if (setError !== null) showRefusal(setError); // Unrepresentable: nothing changed
 }
 
-// The source view submits raw text, valid or not, through the same queue.
+// The source view submits raw text, valid or not, saved the same way.
 function onSource(typed: string) {
 	const { row } = get();
 	if (row.status === 'valid' && !showingSource) return; // the fields view is shown
@@ -52,11 +52,11 @@ onReload(async () => {
 	const { error: reloadError } = await reload(); // InputChanged, NotFound, InvalidUtf8, Io, ...
 	if (reloadError !== null) showReloadFailure(reloadError); // the row and save state stay
 });
-const { error: saveError } = await flush(); // before leaving: wait until no write runs; never retries
+const { error: saveError } = await waitForSaves(); // before leaving: wait until no write runs; never retries
 ```
 
 `canonical-callers.md` shows these in vanilla DOM, Solid, and Svelte views,
-and an owner that leaves a row by stopping input, then awaiting `flush`, and
+and an owner that leaves a row by stopping input, then awaiting `waitForSaves`, and
 asking before it drops input whose save failed.
 
 ## What replaced the retired editor
@@ -64,13 +64,13 @@ asking before it drops input whose save failed.
 | Retired | Now |
 | --- | --- |
 | `change({ fields })`, a partial merge into a draft | `set({ fields, body })`: the complete row; omitted keys are deleted |
-| `save()`, refusing schema-invalid drafts | Every accepted input is published in order; schema-invalid input is saved and the row is `invalid` |
+| `save()`, refusing schema-invalid drafts | Input saves automatically; schema-invalid input is saved and the row is `invalid` |
 | One admitted save; `Saving` refused the next | One running write and the latest input after it; newer input replaces the waiting one |
-| `baseline`, `isDirty` | None. `get().row` is the accepted input; `save` says whether it is written |
+| `baseline`, `isDirty` | None. `get().row` is the latest input; `save` says whether it is written |
 | `observation` beside the draft, `refresh()` | None. The editor never reads on its own; `reload()` adopts the file's text unless the input changed meanwhile, and a failed read changes nothing |
 | `adopt(reviewed)`, "Take this version" | `reload()` discards retained input and its failure on purpose |
 | `lastSave` outcomes | `save`: `idle`, `saving` with an optional previous error, or `failed`; newer input saves automatically and success clears the error |
-| `dispose()` | None. Nothing watches; admitted writes settle whether or not anything holds the editor |
+| `dispose()` | None. Nothing watches; started writes finish whether or not anything holds the editor |
 | Acquisition refused `NoCanonicalForm` and `InvalidSource` | Readable text always opens; such a row is `invalid` and repaired with `setText` |
 | `subscribe(listener)` called with the state at once | `subscribe(invalidate)` makes no initial call; read the snapshot with `get` |
 | A save recreated a removed row | Every write replaces an existing row; a removed row is `NotFound` and stays absent |

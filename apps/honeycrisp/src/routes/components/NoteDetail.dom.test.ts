@@ -234,7 +234,7 @@ test('switching between rich text and Source, or typing a title, keeps the one r
 	await tick();
 	expect(titleOf(a)).toBe('Retitled');
 	expect(only(target, '[aria-label="Note text"]')).toBe(rich);
-	await a.flush();
+	await a.waitForSaves();
 	flushSync();
 	expect(rich.isConnected).toBe(true);
 });
@@ -252,7 +252,7 @@ test('another program’s change shows only on Reload file, and with text not sa
 
 	failWrites();
 	type(title, 'Mine');
-	await a.flush();
+	await a.waitForSaves();
 	await tick();
 	click(target, 'Reload file');
 	flushSync();
@@ -282,7 +282,7 @@ test('a failed save stays visible during a held later edit, and its successful s
 	const status = only(target, '[data-testid="draft-status"]');
 	failWrites();
 	type(title, 'First');
-	await a.flush();
+	await a.waitForSaves();
 	await tick();
 	expect(status.getAttribute('data-status')).toBe('failed');
 	expect(buttonNamed(target, 'Try again')).toBeDefined();
@@ -300,7 +300,7 @@ test('a failed save stays visible during a held later edit, and its successful s
 	} finally {
 		release({ all: true });
 	}
-	expect((await a.flush()).error).toBeNull();
+	expect((await a.waitForSaves()).error).toBeNull();
 	flushSync();
 	expect(text('notes/a.md')).toContain('"title": "Second"');
 	expect(status.getAttribute('data-status')).toBe('saved');
@@ -314,7 +314,7 @@ test('a save that finds no file offers Save as a note at once and keeps the text
 	expect(buttonNamed(target, 'Save as a note')).toBeUndefined();
 	drop('notes/a.md');
 	type(title, 'Kept');
-	expect((await a.flush()).error?.name).toBe('NotFound');
+	expect((await a.waitForSaves()).error?.name).toBe('NotFound');
 	await tick();
 	// The failed save alone offers it: no reload ran and no path change is tracked.
 	expect(a.reloadError).toBeUndefined();
@@ -328,7 +328,7 @@ test('a save that finds no file offers Save as a note at once and keeps the text
 	// Another program puts the file back, and the next edit saves over it.
 	put('notes/a.md', noteText({ title: 'Outside' }));
 	type(title, 'Kept again');
-	expect((await a.flush()).error).toBeNull();
+	expect((await a.waitForSaves()).error).toBeNull();
 	await tick();
 	expect(text('notes/a.md')).toContain('"title": "Kept again"');
 	expect(status.getAttribute('data-status')).toBe('saved');
@@ -371,7 +371,7 @@ test('the file view shows LF, writes the file’s own line endings, and its cont
 	type(file, file.value.replace('Body.', 'Body typed.'));
 	flushSync();
 	expect(c.row.text).toBe(crlf.replace('Body.', 'Body typed.'));
-	expect((await c.flush()).error).toBeNull();
+	expect((await c.waitForSaves()).error).toBeNull();
 	expect(text('notes/c.md')).toBe(crlf.replace('Body.', 'Body typed.'));
 
 	click(target, 'Open as note');
@@ -390,7 +390,7 @@ test('the note status names an unconfirmed save in the folder’s own words', as
 	);
 	loseReplies();
 	type(title, 'Maybe saved');
-	await a.flush();
+	await a.waitForSaves();
 	flushSync();
 	const { save } = a;
 	if (save.status !== 'failed') throw new Error('Expected a stopped save');

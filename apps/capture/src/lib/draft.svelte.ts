@@ -638,7 +638,7 @@ export function createDraft(
 			const result = await hold(
 				'restoring',
 				async (current): Promise<Restored> => {
-					await current.flush();
+					await current.waitForSaves();
 					const text = current.row.text;
 					if (!text.isWellFormed()) return { ok: false, message: UNENCODABLE };
 					let written: Written;
@@ -697,7 +697,7 @@ export function createDraft(
 			const token = {};
 			reviewing = token;
 			return admit(async () => {
-				await current.flush();
+				await current.waitForSaves();
 				return readForDeletion(token, undefined);
 			});
 		},
@@ -766,7 +766,7 @@ export function createDraft(
 		 */
 		copying<T>(task: (source: string) => Promise<T>): Promise<T | undefined> {
 			return hold('copying', async (current) => {
-				await current.flush();
+				await current.waitForSaves();
 				return task(current.row.text);
 			});
 		},
@@ -779,7 +779,7 @@ export function createDraft(
 		 */
 		async settle(): Promise<boolean> {
 			await drainWork();
-			await editor?.flush();
+			await editor?.waitForSaves();
 			await drainWork();
 			return !unsettled();
 		},

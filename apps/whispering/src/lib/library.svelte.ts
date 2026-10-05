@@ -742,8 +742,8 @@ export function createLibrary(workspace: Workspace) {
 			return settleDraft(path);
 		}
 		if (slot?.kind === 'open') {
-			const { error: flushError } = await slot.editing.flush();
-			return flushError === null ? Ok(undefined) : Err(UNSETTLED);
+			const { error: saveError } = await slot.editing.waitForSaves();
+			return saveError === null ? Ok(undefined) : Err(UNSETTLED);
 		}
 		const editor = textDraftAt(path);
 		if (editor === undefined) return Ok(undefined);
@@ -2683,7 +2683,7 @@ export function createLibrary(workspace: Workspace) {
 				// never tried again for the person; with autosave paused, typing in
 				// text drafts is not saved for them either.
 				await Promise.all([
-					...rowEditings().map((editing) => editing.flush()),
+					...rowEditings().map((editing) => editing.waitForSaves()),
 					...(autosave.paused
 						? []
 						: textEditors().map((editor) => editor.settle())),
@@ -3281,7 +3281,7 @@ export function createLibrary(workspace: Workspace) {
 			await input.saved();
 			// A row still opening is never handed a view: its opening is aborted.
 			lifetime.abort();
-			await Promise.all(rowEditings().map((editing) => editing.flush()));
+			await Promise.all(rowEditings().map((editing) => editing.waitForSaves()));
 			for (const editing of rowEditings()) editing.release();
 			for (const editor of textEditors()) {
 				await editor.settle();

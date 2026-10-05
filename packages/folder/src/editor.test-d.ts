@@ -55,7 +55,7 @@ export async function callSite() {
 		}
 		return;
 	}
-	const { get, set, setText, retry, flush, reload, subscribe } = editor;
+	const { get, set, setText, retry, waitForSaves, reload, subscribe } = editor;
 
 	const { row, save } = get();
 	switch (row.status) {
@@ -83,7 +83,7 @@ export async function callSite() {
 		default:
 			row satisfies never;
 	}
-	// Every row exposes its accepted text; storage never hides it.
+	// Every row exposes its text; storage never hides it.
 	row.text satisfies string;
 	// @ts-expect-error there is no unreadable row
 	row.status === 'unreadable';
@@ -100,7 +100,7 @@ export async function callSite() {
 
 	expectTypeOf(setText('---\n---\n')).toEqualTypeOf<void>();
 	expectTypeOf(retry()).toEqualTypeOf<void>();
-	expectTypeOf(flush()).toEqualTypeOf<
+	expectTypeOf(waitForSaves()).toEqualTypeOf<
 		Promise<Result<undefined, RowSaveError>>
 	>();
 	expectTypeOf(reload()).toEqualTypeOf<
@@ -123,6 +123,8 @@ export async function callSite() {
 	editor.refresh;
 	// @ts-expect-error there is no disposal protocol
 	editor.dispose;
+	// @ts-expect-error waitForSaves replaced flush
+	editor.flush;
 
 	// @ts-expect-error only declared tables have editors
 	folder.tables.notes.edit('plan');

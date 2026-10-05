@@ -358,7 +358,7 @@ test('a rich-text edit whose save failed is kept, with its undo history, when th
 	const { gate, disk, notes, draft, rich, prompts } = await editingNote();
 	disk.failWrites();
 	expect(rich.apply(rich.state.tr.insertText('mine ', 1))).toBeDefined();
-	await draft.flush();
+	await draft.waitForSaves();
 	expect(draft.status).toBe('failed');
 	const mine = draft.row.text;
 	const history = undoDepth(rich.state);

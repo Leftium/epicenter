@@ -19,7 +19,7 @@
  * - a failure shows until the next input saves; Retry saves the same text again
  *
  * See also:
- * - `../editor.test.ts` for the owner's queue, flush, and reload rules
+ * - `../editor.test.ts` for the owner's writes, waitForSaves, and reload rules
  */
 import { expect, test } from 'bun:test';
 import type { Component } from 'svelte';
@@ -109,13 +109,13 @@ test('reads outside effects subscribe to nothing; mounted views share one subscr
 		'set',
 		'setText',
 		'retry',
-		'flush',
+		'waitForSaves',
 		'reload',
 	]);
 	expect(reactive.set).toBe(editor.set);
 	expect(reactive.setText).toBe(editor.setText);
 	expect(reactive.retry).toBe(editor.retry);
-	expect(reactive.flush).toBe(editor.flush);
+	expect(reactive.waitForSaves).toBe(editor.waitForSaves);
 	expect(reactive.reload).toBe(editor.reload);
 	expect(reactive.row).toBe(editor.get().row);
 	expect(reactive.save).toBe(editor.get().save);

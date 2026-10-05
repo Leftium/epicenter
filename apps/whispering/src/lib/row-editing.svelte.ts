@@ -340,7 +340,8 @@ export function createRowEditing<TFields>(
 			return true;
 		},
 		/** Wait for the writes already admitted. Never saves anything again. */
-		flush: (): Promise<Result<undefined, RowSaveError>> => native.flush(),
+		waitForSaves: (): Promise<Result<undefined, RowSaveError>> =>
+			native.waitForSaves(),
 		/**
 		 * Put the row down: it takes no input. A write already admitted still
 		 * settles in the editor.

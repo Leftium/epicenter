@@ -70,7 +70,7 @@ async function eventually(settled: () => boolean) {
 
 /** Wait for admitted writes. Answers why the latest did not land. */
 async function written(todo: TodoEditor) {
-	const { error } = await todo.editor.flush();
+	const { error } = await todo.editor.waitForSaves();
 	return error === null ? undefined : error.name;
 }
 

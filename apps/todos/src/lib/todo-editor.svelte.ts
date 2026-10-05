@@ -138,7 +138,7 @@ export function createTodoEditor(
 
 	/** Whether admitted writes all landed and no field is refused. Never retries. */
 	async function flushed(): Promise<boolean> {
-		const { error } = await editor.flush();
+		const { error } = await editor.waitForSaves();
 		return error === null && !hasRefusals();
 	}
 
@@ -311,7 +311,7 @@ export function createTodoEditor(
 			});
 			if (unrepresentable !== null)
 				return `This value cannot be saved: ${unrepresentable.refusal.reason}.`;
-			const { error } = await editor.flush();
+			const { error } = await editor.waitForSaves();
 			return error === null ? undefined : describeSaveError(error);
 		},
 		/**

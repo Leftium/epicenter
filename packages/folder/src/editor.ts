@@ -1,10 +1,10 @@
 /**
- * Row editors: the accepted complete input of one table row and one queue
- * that publishes it.
+ * Row editors: the latest complete input of one table row and the writes
+ * that save it.
  *
  *     const { data: editor, error } = await folder.tables.todos.edit(stem, { signal });
  *     if (error !== null) return showOpenError(error);
- *     const { get, subscribe, set, setText, retry, flush, reload } = editor;
+ *     const { get, subscribe, set, setText, retry, waitForSaves, reload } = editor;
  *
  * The table that owns the row supplies its path, schema, and declared field
  * order, so an editor is acquired only through `table.edit`. Acquisition
@@ -19,25 +19,24 @@
  *
  * The snapshot holds two facts:
  *
- * - `row`: the latest accepted input, from acquisition, a setter, or a
- *   successful `reload`. It is always shown; storage never hides it.
+ * - `row`: the latest input, from acquisition, a setter, or a successful
+ *   `reload`. It is always shown; storage never hides it.
  * - `save`: the outcome of the latest attempt. One write runs at a time, and
- *   the latest input accepted while it runs follows it.
+ *   only the latest text given while it runs waits to follow it.
  *
- * `set` and `setText` accept input synchronously. Before either returns, the
- * accepted text is the row snapshot and its write has started or is waiting
- * for the running one: `save` is `saving` until no write runs and none
- * waits, with no idle gap between consecutive writes. Input that a newer
- * setter replaces before its turn is never written. When a write settles,
- * failed or not, the waiting input starts next; a failure with nothing
- * waiting ends `failed` until the next input or `retry` starts another
- * write. Every write replaces the existing row, so a row deleted before
- * publication is `NotFound` and never recreated.
+ * `set` and `setText` take input synchronously. Before either returns, its
+ * text is the row snapshot and its write has started or is waiting for the
+ * running one: `save` is `saving` until no write runs and none waits, with
+ * no idle gap between consecutive writes. Text that a newer setter replaces
+ * before its turn is never written. When a write completes, failed or not,
+ * the waiting text starts next; a failure with nothing waiting ends `failed`
+ * until the next input or `retry` starts another write. Every write
+ * replaces the existing row, so a row deleted before its write is
+ * `NotFound` and never recreated.
  *
  * The editor never reads storage on its own. It does not watch change hints,
  * and subscribers hear only changes to the snapshot in memory. `reload` is
- * the only read after acquisition. Publication never depends on a
- * subscriber.
+ * the only read after acquisition. Writes never depend on a subscriber.
  *
  * Methods close over the editor; none reads `this`, so destructuring them is
  * safe. One editor may serve several views; each view subscribes on its own.
@@ -68,7 +67,7 @@ export const RowEditorError = defineErrors({
 		message: `Opening '${path}' was aborted`,
 		path,
 	}),
-	/** `set` was given a row with no canonical form. Input and publication are unchanged. */
+	/** `set` was given a row with no canonical form. Input and writes are unchanged. */
 	Unrepresentable: ({
 		path,
 		refusal,
@@ -117,8 +116,8 @@ export const RowEditorError = defineErrors({
 		reading,
 	}),
 	/**
-	 * Input was accepted or a save was admitted while `reload` ran. The file's
-	 * text was not adopted; the newer input and its save state stand.
+	 * A setter or `retry` ran while `reload` ran. The file's text was not
+	 * adopted; the newer input and its save state stand.
 	 */
 	InputChanged: ({ path }: { path: string }) => ({
 		message: `'${path}' changed in the editor while it was being reloaded`,
@@ -138,12 +137,12 @@ type RowEditorErrorOf<TName extends RowEditorError['name']> = Extract<
  */
 export type TableEditError = TableReadError | RowEditorErrorOf<'Aborted'>;
 
-/** Why accepted input supports raw repair but no structured form. */
+/** Why the input supports raw repair but no structured form. */
 export type RowError = RowEditorErrorOf<
 	'Unencodable' | 'NoCanonicalForm' | 'Nonconforming'
 >;
 
-/** Why `set` accepted nothing. */
+/** Why `set` changed nothing. */
 export type RowSetError = RowEditorErrorOf<'Unrepresentable'>;
 
 /**
@@ -156,7 +155,7 @@ export type RowSaveError = FileError | RowEditorErrorOf<'Unencodable'>;
 export type RowReloadError = TableReadError | RowEditorErrorOf<'InputChanged'>;
 
 /**
- * The latest accepted input. Both variants derive wholly from one text;
+ * The latest input. Both variants derive wholly from one text;
  * `valid` adds its complete parse, unknown metadata included.
  */
 export type RowState<TFields> =
@@ -203,17 +202,17 @@ export type RowEditor<TFields> = {
 	 */
 	subscribe(invalidate: () => void): () => void;
 	/**
-	 * Accept a complete row: every field to keep and the body. Only `fields`
+	 * Set a complete row: every field to keep and the body. Only `fields`
 	 * and `body` are read, so a valid row can be passed back with changes;
 	 * its `status` and `text` are ignored. Omitted keys are deleted; nothing
 	 * is merged from disk or earlier input. The values are formatted
 	 * canonically before this returns, so later changes to the caller's
-	 * objects change nothing held or queued. Schema-invalid values are
-	 * accepted and saved; `Unrepresentable` accepts nothing.
+	 * objects change nothing held or waiting. Schema-invalid values are
+	 * kept and saved; `Unrepresentable` changes nothing.
 	 */
 	set(next: CanonicalDocument): Result<undefined, RowSetError>;
 	/**
-	 * Accept raw text exactly as given, malformed frontmatter included. Text
+	 * Set raw text exactly as given, malformed frontmatter included. Text
 	 * UTF-8 cannot encode exactly is held as invalid input and fails its
 	 * turn with `Unencodable` instead of writing lossy bytes.
 	 */
@@ -225,17 +224,17 @@ export type RowEditor<TFields> = {
 	 */
 	retry(): void;
 	/**
-	 * Wait until no write runs or waits, including writes of input accepted
+	 * Wait until no write runs or waits, including writes of input set
 	 * meanwhile, a subscriber's included. `Ok` when the last attempt saved;
 	 * its error when it failed, at once if no write runs. Never starts a write.
 	 */
-	flush(): Promise<Result<undefined, RowSaveError>>;
+	waitForSaves(): Promise<Result<undefined, RowSaveError>>;
 	/**
 	 * Read the row again and adopt its text, discarding retained input and
-	 * any save failure. It first waits as `flush` does. A read failure adopts
-	 * nothing and leaves `row` and `save` as they are. Input accepted, or a
-	 * `retry`, after the call is `InputChanged`: the newer input stands. When
-	 * reloads overlap, the latest call decides, and the earlier ones settle
+	 * any save failure. It first waits as `waitForSaves` does. A read failure
+	 * adopts nothing and leaves `row` and `save` as they are. A setter or
+	 * `retry` after the call is `InputChanged`: the newer input stands. When
+	 * reloads overlap, the latest call decides, and the earlier ones resolve
 	 * with its result.
 	 */
 	reload(): Promise<Result<undefined, RowReloadError>>;
@@ -310,11 +309,12 @@ function createRowEditor<TFields>(
 	const { path } = row;
 
 	/**
-	 * The complete interpretation of one text, whichever setter supplied it.
-	 * Valid fields and body come from that text's own parse, so they always
+	 * The complete parse of one text, whichever setter supplied it: whether it
+	 * has a canonical form and whether its declared fields conform. Valid
+	 * fields and body come from that text's own parse, so they always
 	 * describe it.
 	 */
-	function interpret(text: string): RowState<TFields> {
+	function parseRow(text: string): RowState<TFields> {
 		if (!text.isWellFormed())
 			return Object.freeze({
 				status: 'invalid',
@@ -363,7 +363,7 @@ function createRowEditor<TFields>(
 
 	// --- The snapshot ----------------------------------------------------
 
-	let state: State = Object.freeze({ row: interpret(acquired), save: IDLE });
+	let state: State = Object.freeze({ row: parseRow(acquired), save: IDLE });
 
 	const subscribers = new Set<{ readonly invalidate: () => void }>();
 	let delivering = false;
@@ -404,29 +404,32 @@ function createRowEditor<TFields>(
 		}
 	}
 
-	// --- Publication -----------------------------------------------------
+	// --- Writes ----------------------------------------------------------
 
 	/**
 	 * The one running write. Defined exactly while `save` is `saving`; it
-	 * settles after `settle` has installed whatever follows it.
+	 * resolves after whatever follows it is installed.
 	 */
 	let writeInFlight: Promise<void> | undefined;
-	/** The latest input accepted while a write runs, written when it settles. */
+	/** The latest text set while a write runs, written when it completes. */
 	let pendingText: string | undefined;
 	// Counts setters and retries, which a reload must not overwrite even when
 	// they leave the snapshot as it was.
 	let inputRevision = 0;
 
-	function accept(text: string) {
+	function setText(text: string) {
 		inputRevision += 1;
-		const accepted = interpret(text);
+		const next = parseRow(text);
 		if (writeInFlight !== undefined) {
 			pendingText = text;
-			commit({ row: accepted });
+			commit({ row: next });
 		} else {
 			commit({
-				row: accepted,
-				save: start(text, state.save.status === 'idle' ? undefined : state.save.error),
+				row: next,
+				save: startWrite(
+					text,
+					state.save.status === 'idle' ? undefined : state.save.error,
+				),
 			});
 		}
 	}
@@ -435,21 +438,41 @@ function createRowEditor<TFields>(
 	 * Start writing `text`, or fail at once when no bytes encode it exactly.
 	 * The write is installed before this returns, so before any subscriber
 	 * hears the state that names it.
+	 *
+	 * When the write completes, failed or not, the waiting text starts next;
+	 * with nothing waiting, its outcome is the save state. The next write is
+	 * installed before subscribers hear anything, so input they set waits
+	 * behind it.
 	 */
-	function start(text: string, previousError?: RowSaveError): SaveState {
+	function startWrite(text: string, previousError?: RowSaveError): SaveState {
 		if (!text.isWellFormed())
 			return Object.freeze({
 				status: 'failed',
 				error: RowEditorError.Unencodable({ path }).error,
 			});
-		writeInFlight = publish(text).then(settle);
+		writeInFlight = write(text).then((error) => {
+			writeInFlight = undefined;
+			const next = pendingText;
+			pendingText = undefined;
+			if (next === undefined) {
+				commit({
+					save:
+						error === null ? IDLE : Object.freeze({ status: 'failed', error }),
+				});
+				return;
+			}
+			// Keep a failed attempt visible while the newer document saves.
+			// A successful attempt clears any previous failure.
+			if (error !== null) log.warn(error);
+			commit({ save: startWrite(next, error ?? undefined) });
+		});
 		return previousError === undefined
 			? SAVING
 			: Object.freeze({ status: 'saving', error: previousError });
 	}
 
 	/** Write one capture over the existing row. Never throws. */
-	async function publish(text: string): Promise<RowSaveError | null> {
+	async function write(text: string): Promise<RowSaveError | null> {
 		let bytes: Uint8Array;
 		let sha256: string;
 		try {
@@ -470,34 +493,13 @@ function createRowEditor<TFields>(
 		} catch (cause) {
 			// Storage reports outcomes as Results; a throw is a bug whose write
 			// may or may not have landed.
-			log.error(new Error(`Publishing '${path}' threw.`, { cause }));
+			log.error(new Error(`Writing '${path}' threw.`, { cause }));
 			return FileError.Unconfirmed({ path, operation: 'replace', cause }).error;
 		}
 	}
 
-	/**
-	 * Settle the running write, failed or not: start the waiting input, or
-	 * report this outcome. The next write is installed before subscribers
-	 * hear anything, so input they accept waits behind it.
-	 */
-	function settle(error: RowSaveError | null) {
-		writeInFlight = undefined;
-		const next = pendingText;
-		pendingText = undefined;
-		if (next === undefined) {
-			commit({
-				save: error === null ? IDLE : Object.freeze({ status: 'failed', error }),
-			});
-			return;
-		}
-		// Keep a failed attempt visible while the newer document saves.
-		// A successful attempt clears any previous failure.
-		if (error !== null) log.warn(error);
-		commit({ save: start(next, error ?? undefined) });
-	}
-
 	/** Wait until no write runs or waits, then report the latest attempt. */
-	async function flush(): Promise<Result<undefined, RowSaveError>> {
+	async function waitForSaves(): Promise<Result<undefined, RowSaveError>> {
 		while (writeInFlight !== undefined) await writeInFlight;
 		const { save } = state;
 		return save.status === 'failed' ? Err(save.error) : Ok(undefined);
@@ -505,25 +507,7 @@ function createRowEditor<TFields>(
 
 	// --- Reload ----------------------------------------------------------
 
-	/**
-	 * Wait as `flush` does, then read the row, unless input changed since the
-	 * call. `before` is the snapshot the read began in.
-	 */
-	async function readAfterWrites(
-		revision: number,
-	): Promise<Result<{ text: string; before: State }, RowReloadError>> {
-		// A failure is fine: adoption discards it explicitly. With nothing
-		// writing, the read starts before this returns.
-		if (writeInFlight !== undefined) await flush();
-		if (inputRevision !== revision || writeInFlight !== undefined)
-			return RowEditorError.InputChanged({ path });
-		const before = state;
-		const { data: text, error } = await readText(row);
-		if (error !== null) return Err(error);
-		return Ok({ text, before });
-	}
-
-	/** The latest `reload` call. An earlier call that overlaps it settles with its result. */
+	/** The latest `reload` call. An earlier call that overlaps it resolves with its result. */
 	let latestReload: Promise<Result<undefined, RowReloadError>> =
 		Promise.resolve(Ok(undefined));
 
@@ -545,31 +529,40 @@ function createRowEditor<TFields>(
 			);
 			if (refusal !== null)
 				return RowEditorError.Unrepresentable({ path, refusal });
-			accept(text);
+			setText(text);
 			return Ok(undefined);
 		},
-		setText: accept,
+		setText,
 		retry(): void {
 			if (state.save.status !== 'failed') return;
 			inputRevision += 1;
-			commit({ save: start(state.row.text, state.save.error) });
+			commit({ save: startWrite(state.row.text, state.save.error) });
 		},
-		flush,
+		waitForSaves,
 		reload(): Promise<Result<undefined, RowReloadError>> {
-			const reloading: Promise<Result<undefined, RowReloadError>> =
-				readAfterWrites(inputRevision).then(({ data: read, error }) => {
-					if (latestReload !== reloading) return latestReload;
-					if (error !== null) return Err(error);
-					// A setter changes `row`; `retry` changes `save`.
-					if (state !== read.before)
-						return RowEditorError.InputChanged({ path });
-					commit({
-						row:
-							read.text === state.row.text ? state.row : interpret(read.text),
-						save: IDLE,
-					});
-					return Ok(undefined);
+			const revision = inputRevision;
+			const readAndAdopt = async (): Promise<
+				Result<undefined, RowReloadError>
+			> => {
+				// A save failure is fine: adoption discards it explicitly. With
+				// nothing writing, the read starts before `reload` returns.
+				if (writeInFlight !== undefined) await waitForSaves();
+				const read =
+					inputRevision === revision
+						? await readText(row)
+						: RowEditorError.InputChanged({ path });
+				if (latestReload !== reloading) return latestReload;
+				const { data: text, error } = read;
+				if (error !== null) return Err(error);
+				if (inputRevision !== revision)
+					return RowEditorError.InputChanged({ path });
+				commit({
+					row: text === state.row.text ? state.row : parseRow(text),
+					save: IDLE,
 				});
+				return Ok(undefined);
+			};
+			const reloading = readAndAdopt();
 			latestReload = reloading;
 			return reloading;
 		},

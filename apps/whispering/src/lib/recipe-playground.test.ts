@@ -427,7 +427,7 @@ test('what is saved is what was sent: edits to the recipe or the connection whil
 	const id = library.textRuns[0]!.id;
 	editor.setBody('Edited while running.\n');
 	editor.setField('model', 'other');
-	expectOk(await editor.flush());
+	expectOk(await editor.waitForSaves());
 	expect(
 		await library.saveConnection('text', {
 			baseUrl: TEST_BASE_URL,

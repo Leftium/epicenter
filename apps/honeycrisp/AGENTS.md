@@ -84,7 +84,7 @@ against the code. The constraints below apply to every edit here.
   explicit reload succeeds. The latest waiting input proceeds after failure, and later input
   starts another save. Try again (`retry`) resubmits the current text. Present
   unconfirmed as uncertainty, with the folder's own message. Nothing replays
-  an old request, and `flush` waits for every consecutive admitted write and
+  an old request, and `waitForSaves` waits for every consecutive admitted write and
   reports the final outcome.
 - Typed text the editor refuses (a title or Markdown source with an
   unpaired surrogate) stays in its own control with the reason shown, and
@@ -95,7 +95,7 @@ against the code. The constraints below apply to every edit here.
   not invent a table schema for them or introduce a second current-content
   store. Note repair is not one of them.
 - Rename and delete fence the note's input, wait for every admitted write
-  (`flush`), then capture the file; they refuse after a failed save and
+  (`waitForSaves`), then capture the file; they refuse after a failed save and
   when the file is not the text the editor holds. Delete removes exactly the
   capture the person confirmed and reads nothing after the confirmation.
   While a rename or delete is unconfirmed, stopped short, or no longer

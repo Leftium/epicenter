@@ -382,7 +382,7 @@ test('typing in a row whose file was removed blocks the close, stays in the edit
 	const path = join(root, editor.path);
 	await rm(path);
 	editor.setField('title', 'Typed after it was removed');
-	expect((await editor.flush()).error?.name).toBe('NotFound');
+	expect((await editor.waitForSaves()).error?.name).toBe('NotFound');
 
 	await ask();
 
@@ -410,10 +410,10 @@ test('close keeps failed input visible, and typing after Keep working saves agai
 	chmodSync(join(root, 'recordings'), 0o555);
 	try {
 		editor.setField('title', 'Typed before it failed');
-		expect((await editor.flush()).error).not.toBeNull();
+		expect((await editor.waitForSaves()).error).not.toBeNull();
 		expect(editor.status.kind).toBe('failed');
 		editor.setField('title', 'Typed after it failed');
-		expect((await editor.flush()).error).not.toBeNull();
+		expect((await editor.waitForSaves()).error).not.toBeNull();
 	} finally {
 		chmodSync(join(root, 'recordings'), 0o755);
 	}
@@ -433,7 +433,7 @@ test('close keeps failed input visible, and typing after Keep working saves agai
 
 	// Keep working admits later input, which starts another save.
 	editor.setField('title', 'Typed after staying');
-	expectOk(await editor.flush());
+	expectOk(await editor.waitForSaves());
 	expect(editor.status.kind).toBe('saved');
 	expect(await Bun.file(path).text()).toContain('Typed after staying');
 	await ask();
@@ -617,7 +617,7 @@ test('while the person decides nothing new starts, and keep working admits work 
 	await library.createTransformation({ title: 'Clean up', prompt: 'Tidy.\n' });
 	const editor = editingOf(library.selectedTransformation?.slot);
 	editor.setBody('Typed before the close.\n');
-	expectOk(await editor.flush());
+	expectOk(await editor.waitForSaves());
 
 	await ask();
 	expect(answers).toEqual(['asking']);
@@ -652,7 +652,7 @@ test('while the person decides nothing new starts, and keep working admits work 
 	expect(editor.row).toMatchObject({
 		body: 'Typed before the close.\nMore.\n',
 	});
-	expectOk(await editor.flush());
+	expectOk(await editor.waitForSaves());
 	expect(await Bun.file(join(root, editor.path)).text()).toContain('More.');
 	await library.startRecording();
 	expect(library.recorder.phase).toBe('recording');

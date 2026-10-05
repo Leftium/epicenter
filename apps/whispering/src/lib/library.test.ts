@@ -246,7 +246,7 @@ const recordingEditor = (library: Library) => editingOf(recordingSlot(library));
 
 /** Wait until the writes typing started have settled, and expect them saved. */
 async function saved<TFields>(editor: RowEditing<TFields>) {
-	expectOk(await editor.flush());
+	expectOk(await editor.waitForSaves());
 }
 
 test('the first launch creates no files or history, and saving a connection writes nothing to the folder', async () => {
@@ -759,7 +759,7 @@ test('typing in a row removed outside is kept on screen, and saving never create
 	const path = join(root, editor.path);
 	await rm(path);
 	editor.setField('title', 'Mine');
-	expect((await editor.flush()).error?.name).toBe('NotFound');
+	expect((await editor.waitForSaves()).error?.name).toBe('NotFound');
 	await library.refreshAll();
 
 	expect(editor.status.kind).toBe('removed');
@@ -771,7 +771,7 @@ test('typing in a row removed outside is kept on screen, and saving never create
 	]);
 	// Saving again, as the person may ask, fails the same way and creates nothing.
 	expect(editor.retry()).toBeUndefined();
-	expect((await editor.flush()).error?.name).toBe('NotFound');
+	expect((await editor.waitForSaves()).error?.name).toBe('NotFound');
 	expect(await Bun.file(path).exists()).toBe(false);
 
 	// A failed Reload keeps input, including a scalar the row refused.
@@ -3195,7 +3195,7 @@ test('a recording is not deleted while a draft of one of its results holds typin
 	chmodSync(join(root, 'transcriptions'), 0o555);
 	try {
 		draft.setText(`${draft.sourceValue()}Not saved.\n`);
-		expect((await draft.flush()).error).not.toBeNull();
+		expect((await draft.waitForSaves()).error).not.toBeNull();
 	} finally {
 		chmodSync(join(root, 'transcriptions'), 0o755);
 	}

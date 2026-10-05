@@ -486,7 +486,7 @@ test('a row save whose reply the shell never sent stays unknown, and later input
 	});
 
 	editing.setBody('Tidy it.\n');
-	expect((await editing.flush()).error?.name).toBe('Unconfirmed');
+	expect((await editing.waitForSaves()).error?.name).toBe('Unconfirmed');
 	expect(written).toHaveLength(1);
 	expect(editing.status).toMatchObject({
 		kind: 'unconfirmed',
@@ -500,7 +500,7 @@ test('a row save whose reply the shell never sent stays unknown, and later input
 		status: 'valid',
 		body: 'Tidy it more.\n',
 	});
-	expect((await editing.flush()).error?.name).toBe('Unconfirmed');
+	expect((await editing.waitForSaves()).error?.name).toBe('Unconfirmed');
 	expect(editing.holds).toBe(true);
 	expect(written).toHaveLength(2);
 
@@ -508,7 +508,7 @@ test('a row save whose reply the shell never sent stays unknown, and later input
 	// own reply confirms it.
 	loseReplies = false;
 	expect(editing.retry()).toBeUndefined();
-	expect((await editing.flush()).error).toBeNull();
+	expect((await editing.waitForSaves()).error).toBeNull();
 	expect(written).toHaveLength(3);
 	expect(written[2]).toContain('Tidy it more.');
 	expect(editing.status).toEqual({ kind: 'saved' });

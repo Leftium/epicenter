@@ -142,7 +142,7 @@ describe('typing and saving', () => {
 		// The editor holds it now; there is no draft beside it.
 		expect(session.row.text).toBe(saved);
 		expect(session.save.status).toBe('saving');
-		expect((await session.flush()).error).toBeNull();
+		expect((await session.waitForSaves()).error).toBeNull();
 		expect(text(PATH)).toBe(saved);
 		expect(saved).toContain('"owner": {"name": "one", "tags": ["two"]}');
 		expect(saved).not.toContain('# kept');
@@ -158,7 +158,7 @@ describe('typing and saving', () => {
 		});
 		expect(body.input('New body.\n')).toBe(true);
 		expect(body.body).toBe('New body.\n');
-		await session.flush();
+		await session.waitForSaves();
 		expect(text(PATH)).toBe(
 			canonical(
 				noteText(),
@@ -191,7 +191,7 @@ describe('typing and saving', () => {
 		expect(text(PATH)).toBe(canonical(noteText(), { title: 'First' }));
 		expect(session.save.status).toBe('saving');
 		release({ all: true });
-		expect((await session.flush()).error).toBeNull();
+		expect((await session.waitForSaves()).error).toBeNull();
 		// "Second" was superseded before it was attempted.
 		expect(text(PATH)).toBe(canonical(noteText(), { title: 'Third' }));
 		expect(saves).toEqual(['saving', 'idle']);
@@ -202,7 +202,7 @@ describe('typing and saving', () => {
 		expect(session.edit({ fields: { deletedAt: undefined } })).toBeUndefined();
 		// Whole validity decides which view shows; the fields give way to the file.
 		expect(session.row.status).toBe('invalid');
-		await session.flush();
+		await session.waitForSaves();
 		expect(text(PATH)).not.toContain('deletedAt');
 		expect(text(PATH)).toContain('"owner"');
 	});
@@ -213,7 +213,7 @@ describe('a write that does not end saved', () => {
 		const { session, text, failWrites, saves, notes } = await open();
 		failWrites();
 		session.edit({ fields: { title: 'Lost?' } });
-		const { error } = await session.flush();
+		const { error } = await session.waitForSaves();
 		expect(error?.name).toBe('Io');
 		expect(session.save).toMatchObject({
 			status: 'failed',
@@ -229,7 +229,7 @@ describe('a write that does not end saved', () => {
 		expect(fieldsOf(session).title).toBe('Newer');
 		expect(notes()).toBe(attempts + 1);
 		expect(saves).toEqual(['saving', 'failed', 'saving', 'idle']);
-		expect((await session.flush()).error).toBeNull();
+		expect((await session.waitForSaves()).error).toBeNull();
 		expect(text(PATH)).toBe(canonical(noteText(), { title: 'Newer' }));
 		expect(session.status).toBe('saved');
 	});
@@ -238,7 +238,7 @@ describe('a write that does not end saved', () => {
 		const { session, text, loseReplies } = await open();
 		loseReplies();
 		session.edit({ fields: { title: 'Maybe' } });
-		await session.flush();
+		await session.waitForSaves();
 		const { save } = session;
 		if (save.status !== 'failed') throw new Error('expected a failed save');
 		expect(save.error.name).toBe('Unconfirmed');
@@ -251,7 +251,7 @@ describe('a write that does not end saved', () => {
 		loseReplies(false);
 		expect(session.retry()).toBeUndefined();
 		expect(session.save.status).toBe('saving');
-		await session.flush();
+		await session.waitForSaves();
 		expect(session.status).toBe('saved');
 	});
 
@@ -273,11 +273,11 @@ describe('a write that does not end saved', () => {
 		expect(session.showFile(true)).toBeUndefined();
 		failWrites();
 		session.setText(hand);
-		await session.flush();
+		await session.waitForSaves();
 		expect(session.save.status).toBe('failed');
 		failWrites(false);
 		expect(session.retry()).toBeUndefined();
-		await session.flush();
+		await session.waitForSaves();
 		expect(text(PATH)).toBe(hand);
 	});
 
@@ -285,12 +285,12 @@ describe('a write that does not end saved', () => {
 		const { session, text, drop } = await open();
 		drop(PATH);
 		session.edit({ fields: { title: 'Mine' } });
-		expect((await session.flush()).error?.name).toBe('NotFound');
+		expect((await session.waitForSaves()).error?.name).toBe('NotFound');
 		expect(session.missing).toBe(true);
 		expect(fieldsOf(session).title).toBe('Mine');
 		expect(session.edit({ fields: { title: 'More' } })).toBeUndefined();
 		session.retry();
-		expect((await session.flush()).error?.name).toBe('NotFound');
+		expect((await session.waitForSaves()).error?.name).toBe('NotFound');
 		expect(text(PATH)).toBeUndefined();
 	});
 });
@@ -313,7 +313,7 @@ describe('the file changes', () => {
 		const { session, text, put } = await open();
 		put(PATH, noteText({ title: 'Theirs' }));
 		session.edit({ fields: { title: 'Mine' } });
-		await session.flush();
+		await session.waitForSaves();
 		expect(text(PATH)).toBe(canonical(noteText(), { title: 'Mine' }));
 	});
 
@@ -332,7 +332,7 @@ describe('the file changes', () => {
 		const { session, text, failWrites } = await open();
 		failWrites();
 		session.edit({ fields: { title: 'Lost' } });
-		await session.flush();
+		await session.waitForSaves();
 		failWrites(false);
 		expect(await session.reload()).toBeUndefined();
 		expect(session.save.status).toBe('idle');
@@ -344,7 +344,7 @@ describe('the file changes', () => {
 		const { session, put, drop, failWrites } = await open();
 		failWrites();
 		session.edit({ fields: { title: 'Mine' } });
-		await session.flush();
+		await session.waitForSaves();
 		const kept = session.row.text;
 		put(PATH, new Uint8Array([0xff, 0xfe]));
 		expect(await session.reload()).toContain('not UTF-8');
@@ -376,13 +376,13 @@ describe('input the row editor cannot take', () => {
 		expect(session.showFile(true)).toContain('the title');
 		// Other fields go on saving.
 		expect(session.edit({ fields: { pinned: true } })).toBeUndefined();
-		await session.flush();
+		await session.waitForSaves();
 		expect(session.refused.title).toBeDefined();
 		expect(
 			session.edit({ fields: { title: 'a' } }, { keep: true }),
 		).toBeUndefined();
 		expect(session.refused.title).toBeUndefined();
-		await session.flush();
+		await session.waitForSaves();
 		expect(text(PATH)).toBe(
 			canonical(noteText(), { title: 'a', pinned: true }),
 		);
@@ -433,7 +433,7 @@ describe('the file view', () => {
 		// The file view stays after the text reads as a note again.
 		expect(session.rawMode).toBe(true);
 		expect(session.row).toMatchObject({ status: 'valid' });
-		await session.flush();
+		await session.waitForSaves();
 		expect(text(PATH)).toBe(fixed);
 		expect(session.showFile(false)).toBeUndefined();
 		expect(session.edit({ fields: { title: 'Again' } })).toBeUndefined();
@@ -443,7 +443,7 @@ describe('the file view', () => {
 		const { session, text } = await open();
 		session.showFile(true);
 		session.setText('---\ntitle: [\n');
-		await session.flush();
+		await session.waitForSaves();
 		expect(text(PATH)).toBe('---\ntitle: [\n');
 		expect(session.showFile(false)).toContain('cannot be opened as a note yet');
 	});
@@ -459,14 +459,14 @@ describe('fences and release', () => {
 		expect(session.edit({ fields: { title: 'After' } })).toContain('closing');
 		expect(session.retry()).toContain('closing');
 		expect(await session.reload()).toContain('closing');
-		let flushed = false;
-		void session.flush().then(() => {
-			flushed = true;
+		let saved = false;
+		void session.waitForSaves().then(() => {
+			saved = true;
 		});
 		await settle();
-		expect(flushed).toBe(false);
+		expect(saved).toBe(false);
 		release({ all: true });
-		await until(() => flushed, 'the flush');
+		await until(() => saved, 'the wait for saves');
 		expect(text(PATH)).toBe(canonical(noteText(), { title: 'Typed' }));
 	});
 
@@ -502,7 +502,7 @@ describe('fences and release', () => {
 		expect(notes()).toBe(0);
 		expect(session.saveHere()).toBeUndefined();
 		expect(session.hold).toBeUndefined();
-		await session.flush();
+		await session.waitForSaves();
 		expect(notes()).toBe(1);
 		expect(session.edit({ fields: { title: 'x' } })).toBeUndefined();
 	});

@@ -981,7 +981,7 @@ export function createNotes(host: NotesHost) {
 				noteActionProblem(session, listed) ??
 				session.edit({ fields: owned as Partial<NoteFields> });
 			if (problem !== undefined) return problem;
-			const { error } = await session.flush();
+			const { error } = await session.waitForSaves();
 			return error === null ? undefined : noteSaveProblem(error);
 		}
 		const stem = rowStemOf(table, path);
@@ -1042,7 +1042,7 @@ export function createNotes(host: NotesHost) {
 	async function captureNote(
 		session: NoteSession,
 	): Promise<Result<Capture, string>> {
-		const { error: saveError } = await session.flush();
+		const { error: saveError } = await session.waitForSaves();
 		if (saveError !== null || session.unsettled) return Err(UNSETTLED);
 		const { data: read, error: readError } = await readTextFile(
 			folder.files,
@@ -1915,7 +1915,7 @@ export function createNotes(host: NotesHost) {
 				// reservation's work begins.
 				const removed = await note.operate(() =>
 					reserve([path], async () => {
-						const { error } = await note.flush();
+						const { error } = await note.waitForSaves();
 						if (error !== null || note.unsettled)
 							return { kind: 'unsettled' } as const;
 						const step = { kind: 'remove', from: deletion.file } as const;
@@ -1970,7 +1970,7 @@ export function createNotes(host: NotesHost) {
 		async settleAll(): Promise<number> {
 			await Promise.all([
 				...allSessions().map((session) => session.settle()),
-				...allNotes().map((session) => session.flush()),
+				...allNotes().map((session) => session.waitForSaves()),
 				...working.keys(),
 			]);
 			return unaccounted();
@@ -1992,7 +1992,7 @@ export function createNotes(host: NotesHost) {
 					session.dispose();
 				}
 				for (const session of allNotes()) {
-					await session.flush();
+					await session.waitForSaves();
 					session.release();
 				}
 				unsubscribeGit();

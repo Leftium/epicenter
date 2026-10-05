@@ -173,14 +173,14 @@ element('checkpoint').onclick = () =>
 		element('gate').textContent = `Explicit checkpoint: ${outcome.status}`;
 	});
 element('close').onclick = async () => {
-	await editor.flush();
+	await editor.waitForSaves();
 	await folder.close();
 	text.disabled = true;
 	element('gate').textContent = 'Folder closed; reload to reopen';
 };
 
 async function inspect() {
-	await editor.flush();
+	await editor.waitForSaves();
 	const saved = await folder.files.read('notes/note.md');
 	element('saved').textContent = saved.error
 		? saved.error.message

@@ -184,7 +184,7 @@ function accepted(editor: TodoEditor) {
 
 /** Wait for a todo's admitted writes. Answers why the latest did not land. */
 async function written(editor: TodoEditor) {
-	const { error } = await editor.editor.flush();
+	const { error } = await editor.editor.waitForSaves();
 	return error === null ? undefined : error.message;
 }
 

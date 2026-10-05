@@ -35,7 +35,7 @@ const editor = fromRowEditor(owner);
 editor.set({ fields: { ...editor.row.fields, title }, body: editor.row.body });
 editor.setText(source);
 editor.retry();
-await editor.flush();
+await editor.waitForSaves();
 await editor.reload();
 ```
 
@@ -73,7 +73,7 @@ Setters accept input before returning. One captured write runs at a time.
 Only the latest complete document waiting behind it is written next. Intermediate
 waiting documents may never reach disk. A receipt settles its captured write and
 never replaces newer input. The editor holds one active write promise and one
-optional waiting text. `flush()` follows successive writes rather than retaining
+optional waiting text. `waitForSaves()` follows successive writes rather than retaining
 a separate promise for the sequence.
 
 Structured input is formatted, then enters the same interpretation and save path
@@ -89,7 +89,7 @@ document is attempted. Failures remain visible in `saving.error` while newer inp
 writes. Success clears the previous error. Without waiting input, a failure stops
 saving and is reported. A later edit starts saving normally. There is no automatic retry loop.
 `retry()` optionally saves the visible document again; it is a new attempt, not
-confirmation of an earlier uncertain write. `flush()` waits through successive
+confirmation of an earlier uncertain write. `waitForSaves()` waits through successive
 writes and returns the final relevant outcome. It never starts a write.
 
 Storage carries no cross-writer request number. Browser and native owners retain
@@ -116,7 +116,7 @@ not confirm or cancel that earlier write. Idle describes the newly adopted local
 ### Svelte tracks the same owner
 
 `fromRowEditor` at `@epicenter/folder/svelte` exposes tracked `row` and `save`
-getters and the owner's own `set`, `setText`, `retry`, `flush`, and `reload`.
+getters and the owner's own `set`, `setText`, `retry`, `waitForSaves`, and `reload`.
 One `createSubscriber` connects these getters to memory invalidation. The
 adapter copies no input, diagnostics, or publication state. Repeated adaptation
 reuses the wrapper.
@@ -156,7 +156,7 @@ uncertainty prevents false success claims.
 ## Verification
 
 Controlled storage tests cover serial writes with latest waiting input, failure
-with waiting input, failure followed by a later edit, explicit retry, flush
+with waiting input, failure followed by a later edit, explicit retry, waiting for saves
 through consecutive writes and subscriber input, deletion, reload failure, concurrent
 input, overlapping reloads, malformed repair, and complete metadata. Mounted
 Svelte tests cover direct bindings, outgoing views, subscription lifetimes,

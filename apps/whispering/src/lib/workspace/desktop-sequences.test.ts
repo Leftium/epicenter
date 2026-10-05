@@ -124,7 +124,7 @@ test('a save whose reply was lost stays unknown with its own message and later t
 	owner.control.loseReplies = 1;
 
 	editor.setBody('Tidy it.\n');
-	expect((await editor.flush()).error?.name).toBe('Unconfirmed');
+	expect((await editor.waitForSaves()).error?.name).toBe('Unconfirmed');
 	await library.refreshAll();
 
 	// The owner wrote it, and a listing finding it there confirms nothing.
@@ -148,7 +148,7 @@ test('a save whose reply was lost stays unknown with its own message and later t
 	editor.setText(`${editor.sourceValue()}More.\n`);
 	expect(editor.row.text).toContain('Tidy it.\nMore.\n');
 
-	expectOk(await editor.flush());
+	expectOk(await editor.waitForSaves());
 	expect(owner.applied).toHaveLength(2);
 	expect(owner.text(PATH)).toContain('Tidy it.\nMore.\n');
 	expect(editor.status).toEqual({ kind: 'saved' });
@@ -163,11 +163,11 @@ test('saving again after a lost reply writes exactly the input it holds, its com
 	library.editSource(PATH);
 	owner.control.loseReplies = 1;
 	editor.setText(handmade);
-	expect((await editor.flush()).error?.name).toBe('Unconfirmed');
+	expect((await editor.waitForSaves()).error?.name).toBe('Unconfirmed');
 	expect(editor.status.kind).toBe('unconfirmed');
 
 	expect(editor.retry()).toBeUndefined();
-	expectOk(await editor.flush());
+	expectOk(await editor.waitForSaves());
 
 	expect(owner.applied).toHaveLength(2);
 	expect(owner.applied[1]).toEqual(owner.applied[0]);
@@ -188,7 +188,7 @@ test('typing during a save is shown at once and saved after it; input superseded
 	// The latest is shown while the first is still being written.
 	expect(editor.row).toMatchObject({ status: 'valid', body: 'Third.\n' });
 	first.release();
-	expectOk(await editor.flush());
+	expectOk(await editor.waitForSaves());
 
 	expect(kinds()).toEqual(['replace', 'replace']);
 	expect(written(0)).toContain('First.\n');
@@ -201,7 +201,7 @@ test('a failed save keeps input and another writer’s change is not loaded; lat
 	const { library, editor } = await open({ [PATH]: SEED });
 	owner.control.refuseNext = 1;
 	editor.setBody('A.\n');
-	expect((await editor.flush()).error).not.toBeNull();
+	expect((await editor.waitForSaves()).error).not.toBeNull();
 	expect(editor.status).toMatchObject({
 		kind: 'failed',
 		message: expect.stringContaining('the disk refused the write'),
@@ -221,7 +221,7 @@ test('a failed save keeps input and another writer’s change is not loaded; lat
 	]);
 
 	editor.setBody('B.\n');
-	expectOk(await editor.flush());
+	expectOk(await editor.waitForSaves());
 	expect(owner.text(PATH)).toBe(editor.row.text);
 	expect(owner.text(PATH)).toContain('B.\n');
 	expect(library.holdsUnsavedWork).toBe(false);
@@ -231,7 +231,7 @@ test('discarding a failed save loads the file as it is now into the same editor,
 	const { library, editor } = await open({ [PATH]: SEED });
 	owner.control.refuseNext = 1;
 	editor.setBody('A.\n');
-	await editor.flush();
+	await editor.waitForSaves();
 	const other = SEED.replace('Tidy.', 'C.');
 	owner.write(PATH, other);
 
@@ -245,7 +245,7 @@ test('discarding a failed save loads the file as it is now into the same editor,
 	expect(await library.prepareToLeave()).toBe(true);
 	// It takes typing and saves again as usual.
 	editor.setBody('D.\n');
-	expectOk(await editor.flush());
+	expectOk(await editor.waitForSaves());
 	expect(owner.text(PATH)).toContain('D.\n');
 });
 
@@ -253,7 +253,7 @@ test('a discard whose read fails keeps the input on screen, the stopped save, an
 	const { library, editor } = await open({ [PATH]: SEED });
 	owner.control.refuseNext = 1;
 	editor.setBody('A.\n');
-	await editor.flush();
+	await editor.waitForSaves();
 	owner.control.failReads.add(PATH);
 
 	expect(await library.discardDraft(PATH)).toContain(
@@ -267,7 +267,7 @@ test('a discard whose read fails keeps the input on screen, the stopped save, an
 	owner.control.refuseNext = 1;
 	editor.setBody('A, still mine.\n');
 	expect(editor.row).toMatchObject({ body: 'A, still mine.\n' });
-	expect((await editor.flush()).error).not.toBeNull();
+	expect((await editor.waitForSaves()).error).not.toBeNull();
 
 	owner.control.failReads.delete(PATH);
 	expect(await library.reloadRow(PATH)).toBeUndefined();
@@ -308,7 +308,7 @@ test('a write over a corrupt file is the person’s choice of what to save, and 
 	expect(owner.applied).toEqual([]);
 
 	editor.setBody('Repaired.\n');
-	expectOk(await editor.flush());
+	expectOk(await editor.waitForSaves());
 
 	expect(kinds()).toEqual(['replace']);
 	expect(owner.text(PATH)).toContain('Repaired.\n');
@@ -322,7 +322,7 @@ test('a submission whose file was removed before it was written fails as gone, s
 		if (change.kind === 'replace') owner.disk.delete(PATH);
 	};
 	editor.setBody('Mine.\n');
-	expect((await editor.flush()).error?.name).toBe('NotFound');
+	expect((await editor.waitForSaves()).error?.name).toBe('NotFound');
 	owner.control.beforeApply = undefined;
 	await library.refreshAll();
 
@@ -336,7 +336,7 @@ test('a submission whose file was removed before it was written fails as gone, s
 	// Typing goes on and is kept; saving again creates nothing.
 	editor.setBody('Mine, more.\n');
 	expect(editor.retry()).toBeUndefined();
-	expect((await editor.flush()).error?.name).toBe('NotFound');
+	expect((await editor.waitForSaves()).error?.name).toBe('NotFound');
 	expect(owner.text(PATH)).toBeUndefined();
 	expect(owner.applied).toEqual([]);
 
@@ -350,7 +350,7 @@ test('a submission whose file was removed before it was written fails as gone, s
 test('a saved editor whose file another writer removed is not a failed save, and is put down', async () => {
 	const { library, editor } = await open({ [PATH]: SEED });
 	editor.setBody('Saved.\n');
-	expectOk(await editor.flush());
+	expectOk(await editor.waitForSaves());
 	owner.disk.delete(PATH);
 	await library.refreshAll();
 
@@ -381,14 +381,14 @@ test('a typed value no file can hold is kept in its own field, holds the close, 
 	expect(await library.prepareToLeave()).toBe(false);
 	// Another field still takes input, and the kept body stays.
 	editor.setField('title', 'Clean it');
-	expectOk(await editor.flush());
+	expectOk(await editor.waitForSaves());
 	expect(editor.bodyText()).toBe(lone);
 	expect(owner.text(PATH)).toContain('"title": "Clean it"');
 	expect(owner.text(PATH)).toContain('Tidy.\n');
 
 	// Repaired in the same field, it is taken and let go.
 	editor.setBody('Whole.\n');
-	expectOk(await editor.flush());
+	expectOk(await editor.waitForSaves());
 	expect(editor.status.kind).toBe('saved');
 	expect(editor.holds).toBe(false);
 	expect(owner.text(PATH)).toContain('Whole.\n');
@@ -408,14 +408,14 @@ test('source text a file cannot hold exactly is kept as typed and never written;
 	const lone = `${SEED}Half a pair: \uD800.\n`;
 	editor.setText(lone);
 
-	expect((await editor.flush()).error?.name).toBe('Unencodable');
+	expect((await editor.waitForSaves()).error?.name).toBe('Unencodable');
 	expect(editor.row).toMatchObject({ status: 'invalid', text: lone });
 	expect(editor.status.kind).toBe('failed');
 	expect(owner.applied).toEqual([]);
 
 	editor.setText(SEED.replace('Tidy.', 'Fixed.'));
 	// The corrected input starts another save.
-	expectOk(await editor.flush());
+	expectOk(await editor.waitForSaves());
 	expect(owner.text(PATH)).toContain('Fixed.');
 });
 
@@ -428,7 +428,7 @@ test('a deletion is refused while a save of the row is out, and the save lands',
 	await save.reached;
 	expect(await library.remove(deletion)).toContain('Save or discard');
 	save.release();
-	expectOk(await editor.flush());
+	expectOk(await editor.waitForSaves());
 
 	expect(editor.status).toEqual({ kind: 'saved' });
 	expect(owner.text(PATH)).toContain('Saved while it was being deleted.');
@@ -561,7 +561,7 @@ test('a move whose reply was lost before it happened leaves the file where it wa
 	await library.open(ONE);
 	const reopened = editingOf(library.transcriptAt(ONE));
 	reopened.setBody('Typed after it was opened again.\n');
-	expectOk(await reopened.flush());
+	expectOk(await reopened.waitForSaves());
 	expect(owner.text(ONE)).toContain('Typed after it was opened again.\n');
 	expect(owner.text(TWO)).toBeUndefined();
 	expect(kinds()).toEqual(['replace']);

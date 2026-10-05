@@ -302,7 +302,7 @@ edit gives it the complete document with `set`, or the file view's exact text
 with `setText`, and the editor writes the whole note by replacing the existing
 file, one write at a time with only the latest waiting. After a failed write
 the latest waiting input proceeds, and later input starts another save.
-`retry` resubmits the current text; `flush` waits for all consecutive admitted
+`retry` resubmits the current text; `waitForSaves` waits for all consecutive admitted
 writes and reports the final outcome, and
 `reload` is the one read of the file after opening. The views read it
 through `fromRowEditor` from `@epicenter/folder/svelte`. A deleted note is

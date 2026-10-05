@@ -13,8 +13,8 @@
  * - one running write and the latest input after it; receipts never roll input back
  * - a settled write, failed or not, starts the waiting input before subscribers hear it
  * - a failure with nothing waiting ends `failed`; the next input saves again
- * - `flush` waits through consecutive writes, a subscriber's included, and never retries
- * - `reload` waits as `flush` does, then adopts the file unless input changed
+ * - `waitForSaves` waits through consecutive writes, a subscriber's included, and never retries
+ * - `reload` waits as `waitForSaves` does, then adopts the file unless input changed
  * - every write replaces the existing row and never recreates it
  * - nothing orders the editor's writes against other saves: the last to land stays
  *
@@ -684,7 +684,7 @@ for (const outcome of ['io', 'unconfirmed'] as const)
 		expect(fake.disk()).toBe(row('C'));
 		expect(editor.get().save.status).toBe('idle');
 		expect(saves()).not.toContain('failed');
-		expectOk(await editor.flush());
+		expectOk(await editor.waitForSaves());
 	});
 
 for (const outcome of ['io', 'unconfirmed'] as const)
@@ -734,7 +734,7 @@ test('a failed attempt remains visible while newer pending text saves; success c
 	await until(() => fake.applied.length === 3);
 	expect(editor.get().save).toEqual({ status: 'saving' });
 	fake.releaseReplies();
-	expectOk(await editor.flush());
+	expectOk(await editor.waitForSaves());
 	expect(editor.get().save).toEqual({ status: 'idle' });
 	expect(fake.disk()).toBe(row('C'));
 });
@@ -774,7 +774,7 @@ test('a subscriber answering a failure with new input starts a write that the se
 		editor.setText(row('C'));
 	});
 	fake.releaseReplies();
-	expectOk(await editor.flush());
+	expectOk(await editor.waitForSaves());
 	expect(answered).toBe(true);
 	expect(fake.attempts).toEqual([row('A1'), row('C')]);
 	expect(editor.get().save.status).toBe('idle');
@@ -817,7 +817,7 @@ test('raw text UTF-8 cannot encode exactly is held and never written lossily; th
 	expect(held.row.error.name).toBe('Unencodable');
 	if (held.save.status !== 'failed') throw new Error('expected failed');
 	expect(held.save.error.name).toBe('Unencodable');
-	expectErr(await editor.flush());
+	expectErr(await editor.waitForSaves());
 	await flush();
 	expect(fake.applied).toHaveLength(0);
 
@@ -830,7 +830,7 @@ test('raw text UTF-8 cannot encode exactly is held and never written lossily; th
 	editor.setText(row('Fixed'));
 	expect(shown(editor)).toBe('Fixed');
 	expect(editor.get().save.status).toBe('saving');
-	expectOk(await editor.flush());
+	expectOk(await editor.waitForSaves());
 	expect(fake.writes).toEqual([row('Fixed')]);
 });
 
@@ -867,7 +867,7 @@ test("A failing with unencodable B waiting reports B's Unencodable: the latest a
 	await until(() => editor.get().save.status !== 'saving');
 	const { save } = editor.get();
 	expect(save.status === 'failed' && save.error.name).toBe('Unencodable');
-	expect(expectErr(await editor.flush()).name).toBe('Unencodable');
+	expect(expectErr(await editor.waitForSaves()).name).toBe('Unencodable');
 	expect(fake.attempts).toEqual([row('A1')]);
 });
 
@@ -881,7 +881,7 @@ test('storage that throws settles as uncertain, never stuck saving; the next inp
 	if (save.status !== 'failed') throw new Error('expected failed');
 	expect(save.error.name).toBe('Unconfirmed');
 	editor.setText(row('C'));
-	expectOk(await editor.flush());
+	expectOk(await editor.waitForSaves());
 	expect(fake.writes).toEqual([row('B'), row('C')]);
 });
 
@@ -890,17 +890,17 @@ test('a row deleted before publication is NotFound, never recreated by any later
 	const { editor } = fake;
 	fake.writeElsewhere(undefined);
 	editor.setText(row('B'));
-	expect(expectErr(await editor.flush()).name).toBe('NotFound');
+	expect(expectErr(await editor.waitForSaves()).name).toBe('NotFound');
 	expect(shown(editor)).toBe('B');
 
 	// Explicit retry and later typing each attempt again; neither recreates.
 	editor.retry();
-	expect(expectErr(await editor.flush()).name).toBe('NotFound');
+	expect(expectErr(await editor.waitForSaves()).name).toBe('NotFound');
 	fake.holdReplies();
 	editor.setText(row('C'));
 	editor.setText(row('D'));
 	fake.releaseReplies();
-	expect(expectErr(await editor.flush()).name).toBe('NotFound');
+	expect(expectErr(await editor.waitForSaves()).name).toBe('NotFound');
 	expect(fake.attempts).toEqual([row('B'), row('B'), row('C'), row('D')]);
 	expect(fake.disk()).toBeUndefined();
 	expect(fake.writes).toEqual([]);
@@ -918,7 +918,7 @@ test('an earlier write that lands after a later save stays: nothing orders them'
 	expect(fake.disk()).toBe(row('Later'));
 	land();
 	// It lands over the later save and reports success, not a refusal.
-	expectOk(await editor.flush());
+	expectOk(await editor.waitForSaves());
 	expect(fake.disk()).toBe(row('Mine'));
 	expect(fake.writes).toEqual([row('Later'), row('Mine')]);
 });
@@ -946,7 +946,7 @@ test('listener exceptions are isolated, never fail a save, and delivery is never
 	expect(maxDepth).toBe(1);
 	expect(titles.slice(0, 2)).toEqual(['B', 'Nested']);
 	fake.releaseReplies();
-	expectOk(await editor.flush());
+	expectOk(await editor.waitForSaves());
 	expect(editor.get().save.status).toBe('idle');
 	expect(fake.writes).toEqual([row('B'), row('Nested')]);
 	// The broken view heard every change, through both writes.
@@ -972,53 +972,53 @@ test('unsubscribing ends only that subscription and leaves publication running',
 });
 
 // ============================================================================
-// flush
+// waitForSaves
 // ============================================================================
 
-test('flush resolves Ok at once when idle and waits through consecutive writes, input accepted during them included', async () => {
+test('waitForSaves resolves Ok at once when idle and waits through consecutive writes, input accepted during them included', async () => {
 	const fake = await openPlan();
 	const { editor } = fake;
-	expectOk(await editor.flush());
+	expectOk(await editor.waitForSaves());
 
 	fake.holdReplies();
 	editor.setText(row('A1'));
-	const flushing = editor.flush();
+	const waiting = editor.waitForSaves();
 	await flush();
 	editor.setText(row('B'));
 	fake.releaseReply();
 	// A settled, but B is running.
 	await until(() => fake.applied.length === 2);
-	expect(await hasSettled(flushing)).toBe(false);
+	expect(await hasSettled(waiting)).toBe(false);
 	fake.releaseReplies();
-	expectOk(await flushing);
+	expectOk(await waiting);
 	expect(editor.get().save.status).toBe('idle');
 	expect(fake.disk()).toBe(row('B'));
 });
 
-test('flush returns the latest attempt: a failure the waiting input replaced is Ok once that input saves', async () => {
+test('waitForSaves returns the latest attempt: a failure the waiting input replaced is Ok once that input saves', async () => {
 	const fake = await openPlan();
 	const { editor } = fake;
 	fake.script('io');
 	fake.holdReplies();
 	editor.setText(row('A1'));
-	const flushing = editor.flush();
+	const waiting = editor.waitForSaves();
 	await flush();
 	editor.setText(row('B'));
 	fake.releaseReplies();
-	expectOk(await flushing);
+	expectOk(await waiting);
 	expect(fake.disk()).toBe(row('B'));
 });
 
-test('flush returns a failure with nothing waiting at once and never retries it', async () => {
+test('waitForSaves returns a failure with nothing waiting at once and never retries it', async () => {
 	const fake = await openFailed();
 	const { editor, save } = fake;
-	expect(expectErr(await editor.flush())).toBe(save.error);
-	expect(expectErr(await editor.flush())).toBe(save.error);
+	expect(expectErr(await editor.waitForSaves())).toBe(save.error);
+	expect(expectErr(await editor.waitForSaves())).toBe(save.error);
 	await flush();
 	expect(fake.applied).toHaveLength(1);
 });
 
-test('flush waits through writes a subscriber starts as each settles, and returns the last outcome', async () => {
+test('waitForSaves waits through writes a subscriber starts as each settles, and returns the last outcome', async () => {
 	const fake = await openPlan();
 	const { editor } = fake;
 	const answers = [row('Second'), row('Third')];
@@ -1032,7 +1032,7 @@ test('flush waits through writes a subscriber starts as each settles, and return
 		if (next !== undefined) editor.setText(next);
 	});
 	editor.setText(row('First'));
-	const error = expectErr(await editor.flush());
+	const error = expectErr(await editor.waitForSaves());
 	expect(error.name).toBe('Io');
 	expect(fake.attempts).toEqual([row('First'), row('Second'), row('Third')]);
 	expect(editor.get().save.status).toBe('failed');
@@ -1152,7 +1152,7 @@ test('typing after a failure, or a retry, during a reload read returns InputChan
 		else editor.retry();
 		fake.releaseReads();
 		expect(expectErr(await reloading).name).toBe('InputChanged');
-		expectOk(await editor.flush());
+		expectOk(await editor.waitForSaves());
 		const kept = during === 'typing' ? 'C' : 'B';
 		expect(shown(editor)).toBe(kept);
 		expect(fake.disk()).toBe(row(kept));
@@ -1246,7 +1246,7 @@ test('over a real folder: acquire styled source, replace canonically, ignore out
 				body: opened.body,
 			}),
 		);
-		expectOk(await editor.flush());
+		expectOk(await editor.waitForSaves());
 		const disk = await readFile(join(root, PATH), 'utf8');
 		expect(disk).toBe(
 			'---\n"title": "Plan B"\n"done": true\n"priority": "normal"\n"meta": {"a": [true, null], "b": 1}\n"owner": "sam"\n---\nBody A.\n',
@@ -1267,7 +1267,7 @@ test('over a real folder: acquire styled source, replace canonically, ignore out
 		// Deleted outside the folder, then edited: replace refuses to recreate.
 		await rm(join(root, PATH));
 		editor.setText(row('Mine'));
-		const failure = expectErr(await editor.flush());
+		const failure = expectErr(await editor.waitForSaves());
 		expect(failure.name).toBe('NotFound');
 		expect(expectOk(await folder.tables.todos.get('plan'))).toBeUndefined();
 		expect(expectErr(await editor.reload()).name).toBe('NotFound');
@@ -1282,7 +1282,7 @@ test('over a real folder: acquire styled source, replace canonically, ignore out
 		// A closed folder refuses the next attempt and the next read.
 		await folder.close();
 		editor.setText(row('After close'));
-		expect(expectErr(await editor.flush()).name).toBe('Closed');
+		expect(expectErr(await editor.waitForSaves()).name).toBe('Closed');
 		expect(expectErr(await editor.reload()).name).toBe('Closed');
 		expect(shown(editor)).toBe('After close');
 		stop();

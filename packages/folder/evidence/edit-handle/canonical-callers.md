@@ -165,7 +165,7 @@ failed, and it names its target path. Only `open`, as a transition's last
 step after the release left no editor, installs an editor.
 
 Leaving first unmounts every view, so no control can submit input. Then the
-owner awaits `flush()`. If the last save failed, the page asks: "Keep
+owner awaits `waitForSaves()`. If the last save failed, the page asks: "Keep
 editing" mounts the views again over the same editor and ends the
 transition, and the other choice drops the editor and its input. Opening the
 row again reads the file; nothing adopts or overwrites anything on the way.

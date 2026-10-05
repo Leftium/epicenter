@@ -82,7 +82,7 @@ async function cleanup(session: Session, model?: string) {
 	const editor = editingOf(library.selectedTransformation?.slot);
 	if (model !== undefined) {
 		editor.setField('model', model);
-		expectOk(await editor.flush());
+		expectOk(await editor.waitForSaves());
 		await library.refreshAll();
 	}
 	return library.transformations[0]!;

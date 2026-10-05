@@ -270,7 +270,7 @@ const textOf = (session: NoteSession): string => session.row.text;
 
 /** Wait for a note's admitted writes. Resolves why they did not end saved. */
 async function saved(session: NoteSession): Promise<string | undefined> {
-	const { error } = await session.flush();
+	const { error } = await session.waitForSaves();
 	return error === null ? undefined : noteSaveProblem(error);
 }
 
@@ -1470,7 +1470,7 @@ describe('kept sessions', () => {
 		session.showFile(true);
 		const typed = `${textOf(session)}half \uD800\n`;
 		session.setText(typed);
-		await session.flush();
+		await session.waitForSaves();
 		expect(session.save).toMatchObject({
 			status: 'failed',
 			error: { name: 'Unencodable' },

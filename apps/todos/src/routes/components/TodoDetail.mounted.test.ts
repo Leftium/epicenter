@@ -311,7 +311,7 @@ test('a failed save keeps the input; disk C replaces nothing, and Discard mine a
 	// A second failed attempt keeps newer typing available for deliberate reload.
 	failNextWrite(opfs, path);
 	type(title, 'Mine again');
-	await editor.editor.flush();
+	await editor.editor.waitForSaves();
 	expect(await text(path)).toBe(ROW('Theirs'));
 	expect(title.value).toBe('Mine again');
 

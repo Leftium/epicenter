@@ -465,11 +465,11 @@ test('a round cancelled elsewhere gives back a failed save and the newer input t
 	const editor = todoEditor(todos);
 	failNextWrite(path);
 	editor.setTitle('First');
-	await editor.editor.flush();
+	await editor.editor.waitForSaves();
 	expect(editor.editor.save.status).toBe('failed');
 	failNextWrite(path);
 	editor.setTitle('Newer');
-	await editor.editor.flush();
+	await editor.editor.waitForSaves();
 
 	host.begin('quit');
 	host.nudge();

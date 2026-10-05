@@ -644,7 +644,7 @@ test('a transcript is edited through the one editor kept for its file, and its r
 	// Saving from the moment it is typed: leaving now would wait for it.
 	expect(editor.save.status).toBe('saving');
 	expect(library.holdsUnsavedWork).toBe(true);
-	expectOk(await editor.flush());
+	expectOk(await editor.waitForSaves());
 
 	const saved = await readFile(join(root, TRANSCRIPT), 'utf8');
 	// The whole row is saved in its one form: the fields as they were, the new text.
@@ -704,7 +704,7 @@ test('a transcript changed outside is listed but not loaded into its open editor
 	);
 	await library.refreshAll();
 	editor.setBody('What I typed.\n');
-	expectOk(await editor.flush());
+	expectOk(await editor.waitForSaves());
 	const saved = await readFile(join(root, TRANSCRIPT), 'utf8');
 	expect(saved).toBe(editor.row.text);
 	expect(

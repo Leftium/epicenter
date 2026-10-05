@@ -418,7 +418,7 @@ describe('the last save to land on a path stays, whenever it was asked for', () 
 		expectOk(await raw);
 		digest.release();
 		// Nothing places the editor's write first: it lands last and stays.
-		expectOk(await editor.flush());
+		expectOk(await editor.waitForSaves());
 		expect(decoder.decode(opfs.files(ROOT).get(path))).toBe(
 			editor.get().row.text,
 		);

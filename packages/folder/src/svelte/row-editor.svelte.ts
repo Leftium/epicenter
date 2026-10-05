@@ -7,8 +7,8 @@
  *
  * `row` and `save` announce a dependency, then return the native `get()`
  * parts. Nothing is copied or cached: every read is the owner's current
- * snapshot, inside or outside an effect. `set`, `setText`, `retry`, `flush`,
- * and `reload` are the owner's own methods.
+ * snapshot, inside or outside an effect. `set`, `setText`, `retry`,
+ * `waitForSaves`, and `reload` are the owner's own methods.
  *
  * One `createSubscriber` serves both getters. A read inside an effect, or
  * inside a derived an effect reads, subscribes to the owner's in-memory
@@ -31,7 +31,7 @@ import type { RowEditor, RowEditorState } from '../editor.js';
 /** A row editor whose `row` and `save` reads participate in Svelte tracking. */
 export type ReactiveRowEditor<TFields> = Pick<
 	RowEditor<TFields>,
-	'set' | 'setText' | 'retry' | 'flush' | 'reload'
+	'set' | 'setText' | 'retry' | 'waitForSaves' | 'reload'
 > & {
 	readonly row: RowEditorState<TFields>['row'];
 	readonly save: RowEditorState<TFields>['save'];
@@ -45,7 +45,7 @@ export function fromRowEditor<TFields>(
 ): ReactiveRowEditor<TFields> {
 	const existing = wrappers.get(editor);
 	if (existing) return existing as ReactiveRowEditor<TFields>;
-	const { get, subscribe, set, setText, retry, flush, reload } = editor;
+	const { get, subscribe, set, setText, retry, waitForSaves, reload } = editor;
 	const track = createSubscriber((update) => subscribe(update));
 	const reactive: ReactiveRowEditor<TFields> = Object.freeze({
 		get row() {
@@ -59,7 +59,7 @@ export function fromRowEditor<TFields>(
 		set,
 		setText,
 		retry,
-		flush,
+		waitForSaves,
 		reload,
 	});
 	wrappers.set(editor, reactive as ReactiveRowEditor<unknown>);

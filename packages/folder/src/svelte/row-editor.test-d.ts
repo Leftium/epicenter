@@ -2,7 +2,7 @@
  * Svelte row editor call-site types. Checked by `tsc`, never run.
  *
  * The adapter names the native snapshot parts and commands: `row`, `save`,
- * `set`, `setText`, `retry`, `flush`, and `reload`, typed by the table's
+ * `set`, `setText`, `retry`, `waitForSaves`, and `reload`, typed by the table's
  * definition. It adds
  * no read or command of its own, and the core and platform entries export
  * nothing from it.
@@ -36,14 +36,16 @@ export async function callSite() {
 	const editor = fromRowEditor(rowEditor);
 	expectTypeOf(editor).toEqualTypeOf<ReactiveRowEditor<Todo>>();
 	expectTypeOf<keyof typeof editor>().toEqualTypeOf<
-		'row' | 'save' | 'set' | 'setText' | 'retry' | 'flush' | 'reload'
+		'row' | 'save' | 'set' | 'setText' | 'retry' | 'waitForSaves' | 'reload'
 	>();
 	expectTypeOf(editor.row).toEqualTypeOf<RowState<Todo>>();
 	expectTypeOf(editor.save).toEqualTypeOf<SaveState>();
 	expectTypeOf(editor.set).toEqualTypeOf<RowEditor<Todo>['set']>();
 	expectTypeOf(editor.setText).toEqualTypeOf<RowEditor<Todo>['setText']>();
 	expectTypeOf(editor.retry).toEqualTypeOf<RowEditor<Todo>['retry']>();
-	expectTypeOf(editor.flush).toEqualTypeOf<RowEditor<Todo>['flush']>();
+	expectTypeOf(editor.waitForSaves).toEqualTypeOf<
+		RowEditor<Todo>['waitForSaves']
+	>();
 	expectTypeOf(editor.reload).toEqualTypeOf<RowEditor<Todo>['reload']>();
 
 	const { row } = editor;

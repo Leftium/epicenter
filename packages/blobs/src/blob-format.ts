@@ -232,7 +232,7 @@ export function blobKeyFormat(id: string): {
 export function assertBlobFormat(id: string, input: { type: string }): void {
 	const declared = byType(input.type);
 	if (!declared) return;
-	const saved = byExtension(blobKeyFormat(id).extension);
+	const saved = byExtension(id.slice(id.lastIndexOf('.') + 1));
 	if (declared.family !== saved?.family) {
 		throw new TypeError(
 			`Blob type '${input.type}' conflicts with key '${id}'.`,

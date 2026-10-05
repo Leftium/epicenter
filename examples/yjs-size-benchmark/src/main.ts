@@ -49,9 +49,7 @@ const elements = {
 };
 
 // Show network URL for phone access
-const host = window.location.hostname;
-const port = window.location.port;
-elements.networkUrl.textContent = `http://${host}:${port}`;
+elements.networkUrl.textContent = window.location.origin;
 
 // Utility functions
 function formatBytes(bytes: number): string {

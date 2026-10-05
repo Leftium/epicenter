@@ -27,7 +27,7 @@
  *   again or the word is let go
  *
  * See also:
- * - `entries.test.ts` for adding, listing, and the shared note and stage
+ * - `entries.test.ts` for adding and listing
  * - `reread.test.ts` for listings made stale by this tab's saves
  * - `../routes/components/EntryCard.test.ts` for the mounted card
  */
@@ -225,16 +225,30 @@ test('each note keystroke reaches the editor at once as the whole word, and the 
 	]);
 });
 
-test('a stage press saves the note as typed, and typing afterwards keeps the stage', async () => {
+test('every view shares one editor: a stage press saves the typed note, the list follows, and later typing keeps the stage', async () => {
 	await using context = await setup();
 	const { entries, id } = context;
 	const word = entries.word(id);
 	await word.open();
 
-	word.inputNote('typed');
-	expect(await word.setStage('understood')).toBeNull();
-	expect(word.note()).toBe('typed');
+	expect(entries.word(id)).toBe(word);
+	const note = 'honest,\nand a second line: "quoted"';
+	word.inputNote(note);
+	expect(await entries.word(id).setStage('understood')).toBeNull();
+	expect(word.note()).toBe(note);
 	expect(word.stage()).toBe('understood');
+	expect(word.unsettled).toBe(false);
+	await until(
+		() => entries.entries[0]?.file.text === word.row?.text,
+		'the list to show the saved word',
+	);
+	expect(await context.reopened()).toEqual([
+		{ text: 'lucid', note, stage: 'understood' },
+	]);
+	const source = await context.file();
+	expect(source).toStartWith('---\n"text": "lucid"\n"note": ');
+	expect(entries.entries[0]).toMatchObject({ note, stage: 'understood' });
+	expect(entries.entries[0]?.file.text).toBe(source);
 	word.inputNote('typed more');
 	await idle(word);
 	expect(await context.reopened()).toEqual([
@@ -463,11 +477,15 @@ test('a word saved, then removed elsewhere, leaves the list with nothing shown a
 // Repair as exact text, through the same editor
 // ============================================================================
 
-test('a file that is not a valid word is repaired as exact text through its own editor, and its note then saves with the repair kept', async () => {
+test('a tagged word stays listed, opens for exact repair, and saves its note and stage with the repair kept', async () => {
 	await using context = await setup();
 	const { browser, entries, id, path } = context;
 	const broken = await tagged(context);
 	browser.put(path, broken);
+	await entries.refresh();
+	expect(entries.entries).toMatchObject([
+		{ id, text: 'lucid', note: '', stage: 'new' },
+	]);
 	const word = entries.word(id);
 	await word.open();
 
@@ -481,15 +499,19 @@ test('a file that is not a valid word is repaired as exact text through its own 
 
 	const repaired = broken.replace('!book ', '');
 	word.inputRepair(repaired);
+	expect(word.row?.status).toBe('valid');
 	await idle(word);
 	expect(await context.file()).toBe(repaired);
 	expect(word.row?.status).toBe('valid');
 
 	word.inputNote('mine');
-	await idle(word);
+	expect(await word.setStage('usable')).toBeNull();
 	const saved = await context.file();
 	expect(saved).toContain('"note": "mine"');
 	expect(saved).toContain('"source": "Moby Dick"');
+	expect(await context.reopened()).toEqual([
+		{ text: 'lucid', note: 'mine', stage: 'usable' },
+	]);
 });
 
 test('repair text is saved in the file’s own line endings', async () => {

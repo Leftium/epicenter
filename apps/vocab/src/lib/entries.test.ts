@@ -9,16 +9,14 @@
  * - Text is trimmed and otherwise exact, whatever its script or spelling
  * - A phrase with the exact text of a saved word writes nothing and leaves
  *   that word's note and stage alone
- * - Note and stage share one editor per word: a stage pressed after a note is
- *   typed saves both, and each save writes the whole word
  * - An open word reads another tab's edit only when it is reloaded; a save
  *   overwrites an edit that was never read here
  * - A removal of a word that changed elsewhere is refused, and the other
  *   change is kept
- * - A word whose file has no canonical form is repaired as exact text
- *   through its own editor
  * - A closed folder answers with an error and lists nothing new
  * - A row file that cannot be read as a word is reported, never dropped
+ *
+ * See `word.test.ts` for shared note and stage saves and raw repair.
  */
 import './svelte-modules.test-support.js';
 import { expect, test } from 'bun:test';
@@ -124,41 +122,6 @@ test('a phrase with the exact text of a saved word writes nothing and leaves its
 	expect(summary(entries)).toEqual([
 		{ text: 'by and large', note: 'mostly; on the whole', stage: 'understood' },
 	]);
-});
-
-test('a stage pressed while a note is typed saves both, from one editor shared by every view', async () => {
-	await using context = await setup();
-	const { entries, folder } = context;
-	expectOk(await entries.add('candid'));
-	const id = entries.entries[0]?.id ?? '';
-	const card = entries.word(id);
-	// The focus list's stage control reaches the same editor.
-	expect(entries.word(id)).toBe(card);
-	await card.open();
-
-	card.inputNote('honest,\nand a second line: "quoted"');
-	expect(await entries.word(id).setStage('usable')).toBeNull();
-	// The stage did not reset the note, and the note was saved with it.
-	expect(card.note()).toBe('honest,\nand a second line: "quoted"');
-	expect(card.unsettled).toBe(false);
-	await until(
-		() => entries.entries[0]?.file.text === card.row?.text,
-		'the list to show the saved word',
-	);
-
-	const expected = [
-		{
-			text: 'candid',
-			note: 'honest,\nand a second line: "quoted"',
-			stage: 'usable',
-		},
-	];
-	expect(summary(entries)).toEqual(expected);
-	expect(summary(await context.reopened())).toEqual(expected);
-	// The whole word, in canonical form, with what it had before.
-	const source = await fileText(folder, `entries/${id}.md`);
-	expect(source).toStartWith('---\n"text": "candid"\n"note": ');
-	expect(entries.entries[0]?.file.text).toBe(source);
 });
 
 test('an open word reads another tab’s edit only when reloaded, and a stage pressed here then keeps that note', async () => {
@@ -428,42 +391,4 @@ test('a word another tab removed, with no hint yet read here, is saved again ins
 		summary(state).sort((a, b) => a.text.localeCompare(b.text));
 	expect(byText(entries)).toEqual(fresh);
 	expect(byText(await context.reopened())).toEqual(fresh);
-});
-
-test('a word whose file has no canonical form opens for repair as exact text through its own editor, and then edits again', async () => {
-	await using context = await setup();
-	const { folder, entries } = context;
-	expectOk(await entries.add('lucid'));
-	const id = entries.entries[0]?.id ?? '';
-	const path = `entries/${id}.md`;
-	// Another program adds a value with a custom tag: the fields still read,
-	// but the file has no canonical form, so its editor offers only its text.
-	const tagged =
-		(await fileText(folder, path))?.replace(
-			'\n---\n',
-			'\nsource: !book Moby Dick\n---\n',
-		) ?? '';
-	expectOk(await folder.files.overwrite(path, tagged));
-	await entries.refresh();
-	expect(summary(entries)).toEqual([{ text: 'lucid', note: '', stage: 'new' }]);
-
-	const word = entries.word(id);
-	await word.open();
-	expect(word.row?.status).toBe('invalid');
-	expect(word.repairText()).toBe(tagged);
-	expect(await word.setStage('usable')).toContain('needs repair');
-	expect(await fileText(folder, path)).toBe(tagged);
-
-	// Each keystroke of the text goes to the same editor.
-	const repaired = tagged.replace('!book ', '');
-	word.inputRepair(repaired);
-	expect(word.row?.status).toBe('valid');
-	await until(() => word.save?.status === 'idle', 'the repair to save');
-	expect(await fileText(folder, path)).toBe(repaired);
-	expect(await word.setStage('usable')).toBeNull();
-	// The repaired metadata Vocab does not declare is kept by the save.
-	expect(await fileText(folder, path)).toContain('"source": "Moby Dick"');
-	expect(summary(await context.reopened())).toEqual([
-		{ text: 'lucid', note: '', stage: 'usable' },
-	]);
 });

@@ -98,8 +98,6 @@ export function recordingRows(library: Source): RecordingRow[] {
 	});
 }
 
-const fold = (text: string) => text.toLowerCase();
-
 /** Whether the title, ID, notes, or any transcript of a row contains the search text. */
 function matches(row: RecordingRow, needle: string): boolean {
 	return [
@@ -107,7 +105,7 @@ function matches(row: RecordingRow, needle: string): boolean {
 		row.entry.stem,
 		row.entry.body ?? '',
 		...row.transcripts.map((transcript) => transcript.body ?? ''),
-	].some((text) => fold(text).includes(needle));
+	].some((text) => text.toLowerCase().includes(needle));
 }
 
 /**
@@ -119,7 +117,7 @@ export function searchRows(
 	rows: readonly RecordingRow[],
 	query: string,
 ): RecordingRow[] {
-	const needle = fold(query.trim());
+	const needle = query.trim().toLowerCase();
 	if (needle === '') return [...rows];
 	return rows.filter((row) => needsRepair(row.entry) || matches(row, needle));
 }
@@ -128,8 +126,6 @@ export function searchRows(
 const EXCERPT_LENGTH = 140;
 /** How much comes before the found text, so it reads in its sentence. */
 const EXCERPT_LEAD = 40;
-
-const oneLine = (text: string) => text.replace(/\s+/g, ' ').trim();
 
 /**
  * The line of transcript a row shows. With no search it is the start of the
@@ -141,9 +137,9 @@ export function transcriptExcerpt(
 	row: RecordingRow,
 	query: string,
 ): string | undefined {
-	const needle = fold(query.trim());
+	const needle = query.trim().toLowerCase();
 	const texts = row.transcripts
-		.map((transcript) => oneLine(transcript.body ?? ''))
+		.map((transcript) => (transcript.body ?? '').replace(/\s+/g, ' ').trim())
 		.filter((text) => text !== '');
 	const newest = texts[0];
 	if (newest === undefined) return undefined;
@@ -154,7 +150,7 @@ export function transcriptExcerpt(
 	};
 	if (needle !== '')
 		for (const text of texts) {
-			const found = fold(text).indexOf(needle);
+			const found = text.toLowerCase().indexOf(needle);
 			if (found >= 0) return clip(text, found - EXCERPT_LEAD);
 		}
 	return clip(newest, 0);
@@ -172,7 +168,7 @@ export function sortRows(
 	const value = (row: RecordingRow): string | number | undefined => {
 		switch (sort.key) {
 			case 'title':
-				return fold(row.title);
+				return row.title.toLowerCase();
 			case 'recordedAt':
 				return row.entry.fields.recordedAt;
 			case 'durationMs':
@@ -236,9 +232,8 @@ export function selectionIn(
 ): { rows: RecordingRow[]; hidden: number } {
 	const chosen = new Set(selected);
 	const rows = shown.filter((row) => chosen.has(row.path));
-	const present = library.entries.filter((entry) =>
-		chosen.has(entry.path),
-	).length;
+	let present = 0;
+	for (const entry of library.entries) if (chosen.has(entry.path)) present++;
 	return { rows, hidden: present - rows.length };
 }
 
@@ -415,9 +410,9 @@ export function describeDeletions({ deletions, refused }: CapturedDeletions): {
 } {
 	const results = deletions.reduce((sum, item) => sum + item.results.length, 0);
 	const outputs = deletions.reduce((sum, item) => sum + item.outputs.length, 0);
-	const audio = deletions.filter(
-		(item) => audioPathIn(item.entry.fields) !== undefined,
-	).length;
+	let audio = 0;
+	for (const item of deletions)
+		if (audioPathIn(item.entry.fields) !== undefined) audio++;
 	const removed = [
 		count(deletions.length, 'recording file', 'recording files'),
 		...(results > 0

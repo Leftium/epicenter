@@ -1,41 +1,23 @@
 /**
  * Skills opens its Account's current Personal library through App.
  * Instructions survive an offline reopen, and aborted boot releases ownership.
- * Rune shims permit imperative state reads; these tests do not prove reactivity.
+ * Real Svelte tracking keeps skills and references current through mutations.
  */
+import './svelte.test-support.js';
 import 'fake-indexeddb/auto';
-import { afterAll, expect, test } from 'bun:test';
+import { expect, test } from 'bun:test';
 import type { Account } from '@epicenter/auth';
 import { installTestLocks } from '@epicenter/device/test-locks';
 import { asPrincipalId } from '@epicenter/principal';
 import { skillsDefinition } from '@epicenter/skills';
 import { createCurrentDownloadResponse } from '@epicenter/sync/current-download';
-import { openSkillsRuntime } from './application.js';
+import { flushSync } from 'svelte';
+import { expectOk } from 'wellcrafted/testing';
+
+const { openSkillsRuntime } = await import('./application.js');
+const { watch } = await import('./effects.test-support.svelte.js');
 
 installTestLocks();
-const previous = ['window', '$state', '$derived'].map(
-	(key) => [key, Object.getOwnPropertyDescriptor(globalThis, key)] as const,
-);
-Object.defineProperty(globalThis, 'window', {
-	configurable: true,
-	value: Object.assign(new EventTarget(), {
-		localStorage: { getItem: () => null, setItem() {}, removeItem() {} },
-	}),
-});
-(globalThis as unknown as { $state: unknown }).$state = Object.assign(
-	<TValue>(value: TValue) => value,
-	{ raw: <TValue>(value: TValue) => value },
-);
-(globalThis as unknown as { $derived: unknown }).$derived = Object.assign(
-	<TValue>(value: TValue) => value,
-	{ by: <TValue>(derive: () => TValue) => derive() },
-);
-afterAll(() => {
-	for (const [key, descriptor] of previous) {
-		if (descriptor) Object.defineProperty(globalThis, key, descriptor);
-		else Reflect.deleteProperty(globalThis, key);
-	}
-});
 
 function accountFor(): Account {
 	return {
@@ -74,6 +56,78 @@ test('the runtime opens the captured account current Personal library', async ()
 	expect(names).toContain(
 		`epicenter/${skillsDefinition.id}/accounts/${account.authorityId}/${account.principalId}/data/${skillsDefinition.id}/personal/current`,
 	);
+});
+
+test('reactive skill and reference views follow native edits and selection', async () => {
+	await using runtime = await openSkillsRuntime({ account: accountFor() });
+	const seen: {
+		names: string[];
+		selected: string | undefined;
+		paths: string[];
+	}[] = [];
+	const stop = watch(() => {
+		seen.push({
+			names: runtime.state.skills.map((skill) => skill.name),
+			selected: runtime.state.selectedSkill?.name,
+			paths: runtime.state.selectedReferences.map(
+				(reference) => reference.path,
+			),
+		});
+	});
+	try {
+		flushSync();
+		const zulu = runtime.state.createSkill('Zulu');
+		const alpha = runtime.state.createSkill('Alpha');
+		runtime.state.createReference(alpha, 'z.md');
+		runtime.state.createReference(alpha, 'a.md');
+		flushSync();
+		expect(seen.at(-1)).toEqual({
+			names: ['Alpha', 'Zulu'],
+			selected: 'Alpha',
+			paths: ['a.md', 'z.md'],
+		});
+
+		expectOk(runtime.data.tables.skills.update(alpha, { name: 'Beta' }));
+		flushSync();
+		expect(seen.at(-1)?.selected).toBe('Beta');
+		runtime.state.selectSkill(zulu);
+		flushSync();
+		expect(seen.at(-1)?.paths).toEqual([]);
+		runtime.state.selectSkill(alpha);
+		runtime.state.deleteSkill(alpha);
+		flushSync();
+		expect(seen.at(-1)).toEqual({
+			names: ['Zulu'],
+			selected: 'Zulu',
+			paths: [],
+		});
+		expect(runtime.data.tables.skillReferences.rows()).toEqual([]);
+	} finally {
+		stop();
+	}
+});
+
+test('imperative deletion sees skills and references created in the same transaction', async () => {
+	await using runtime = await openSkillsRuntime({ account: accountFor() });
+	const id = runtime.state.createSkill('Transient');
+	const stop = watch(() => {
+		void runtime.state.skills;
+	});
+	try {
+		flushSync();
+		runtime.data.transact(() => {
+			runtime.state.createSkill('Zulu');
+			const alpha = runtime.state.createSkill('Alpha');
+			runtime.state.selectSkill(id);
+			runtime.state.createReference(id, 'new.md');
+			runtime.state.deleteSkill(id);
+			expect(runtime.state.selectedSkillId).toBe(alpha);
+		});
+		expect(runtime.data.tables.skills.get(id)).toBeUndefined();
+		expect(runtime.data.tables.skillReferences.rows()).toEqual([]);
+	} finally {
+		stop();
+	}
 });
 
 test('a skill and its instructions survive an offline reopen', async () => {
@@ -133,7 +187,7 @@ test('aborting during bootstrap closes the App before another opening', async ()
 	release.resolve();
 	await expect(opening).rejects.toThrow('root unmounted');
 	await using retry = await openSkillsRuntime({ account });
-	expect(retry.data.tables.skills.rows).toHaveLength(0);
+	expect(retry.data.tables.skills.rows()).toHaveLength(0);
 });
 
 test('disposing retires retained data handles and repeated disposal joins closure', async () => {
@@ -146,5 +200,5 @@ test('disposing retires retained data handles and repeated disposal joins closur
 	]);
 	expect(() => read('retained')).toThrow('disposed');
 	await using retry = await openSkillsRuntime({ account });
-	expect(retry.data.tables.skills.rows).toHaveLength(0);
+	expect(retry.data.tables.skills.rows()).toHaveLength(0);
 });

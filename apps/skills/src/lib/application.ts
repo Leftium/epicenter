@@ -1,11 +1,12 @@
 /**
- * Skills' App and UI state share one lifetime. The route still awaits a product
- * decision about authentication; callers that hold an Account use the same
- * Personal store opening path as the other store applications.
+ * Skills' App owns storage; mounted readers own reactive subscriptions.
+ * The route awaits a product decision about authentication; callers that hold
+ * an Account use the same Personal store opening path as the other applications.
  */
 import { openPersonal } from '@epicenter/app/open';
 import type { Account } from '@epicenter/auth';
 import { skillsDefinition } from '@epicenter/skills';
+import { fromData } from '@epicenter/svelte';
 import { createSkillsState } from './state/skills-state.svelte.js';
 
 /** Open the captured account's Personal store before creating UI state. */
@@ -20,21 +21,11 @@ export async function openSkillsRuntime({
 	const app = await openPersonal(skillsDefinition, { account });
 	try {
 		signal?.throwIfAborted();
-		const data = app;
-		const state = createSkillsState({ data });
-		let stateClosed = false;
 		return Object.freeze({
-			data,
-			state,
+			data: app,
+			state: createSkillsState({ data: fromData(app) }),
 			async [Symbol.asyncDispose]() {
-				try {
-					if (!stateClosed) {
-						stateClosed = true;
-						state[Symbol.dispose]();
-					}
-				} finally {
-					await app.close();
-				}
+				await app.close();
 			},
 		});
 	} catch (cause) {

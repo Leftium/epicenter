@@ -418,6 +418,7 @@
         "@epicenter/app": "workspace:*",
         "@epicenter/auth": "workspace:*",
         "@epicenter/principal": "workspace:*",
+        "@epicenter/svelte": "workspace:*",
         "@y/y": "14.0.0-rc.26",
         "mode-watcher": "^1.1.0",
         "wellcrafted": "catalog:",

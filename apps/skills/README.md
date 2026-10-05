@@ -12,8 +12,9 @@ AGPL-3.0 licensed.
 ## Workspace composition
 
 `openSkillsRuntime({ account })` awaits `openPersonal(skillsDefinition, { account })`
-and constructs UI state over the ready store. Its disposal stops UI state before
-closing the store. The mounted layout renders its
+and constructs UI state over the ready store. UI state derives table reads
+through `fromData` from `@epicenter/svelte`; mounted readers own subscriptions,
+and runtime disposal closes the store. The mounted layout renders its
 current authentication refusal through Svelte's `{#await}` failure branch.
 Importing Skills modules opens no storage. The declaration validates row data. Rows that do not
 conform stay stored and appear in the UI's invalid-record count rather than

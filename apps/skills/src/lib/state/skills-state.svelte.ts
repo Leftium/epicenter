@@ -1,6 +1,5 @@
 import { InstantString } from '@epicenter/app/field';
-import type { NonconformingRow } from '@epicenter/app/store';
-import type { Reference, Skill, SkillsData } from '@epicenter/skills';
+import type { Skill, SkillsData } from '@epicenter/skills';
 
 export type SkillMetadataUpdate = Partial<
 	Pick<Skill, 'name' | 'description' | 'license' | 'compatibility'>
@@ -9,45 +8,29 @@ export type SkillMetadataUpdate = Partial<
 /**
  * Skills' rows, read straight out of the store.
  *
- * There is no `refresh`, no generation counter, and no `await` on a read. The
- * store's `subscribe` says which rows a commit touched and fires for a local
- * write and for markdown typed into a row's content node alike (ADR-0221), so a
- * re-read after a mutation is something this module hears about rather than
- * something every call site remembers. That is also what retired the
- * generation counter: it existed to discard a stale async scan, and a
- * synchronous read has no window to be stale in.
+ * The runtime supplies reactive native reads; selection belongs to this
+ * module. There are no copied rows or subscriptions to refresh and dispose.
  */
 export function createSkillsState({ data }: { data: SkillsData }) {
-	let skillRows = $state.raw<Skill[]>([]);
-	let referenceRows = $state.raw<Reference[]>([]);
-	let nonconforming = $state.raw<NonconformingRow[]>([]);
 	let selectedSkillId = $state<string | null>(null);
+	const nonconforming = $derived([
+		...data.tables.skills.nonconforming(),
+		...data.tables.skillReferences.nonconforming(),
+	]);
 
-	function read(): void {
-		const skills = data.tables.skills;
-		const references = data.tables.skillReferences;
-		skillRows = skills.rows;
-		referenceRows = references.rows;
-		nonconforming = [...skills.nonconforming, ...references.nonconforming];
+	function readSkillsByName() {
+		return data.tables.skills
+			.rows()
+			.toSorted((left, right) => left.name.localeCompare(right.name));
 	}
-
-	read();
-	// Registration is synchronous, does no I/O and never fires initially, so the
-	// read above has already seen everything (ADR-0187).
-	const stopSkills = data.tables.skills.subscribe(read);
-	const stopReferences = data.tables.skillReferences.subscribe(read);
-
-	const sortedSkills = $derived(
-		skillRows.toSorted((left, right) => left.name.localeCompare(right.name)),
-	);
+	const sortedSkills = $derived(readSkillsByName());
 	const selectedSkill = $derived(
-		selectedSkillId
-			? (skillRows.find((skill) => skill.id === selectedSkillId) ?? null)
-			: null,
+		selectedSkillId ? (data.tables.skills.get(selectedSkillId) ?? null) : null,
 	);
 	const selectedReferences = $derived(
 		selectedSkillId
-			? referenceRows
+			? data.tables.skillReferences
+					.rows()
 					.filter((reference) => reference.skillId === selectedSkillId)
 					.toSorted((left, right) => left.path.localeCompare(right.path))
 			: [],
@@ -98,14 +81,13 @@ export function createSkillsState({ data }: { data: SkillsData }) {
 		},
 
 		deleteSkill(id: string): void {
-			for (const reference of referenceRows) {
+			for (const reference of data.tables.skillReferences.rows()) {
 				if (reference.skillId !== id) continue;
 				data.tables.skillReferences.delete(reference.id);
 			}
 			data.tables.skills.delete(id);
 			if (selectedSkillId === id) {
-				selectedSkillId =
-					sortedSkills.find((skill) => skill.id !== id)?.id ?? null;
+				selectedSkillId = readSkillsByName()[0]?.id ?? null;
 			}
 		},
 
@@ -120,11 +102,6 @@ export function createSkillsState({ data }: { data: SkillsData }) {
 
 		deleteReference(id: string): void {
 			data.tables.skillReferences.delete(id);
-		},
-
-		[Symbol.dispose]() {
-			stopSkills();
-			stopReferences();
 		},
 	};
 }

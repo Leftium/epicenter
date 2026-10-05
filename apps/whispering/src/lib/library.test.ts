@@ -521,9 +521,11 @@ test('the title and notes are one row editor saved whole as they are typed, and 
 	});
 });
 
-test('rapid typing leaves the latest whole row, and switching to the text is only a view', async () => {
+test('rapid title typing keeps the recording path and audio link, and switching to the text is only a view', async () => {
 	const { library, root } = await open();
 	await record(library);
+	const entry = library.entries[0]!;
+	const before = (await readdir(join(root, 'recordings'))).sort();
 	const editor = recordingEditor(library);
 	const path = join(root, editor.path);
 
@@ -538,6 +540,12 @@ test('rapid typing leaves the latest whole row, and switching to the text is onl
 	await saved(editor);
 	expect(await readFile(path, 'utf8')).toBe(editor.row.text);
 	expect(await readFile(path, 'utf8')).toContain('"title": "Typed"');
+	await library.refresh();
+	expect((await readdir(join(root, 'recordings'))).sort()).toEqual(before);
+	const listed = library.entries[0]!;
+	expect(listed.path).toBe(entry.path);
+	expect(listed.fields.title).toBe('Typed');
+	expect(listed.fields.audioPath).toBe(entry.fields.audioPath);
 	expect(library.useForm(editor.path)).toBeUndefined();
 	expect(editor.view).toBe('fields');
 	expect(recordingEditor(library)).toBe(editor);
@@ -1167,24 +1175,6 @@ test('a row written before audioPath names no audio: it needs repair, and no sam
 	expect(transcribed.map((request) => request.audioPath)).toEqual([
 		'recordings/old.wav',
 	]);
-});
-
-test('a title edit changes frontmatter only: no file is renamed and the audio path stands', async () => {
-	const { library, root } = await open();
-	await record(library);
-	const entry = library.entries[0]!;
-	const editor = recordingEditor(library);
-	const before = (await readdir(join(root, 'recordings'))).sort();
-
-	editor.setField('title', 'A new title');
-	await saved(editor);
-	await library.refresh();
-
-	expect((await readdir(join(root, 'recordings'))).sort()).toEqual(before);
-	const listed = library.entries[0]!;
-	expect(listed.path).toBe(entry.path);
-	expect(listed.fields.title).toBe('A new title');
-	expect(listed.fields.audioPath).toBe(entry.fields.audioPath);
 });
 
 test('a recording cannot be deleted while its transcription runs, including one started after confirming', async () => {

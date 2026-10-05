@@ -1,15 +1,14 @@
 /**
- * Format tests: `formatExpected` over each expected shape, and `formatReport` over real violations
- * + summary. The report is grouped by location, computes the `invalid-type` expected phrase at the
- * edge from the carried field, and closes with a roll-up line.
+ * Report format tests over real violations and summaries. The report groups findings by
+ * location, computes expected phrases from carried fields, and closes with a roll-up line.
+ * `../core/expected.test.ts` covers individual expected values and phrases.
  */
 
 import { describe, expect, test } from 'bun:test';
-import { formatExpected } from '../core/expected';
-import { assess, type TableInput } from '../core/integrity';
-import { readTable } from '../core/table';
-import { summarize, toViolations } from '../core/violations';
-import { formatReport } from './format';
+import { assess, type TableInput } from '../core/integrity.js';
+import { readTable } from '../core/table.js';
+import { summarize, toViolations } from '../core/violations.js';
+import { formatReport } from './format.js';
 
 type Entries = Parameters<typeof readTable>[0];
 
@@ -20,23 +19,6 @@ function loaded(
 ): TableInput {
 	return { name, status: 'readable', read: readTable(entries, contractText) };
 }
-
-describe('formatExpected', () => {
-	test('scalar kinds render their phrase', () => {
-		expect(formatExpected({ kind: 'string' })).toBe('string');
-		expect(formatExpected({ kind: 'integer' })).toBe('integer');
-		expect(formatExpected({ kind: 'reference' })).toBe('reference');
-	});
-
-	test('enum kinds list their members', () => {
-		expect(formatExpected({ kind: 'select', values: ['draft', 'live'] })).toBe(
-			'one of draft, live',
-		);
-		expect(formatExpected({ kind: 'multiSelect', values: ['a', 'b'] })).toBe(
-			'array containing one of a, b',
-		);
-	});
-});
 
 describe('formatReport', () => {
 	const pagesModel = JSON.stringify({

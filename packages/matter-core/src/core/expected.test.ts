@@ -1,14 +1,14 @@
 /**
- * `describeExpected` tests: a loaded field projects to its serializable expected value. The two
- * enum-carrying kinds (`select` / `multiSelect`) must lift their members; every other kind reduces
- * to its name. Fields are built through `validateContract`, the same recognition the live contract uses.
+ * Expected-value tests: loaded fields project to serializable values and readable phrases.
+ * Enum kinds carry their members; scalar and reference kinds reduce to their names.
+ * Fields use the same contract validation as the report and integrity panel.
  */
 
 import { describe, expect, test } from 'bun:test';
 import { expectOk } from 'wellcrafted/testing';
 import type { Field } from '../field/index.js';
-import { validateContract } from './contract';
-import { describeExpected } from './expected';
+import { validateContract } from './contract.js';
+import { describeExpected, formatExpected } from './expected.js';
 
 /** Recognize one at-rest field schema into a loaded {@link Field}. */
 function fieldFrom(schema: unknown): Field {
@@ -18,39 +18,39 @@ function fieldFrom(schema: unknown): Field {
 	return field;
 }
 
-describe('describeExpected', () => {
+describe('expected values and phrases', () => {
 	test('a scalar kind reduces to its name', () => {
-		expect(describeExpected(fieldFrom({ type: 'string' }))).toEqual({
-			kind: 'string',
-		});
-		expect(describeExpected(fieldFrom({ type: 'integer' }))).toEqual({
-			kind: 'integer',
-		});
-		expect(describeExpected(fieldFrom({ type: 'boolean' }))).toEqual({
-			kind: 'boolean',
-		});
+		for (const kind of ['string', 'integer', 'boolean'] as const) {
+			const expected = describeExpected(fieldFrom({ type: kind }));
+			expect(expected).toEqual({ kind });
+			expect(formatExpected(expected)).toBe(kind);
+		}
 	});
 
 	test('a reference reduces to its name (no target table leaks in)', () => {
-		expect(
-			describeExpected(fieldFrom({ type: 'string', 'x-ref': 'pages' })),
-		).toEqual({ kind: 'reference' });
+		const expected = describeExpected(
+			fieldFrom({ type: 'string', 'x-ref': 'pages' }),
+		);
+		expect(expected).toEqual({ kind: 'reference' });
+		expect(formatExpected(expected)).toBe('reference');
 	});
 
 	test('select carries its enum members', () => {
-		expect(
-			describeExpected(fieldFrom({ type: 'string', enum: ['draft', 'live'] })),
-		).toEqual({ kind: 'select', values: ['draft', 'live'] });
+		const expected = describeExpected(
+			fieldFrom({ type: 'string', enum: ['draft', 'live'] }),
+		);
+		expect(expected).toEqual({ kind: 'select', values: ['draft', 'live'] });
+		expect(formatExpected(expected)).toBe('one of draft, live');
 	});
 
 	test('multiSelect carries its enum members', () => {
-		expect(
-			describeExpected(
-				fieldFrom({
-					type: 'array',
-					items: { type: 'string', enum: ['a', 'b'] },
-				}),
-			),
-		).toEqual({ kind: 'multiSelect', values: ['a', 'b'] });
+		const expected = describeExpected(
+			fieldFrom({
+				type: 'array',
+				items: { type: 'string', enum: ['a', 'b'] },
+			}),
+		);
+		expect(expected).toEqual({ kind: 'multiSelect', values: ['a', 'b'] });
+		expect(formatExpected(expected)).toBe('array containing one of a, b');
 	});
 });

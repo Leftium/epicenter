@@ -742,7 +742,6 @@ test('a directory folder refuses a conflict by default and changes nothing', asy
 		},
 	});
 	try {
-		expect(directory.git.mergeUnsupported).toBeUndefined();
 		expectOk(await directory.files.create('a.md', 'base\n'));
 		expect((await directory.git.commitAndPush()).push.status).toBe('pushed');
 		const upstream = join(root, 'upstream');

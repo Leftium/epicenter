@@ -189,9 +189,6 @@ function heldGit(fetch: ReturnType<typeof gate>) {
 			get snapshot() {
 				return folder.git.snapshot;
 			},
-			get mergeUnsupported() {
-				return undefined;
-			},
 			async fetch() {
 				await fetch.wait();
 				return Ok({ status: 'fetched', oid: undefined });

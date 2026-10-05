@@ -18,8 +18,9 @@ use epicenter_folder_core::files::{
 };
 use epicenter_folder_core::git::{CommitSummary, PathStatus};
 use epicenter_folder_core::history::{
-    CommitOutcome, FetchOutcome, FilesObservation, GitError, GitSnapshot, OwnerEvent, PullError,
-    PullOutcome, PushOutcome, RecoverOutcome, Settled,
+    CommitOutcome, FetchOutcome, FilesObservation, GitError, GitSnapshot, MergeConflicts,
+    MergeError, MergeOutcome, OwnerEvent, PullError, PullOutcome, PushOutcome, RecoverOutcome,
+    Settled, StagedCommit,
 };
 use epicenter_folder_core::owner::{Caller, FolderOwner};
 use epicenter_folder_core::registry::AttachError;
@@ -53,7 +54,7 @@ pub struct FolderFilesChanged {
 /// The version of this command contract. A page built against another
 /// version is refused at attach, before it can change anything.
 ///
-/// Version 7 is the unreleased command contract. Push and fetch name a
+/// Version 8 is the unreleased command contract. Push and fetch name a
 /// session-owned request that can withdraw before transport admission. No
 /// command holds the folder across calls or names a terminal lease. A read
 /// returns its bytes and their SHA-256, and a file change is one of create,
@@ -64,11 +65,15 @@ pub struct FolderFilesChanged {
 /// Version 5 added the incoming record: the snapshot's `pendingIncoming`,
 /// `recover_incoming`, and the refusals a pending update causes. Version 6
 /// made `replace`'s `expectedSha256` optional: a version 5 page would read a
-/// missing unguarded target as `Conflict`, not `NotFound`. Version 7 removes
+/// missing unguarded target as `Conflict`, not `NotFound`. Version 7 removed
 /// the number `apply` named and the `Superseded` refusal: saves are no longer
-/// ordered by the page, and the last to land wins. A version 6 page would
-/// still count on that order. Any other version is refused at attach.
-pub const PROTOCOL: u32 = 7;
+/// ordered by the page, and the last to land wins. Version 8 adds
+/// `merge_incoming`, unfinished merges (the snapshot's `merging`,
+/// `lastMerge`, and merge activity, a recorded incoming update's `merge`,
+/// the `Unmerged` refusal), and a staged commit's `incoming` and
+/// `mergeStateWarning`; a version 7 page would read a merge in progress as a
+/// clean folder. Any other version is refused at attach.
+pub const PROTOCOL: u32 = 8;
 
 /// What a window receives when it attaches to a scope.
 #[derive(Debug, Clone, Serialize, Type)]
@@ -81,12 +86,6 @@ pub struct Attached {
     /// The snapshot at attach; events numbered above `sequence` follow it.
     pub sequence: u64,
     pub snapshot: GitSnapshot,
-}
-
-#[derive(Debug, Clone, Serialize, Type)]
-pub struct StagedCommit {
-    pub oid: String,
-    pub parent: Option<String>,
 }
 
 /// One window's session as the webview's resource table holds it, so a
@@ -612,6 +611,26 @@ pub async fn pull_fast_forward<R: Runtime>(
     .await
 }
 
+/// Merge the fetched remote head: a fast-forward when the branch is behind,
+/// otherwise a two-parent merge. `refuse` writes nothing on a conflict;
+/// `leave`, for a folder that does not commit on edit, publishes the merge
+/// unfinished, with conflict markers, unmerged index stages, and Git's merge
+/// state, for a person to resolve, stage, and commit. Never fetches.
+#[tauri::command]
+#[specta::specta]
+pub async fn merge_incoming<R: Runtime>(
+    webview: Webview<R>,
+    session: u32,
+    conflicts: MergeConflicts,
+) -> Result<MergeOutcome, MergeError> {
+    let owner = owner(&webview, session).map_err(|reason| MergeError::from(git_denied(reason)))?;
+    blocking(
+        move || owner.merge_incoming(conflicts),
+        |cause| Err(git_unconfirmed("merge")(cause).into()),
+    )
+    .await
+}
+
 /// Finish or clear this folder's pending incoming update, only because the
 /// page asked. Opening and status report a pending update and never resume
 /// it. Recovery writes only paths still at the update's before state; a path,
@@ -666,11 +685,7 @@ pub async fn commit_staged<R: Runtime>(
 ) -> Result<StagedCommit, GitError> {
     let owner = owner(&webview, session).map_err(git_denied)?;
     blocking(
-        move || {
-            owner
-                .commit_staged(&message)
-                .map(|(oid, parent)| StagedCommit { oid, parent })
-        },
+        move || owner.commit_staged(&message),
         |cause| Err(git_unconfirmed("commit")(cause)),
     )
     .await

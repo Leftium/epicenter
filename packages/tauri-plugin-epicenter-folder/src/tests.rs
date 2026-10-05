@@ -461,6 +461,22 @@ fn a_window_attaches_reads_publishes_and_commits_through_invoke() {
         invoke(&main, "pull_fast_forward", json!({ "session": session })).unwrap_err(),
         json!({ "name": "Git", "error": { "name": "NoRemote" } })
     );
+    // A merge, even one that would leave its conflicts, needs a remote first.
+    assert_eq!(
+        invoke(
+            &main,
+            "merge_incoming",
+            json!({ "session": session, "conflicts": "leave" })
+        )
+        .unwrap_err(),
+        json!({ "name": "Pull", "error": { "name": "Git", "error": { "name": "NoRemote" } } })
+    );
+    assert!(invoke(
+        &main,
+        "merge_incoming",
+        json!({ "session": session, "conflicts": "sometimes" })
+    )
+    .is_err());
 
     // Manual staging through invoke, since this scope does not commit on edit.
     apply(&main, session, json!([create("b.md", "B")])).unwrap();
@@ -488,6 +504,9 @@ fn a_window_attaches_reads_publishes_and_commits_through_invoke() {
     )
     .unwrap();
     assert_eq!(staged["parent"], committed["oid"]);
+    // A staged commit that finished no merge names no incoming parent.
+    assert_eq!(staged["incoming"], serde_json::Value::Null);
+    assert_eq!(staged["mergeStateWarning"], serde_json::Value::Null);
     assert_eq!(
         git(&fixture.root, &["rev-parse", "HEAD"]),
         staged["oid"].as_str().unwrap()

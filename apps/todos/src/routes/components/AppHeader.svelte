@@ -70,12 +70,11 @@
 	const NO_REMOTE =
 		'This folder has no Git remote, so there is nothing to pull from or push to.';
 	/**
-	 * Offered only where the folder merges (a browser folder) and the last
-	 * check saw commits on both sides. Pull stays fast-forward only.
+	 * Offered when the last check saw commits on both sides. Pull stays
+	 * fast-forward only.
 	 */
 	const offerMerge = $derived(
 		hasRemote &&
-			todos.folder.git.mergeUnsupported === undefined &&
 			todos.git.sync.state === 'observed' &&
 			todos.git.sync.value.ahead > 0 &&
 			todos.git.sync.value.behind > 0,

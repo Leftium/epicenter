@@ -34,11 +34,16 @@
  * Tauri sends again lands again. Each change's own condition still holds
  * where the owner publishes it.
  *
- * A fast-forward that stops partway leaves the owner's incoming record
- * (ADR-0474). The snapshot reports it as `pendingIncoming`; until it is
- * settled, commits, staging, and new updates are refused and saves continue.
- * `recoverIncoming()` is the only way it is resumed, and the owner decides
- * from what the folder holds then.
+ * A fast-forward or merge that stops partway leaves the owner's incoming
+ * record (ADR-0474). The snapshot reports it as `pendingIncoming`; until it
+ * is settled, commits, staging, and new updates are refused and saves
+ * continue. `recoverIncoming()` is the only way it is resumed, and the owner
+ * decides from what the folder holds then.
+ *
+ * The owner merges like every other folder: `mergeIncoming` sends one
+ * command, and with `conflicts: 'leave'` the owner leaves Git's own
+ * unfinished merge, which the snapshot reports as `merging` until a staged
+ * commit records it.
  *
  * This module loads no Git implementation and no browser storage.
  */
@@ -62,11 +67,18 @@ import {
 	type FolderHistory,
 } from './folder.js';
 import type {
+	MergeInProgress,
 	PendingIncoming,
 	RecordedIncoming,
 	StatusCode,
+	UnfinishedMerge,
 } from './git/backend.js';
-import { GitError, MergeError, PullError } from './git/errors.js';
+import {
+	GitError,
+	type MergeConflict,
+	MergeError,
+	PullError,
+} from './git/errors.js';
 import type {
 	CommitOutcome,
 	FetchOutcome,
@@ -87,11 +99,16 @@ import {
 	type FileStep as WireFileStep,
 	type GitError as WireGitError,
 	type GitSnapshot as WireGitSnapshot,
+	type MergeConflict as WireMergeConflict,
+	type MergeError as WireMergeError,
+	type MergeInProgress as WireMergeInProgress,
+	type MergeOutcome as WireMergeOutcome,
 	type PendingIncoming as WirePendingIncoming,
 	type PullError as WirePullError,
 	type PullOutcome as WirePullOutcome,
 	type PushOutcome as WirePushOutcome,
 	type RecoverOutcome as WireRecoverOutcome,
+	type UnfinishedMerge as WireUnfinishedMerge,
 } from './native/bindings.gen.js';
 import { callObserver } from './observer.js';
 
@@ -212,6 +229,8 @@ function gitError(error: WireGitError, operation: string): GitError {
 			return GitError.IncomingPending({
 				pending: pendingFromWire(error.pending),
 			}).error;
+		case 'Unmerged':
+			return GitError.Unmerged(error).error;
 	}
 }
 
@@ -220,6 +239,19 @@ function pendingFromWire(pending: WirePendingIncoming): PendingIncoming {
 	return pending.state === 'recorded'
 		? recordedFromWire(pending)
 		: Object.freeze({ state: 'unreadable', reason: pending.reason });
+}
+
+function unfinishedFromWire(merge: WireUnfinishedMerge): UnfinishedMerge {
+	return {
+		incoming: merge.incoming,
+		message: merge.message,
+		unmerged: merge.unmerged.map((path) => ({
+			path: path.path,
+			base: orUndefined(path.base),
+			ours: orUndefined(path.ours),
+			theirs: orUndefined(path.theirs),
+		})),
+	};
 }
 
 function recordedFromWire(
@@ -231,7 +263,51 @@ function recordedFromWire(
 		branch: pending.branch,
 		expectedHead: orUndefined(pending.expectedHead),
 		nextHead: pending.nextHead,
+		...(pending.merge === null
+			? {}
+			: { merge: unfinishedFromWire(pending.merge) }),
 	});
+}
+
+function mergingFromWire(merging: WireMergeInProgress): MergeInProgress {
+	return Object.freeze({
+		incoming: merging.incoming,
+		head: orUndefined(merging.head),
+		unresolved: merging.unresolved,
+	});
+}
+
+/** The owner's conflicts already have the shared shape. */
+const conflictsFromWire = (
+	conflicts: readonly WireMergeConflict[],
+): readonly MergeConflict[] => conflicts;
+
+function mergeError(error: WireMergeError): MergeError | PullError | GitError {
+	switch (error.name) {
+		case 'Pull':
+			return pullError(error.error);
+		case 'UnsupportedHistory':
+			return MergeError.UnsupportedHistory(error).error;
+		case 'Unmergeable':
+			return MergeError.Unmergeable(error).error;
+		case 'Conflicted':
+			return MergeError.Conflicted({
+				conflicts: conflictsFromWire(error.conflicts),
+			}).error;
+	}
+}
+
+function mergeOutcome(outcome: WireMergeOutcome): MergeOutcome {
+	switch (outcome.status) {
+		case 'upToDate':
+		case 'ahead':
+		case 'fastForwarded':
+			return pullOutcome(outcome);
+		case 'merged':
+			return outcome;
+		case 'conflicted':
+			return { ...outcome, conflicts: conflictsFromWire(outcome.conflicts) };
+	}
 }
 
 /** A settled recovery. A cleared or completed one names the record it settled. */
@@ -380,9 +456,6 @@ type Observed<T> =
 			readonly error: string | undefined;
 	  };
 
-const MERGE_UNSUPPORTED =
-	'merging diverged histories is not available in the desktop app yet';
-
 function snapshotFromWire(wire: WireGitSnapshot): GitSnapshot {
 	return Object.freeze({
 		branch: wire.branch,
@@ -398,7 +471,7 @@ function snapshotFromWire(wire: WireGitSnapshot): GitSnapshot {
 			ahead: sync.ahead,
 			behind: sync.behind,
 		})),
-		activity: { ...wire.activity, merge: { active: false } },
+		activity: wire.activity,
 		lastCommit:
 			wire.lastCommit === null
 				? undefined
@@ -430,11 +503,23 @@ function snapshotFromWire(wire: WireGitSnapshot): GitSnapshot {
 								? Ok(pullOutcome(wire.lastPull.result.value))
 								: Err(pullError(wire.lastPull.result.error)),
 					},
-		lastMerge: undefined,
-		// Absent where none is pending, as the shared snapshot has it.
+		lastMerge:
+			wire.lastMerge === null
+				? undefined
+				: {
+						at: wire.lastMerge.at,
+						result:
+							wire.lastMerge.result.status === 'ok'
+								? Ok(mergeOutcome(wire.lastMerge.result.value))
+								: Err(mergeError(wire.lastMerge.result.error)),
+					},
+		// Absent where none is pending or merging, as the shared snapshot has it.
 		...(wire.pendingIncoming === null
 			? {}
 			: { pendingIncoming: pendingFromWire(wire.pendingIncoming) }),
+		...(wire.merging === null
+			? {}
+			: { merging: mergingFromWire(wire.merging) }),
 		closed: wire.closed,
 	});
 }
@@ -841,13 +926,26 @@ function createHistory(
 					return recoverOutcome(result.data);
 				},
 			),
-		// The desktop owner merges nothing yet; nothing is sent to it.
-		mergeIncoming: () =>
-			client.local<Result<MergeOutcome, MergeError | PullError | GitError>>(
+		// The owner refuses `leave` under automatic history before anything
+		// runs, as every folder does.
+		mergeIncoming: ({ conflicts = 'refuse' } = {}) =>
+			client.local(
 				closed,
-				async () => MergeError.Unsupported({ reason: MERGE_UNSUPPORTED }),
+				async (): Promise<
+					Result<MergeOutcome, MergeError | PullError | GitError>
+				> => {
+					const result = await call(commands.mergeIncoming(session, conflicts));
+					// A lost reply may have published the merge, finished or not.
+					if (!result.sent)
+						return GitError.Unconfirmed({
+							operation: 'merge',
+							cause: result.cause,
+						});
+					if (result.settled === 'refused')
+						return Err(mergeError(result.error));
+					return Ok(mergeOutcome(result.data));
+				},
 			),
-		mergeUnsupported: MERGE_UNSUPPORTED,
 		paths: () =>
 			observe(
 				'status',
@@ -872,7 +970,14 @@ function createHistory(
 				change(
 					'commit',
 					() => commands.commitStaged(session, message),
-					(staged) => ({ oid: staged.oid, parent: orUndefined(staged.parent) }),
+					(staged) => ({
+						oid: staged.oid,
+						parent: orUndefined(staged.parent),
+						...(staged.incoming === null ? {} : { incoming: staged.incoming }),
+						...(staged.mergeStateWarning === null
+							? {}
+							: { mergeStateWarning: staged.mergeStateWarning }),
+					}),
 				),
 			),
 		diff: ({ staged, paths }) =>

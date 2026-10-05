@@ -26,6 +26,8 @@ use std::time::Duration;
 use serde::Serialize;
 use specta::Type;
 
+use crate::history::MergeInProgress;
+use crate::incoming::UnmergedPath;
 use crate::messages::{ChangeKind, PathChange};
 use crate::paths::{is_portable_path, path_problem};
 
@@ -34,8 +36,11 @@ const ZERO: &str = "0000000000000000000000000000000000000000";
 pub const EMPTY_TREE: &str = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
 const REMOTE_NAME: &str = "origin";
 const PLAIN_ONLY: &str = "automatic commits only write plain files";
-const OPERATION_MARKERS: [&str; 6] = [
-    "MERGE_HEAD",
+/// Git's empty blob: the base of a file both sides added.
+const EMPTY_BLOB: &str = "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391";
+/// Git operations no commit may run under. A merge in progress is not one of
+/// them: a staged commit is what finishes it (`merge_state`).
+const OPERATION_MARKERS: [&str; 5] = [
     "CHERRY_PICK_HEAD",
     "REVERT_HEAD",
     "rebase-merge",
@@ -468,8 +473,8 @@ impl Git {
         Err(Self::failure(&args, &output))
     }
 
-    /// Why automatic commits must not run now: a wrong or detached HEAD, or a
-    /// native Git operation in progress.
+    /// Why no commit may run now: a wrong or detached HEAD, or a native Git
+    /// operation other than a merge in progress.
     pub fn blocked(&self) -> Result<Option<String>, Failure> {
         let head = self.run(&["symbolic-ref", "--quiet", "HEAD"], None, &[])?;
         if head.code != Some(0) {
@@ -924,12 +929,26 @@ impl Git {
         })
     }
 
-    /// Trees for every directory, deepest first, one `mktree --batch` per depth.
+    /// Trees for every directory of plain files, deepest first.
     fn write_tree(&self, files: &BTreeMap<String, String>) -> Result<String, Failure> {
+        let entries: BTreeMap<String, (String, String)> = files
+            .iter()
+            .map(|(path, oid)| (path.clone(), ("100644".to_string(), oid.clone())))
+            .collect();
+        self.write_entries_tree(&entries)
+    }
+
+    /// Trees for every directory, deepest first, one `mktree --batch` per
+    /// depth. Each leaf keeps its own `(mode, oid)`; a submodule's mode names
+    /// a commit.
+    pub fn write_entries_tree(
+        &self,
+        files: &BTreeMap<String, (String, String)>,
+    ) -> Result<String, Failure> {
         // Directory path ("" is the root) to its `mktree` lines.
         let mut directories: BTreeMap<String, Vec<String>> = BTreeMap::new();
         directories.insert(String::new(), Vec::new());
-        for (path, oid) in files {
+        for (path, (mode, oid)) in files {
             let (directory, name) = path.rsplit_once('/').unwrap_or(("", path));
             let mut ancestor = String::new();
             for part in directory.split('/').filter(|part| !part.is_empty()) {
@@ -939,10 +958,11 @@ impl Git {
                 ancestor.push_str(part);
                 directories.entry(ancestor.clone()).or_default();
             }
+            let kind = if mode == "160000" { "commit" } else { "blob" };
             directories
                 .entry(directory.to_string())
                 .or_default()
-                .push(format!("100644 blob {oid}\t{}", line_quoted(name)));
+                .push(format!("{mode} {kind} {oid}\t{}", line_quoted(name)));
         }
         let depth = |directory: &str| {
             if directory.is_empty() {
@@ -1162,8 +1182,20 @@ impl Git {
         message: &str,
         author: &Author,
     ) -> Result<String, Failure> {
+        let parents: Vec<&str> = parent.into_iter().collect();
+        self.write_commit_with_parents(tree, &parents, message, author)
+    }
+
+    /// Write a commit object with exactly `parents`, in order.
+    pub fn write_commit_with_parents(
+        &self,
+        tree: &str,
+        parents: &[&str],
+        message: &str,
+        author: &Author,
+    ) -> Result<String, Failure> {
         let mut args = vec!["commit-tree", "--no-gpg-sign"];
-        if let Some(parent) = parent {
+        for parent in parents {
             args.extend(["-p", parent]);
         }
         args.push(tree);
@@ -1269,6 +1301,8 @@ impl Git {
     }
 
     /// Commit the index onto the branch head with a user-authored message.
+    /// The caller has found no merge in progress; a merge is committed by
+    /// `commit_merge_index`.
     pub fn commit_index(&self, message: &str, author: &Author) -> Result<IndexCommit, Failure> {
         let parent = self.read_branch()?;
         if self.index_matches_head()? {
@@ -1294,6 +1328,290 @@ impl Git {
             Some(oid) => Ok(IndexCommit::Committed { oid, parent }),
             None => Err("git commit succeeded without a branch head".to_string()),
         }
+    }
+
+    // ------------------------------------------------------------------
+    // Merges
+    // ------------------------------------------------------------------
+
+    /// The best common ancestors of two commits.
+    pub fn merge_bases(&self, left: &str, right: &str) -> Result<Vec<String>, Failure> {
+        let args = ["merge-base", "--all", left, right];
+        let output = self.run(&args, None, &[])?;
+        match output.code {
+            Some(0) => Ok(text(&output.stdout)
+                .lines()
+                .filter(|line| !line.is_empty())
+                .map(str::to_string)
+                .collect()),
+            Some(1) if output.stderr.is_empty() => Ok(Vec::new()),
+            _ => Err(Self::failure(&args, &output)),
+        }
+    }
+
+    /// Store exact bytes as a blob; no filter runs.
+    pub fn write_blob(&self, bytes: &[u8]) -> Result<String, Failure> {
+        let output = self.ok(&["hash-object", "-w", "--stdin"], Some(bytes), &[])?;
+        Ok(text(&output).trim().to_string())
+    }
+
+    /// Git's own three-way line merge of three blobs, written as a blob, and
+    /// whether it left conflict markers. `base` absent is the empty blob.
+    /// The labels follow the markers, as `git merge` writes them.
+    pub fn merge_blobs(
+        &self,
+        base: Option<&str>,
+        ours: &str,
+        theirs: &str,
+        labels: (&str, &str),
+    ) -> Result<(String, bool), Failure> {
+        let base = match base {
+            Some(base) => base.to_string(),
+            None => {
+                let empty = self.write_blob(b"")?;
+                debug_assert_eq!(empty, EMPTY_BLOB);
+                empty
+            }
+        };
+        let args = [
+            "merge-file",
+            "--object-id",
+            "-L",
+            labels.0,
+            "-L",
+            "base",
+            "-L",
+            labels.1,
+            ours,
+            &base,
+            theirs,
+        ];
+        let output = self.run(&args, None, &[])?;
+        match output.code {
+            Some(code @ 0..=127) => Ok((text(&output.stdout).trim().to_string(), code > 0)),
+            _ => Err(Self::failure(&args, &output)),
+        }
+    }
+
+    /// The first of `paths`, in byte order, that `commit`'s own attribute
+    /// files give a `merge` attribute other than Git's text merge: unset, as
+    /// the `binary` macro does, or a driver.
+    pub fn merge_attribute<'a>(
+        &self,
+        commit: &str,
+        paths: impl IntoIterator<Item = &'a str>,
+    ) -> Result<Option<(String, String)>, Failure> {
+        let mut paths: Vec<&str> = paths.into_iter().collect();
+        if paths.is_empty() {
+            return Ok(None);
+        }
+        paths.sort_unstable();
+        let source = format!("--source={commit}");
+        let args = ["check-attr", &source, "--stdin", "-z", "merge"];
+        let attributes = records(&self.ok(&args, Some(&nul_separated(paths)), &[])?);
+        for triple in attributes.chunks(3) {
+            let [path, _, value] = triple else { continue };
+            if value != "unspecified" && value != "set" {
+                let shown = if value == "unset" {
+                    "-merge".to_string()
+                } else {
+                    format!("merge={value}")
+                };
+                return Ok(Some((path.clone(), shown)));
+            }
+        }
+        Ok(None)
+    }
+
+    /// A commit ID stored in a private file of the Git directory, `None` when
+    /// the file is absent, and an error when it holds anything else.
+    fn private_commit(&self, name: &str) -> Result<Option<String>, Failure> {
+        match fs::read(self.gitdir.join(name)) {
+            Ok(bytes) => {
+                let value = text(&bytes);
+                let first = value.lines().next().unwrap_or("").trim().to_string();
+                if matches!(first.len(), 40 | 64)
+                    && first
+                        .bytes()
+                        .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+                {
+                    Ok(Some(first))
+                } else {
+                    Err(format!(".git/{name} does not name a commit"))
+                }
+            }
+            Err(cause) if cause.kind() == std::io::ErrorKind::NotFound => Ok(None),
+            Err(cause) => Err(format!(".git/{name} cannot be read: {cause}")),
+        }
+    }
+
+    /// The merge Git records as begun and not committed: `MERGE_HEAD`,
+    /// `ORIG_HEAD`, and the paths still unmerged.
+    pub fn merge_state(&self) -> Result<Option<MergeInProgress>, Failure> {
+        let Some(incoming) = self.private_commit("MERGE_HEAD")? else {
+            return Ok(None);
+        };
+        let head = self.private_commit("ORIG_HEAD").unwrap_or(None);
+        Ok(Some(MergeInProgress {
+            incoming,
+            head,
+            unresolved: self.unmerged_paths()?,
+        }))
+    }
+
+    /// Each path the index holds as unmerged stages, once, in index order,
+    /// whether or not `MERGE_HEAD` exists.
+    pub fn unmerged_paths(&self) -> Result<Vec<String>, Failure> {
+        let listing = self.ok(&["ls-files", "--unmerged", "-z"], None, &[])?;
+        let mut unresolved: Vec<String> = Vec::new();
+        for record in records(&listing) {
+            if let Some((_, path)) = record.split_once('\t') {
+                if unresolved.last().map(String::as_str) != Some(path) {
+                    unresolved.push(path.to_string());
+                }
+            }
+        }
+        Ok(unresolved)
+    }
+
+    /// The parents of `commit`, in order.
+    pub fn parents(&self, commit: &str) -> Result<Vec<String>, Failure> {
+        let listed = self.ok(&["log", "-1", "--format=%P", commit], None, &[])?;
+        Ok(text(&listed)
+            .split_whitespace()
+            .map(str::to_string)
+            .collect())
+    }
+
+    /// Commit the index as a merge whose parents are exactly `head` and
+    /// `incoming`, moving the branch only from `head`. The tree is built from
+    /// a listing of the index, never by `git commit` or `write-tree`, which
+    /// would commit onto whatever `HEAD` names now and rewrite the index to
+    /// cache its trees: a commit the compare-and-swap refuses leaves the
+    /// index, the files, and the merge state exactly as they were.
+    pub fn commit_merge_index(
+        &self,
+        message: &str,
+        author: &Author,
+        head: &str,
+        incoming: &str,
+    ) -> Result<IndexCommit, Failure> {
+        let mut entries: BTreeMap<String, (String, String)> = BTreeMap::new();
+        for (path, stages) in self.index_stages()? {
+            match stages.get(&0) {
+                Some(entry) if stages.len() == 1 => {
+                    entries.insert(path, entry.clone());
+                }
+                _ => return Err(format!("{path} is still unmerged")),
+            }
+        }
+        let tree = self.write_entries_tree(&entries)?;
+        let oid = self.write_commit_with_parents(&tree, &[head, incoming], message, author)?;
+        match self.move_branch(Some(head), &oid, "epicenter: merge")? {
+            Cas::Moved => Ok(IndexCommit::Committed {
+                oid,
+                parent: Some(head.to_string()),
+            }),
+            Cas::Lost { actual } => Ok(IndexCommit::BranchMoved { actual }),
+        }
+    }
+
+    /// Replace a private file of the Git directory whole: a scratch file,
+    /// flushed, then renamed into place.
+    fn write_private(&self, name: &str, bytes: &[u8]) -> Result<(), Failure> {
+        let scratch = self.gitdir.join(format!(
+            "{name}.epicenter-{}-{}",
+            std::process::id(),
+            SNAPSHOT_SEQUENCE.fetch_add(1, Ordering::SeqCst)
+        ));
+        let written = (|| {
+            let mut file = fs::File::create(&scratch)?;
+            file.write_all(bytes)?;
+            file.sync_all()?;
+            fs::rename(&scratch, self.gitdir.join(name))
+        })();
+        written.map_err(|cause| {
+            let _ = fs::remove_file(&scratch);
+            format!(".git/{name} could not be written: {cause}")
+        })
+    }
+
+    /// Record a merge in progress over the unmoved branch, as `git merge`
+    /// leaves one: `ORIG_HEAD`, `MERGE_MSG`, and `MERGE_HEAD` last, whose
+    /// presence says the merge began.
+    pub fn write_merge_state(
+        &self,
+        head: &str,
+        incoming: &str,
+        message: &str,
+    ) -> Result<(), Failure> {
+        self.write_private("ORIG_HEAD", format!("{head}\n").as_bytes())?;
+        let mut body = message.as_bytes().to_vec();
+        if !body.ends_with(b"\n") {
+            body.push(b'\n');
+        }
+        self.write_private("MERGE_MSG", &body)?;
+        self.write_private("MERGE_HEAD", format!("{incoming}\n").as_bytes())
+    }
+
+    /// Remove `MERGE_HEAD` first, then `MERGE_MSG` and `MERGE_MODE`. `ORIG_HEAD`
+    /// stays, as Git leaves it. Files already gone are not an error.
+    pub fn clear_merge(&self) -> Result<(), Failure> {
+        for name in ["MERGE_HEAD", "MERGE_MSG", "MERGE_MODE"] {
+            match fs::remove_file(self.gitdir.join(name)) {
+                Ok(()) => {}
+                Err(cause) if cause.kind() == std::io::ErrorKind::NotFound => {}
+                Err(cause) => return Err(format!(".git/{name} could not be removed: {cause}")),
+            }
+        }
+        Ok(())
+    }
+
+    /// Give each unmerged path its stages in place of its index entry,
+    /// through Git's index lock.
+    pub fn stage_unmerged(&self, unmerged: &[UnmergedPath]) -> Result<(), Failure> {
+        if unmerged.is_empty() {
+            return Ok(());
+        }
+        let mut input = Vec::new();
+        for entry in unmerged {
+            // A mode-0 record removes the path's entries before its stages go in.
+            input.extend_from_slice(format!("0 {ZERO}\t{}\0", entry.path).as_bytes());
+            for (stage, oid) in [(1, &entry.base), (2, &entry.ours), (3, &entry.theirs)] {
+                if let Some(oid) = oid {
+                    input.extend_from_slice(
+                        format!("100644 {oid} {stage}\t{}\0", entry.path).as_bytes(),
+                    );
+                }
+            }
+        }
+        self.ok(&["update-index", "-z", "--index-info"], Some(&input), &[])?;
+        Ok(())
+    }
+
+    /// Every index entry as stage to `(mode, oid)`, by path.
+    #[allow(clippy::type_complexity)]
+    pub fn index_stages(
+        &self,
+    ) -> Result<BTreeMap<String, BTreeMap<u8, (String, String)>>, Failure> {
+        let listing = self.ok(&["ls-files", "--stage", "-z"], None, &[])?;
+        let mut entries: BTreeMap<String, BTreeMap<u8, (String, String)>> = BTreeMap::new();
+        for record in records(&listing) {
+            let Some((meta, path)) = record.split_once('\t') else {
+                continue;
+            };
+            let mut fields = meta.split(' ');
+            let (mode, oid, stage) = (
+                fields.next().unwrap_or(""),
+                fields.next().unwrap_or(""),
+                fields.next().unwrap_or(""),
+            );
+            entries.entry(path.to_string()).or_default().insert(
+                stage.parse().unwrap_or(u8::MAX),
+                (mode.to_string(), oid.to_string()),
+            );
+        }
+        Ok(entries)
     }
 
     pub fn diff(&self, staged: bool, paths: &[String]) -> Result<String, Failure> {

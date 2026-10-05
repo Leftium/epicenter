@@ -1229,9 +1229,6 @@ export function createTodos(folder: TodosFolder) {
 			if (closing !== undefined) return GitError.Closed();
 			if (departing)
 				return GitError.Failed({ operation: 'merge', cause: DEPARTING });
-			const unsupported = folder.git.mergeUnsupported;
-			if (unsupported !== undefined)
-				return MergeError.Unsupported({ reason: unsupported });
 			return admitted(
 				(async (): Promise<
 					Result<MergeOutcome, MergeError | PullError | GitError>

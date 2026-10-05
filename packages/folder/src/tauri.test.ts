@@ -27,6 +27,9 @@
  * - Closing stops a terminal command's later steps and waits for the one
  *   already sent
  * - Snapshot events replace the snapshot in order; a stale one is dropped
+ * - A merge is one `merge_incoming` with its conflict policy; its outcomes,
+ *   refusals, the snapshot's merge state, and a staged commit's merge parent
+ *   arrive in the shared shapes, and a lost reply is `Unconfirmed`
  * - Closing detaches this window once and does not shut the folder down
  *
  * See also:
@@ -96,7 +99,7 @@ const wireSnapshot = (overrides: Record<string, unknown> = {}) => ({
 	files: { state: 'unknown', error: null },
 	sync: { state: 'unknown', error: null },
 	activity: Object.fromEntries(
-		['scan', 'commit', 'push', 'fetch', 'pull'].map((name) => [
+		['scan', 'commit', 'push', 'fetch', 'pull', 'merge'].map((name) => [
 			name,
 			{ active: false },
 		]),
@@ -105,7 +108,9 @@ const wireSnapshot = (overrides: Record<string, unknown> = {}) => ({
 	lastPush: null,
 	lastFetch: null,
 	lastPull: null,
+	lastMerge: null,
 	pendingIncoming: null,
+	merging: null,
 	closed: false,
 	...overrides,
 });
@@ -139,7 +144,7 @@ async function attached() {
 		withdraw_request: () => null,
 	};
 	const folder = expectOk(await openFolder({ id: 'notes', definition }));
-	expect(sent('attach')[0]?.args).toEqual({ scope: 'notes', protocol: 7 });
+	expect(sent('attach')[0]?.args).toEqual({ scope: 'notes', protocol: 8 });
 	expect(folder.location).toEqual({
 		kind: 'directory',
 		root: '/Users/someone/Epicenter/notes',
@@ -176,7 +181,7 @@ test('the folder opened is the scope the opener names', async () => {
 	);
 	expect(sent('attach')[0]?.args).toEqual({
 		scope: 'so.epicenter.taurifoldertest',
-		protocol: 7,
+		protocol: 8,
 	});
 	expect(folder.git.snapshot.commitOnEdit).toBe(false);
 	await folder.close();
@@ -251,14 +256,14 @@ test.each([
 test('a desktop app that speaks another protocol is refused at attach, before any other call', async () => {
 	calls = [];
 	replies = {
-		// A desktop app from before saves stopped carrying a number.
-		attach: () => refuse({ name: 'Incompatible', host: 6, page: 7 }),
+		// A desktop app from before it merged.
+		attach: () => refuse({ name: 'Incompatible', host: 7, page: 8 }),
 	};
 	const refused = expectErr(await openFolder({ id: 'notes', definition }));
-	expect(refused).toMatchObject({ name: 'Incompatible', host: 6, page: 7 });
+	expect(refused).toMatchObject({ name: 'Incompatible', host: 7, page: 8 });
 	expect(refused.message).toContain('Update the app');
 	expect(calls).toEqual([
-		{ cmd: 'attach', args: { scope: 'notes', protocol: 7 } },
+		{ cmd: 'attach', args: { scope: 'notes', protocol: 8 } },
 	]);
 });
 
@@ -1025,6 +1030,7 @@ const RECORD = {
 	branch: 'main',
 	expectedHead: null,
 	nextHead: 'b'.repeat(40),
+	merge: null,
 } as const;
 const RECORDED: RecordedIncoming = {
 	state: 'recorded',
@@ -1143,16 +1149,198 @@ test('history work a pending update holds back is refused with the record that h
 	});
 });
 
-test('a merge is unsupported in the desktop app: nothing is sent and the snapshot shows no merge', async () => {
+// ============================================================================
+// Merging
+// ============================================================================
+
+const LOCAL = 'c'.repeat(40);
+const FETCHED = 'd'.repeat(40);
+const MERGED = 'e'.repeat(40);
+const COLOR_CONFLICT = { reason: 'content', path: 'notes/color.txt' } as const;
+
+test('a merge sends one command with its conflict policy and maps each outcome', async () => {
 	const folder = await attached();
-	expect(folder.git.mergeUnsupported).toBeString();
-	expect(expectErr(await folder.git.mergeIncoming())).toMatchObject({
-		name: 'Unsupported',
-		reason: folder.git.mergeUnsupported,
+	replies.merge_incoming = ({ args }) =>
+		args.conflicts === 'refuse'
+			? {
+					status: 'merged',
+					from: LOCAL,
+					to: MERGED,
+					fetched: FETCHED,
+					changedPaths: ['a.md'],
+				}
+			: {
+					status: 'conflicted',
+					from: LOCAL,
+					fetched: FETCHED,
+					conflicts: [COLOR_CONFLICT],
+					changedPaths: ['notes/color.txt'],
+				};
+
+	expect(expectOk(await folder.git.mergeIncoming())).toEqual({
+		status: 'merged',
+		from: LOCAL,
+		to: MERGED,
+		fetched: FETCHED,
+		changedPaths: ['a.md'],
 	});
-	expect(calls).toEqual([]);
-	expect(folder.git.snapshot.activity.merge).toEqual({ active: false });
-	expect(folder.git.snapshot.lastMerge).toBeUndefined();
+	expect(
+		expectOk(await folder.git.mergeIncoming({ conflicts: 'leave' })),
+	).toEqual({
+		status: 'conflicted',
+		from: LOCAL,
+		fetched: FETCHED,
+		conflicts: [COLOR_CONFLICT],
+		changedPaths: ['notes/color.txt'],
+	});
+	replies.merge_incoming = () => ({
+		status: 'fastForwarded',
+		from: null,
+		to: FETCHED,
+		changedPaths: [],
+	});
+	expect(expectOk(await folder.git.mergeIncoming())).toEqual({
+		status: 'fastForwarded',
+		from: undefined,
+		to: FETCHED,
+		changedPaths: [],
+	});
+	expect(sent('merge_incoming').map((call) => call.args)).toEqual([
+		{ session: 7, conflicts: 'refuse' },
+		{ session: 7, conflicts: 'leave' },
+		{ session: 7, conflicts: 'refuse' },
+	]);
+	await folder.close();
+});
+
+test('merge refusals keep their names, and a lost reply is Unconfirmed and sent once', async () => {
+	const folder = await attached();
+	for (const [refusal, expected] of [
+		[
+			{ name: 'Conflicted', conflicts: [COLOR_CONFLICT] },
+			{ name: 'Conflicted', conflicts: [COLOR_CONFLICT] },
+		],
+		[
+			{ name: 'UnsupportedHistory', head: LOCAL, fetched: FETCHED, bases: 2 },
+			{ name: 'UnsupportedHistory', bases: 2 },
+		],
+		[
+			{ name: 'Unmergeable', paths: ['a.md'], reason: 'merge=union' },
+			{ name: 'Unmergeable', paths: ['a.md'] },
+		],
+		[
+			{ name: 'Pull', error: { name: 'Blocked', reason: 'a merge' } },
+			{ name: 'Blocked', reason: 'a merge' },
+		],
+		[
+			{
+				name: 'Pull',
+				error: { name: 'Git', error: { name: 'AutomaticHistory' } },
+			},
+			{ name: 'AutomaticHistory' },
+		],
+	] as const) {
+		replies.merge_incoming = () => refuse(refusal);
+		expect(expectErr(await folder.git.mergeIncoming())).toMatchObject(
+			expected,
+		);
+	}
+	calls = [];
+	replies.merge_incoming = () => {
+		throw new Error('the webview lost its IPC connection');
+	};
+	expect(expectErr(await folder.git.mergeIncoming()).name).toBe('Unconfirmed');
+	expect(sent('merge_incoming')).toHaveLength(1);
+	await folder.close();
+});
+
+test('the snapshot shows a merge in progress, its last attempt, and a pending merge publication', async () => {
+	const folder = await attached();
+	expect('merging' in folder.git.snapshot).toBe(false);
+	const unmerged = {
+		path: 'notes/color.txt',
+		base: null,
+		ours: 'f'.repeat(40),
+		theirs: 'a'.repeat(40),
+	};
+	emit('folder-snapshot-changed', {
+		scope: 'notes',
+		sequence: 4,
+		snapshot: wireSnapshot({
+			activity: Object.fromEntries(
+				['scan', 'commit', 'push', 'fetch', 'pull', 'merge'].map((name) => [
+					name,
+					{ active: name === 'merge' },
+				]),
+			),
+			merging: { incoming: FETCHED, head: LOCAL, unresolved: [] },
+			lastMerge: {
+				at: 5,
+				result: {
+					status: 'err',
+					error: { name: 'Conflicted', conflicts: [COLOR_CONFLICT] },
+				},
+			},
+			pendingIncoming: {
+				...RECORD,
+				expectedHead: LOCAL,
+				merge: { incoming: FETCHED, message: 'Merge', unmerged: [unmerged] },
+			},
+		}),
+	});
+	const snapshot = folder.git.snapshot;
+	expect(snapshot.activity.merge).toEqual({ active: true });
+	expect(snapshot.merging).toEqual({
+		incoming: FETCHED,
+		head: LOCAL,
+		unresolved: [],
+	});
+	expect(snapshot.lastMerge?.result.error).toMatchObject({
+		name: 'Conflicted',
+		conflicts: [COLOR_CONFLICT],
+	});
+	expect(snapshot.pendingIncoming).toEqual({
+		...RECORDED,
+		expectedHead: LOCAL,
+		merge: {
+			incoming: FETCHED,
+			message: 'Merge',
+			unmerged: [{ ...unmerged, base: undefined }],
+		},
+	});
+	await folder.close();
+});
+
+test('a staged commit names the merge it finished, and an unmerged path refuses it', async () => {
+	const folder = await attached();
+	replies.commit_staged = () => ({
+		oid: MERGED,
+		parent: LOCAL,
+		incoming: FETCHED,
+		mergeStateWarning: 'MERGE_MSG could not be removed',
+	});
+	expect(expectOk(await folder.git.commitStaged('Merge'))).toEqual({
+		oid: MERGED,
+		parent: LOCAL,
+		incoming: FETCHED,
+		mergeStateWarning: 'MERGE_MSG could not be removed',
+	});
+	replies.commit_staged = () => ({
+		oid: MERGED,
+		parent: null,
+		incoming: null,
+		mergeStateWarning: null,
+	});
+	expect(expectOk(await folder.git.commitStaged('Plain'))).toEqual({
+		oid: MERGED,
+		parent: undefined,
+	});
+	replies.commit_staged = () =>
+		refuse({ name: 'Unmerged', paths: ['notes/color.txt'] });
+	expect(expectErr(await folder.git.commitStaged('Too soon'))).toMatchObject({
+		name: 'Unmerged',
+		paths: ['notes/color.txt'],
+	});
 	await folder.close();
 });
 

@@ -20,6 +20,7 @@ Attach to the folders the shell registered for this window, then read, publish, 
 - `allow-push`
 - `allow-fetch`
 - `allow-pull-fast-forward`
+- `allow-merge-incoming`
 - `allow-recover-incoming`
 - `allow-paths`
 - `allow-stage`
@@ -292,6 +293,32 @@ Enables the log command without any pre-configured scope.
 <td>
 
 Denies the log command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`epicenter-folder:allow-merge-incoming`
+
+</td>
+<td>
+
+Enables the merge_incoming command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`epicenter-folder:deny-merge-incoming`
+
+</td>
+<td>
+
+Denies the merge_incoming command without any pre-configured scope.
 
 </td>
 </tr>

@@ -51,6 +51,11 @@ pub enum GitError {
     IncomingPending {
         pending: PendingIncoming,
     },
+    /// A merge in progress still has paths whose index entries are unmerged
+    /// stages. Nothing was written; stage each resolution, then commit.
+    Unmerged {
+        paths: Vec<String>,
+    },
 }
 
 impl GitError {
@@ -248,6 +253,173 @@ impl From<GitError> for PullError {
     }
 }
 
+/// How `merge_incoming` treats competing changes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, serde::Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub enum MergeConflicts {
+    /// Write nothing when anything conflicts.
+    Refuse,
+    /// Publish the merge with its conflicts in place, for a person to resolve,
+    /// stage, and commit. Requires `commitOnEdit: false`.
+    Leave,
+}
+
+/// Which version of `kv.json` is not a KV object. `ours` is the local branch.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub enum MergeSide {
+    Base,
+    Ours,
+    Theirs,
+}
+
+/// Which side deleted a file the other changed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub enum DeletedBy {
+    Ours,
+    Theirs,
+}
+
+/// One reason a merge could not combine both sides by itself.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
+#[serde(tag = "reason", rename_all = "camelCase")]
+pub enum MergeConflict {
+    /// Both sides changed the same lines of a text file.
+    Content { path: String },
+    /// Both sides changed a file whose bytes are not merged as text: not
+    /// UTF-8, holding a NUL byte, or holding a line break the line merge
+    /// would not keep.
+    Binary { path: String },
+    /// One side deleted a file the other changed.
+    #[serde(rename_all = "camelCase")]
+    Deleted { path: String, deleted_by: DeletedBy },
+    /// One side has a file where the other has a directory.
+    Shape { path: String },
+    /// Both sides changed one root key of `kv.json` differently. Values are
+    /// raw JSON text, `null` for an absent key.
+    KvKey {
+        path: String,
+        key: String,
+        base: Option<String>,
+        ours: Option<String>,
+        theirs: Option<String>,
+    },
+    /// One side deleted `kv.json` while the other changed its values.
+    KvFile { path: String },
+    /// Both sides changed `kv.json`, and `side`'s text is not a KV object.
+    KvInvalid { path: String, side: MergeSide },
+}
+
+impl MergeConflict {
+    pub fn path(&self) -> &str {
+        match self {
+            Self::Content { path }
+            | Self::Binary { path }
+            | Self::Deleted { path, .. }
+            | Self::Shape { path }
+            | Self::KvKey { path, .. }
+            | Self::KvFile { path }
+            | Self::KvInvalid { path, .. } => path,
+        }
+    }
+}
+
+/// A merge fast-forwards when it can, and otherwise records a two-parent
+/// commit; asked to leave conflicts, it may stop with them in place.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
+#[serde(tag = "status", rename_all = "camelCase")]
+pub enum MergeOutcome {
+    UpToDate {
+        head: Option<String>,
+    },
+    Ahead {
+        head: String,
+    },
+    #[serde(rename_all = "camelCase")]
+    FastForwarded {
+        from: Option<String>,
+        to: String,
+        changed_paths: Vec<String>,
+    },
+    /// The merge commit `to` has the parents `from` and `fetched`.
+    #[serde(rename_all = "camelCase")]
+    Merged {
+        from: String,
+        to: String,
+        fetched: String,
+        changed_paths: Vec<String>,
+    },
+    /// Only with `leave`: the files, the index's stages, and Git's merge
+    /// state hold the merge; the branch is still `from`.
+    #[serde(rename_all = "camelCase")]
+    Conflicted {
+        from: String,
+        fetched: String,
+        conflicts: Vec<MergeConflict>,
+        changed_paths: Vec<String>,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
+#[serde(tag = "name")]
+pub enum MergeError {
+    /// A refusal every incoming update can report, or a Git failure.
+    Pull { error: PullError },
+    /// The two heads have no common commit, or more than one best one.
+    UnsupportedHistory {
+        head: String,
+        fetched: String,
+        bases: u32,
+    },
+    /// A path would need a merge this folder does not perform faithfully.
+    /// Nothing was written.
+    Unmergeable { paths: Vec<String>, reason: String },
+    /// Competing changes need a person. Nothing was written.
+    Conflicted { conflicts: Vec<MergeConflict> },
+}
+
+impl From<PullError> for MergeError {
+    fn from(error: PullError) -> Self {
+        Self::Pull { error }
+    }
+}
+
+impl From<GitError> for MergeError {
+    fn from(error: GitError) -> Self {
+        Self::Pull {
+            error: PullError::Git { error },
+        }
+    }
+}
+
+/// Git's merge state as the repository holds it: a merge that began and has
+/// not been committed.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
+pub struct MergeInProgress {
+    /// `MERGE_HEAD`: the merge commit's second parent.
+    pub incoming: String,
+    /// `ORIG_HEAD`: the head the merge began from, when recorded.
+    pub head: Option<String>,
+    /// Paths whose index entry is still unmerged stages. Empty once each is
+    /// staged, while the merge waits for its commit.
+    pub unresolved: Vec<String>,
+}
+
+/// A staged commit that landed.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct StagedCommit {
+    pub oid: String,
+    pub parent: Option<String>,
+    /// Set when the commit finished a merge: its second parent.
+    pub incoming: Option<String>,
+    /// The merge commit landed, but Git's merge state could not be removed.
+    /// The next staged commit removes it once it confirms the branch holds
+    /// `incoming`.
+    pub merge_state_warning: Option<String>,
+}
+
 /// A settled attempt recorded in the snapshot.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
 #[serde(tag = "status", rename_all = "camelCase")]
@@ -311,6 +483,7 @@ pub struct Activities {
     pub push: Activity,
     pub fetch: Activity,
     pub pull: Activity,
+    pub merge: Activity,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
@@ -333,10 +506,15 @@ pub struct GitSnapshot {
     pub last_push: Option<Attempt<PushOutcome>>,
     pub last_fetch: Option<Attempt<Settled<FetchOutcome, GitError>>>,
     pub last_pull: Option<Attempt<Settled<PullOutcome, PullError>>>,
+    pub last_merge: Option<Attempt<Settled<MergeOutcome, MergeError>>>,
     /// An incoming update whose record exists, as last read. While there is
     /// one, staging, commits, and new incoming updates wait for
     /// `recoverIncoming`; file saves continue.
     pub pending_incoming: Option<PendingIncoming>,
+    /// Git's merge state as last read. It stays after every path is staged,
+    /// until the staged commit records the merge. While it is here,
+    /// whole-folder commits, pulls, and merges are blocked.
+    pub merging: Option<MergeInProgress>,
     pub closed: bool,
 }
 

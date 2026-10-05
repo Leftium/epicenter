@@ -2947,29 +2947,6 @@ test('merge fetches, then merges what was fetched, and pushes nothing', async ()
 	]);
 });
 
-test('where the folder cannot merge, merge fetches nothing and says why', async () => {
-	const { calls, adapt } = recordingFolder();
-	const todos = await open((folder) => {
-		const adapted = adapt(folder);
-		return {
-			...adapted,
-			git: {
-				...adapted.git,
-				mergeUnsupported: 'not in this place',
-				get snapshot() {
-					return folder.git.snapshot;
-				},
-			},
-		};
-	});
-	calls.length = 0;
-	expect((await todos.merge()).error).toMatchObject({
-		name: 'Unsupported',
-		reason: 'not in this place',
-	});
-	expect(calls).toEqual([]);
-});
-
 test('close cancels a pull whose fetch is still on the network, and nothing is fast-forwarded', async () => {
 	const originalFetch = globalThis.fetch;
 	let requests = 0;

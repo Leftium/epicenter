@@ -1728,8 +1728,6 @@ export function createHistory({
 		pullFastForward: pullNow,
 		mergeIncoming: mergeNow,
 		recoverIncoming: recoverNow,
-		// Every folder whose history this process records merges.
-		mergeUnsupported: undefined,
 		paths: (): Promise<Result<PathStatus[], GitError>> =>
 			guarded('status', () => exclusive(() => backend.pathStatus())),
 		async stage(

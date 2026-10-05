@@ -415,6 +415,18 @@
           "markdownDescription": "Denies the log command without any pre-configured scope."
         },
         {
+          "description": "Enables the merge_incoming command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-merge-incoming",
+          "markdownDescription": "Enables the merge_incoming command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the merge_incoming command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-merge-incoming",
+          "markdownDescription": "Denies the merge_incoming command without any pre-configured scope."
+        },
+        {
           "description": "Enables the mkdir command without any pre-configured scope.",
           "type": "string",
           "const": "allow-mkdir",
@@ -559,10 +571,10 @@
           "markdownDescription": "Denies the withdraw_request command without any pre-configured scope."
         },
         {
-          "description": "Attach to the folders the shell registered for this window, then read, publish, and record history through them.\n#### This default permission set includes:\n\n- `allow-attach`\n- `allow-detach`\n- `allow-list`\n- `allow-children`\n- `allow-read`\n- `allow-read-many`\n- `allow-apply`\n- `allow-mkdir`\n- `allow-rmdir`\n- `allow-status`\n- `allow-commit`\n- `allow-open-request`\n- `allow-withdraw-request`\n- `allow-push`\n- `allow-fetch`\n- `allow-pull-fast-forward`\n- `allow-recover-incoming`\n- `allow-paths`\n- `allow-stage`\n- `allow-commit-staged`\n- `allow-diff`\n- `allow-log`",
+          "description": "Attach to the folders the shell registered for this window, then read, publish, and record history through them.\n#### This default permission set includes:\n\n- `allow-attach`\n- `allow-detach`\n- `allow-list`\n- `allow-children`\n- `allow-read`\n- `allow-read-many`\n- `allow-apply`\n- `allow-mkdir`\n- `allow-rmdir`\n- `allow-status`\n- `allow-commit`\n- `allow-open-request`\n- `allow-withdraw-request`\n- `allow-push`\n- `allow-fetch`\n- `allow-pull-fast-forward`\n- `allow-merge-incoming`\n- `allow-recover-incoming`\n- `allow-paths`\n- `allow-stage`\n- `allow-commit-staged`\n- `allow-diff`\n- `allow-log`",
           "type": "string",
           "const": "default",
-          "markdownDescription": "Attach to the folders the shell registered for this window, then read, publish, and record history through them.\n#### This default permission set includes:\n\n- `allow-attach`\n- `allow-detach`\n- `allow-list`\n- `allow-children`\n- `allow-read`\n- `allow-read-many`\n- `allow-apply`\n- `allow-mkdir`\n- `allow-rmdir`\n- `allow-status`\n- `allow-commit`\n- `allow-open-request`\n- `allow-withdraw-request`\n- `allow-push`\n- `allow-fetch`\n- `allow-pull-fast-forward`\n- `allow-recover-incoming`\n- `allow-paths`\n- `allow-stage`\n- `allow-commit-staged`\n- `allow-diff`\n- `allow-log`"
+          "markdownDescription": "Attach to the folders the shell registered for this window, then read, publish, and record history through them.\n#### This default permission set includes:\n\n- `allow-attach`\n- `allow-detach`\n- `allow-list`\n- `allow-children`\n- `allow-read`\n- `allow-read-many`\n- `allow-apply`\n- `allow-mkdir`\n- `allow-rmdir`\n- `allow-status`\n- `allow-commit`\n- `allow-open-request`\n- `allow-withdraw-request`\n- `allow-push`\n- `allow-fetch`\n- `allow-pull-fast-forward`\n- `allow-merge-incoming`\n- `allow-recover-incoming`\n- `allow-paths`\n- `allow-stage`\n- `allow-commit-staged`\n- `allow-diff`\n- `allow-log`"
         }
       ]
     }

@@ -137,3 +137,22 @@ d34cb572dfbf6cd0e7f3a60ba73c2c24e5364df3
 A still showed red until it fetched, which changed its relationship to 0 ahead / 2 behind without changing the editor. Pull then fast-forwarded and the clean editor showed purple. Native B independently pulled the earlier disjoint merge, received terminal.txt only after pull, and has committed its own green divergence ec72df4 for the upcoming native conflict journey. Native merge support remains under implementation, so no native conflict completion is claimed yet.
 
 Long terminal output left new failures below the visible viewport. The page now follows appended output while at the bottom, and stops following when the person scrolls back. This is a UI observation, not a new shell lifecycle.
+
+### Native conflict and cross-platform transfer
+
+The rebuilt standalone release at `tauri://localhost` reopened native B at its independent green commit. Fetch moved its relationship to one ahead and three behind while the editor stayed green. Merge displayed green/purple conflict markers and `UU notes/color.txt`; the installed Git configuration included the base section. An unresolved commit failed with exit 128. Closing and reopening retained both markers and unmerged stages. Saving orange text followed by Status kept `UU`. Explicit add changed the index to staged `M` while the merge banner remained. Closing and reopening after staging still said to commit to finish the merge.
+
+Release commit and push produced this exact history, verified separately in the bare remote:
+
+```text
+9e4d81fcbe81c98af477a64e754196be6733a2e4
+ec72df43117eb3c746681183605ac22f8e87b8df d34cb572dfbf6cd0e7f3a60ba73c2c24e5364df3
+```
+
+Browser A still displayed purple after fetching 9e4d81f, with zero ahead and two behind. Pull fast-forwarded, and the clean editor changed to orange. The two original native merge parents survived; no working directory was shared between browser and desktop.
+
+Coordinator checks reproduced 121 Rust core tests with no failures, 47 adapter tests, and the real native bridge journey. The first bridge run hit Bun's five-second default timeout while Cargo compiled the changed plugin. After compilation, the same suite with a thirty-second timeout passed all nineteen cases in 7.29 seconds. Integrated adapter/merge/admission checks passed 85 cases; folder and app typechecks reported zero errors and warnings. Both debug and release standalone bundles built. Independent native review accepted the journal publication order, original-parent compare-and-swap, completed-record clearing without replay, and orphan-stage guards. Generated protocol-8 bindings were produced by the Rust generator, not edited by hand.
+
+Browser terminal computer use verified output following at the bottom, deliberate Home scrollback remaining in place when a command appended output, and End restoring following for the next appended result. The readonly output is keyboard-focusable.
+
+The second independent review accepted browser implementation but found a Bun-only publication-order gap: writing files before the intended index could advertise all conflicts staged after an index failure. A further correction publishes clean incoming index entries and every conflict stage before MERGE_HEAD and authored files. Review rejected restoring an old index on failure because it can erase unrelated outside staging. The bounded worker now retains prepared state and reports it for explicit repair; Bun acceptance remains conditional until its returned artifact is integrated and verified.

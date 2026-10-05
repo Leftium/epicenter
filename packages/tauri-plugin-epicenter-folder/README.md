@@ -103,11 +103,12 @@ await folder.close();           // detaches this page only
 `openFolder` returns its refusals: an unknown scope, a window the scope does
 not list, a folder another process holds, a shell without this plugin, and a
 desktop app built for another protocol version. The unreleased protocol is
-version 7: version 5 added the incoming record, `recover_incoming`, and the
+version 8: version 5 added the incoming record, `recover_incoming`, and the
 refusals a pending update causes, version 6 the optional `expectedSha256` on
-`replace`, and version 7 removes the save number `apply` named and its
-`Superseded` refusal. No command holds the folder across calls or names a
-terminal lease.
+`replace`, version 7 removed the save number `apply` named and its
+`Superseded` refusal, and version 8 adds `merge_incoming` and unfinished
+merges (see [Merging incoming history](#merging-incoming-history)). No
+command holds the folder across calls or names a terminal lease.
 A page built for a different version is refused at attach. It never opens
 browser storage instead. `@epicenter/folder/tauri` is the same opener without the
 browser adapter in the build.
@@ -156,6 +157,62 @@ A fast-forward publishes through the same changes: `create` for an added path,
 removes or replaces a file without that guard, and refuses before writing
 anything if it cannot name one.
 
+## Merging incoming history
+
+`merge_incoming(session, conflicts)` merges the already fetched remote head.
+A branch that is behind fast-forwards; one that is ahead or equal changes
+nothing; a diverged one with exactly one merge base is merged, under the same
+admission, record, and recovery as a fast-forward. Root `kv.json` changed on
+both sides merges by key (`kv_merge`); every other file follows Git's rules,
+with `git merge-file` for a file both sides changed. The same paths are
+refused as in `@epicenter/folder`'s browser merge: a file whose versions are
+not all UTF-8 text the browser's line merge keeps is a `binary` conflict, a
+link, executable, or submodule among a two-sided change's versions or a
+`merge` attribute other than Git's text merge is `Unmergeable`, and several
+merge bases are `UnsupportedHistory`.
+
+- **`refuse`** writes no file, index entry, or ref when anything conflicts:
+  `MergeError` `Conflicted` with one entry per reason. Otherwise the merge
+  commit's parents are the head and the fetched commit, and it is published
+  like a fast-forward: `{ status: 'merged', from, to, fetched, changedPaths }`.
+- **`leave`** requires a folder that does not commit on edit, and is
+  `AutomaticHistory` before anything runs otherwise. A conflicted merge is
+  published unfinished, as `git merge` leaves one: conflicted files hold
+  Git's markers, the changed side against a deletion, or our bytes for a
+  binary conflict; each conflicted path's index entry is its exact stages;
+  `ORIG_HEAD`, `MERGE_MSG`, and then `MERGE_HEAD` are written; the branch does
+  not move: `{ status: 'conflicted', from, fetched, conflicts, changedPaths }`.
+  A file against a directory is still refused. The record names the
+  unfinished destination and the commit of the files it leaves, which no
+  branch ever names, and pins the fetched commit too.
+- **While Git's merge state exists**, the snapshot reports `merging`
+  (`{ incoming, head, unresolved }`), including after every path is staged and
+  after reopening. Whole-folder commits, automatic commits, fast-forwards, and
+  merges are blocked; saves, fetches, and staging continue. `stage` resolves a
+  path whatever its bytes. `commit_staged` checks the incoming record and the
+  merge state under the Git lock and is `Unmerged { paths }` while a path is.
+  `ORIG_HEAD` is the merge's first parent: the merge commit is built from a
+  listing of the index, with exactly `ORIG_HEAD` and `MERGE_HEAD` as parents
+  even when its tree equals the head's, and the branch moves by
+  compare-and-swap from `ORIG_HEAD`, never by `git commit`. A branch another
+  program moved anywhere else is `BranchMoved { expected, actual }`, and a
+  missing `ORIG_HEAD` is a refusal naming it; either writes no file, index
+  entry, ref, or merge state. Its reply names `incoming`; a failure to remove
+  the merge state afterward is `mergeStateWarning`, and the next staged commit
+  removes leftover merge state only when the branch's latest commit has
+  exactly those two parents.
+- **Unmerged stages without `MERGE_HEAD`** block whole-folder commits,
+  automatic commits, and incoming updates, and a staged commit over them is
+  `Unmerged`; nothing erases them but staging each path.
+- **Recovery** of an unfinished merge's record writes the remaining files, the
+  index with its stages, and the merge state. `MERGE_HEAD` is written last, so
+  finding it naming the recorded incoming commit, with `ORIG_HEAD` at the
+  unmoved branch, proves the publication completed: the record and pins go
+  (`cleared`) without looking at files or the index again, so a resolution a
+  person saved since, and the original stages, stay. Any other merge's state
+  is refused. Recovery never resolves a path, clears a stage, or moves the
+  branch.
+
 ## Incoming updates and their recovery
 
 A fast-forward changes files, then the index, then the branch, and a process
@@ -163,7 +220,7 @@ can stop between any two (ADR-0474). Before it changes anything, it pins its
 before and after commits under `refs/epicenter/incoming/<operationId>/` and
 writes one record, `.git/epicenter/incoming.json`, holding exactly
 `operationId`, `branch`, `expectedHead` (`null` for an empty history), and
-`nextHead`. The record is written to a scratch name, flushed, and renamed into
+`nextHead`, and for a merge left unfinished its `merge` destination. The record is written to a scratch name, flushed, and renamed into
 place. Every path, byte, and index entry is derived from the two pinned trees,
 so a later fetch that moves the tracking ref, or a garbage collection, cannot
 take the target away. Ordinary saves keep no record.

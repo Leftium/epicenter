@@ -11,6 +11,7 @@ pub mod history;
 pub mod incoming;
 pub mod kv_merge;
 pub mod lock;
+pub mod merge;
 pub mod messages;
 pub mod owner;
 pub mod paths;
@@ -21,6 +22,8 @@ mod runner;
 mod history_tests;
 #[cfg(test)]
 mod incoming_tests;
+#[cfg(test)]
+mod merge_tests;
 #[cfg(test)]
 mod publication_tests;
 #[cfg(test)]

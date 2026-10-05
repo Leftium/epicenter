@@ -94,13 +94,11 @@ export type FolderGit = {
 	 * with conflict markers, unmerged index stages, and Git's merge state,
 	 * with the branch unmoved. Stage each resolution, then `commitStaged`
 	 * records the merge commit. A file against a directory is still refused.
-	 * Where `mergeUnsupported` is set, this is `Unsupported`.
+	 * Browser, directory, and desktop folders all merge.
 	 */
 	mergeIncoming(
 		options?: MergeConflictPolicy,
 	): Promise<Result<MergeOutcome, MergeError | PullError | GitError>>;
-	/** Why `mergeIncoming` is unavailable here, or `undefined` when it is available. */
-	readonly mergeUnsupported: string | undefined;
 	/**
 	 * Finish or clear the incoming update in `snapshot.pendingIncoming`, only
 	 * because it is asked for. An `unadmitted` (empty) record is removed:
@@ -256,7 +254,6 @@ function createFolderGit(history: FolderHistory): FolderGit {
 		pullFastForward: () => history.pullFastForward(),
 		mergeIncoming: (options) => history.mergeIncoming(options),
 		recoverIncoming: () => history.recoverIncoming(),
-		mergeUnsupported: history.mergeUnsupported,
 		paths: () => history.paths(),
 		stage: (paths) => history.stage(paths),
 		commitStaged: (message) => history.commitStaged(message),

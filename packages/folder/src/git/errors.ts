@@ -235,10 +235,6 @@ export type MergeConflict =
 	  };
 
 export const MergeError = defineErrors({
-	Unsupported: ({ reason }: { reason: string }) => ({
-		message: `This folder cannot merge incoming changes: ${reason}`,
-		reason,
-	}),
 	/** The two heads have no common commit, or more than one best one. */
 	UnsupportedHistory: ({
 		head,

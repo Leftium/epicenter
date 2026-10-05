@@ -21,6 +21,7 @@ permissions = [
   "allow-push",
   "allow-fetch",
   "allow-pull-fast-forward",
+  "allow-merge-incoming",
   "allow-recover-incoming",
   "allow-paths",
   "allow-stage",

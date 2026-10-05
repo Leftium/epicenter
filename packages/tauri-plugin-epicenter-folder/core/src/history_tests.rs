@@ -1054,10 +1054,16 @@ fn staged_authoring_is_refused_under_automatic_history_and_works_in_manual_mode(
         .diff(true, &["a.md".to_string()])
         .unwrap()
         .contains("+A"));
-    let (oid, parent) = owner
+    let crate::history::StagedCommit {
+        oid,
+        parent,
+        incoming,
+        ..
+    } = owner
         .commit_staged("Add the first note\n\nWith a body.")
         .unwrap();
     assert_eq!(parent, None);
+    assert_eq!(incoming, None);
     assert_eq!(git(&root, &["rev-parse", "HEAD"]), oid);
     assert_eq!(
         git(&root, &["ls-tree", "-r", "--name-only", "HEAD"]),

@@ -27,9 +27,16 @@ output, and typed command while hidden. Binary files stay visible with an
 explanation. Text editing is limited to UTF-8 files of at most 2 MiB.
 
 Automatic commits are disabled. Use `git add`, `git commit -m`, `git fetch`,
-`git pull --ff-only`, and `git push` explicitly. Fetch updates remote knowledge
+`git merge`, `git pull --ff-only`, and `git push` explicitly. Fetch updates remote knowledge
 without updating working files. Status separates index and worktree columns;
 ahead and behind are relative to the last fetched head.
+
+Merge uses the last fetched head. Competing changes leave editable conflict
+markers and unmerged index stages. Saving a resolution keeps it unmerged;
+`git add` resolves its index stages. The merge remains in progress after every
+path is staged, including after reopening, until `git commit -m` records both
+original parents. An unresolved commit is refused. If publication stops partway,
+the page shows the pending update and offers explicit recovery.
 
 Enter an HTTP(S) remote or leave the URL empty for local history. Browser
 transport uses fetch and needs a same-origin endpoint or a server that permits
@@ -59,5 +66,10 @@ native staging and commits, native pushes reaching the loopback remote,
 browser fetch changing ahead/behind without receiving files, and pull refusing
 uncommitted changes. Browser interaction also demonstrated clean-editor refresh,
 raw Markdown, binary explanations, and hidden-terminal output/command retention.
-Conflict integration is a subsequent implementation wave; the current embedded
-terminal supports fast-forward pulls.
+Browser interaction also demonstrated a clean divergent merge, conflict markers,
+unresolved commit refusal, reopening before and after staging, and a resolution
+commit with both original parents. The standalone release also demonstrated
+conflict repair and reopening before and after staging. Both platforms pushed
+their resolution commits through the disposable remote; the receiving editor
+changed only after pull. See the [iteration evidence](evidence/iteration.md)
+for commit identities and checks.

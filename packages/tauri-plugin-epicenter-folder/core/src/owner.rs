@@ -77,10 +77,12 @@ use crate::files::{
 use crate::git::{Author, Capture, Cas, CommitSummary, Git, IndexCommit, PathStatus, Remote};
 use crate::history::{
     Activities, Activity, Attempt, CommitOutcome, FetchOutcome, FilesObservation, GitError,
-    GitSnapshot, Observation, OwnerEvent, PendingIncoming, PullError, PullOutcome, PushOutcome,
-    RecoverOutcome, SyncObservation,
+    GitSnapshot, MergeConflict, MergeConflicts, MergeError, MergeInProgress, MergeOutcome,
+    Observation, OwnerEvent, PendingIncoming, PullError, PullOutcome, PushOutcome, RecoverOutcome,
+    StagedCommit, SyncObservation,
 };
-use crate::incoming::{self, Record, Written};
+use crate::incoming::{self, Record, UnfinishedMerge, Written};
+use crate::merge::{self, Labels, Prepared};
 use crate::messages::{commit_subject, message_problem, ChangeKind};
 use crate::paths::{ancestors, is_portable_path, path_problem};
 use crate::runner::{CloseMode, Endings, Leaving, PassRunner};
@@ -205,10 +207,14 @@ struct HistoryState {
     last_push: Option<Attempt<PushOutcome>>,
     last_fetch: Option<Attempt<Result<FetchOutcome, GitError>>>,
     last_pull: Option<Attempt<Result<PullOutcome, PullError>>>,
+    last_merge: Option<Attempt<Result<MergeOutcome, MergeError>>>,
     remote_sequence: u64,
     /// The incoming record as last read: at opening, by status, and by every
     /// incoming update and recovery.
     pending_incoming: Option<PendingIncoming>,
+    /// Git's merge state as last read, at the same moments and after staging
+    /// and staged commits. Reading it clears nothing.
+    merging: Option<MergeInProgress>,
 }
 
 /// Automatic commit requests, numbered by the complete saves that made them.
@@ -289,6 +295,7 @@ struct Inner {
     /// the snapshot's activity.
     commits: AtomicUsize,
     pulls: AtomicUsize,
+    merges: AtomicUsize,
     revision: AtomicU64,
     own_in_flight: AtomicUsize,
     own_done: AtomicU64,
@@ -456,8 +463,10 @@ impl FolderOwner {
             }
         }
         git.clear_snapshots();
-        // An update an earlier process left is reported, never resumed.
+        // An update an earlier process left is reported, never resumed, and
+        // a merge it left is reported, never finished or cleared.
         let pending_incoming = incoming::read(git.gitdir()).pending();
+        let merging = git.merge_state().unwrap_or(None);
         let watching = Arc::new(AtomicBool::new(true));
         let inner = Arc::new_cyclic(|owner: &Weak<Inner>| Inner {
             files: Files::new(&root),
@@ -474,8 +483,10 @@ impl FolderOwner {
                 last_push: None,
                 last_fetch: None,
                 last_pull: None,
+                last_merge: None,
                 remote_sequence: 0,
                 pending_incoming: pending_incoming.clone(),
+                merging: merging.clone(),
             }),
             emitted: Mutex::new(Emitted {
                 sequence: 0,
@@ -490,7 +501,9 @@ impl FolderOwner {
                     last_push: None,
                     last_fetch: None,
                     last_pull: None,
+                    last_merge: None,
                     pending_incoming,
+                    merging,
                     closed: false,
                 }),
             }),
@@ -502,6 +515,7 @@ impl FolderOwner {
             shutdown: Mutex::new(false),
             commits: AtomicUsize::new(0),
             pulls: AtomicUsize::new(0),
+            merges: AtomicUsize::new(0),
             revision: AtomicU64::new(0),
             own_in_flight: AtomicUsize::new(0),
             own_done: AtomicU64::new(0),
@@ -794,6 +808,28 @@ impl FolderOwner {
         self.inner.run_pull()
     }
 
+    /// Merge the fetched remote head into a clean folder: a fast-forward when
+    /// the branch is behind, otherwise one commit whose parents are the head
+    /// and the fetched commit, published under the same record as a
+    /// fast-forward. A refusal writes nothing, and so does a conflict unless
+    /// `Leave` asks to publish it unfinished: files a person resolves,
+    /// unmerged index stages, and Git's merge state, with the branch unmoved.
+    /// `Leave` requires `commit_on_edit: false` and is refused before
+    /// anything runs otherwise. Never fetches or pushes.
+    pub fn merge_incoming(&self, conflicts: MergeConflicts) -> Result<MergeOutcome, MergeError> {
+        if self.inner.closing.load(Ordering::SeqCst) {
+            return Err(GitError::Closed.into());
+        }
+        if conflicts == MergeConflicts::Leave && self.inner.config.commit_on_edit {
+            return Err(GitError::AutomaticHistory.into());
+        }
+        let Ok(_admitted) = self.inner.admit() else {
+            return Err(GitError::Closed.into());
+        };
+        let _running = self.inner.running(&self.inner.merges);
+        self.inner.run_merge(conflicts == MergeConflicts::Leave)
+    }
+
     /// The incoming update whose record exists, read now.
     pub fn pending_incoming(&self) -> Option<PendingIncoming> {
         self.inner.read_pending().pending()
@@ -821,7 +857,8 @@ impl FolderOwner {
         })
     }
 
-    /// Staged authoring requires `commit_on_edit: false`. `None` stages everything.
+    /// Staged authoring requires `commit_on_edit: false`. `None` stages
+    /// everything. Staging an unmerged path resolves it, whatever its bytes.
     pub fn stage(&self, paths: Option<&[String]>) -> Result<(), GitError> {
         if self.inner.closing.load(Ordering::SeqCst) {
             return Err(GitError::Closed);
@@ -832,18 +869,28 @@ impl FolderOwner {
         let Ok(_admitted) = self.inner.admit() else {
             return Err(GitError::Closed);
         };
-        let _git = lock(&self.inner.git_lock);
-        if let Some(pending) = self.inner.read_pending().pending() {
-            return Err(GitError::IncomingPending { pending });
-        }
-        self.inner
-            .git
-            .stage(paths)
-            .map_err(|cause| GitError::failed("add", cause))
+        let staged = {
+            let _git = lock(&self.inner.git_lock);
+            if let Some(pending) = self.inner.read_pending().pending() {
+                return Err(GitError::IncomingPending { pending });
+            }
+            let staged = self
+                .inner
+                .git
+                .stage(paths)
+                .map_err(|cause| GitError::failed("add", cause));
+            // Staging a resolution changes which paths a merge has unmerged.
+            let _ = self.inner.read_merging();
+            staged
+        };
+        self.inner.emit();
+        staged
     }
 
     /// Commit staged changes with a user-authored message in manual mode.
-    pub fn commit_staged(&self, message: &str) -> Result<(String, Option<String>), GitError> {
+    /// With a merge in progress the commit finishes it: its parents are the
+    /// head and `MERGE_HEAD`, and it is `Unmerged` while a path is.
+    pub fn commit_staged(&self, message: &str) -> Result<StagedCommit, GitError> {
         let Ok(_admitted) = self.inner.admit() else {
             return Err(GitError::Closed);
         };
@@ -1016,6 +1063,9 @@ impl Inner {
             pull: Activity {
                 active: counted(&self.pulls),
             },
+            merge: Activity {
+                active: counted(&self.merges),
+            },
         };
         let snapshot = {
             let state = lock(&self.state);
@@ -1036,7 +1086,12 @@ impl Inner {
                     result: attempt.result.into(),
                     at: attempt.at,
                 }),
+                last_merge: state.last_merge.clone().map(|attempt| Attempt {
+                    result: attempt.result.into(),
+                    at: attempt.at,
+                }),
                 pending_incoming: state.pending_incoming.clone(),
+                merging: state.merging.clone(),
                 closed: self.closing.load(Ordering::SeqCst),
             }
         };
@@ -1364,10 +1419,99 @@ impl Inner {
                 Err(GitError::failed("status", cause))
             }
         };
-        // Status reports a pending update; reading it resumes nothing.
+        // Status reports a pending update and a merge in progress; reading
+        // them resumes, finishes, or clears nothing.
         self.read_pending();
+        let _ = self.read_merging();
         self.emit();
         result
+    }
+
+    /// Read Git's merge state, and remember it for the snapshot. A state that
+    /// cannot be read keeps the last observation.
+    fn read_merging(&self) -> Result<Option<MergeInProgress>, String> {
+        let read = self.git.merge_state();
+        if let Ok(state) = &read {
+            lock(&self.state).merging = state.clone();
+        }
+        read
+    }
+
+    /// Why a merge in progress blocks whole-folder work: a whole-folder commit
+    /// would record the files without the merge's second parent, and an
+    /// incoming update would move the branch under it.
+    fn merge_problem(&self) -> Result<Option<String>, String> {
+        let state = match self.read_merging() {
+            Ok(state) => state,
+            Err(cause) => return Ok(Some(format!("Git's merge state cannot be read: {cause}"))),
+        };
+        if let Some(state) = state {
+            let unresolved = if state.unresolved.is_empty() {
+                "every path is staged".to_string()
+            } else {
+                format!("unmerged: {}", state.unresolved.join(", "))
+            };
+            return Ok(Some(format!(
+                "a merge of {} is in progress ({unresolved}); stage its resolution and commit it with a staged commit",
+                state.incoming
+            )));
+        }
+        // Stages a merge left after its `MERGE_HEAD` went: a whole-folder
+        // commit would record the files over them and erase every stage.
+        let orphans = self.git.unmerged_paths()?;
+        if orphans.is_empty() {
+            return Ok(None);
+        }
+        Ok(Some(format!(
+            "the index holds unmerged stages with no merge in progress: {}; stage each path's resolution first",
+            orphans.join(", ")
+        )))
+    }
+
+    /// What a staged commit finds of the merge in progress, under the Git
+    /// lock. `ORIG_HEAD` is the merge's promised first parent: the merge
+    /// finishes only while the branch still names it. A branch at a commit
+    /// whose parents are exactly `ORIG_HEAD` and `MERGE_HEAD` is the merge
+    /// already committed, with merge state its failed removal left behind;
+    /// that state is removed, so it never becomes the second parent of
+    /// another commit. Any other branch, one that merely contains the
+    /// incoming commit included, is refused and changes nothing: the files,
+    /// the index, the branch, and the merge state stay for a person to
+    /// inspect. Moving the branch back to `ORIG_HEAD` finishes the merge;
+    /// removing `MERGE_HEAD` abandons it.
+    fn current_merge(&self) -> Result<Finishing, String> {
+        let Some(state) = self.git.merge_state()? else {
+            return Ok(Finishing::None);
+        };
+        let Some(head) = state.head.clone() else {
+            return Ok(Finishing::Unverifiable(format!(
+                "a merge of {} is in progress, but ORIG_HEAD does not name the commit it began from; write that commit to .git/ORIG_HEAD to finish the merge, or remove .git/MERGE_HEAD to abandon it",
+                state.incoming
+            )));
+        };
+        let branch = self.git.read_branch()?;
+        if branch.as_deref() == Some(head.as_str()) {
+            return Ok(if state.unresolved.is_empty() {
+                Finishing::Merge {
+                    head,
+                    incoming: state.incoming,
+                }
+            } else {
+                Finishing::Unmerged(state.unresolved)
+            });
+        }
+        if let Some(branch) = &branch {
+            if state.unresolved.is_empty()
+                && self.git.parents(branch)? == [head.clone(), state.incoming.clone()]
+            {
+                self.git.clear_merge()?;
+                return Ok(Finishing::None);
+            }
+        }
+        Ok(Finishing::BranchMoved {
+            expected: head,
+            actual: branch,
+        })
     }
 
     /// Look for file and ref changes this owner did not make.
@@ -1569,6 +1713,10 @@ impl Inner {
                 reason: incoming_blocks(&pending, "committing"),
             });
         }
+        // Nor a tree a merge in progress is still resolving.
+        if let Some(reason) = self.merge_problem()? {
+            return Ok(CommitOutcome::Blocked { reason });
+        }
         // The parent is pinned and the folder snapshotted under both locks,
         // so no fast-forward or staged commit of this owner falls between
         // them: bytes snapshotted for one parent are never committed on
@@ -1659,21 +1807,59 @@ impl Inner {
         outcome
     }
 
-    fn commit_staged(&self, message: &str) -> Result<(String, Option<String>), GitError> {
+    /// Every check runs under the Git lock: an incoming update that stopped,
+    /// or merge state that changed, while this waited is seen here.
+    fn commit_staged(&self, message: &str) -> Result<StagedCommit, GitError> {
         if let Some(reason) = message_problem(message) {
             return Err(GitError::InvalidMessage {
                 reason: reason.to_string(),
             });
         }
         let failed = |cause: String| GitError::failed("commit", cause);
-        if let Some(blocked) = self.git.blocked().map_err(failed)? {
-            return Err(failed(blocked));
-        }
-        let (result, changed_paths) = {
+        // A refusal found under the lock: nothing was written, and the
+        // snapshot shows the merge state as it is.
+        let refused = |error: GitError| {
+            let _ = self.read_merging();
+            self.emit();
+            Err(error)
+        };
+        let (result, changed_paths, finishing, merge_state_warning) = {
             let _git = lock(&self.git_lock);
             if let Some(pending) = self.read_pending().pending() {
                 return Err(GitError::IncomingPending { pending });
             }
+            if let Some(blocked) = self.git.blocked().map_err(failed)? {
+                return Err(failed(blocked));
+            }
+            let finishing = match self.current_merge().map_err(failed)? {
+                Finishing::None => {
+                    // Stages left without `MERGE_HEAD` are never committed
+                    // over: `git commit` would refuse them, and they name
+                    // what a person still has to resolve.
+                    let orphans = self.git.unmerged_paths().map_err(failed)?;
+                    if !orphans.is_empty() {
+                        drop(_git);
+                        return refused(GitError::Unmerged { paths: orphans });
+                    }
+                    None
+                }
+                Finishing::Merge { head, incoming } => Some((head, incoming)),
+                Finishing::Unmerged(paths) => {
+                    drop(_git);
+                    return refused(GitError::Unmerged { paths });
+                }
+                Finishing::BranchMoved { expected, actual } => {
+                    drop(_git);
+                    return refused(GitError::BranchMoved {
+                        expected: Some(expected),
+                        actual,
+                    });
+                }
+                Finishing::Unverifiable(reason) => {
+                    drop(_git);
+                    return refused(failed(reason));
+                }
+            };
             let staged = self
                 .git
                 .path_status()
@@ -1681,12 +1867,22 @@ impl Inner {
                 .iter()
                 .filter(|path| path.index != " " && path.index != "?")
                 .count();
-            (
-                self.git
-                    .commit_index(message, &self.config.author)
-                    .map_err(failed)?,
-                staged,
-            )
+            let result = match &finishing {
+                Some((head, incoming)) => {
+                    self.git
+                        .commit_merge_index(message, &self.config.author, head, incoming)
+                }
+                None => self.git.commit_index(message, &self.config.author),
+            }
+            .map_err(failed)?;
+            // The merge state goes only after the branch moved to the merge;
+            // a failure is reported with the commit.
+            let warning = match (&result, &finishing) {
+                (IndexCommit::Committed { .. }, Some(_)) => self.git.clear_merge().err(),
+                _ => None,
+            };
+            let _ = self.read_merging();
+            (result, staged, finishing, warning)
         };
         if let IndexCommit::Committed { oid, parent } = &result {
             lock(&self.state).last_commit = Some(Attempt {
@@ -1706,10 +1902,15 @@ impl Inner {
         match result {
             IndexCommit::Nothing => Err(GitError::NothingToCommit),
             IndexCommit::BranchMoved { actual } => Err(GitError::BranchMoved {
-                expected: None,
+                expected: finishing.map(|(head, _)| head),
                 actual,
             }),
-            IndexCommit::Committed { oid, parent } => Ok((oid, parent)),
+            IndexCommit::Committed { oid, parent } => Ok(StagedCommit {
+                oid,
+                parent,
+                incoming: finishing.map(|(_, incoming)| incoming),
+                merge_state_warning,
+            }),
         }
     }
 
@@ -1787,8 +1988,27 @@ impl Inner {
             if self.closing.load(Ordering::SeqCst) {
                 return Err(GitError::Closed.into());
             }
-            self.pull(files, git)
-                .unwrap_or_else(|cause| Err(GitError::failed("pull", cause).into()))
+            match self.incoming(files, git, None) {
+                Err(cause) => Err(GitError::failed("pull", cause).into()),
+                Ok(Ok(outcome)) => Ok(match outcome {
+                    MergeOutcome::UpToDate { head } => PullOutcome::UpToDate { head },
+                    MergeOutcome::Ahead { head } => PullOutcome::Ahead { head },
+                    MergeOutcome::FastForwarded {
+                        from,
+                        to,
+                        changed_paths,
+                    } => PullOutcome::FastForwarded {
+                        from,
+                        to,
+                        changed_paths,
+                    },
+                    MergeOutcome::Merged { .. } | MergeOutcome::Conflicted { .. } => {
+                        unreachable!("a pull never merges")
+                    }
+                }),
+                Ok(Err(MergeError::Pull { error })) => Err(error),
+                Ok(Err(other)) => unreachable!("a pull never merges: {other:?}"),
+            }
         };
         if !matches!(
             result,
@@ -1806,42 +2026,145 @@ impl Inner {
         result
     }
 
-    /// The outer error is an unexpected Git failure; the inner one is a
-    /// reported outcome. The file gate and the Git lock are both held until
-    /// the files and the branch agree.
-    fn pull(
+    fn run_merge(&self, leave: bool) -> Result<MergeOutcome, MergeError> {
+        let result = if self.git.remote.is_none() {
+            Err(GitError::NoRemote.into())
+        } else {
+            let (files, git) = self.enter_both();
+            // Shutdown began while this waited: nothing ran, nothing is recorded.
+            if self.closing.load(Ordering::SeqCst) {
+                return Err(GitError::Closed.into());
+            }
+            self.incoming(files, git, Some(leave))
+                .unwrap_or_else(|cause| Err(GitError::failed("merge", cause).into()))
+        };
+        if !matches!(
+            result,
+            Err(MergeError::Pull {
+                error: PullError::Git {
+                    error: GitError::Failed { .. }
+                }
+            })
+        ) {
+            self.refresh_sync();
+        }
+        let _ = self.read_merging();
+        lock(&self.state).last_merge = Some(Attempt {
+            result: result.clone(),
+            at: now_ms(),
+        });
+        self.emit();
+        result
+    }
+
+    /// Why the tree of `commit`, `files`, cannot be written to this folder as
+    /// plain bytes, if it cannot.
+    fn unrepresentable(
+        &self,
+        commit: &str,
+        files: &BTreeMap<String, (String, String)>,
+    ) -> Result<Option<PullError>, String> {
+        let refuse = |paths: Vec<String>, reason: &str| {
+            Ok(Some(PullError::Unrepresentable {
+                paths,
+                reason: reason.to_string(),
+            }))
+        };
+        let unsupported: Vec<String> = files
+            .iter()
+            .filter(|(_, (mode, _))| mode != "100644")
+            .map(|(path, _)| path.clone())
+            .collect();
+        if !unsupported.is_empty() {
+            return refuse(
+                unsupported,
+                "symbolic links, submodules, and executable files are not plain folder files",
+            );
+        }
+        let invalid: Vec<String> = files
+            .keys()
+            .filter(|path| path_problem(path).is_some())
+            .cloned()
+            .collect();
+        if !invalid.is_empty() {
+            return refuse(invalid, "some paths are not valid folder paths");
+        }
+        // An update writes each blob's bytes as they are stored. A commit that
+        // declares a filter or a conversion for a path means something else
+        // by those bytes: under `filter=lfs` the blob is a pointer, not the
+        // audio. Every path is asked about, against the commit's own
+        // attributes, so a commit that only adds an attribute over a file it
+        // does not touch is refused as well.
+        if let Some((path, attribute)) = self
+            .git
+            .normalizing_attribute(Some(commit), files.keys().map(String::as_str))?
+        {
+            return refuse(
+                vec![path],
+                &format!(
+                    "the incoming commit declares the Git attribute {attribute}, and this folder does not apply attribute filters or conversion"
+                ),
+            );
+        }
+        let mut folded: BTreeMap<String, &String> = BTreeMap::new();
+        for path in files.keys() {
+            if let Some(existing) = folded.insert(collision_key(path), path) {
+                return refuse(
+                    vec![existing.clone(), path.clone()],
+                    "paths collide on case-insensitive filesystems",
+                );
+            }
+        }
+        Ok(None)
+    }
+
+    /// One incoming update: a fast-forward for a pull (`merge` is `None`), or
+    /// for a merge a fast-forward or a two-parent merge, published or, with
+    /// `Some(true)`, left unfinished. The outer error is an unexpected Git
+    /// failure; the inner one is a reported outcome. The file gate and the
+    /// Git lock are both held until the files and the branch agree.
+    fn incoming(
         &self,
         _files: MutexGuard<'_, ()>,
         _git: MutexGuard<'_, ()>,
-    ) -> Result<Result<PullOutcome, PullError>, String> {
+        merge: Option<bool>,
+    ) -> Result<Result<MergeOutcome, MergeError>, String> {
         // One update at a time: an earlier one is recovered explicitly first.
         if let Some(pending) = self.read_pending().pending() {
-            return Ok(Err(PullError::IncomingPending { pending }));
+            return Ok(Err(PullError::IncomingPending { pending }.into()));
         }
         if let Some(reason) = self.git.blocked()? {
-            return Ok(Err(PullError::Blocked { reason }));
+            return Ok(Err(PullError::Blocked { reason }.into()));
+        }
+        if let Some(reason) = self.merge_problem()? {
+            return Ok(Err(PullError::Blocked { reason }.into()));
         }
         let captured_at = self.tick();
         let Some(fetched) = self.git.read_remote_tracking()? else {
-            return Ok(Err(PullError::NoFetchedHead));
+            return Ok(Err(PullError::NoFetchedHead.into()));
         };
         let head = self.git.read_branch()?;
         let snapshot = self.git.snapshot()?;
         if let Some(reason) = self.git.checkpoint_problem(&snapshot, head.as_deref())? {
-            return Ok(Err(PullError::Blocked { reason }));
+            return Ok(Err(PullError::Blocked { reason }.into()));
         }
         if head.as_deref() == Some(fetched.as_str()) {
-            return Ok(Ok(PullOutcome::UpToDate { head }));
+            return Ok(Ok(MergeOutcome::UpToDate { head }));
         }
+        let mut diverged = false;
         if let Some(head) = &head {
             if !self.git.is_ancestor(head, &fetched)? {
                 if self.git.is_ancestor(&fetched, head)? {
-                    return Ok(Ok(PullOutcome::Ahead { head: head.clone() }));
+                    return Ok(Ok(MergeOutcome::Ahead { head: head.clone() }));
                 }
-                return Ok(Err(PullError::Diverged {
-                    head: head.clone(),
-                    fetched,
-                }));
+                if merge.is_none() {
+                    return Ok(Err(PullError::Diverged {
+                        head: head.clone(),
+                        fetched,
+                    }
+                    .into()));
+                }
+                diverged = true;
             }
         }
         // The entire folder must be clean, including staged changes.
@@ -1851,66 +2174,93 @@ impl Inner {
         if !dirty.is_empty() {
             return Ok(Err(PullError::Dirty {
                 paths: dirty.into_iter().map(|change| change.path).collect(),
-            }));
+            }
+            .into()));
         }
         if !self.git.index_matches_head()? {
-            return Ok(Err(PullError::StagedChanges));
+            return Ok(Err(PullError::StagedChanges.into()));
         }
 
         let incoming = self.git.tree_files(&fetched)?;
-        let unrepresentable = |paths: Vec<String>, reason: &str| {
-            Ok(Err(PullError::Unrepresentable {
-                paths,
-                reason: reason.to_string(),
-            }))
-        };
-        let unsupported: Vec<String> = incoming
-            .iter()
-            .filter(|(_, (mode, _))| mode != "100644")
-            .map(|(path, _)| path.clone())
-            .collect();
-        if !unsupported.is_empty() {
-            return unrepresentable(
-                unsupported,
-                "symbolic links, submodules, and executable files are not plain folder files",
-            );
+        if let Some(refused) = self.unrepresentable(&fetched, &incoming)? {
+            return Ok(Err(refused.into()));
         }
-        let invalid: Vec<String> = incoming
-            .keys()
-            .filter(|path| path_problem(path).is_some())
-            .cloned()
-            .collect();
-        if !invalid.is_empty() {
-            return unrepresentable(invalid, "some paths are not valid folder paths");
+        /// What the update publishes and how its outcome is reported.
+        enum Kind {
+            FastForward,
+            Merged,
+            Conflicted(Vec<MergeConflict>),
         }
-        // The fast-forward writes each blob's bytes as they are stored. A
-        // commit that declares a filter or a conversion for a path means
-        // something else by those bytes: under `filter=lfs` the blob is a
-        // pointer, not the audio. Every incoming path is asked about, against
-        // the fetched commit's own attributes, so a commit that only adds an
-        // attribute over a file it does not touch is refused as well.
-        if let Some((path, attribute)) = self
-            .git
-            .normalizing_attribute(Some(&fetched), incoming.keys().map(String::as_str))?
-        {
-            return unrepresentable(
-                vec![path],
-                &format!(
-                    "the incoming commit declares the Git attribute {attribute}, and this folder does not apply attribute filters or conversion"
-                ),
-            );
-        }
-        let mut folded: BTreeMap<String, &String> = BTreeMap::new();
-        for path in incoming.keys() {
-            if let Some(existing) = folded.insert(collision_key(path), path) {
-                return unrepresentable(
-                    vec![existing.clone(), path.clone()],
-                    "paths collide on case-insensitive filesystems",
-                );
+        let (next_head, target, destination, kind) = if !diverged {
+            (fetched.clone(), incoming, None, Kind::FastForward)
+        } else {
+            let local = head.clone().expect("a diverged branch has a head");
+            let bases = self.git.merge_bases(&local, &fetched)?;
+            if bases.len() != 1 {
+                return Ok(Err(MergeError::UnsupportedHistory {
+                    head: local,
+                    fetched,
+                    bases: bases.len() as u32,
+                }));
             }
-        }
+            let remote_branch = self
+                .git
+                .remote
+                .as_ref()
+                .map_or(self.git.branch.as_str(), |remote| remote.branch.as_str());
+            let message = format!("Merge remote-tracking branch 'origin/{remote_branch}'");
+            let theirs = format!("origin/{remote_branch}");
+            let prepared = merge::prepare(
+                &self.git,
+                &bases[0],
+                &local,
+                &fetched,
+                &self.config.author,
+                &message,
+                Labels {
+                    ours: "HEAD",
+                    theirs: &theirs,
+                },
+                merge == Some(true),
+            )?;
+            match prepared {
+                Prepared::Conflicted { conflicts } => {
+                    return Ok(Err(MergeError::Conflicted { conflicts }))
+                }
+                Prepared::Unmergeable { paths, reason } => {
+                    return Ok(Err(MergeError::Unmergeable { paths, reason }))
+                }
+                Prepared::Merged { commit, files } => {
+                    if let Some(refused) = self.unrepresentable(&commit, &files)? {
+                        return Ok(Err(refused.into()));
+                    }
+                    (commit, files, None, Kind::Merged)
+                }
+                Prepared::Unfinished {
+                    commit,
+                    files,
+                    conflicts,
+                    unmerged,
+                } => {
+                    if let Some(refused) = self.unrepresentable(&commit, &files)? {
+                        return Ok(Err(refused.into()));
+                    }
+                    let destination = UnfinishedMerge {
+                        incoming: fetched.clone(),
+                        message,
+                        unmerged,
+                    };
+                    (
+                        commit,
+                        files,
+                        Some(destination),
+                        Kind::Conflicted(conflicts),
+                    )
+                }
+            }
+        };
 
-        let incoming_oids: BTreeMap<String, String> = incoming
+        let incoming_oids: BTreeMap<String, String> = target
             .iter()
             .map(|(path, (_, oid))| (path.clone(), oid.clone()))
             .collect();
@@ -1936,16 +2286,17 @@ impl Inner {
             .cloned()
             .collect();
         if !colliding.is_empty() {
-            return Ok(Err(PullError::Collision { paths: colliding }));
+            return Ok(Err(PullError::Collision { paths: colliding }.into()));
         }
         #[cfg(test)]
         self.hook(|hooks| &hooks.during_pull);
 
-        // Admission: pin both commits, then put the record in place, before
+        // Admission: pin the commits, then put the record in place, before
         // any authored file, index entry, or ref of the branch changes.
-        let record = Record::new(&self.git.branch, head.clone(), fetched);
+        let mut record = Record::new(&self.git.branch, head.clone(), next_head);
+        record.merge = destination;
         if self.boundary("record") {
-            return Ok(Err(recovery::stopped_at("record", Vec::new())));
+            return Ok(Err(recovery::stopped_at("record", Vec::new()).into()));
         }
         incoming::pin(&self.git, &record)?;
         match incoming::write(self.git.gitdir(), &record) {
@@ -1960,17 +2311,70 @@ impl Inner {
                     applied: Vec::new(),
                     uncertain: vec![recovery::RECORD_LABEL.to_string()],
                     error,
-                }));
+                }
+                .into()));
             }
         }
         self.read_pending();
         if self.boundary("recorded") {
-            return Ok(Err(recovery::stopped_at("recorded", Vec::new())));
+            return Ok(Err(recovery::stopped_at("recorded", Vec::new()).into()));
         }
-        let result = self.finish_pull(&record, head, captured_at);
+        let result = self.finish_pull(&record, head.clone(), captured_at);
         self.read_pending();
-        result
+        Ok(match result? {
+            Err(error) => Err(error.into()),
+            Ok(PullOutcome::FastForwarded { changed_paths, .. })
+                if !matches!(kind, Kind::FastForward) =>
+            {
+                let from = head.expect("a merged branch has a head");
+                match kind {
+                    Kind::Conflicted(conflicts) => Ok(MergeOutcome::Conflicted {
+                        from,
+                        fetched,
+                        conflicts,
+                        changed_paths,
+                    }),
+                    _ => Ok(MergeOutcome::Merged {
+                        from,
+                        to: record.next_head.clone(),
+                        fetched,
+                        changed_paths,
+                    }),
+                }
+            }
+            Ok(PullOutcome::FastForwarded {
+                from,
+                to,
+                changed_paths,
+            }) => Ok(MergeOutcome::FastForwarded {
+                from,
+                to,
+                changed_paths,
+            }),
+            Ok(PullOutcome::UpToDate { head }) => Ok(MergeOutcome::UpToDate { head }),
+            Ok(PullOutcome::Ahead { head }) => Ok(MergeOutcome::Ahead { head }),
+        })
     }
+}
+
+/// What a staged commit found of Git's merge state.
+enum Finishing {
+    /// No merge is in progress.
+    None,
+    /// The branch names `ORIG_HEAD` and nothing is unmerged: the commit
+    /// finishes the merge with exactly these parents.
+    Merge {
+        head: String,
+        incoming: String,
+    },
+    Unmerged(Vec<String>),
+    /// The branch names neither `ORIG_HEAD` nor the merge already committed.
+    BranchMoved {
+        expected: String,
+        actual: Option<String>,
+    },
+    /// `ORIG_HEAD` is missing, so the first parent is not known.
+    Unverifiable(String),
 }
 
 /// Why history work waits for the pending update.

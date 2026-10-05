@@ -32,6 +32,9 @@
  * - A terminal's rewrite of a file it read is refused when another window
  *   wrote between its steps, and the steps before it stay landed
  * - A terminal `git fetch` in flight at the remote delays no save and no commit
+ * - A terminal `git merge` leaves red against green as Git leaves it; the
+ *   other window sees the merge, `git commit` refuses until `git add`, and
+ *   the merge commit has both original parents
  * - Closing a page mid-command stops the command's later steps; the save the
  *   owner already admitted lands and is committed without the page
  * - Closing one window's folder leaves the other window and the owner working,
@@ -788,6 +791,74 @@ describe.skipIf(!enabled)('tauri folder against the native owner', () => {
 			await bridge?.stop();
 			bridge = undefined;
 			await remote.stop();
+		}
+	});
+
+	test('red against green is left for the terminal and finished by a staged commit with both parents', async () => {
+		const remoteRoot = await realpath(await scratch('tauri-folder-merge-'));
+		try {
+			const bare = await createBareRemote(remoteRoot);
+			const { folder, other, root } = await setup({
+				manual: true,
+				remote: bare,
+			});
+			expectOk(await a(() => folder.files.create('notes/color.txt', 'blue\n')));
+			const pushed = await a(() => folder.git.commitAndPush());
+			expect(pushed.push.status).toBe('pushed');
+
+			// Another copy makes it green and pushes; this one makes it red.
+			const upstream = join(remoteRoot, 'upstream');
+			await git(remoteRoot, 'clone', '--quiet', bare, upstream);
+			await writeFile(join(upstream, 'notes/color.txt'), 'green\n');
+			await git(upstream, 'commit', '--quiet', '-am', 'Green');
+			await git(upstream, 'push', '--quiet', 'origin', 'main');
+			const green = await git(bare, 'rev-parse', 'main');
+			expectOk(
+				await a(() => folder.files.overwrite('notes/color.txt', 'red\n')),
+			);
+			const red = await a(() => folder.git.commit());
+			if (red.status !== 'committed') throw new Error(red.status);
+			expectOk(await a(() => folder.git.fetch()));
+
+			const terminal = folder.terminal();
+			const merged = await a(() =>
+				terminal.exec('git merge; cat notes/color.txt'),
+			);
+			expect(merged.stdout).toBe(
+				'CONFLICT (content): Merge conflict in notes/color.txt\nAutomatic merge failed; fix conflicts and then commit the result.\n<<<<<<< HEAD\nred\n=======\ngreen\n>>>>>>> origin/main\n',
+			);
+			expect(await git(root, 'status', '--porcelain')).toBe(
+				'UU notes/color.txt',
+			);
+			expect(await git(root, 'rev-parse', 'main')).toBe(red.oid);
+			expectOk(await b(() => other.git.status()));
+			expect(other.git.snapshot.merging).toEqual({
+				incoming: green,
+				head: red.oid,
+				unresolved: ['notes/color.txt'],
+			});
+
+			expect(
+				(await a(() => terminal.exec("printf 'green\\n' > notes/color.txt")))
+					.exitCode,
+			).toBe(0);
+			const refused = await a(() => terminal.exec('git commit -m Merge'));
+			expect(refused.exitCode).toBe(128);
+			expect(refused.stderr).toContain('U\tnotes/color.txt');
+			expect(
+				(await a(() => terminal.exec('git add notes/color.txt'))).exitCode,
+			).toBe(0);
+			expect(
+				(await a(() => terminal.exec('git commit -m Merge'))).exitCode,
+			).toBe(0);
+			expect(await git(root, 'log', '-1', '--format=%P')).toBe(
+				`${red.oid} ${green}`,
+			);
+			expect(existsSync(join(root, '.git/MERGE_HEAD'))).toBe(false);
+		} finally {
+			await bridge?.stop();
+			bridge = undefined;
+			await rm(remoteRoot, { recursive: true, force: true });
 		}
 	});
 

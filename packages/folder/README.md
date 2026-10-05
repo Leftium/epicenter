@@ -258,7 +258,7 @@ server, and desktop builds never load the addon or need a compiler.
 | `tables.<name>` | Rows at `<name>/<stem>.md`. A snapshot is the captured file: its path, literal `stem`, exact whole-file `text`, and `sha256`, beside how that text reads: `fields`, `body`, `parseError`, and `issues`. `get(stem)` returns `undefined` only for absence. `list()` returns one `{ path, result }` for every row file. `create` is exclusive. `update`, `replace`, `rename`, and `delete` address the row by stem and take required options: `{}` acts on the current row, and `{ expectedSha256 }` is refused as `Conflict` when the bytes differ. `update(stem, change, options)` reads the current text once and conditionally publishes without retry. Interpreting text is `inspectRow(definition.tables.<name>, text)`, which needs no open folder. Each changes exactly one Markdown file. `edit(stem, { signal })` opens a retained canonical editor whose setters submit complete rows. See [Reading a row](#reading-a-row) and [Editing a row](#editing-a-row). |
 | `kv` | Root `kv.json`, a sparse map of declared values. A snapshot is a text capture: `path`, exact `text`, and `sha256`, beside the stored `values` that validated, `parseError`, and `issues`. `get()` returns `undefined` only for absence; readable text that is not a JSON object is a snapshot with a `parseError`. `inspect(text)` interprets text without reading anything. `create(values)` saves a new file from the supplied values and refuses with `Exists` when one is there. `update(values)` reads the current text once, assigns the supplied keys, and conditionally publishes without retry; a missing file is `NotFound`. An update changes only the values it assigns: unknown keys, number spellings, and formatting stay exact. See [Reading and saving kv.json](#reading-and-saving-kvjson). |
 | `files` | Ordinary files at literal paths. See below. |
-| `git` | A status snapshot, `status()`, `commit()`, `commitAndPush()`, `push()`, `fetch()`, `pullFastForward()`, `mergeIncoming({ conflicts? })` and `mergeUnsupported`, `recoverIncoming()`, and `paths()`, `stage()`, `commitStaged(message)`, `diff()`, `log()`. |
+| `git` | A status snapshot, `status()`, `commit()`, `commitAndPush()`, `push()`, `fetch()`, `pullFastForward()`, `mergeIncoming({ conflicts? })`, `recoverIncoming()`, and `paths()`, `stage()`, `commitStaged(message)`, `diff()`, `log()`. |
 | `location` | `{ kind: 'opfs', directory }` or `{ kind: 'directory', root }`. For showing to a person. File paths are never joined onto it. |
 | `onFilesChanged(listener)` | A hint that paths changed, so read again. Returns the function that stops listening. |
 | `terminal({ cwd })` | A shell over the folder's files and history. |
@@ -1390,9 +1390,11 @@ competing lines; `binary`; `deleted` for a delete against a change; and
 `shape` for a file against a directory. By default a conflict or refusal
 writes no file, index entry, or ref; unreachable objects may remain.
 
-Browser and Bun directory folders merge. In the desktop app,
-`mergeUnsupported` says why and `mergeIncoming()` returns `Unsupported`
-without sending or changing anything.
+Browser folders, Bun directory folders, and the desktop app's Rust owner all
+merge under these rules. The desktop owner merges a file both sides changed
+with `git merge-file` and root `kv.json` with `kv_merge`, the Rust
+counterpart of `mergeKv`; its conflict markers are Git's own, so its hunks
+can differ from the browser's line merge.
 
 ### Unfinished merges
 
@@ -1457,8 +1459,8 @@ content. The stages keep the base, ours, and theirs blobs. Restoring
 `MERGE_HEAD` and `ORIG_HEAD` lets a staged commit finish the merge; staging
 each resolution without them commits it outside the merge.
 
-A browser publication that stops partway stays pending like any incoming
-update. Recovery writes the remaining files, the index with its stages, and
+A browser or desktop publication that stops partway stays pending like any
+incoming update. Recovery writes the remaining files, the index with its stages, and
 the merge state, treating merge state it wrote itself as its own and any
 other merge's as in the way. It never resolves a path, clears a stage, or
 moves the branch, and a file edited since publication is a third state that

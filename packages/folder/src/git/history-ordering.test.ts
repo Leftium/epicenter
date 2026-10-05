@@ -12,6 +12,8 @@
  * - An external branch move between that pin and publication is refused
  * - `close()` waits for held `stage` and `commitStaged` work, including the
  *   staged commit's refresh, and starts no network work
+ * - A staged commit that waited for the Git lock while an incoming record
+ *   was admitted refuses under the lock, leaving files, index, and head
  * - A pull whose files landed but whose index or branch did not never leaves
  *   a fresh clean observation behind
  * - Explicit `commit()` never pushes; `commitAndPush()` does, once
@@ -95,6 +97,7 @@ async function setup(
 		);
 	}
 	return {
+		raw,
 		real,
 		base,
 		history,
@@ -103,6 +106,51 @@ async function setup(
 		pushes: () => pushStarts,
 	};
 }
+
+test('a staged commit that waited while an incoming record was admitted refuses and touches nothing', async () => {
+	const { raw, real, history, write } = await setup(() => ({}), {
+		commitOnEdit: false,
+	});
+	await write('a.txt', 'one');
+	const committed = await history.commit();
+	if (committed.status !== 'committed') throw new Error(committed.status);
+	await write('a.txt', 'two');
+	expectOk(await history.stage(['a.txt']));
+
+	// Another tab's incoming update stops partway while it holds the Git
+	// lock, leaving its record, and this staged commit waits behind it.
+	const held = gate();
+	const entered = gate();
+	const owner = real.exclusive(async () => {
+		entered.open();
+		await held.opened;
+		raw.opfs.put(
+			'Epicenter/local/ordering/.git/epicenter-incoming.json',
+			encoder.encode(
+				JSON.stringify({
+					operationId: 'stopped',
+					branch: 'main',
+					expectedHead: committed.oid,
+					nextHead: committed.oid,
+				}),
+			),
+		);
+	});
+	await entered.opened;
+	const committing = history.commitStaged('Two');
+	await Bun.sleep(5);
+	held.open();
+	await owner;
+	const before = await raw.dump();
+
+	expect(expectErr(await committing)).toMatchObject({
+		name: 'IncomingPending',
+		pending: { state: 'recorded', operationId: 'stopped' },
+	});
+	expect(await raw.dump()).toEqual(before);
+	expect(await real.readBranch()).toBe(committed.oid);
+	expect(history.snapshot.lastCommit).toMatchObject({ oid: committed.oid });
+});
 
 test('a checkpoint waiting for the Git lock cannot revert files and a head that landed meanwhile', async () => {
 	const { real, history, write, commitOf } = await setup();

@@ -445,12 +445,6 @@ export function mergeOutcomeLine({
 					tone: 'error',
 				};
 			}
-			case 'Unsupported':
-				return {
-					label: 'Merging is not available here',
-					detail: 'Nothing was changed.',
-					tone: 'neutral',
-				};
 			case 'Dirty':
 			case 'StagedChanges':
 				return {

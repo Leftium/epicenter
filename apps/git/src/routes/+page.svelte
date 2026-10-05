@@ -1,5 +1,5 @@
 <script lang="ts">
- import { onMount } from 'svelte';
+ import { onMount, tick } from 'svelte';
  import { SvelteSet } from 'svelte/reactivity';
  import { invoke, isTauri } from '@tauri-apps/api/core';
  import { Button } from '@epicenter/ui/button';
@@ -18,6 +18,16 @@
  let message = $state('');
  let showTerminal = $state(true);
  let showGuide = $state(false);
+ let terminalOutput = $state<HTMLDivElement>();
+ let followOutput = $state(true);
+ $effect(() => {
+  const output = workspace?.output;
+  const element = terminalOutput;
+  if (output === undefined || !element || !followOutput) return;
+  void tick().then(() => {
+   if (terminalOutput === element) element.scrollTop = element.scrollHeight;
+  });
+ });
  const expanded = new SvelteSet<string>();
  const rows = $derived(workspace ? visibleRows(workspace.listing, expanded) : []);
  const sync = $derived(workspace?.snapshot.sync);
@@ -54,7 +64,7 @@
    if (workspace) { await workspace.close(); workspace = undefined; }
    const next = await openWorkingCopy(copy, remote);
    if (!alive) { await next.close(); return; }
-   workspace = next;
+   workspace = next; followOutput = true;
    for (const directory of next.listing.directories) expanded.add(directory);
    if (next.listing.files[0]) await next.select(next.listing.files[0].path);
   } catch (error) { message = error instanceof Error ? error.message : String(error); }
@@ -96,6 +106,8 @@
    <p>Open A and B on the same remote. Each keeps its own files. In a browser, use a second tab with <code>?copy=b</code>; the desktop app opens two windows.</p>
    <p>Both start with <code>notes/color.txt</code> containing <code>color=blue</code>. In A, change it to red, then run <code>git add .</code>, <code>git commit -m 'Red'</code>, and <code>git push</code>.</p>
    <p>In B, run <code>git fetch</code>. Its files stay unchanged until <code>git pull --ff-only</code>. Ahead and behind counts describe the last fetched head.</p>
+   <p>For a conflict, first let B commit green in <code>notes/color.txt</code> while A commits and pushes red. In B, run <code>git fetch</code>, then <code>git merge</code>. Repair the markers in the editor, run <code>git add notes/color.txt</code>, then <code>git commit -m 'Resolve color'</code> and <code>git push</code>. A can pull the resolution.</p>
+   <p>A merge stays unfinished when you close and reopen the copy. Saving a repaired file keeps it unstaged until you add it. Git refuses a commit while any conflicts remain unstaged.</p>
    <p>Try pulling with an uncommitted edit: the update refuses and your file stays available. Commits and pushes remain explicit.</p>
   </section>
  {/if}
@@ -125,6 +137,12 @@
      <span class="ml-auto text-xs text-muted-foreground">{workspace.saveMessage}</span>
      <Button variant="ghost" size="xs" disabled={workspace.running || !workspace.dirty} onclick={() => act(() => workspace!.flush())}>Save</Button>
     </div>
+    {#if workspace.snapshot.merging}
+     <div role="status" class="shrink-0 border-b px-4 py-2 text-sm"><p class="font-medium">Merge in progress</p><p class="text-muted-foreground">{workspace.snapshot.merging.unresolved.length ? `Repair and stage: ${workspace.snapshot.merging.unresolved.join(', ')}` : 'All conflicts are staged. Commit to finish the merge.'}</p></div>
+    {/if}
+    {#if workspace.snapshot.pendingIncoming}
+     <div role="status" class="flex shrink-0 flex-wrap items-center gap-2 border-b px-4 py-2 text-sm"><span>An incoming update stopped before it finished. Inspect your files, then recover it explicitly.</span><Button size="xs" variant="outline" disabled={workspace.running} onclick={() => workspace!.recover()}>Recover incoming update</Button></div>
+    {/if}
     {#if workspace.dirty && !['Unsaved changes', 'Saving…'].includes(workspace.saveMessage)}
      <div class="flex shrink-0 flex-wrap items-center gap-2 border-b px-4 py-2 text-sm"><span>Your text is still here.</span><Button size="xs" variant="outline" onclick={() => act(() => workspace!.keepMyText())}>Replace saved file with my text</Button><Button size="xs" variant="outline" onclick={() => act(() => workspace!.useSavedText())}>Discard my edits and reload</Button></div>
     {/if}
@@ -133,14 +151,14 @@
     {:else}<div class="flex min-h-0 flex-1 items-center justify-center p-8 text-sm text-muted-foreground">{workspace.selected ? workspace.saveMessage : 'Select a file to edit its text.'}</div>{/if}
   {#if showTerminal}
    <section class="flex h-64 shrink-0 flex-col border-t" aria-label="Terminal">
-    <div class="flex shrink-0 items-center gap-2 border-b px-4 py-2 text-xs text-muted-foreground"><span>Terminal · files save immediately; commits are explicit</span><div class="ml-auto flex gap-2"><Button size="xs" variant="ghost" disabled={workspace.running} onclick={() => workspace!.run('git status')}>Status</Button><Button size="xs" variant="ghost" disabled={workspace.running || !remote} onclick={() => workspace!.run('git fetch')}>Fetch</Button><Button size="xs" variant="ghost" disabled={workspace.running || !remote} onclick={() => workspace!.run('git pull --ff-only')}>Pull</Button></div></div>
-    <pre aria-label="Terminal output" class="min-h-0 flex-1 overflow-auto whitespace-pre-wrap break-all px-4 py-2 font-mono text-xs">{workspace.output}</pre>
-    <form class="flex shrink-0 items-center gap-2 border-t px-4 py-2" onsubmit={(event) => { event.preventDefault(); void workspace!.run(); }}><span class="font-mono text-muted-foreground">$</span><Input aria-label="Terminal command" class="flex-1 font-mono" bind:value={() => workspace!.command, (next) => { workspace!.command = String(next ?? ''); }} disabled={workspace.running} placeholder="git status" /><Button size="sm" type="submit" disabled={workspace.running}>{workspace.running ? 'Running…' : 'Run'}</Button></form>
+    <div class="flex shrink-0 items-center gap-2 border-b px-4 py-2 text-xs text-muted-foreground"><span>Terminal · files save immediately; commits are explicit</span><div class="ml-auto flex gap-2"><Button size="xs" variant="ghost" disabled={workspace.running} onclick={() => workspace!.run('git status')}>Status</Button><Button size="xs" variant="ghost" disabled={workspace.running || !remote} onclick={() => workspace!.run('git fetch')}>Fetch</Button><Button size="xs" variant="ghost" disabled={workspace.running || !remote} onclick={() => workspace!.run('git pull --ff-only')}>Pull</Button><Button size="xs" variant="ghost" disabled={workspace.running || !remote} onclick={() => workspace!.run('git merge')}>Merge</Button></div></div>
+    <div role="textbox" aria-readonly="true" aria-multiline="true" tabindex="0" bind:this={terminalOutput} onscroll={(event) => { const element = event.currentTarget; followOutput = element.scrollHeight - element.scrollTop - element.clientHeight < 24; }} aria-label="Terminal output" class="min-h-0 flex-1 overflow-auto whitespace-pre-wrap break-all px-4 py-2 font-mono text-xs">{workspace.output}</div>
+    <form class="flex shrink-0 items-center gap-2 border-t px-4 py-2" onsubmit={(event) => { event.preventDefault(); void workspace!.run(); }}><span class="font-mono text-muted-foreground">$</span><Input aria-label="Terminal command" class="flex-1 font-mono" spellcheck={false} autocorrect="off" autocapitalize="off" bind:value={() => workspace!.command, (next) => { workspace!.command = String(next ?? ''); }} disabled={workspace.running} placeholder="git status" /><Button size="sm" type="submit" disabled={workspace.running}>{workspace.running ? 'Running…' : 'Run'}</Button></form>
    </section>
   {/if}
    </main>
   </div>
-  <footer class="flex shrink-0 flex-wrap gap-x-4 border-t px-4 py-2 text-xs text-muted-foreground"><span>main</span>{#if sync?.state === 'observed'}<span>{sync.value.ahead} ahead · {sync.value.behind} behind last fetched head{sync.stale ? ' · needs refresh' : ''}</span>{:else}<span>Remote relationship unknown</span>{/if}<span class="ml-auto truncate">{location?.kind === 'directory' ? location.root : location?.directory}</span></footer>
+  <footer class="flex shrink-0 flex-wrap gap-x-4 border-t px-4 py-2 text-xs text-muted-foreground"><span>{workspace.snapshot.branch}</span>{#if !remote}<span>Local history</span>{:else if sync?.state === 'observed' && sync.value.remote !== undefined}<span>{sync.value.ahead} ahead · {sync.value.behind} behind last fetched head{sync.stale ? ' · needs refresh' : ''}</span>{:else}<span>Remote relationship unknown</span>{/if}<span class="ml-auto truncate">{location?.kind === 'directory' ? location.root : location?.directory}</span></footer>
  {:else}
   <main class="flex flex-1 items-center justify-center p-8"><div class="max-w-lg space-y-3"><h1 class="text-xl font-semibold">Two working copies. One remote.</h1><p class="text-sm text-muted-foreground">Open a working copy to browse files, edit text, and stage, commit, fetch, and push from the terminal. Opening an empty copy fetches the remote's main branch.</p><p class="text-sm text-muted-foreground">Copy A and copy B have separate files and history. Changes arrive only when you ask Git to bring them in.</p></div></main>
  {/if}

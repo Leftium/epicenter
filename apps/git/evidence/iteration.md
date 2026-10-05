@@ -103,3 +103,37 @@ Coordination with Queue automatic history saves, Coalesce pending automatic comm
 and Implement folder row write queue agrees on ownership: editor owns latest typed
 input, folder owns generation-counted automatic requests, app requests synchronization,
 and repository owns durable merge state. Their committed source is preserved.
+
+### Foundation acceptance and commit
+
+Foundation committed as `a42574064d`, using a temporary index to exclude unrelated root dependencies and preserve the already staged device change. App tests passed seven cases with forty assertions; typecheck reported zero errors and warnings. Browser and desktop UI builds passed, as did debug and release Tauri bundle builds.
+
+Computer use opened the release bundle, acquired local-only B, created and staged a file, committed it, edited its raw text, and reopened the copy with the saved text intact. The terminal remains below the editor. macOS typing substituted smart quotes in the first shell command; literal paste worked and the initial failed command stayed visible. The command field now disables correction and capitalization. Local-only status now says Local history rather than describing an absent remote.
+
+The root `bun dev:git:desktop` built and ran the development binary. Computer use cannot select a bare macOS executable. A task-owned copy of the bundle metadata with that exact newly built executable made it selectable, serving the development frontend at 127.0.0.1:1431. The development copy reopened the existing native remote-backed B, displayed raw README source, observed an outside change to desktop.txt in its clean editor, and restored the file through its terminal. This wrapper is verification scaffolding, not an application launch feature.
+
+Browser transport was exercised with the native loopback URL on port 5191, bypassing the same-origin proxy. The copy stayed empty and terminal showed `Git fetch failed: Load failed`, as expected for the server without CORS headers. Source exposes no browser credential provider. This is a demonstrated transport limit, not a GitHub compatibility claim. That interaction exposed misleading 0/0 counts before any fetched head existed; the footer now requires a known remote-tracking head before showing ahead/behind.
+
+### Browser disjoint merge
+
+After source integration, computer use reopened browser A at its clean divergence: local ecf81cc (terminal.txt), fetched a5741e8 (desktop.txt from native B), both from seed fa3d0e6. Clicking Merge produced a5b1dad, added desktop.txt while retaining terminal.txt, and terminal reads showed native editor and replacement respectively. Browser pushed the merge through the smart HTTP proxy. Independent bare Git inspection confirmed:
+
+```text
+a5b1dadd50c859c5252b4c6b98ca58e5c6ec97a9
+ecf81cc4dd24a1a658b706b5168a4216c7ff5314 a5741e871d0518d42f49cb82b5595031987bde8f
+```
+
+Codex reproduced 128 focused folder Git tests with zero failures before review repairs. Reviewer found additional completion/publication edges: original local head validation, early Bun durable merge identity, and completed-merge leftover-journal clearing. OPFS clear-only recovery now has a real removal-failure regression: later resolution edits survive reopening and recovery, and original index stages and branch remain unchanged. The isolated native and integrity workers own the remaining repairs. The proposed staged-journal corruption was disproved by executable review: backend settled() guards keep branch/index/journal unchanged; moving public admission under protection still improves the typed refusal.
+
+### Browser conflict and resolution
+
+Computer use opened a fresh independent browser B on a5b1dad, edited green and committed 2ef5455. Browser A edited red and pushed 8d5aae9. B stayed green before and after fetch, moving from 1/0 to 1/1 ahead/behind only after fetch. Merge displayed editable green/red markers, UU status, and Merge in progress. An unresolved commit failed visibly with U notes/color.txt and exit 128. Closing and reopening retained the markers and UU state. Editing purple and running status saved text but kept UU. Explicit add changed the index status to M, with the merge banner still visible. Closing and reopening after staging retained that banner and the staged resolution. Commit and push produced d34cb57; independent bare Git verified exactly the original parents:
+
+```text
+d34cb572dfbf6cd0e7f3a60ba73c2c24e5364df3
+2ef5455431baf999b1a4436c8ff71496db19cde2 8d5aae98841bb187e6b841302a18cd6b49a95b87
+```
+
+A still showed red until it fetched, which changed its relationship to 0 ahead / 2 behind without changing the editor. Pull then fast-forwarded and the clean editor showed purple. Native B independently pulled the earlier disjoint merge, received terminal.txt only after pull, and has committed its own green divergence ec72df4 for the upcoming native conflict journey. Native merge support remains under implementation, so no native conflict completion is claimed yet.
+
+Long terminal output left new failures below the visible viewport. The page now follows appended output while at the bottom, and stops following when the person scrolls back. This is a UI observation, not a new shell lifecycle.

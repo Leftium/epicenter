@@ -161,6 +161,20 @@ export async function openWorkingCopy(copy: string, remote: string) {
 			await saving;
 		}
 	}
+	async function execute(label: string, work: () => Promise<string>) {
+		if (running || closed) return;
+		running = true;
+		output += `\n$ ${label}\n`;
+		try {
+			await flush();
+			output += await work();
+			await refresh();
+		} catch (error) {
+			output += `${error instanceof Error ? error.message : String(error)}\n`;
+		} finally {
+			running = false;
+		}
+	}
 	const stopFiles = folder.onFilesChanged(() => {
 		void refresh().catch((e) => {
 			output += `\n${String(e)}\n`;
@@ -267,20 +281,22 @@ export async function openWorkingCopy(copy: string, remote: string) {
 		refresh,
 		async run(line = command) {
 			if (running || closed || !line.trim()) return;
-			running = true;
 			command = '';
-			output += `\n$ ${line}\n`;
-			try {
-				await flush();
+			await execute(line, async () => {
 				const result = await terminal.exec(line);
-				output += result.stdout + result.stderr;
-				if (result.exitCode) output += `[exit ${result.exitCode}]\n`;
-				await refresh();
-			} catch (error) {
-				output += `${error instanceof Error ? error.message : String(error)}\n`;
-			} finally {
-				running = false;
-			}
+				return (
+					result.stdout +
+					result.stderr +
+					(result.exitCode ? `[exit ${result.exitCode}]\n` : '')
+				);
+			});
+		},
+		async recover() {
+			await execute('Recover incoming update', async () => {
+				const result = await folder.git.recoverIncoming();
+				if (result.error !== null) throw new Error(result.error.message);
+				return `Incoming recovery: ${result.data.status}\n`;
+			});
 		},
 		async close() {
 			await flush();

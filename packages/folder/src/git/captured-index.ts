@@ -1,4 +1,5 @@
 import * as git from 'isomorphic-git';
+import { parseIndex } from './index-file.js';
 import type { ObjectAccess } from './objects.js';
 
 export type CapturedIndex = {
@@ -6,11 +7,20 @@ export type CapturedIndex = {
 	readonly bytes: Uint8Array | undefined;
 };
 
-/** Compare the captured index itself, rather than a later live index, to the pinned head. */
+/**
+ * Compare the captured index itself, rather than a later live index, to the
+ * pinned head. An index holding any unmerged stage never matches: the status
+ * walk would compare only one of its stages.
+ */
 export async function capturedIndexMatchesHead(
 	access: ObjectAccess,
 	{ head, bytes }: CapturedIndex,
 ): Promise<boolean> {
+	if (
+		bytes !== undefined &&
+		(parseIndex(bytes) ?? []).some((entry) => entry.stage !== 0)
+	)
+		return false;
 	const indexPath = `${access.gitdir}/index`;
 	const pinned = {
 		...access,

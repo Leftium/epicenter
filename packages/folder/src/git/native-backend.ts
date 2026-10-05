@@ -5,28 +5,61 @@
  * scratch file and rename). Everything that mutates shared state uses the
  * real `git` CLI, whose `index.lock` and ref locks other Git processes
  * respect: `update-ref` with an expected old value is the branch
- * compare-and-swap, `reset` updates index entries, and staging and staged
- * commits run `git add` and `git commit`. isomorphic-git never writes the
+ * compare-and-swap, `reset` and `update-index` update index entries, and
+ * staging and staged commits run `git add` and `git commit`, except a
+ * commit that finishes a merge (below). isomorphic-git never writes the
  * native index.
+ *
+ * A merge left unfinished is Git's own: `ORIG_HEAD`, `MERGE_MSG`, and
+ * `MERGE_HEAD` beside the unmoved branch, files with markers, and unmerged
+ * index stages written by `update-index --index-info`, so `git status`,
+ * `git add`, and `git commit` in a terminal see the same merge. The merge
+ * state is written first, `MERGE_HEAD` last, before any file or index
+ * entry: it is what keeps the merge's two parents, the local head and the
+ * fetched commit. If it cannot be written, nothing else is. Files or an index
+ * that stop partway after it stay under that merge, so whole-folder commits
+ * refuse them and a staged commit can only record both parents; a person
+ * inspects the files, stages what they mean, and commits, or removes
+ * `MERGE_HEAD` to abandon the merge. No other record is kept for a
+ * publication that stops partway; it reports the steps that landed.
+ *
+ * A staged commit that finishes a merge writes, as objects, the index's tree
+ * and a commit whose parents are `ORIG_HEAD` and `MERGE_HEAD`, then moves
+ * the branch from `ORIG_HEAD` by compare-and-swap. `git commit` would take
+ * whatever `HEAD` names when it runs. Like a whole-folder commit, that
+ * commit runs no hooks.
  */
 import { spawn } from 'node:child_process';
 import * as nodeFs from 'node:fs';
-import { readFile, rename, stat, writeFile } from 'node:fs/promises';
+import { readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import type * as git from 'isomorphic-git';
 import type { FileBoundary } from '../boundary.js';
+import { FileError } from '../errors.js';
 import { byCodePoint, NORMALIZING } from './attributes.js';
 import type {
 	GitBackend,
 	GitRemote,
+	IncomingPlan,
+	MergeInProgress,
 	PathStatus,
 	PublishResult,
 	StatusCode,
+	UnfinishedMerge,
+	UnmergedPath,
 } from './backend.js';
-import { createMutex } from './mutex.js';
 import { capturedIndexMatchesHead } from './captured-index.js';
+import { createMutex } from './mutex.js';
 import { nativeCheckpointProblem } from './native-checkpoint.js';
-import type { CommitSummary, ObjectAccess } from './objects.js';
+import {
+	type CommitSummary,
+	commitTree,
+	type ObjectAccess,
+	readTreeFiles,
+	type TreeFile,
+	writeCommitObject,
+	writeTreeFiles,
+} from './objects.js';
 
 const ZERO = '0000000000000000000000000000000000000000';
 const REMOTE_NAME = 'origin';
@@ -184,6 +217,134 @@ export async function createNativeGitBackend({
 		);
 	}
 
+	/** A private Git file's bytes, or `undefined` when there is none. */
+	async function readPrivate(name: string): Promise<Uint8Array | undefined> {
+		try {
+			return new Uint8Array(await readFile(join(gitdir, name)));
+		} catch (cause) {
+			if ((cause as { code?: string }).code === 'ENOENT') return undefined;
+			throw cause;
+		}
+	}
+
+	/** Replace a private Git file whole, through a scratch file and rename. */
+	async function writePrivate(name: string, value: string) {
+		const temporary = join(gitdir, `${name}.tmp-${crypto.randomUUID()}`);
+		try {
+			await writeFile(temporary, value);
+			await rename(temporary, join(gitdir, name));
+		} finally {
+			await rm(temporary, { force: true }).catch(() => {});
+		}
+	}
+
+	/**
+	 * Give the changed paths the entries of `commit`'s tree and each unmerged
+	 * path its stages, in one `update-index`: Git writes the index once, so
+	 * it holds either all of these entries or none of them.
+	 */
+	async function indexMerge(
+		commit: string,
+		paths: readonly string[],
+		unmerged: readonly UnmergedPath[],
+	) {
+		const target = await readTreeFiles(
+			access,
+			await commitTree(access, commit),
+		);
+		const conflicted = new Set(unmerged.map((path) => path.path));
+		const removals: string[] = [];
+		const entries: string[] = [];
+		for (const path of paths) {
+			if (conflicted.has(path)) continue;
+			const file = target.get(path);
+			// A mode-0 record removes the path's entries.
+			if (file === undefined) removals.push(`0 ${ZERO}\t${path}`);
+			else entries.push(`${file.mode} ${file.oid} 0\t${path}`);
+		}
+		for (const { path, base, ours, theirs } of unmerged) {
+			// The path's entry goes before its stages go in.
+			removals.push(`0 ${ZERO}\t${path}`);
+			for (const [stage, oid] of [
+				[1, base],
+				[2, ours],
+				[3, theirs],
+			] as const)
+				if (oid !== undefined) entries.push(`100644 ${oid} ${stage}\t${path}`);
+		}
+		const records = [...removals, ...entries];
+		if (records.length === 0) return;
+		await run(['update-index', '-z', '--index-info'], {
+			input: `${records.join('\0')}\0`,
+		});
+	}
+
+	/**
+	 * Publish a merge left unfinished: Git's merge state first, then the
+	 * files, then the index. See the module comment for why that order.
+	 */
+	async function publishMerge(
+		plan: IncomingPlan,
+		merge: UnfinishedMerge,
+	): Promise<PublishResult> {
+		const actual = await resolve(branchRef);
+		if (actual !== plan.expectedHead)
+			return { status: 'branchMoved', actual, filesApplied: false };
+		try {
+			await writePrivate('ORIG_HEAD', `${plan.expectedHead}\n`);
+			await writePrivate(
+				'MERGE_MSG',
+				merge.message.endsWith('\n') ? merge.message : `${merge.message}\n`,
+			);
+			await writePrivate('MERGE_HEAD', `${merge.incoming}\n`);
+		} catch (cause) {
+			// No `MERGE_HEAD`, so no merge began, and no file or index entry was
+			// written. An `ORIG_HEAD` or `MERGE_MSG` written before it is only a
+			// head and a message, as Git leaves them after other operations.
+			return {
+				status: 'refused',
+				error: FileError.Io({
+					path: '.git/MERGE_HEAD',
+					operation: 'record the merge before writing its files',
+					cause,
+				}).error,
+			};
+		}
+		const { error: applyError } = await boundary.apply(plan.changes);
+		if (applyError !== null) {
+			if (applyError.name === 'Partial')
+				return {
+					status: 'partial',
+					applied: applyError.applied,
+					error: applyError.error,
+				};
+			// No file was written, so the merge state describes nothing that
+			// happened. If it cannot be removed it stays, visible, and the
+			// result does not claim that nothing changed.
+			try {
+				await backend.clearMerge();
+			} catch {
+				return { status: 'partial', applied: [], error: applyError };
+			}
+			return { status: 'refused', error: applyError };
+		}
+		try {
+			await indexMerge(plan.nextHead, plan.paths, merge.unmerged);
+		} catch (cause) {
+			return {
+				status: 'indexFailed',
+				error: cause instanceof Error ? cause.message : String(cause),
+			};
+		}
+		// Another program may have moved the branch meanwhile. `ORIG_HEAD`
+		// still names the merge's first parent; a staged commit refuses to
+		// finish the merge from anywhere else.
+		const after = await resolve(branchRef);
+		if (after !== plan.expectedHead)
+			return { status: 'branchMoved', actual: after, filesApplied: true };
+		return { status: 'published' };
+	}
+
 	function parsePorcelain(output: Uint8Array): PathStatus[] {
 		const tokens = text(output).split('\0');
 		const result: PathStatus[] = [];
@@ -232,8 +393,8 @@ export async function createNativeGitBackend({
 			if (head.code !== 0) return 'HEAD is detached';
 			if (text(head.stdout).trim() !== branchRef)
 				return `HEAD is not on ${branch}`;
+			// A merge in progress is `mergeState`: a staged commit finishes it.
 			for (const marker of [
-				'MERGE_HEAD',
 				'CHERRY_PICK_HEAD',
 				'REVERT_HEAD',
 				'rebase-merge',
@@ -247,6 +408,33 @@ export async function createNativeGitBackend({
 				if (present) return `a Git operation is in progress (${marker})`;
 			}
 			return undefined;
+		},
+		async mergeState(): Promise<MergeInProgress | undefined> {
+			const stored = await readPrivate('MERGE_HEAD');
+			if (stored === undefined) return undefined;
+			const incoming = text(stored).trim().split('\n')[0] ?? '';
+			if (!/^[0-9a-f]{40}$/.test(incoming))
+				throw new Error('.git/MERGE_HEAD does not name a commit');
+			const origin = text((await readPrivate('ORIG_HEAD')) ?? new Uint8Array())
+				.trim()
+				.split('\n')[0];
+			const listed = await run(['ls-files', '--unmerged', '-z']);
+			const unresolved = new Set<string>();
+			for (const record of text(listed.stdout).split('\0'))
+				if (record.includes('\t'))
+					unresolved.add(record.slice(record.indexOf('\t') + 1));
+			return {
+				incoming,
+				head:
+					origin !== undefined && /^[0-9a-f]{40}$/.test(origin)
+						? origin
+						: undefined,
+				unresolved: [...unresolved],
+			};
+		},
+		async clearMerge() {
+			for (const name of ['MERGE_HEAD', 'MERGE_MSG', 'MERGE_MODE'])
+				await rm(join(gitdir, name), { force: true });
 		},
 		async checkpointProblem() {
 			return nativeCheckpointProblem({
@@ -318,18 +506,7 @@ export async function createNativeGitBackend({
 			if (result.code === 1) return false;
 			throw new GitCommandError(['diff'], result.code, result.stderr);
 		},
-		async readIndex() {
-			try {
-				return new Uint8Array(await readFile(join(gitdir, 'index')));
-			} catch (cause) {
-				if ((cause as { code?: string }).code === 'ENOENT') return undefined;
-				throw cause;
-			}
-		},
-		// Merging here would apply ordered file steps outside one transaction,
-		// with Git's own merge rules beside this folder's. Neither is built.
-		mergeUnsupported:
-			'merging diverged histories is not available for a folder on disk yet',
+		readIndex: () => readPrivate('index'),
 		async pathStatus() {
 			const result = await run([
 				'status',
@@ -343,10 +520,33 @@ export async function createNativeGitBackend({
 			if (paths === 'all') await run(['add', '--all']);
 			else await run([...literal, 'add', '--all', '--', ...paths]);
 		},
-		async commitIndex(message, author) {
+		async commitIndex(message, author, merge) {
+			if (merge !== undefined) {
+				// Both parents are pinned. The tree is built from a listing of the
+				// index, which `write-tree` would rewrite to cache its trees, so a
+				// commit the compare-and-swap refuses leaves the index as it was.
+				const listed = await run(['ls-files', '--stage', '-z']);
+				const entries = new Map<string, TreeFile>();
+				for (const record of text(listed.stdout).split('\0')) {
+					const match = /^(\d{6}) ([0-9a-f]{40}) (\d)\t(.+)$/s.exec(record);
+					if (match === null) continue;
+					const [, mode, oid, stage, path] = match;
+					if (stage !== '0') throw new Error(`${path} is still unmerged`);
+					entries.set(path!, { mode: mode!, oid: oid! });
+				}
+				const tree = await writeTreeFiles(access, entries);
+				const oid = await writeCommitObject(access, {
+					tree,
+					parents: [merge.head, merge.incoming],
+					message,
+					author,
+				});
+				const moved = await backend.casBranch(merge.head, oid);
+				if (!moved.ok) return { status: 'branchMoved', actual: moved.actual };
+				return { status: 'committed', oid, parent: merge.head };
+			}
 			const parent = await resolve(branchRef);
-			const staged = await backend.indexMatchesHead();
-			if (staged) return { status: 'nothing' };
+			if (await backend.indexMatchesHead()) return { status: 'nothing' };
 			const result = await run(
 				[
 					'-c',
@@ -443,6 +643,7 @@ export async function createNativeGitBackend({
 		// The baseline is not checked here: each step carries its own file
 		// condition, and other programs are met only at Git's lock files.
 		async publishIncoming(plan): Promise<PublishResult> {
+			if (plan.merge !== undefined) return publishMerge(plan, plan.merge);
 			const { error: applyError } = await boundary.apply(plan.changes);
 			if (applyError !== null) {
 				if (applyError.name === 'Partial')

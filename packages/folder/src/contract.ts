@@ -86,10 +86,13 @@ export type {
 } from './folder.js';
 export type {
 	GitRemote,
+	MergeInProgress,
 	PathStatus,
 	PendingIncoming,
 	RecordedIncoming,
 	StatusCode,
+	UnfinishedMerge,
+	UnmergedPath,
 } from './git/backend.js';
 export {
 	GitError,
@@ -105,11 +108,13 @@ export type {
 	FetchOutcome,
 	FilesObservation,
 	GitSnapshot,
+	MergeConflictPolicy,
 	MergeOutcome,
 	Observation,
 	PullOutcome,
 	PushOutcome,
 	RecoverOutcome,
+	StagedCommit,
 	SyncObservation,
 } from './git/history.js';
 export { commitSubject, escapePath, type PathChange } from './git/messages.js';

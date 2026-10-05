@@ -17,9 +17,12 @@
  *   changes keep their exact bytes
  * - A save to an unchanged path, a new file at an incoming path, staging, or
  *   a branch move between planning and publication refuses the whole update
- * - A directory folder reports the merge as unsupported
+ * - A directory folder refuses the same conflicts with its files, index,
+ *   and branch untouched
  *
  * See also:
+ * - `merge-unfinished.test.ts` for conflicts left in place, and a directory
+ *   folder's clean merge
  * - `kv-merge.test.ts` for the key-level merge itself
  * - `git/history-ordering.test.ts` for incoming updates that land partly
  */
@@ -31,7 +34,7 @@ import {
 	expect,
 	test,
 } from 'bun:test';
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import * as isogit from 'isomorphic-git';
 import { expectErr, expectOk } from 'wellcrafted/testing';
@@ -720,8 +723,9 @@ describe('the browser journey', () => {
 	});
 });
 
-test('a directory folder reports the merge as unsupported and changes nothing', async () => {
+test('a directory folder refuses a conflict by default and changes nothing', async () => {
 	const root = await scratch('merge-directory-');
+	const bare = await createBareRemote(root);
 	const local = join(root, 'local');
 	await mkdir(local);
 	const definition = defineFolder({
@@ -734,15 +738,32 @@ test('a directory folder reports the merge as unsupported and changes nothing', 
 		git: {
 			author,
 			commitOnEdit: false,
-			remote: { url: join(root, 'remote.git'), branch: 'main' },
+			remote: { url: bare, branch: 'main' },
 		},
 	});
 	try {
-		expect(directory.git.mergeUnsupported).toBeString();
+		expect(directory.git.mergeUnsupported).toBeUndefined();
+		expectOk(await directory.files.create('a.md', 'base\n'));
+		expect((await directory.git.commitAndPush()).push.status).toBe('pushed');
+		const upstream = join(root, 'upstream');
+		await git(root, 'clone', '--quiet', bare, upstream);
+		await writeFile(join(upstream, 'a.md'), 'theirs\n');
+		await git(upstream, 'commit', '--quiet', '-am', 'Theirs');
+		await git(upstream, 'push', '--quiet', 'origin', 'main');
+		expectOk(await directory.files.overwrite('a.md', 'ours\n'));
+		const ours = await directory.git.commit();
+		if (ours.status !== 'committed') throw new Error(ours.status);
+		expectOk(await directory.git.fetch());
+		const index = await readFile(join(local, '.git/index'));
+
 		expect(expectErr(await directory.git.mergeIncoming())).toMatchObject({
-			name: 'Unsupported',
-			reason: directory.git.mergeUnsupported,
+			name: 'Conflicted',
+			conflicts: [{ reason: 'content', path: 'a.md' }],
 		});
+		expect(await git(local, 'rev-parse', 'main')).toBe(ours.oid);
+		expect(await readFile(join(local, 'a.md'), 'utf8')).toBe('ours\n');
+		expect(await readFile(join(local, '.git/index'))).toEqual(index);
+		expect(await git(local, 'status', '--porcelain')).toBe('');
 	} finally {
 		await directory.close();
 	}

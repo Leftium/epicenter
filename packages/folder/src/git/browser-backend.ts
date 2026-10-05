@@ -23,14 +23,24 @@ import type {
 	GitBackend,
 	GitRemote,
 	IncomingPlan,
+	MergeInProgress,
 	PathStatus,
 	PendingIncoming,
 	PublishResult,
 	RecoverIncomingResult,
 	StatusCode,
+	UnmergedPath,
 } from './backend.js';
 import { capturedIndexMatchesHead } from './captured-index.js';
 import { abortableHttp } from './http.js';
+import {
+	type IndexEntry,
+	orphanStagesProblem,
+	parseIndex,
+	plainEntry,
+	renderIndex,
+	unmergedPaths,
+} from './index-file.js';
 import {
 	commitTree,
 	logCommits,
@@ -131,10 +141,66 @@ export async function indexTo(
 			});
 }
 
+/**
+ * Replace each unmerged path's entries in the index of `fs` (unflushed) with
+ * its stages: 1 for the base, 2 for ours, 3 for theirs, each a plain file
+ * with no cached stats. Other entries are kept as they are.
+ */
+export async function stageUnmerged(
+	fs: PromiseFsClient,
+	unmerged: readonly UnmergedPath[],
+) {
+	if (unmerged.length === 0) return;
+	const bytes: Uint8Array | undefined = await fs.promises
+		.readFile(`${GITDIR}/index`)
+		.catch(() => undefined);
+	const entries = bytes === undefined ? [] : parseIndex(bytes);
+	if (entries === undefined)
+		throw new Error('The index is not a version 2 Git index');
+	const paths = new Set(unmerged.map((path) => path.path));
+	const staged = entries.filter((entry) => !paths.has(entry.path));
+	staged.push(...unmergedEntries(unmerged));
+	await fs.promises.writeFile(`${GITDIR}/index`, await renderIndex(staged));
+}
+
+/** The stage entries of `unmerged` paths. */
+export function unmergedEntries(
+	unmerged: readonly UnmergedPath[],
+): IndexEntry[] {
+	return unmerged.flatMap(({ path, base, ours, theirs }) =>
+		(
+			[
+				[1, base],
+				[2, ours],
+				[3, theirs],
+			] as const
+		).flatMap(([stage, oid]) =>
+			oid === undefined ? [] : [plainEntry(path, oid, stage)],
+		),
+	);
+}
+
+/**
+ * `git status` codes for an unmerged path, by the stages it has: `UU` both
+ * modified, `AA` both added, `DU` deleted by us, `UD` deleted by them, `AU`
+ * added by us, `UA` added by them, `DD` both deleted.
+ */
+function unmergedCodes(stages: ReadonlySet<number>): [StatusCode, StatusCode] {
+	const [base, ours, theirs] = [stages.has(1), stages.has(2), stages.has(3)];
+	if (ours && theirs) return base ? ['U', 'U'] : ['A', 'A'];
+	if (base && theirs) return ['D', 'U'];
+	if (base && ours) return ['U', 'D'];
+	if (ours) return ['A', 'U'];
+	if (theirs) return ['U', 'A'];
+	return ['D', 'D'];
+}
+
 /** Why index and branch work waits for `pending`. */
 export function pendingReason(pending: PendingIncoming): string {
 	switch (pending.state) {
 		case 'recorded':
+			if (pending.merge !== undefined)
+				return `Incoming merge ${pending.operationId} of ${pending.merge.incoming} over ${pending.expectedHead ?? 'an empty history'} has not finished publishing; recover it with recoverIncoming()`;
 			return `Incoming update ${pending.operationId} from ${pending.expectedHead ?? 'an empty history'} to ${pending.nextHead} has not finished; recover it with recoverIncoming()`;
 		case 'unadmitted':
 			return 'An incoming update was never admitted: its record is empty; recoverIncoming() clears it';
@@ -159,6 +225,7 @@ export async function createStoredGitBackend<TSession extends GitFsSession>({
 }): Promise<GitBackend> {
 	const branchKey = `${GITDIR}/refs/heads/${branch}`;
 	const indexKey = `${GITDIR}/index`;
+	const mergeHeadKey = `${GITDIR}/MERGE_HEAD`;
 	const trackingKey = `${GITDIR}/refs/remotes/${REMOTE_NAME}/${remote?.branch ?? branch}`;
 
 	async function withObjects<T>(
@@ -268,6 +335,12 @@ export async function createStoredGitBackend<TSession extends GitFsSession>({
 		return [index, worktree];
 	}
 
+	/**
+	 * isomorphic-git's status walk, with its index refresh off. That refresh
+	 * writes a merged entry for a file whose bytes equal the stage it looked
+	 * at, which would resolve an unmerged path by reading it. Stats here are
+	 * never cached anyway (see `opfs-git.ts`), so it saves nothing.
+	 */
 	async function matrix(access: ObjectAccess, filepaths?: string[]) {
 		const hasHead = (await readRef(branchKey)) !== undefined;
 		if (!hasHead) {
@@ -277,7 +350,7 @@ export async function createStoredGitBackend<TSession extends GitFsSession>({
 			await git.walk({
 				...access,
 				dir: WORKDIR,
-				trees: [git.STAGE(), git.WORKDIR()],
+				trees: [git.STAGE(), git.WORKDIR({ refresh: false })],
 				map: async (filepath, [stage, workdir]) => {
 					if (filepath === '.') return undefined;
 					if (
@@ -319,7 +392,22 @@ export async function createStoredGitBackend<TSession extends GitFsSession>({
 			dir: WORKDIR,
 			ref: branchKey.slice(GITDIR.length + 1),
 			filepaths,
+			refresh: false,
 		});
+	}
+
+	/** Each unmerged path's stages, from the stored index. */
+	async function unmergedStages(): Promise<Map<string, Set<number>>> {
+		const bytes = await store.readPrivate(indexKey);
+		const stages = new Map<string, Set<number>>();
+		if (bytes === undefined) return stages;
+		for (const entry of parseIndex(bytes) ?? [])
+			if (entry.stage !== 0)
+				stages.set(
+					entry.path,
+					(stages.get(entry.path) ?? new Set()).add(entry.stage),
+				);
+		return stages;
 	}
 
 	async function blobText(
@@ -356,9 +444,36 @@ export async function createStoredGitBackend<TSession extends GitFsSession>({
 				return `HEAD is not on ${branch}`;
 			return undefined;
 		},
+		async mergeState(): Promise<MergeInProgress | undefined> {
+			const stored = await store.readPrivate(mergeHeadKey);
+			if (stored === undefined) return undefined;
+			const incoming = refValue(stored);
+			if (incoming === undefined)
+				throw new Error('.git/MERGE_HEAD does not name a commit');
+			const index = await store.readPrivate(indexKey);
+			return {
+				incoming,
+				head: refValue(await store.readPrivate(`${GITDIR}/ORIG_HEAD`)),
+				unresolved:
+					index === undefined ? [] : unmergedPaths(parseIndex(index) ?? []),
+			};
+		},
+		async clearMerge() {
+			// `MERGE_HEAD` first: without it the merge is over, and a
+			// `MERGE_MSG` left behind is only a message.
+			await withObjects(async ({ fs }) => {
+				for (const name of ['MERGE_HEAD', 'MERGE_MSG'])
+					await fs.promises
+						.unlink(`${GITDIR}/${name}`)
+						.catch((cause: unknown) => {
+							if ((cause as { code?: string }).code !== 'ENOENT') throw cause;
+						});
+			});
+		},
 		async checkpointProblem() {
 			// Browser files are plain bytes with no modes, links, or filters.
-			return undefined;
+			// Stages are what is left of a merge whose `MERGE_HEAD` is gone.
+			return orphanStagesProblem([...(await unmergedStages()).keys()]);
 		},
 		async incomingAttribute(_commit, files) {
 			// There is no Git program here. The tree's own attribute files are
@@ -417,15 +532,18 @@ export async function createStoredGitBackend<TSession extends GitFsSession>({
 			);
 		},
 		readIndex: () => store.readPrivate(indexKey),
-		mergeUnsupported: undefined,
 		async pathStatus() {
 			const rows = await withObjects((access) => matrix(access));
+			// The status walk sees one stage of an unmerged path; its codes
+			// come from the stages the index holds.
+			const unmerged = await unmergedStages();
 			const result: PathStatus[] = [];
 			for (const [path, head, workdir, stage] of rows) {
-				const [index, worktree] = matrixCodes(head, workdir, stage) as [
-					StatusCode,
-					StatusCode,
-				];
+				const stages = unmerged.get(path);
+				const [index, worktree] =
+					stages === undefined
+						? (matrixCodes(head, workdir, stage) as [StatusCode, StatusCode])
+						: unmergedCodes(stages);
 				if (index === ' ' && worktree === ' ') continue;
 				result.push({ path, index, worktree });
 			}
@@ -433,6 +551,7 @@ export async function createStoredGitBackend<TSession extends GitFsSession>({
 		},
 		async stage(paths) {
 			await settled();
+			const unmerged = await unmergedStages();
 			await withObjects(async (access) => {
 				const rows = await matrix(
 					access,
@@ -450,7 +569,14 @@ export async function createStoredGitBackend<TSession extends GitFsSession>({
 					}
 				}
 				for (const [filepath, , workdir, stage] of rows) {
-					if (workdir === 0) {
+					// An unmerged path is always staged: the status walk compares
+					// the file with one of its stages, and a resolution equal to
+					// that stage would otherwise keep every stage.
+					if (unmerged.has(filepath)) {
+						if (workdir === 0)
+							await git.remove({ ...access, dir: WORKDIR, filepath });
+						else await git.add({ ...access, dir: WORKDIR, filepath });
+					} else if (workdir === 0) {
 						if (stage !== 0)
 							await git.remove({ ...access, dir: WORKDIR, filepath });
 					} else if (stage !== 2 || workdir !== 2) {
@@ -459,7 +585,7 @@ export async function createStoredGitBackend<TSession extends GitFsSession>({
 				}
 			});
 		},
-		async commitIndex(message, author) {
+		async commitIndex(message, author, merge) {
 			await settled();
 			const session = store.session();
 			const access: ObjectAccess = {
@@ -467,7 +593,10 @@ export async function createStoredGitBackend<TSession extends GitFsSession>({
 				gitdir: GITDIR,
 				cache: {},
 			};
-			const parent = await readRef(branchKey);
+			// A merge's first parent is the head it began from, never whatever
+			// the branch names now; the compare-and-swap below moves the branch
+			// only from that head.
+			const parent = merge?.head ?? (await readRef(branchKey));
 			const now = new Date();
 			const signature = {
 				name: author.name,
@@ -475,6 +604,9 @@ export async function createStoredGitBackend<TSession extends GitFsSession>({
 				timestamp: Math.floor(now.getTime() / 1000),
 				timezoneOffset: now.getTimezoneOffset(),
 			};
+			// isomorphic-git does not read `MERGE_HEAD`: a merge's second parent
+			// is supplied here. A merge commit is recorded even when its tree is
+			// the head's, as when a person kept every local version.
 			const oid = await git.commit({
 				...access,
 				dir: WORKDIR,
@@ -482,17 +614,22 @@ export async function createStoredGitBackend<TSession extends GitFsSession>({
 				author: signature,
 				committer: signature,
 				noUpdateBranch: true,
-				parent: parent === undefined ? [] : [parent],
+				parent: [
+					...(parent === undefined ? [] : [parent]),
+					...(merge === undefined ? [] : [merge.incoming]),
+				],
 			});
-			const tree = await commitTree(access, oid);
-			const parentTree =
-				parent === undefined ? undefined : await commitTree(access, parent);
-			const indexEntries = await git.listFiles({ ...access, dir: WORKDIR });
-			if (
-				tree === parentTree ||
-				(parent === undefined && indexEntries.length === 0)
-			)
-				return { status: 'nothing' };
+			if (merge === undefined) {
+				const tree = await commitTree(access, oid);
+				const parentTree =
+					parent === undefined ? undefined : await commitTree(access, parent);
+				const indexEntries = await git.listFiles({ ...access, dir: WORKDIR });
+				if (
+					tree === parentTree ||
+					(parent === undefined && indexEntries.length === 0)
+				)
+					return { status: 'nothing' };
+			}
 			await session.flush();
 			const moved = await store.casRef(branchKey, parent, oid);
 			if (!moved.ok) return { status: 'branchMoved', actual: moved.actual };
@@ -508,10 +645,12 @@ export async function createStoredGitBackend<TSession extends GitFsSession>({
 				const head = await readRef(branchKey);
 				const filepaths = paths.length === 0 ? undefined : [...paths];
 				const outputs: string[] = [];
+				// No index refresh, as in `matrix`: a diff never writes the index.
+				const workdir = git.WORKDIR({ refresh: false });
 				const trees =
 					head === undefined
-						? [git.STAGE(), git.WORKDIR()]
-						: [git.TREE({ ref: head }), git.STAGE(), git.WORKDIR()];
+						? [git.STAGE(), workdir]
+						: [git.TREE({ ref: head }), git.STAGE(), workdir];
 				await git.walk({
 					...access,
 					dir: WORKDIR,
@@ -665,6 +804,9 @@ export async function createStoredGitBackend<TSession extends GitFsSession>({
 						.map((change) => (change as { path: string }).path),
 				),
 			);
+			// A merge left unfinished gives each conflicted path its stages.
+			if (plan.merge !== undefined)
+				await stageUnmerged(session.fs, plan.merge.unmerged);
 			return store.publishIncoming(plan, session);
 		},
 	};

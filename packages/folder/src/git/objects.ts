@@ -76,6 +76,53 @@ export async function writeFilesTree(
 	return write(root);
 }
 
+/**
+ * Write the trees that hold `files`, each leaf the object it already names
+ * with its own mode. Returns the root tree.
+ */
+export async function writeTreeFiles(
+	access: ObjectAccess,
+	files: ReadonlyMap<string, TreeFile>,
+): Promise<string> {
+	type Directory = {
+		files: Map<string, TreeFile>;
+		directories: Map<string, Directory>;
+	};
+	const root: Directory = { files: new Map(), directories: new Map() };
+	for (const [path, file] of files) {
+		const parts = path.split('/');
+		let directory = root;
+		for (const part of parts.slice(0, -1)) {
+			let child = directory.directories.get(part);
+			if (child === undefined) {
+				child = { files: new Map(), directories: new Map() };
+				directory.directories.set(part, child);
+			}
+			directory = child;
+		}
+		directory.files.set(parts[parts.length - 1]!, file);
+	}
+	async function write(directory: Directory): Promise<string> {
+		const entries: git.TreeEntry[] = [];
+		for (const [name, file] of directory.files)
+			entries.push({
+				path: name,
+				mode: file.mode,
+				type: file.mode === '160000' ? 'commit' : 'blob',
+				oid: file.oid,
+			});
+		for (const [name, child] of directory.directories)
+			entries.push({
+				path: name,
+				mode: '040000',
+				type: 'tree',
+				oid: await write(child),
+			});
+		return git.writeTree({ ...access, tree: entries });
+	}
+	return write(root);
+}
+
 /** Git blob IDs for captured bytes, without writing objects. */
 export async function hashFiles(
 	files: ReadonlyMap<string, Uint8Array>,

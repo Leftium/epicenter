@@ -37,6 +37,14 @@ export const GitError = defineErrors({
 		reason,
 	}),
 	NothingToCommit: () => ({ message: 'Nothing is staged to commit' }),
+	/**
+	 * A merge in progress still has paths whose index entries are unmerged
+	 * stages. Nothing was written; stage each path's resolution, then commit.
+	 */
+	Unmerged: ({ paths }: { paths: readonly string[] }) => ({
+		message: `Committing is not possible because ${paths.length === 1 ? 'a path is' : `${paths.length} paths are`} unmerged: ${paths.join(', ')}; stage the resolved ${paths.length === 1 ? 'file' : 'files'} first`,
+		paths,
+	}),
 	AutomaticHistory: () => ({
 		message: 'Staged authoring requires commitOnEdit: false',
 	}),
@@ -261,7 +269,11 @@ export const MergeError = defineErrors({
 		paths,
 		reason,
 	}),
-	/** Competing changes need a person. Nothing was written to files, the index, or the branch. */
+	/**
+	 * Competing changes need a person. Nothing was written to files, the
+	 * index, or the branch. A merge asked to leave its conflicts gets this
+	 * only for conflicts it cannot leave as files: a file against a directory.
+	 */
 	Conflicted: ({ conflicts }: { conflicts: readonly MergeConflict[] }) => ({
 		message: `${conflicts.length} ${conflicts.length === 1 ? 'conflict blocks' : 'conflicts block'} the merge: ${[
 			...new Set(conflicts.map((conflict) => conflict.path)),

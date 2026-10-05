@@ -26,12 +26,14 @@ import type {
 	FilesObservation,
 	GitError,
 	GitSnapshot,
+	MergeConflictPolicy,
 	MergeError,
 	MergeOutcome,
 	PullError,
 	PullOutcome,
 	PushOutcome,
 	RecoverOutcome,
+	StagedCommit,
 } from './git/history.js';
 import type { Author, CommitSummary } from './git/objects.js';
 import { createKv, type FileKv } from './kv.js';
@@ -84,12 +86,19 @@ export type FolderGit = {
 	 * Merge the fetched remote head into a clean folder: a fast-forward when
 	 * possible, otherwise one commit with the branch head and the fetched head
 	 * as parents. Root `kv.json` merges by key; other files by Git's rules.
-	 * A conflict or refusal changes no file, index entry, or ref. Never pushes.
-	 * Only a browser folder merges; elsewhere this is `Unsupported`.
+	 * A refusal changes no file, index entry, or ref, and by default so does a
+	 * conflict. Never pushes.
+	 *
+	 * With `{ conflicts: 'leave' }`, which requires `commitOnEdit: false`, a
+	 * conflicted merge is published unfinished instead (`conflicted`): files
+	 * with conflict markers, unmerged index stages, and Git's merge state,
+	 * with the branch unmoved. Stage each resolution, then `commitStaged`
+	 * records the merge commit. A file against a directory is still refused.
+	 * Where `mergeUnsupported` is set, this is `Unsupported`.
 	 */
-	mergeIncoming(): Promise<
-		Result<MergeOutcome, MergeError | PullError | GitError>
-	>;
+	mergeIncoming(
+		options?: MergeConflictPolicy,
+	): Promise<Result<MergeOutcome, MergeError | PullError | GitError>>;
 	/** Why `mergeIncoming` is unavailable here, or `undefined` when it is available. */
 	readonly mergeUnsupported: string | undefined;
 	/**
@@ -109,12 +118,18 @@ export type FolderGit = {
 	recoverIncoming(): Promise<Result<RecoverOutcome, PullError | GitError>>;
 	/** Per-path staged and unstaged state, as `git status` reports it. */
 	paths(): Promise<Result<PathStatus[], GitError>>;
-	/** Staged authoring requires `commitOnEdit: false`. */
+	/**
+	 * Staged authoring requires `commitOnEdit: false`. Staging an unmerged
+	 * path resolves it, whatever its bytes.
+	 */
 	stage(paths: readonly string[] | 'all'): Promise<Result<undefined, GitError>>;
-	/** Commit staged changes with a user-authored message in manual mode. */
-	commitStaged(
-		message: string,
-	): Promise<Result<{ oid: string; parent: string | undefined }, GitError>>;
+	/**
+	 * Commit staged changes with a user-authored message in manual mode. With
+	 * a merge in progress the commit finishes it, with the branch head and
+	 * `snapshot.merging.incoming` as parents; while a path is still unmerged
+	 * it is `Unmerged` and writes nothing.
+	 */
+	commitStaged(message: string): Promise<Result<StagedCommit, GitError>>;
 	diff(options: {
 		staged: boolean;
 		paths: readonly string[];
@@ -239,7 +254,7 @@ function createFolderGit(history: FolderHistory): FolderGit {
 		push: (options) => history.push(options),
 		fetch: (options) => history.fetch(options),
 		pullFastForward: () => history.pullFastForward(),
-		mergeIncoming: () => history.mergeIncoming(),
+		mergeIncoming: (options) => history.mergeIncoming(options),
 		recoverIncoming: () => history.recoverIncoming(),
 		mergeUnsupported: history.mergeUnsupported,
 		paths: () => history.paths(),

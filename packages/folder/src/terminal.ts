@@ -10,8 +10,11 @@
  * deliberate overwrite.
  *
  * `git` is a real command over the folder's history: status, diff, log, add,
- * commit -m, push, fetch, and pull --ff-only. Staged authoring requires
- * `commitOnEdit: false`. Other Git commands are refused.
+ * commit -m, push, fetch, pull --ff-only, and merge. Staged authoring requires
+ * `commitOnEdit: false`. `git merge` merges the already fetched remote head;
+ * in manual history it leaves conflicts in the files and exits 1, as Git
+ * does, and `git add` then `git commit -m` finish it. Other Git commands are
+ * refused.
  */
 import { Buffer } from 'buffer/';
 import {
@@ -444,7 +447,10 @@ export function createTerminal(
 		const result = await runGit(git, args, (path) =>
 			relative(context.fs.resolvePath(context.cwd, path)),
 		);
-		if (args[0] === 'pull' && result.exitCode === 0) await refresh();
+		// A merge may publish files whether it succeeds, stops on a conflict
+		// it leaves in place, or fails partway.
+		if ((args[0] === 'pull' && result.exitCode === 0) || args[0] === 'merge')
+			await refresh();
 		return result;
 	});
 
@@ -535,6 +541,14 @@ async function runGit(
 					? `?? ${path.path}`
 					: `${path.index}${path.worktree} ${path.path}`,
 			);
+			const brief = rest.some((arg) =>
+				['-s', '--short', '--porcelain'].includes(arg),
+			);
+			if (snapshot.merging !== undefined && !brief)
+				header +=
+					snapshot.merging.unresolved.length > 0
+						? '\nYou have unmerged paths.\n  (fix conflicts and run "git commit")'
+						: '\nAll conflicts fixed but you are still merging.\n  (use "git commit" to conclude merge)';
 			if (lines.length === 0)
 				return ok(`${header}\nnothing to commit, working tree clean\n`);
 			return ok(`${header}\n${lines.join('\n')}\n`);
@@ -651,12 +665,26 @@ async function runGit(
 			if (commitError !== null) {
 				if (commitError.name === 'NothingToCommit')
 					return error('nothing added to commit', 1);
+				if (commitError.name === 'Unmerged')
+					return error(
+						`error: Committing is not possible because you have unmerged files.\n${commitError.paths
+							.map((path) => `U\t${path}`)
+							.join(
+								'\n',
+							)}\nhint: Fix them up in the work tree, and then use 'git add <file>'\nhint: to mark resolution and make a commit.\nfatal: Exiting because of an unresolved conflict.`,
+						128,
+					);
 				return error(commitError.message);
 			}
 			const subject = messages[0]!.split('\n')[0];
-			return ok(
-				`[${git.snapshot.branch} ${short(committed.oid)}] ${subject}\n`,
-			);
+			return {
+				stdout: `[${git.snapshot.branch} ${short(committed.oid)}] ${subject}\n`,
+				stderr:
+					committed.mergeStateWarning === undefined
+						? ''
+						: `warning: the merge was committed, but Git's merge state could not be removed: ${committed.mergeStateWarning}\n`,
+				exitCode: 0,
+			};
 		}
 		case 'push': {
 			if (rest.length > 0)
@@ -730,11 +758,79 @@ async function runGit(
 			}
 			return error('pull did not complete');
 		}
+		case 'merge': {
+			const remote = git.snapshot.remote;
+			const upstream = `origin/${remote?.branch ?? git.snapshot.branch}`;
+			const targets = rest.filter((arg) => arg !== '--no-edit');
+			if (
+				targets.length > 1 ||
+				(targets.length === 1 &&
+					![upstream, '@{u}', '@{upstream}'].includes(targets[0]!))
+			)
+				return error(
+					`git merge: only the fetched remote branch can be merged: git merge [${upstream}]`,
+					129,
+				);
+			const { data: merged, error: mergeError } = await git.mergeIncoming({
+				conflicts: git.snapshot.commitOnEdit ? 'refuse' : 'leave',
+			});
+			if (mergeError !== null) {
+				if (mergeError.name === 'NoFetchedHead')
+					return error(`merge: ${upstream} - not something we can merge`);
+				return error(`fatal: ${mergeError.message}`, 128);
+			}
+			const files = (paths: readonly string[]) =>
+				`${paths.map((path) => ` ${path}`).join('\n')}\n ${paths.length} ${paths.length === 1 ? 'file' : 'files'} changed\n`;
+			switch (merged.status) {
+				case 'upToDate':
+				case 'ahead':
+					return ok('Already up to date.\n');
+				case 'fastForwarded':
+					return ok(
+						`Updating ${short(merged.from)}..${short(merged.to)}\nFast-forward\n${files(merged.changedPaths)}`,
+					);
+				case 'merged':
+					return ok(
+						`Merge made: ${short(merged.to)} (parents ${short(merged.from)} and ${short(merged.fetched)})\n${files(merged.changedPaths)}`,
+					);
+				case 'conflicted': {
+					const lines: string[] = [];
+					const reported = new Set<string>();
+					for (const conflict of merged.conflicts) {
+						if (reported.has(conflict.path)) continue;
+						reported.add(conflict.path);
+						if (conflict.reason === 'deleted')
+							lines.push(
+								`CONFLICT (modify/delete): ${conflict.path} deleted in ${conflict.deletedBy === 'ours' ? 'HEAD' : upstream} and modified in ${conflict.deletedBy === 'ours' ? upstream : 'HEAD'}.`,
+							);
+						else if (conflict.reason === 'kvFile')
+							lines.push(
+								`CONFLICT (modify/delete): ${conflict.path} deleted on one side and modified on the other.`,
+							);
+						else {
+							if (conflict.reason === 'binary')
+								lines.push(
+									`warning: Cannot merge binary files: ${conflict.path} (HEAD vs. ${upstream})`,
+								);
+							lines.push(
+								`CONFLICT (content): Merge conflict in ${conflict.path}`,
+							);
+						}
+					}
+					return {
+						stdout: `${lines.join('\n')}\nAutomatic merge failed; fix conflicts and then commit the result.\n`,
+						stderr: '',
+						exitCode: 1,
+					};
+				}
+			}
+			return error('merge did not complete');
+		}
 		case undefined:
 		case 'help':
 		case '--help':
 			return ok(
-				`Supported: git status, git diff [--cached] [paths], git log [-n N] [--oneline]${git.snapshot.commitOnEdit ? '' : ', git add <paths>|-A, git commit -m <message>'}, git push, git fetch, git pull --ff-only\n`,
+				`Supported: git status, git diff [--cached] [paths], git log [-n N] [--oneline]${git.snapshot.commitOnEdit ? '' : ', git add <paths>|-A, git commit -m <message>'}, git push, git fetch, git pull --ff-only, git merge\n`,
 			);
 		default:
 			return error(

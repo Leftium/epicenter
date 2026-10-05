@@ -19,12 +19,28 @@
  * one-sided changes keep their exact blobs. Its merge also ignores Git's
  * `merge` attribute, so a path that attribute would merge differently is
  * refused.
+ *
+ * A merge whose conflicts are left for a person (`leave`) classifies them
+ * the same way, then gives each conflicted path, in both children, the bytes
+ * a person resolves: the changed side's file against a deletion, ordinary
+ * conflict markers when every version is text the line merge keeps, and
+ * otherwise our bytes, as Git leaves a binary conflict. A conflicted root
+ * `kv.json` gets the same treatment: its markers are ordinary text, not
+ * JSON. The merge of those children is clean, and its tree goes into a
+ * commit whose parents are the head and the fetched commit. That commit is
+ * never a branch head or a merge parent: it names the files and index
+ * entries an unfinished merge publishes. Each conflicted path keeps the
+ * base, ours, and theirs blobs that become its index stages. A file against
+ * a directory cannot be left this way and is refused like any conflict, as
+ * is a conflicted path that is not a plain file in one of its versions.
  */
 import * as git from 'isomorphic-git';
 import { mergeKv } from '../kv-merge.js';
 import { ancestors } from '../paths.js';
 import { byCodePoint, isAttributesPath, mergeAttribute } from './attributes.js';
+import type { UnmergedPath } from './backend.js';
 import type { MergeConflict } from './errors.js';
+import { conflictMarkers, type MarkerLabels } from './merge-markers.js';
 import {
 	type Author,
 	commitTree,
@@ -33,6 +49,7 @@ import {
 	readTreeFiles,
 	type TreeFile,
 	writeCommitObject,
+	writeTreeFiles,
 } from './objects.js';
 
 /** The one file merged by key rather than by line. */
@@ -50,6 +67,15 @@ export type PreparedMerge =
 	| {
 			readonly kind: 'conflicted';
 			readonly conflicts: readonly MergeConflict[];
+	  }
+	/** Conflicts left in place: the commit of the files a person resolves. */
+	| {
+			readonly kind: 'unfinished';
+			/** Never a branch head; its parents are the head and the fetched commit. */
+			readonly commit: string;
+			readonly files: ReadonlyMap<string, TreeFile>;
+			readonly conflicts: readonly MergeConflict[];
+			readonly unmerged: readonly UnmergedPath[];
 	  }
 	| {
 			readonly kind: 'unmergeable';
@@ -91,27 +117,55 @@ function mergesAsText(bytes: Uint8Array): boolean {
 	return text !== undefined && (text.match(LINES) ?? []).join('') === text;
 }
 
-/** A child of `commit` whose root `kv.json` is `blob`, or absent for `null`. */
-async function withRootKv(
+/**
+ * A child of `commit` whose file at each path of `overrides` is that blob,
+ * or absent for `null`. Every other entry, modes included, is the commit's.
+ */
+async function withOverrides(
 	access: ObjectAccess,
 	commit: string,
-	blob: string | null,
+	overrides: ReadonlyMap<string, string | null>,
 	author: Author,
 ): Promise<string> {
-	const { tree: entries } = await git.readTree({
-		...access,
-		oid: await commitTree(access, commit),
-	});
-	const kept = entries.filter((entry) => entry.path !== ROOT_KV);
-	if (blob !== null)
-		kept.push({ mode: PLAIN, path: ROOT_KV, oid: blob, type: 'blob' });
-	const tree = await git.writeTree({ ...access, tree: kept });
+	const files = await readTreeFiles(access, await commitTree(access, commit));
+	for (const [path, blob] of overrides)
+		if (blob === null) files.delete(path);
+		else files.set(path, { mode: PLAIN, oid: blob });
 	return writeCommitObject(access, {
-		tree,
+		tree: await writeTreeFiles(access, files),
 		parents: [commit],
-		message: 'Merge kv.json by key',
+		message: 'Merge with prepared paths',
 		author,
 	});
+}
+
+/**
+ * The bytes a person resolves at a conflicted path: the changed side's file
+ * against a deletion, conflict markers when every version is text the line
+ * merge keeps, and otherwise our bytes.
+ */
+async function unresolvedBytes(
+	access: ObjectAccess,
+	[base, ours, theirs]: readonly (TreeFile | undefined)[],
+	labels: MarkerLabels,
+): Promise<Uint8Array> {
+	const bytes = (entry: TreeFile) => readBlob(access, entry.oid);
+	if (ours === undefined) return bytes(theirs!);
+	if (theirs === undefined) return bytes(ours);
+	const texts: (string | undefined)[] = [];
+	for (const entry of [base, ours, theirs]) {
+		if (entry === undefined) {
+			texts.push('');
+			continue;
+		}
+		const read = await bytes(entry);
+		texts.push(mergesAsText(read) ? strictText(read) : undefined);
+	}
+	const [b, o, t] = texts;
+	if (b === undefined || o === undefined || t === undefined) return bytes(ours);
+	return encoder.encode(
+		await conflictMarkers({ base: b, ours: o, theirs: t }, labels),
+	);
 }
 
 /**
@@ -127,12 +181,15 @@ export async function prepareMerge(
 		fetched,
 		author,
 		message,
+		leave,
 	}: {
 		base: string;
 		head: string;
 		fetched: string;
 		author: Author;
 		message: string;
+		/** Leave conflicts for a person, marked with these labels, instead of refusing. */
+		leave?: MarkerLabels;
 	},
 ): Promise<PreparedMerge> {
 	const [b, o, t] = (await Promise.all(
@@ -282,58 +339,111 @@ export async function prepareMerge(
 			if (present.has(parent)) shapes.add(parent);
 	for (const path of shapes) conflicts.push({ reason: 'shape', path });
 
-	let tree: string | undefined;
-	let kvBlob: string | null | undefined;
-	if (shapes.size === 0) {
+	const signature = { name: author.name, email: author.email };
+	/** isomorphic-git's merge of the two sides, each with `overrides` applied. */
+	async function mergeWith(overrides: ReadonlyMap<string, string | null>) {
 		let [ours, theirs] = [head, fetched];
-		if (kv !== undefined) {
-			kvBlob =
-				kv === null ? null : await git.writeBlob({ ...access, blob: kv });
+		if (overrides.size > 0)
 			[ours, theirs] = (await Promise.all(
 				[head, fetched].map((side) =>
-					withRootKv(access, side, kvBlob!, author),
+					withOverrides(access, side, overrides, author),
 				),
 			)) as [string, string];
-		}
-		const signature = { name: author.name, email: author.email };
+		return (
+			await git.merge({
+				...access,
+				ours,
+				theirs,
+				fastForward: false,
+				noUpdateBranch: true,
+				abortOnConflict: true,
+				message,
+				author: signature,
+				committer: signature,
+			})
+		).tree;
+	}
+	const unsupported = {
+		kind: 'unmergeable',
+		paths: [],
+		reason:
+			'isomorphic-git does not merge this combination of files and directories',
+	} as const;
+
+	let tree: string | undefined;
+	const overrides = new Map<string, string | null>();
+	if (shapes.size === 0) {
+		if (kv !== undefined)
+			overrides.set(
+				ROOT_KV,
+				kv === null ? null : await git.writeBlob({ ...access, blob: kv }),
+			);
 		try {
-			tree = (
-				await git.merge({
-					...access,
-					ours,
-					theirs,
-					fastForward: false,
-					noUpdateBranch: true,
-					abortOnConflict: true,
-					message,
-					author: signature,
-					committer: signature,
-				})
-			).tree;
+			tree = await mergeWith(overrides);
 		} catch (cause) {
 			if (cause instanceof git.Errors.MergeNotSupportedError)
-				return {
-					kind: 'unmergeable',
-					paths: [],
-					reason:
-						'isomorphic-git does not merge this combination of files and directories',
-				};
+				return unsupported;
 			if (!(cause instanceof git.Errors.MergeConflictError)) throw cause;
 			const reported = new Set(conflicts.map((conflict) => conflict.path));
 			for (const path of cause.data.bothModified)
 				if (!reported.has(path)) conflicts.push({ reason: 'content', path });
 		}
 	}
-	if (conflicts.length > 0)
-		return {
-			kind: 'conflicted',
-			conflicts: conflicts.sort((left, right) =>
-				byCodePoint(left.path, right.path),
+	conflicts.sort((left, right) => byCodePoint(left.path, right.path));
+
+	if (conflicts.length > 0 && leave !== undefined && shapes.size === 0) {
+		const paths = [...new Set(conflicts.map((conflict) => conflict.path))];
+		const unplain = paths.filter((path) =>
+			[b.get(path), o.get(path), t.get(path)].some(
+				(entry) => entry !== undefined && entry.mode !== PLAIN,
 			),
-		};
+		);
+		if (unplain.length > 0)
+			return {
+				kind: 'unmergeable',
+				paths: unplain,
+				reason:
+					'a conflicted path is a symbolic link, executable, or submodule in one of its versions, so it cannot be left as a plain file',
+			};
+		const unmerged: UnmergedPath[] = [];
+		for (const path of paths) {
+			const sides = [b.get(path), o.get(path), t.get(path)];
+			overrides.set(
+				path,
+				await git.writeBlob({
+					...access,
+					blob: await unresolvedBytes(access, sides, leave),
+				}),
+			);
+			const [eb, eo, et] = sides;
+			unmerged.push({ path, base: eb?.oid, ours: eo?.oid, theirs: et?.oid });
+		}
+		let left: string | undefined;
+		try {
+			left = await mergeWith(overrides);
+		} catch (cause) {
+			if (cause instanceof git.Errors.MergeNotSupportedError)
+				return unsupported;
+			throw cause;
+		}
+		if (left === undefined) throw new Error('The merge produced no tree');
+		const files = await readTreeFiles(access, left);
+		for (const [path, blob] of overrides)
+			if ((files.get(path)?.oid ?? null) !== blob)
+				throw new Error(`The merged tree does not hold the prepared ${path}`);
+		const commit = await writeCommitObject(access, {
+			tree: left,
+			parents: [head, fetched],
+			message,
+			author,
+		});
+		return { kind: 'unfinished', commit, files, conflicts, unmerged };
+	}
+	if (conflicts.length > 0) return { kind: 'conflicted', conflicts };
 	if (tree === undefined) throw new Error('The merge produced no tree');
 
 	const files = await readTreeFiles(access, tree);
+	const kvBlob = overrides.get(ROOT_KV);
 	if (kvBlob !== undefined && (files.get(ROOT_KV)?.oid ?? null) !== kvBlob)
 		throw new Error('The merged tree does not hold the merged kv.json');
 	const commit = await writeCommitObject(access, {

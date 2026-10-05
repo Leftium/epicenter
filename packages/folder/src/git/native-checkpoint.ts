@@ -6,13 +6,15 @@
  * attribute filters, line-ending conversion, or LFS, and they cannot record
  * symbolic links, submodules, or executable bits. Rather than rewrite history
  * for such a repository, the checkpoint is refused with the first reason
- * found. Reads, raw file access, and explicit native Git (`git add`,
- * `git commit`) are unaffected.
+ * found, as it is for unmerged index stages no `MERGE_HEAD` explains. Reads,
+ * raw file access, and explicit native Git (`git add`, `git commit`) are
+ * unaffected.
  */
 import { lstat, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { pathProblem } from '../paths.js';
 import { NORMALIZING } from './attributes.js';
+import { orphanStagesProblem } from './index-file.js';
 import type { GitRun } from './native-backend.js';
 
 const MODES: Record<string, string> = {
@@ -38,6 +40,17 @@ export async function nativeCheckpointProblem({
 	/** Untracked candidates that ignore rules exclude from source. */
 	ignored: (paths: readonly string[]) => Promise<ReadonlySet<string>>;
 }): Promise<string | undefined> {
+	// Unmerged stages are only reached here with no `MERGE_HEAD`; the
+	// checkpoint would reset them and record conflict markers as content.
+	const staged = records((await run(['ls-files', '--stage', '-z'])).stdout);
+	const unmerged = new Set(
+		staged
+			.filter((record) => !/^\d+ [0-9a-f]+ 0\t/.test(record))
+			.map((record) => record.slice(record.indexOf('\t') + 1)),
+	);
+	const orphaned = orphanStagesProblem([...unmerged]);
+	if (orphaned !== undefined) return orphaned;
+
 	// Tracked modes, in the committed tree and in the index.
 	const tracked = new Set<string>();
 	const listings = [
@@ -46,7 +59,7 @@ export async function nativeCheckpointProblem({
 			: records(
 					(await run(['ls-tree', '-r', '-z', '--full-tree', head])).stdout,
 				)),
-		...records((await run(['ls-files', '--stage', '-z'])).stdout),
+		...staged,
 	];
 	for (const record of listings) {
 		const path = record.slice(record.indexOf('\t') + 1);

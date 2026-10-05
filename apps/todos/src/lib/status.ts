@@ -478,6 +478,12 @@ export function mergeOutcomeLine({
 			detail: `${short(outcome.from)} + ${short(outcome.fetched)} → ${short(outcome.to)}\nNot pushed yet.`,
 			tone: 'good',
 		};
+	if (outcome.status === 'conflicted')
+		return {
+			label: 'Merge needs your edits',
+			detail: 'Resolve the conflicts in the files, stage them, then commit.',
+			tone: 'warning',
+		};
 	return pullOutcomeLine(Ok(outcome));
 }
 

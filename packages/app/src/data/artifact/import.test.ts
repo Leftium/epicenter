@@ -8,6 +8,8 @@
  * that retyped a value or a codec that lost a body shows up here as a
  * difference between two stores, which is the failure a person would
  * actually suffer.
+ * Unknown fields and tables survive; unreadable KV and bodies without a codec
+ * refuse the import rather than silently losing stored data.
  */
 
 import { describe, expect, test } from 'bun:test';
@@ -49,7 +51,7 @@ const store = defineStore({
 });
 
 /** A store with one of everything the artifact has to carry. */
-async function seeded() {
+async function setup() {
 	const data = await openMemory(store);
 	data.kv.update({ theme: 'dark' });
 	const folder = data.tables.folders.create({ name: 'Inbox' });
@@ -68,7 +70,7 @@ async function seeded() {
 	const body = data.tables.notes.get(note.id);
 	if (body === undefined) throw new Error('the row has no body');
 	data.tables.notes.body(body.id)!.insert(0, ['buy milk\n\n---\nnot a fence']);
-	return { data, folder, note };
+	return { data, note };
 }
 
 /** Collect the stream into a map, which is what an assertion wants. */
@@ -85,7 +87,7 @@ async function collect(
 
 describe('readArtifact (ADR-0267/0268)', () => {
 	test('an exported store imports back into an identical one', async () => {
-		const { data, note } = await seeded();
+		const { data, note } = await setup();
 		const exported = await collect(renderArtifact(data, store));
 
 		const state = expectOk(readArtifact(exported, store));
@@ -93,8 +95,8 @@ describe('readArtifact (ADR-0267/0268)', () => {
 		expectOk(syncEngineOf(restored).applyRemote(state));
 
 		// Every value, at the same id, read through the same lens.
-		expect(restored.tables.notes.rows).toHaveLength(1);
-		expect(restored.tables.folders.rows).toHaveLength(1);
+		expect(restored.tables.notes.rows()).toHaveLength(1);
+		expect(restored.tables.folders.rows()).toHaveLength(1);
 		expect(restored.kv.get('theme')).toBe('dark');
 		expect(restored.stored().kv).toEqual(data.stored().kv);
 		// Compared through `stored()` rather than `rows`, and the reason is the
@@ -110,24 +112,7 @@ describe('readArtifact (ADR-0267/0268)', () => {
 		await data[Symbol.asyncDispose]();
 	});
 
-	test('a value keeps its type, so a string that looks like a number stays one', async () => {
-		const { data, note } = await seeded();
-		const exported = await collect(renderArtifact(data, store));
-		const state = expectOk(readArtifact(exported, store));
-		await using restored = await openMemory(store);
-		syncEngineOf(restored).applyRemote(state);
-
-		const row = restored.tables.notes.get(note.id);
-		expect(row?.title).toBe('007');
-		expect(row?.code).toBe('123');
-		expect(row?.flag).toBe('true');
-		expect(row?.pinned).toBe(false);
-		expect(row?.count).toBe(3);
-		expect(row?.tags).toEqual(['no', '2024-03-05']);
-		await data[Symbol.asyncDispose]();
-	});
-
-	test('a row the declaration no longer names survives the round trip', async () => {
+	test('a field the declaration no longer names survives the round trip', async () => {
 		// The export carries it (the artifact is not read through the lens), so
 		// the import has to put it back, or a release upgrade plus an export and
 		// an import would quietly delete it.
@@ -160,6 +145,60 @@ describe('readArtifact (ADR-0267/0268)', () => {
 			legacy: 'kept',
 		});
 		record.close();
+	});
+
+	test('an undeclared table keeps its fields when imported without a body', async () => {
+		const files = new Map([
+			[
+				'archived/old.md',
+				'---\nlabel: "kept"\nmetadata: {enabled: true}\n---\n',
+			],
+		]);
+		const state = expectOk(readArtifact(files, store));
+		await using restored = await openMemory(store);
+		expectOk(syncEngineOf(restored).applyRemote(state));
+		expect(restored.stored().tables.get('archived')?.get('old')).toEqual({
+			label: 'kept',
+			metadata: { enabled: true },
+		});
+	});
+
+	test('an undeclared table with body text refuses import instead of dropping the body', () => {
+		const files = new Map([
+			['archived/old.md', '---\nlabel: "kept"\n---\n\nPreserve this body.\n'],
+		]);
+		expect(expectErr(readArtifact(files, store))).toMatchObject({
+			name: 'UncodedBody',
+			table: 'archived',
+			rowId: 'old',
+		});
+	});
+
+	test.each([
+		'{broken',
+		'null',
+		'[]',
+		'"dark"',
+	])('kv.json containing %s refuses the import as a malformed file', (contents) => {
+		const files = new Map([['kv.json', contents]]);
+		expect(expectErr(readArtifact(files, store))).toMatchObject({
+			name: 'MalformedFile',
+			path: 'kv.json',
+		});
+	});
+
+	test('KV import preserves undeclared keys and leaves conformance to reads', async () => {
+		const values = { theme: 42, archived: { tags: ['no', null, true] } };
+		const state = expectOk(
+			readArtifact(new Map([['kv.json', JSON.stringify(values)]]), store),
+		);
+		await using restored = await openMemory(store);
+		expectOk(syncEngineOf(restored).applyRemote(state));
+		expect(restored.stored().kv).toEqual(values);
+		expect(restored.kv.get('theme')).toBeUndefined();
+		expect(restored.kv.nonconforming().map(({ field }) => field)).toEqual([
+			'theme',
+		]);
 	});
 
 	test('a hand-typed value that was never quoted reads as the string it looks like', async () => {

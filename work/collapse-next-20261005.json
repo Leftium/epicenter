@@ -1,0 +1,38 @@
+{
+  "date": "2026-10-05",
+  "scope": "artifact body import",
+  "status": "completed; source cleanup recorded in a focused commit",
+  "priorCommits": [
+    "8d7e6a034e",
+    "b59830aeb0"
+  ],
+  "files": {
+    "packages/app/src/data/artifact/import.ts": {
+      "beforeSha256": "63ef3834c521f98b2cacc55e127ce802cfb79a1ae90227685397946b22ef0fb0",
+      "afterSha256": "2edb86c721ca92242d384abe3c7d7ba4ff6b8005e1f84b7329db5f2ced2d311e"
+    },
+    "packages/app/src/data/artifact/body-content.ts": {
+      "beforeSha256": "2cad53b280f2ae3b6c6af4f8bcb60435b3e76a5b2fb90e8a6032bd08946a525c",
+      "afterSha256": null
+    },
+    "packages/app/src/data/artifact/body-boundary.test.ts": {
+      "beforeSha256": "afb3dfe09fbc740a68c2dfe2f82376cb136b11dd41e3635f03f3bd402aadad4e",
+      "afterSha256": "7387b9cddde18d720c028f041bba6b1e64ec6ab6da412000aca7a5887c3d7de8"
+    },
+    "packages/app/src/data/definition/declaration.ts": {
+      "beforeSha256": "5b20f00a27845885432b497e334b952e43309f4caa6b7eb44db0195698af8e20",
+      "afterSha256": "ce85fa67ba269f9d8060339ce488b03a885d9f69fc10b7b772922cbd55c2257c"
+    }
+  },
+  "review": "/tmp/epicenter-collapse-next-20261005/review.txt",
+  "patch": "/tmp/epicenter-collapse-next-20261005/cleanup.patch",
+  "verification": {
+    "artifactTests": 36,
+    "appTests": 630,
+    "finalBodyBoundaryTests": 5,
+    "failedTests": 0,
+    "typecheck": "seven App targets passed",
+    "biome": "zero errors, six warnings reproduced on saved baseline"
+  },
+  "coordination": "Work ledger refreshed; unrelated staged device-owner change preserved. Direct thread access unavailable."
+}

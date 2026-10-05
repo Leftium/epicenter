@@ -9,7 +9,6 @@ import * as Y from '@y/y';
 import { expectOk } from 'wellcrafted/testing';
 import { createMemoryRecord, openMemory } from '../store/memory.js';
 import { syncEngineOf } from '../store/store.js';
-import { replaceBody } from './body-content.js';
 import { readArtifact } from './import.js';
 import { renderArtifact } from './render.js';
 
@@ -151,9 +150,11 @@ test('a fresh body retains its attributes through sequence replacement, persiste
 		};
 		const row = original.tables.notes.create(fields, fresh);
 		expect(original.tables.notes.body(row.id)).toBe(fresh);
-		original.transact(() =>
-			replaceBody(fresh, plainText().decode('Rewritten')),
-		);
+		original.transact(() => {
+			const content = plainText().decode('Rewritten');
+			fresh.delete(0, fresh.length);
+			fresh.applyDelta(content);
+		});
 		expect(fresh.getAttr('language')).toBe('en');
 		await original[Symbol.asyncDispose]();
 		await using reopened = await openMemory(definition, record);

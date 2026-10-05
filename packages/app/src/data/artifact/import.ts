@@ -38,7 +38,6 @@ import {
 	kvRoot,
 	tableRoot,
 } from '../store/document.js';
-import { decodeBody } from './body-content.js';
 import { parseRowFile } from './frontmatter.js';
 import { parseRowPath } from './layout.js';
 
@@ -243,6 +242,23 @@ function admitRow({
 		});
 	}
 	return Ok(undefined);
+}
+
+/** Decode complete sequence content before entering a store transaction. */
+function decodeBody(codec: BodyCodec, text: string) {
+	const content = codec.decode(text);
+	const snapshot = content.toJSON();
+	if (snapshot.attrs && Object.keys(snapshot.attrs).length > 0) {
+		throw new Error('A body codec may not edit body-root attributes');
+	}
+	if (
+		snapshot.children?.some(
+			(operation) => !('type' in operation) || operation.type !== 'insert',
+		)
+	) {
+		throw new Error('A body codec must return insertion-only content');
+	}
+	return content;
 }
 
 function parseKv(text: string): JsonObject | undefined {

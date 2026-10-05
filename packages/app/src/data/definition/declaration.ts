@@ -31,8 +31,8 @@ export {
  * One table's file format for its body's complete sequence.
  *
  * The codec turns the live body into file text and parses file text into
- * insertion-only content. The artifact layer owns fresh-node creation and
- * in-place sequence replacement, preserving editor bindings and root attributes.
+ * insertion-only content. The artifact importer validates the content and
+ * creates a fresh node for each row.
  * Nested rich-text nodes may carry their own attributes. A table without a
  * codec can export only an empty body and import only empty body text.
  */

@@ -49,12 +49,11 @@ export function createBrowserQuery(sqlite: Sqlite3Static, database: Database) {
 			'temp',
 			...schemas.map((row) => String(row.name)),
 		])) {
-			const rows = database.exec({
+			for (const row of database.exec({
 				sql: `SELECT name FROM "${schema.replaceAll('"', '""')}".sqlite_schema`,
 				rowMode: 'object',
 				returnValue: 'resultRows',
-			});
-			for (const row of rows) {
+			})) {
 				const name = String(row.name).toLowerCase();
 				physical.add(name);
 				relations.add(name);

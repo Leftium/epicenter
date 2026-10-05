@@ -22,12 +22,12 @@
 
 import { type AccountIdentity, deviceOwnerPath } from '@epicenter/principal';
 import { Ok } from 'wellcrafted/result';
-import { browserSqliteTransport as request } from './browser-sqlite.js';
+import { browserSqliteTransport } from './browser-sqlite.js';
 import { appIdOrThrow, type SecretLabel, type SecretStore } from './index.js';
 import { createTransportSqliteOwner } from './owner.js';
 
 export function createBrowserSqliteOwner(): import('./owner.js').DeviceSqliteOwner {
-	return createTransportSqliteOwner(request);
+	return createTransportSqliteOwner(browserSqliteTransport);
 }
 
 /** In memory, for the life of the tab, permanently rather than provisionally. */

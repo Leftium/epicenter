@@ -7,26 +7,11 @@
  */
 
 import { describe, expect, test } from 'bun:test';
-import { existsSync } from 'node:fs';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { basename, dirname, join, resolve } from 'node:path';
-import { assess } from '../core/integrity';
-import { loadPath, loadTable } from './fs';
-
-/** Resolve the bundled example vault by walking up from this file until it appears, so the path holds
- *  wherever in the repo this test lives, not at a fixed offset from `import.meta.dir`. */
-function findExampleVault(): string {
-	let dir = import.meta.dir;
-	for (;;) {
-		const candidate = resolve(dir, 'examples/matter/content-vault');
-		if (existsSync(candidate)) return candidate;
-		const parent = dirname(dir);
-		if (parent === dir)
-			throw new Error('examples/matter/content-vault not found');
-		dir = parent;
-	}
-}
+import { basename, join, resolve } from 'node:path';
+import { assess } from '../core/integrity.js';
+import { loadPath, loadTable } from './fs.js';
 
 /** A scratch directory, cleaned up after `body` runs. */
 async function withTempDir<T>(body: (dir: string) => Promise<T>): Promise<T> {
@@ -55,12 +40,13 @@ async function makeTable(
 }
 
 describe('loadTable', () => {
-	test('reads a typed folder into a readable table named for its basename', async () => {
+	test('loads a typed folder named for its basename and includes only Markdown rows', async () => {
 		await withTempDir(async (root) => {
 			const dir = join(root, 'pages');
 			await mkdir(dir);
 			await writeFile(join(dir, 'matter.json'), pagesModel);
 			await writeFile(join(dir, 'p1.md'), '---\ntitle: Hello\n---');
+			await writeFile(join(dir, 'notes.txt'), 'ignore me');
 
 			const table = await loadTable(dir);
 			expect(table.name).toBe('pages');
@@ -83,20 +69,6 @@ describe('loadTable', () => {
 		});
 	});
 
-	test('only .md files become rows; matter.json and other files are not rows', async () => {
-		await withTempDir(async (root) => {
-			const dir = join(root, 'pages');
-			await mkdir(dir);
-			await writeFile(join(dir, 'matter.json'), pagesModel);
-			await writeFile(join(dir, 'p1.md'), '---\ntitle: Hello\n---');
-			await writeFile(join(dir, 'notes.txt'), 'ignore me');
-
-			const table = await loadTable(dir);
-			if (table.status !== 'readable') throw new Error('expected readable');
-			expect(table.read.rows.map((r) => r.fileName)).toEqual(['p1.md']);
-		});
-	});
-
 	test('a folder that cannot be listed is an unreadable table carrying a message', async () => {
 		await withTempDir(async (root) => {
 			const table = await loadTable(join(root, 'does-not-exist'));
@@ -109,11 +81,12 @@ describe('loadTable', () => {
 });
 
 describe('loadPath: a folder is a table XOR a container of tables', () => {
-	test('a container loads its marked children, sorted, and skips unmarked sibling dirs', async () => {
+	test('loads marked children in order and skips hidden, unmarked, and loose entries', async () => {
 		await withTempDir(async (root) => {
 			// Created out of order to prove the loader sorts.
 			await makeTable(join(root, 'pages'), pagesModel);
 			await makeTable(join(root, 'adaptations'), pagesModel);
+			await makeTable(join(root, '.obsidian'), pagesModel);
 			// An unmarked sibling (an attachment bundle / junk dir): no matter.json, so not loaded.
 			const assets = join(root, 'assets');
 			await mkdir(assets);
@@ -179,18 +152,6 @@ describe('loadPath: a folder is a table XOR a container of tables', () => {
 		});
 	});
 
-	test('a hidden marked child of a container is never a table', async () => {
-		await withTempDir(async (root) => {
-			// The container branch is where the hidden-skip bites: a hidden marked dir is dropped
-			// before the marker check, while a real sibling table still loads.
-			await makeTable(join(root, 'pages'), pagesModel);
-			await makeTable(join(root, '.obsidian'), pagesModel); // hidden: skipped
-
-			const tables = await loadPath(root);
-			expect(tables.map((t) => t.name)).toEqual(['pages']);
-		});
-	});
-
 	test('a path that cannot be listed is one unreadable table', async () => {
 		await withTempDir(async (root) => {
 			const tables = await loadPath(join(root, 'nope'));
@@ -201,7 +162,10 @@ describe('loadPath: a folder is a table XOR a container of tables', () => {
 });
 
 describe('loadPath feeds the pipeline', () => {
-	const exampleVault = findExampleVault();
+	const exampleVault = resolve(
+		import.meta.dir,
+		'../../../../examples/matter/content-vault',
+	);
 
 	test('the bundled content-vault loads three typed tables that assess', async () => {
 		const tables = await loadPath(exampleVault);

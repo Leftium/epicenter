@@ -58,7 +58,7 @@ function createBrowserSqliteTransport(): AppSqliteTransport {
 			if (worker !== started) return;
 			worker = undefined;
 			started.terminate();
-			for (const settle of [...pending.values()]) settle({ failed: cause });
+			for (const settle of pending.values()) settle({ failed: cause });
 			pending.clear();
 		};
 		started.onerror = (event) => abandon(event.message ?? 'worker failed');

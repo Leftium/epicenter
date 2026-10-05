@@ -27,6 +27,8 @@ type Seen = {
 	method: string;
 	authorization: string | null;
 	contentType: string | null;
+	credentials: RequestInit['credentials'];
+	redirect: RequestInit['redirect'];
 	body: unknown;
 };
 
@@ -42,6 +44,8 @@ function endpoint(respond: (seen: Seen) => Response | Promise<Response>) {
 				method: request.method,
 				authorization: request.headers.get('authorization'),
 				contentType: request.headers.get('content-type'),
+				credentials: init?.credentials,
+				redirect: init?.redirect,
 				body: await request.json(),
 			};
 			seen.push(record);
@@ -71,7 +75,7 @@ const request = {
 	input: 'um so a steady tone',
 };
 
-test('the request is a chat completion with the prompt as system and the transcript as user', async () => {
+test('the request sends the chat completion with no ambient credentials and refuses redirects', async () => {
 	const local = endpoint(() => completion('A steady tone.'));
 
 	const answered = expectOk(
@@ -85,6 +89,8 @@ test('the request is a chat completion with the prompt as system and the transcr
 			method: 'POST',
 			authorization: `Bearer ${KEY}`,
 			contentType: 'application/json',
+			credentials: 'omit',
+			redirect: 'error',
 			body: {
 				model: 'chat-model',
 				messages: [
@@ -97,21 +103,6 @@ test('the request is a chat completion with the prompt as system and the transcr
 			},
 		},
 	]);
-});
-
-test('the request refuses redirects and sends no ambient credentials', async () => {
-	let init: RequestInit | undefined;
-	expectOk(
-		await requestTransformation({
-			...request,
-			fetch: async (_input, given) => {
-				init = given;
-				return completion('ok');
-			},
-		}),
-	);
-
-	expect(init).toMatchObject({ redirect: 'error', credentials: 'omit' });
 });
 
 test('a base URL that is not plain HTTP(S) is refused before anything is sent', async () => {

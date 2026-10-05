@@ -46,7 +46,10 @@ made while it waits or commits only renumber the obligation. When the
 protection is released, the worker captures the folder as it is then and
 commits the latest files without another save. No queue, timer, debounce,
 leader, or second waiter exists. `tryExclusive`, `Admitted`, and the mutex's
-`tryRun` are removed.
+`tryRun` are removed. The browser requests its Web Lock directly: the same
+lock queues requests within a tab and across tabs, and cancels waiters when
+closing starts. It checks closing again at callback entry. The Bun backend
+keeps its process-local mutex because it has no Web Lock.
 
 **Every whole-folder checkpoint answers the requests made before it starts.**
 `commit()`, `commitAndPush()`, and the automatic worker set `answered` to

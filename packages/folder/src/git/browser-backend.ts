@@ -9,9 +9,9 @@
  * `.git` of its origin private file system directory (`opfs-git.ts`).
  *
  * The branch moves only by comparing the stored ref with the pinned value.
- * Index and branch work holds a Web Lock (plus an in-process queue) so tabs
- * of the same origin do not interleave index writes. Network transfers run
- * outside the lock.
+ * Index and branch work holds a Web Lock, which queues this tab's requests
+ * with every other tab's of the same origin, so none interleave index writes.
+ * Network transfers run outside the lock.
  */
 
 import type { PromiseFsClient } from 'isomorphic-git';
@@ -31,7 +31,6 @@ import type {
 } from './backend.js';
 import { capturedIndexMatchesHead } from './captured-index.js';
 import { abortableHttp } from './http.js';
-import { createMutex } from './mutex.js';
 import {
 	commitTree,
 	logCommits,
@@ -161,7 +160,6 @@ export async function createStoredGitBackend<TSession extends GitFsSession>({
 	const branchKey = `${GITDIR}/refs/heads/${branch}`;
 	const indexKey = `${GITDIR}/index`;
 	const trackingKey = `${GITDIR}/refs/remotes/${REMOTE_NAME}/${remote?.branch ?? branch}`;
-	const queue = createMutex();
 
 	async function withObjects<T>(
 		work: (access: ObjectAccess) => Promise<T>,
@@ -226,21 +224,21 @@ export async function createStoredGitBackend<TSession extends GitFsSession>({
 		work: () => Promise<T>,
 		signal?: AbortSignal,
 	): Promise<T> {
-		// The signal reaches both waits: this tab's queue, then the Web Lock.
-		// Either one rejects a waiter that is aborted and never runs its work.
-		return queue.run(async () => {
-			let entered = false;
-			try {
-				return await locks.request(lockName, { signal }, () => {
-					entered = true;
-					return work();
-				});
-			} catch (cause) {
-				// Normalize a refused wait even if the host uses its own AbortError.
-				if (!entered && signal?.aborted) throw signal.reason;
-				throw cause;
-			}
-		}, signal);
+		// The Web Lock queues this tab's requests behind every holder and
+		// waiter, and the signal rejects a waiter that is aborted before it is
+		// granted; that waiter never runs its work.
+		let entered = false;
+		try {
+			return await locks.request(lockName, { signal }, () => {
+				signal?.throwIfAborted();
+				entered = true;
+				return work();
+			});
+		} catch (cause) {
+			// Normalize a refused wait even if the host uses its own AbortError.
+			if (!entered && signal?.aborted) throw signal.reason;
+			throw cause;
+		}
 	}
 
 	async function casBranch(

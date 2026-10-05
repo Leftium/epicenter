@@ -43,6 +43,7 @@ import { hashBytes } from '../capture.js';
 import { defineFolder, field } from '../contract.js';
 import { openNativeFolder } from '../directory.test-support.js';
 import { GIT_ENV, git, scratch } from '../git-http.test-support.js';
+import type { OpfsLocks } from '../opfs-store.js';
 import { installWebLocks, useWebLocks } from '../web-locks.test-support.js';
 import type { GitBackend } from './backend.js';
 import { createHistory } from './history.js';
@@ -763,6 +764,39 @@ test('a caller that stops waiting on commitAndPush leaves its commit to finish a
 // ============================================================================
 // Closing
 // ============================================================================
+
+test('closing after a Web Lock grant but before its callback refuses Git work without recording a commit', async () => {
+	const restore = installWebLocks();
+	try {
+		const locks = navigator.locks as unknown as OpfsLocks;
+		const request = locks.request;
+		const granted = gate();
+		const callback = gate();
+		locks.request = (name, options, work) =>
+			request(name, options, async (lock) => {
+				if (name.startsWith('epicenter-folder-opfs-git:')) {
+					granted.open();
+					// The host has granted this lock and ignores a later abort.
+					// Hold before the backend callback starts actual Git work.
+					await callback.opened;
+				}
+				return work(lock);
+			});
+		const { history, holds } = await tab(createTestStorage(), 'granted-close');
+		const pathStatus = gate();
+		holds.pathStatus = pathStatus;
+		const listing = history.paths();
+		await granted.opened;
+		const closed = history.close();
+		callback.open();
+		expect(expectErr(await listing).name).toBe('Closed');
+		await closed;
+		expect(holds.pathStatus).toBe(pathStatus);
+		expect(history.snapshot.lastCommit).toBeUndefined();
+	} finally {
+		restore();
+	}
+});
 
 test("closing refuses an explicit commit still waiting on another tab's Web Lock, resolves without it, and the branch is not moved by it", async () => {
 	const restore = installWebLocks();

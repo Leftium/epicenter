@@ -32,6 +32,28 @@ non-obvious decision, enforcing an invariant, owning a lifecycle, or making a
 long phase understandable. Preserve evaluation timing, receiver binding,
 caching, and snapshot semantics when inlining; fewer names must not change behavior.
 
+### Find same name property aliases
+
+When looking for shallow aliases, search a bounded area for `const a = b.a`,
+such as `const status = row.status` or `const row = editor.row`. From the repo
+root, use PCRE2 so the final property must match the captured variable name:
+
+```sh
+rg -n --pcre2 '\bconst\s+([A-Za-z_$][\w$]*)\s*=\s*[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*\.\1(?![\w$])(?=\s*(?:;|,|$))' apps packages -g '*.ts' -g '*.js' -g '*.mjs' -g '*.svelte'
+```
+
+Replace `apps packages` with the relevant paths. The search includes nested
+accesses like `const status = editor.row.status`; optional chaining, bracket
+access, and typed declarations need a different pattern. Comments and strings
+can match too.
+
+Treat matches as candidates, not automatic replacements. Trace each binding's
+uses and apply the source-and-action test above. Keep an intentional snapshot
+or single getter read; check whether later reads would observe a different value,
+especially across `await`. For method aliases, compare the receiver supplied by
+the extracted call with the object call. Inline when direct access improves
+clarity and preserves behavior, then verify the affected behavior.
+
 ## The audit: count callers as evidence
 
 Trace the binding's actual callers before changing it. Delete unused internal

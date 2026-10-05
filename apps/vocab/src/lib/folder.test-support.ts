@@ -145,9 +145,8 @@ export async function tableFiles(
 /**
  * The real entries table with its word operations held where a test says.
  * `edit` and `get` wait before they read anything; `delete` runs for real
- * first, so the file is gone, and its answer waits. `ordinaryWrites` counts
- * `replace` and `update` calls, which a word's own saves never make;
- * `deletes` counts deletes sent. While `refusing` names `edit` or `get`,
+ * first, so the file is gone, and its answer waits. `deletes` counts deletes
+ * sent. While `refusing` names `edit` or `get`,
  * that call answers with a storage failure and reads nothing, the way a
  * browser store that cannot read answers.
  */
@@ -157,9 +156,8 @@ export function heldEntries(table: VocabTables['entries']) {
 		get?: Promise<void>;
 		deleteAnswer?: Promise<void>;
 		refusing: Set<'edit' | 'get'>;
-		ordinaryWrites: number;
 		deletes: number;
-	} = { refusing: new Set(), ordinaryWrites: 0, deletes: 0 };
+	} = { refusing: new Set(), deletes: 0 };
 	const refused = (stem: string) =>
 		FileError.Io({
 			path: `entries/${stem}.md`,
@@ -177,14 +175,6 @@ export function heldEntries(table: VocabTables['entries']) {
 			await holds.get;
 			if (holds.refusing.has('get')) return refused(stem);
 			return table.get(stem);
-		},
-		async replace(stem, text, options) {
-			holds.ordinaryWrites++;
-			return table.replace(stem, text, options);
-		},
-		async update(stem, change, options) {
-			holds.ordinaryWrites++;
-			return table.update(stem, change, options);
 		},
 		async delete(stem, options) {
 			holds.deletes++;

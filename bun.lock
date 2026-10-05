@@ -156,6 +156,33 @@
         "vite-plugin-singlefile": "catalog:",
       },
     },
+    "apps/git": {
+      "name": "@epicenter/git",
+      "version": "0.0.1",
+      "dependencies": {
+        "@epicenter/folder": "workspace:*",
+        "@tauri-apps/api": "catalog:",
+        "buffer": "^6.0.3",
+      },
+      "devDependencies": {
+        "@epicenter/ui": "workspace:*",
+        "@epicenter/vite-config": "workspace:*",
+        "@lucide/svelte": "catalog:",
+        "@sveltejs/adapter-static": "catalog:",
+        "@sveltejs/kit": "catalog:",
+        "@sveltejs/vite-plugin-svelte": "catalog:",
+        "@tailwindcss/vite": "catalog:",
+        "@tauri-apps/cli": "catalog:",
+        "@types/bun": "catalog:",
+        "mode-watcher": "catalog:",
+        "svelte": "catalog:",
+        "svelte-check": "catalog:",
+        "tailwindcss": "catalog:",
+        "typescript": "catalog:",
+        "vite": "catalog:",
+        "wellcrafted": "catalog:",
+      },
+    },
     "apps/honeycrisp": {
       "name": "@epicenter/honeycrisp",
       "version": "0.0.2",
@@ -1315,6 +1342,8 @@
     "@epicenter/epicenter": ["@epicenter/epicenter@workspace:apps/epicenter"],
 
     "@epicenter/folder": ["@epicenter/folder@workspace:packages/folder"],
+
+    "@epicenter/git": ["@epicenter/git@workspace:apps/git"],
 
     "@epicenter/honeycrisp": ["@epicenter/honeycrisp@workspace:apps/honeycrisp"],
 

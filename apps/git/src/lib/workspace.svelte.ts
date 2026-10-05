@@ -1,0 +1,294 @@
+import {
+	defineFolder,
+	openFolder,
+	type FileCapture,
+	type FileListing,
+	type GitSnapshot,
+	type PathStatus,
+} from '@epicenter/folder';
+import { readTextFile, withFileNewlines } from '@epicenter/folder/file-browser';
+import { invoke, isTauri } from '@tauri-apps/api/core';
+
+const definition = defineFolder({ kv: {}, tables: {} });
+export type WorkingCopy = NonNullable<
+	Awaited<ReturnType<typeof openWorkingCopy>>
+>;
+
+export async function openWorkingCopy(copy: string, remote: string) {
+	remote = remote.trim();
+	let id: string;
+	if (isTauri()) id = await invoke<string>('open_copy', { copy, remote });
+	else {
+		if (remote) {
+			const url = new URL(remote);
+			if (!['http:', 'https:'].includes(url.protocol))
+				throw new Error('Use an HTTP or HTTPS Git remote');
+		}
+		const digest = await crypto.subtle.digest(
+			'SHA-256',
+			new TextEncoder().encode(remote),
+		);
+		const key = Array.from(new Uint8Array(digest), (b) =>
+			b.toString(16).padStart(2, '0'),
+		).join('');
+		id = `so.epicenter.git.${key}.${copy}`;
+	}
+	const opened = await openFolder({
+		id,
+		definition,
+		browser: {
+			scope: { channel: 'development' },
+			author: {
+				name: `Working copy ${copy.toUpperCase()}`,
+				email: `${copy}@git-lab.localhost`,
+			},
+			commitOnEdit: false,
+			...(remote && { remote: { url: remote, branch: 'main' } }),
+		},
+	});
+	if (opened.error !== null) throw new Error(opened.error.message);
+	const folder = opened.data;
+	let listing = $state.raw<FileListing>({ files: [], directories: [] });
+	let paths = $state.raw<PathStatus[]>([]);
+	let snapshot = $state.raw<GitSnapshot>(folder.git.snapshot);
+	let selected = $state('');
+	let buffer = $state('');
+	let saved = '';
+	let capture = $state.raw<FileCapture>();
+	let saveMessage = $state('');
+	let dirty = $state(false);
+	let timer: ReturnType<typeof setTimeout> | undefined;
+	let saving: Promise<void> | undefined;
+	let reading: Promise<void> | undefined;
+	let readAgain = false;
+	let closed = false;
+	let selectGeneration = 0;
+	let command = $state('');
+	let running = $state(false);
+	let output = $state('');
+	const terminal = folder.terminal();
+
+	async function readSelected() {
+		const path = selected;
+		const generation = selectGeneration;
+		if (!path || dirty || saving) return;
+		const result = await readTextFile(folder.files, path, 2 * 1024 * 1024);
+		if (
+			closed ||
+			generation !== selectGeneration ||
+			path !== selected ||
+			dirty ||
+			saving
+		)
+			return;
+		if (result.error !== null) {
+			saveMessage = result.error.message;
+			if (result.error.name === 'NotFound') {
+				capture = undefined;
+				buffer = '';
+				saved = '';
+			}
+			return;
+		}
+		if (result.data.kind !== 'text') {
+			saveMessage =
+				'This file is binary or too large to edit. Use the terminal to inspect it.';
+			capture = undefined;
+			buffer = '';
+			saved = '';
+			return;
+		}
+		capture = result.data.file;
+		saved = result.data.file.text;
+		buffer = saved;
+		saveMessage = 'Saved';
+	}
+
+	async function refreshOnce() {
+		const [files, statuses] = await Promise.all([
+			folder.files.list(),
+			folder.git.paths(),
+		]);
+		if (closed) return;
+		if (files.error !== null) throw new Error(files.error.message);
+		if (statuses.error !== null) throw new Error(statuses.error.message);
+		listing = files.data;
+		paths = statuses.data;
+		await folder.git.status();
+		await readSelected();
+	}
+	async function refresh(): Promise<void> {
+		if (reading) {
+			readAgain = true;
+			return reading;
+		}
+		reading = (async () => {
+			do {
+				readAgain = false;
+				await refreshOnce();
+			} while (readAgain && !closed);
+		})();
+		try {
+			await reading;
+		} finally {
+			reading = undefined;
+		}
+	}
+	async function saveOnce(mode: 'replace' | 'overwrite' = 'replace') {
+		if (!capture || !dirty) return;
+		const text = buffer;
+		saveMessage = 'Saving…';
+		const result =
+			mode === 'replace'
+				? await folder.files.replace(capture, text)
+				: await folder.files.overwrite(capture.path, text);
+		if (result.error !== null) {
+			saveMessage = result.error.message;
+			throw new Error(result.error.message);
+		}
+		capture = result.data;
+		saved = text;
+		dirty = buffer !== saved;
+		saveMessage = dirty ? 'Unsaved changes' : 'Saved';
+	}
+	async function flush() {
+		clearTimeout(timer);
+		while (dirty || saving) {
+			if (!saving)
+				saving = saveOnce().finally(() => {
+					saving = undefined;
+				});
+			await saving;
+		}
+	}
+	const stopFiles = folder.onFilesChanged(() => {
+		void refresh().catch((e) => {
+			output += `\n${String(e)}\n`;
+		});
+	});
+	const stopGit = folder.git.subscribe((next) => {
+		snapshot = next;
+	});
+	try {
+		await refresh();
+		if (
+			remote &&
+			folder.git.snapshot.files.state === 'observed' &&
+			folder.git.snapshot.files.value.head === undefined &&
+			(await folder.files.list()).data?.files.length === 0
+		) {
+			output = '$ git pull --ff-only\n';
+			const result = await terminal.exec('git pull --ff-only');
+			output += result.stdout + result.stderr;
+			await refresh();
+		}
+	} catch (error) {
+		stopFiles();
+		stopGit();
+		await folder.close();
+		throw error;
+	}
+	return {
+		folder,
+		get listing() {
+			return listing;
+		},
+		get paths() {
+			return paths;
+		},
+		get snapshot() {
+			return snapshot;
+		},
+		get selected() {
+			return selected;
+		},
+		get buffer() {
+			return buffer;
+		},
+		get dirty() {
+			return dirty;
+		},
+		get saveMessage() {
+			return saveMessage;
+		},
+		get editable() {
+			return capture !== undefined;
+		},
+		get command() {
+			return command;
+		},
+		set command(next: string) {
+			command = next;
+		},
+		get running() {
+			return running;
+		},
+		get output() {
+			return output;
+		},
+		async select(path: string) {
+			const generation = ++selectGeneration;
+			await flush();
+			if (generation !== selectGeneration || closed) return;
+			selected = path;
+			capture = undefined;
+			buffer = '';
+			saved = '';
+			saveMessage = 'Opening…';
+			await readSelected();
+		},
+		input(text: string) {
+			if (closed || !capture) return;
+			buffer = withFileNewlines(text, saved);
+			dirty = buffer !== saved;
+			saveMessage = dirty ? 'Unsaved changes' : 'Saved';
+			clearTimeout(timer);
+			timer = setTimeout(() => {
+				void flush().catch(() => {});
+			}, 350);
+		},
+		async keepMyText() {
+			clearTimeout(timer);
+			while (saving) await saving.catch(() => {});
+			if (!selected || !dirty) return;
+			saving = saveOnce('overwrite').finally(() => {
+				saving = undefined;
+			});
+			await saving;
+			await refresh();
+		},
+		async useSavedText() {
+			clearTimeout(timer);
+			if (saving) await saving.catch(() => {});
+			dirty = false;
+			await readSelected();
+		},
+		flush,
+		refresh,
+		async run(line = command) {
+			if (running || closed || !line.trim()) return;
+			running = true;
+			command = '';
+			output += `\n$ ${line}\n`;
+			try {
+				await flush();
+				const result = await terminal.exec(line);
+				output += result.stdout + result.stderr;
+				if (result.exitCode) output += `[exit ${result.exitCode}]\n`;
+				await refresh();
+			} catch (error) {
+				output += `${error instanceof Error ? error.message : String(error)}\n`;
+			} finally {
+				running = false;
+			}
+		},
+		async close() {
+			await flush();
+			closed = true;
+			clearTimeout(timer);
+			stopFiles();
+			stopGit();
+			await folder.close();
+		},
+	};
+}

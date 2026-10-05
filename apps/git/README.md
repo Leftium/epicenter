@@ -1,0 +1,63 @@
+# Git lab
+
+Git lab is a browser and standalone Tauri testbed for `@epicenter/folder`.
+Each working copy owns its files, index, and local history. Git transfers
+changes between copies. Opening two views of one folder would miss that boundary.
+
+Start from the repository root:
+
+```sh
+bun dev:git
+bun dev:git:desktop
+```
+
+The browser is at `http://127.0.0.1:5190/?copy=a`; open `?copy=b` in another
+tab. Desktop opens windows A and B. Both development commands start or reuse
+one loopback smart HTTP backend on port 5191. The command that starts that
+backend owns its lifetime. Keep it running while the other platform uses it.
+The printed temporary root contains the bare remote and seed checkout.
+`GIT_LAB_DEMO_ROOT` reopens a marked experiment. Fresh experiments have distinct
+remote URLs, so their browser working copies start separately.
+
+Select a file to edit raw text, including Markdown. Autosaves replace the
+captured file conditionally. An outside change cannot discard typed input:
+a failed save offers explicit replacement or discard. Terminal writes refresh
+the tree and clean editor. The terminal below the editor keeps its session,
+output, and typed command while hidden. Binary files stay visible with an
+explanation. Text editing is limited to UTF-8 files of at most 2 MiB.
+
+Automatic commits are disabled. Use `git add`, `git commit -m`, `git fetch`,
+`git pull --ff-only`, and `git push` explicitly. Fetch updates remote knowledge
+without updating working files. Status separates index and worktree columns;
+ahead and behind are relative to the last fetched head.
+
+Enter an HTTP(S) remote or leave the URL empty for local history. Browser
+transport uses fetch and needs a same-origin endpoint or a server that permits
+Git requests through CORS. The development proxy only reaches the disposable
+loopback remote. There is no browser credential flow or general CORS proxy.
+GitHub support has not been demonstrated. Desktop uses installed Git with
+interactive credential prompts disabled; configured Git credential helpers
+can apply. The terminal is the folder's supported shell, not an unrestricted
+system shell. SSH remotes are not accepted by this app.
+
+The standalone bundle embeds the same page through the Tauri folder adapter.
+Rust chooses directories under app data (or `GIT_LAB_ROOT` during development)
+and creates them before registration. Its capability grants folder commands
+and the app's copy commands to windows A and B. CSP allows IPC; remote Git
+transport runs in Rust and needs no browser network grant.
+
+```sh
+bun run --cwd apps/git test
+bun run --cwd apps/git typecheck
+bun run --cwd apps/git build
+bun run --cwd apps/git build:desktop-ui
+bun run --cwd apps/git build:desktop
+```
+
+Computer use has demonstrated native editor saves reaching terminal reads,
+native staging and commits, native pushes reaching the loopback remote,
+browser fetch changing ahead/behind without receiving files, and pull refusing
+uncommitted changes. Browser interaction also demonstrated clean-editor refresh,
+raw Markdown, binary explanations, and hidden-terminal output/command retention.
+Conflict integration is a subsequent implementation wave; the current embedded
+terminal supports fast-forward pulls.

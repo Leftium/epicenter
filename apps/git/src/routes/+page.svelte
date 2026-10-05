@@ -1,0 +1,147 @@
+<script lang="ts">
+ import { onMount } from 'svelte';
+ import { SvelteSet } from 'svelte/reactivity';
+ import { invoke, isTauri } from '@tauri-apps/api/core';
+ import { Button } from '@epicenter/ui/button';
+ import { Input } from '@epicenter/ui/input';
+ import * as Alert from '@epicenter/ui/alert';
+ import * as Item from '@epicenter/ui/item';
+ import { Folder, FileText, ChevronDown, ChevronRight, Terminal, GitBranch } from '@lucide/svelte';
+ import { visibleRows } from '@epicenter/folder/file-browser';
+ import { openWorkingCopy, type WorkingCopy } from '$lib/workspace.svelte';
+
+ let workspace = $state.raw<WorkingCopy>();
+ let copy = $state('a');
+ let remote = $state('');
+ let opening = $state(false);
+ let initializing = $state(true);
+ let message = $state('');
+ let showTerminal = $state(true);
+ let showGuide = $state(false);
+ const expanded = new SvelteSet<string>();
+ const rows = $derived(workspace ? visibleRows(workspace.listing, expanded) : []);
+ const sync = $derived(workspace?.snapshot.sync);
+ const location = $derived(workspace?.folder.location);
+ const desktop = isTauri();
+ let alive = true;
+
+ onMount(() => {
+  void (async () => {
+   try {
+    if (desktop) {
+     const info = await invoke<{ remote: string; copy: string }>('demo_info');
+     remote = info.remote; copy = info.copy;
+    } else {
+     copy = new URL(locationHref()).searchParams.get('copy') === 'b' ? 'b' : 'a';
+     const response = await fetch('/demo/session');
+     if (!response.ok) throw new Error('The demo remote is unavailable. Enter a remote URL or leave it empty to work locally.');
+     const session = await response.json();
+     remote = new URL(session.browserRemotePath, locationHref()).href;
+    }
+   } catch (error) { message = error instanceof Error ? error.message : String(error); }
+   finally { initializing = false; }
+  })();
+  return () => { alive = false; void workspace?.close().catch(() => {}); };
+ });
+ function locationHref() { return window.location.href; }
+ async function act(work: () => Promise<unknown>) {
+  message = '';
+  try { await work(); } catch (error) { message = error instanceof Error ? error.message : String(error); }
+ }
+ async function open() {
+  opening = true; message = '';
+  try {
+   if (workspace) { await workspace.close(); workspace = undefined; }
+   const next = await openWorkingCopy(copy, remote);
+   if (!alive) { await next.close(); return; }
+   workspace = next;
+   for (const directory of next.listing.directories) expanded.add(directory);
+   if (next.listing.files[0]) await next.select(next.listing.files[0].path);
+  } catch (error) { message = error instanceof Error ? error.message : String(error); }
+  finally { opening = false; }
+ }
+</script>
+
+<svelte:head><title>Git lab · {copy.toUpperCase()}</title></svelte:head>
+<svelte:window onbeforeunload={(event) => { if (workspace?.dirty) { event.preventDefault(); event.returnValue = ''; } }} />
+
+<div class="flex h-dvh flex-col overflow-hidden bg-background text-foreground">
+ <header class="flex shrink-0 flex-wrap items-center gap-3 border-b px-4 py-3">
+  <GitBranch class="size-5" />
+  <span class="font-semibold">Git lab</span>
+  <span class="text-sm text-muted-foreground">{desktop ? 'Desktop' : 'Browser'} · Working copy {copy.toUpperCase()}</span>
+  <div class="ml-auto flex gap-2">
+   <Button size="sm" variant="ghost" onclick={() => { showGuide = !showGuide; }} aria-expanded={showGuide}>Demo guide</Button>
+   <Button size="sm" variant="outline" onclick={() => { showTerminal = !showTerminal; }} aria-expanded={showTerminal}><Terminal class="size-4" />Terminal</Button>
+  </div>
+ </header>
+ <form class="flex shrink-0 flex-wrap items-end gap-3 border-b px-4 py-3" onsubmit={(event) => { event.preventDefault(); void open(); }}>
+  <label class="flex flex-col gap-1 text-xs text-muted-foreground">Working copy
+   <select aria-label="Working copy" bind:value={copy} disabled={opening || workspace !== undefined} class="h-9 rounded-md border border-input bg-background px-3 text-sm text-foreground"><option value="a">A</option><option value="b">B</option></select>
+  </label>
+  <label class="flex min-w-64 flex-1 flex-col gap-1 text-xs text-muted-foreground">Remote URL · leave empty for local history
+   <Input aria-label="Remote URL" bind:value={remote} disabled={opening || workspace !== undefined} placeholder="https://example.com/project.git" />
+  </label>
+  {#if workspace}
+   <Button type="button" variant="outline" disabled={workspace.running || opening} onclick={() => act(async () => { await workspace?.close(); workspace = undefined; })}>Close working copy</Button>
+  {:else}
+   <Button type="submit" disabled={initializing || opening}>{opening ? 'Opening…' : 'Open working copy'}</Button>
+  {/if}
+ </form>
+ {#if message}
+  <Alert.Root variant="destructive" class="shrink-0"><Alert.Title>Could not complete the action</Alert.Title><Alert.Description>{message}</Alert.Description></Alert.Root>
+ {/if}
+ {#if showGuide}
+  <section aria-label="Demo guide" class="shrink-0 space-y-2 border-b bg-muted/30 px-4 py-3 text-sm">
+   <p>Open A and B on the same remote. Each keeps its own files. In a browser, use a second tab with <code>?copy=b</code>; the desktop app opens two windows.</p>
+   <p>Both start with <code>notes/color.txt</code> containing <code>color=blue</code>. In A, change it to red, then run <code>git add .</code>, <code>git commit -m 'Red'</code>, and <code>git push</code>.</p>
+   <p>In B, run <code>git fetch</code>. Its files stay unchanged until <code>git pull --ff-only</code>. Ahead and behind counts describe the last fetched head.</p>
+   <p>Try pulling with an uncommitted edit: the update refuses and your file stays available. Commits and pushes remain explicit.</p>
+  </section>
+ {/if}
+ {#if workspace}
+  <div class="flex min-h-0 flex-1 overflow-hidden">
+   <aside class="flex w-64 shrink-0 flex-col overflow-hidden border-r" aria-label="Files">
+    <div class="flex items-center justify-between border-b px-3 py-2"><span class="text-sm font-medium">Files</span><Button variant="ghost" size="xs" disabled={workspace.running} onclick={() => act(() => workspace!.refresh())}>Refresh</Button></div>
+    <Item.Group class="min-h-0 flex-1 overflow-auto p-2">
+     {#each rows as row (row.path)}
+      <Item.Button size="sm" class={workspace.selected === row.path ? 'bg-accent text-accent-foreground' : 'hover:bg-muted'} style={`padding-left: ${row.depth * 16 + 8}px`} aria-label={row.kind === 'directory' ? `Folder ${row.path}` : `Open ${row.path}`} aria-current={workspace.selected === row.path ? 'page' : undefined} aria-expanded={row.kind === 'directory' ? expanded.has(row.path) : undefined} onclick={() => {
+       if (row.kind === 'directory') { if (expanded.has(row.path)) expanded.delete(row.path); else expanded.add(row.path); }
+       else void act(() => workspace!.select(row.path));
+      }}>
+       {#if row.kind === 'directory'}{#if expanded.has(row.path)}<ChevronDown class="size-3" />{:else}<ChevronRight class="size-3" />{/if}<Folder class="size-4" />{:else}<FileText class="size-4" />{/if}
+       <span class="truncate text-sm">{row.name}</span>
+      </Item.Button>
+     {:else}<p class="p-3 text-sm text-muted-foreground">No files yet. Create one in the terminal.</p>{/each}
+    </Item.Group>
+    <section class="max-h-60 overflow-auto border-t p-3 text-xs" aria-label="Changes">
+     <p class="mb-2 font-medium">Staged / unstaged</p>
+     {#each workspace.paths as path (path.path)}<p class="break-all font-mono"><span class="whitespace-pre">{path.index}{path.worktree}</span> {path.path}</p>{:else}<p class="text-muted-foreground">Working copy clean</p>{/each}
+    </section>
+   </aside>
+   <main class="flex min-w-0 flex-1 flex-col overflow-hidden">
+    <div class="flex shrink-0 items-center gap-3 border-b px-4 py-2 text-sm">
+     <span class="truncate font-mono">{workspace.selected || 'Select a file'}</span>
+     <span class="ml-auto text-xs text-muted-foreground">{workspace.saveMessage}</span>
+     <Button variant="ghost" size="xs" disabled={workspace.running || !workspace.dirty} onclick={() => act(() => workspace!.flush())}>Save</Button>
+    </div>
+    {#if workspace.dirty && !['Unsaved changes', 'Saving…'].includes(workspace.saveMessage)}
+     <div class="flex shrink-0 flex-wrap items-center gap-2 border-b px-4 py-2 text-sm"><span>Your text is still here.</span><Button size="xs" variant="outline" onclick={() => act(() => workspace!.keepMyText())}>Replace saved file with my text</Button><Button size="xs" variant="outline" onclick={() => act(() => workspace!.useSavedText())}>Discard my edits and reload</Button></div>
+    {/if}
+    {#if workspace.editable}
+     <textarea aria-label="File text" class="min-h-0 flex-1 resize-none bg-background p-4 font-mono text-sm leading-6 outline-none" spellcheck="false" value={workspace.buffer} disabled={workspace.running} oninput={(event) => workspace!.input(event.currentTarget.value)}></textarea>
+    {:else}<div class="flex min-h-0 flex-1 items-center justify-center p-8 text-sm text-muted-foreground">{workspace.selected ? workspace.saveMessage : 'Select a file to edit its text.'}</div>{/if}
+  {#if showTerminal}
+   <section class="flex h-64 shrink-0 flex-col border-t" aria-label="Terminal">
+    <div class="flex shrink-0 items-center gap-2 border-b px-4 py-2 text-xs text-muted-foreground"><span>Terminal · files save immediately; commits are explicit</span><div class="ml-auto flex gap-2"><Button size="xs" variant="ghost" disabled={workspace.running} onclick={() => workspace!.run('git status')}>Status</Button><Button size="xs" variant="ghost" disabled={workspace.running || !remote} onclick={() => workspace!.run('git fetch')}>Fetch</Button><Button size="xs" variant="ghost" disabled={workspace.running || !remote} onclick={() => workspace!.run('git pull --ff-only')}>Pull</Button></div></div>
+    <pre aria-label="Terminal output" class="min-h-0 flex-1 overflow-auto whitespace-pre-wrap break-all px-4 py-2 font-mono text-xs">{workspace.output}</pre>
+    <form class="flex shrink-0 items-center gap-2 border-t px-4 py-2" onsubmit={(event) => { event.preventDefault(); void workspace!.run(); }}><span class="font-mono text-muted-foreground">$</span><Input aria-label="Terminal command" class="flex-1 font-mono" bind:value={() => workspace!.command, (next) => { workspace!.command = String(next ?? ''); }} disabled={workspace.running} placeholder="git status" /><Button size="sm" type="submit" disabled={workspace.running}>{workspace.running ? 'Running…' : 'Run'}</Button></form>
+   </section>
+  {/if}
+   </main>
+  </div>
+  <footer class="flex shrink-0 flex-wrap gap-x-4 border-t px-4 py-2 text-xs text-muted-foreground"><span>main</span>{#if sync?.state === 'observed'}<span>{sync.value.ahead} ahead · {sync.value.behind} behind last fetched head{sync.stale ? ' · needs refresh' : ''}</span>{:else}<span>Remote relationship unknown</span>{/if}<span class="ml-auto truncate">{location?.kind === 'directory' ? location.root : location?.directory}</span></footer>
+ {:else}
+  <main class="flex flex-1 items-center justify-center p-8"><div class="max-w-lg space-y-3"><h1 class="text-xl font-semibold">Two working copies. One remote.</h1><p class="text-sm text-muted-foreground">Open a working copy to browse files, edit text, and stage, commit, fetch, and push from the terminal. Opening an empty copy fetches the remote's main branch.</p><p class="text-sm text-muted-foreground">Copy A and copy B have separate files and history. Changes arrive only when you ask Git to bring them in.</p></div></main>
+ {/if}
+</div>

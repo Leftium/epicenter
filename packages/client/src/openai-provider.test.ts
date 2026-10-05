@@ -192,44 +192,21 @@ describe('createOpenAiAgentEngine', () => {
 	});
 
 	test('streams text deltas in order', async () => {
-		const { fetch } = capturingFetch(
-			openAiSse([
-				{ choices: [{ delta: { content: 'Hello' }, finish_reason: null }] },
-				{ choices: [{ delta: { content: ', world' }, finish_reason: null }] },
-				{ choices: [{ delta: {}, finish_reason: 'stop' }] },
-				{ usage: { total_tokens: 5 }, choices: [] },
-			]),
-		);
-		const engine = createOpenAiAgentEngine({
-			data: () => ({
-				client: new OpenAI({
-					fetch,
-					baseURL: GATEWAY,
-					apiKey: 'test',
-					logLevel: 'off',
-				}),
-				model: 'gpt-5.5',
-				systemPrompts: [],
-			}),
-		});
-
-		const chunks = await drain(
-			engine(
-				{ messages: [{ role: 'user', content: 'hi' }], tools: [] },
-				new AbortController().signal,
-			),
-		);
-		expect(
-			chunks
-				.filter((c) => c.type === 'text-delta')
-				.map((c) => (c as { delta: string }).delta)
-				.join(''),
-		).toBe('Hello, world');
+		const chunks = await drainFrames([
+			{ choices: [{ delta: { content: 'Hello' }, finish_reason: null }] },
+			{ choices: [{ delta: { content: ', world' }, finish_reason: null }] },
+			{ choices: [{ delta: {}, finish_reason: 'stop' }] },
+			{ usage: { total_tokens: 5 }, choices: [] },
+		]);
+		expect(chunks).toEqual([
+			{ type: 'text-delta', delta: 'Hello' },
+			{ type: 'text-delta', delta: ', world' },
+		]);
 	});
 
 	test('reduces an OpenAI tool call from index-correlated fragmented deltas', async () => {
-		const { fetch } = capturingFetch(
-			openAiSse([
+		const ends = toolCalls(
+			await drainFrames([
 				{
 					choices: [
 						{
@@ -269,27 +246,6 @@ describe('createOpenAiAgentEngine', () => {
 				},
 				{ choices: [{ delta: {}, finish_reason: 'tool_calls' }] },
 			]),
-		);
-		const engine = createOpenAiAgentEngine({
-			data: () => ({
-				client: new OpenAI({
-					fetch,
-					baseURL: GATEWAY,
-					apiKey: 'test',
-					logLevel: 'off',
-				}),
-				model: 'gpt-5.5',
-				systemPrompts: [],
-			}),
-		});
-
-		const ends = toolCalls(
-			await drain(
-				engine(
-					{ messages: [{ role: 'user', content: 'go' }], tools: [] },
-					new AbortController().signal,
-				),
-			),
 		);
 		expect(ends).toHaveLength(1);
 		expect(ends[0]).toMatchObject({

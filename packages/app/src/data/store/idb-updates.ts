@@ -106,13 +106,12 @@ export async function readIdbUpdates(
 	for (const [index, row] of rows.entries()) {
 		const id = ids[index] as number;
 		if (id > lastId) lastId = id;
-		const bytes = row.bytes;
-		updates.push(bytes);
+		updates.push(row.bytes);
 		if (row.authoritySeq === null) {
 			// NULL means owed, on every store kind (ADR-0301). A store with
 			// no authority records `NO_AUTHORITY` on its own appends, so it
 			// reaches this branch for nothing and needs no flag to say so.
-			outbox.push({ id, bytes });
+			outbox.push({ id, bytes: row.bytes });
 		} else if (row.authoritySeq > cursor) {
 			cursor = row.authoritySeq;
 		}

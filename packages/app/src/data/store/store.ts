@@ -901,8 +901,7 @@ export function createStoreOverPort<
 			const root = tableRoot(database, tableName);
 			const fields = readRow(root, rowId);
 			if (fields === undefined) return undefined;
-			const body = readRowBody(root, rowId);
-			return { id: rowId, fields, body };
+			return { id: rowId, fields, body: readRowBody(root, rowId) };
 		},
 		onCommitted(listener: () => void): () => void {
 			assertUsable();
@@ -1239,8 +1238,7 @@ export function createStoreOverPort<
 				// where every consumer already looks and where a repair is composed
 				// (ADR-0125). Absent and unreadable answer the same way here because
 				// a caller asking for one row does the same thing with either.
-				const { data } = conformRow(rowId, payload);
-				return data ?? undefined;
+				return conformRow(rowId, payload).data ?? undefined;
 			},
 			body(rowId: string) {
 				assertUsable();
@@ -1252,8 +1250,8 @@ export function createStoreOverPort<
 				// through a function that would have minted the row had the answer
 				// changed in between; `updateRow` answers whether it found one, so
 				// the check and the write are the same read.
-				const written = transact(() => updateRow(root, rowId, fields));
-				if (!written) return StoreError.RowAbsent({ table: tableName, rowId });
+				if (!transact(() => updateRow(root, rowId, fields)))
+					return StoreError.RowAbsent({ table: tableName, rowId });
 				return Ok(undefined);
 			},
 			delete(rowId: string): void {

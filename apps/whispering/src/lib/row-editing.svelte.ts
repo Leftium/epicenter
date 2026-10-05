@@ -30,7 +30,6 @@
  * not from here.
  */
 import type {
-	CanonicalDocument,
 	CanonicalValue,
 	RowEditor,
 	RowError,
@@ -171,34 +170,6 @@ export function createRowEditing<TFields>(
 		return source || editor.row.status === 'invalid' ? 'source' : 'fields';
 	}
 
-	/**
-	 * Submit the complete row `change` makes of the valid row now. A refusal
-	 * keeps `typed` for its control; that control taking a value lets it go.
-	 * Values held for other controls stay as they are.
-	 */
-	function setRow(
-		control: { field: string } | 'body',
-		typed: string | undefined,
-		change: (row: CanonicalDocument) => CanonicalDocument,
-	): void {
-		if (!takes() || view() !== 'fields') return;
-		const { row } = native.get();
-		if (row.status !== 'valid') return;
-		const { error } = native.set(
-			change({ fields: row.fields, body: row.body }),
-		);
-		if (error === null) {
-			hold(control, undefined);
-			return;
-		}
-		// Only a typed string can be refused: other values come from the row.
-		if (typed !== undefined)
-			hold(control, {
-				value: typed,
-				reason: refusalReason(error.refusal.reason),
-			});
-	}
-
 	return {
 		path,
 		/** The editor's row: valid, or invalid with why. Always the latest input. */
@@ -264,25 +235,41 @@ export function createRowEditing<TFields>(
 			if (held.body !== undefined) return held.body.value;
 			return editor.row.status === 'valid' ? lf(editor.row.body) : '';
 		},
-		/** Set one field of the valid row; `undefined` removes it. Every other field and the body stay. */
+		/**
+		 * Set one field of the valid row; `undefined` removes it. Every other
+		 * field and the body stay. A refused string is kept for this field's
+		 * control; a value the row takes lets that control's go.
+		 */
 		setField(key: string, value: CanonicalValue | undefined) {
-			setRow(
-				{ field: key },
-				typeof value === 'string' ? value : undefined,
-				({ fields, body }) => {
-					const next: Record<string, CanonicalValue> = { ...fields };
-					if (value === undefined) delete next[key];
-					else next[key] = value;
-					return { fields: next, body };
-				},
-			);
+			if (!takes() || source || editor.row.status !== 'valid') return;
+			const fields: Record<string, CanonicalValue> = { ...editor.row.fields };
+			if (value === undefined) delete fields[key];
+			else fields[key] = value;
+			const { error } = editor.set({ fields, body: editor.row.body });
+			if (error === null) hold({ field: key }, undefined);
+			// Only a typed string can be refused: other values come from the row.
+			else if (typeof value === 'string')
+				hold(
+					{ field: key },
+					{ value, reason: refusalReason(error.refusal.reason) },
+				);
 		},
-		/** Set the valid row's body, typed in a textarea, in the body's own line endings. */
+		/**
+		 * Set the valid row's body, typed in a textarea, in the body's own line
+		 * endings. A refused body is kept for the textarea; a taken one lets it go.
+		 */
 		setBody(typed: string) {
-			setRow('body', typed, ({ fields, body }) => ({
-				fields,
-				body: withFileNewlines(typed, body),
-			}));
+			if (!takes() || source || editor.row.status !== 'valid') return;
+			const { error } = editor.set({
+				fields: editor.row.fields,
+				body: withFileNewlines(typed, editor.row.body),
+			});
+			hold(
+				'body',
+				error === null
+					? undefined
+					: { value: typed, reason: refusalReason(error.refusal.reason) },
+			);
 		},
 		/**
 		 * Let go of the typed value one control holds, as the person asked: a

@@ -34,7 +34,6 @@
  *   never changes.
  */
 import type {
-	CanonicalDocument,
 	RowEditor,
 	RowReloadError,
 	RowSaveError,
@@ -112,43 +111,22 @@ export function createTodoEditor(
 		return undefined;
 	}
 
-	/** Whether the fields view is the one taking input now. */
-	function fieldsOpen() {
-		return editor.row.status === 'valid' && !rawMode && refused() === undefined;
-	}
-
-	/** Submit a complete row from the fields view. Answers why nothing was accepted. */
-	function setRow(
-		change: (row: CanonicalDocument, file: string) => CanonicalDocument,
-	): string | undefined {
-		// A leaving fields view can still deliver input; it is not this view's row anymore.
-		if (editor.row.status !== 'valid' || !fieldsOpen()) return undefined;
-		const { error } = editor.set(
-			change(
-				{ fields: editor.row.fields, body: editor.row.body },
-				editor.row.text,
-			),
-		);
-		return error === null ? undefined : error.refusal.reason;
-	}
-
 	/**
-	 * Submit one field's typed value. A refusal keeps the value and why for
-	 * that field; an accepted value clears that field's refusal.
+	 * Record the row's answer to one field's typed value: a refusal keeps the
+	 * value and why for that field; an accepted value clears that field's
+	 * refusal. Answers why nothing was accepted.
 	 */
-	function setField(
+	function recordRefusal(
 		field: RefusedField,
 		value: string,
-		change: (row: CanonicalDocument, file: string) => CanonicalDocument,
+		{ error }: ReturnType<typeof editor.set>,
 	): string | undefined {
-		if (!fieldsOpen()) return undefined;
-		const reason = setRow(change);
 		const next = { ...refusals };
 		delete next[field];
 		const message =
-			reason === undefined
+			error === null
 				? undefined
-				: `The ${field} cannot be saved: ${reason}.`;
+				: `The ${field} cannot be saved: ${error.refusal.reason}.`;
 		if (message !== undefined) next[field] = { value, message };
 		refusals = next;
 		return message;
@@ -201,6 +179,8 @@ export function createTodoEditor(
 		},
 
 		// --- Function bindings. Each guards its own view's gate. -----------
+		// A leaving fields view can still deliver input; the fields setters
+		// take it only while the row shows its fields and takes input.
 
 		title(): string {
 			if (editor.row.status !== 'valid') return '';
@@ -210,32 +190,40 @@ export function createTodoEditor(
 				: '';
 		},
 		setTitle(title: string) {
-			return setField('title', title, ({ fields, body }) => ({
-				fields: { ...fields, title },
-				body,
-			}));
+			if (editor.row.status !== 'valid' || rawMode || refused() !== undefined)
+				return undefined;
+			const result = editor.set({
+				fields: { ...editor.row.fields, title },
+				body: editor.row.body,
+			});
+			return recordRefusal('title', title, result);
 		},
 		done(): boolean {
 			return editor.row.status === 'valid' && editor.row.fields.done === true;
 		},
 		setDone(done: boolean) {
-			const reason = setRow(({ fields, body }) => ({
-				fields: { ...fields, done },
-				body,
-			}));
-			return reason === undefined
+			if (editor.row.status !== 'valid' || rawMode || refused() !== undefined)
+				return undefined;
+			const { error } = editor.set({
+				fields: { ...editor.row.fields, done },
+				body: editor.row.body,
+			});
+			return error === null
 				? undefined
-				: `This value cannot be saved: ${reason}.`;
+				: `This value cannot be saved: ${error.refusal.reason}.`;
 		},
 		notes(): string {
 			if (editor.row.status !== 'valid') return '';
 			return refusals.notes?.value ?? lf(editor.row.body);
 		},
 		setNotes(notes: string) {
-			return setField('notes', notes, ({ fields }, file) => ({
-				fields,
-				body: withFileNewlines(notes, file),
-			}));
+			if (editor.row.status !== 'valid' || rawMode || refused() !== undefined)
+				return undefined;
+			const result = editor.set({
+				fields: editor.row.fields,
+				body: withFileNewlines(notes, editor.row.text),
+			});
+			return recordRefusal('notes', notes, result);
 		},
 		/** The whole file as the source view shows it. */
 		text(): string {
@@ -319,11 +307,12 @@ export function createTodoEditor(
 				return 'This todo is open in its source editor. Change it there.';
 			if (editor.save.status === 'failed')
 				return 'This todo has a save that did not finish. Choose what to do in its editor first.';
-			const reason = setRow(({ fields, body }) => ({
-				fields: { ...fields, done },
-				body,
-			}));
-			if (reason !== undefined) return `This value cannot be saved: ${reason}.`;
+			const { error: unrepresentable } = editor.set({
+				fields: { ...editor.row.fields, done },
+				body: editor.row.body,
+			});
+			if (unrepresentable !== null)
+				return `This value cannot be saved: ${unrepresentable.refusal.reason}.`;
 			const { error } = await editor.flush();
 			return error === null ? undefined : describeSaveError(error);
 		},

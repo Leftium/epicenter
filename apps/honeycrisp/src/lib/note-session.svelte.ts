@@ -132,7 +132,7 @@ const FIELD_NAMES: Record<TypedField, string> = {
 };
 
 export function createNoteSession(
-	editor: NoteEditor,
+	native: NoteEditor,
 	{
 		path,
 		admits = () => true,
@@ -146,7 +146,7 @@ export function createNoteSession(
 		rawMode?: boolean;
 	},
 ) {
-	const reactive = fromRowEditor(editor);
+	const editor = fromRowEditor(native);
 	/** Whether a valid note shows its file view. An invalid one always does. */
 	let raw = $state(rawMode);
 	let pathChange = $state.raw<PathChange | undefined>();
@@ -213,8 +213,7 @@ export function createNoteSession(
 	): string | undefined {
 		const why = blocked();
 		if (why !== undefined) return why;
-		const { row } = editor.get();
-		if (row.status !== 'valid' || raw)
+		if (editor.row.status !== 'valid' || raw)
 			return 'This note is not showing its fields.';
 		const typed: [TypedField, string][] = [];
 		if (typeof fields.title === 'string') typed.push(['title', fields.title]);
@@ -227,8 +226,8 @@ export function createNoteSession(
 			}
 		}
 		const { error } = editor.set({
-			fields: withChange(row.fields, fields),
-			body: body ?? row.body,
+			fields: withChange(editor.row.fields, fields),
+			body: body ?? editor.row.body,
 		});
 		const next = { ...refused };
 		for (const [field, value] of typed)
@@ -244,7 +243,7 @@ export function createNoteSession(
 	}
 
 	const missing = () => {
-		const { save } = editor.get();
+		const { save } = native.get();
 		return (
 			(save.status === 'failed' && save.error.name === 'NotFound') ||
 			reloadError?.name === 'NotFound'
@@ -252,7 +251,7 @@ export function createNoteSession(
 	};
 
 	const unsettled = () =>
-		editor.get().save.status !== 'idle' ||
+		native.get().save.status !== 'idle' ||
 		pathChange !== undefined ||
 		hold !== undefined ||
 		Object.keys(refused).length > 0;
@@ -260,14 +259,14 @@ export function createNoteSession(
 	return {
 		path,
 		/** The row editor's current snapshot, read without tracking. */
-		get: editor.get,
+		get: native.get,
 		/** The editor's input: valid or invalid. */
 		get row() {
-			return reactive.row;
+			return editor.row;
 		},
 		/** The editor's publication: idle, saving, or failed. */
 		get save() {
-			return reactive.save;
+			return editor.save;
 		},
 		/** Typed values the editor refused, by the control they were typed in. */
 		get refused() {
@@ -318,7 +317,7 @@ export function createNoteSession(
 		get status(): SessionStatus {
 			if (pathChange !== undefined)
 				return pathChange.state === 'sent' ? 'saving' : 'unconfirmed';
-			const { save } = reactive;
+			const { save } = editor;
 			if (save.status === 'saving') return 'saving';
 			if (save.status === 'failed')
 				return save.error.name === 'Unconfirmed' ? 'unconfirmed' : 'failed';
@@ -338,10 +337,10 @@ export function createNoteSession(
 		setText(text: string): string | undefined {
 			const why = blocked();
 			if (why !== undefined) return why;
-			if (editor.get().row.status === 'valid' && !raw)
+			if (native.get().row.status === 'valid' && !raw)
 				return 'This note is not showing its file.';
 			raw = true;
-			editor.setText(text);
+			native.setText(text);
 			accepted();
 			return undefined;
 		},
@@ -357,7 +356,7 @@ export function createNoteSession(
 		showFile(on: boolean): string | undefined {
 			const why = fenced();
 			if (why !== undefined) return why;
-			const { row } = editor.get();
+			const { row } = native.get();
 			if (on) {
 				const waiting = (Object.keys(refused) as TypedField[])[0];
 				if (waiting !== undefined)
@@ -374,8 +373,8 @@ export function createNoteSession(
 		retry(): string | undefined {
 			const why = blocked();
 			if (why !== undefined) return why;
-			if (editor.get().save.status !== 'failed') return undefined;
-			editor.retry();
+			if (native.get().save.status !== 'failed') return undefined;
+			native.retry();
 			accepted();
 			return undefined;
 		},
@@ -395,7 +394,7 @@ export function createNoteSession(
 			if (why !== undefined) return why;
 			reloading = true;
 			try {
-				const { error } = await editor.reload();
+				const { error } = await native.reload();
 				if (released) return undefined;
 				if (error !== null) {
 					reloadError = error;
@@ -418,9 +417,9 @@ export function createNoteSession(
 			if (why !== undefined) return why;
 			if (hold === undefined) return undefined;
 			hold = undefined;
-			const { row, save } = editor.get();
-			if (save.status === 'failed') editor.retry();
-			else editor.setText(row.text);
+			const { row, save } = native.get();
+			if (save.status === 'failed') native.retry();
+			else native.setText(row.text);
 			accepted();
 			return undefined;
 		},
@@ -428,7 +427,7 @@ export function createNoteSession(
 		 * Wait for every write already admitted. Resolves the failure that
 		 * paused publication, if any; it never tries again.
 		 */
-		flush: editor.flush,
+		flush: native.flush,
 		/** Run `work` with input fenced: a rename, a delete, a departure. */
 		async operate<T>(work: () => Promise<T>): Promise<T> {
 			operating += 1;

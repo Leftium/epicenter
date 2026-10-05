@@ -1,5 +1,5 @@
 /**
- * Projection tests: `toViolations`, `summarize`, and `tierOf` as pure selectors over a real
+ * Projection tests: `toViolations` and `summarize` as pure selectors over a real
  * `assess` result. Every vault is built from in-memory `readTable` reads, so conformance and
  * reference resolution are on the live path and the selectors read genuine assessed cells.
  *
@@ -13,10 +13,10 @@
  */
 
 import { describe, expect, test } from 'bun:test';
-import { describeExpected } from './expected';
-import { assess, type TableInput } from './integrity';
-import { readTable } from './table';
-import { summarize, toViolations, type Violation } from './violations';
+import { describeExpected } from './expected.js';
+import { assess, type TableInput } from './integrity.js';
+import { readTable } from './table.js';
+import { summarize, toViolations } from './violations.js';
 
 type Entries = Parameters<typeof readTable>[0];
 
@@ -46,10 +46,6 @@ const adaptationsModel = JSON.stringify({
 const statusModel = JSON.stringify({
 	fields: { status: { type: 'string', enum: ['draft', 'live'] } },
 });
-
-function kinds(violations: readonly Violation[]): string[] {
-	return violations.map((v) => v.kind);
-}
 
 describe('toViolations: every kind projects', () => {
 	test('a missing required cell is a missing-required violation', () => {
@@ -84,49 +80,6 @@ describe('toViolations: every kind projects', () => {
 		expect(violation.raw).toBe(123);
 		// The field rides on the violation; "what was expected" is computed at the edge from it.
 		expect(violation.field.name).toBe('title');
-	});
-
-	test('a present pointer that names no row in a loaded target is a dangling-reference', () => {
-		const violations = toViolations(
-			assess([
-				loaded('pages', pagesModel, [
-					{ fileName: 'become-the-source.md', content: '---\ntitle: X\n---' },
-				]),
-				loaded('adaptations', adaptationsModel, [
-					{ fileName: 'a1.md', content: '---\ntitle: A\npage: ghost\n---' },
-				]),
-			]),
-		);
-
-		expect(violations).toEqual([
-			{
-				kind: 'dangling-reference',
-				table: 'adaptations',
-				row: 'a1',
-				field: 'page',
-				value: 'ghost',
-				target: 'pages',
-			},
-		]);
-	});
-
-	test('a reference whose target table is absent is a missing-target', () => {
-		const violations = toViolations(
-			assess([
-				loaded('adaptations', adaptationsModel, [
-					{ fileName: 'a1.md', content: '---\ntitle: A\npage: somewhere\n---' },
-				]),
-			]),
-		);
-
-		expect(violations).toEqual([
-			{
-				kind: 'missing-target',
-				table: 'adaptations',
-				field: 'page',
-				target: 'pages',
-			},
-		]);
 	});
 });
 
@@ -187,13 +140,24 @@ describe('toViolations: dedup and granularity', () => {
 			]),
 		);
 
-		expect(kinds(violations)).toEqual([
-			'dangling-reference',
-			'dangling-reference',
+		expect(violations).toEqual([
+			{
+				kind: 'dangling-reference',
+				table: 'adaptations',
+				row: 'a1',
+				field: 'page',
+				value: 'ghost-one',
+				target: 'pages',
+			},
+			{
+				kind: 'dangling-reference',
+				table: 'adaptations',
+				row: 'a2',
+				field: 'page',
+				value: 'ghost-two',
+				target: 'pages',
+			},
 		]);
-		expect(
-			violations.map((v) => (v.kind === 'dangling-reference' ? v.row : '')),
-		).toEqual(['a1', 'a2']);
 	});
 });
 

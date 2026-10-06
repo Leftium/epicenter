@@ -36,44 +36,13 @@ export async function writeFilesTree(
 	access: ObjectAccess,
 	files: ReadonlyMap<string, Uint8Array>,
 ): Promise<string> {
-	type Directory = {
-		files: Map<string, Uint8Array>;
-		directories: Map<string, Directory>;
-	};
-	const root: Directory = { files: new Map(), directories: new Map() };
-	for (const [path, bytes] of files) {
-		const parts = path.split('/');
-		let directory = root;
-		for (const part of parts.slice(0, -1)) {
-			let child = directory.directories.get(part);
-			if (child === undefined) {
-				child = { files: new Map(), directories: new Map() };
-				directory.directories.set(part, child);
-			}
-			directory = child;
-		}
-		directory.files.set(parts[parts.length - 1]!, bytes);
-	}
-	async function write(directory: Directory): Promise<string> {
-		const entries: git.TreeEntry[] = [];
-		for (const [name, bytes] of directory.files)
-			entries.push({
-				path: name,
-				mode: '100644',
-				type: 'blob',
-				oid: await git.writeBlob({ ...access, blob: bytes }),
-			});
-		for (const [name, child] of directory.directories)
-			entries.push({
-				path: name,
-				mode: '040000',
-				type: 'tree',
-				oid: await write(child),
-			});
-		// An empty root still writes the empty tree so a commit naming it can be pushed.
-		return git.writeTree({ ...access, tree: entries });
-	}
-	return write(root);
+	const entries = new Map<string, TreeFile>();
+	for (const [path, bytes] of files)
+		entries.set(path, {
+			mode: '100644',
+			oid: await git.writeBlob({ ...access, blob: bytes }),
+		});
+	return writeTreeFiles(access, entries);
 }
 
 /**

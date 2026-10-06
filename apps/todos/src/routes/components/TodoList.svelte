@@ -1,6 +1,8 @@
 <script lang="ts">
 	import { Badge } from '@epicenter/ui/badge';
+	import { Button } from '@epicenter/ui/button';
 	import { Checkbox } from '@epicenter/ui/checkbox';
+	import * as Empty from '@epicenter/ui/empty';
 	import { Input } from '@epicenter/ui/input';
 	import { toast } from '@epicenter/ui/sonner';
 	import { onDestroy } from 'svelte';
@@ -44,13 +46,16 @@
 </script>
 
 <section class="flex h-full min-h-0 flex-col" aria-label="Todo list">
-	<form class="border-b p-3" onsubmit={add}>
+	<form class="flex shrink-0 items-center gap-2 border-b p-3" onsubmit={add}>
 		<Input
 			bind:value={() => todos.newTitle, (title) => view.mounted && (todos.newTitle = title)}
-			placeholder="Add a todo and press Enter"
+			placeholder="Add a todo"
 			aria-label="New todo title"
 			disabled={adding || todos.departing}
 		/>
+		<Button type="submit" disabled={adding || todos.departing || todos.newTitle.trim() === ''}>
+			{adding ? 'Adding…' : 'Add'}
+		</Button>
 	</form>
 
 	{#if todos.listError}
@@ -64,19 +69,19 @@
 			{@const selected = todos.selectedPath === entry.path}
 			{@const done = entry.fields.done === true}
 			<li
-				class="flex items-center gap-3 border-b px-3 py-2 text-sm {selected
+				class="flex items-center gap-2 border-b px-3 py-2 text-sm {selected
 					? 'bg-accent text-accent-foreground'
-					: 'hover:bg-muted/50'}"
+					: ''}"
 			>
 				<Checkbox
 					checked={done}
 					disabled={typeof entry.fields.done !== 'boolean' || todos.departing}
-					aria-label={done ? 'Mark as not done' : 'Mark as done'}
+					aria-label="{done ? 'Reopen' : 'Complete'} {titleOf(entry)}"
 					onCheckedChange={() => void toggle(entry)}
 				/>
-				<button
-					type="button"
-					class="flex min-h-8 min-w-0 flex-1 items-center gap-2 text-left"
+				<Button
+					variant="ghost"
+					class="h-auto min-h-9 min-w-0 flex-1 justify-start whitespace-normal text-left"
 					aria-current={selected ? 'true' : undefined}
 					data-todo={entry.path}
 					onclick={() => {
@@ -84,17 +89,18 @@
 						onOpen?.();
 					}}
 				>
-					<span class="truncate {done ? 'text-muted-foreground line-through' : ''}">{titleOf(entry)}</span>
+					<span class="line-clamp-2 break-anywhere {done ? 'text-muted-foreground line-through' : ''}">{titleOf(entry)}</span>
 					{#if needsRepair(entry)}
 						<Badge variant="destructive" class="shrink-0">Needs repair</Badge>
 					{/if}
-				</button>
-				<span class="shrink-0 font-mono text-xs text-muted-foreground max-sm:hidden">{entry.stem === '' ? entry.path : entry.stem}</span>
+				</Button>
 			</li>
 		{:else}
-			<li class="px-3 py-8 text-center text-sm text-muted-foreground">
-				No todos yet. Add one above, pull from the remote, or create
-				<code class="font-mono">todos/&lt;name&gt;.md</code> in the terminal.
+			<li>
+				<Empty.Root>
+					<Empty.Title>No todos yet</Empty.Title>
+					<Empty.Description>Add your first todo above.</Empty.Description>
+				</Empty.Root>
 			</li>
 		{/each}
 	</ul>

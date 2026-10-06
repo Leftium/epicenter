@@ -115,7 +115,7 @@
 			</Button>
 		{/if}
 		{#if editing?.view === 'fields'}
-			<LiveInput class="flex-1 text-base font-medium" get={() => editing?.fieldText('title') ?? ''} set={(value) => editing?.setField('title', value)} placeholder="Title" aria-label="Recording title" />
+			<LiveInput class="flex-1 text-base font-medium" get={() => editing?.fieldText('title') ?? ''} set={(value) => editing?.setField('title', value)} readonly={!editing.editable} placeholder="Title" aria-label="Recording title" />
 		{:else}
 			<h2 class="min-w-0 flex-1 truncate text-base font-medium" data-testid="recording-title-text">{title || id}</h2>
 		{/if}
@@ -240,6 +240,7 @@
 							class="min-h-28 resize-y font-sans"
 							get={() => editing?.bodyText() ?? ''}
 							set={(value) => editing?.setBody(value)}
+							readonly={!editing.editable}
 							placeholder="Notes in Markdown, saved in the recording’s file"
 							aria-label="Notes"
 						/>
@@ -320,6 +321,7 @@
 					class="h-full min-h-40 flex-1 resize-none font-mono text-xs"
 					get={() => editing?.sourceValue() ?? ''}
 					set={(value) => editing?.setText(value)}
+					readonly={!editing.editable}
 					aria-label="Markdown source"
 					spellcheck={false}
 				/>

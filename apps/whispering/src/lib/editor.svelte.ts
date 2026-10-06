@@ -93,12 +93,6 @@ export function createTextFileEditor(
 	autosave: Autosave,
 	onSaved: () => void,
 	admits: Admits = () => true,
-	/**
-	 * Whether this draft may write its file now. False while the file is
-	 * being moved or deleted: nothing is saved, by a timer, by settling, or by
-	 * the person, until it is true again and `resume` is called.
-	 */
-	writes: () => boolean = () => true,
 ) {
 	let baseline = $state.raw<SavedText>(file);
 	let buffer = $state(file.text);
@@ -110,18 +104,16 @@ export function createTextFileEditor(
 	let unknown = $state<string | undefined>();
 	let timer: ReturnType<typeof setTimeout> | undefined;
 	let saving: Promise<void> | undefined;
-	let disposed = false;
+	let disposed = $state(false);
 
 	const dirty = () => buffer !== baseline.text;
 	/** Whether saving goes on without the person: nothing failed, is unknown, or is in review. */
 	const proceeds = () => saveState.kind === 'saved' && !disposed;
-	/** Whether a save may be sent now, by a timer or by the person. */
-	const sendable = () => !disposed && writes();
 
 	function schedule() {
 		clearTimeout(timer);
 		timer = undefined;
-		if (!proceeds() || !sendable() || autosave.paused) return;
+		if (!proceeds() || autosave.paused) return;
 		timer = setTimeout(() => {
 			timer = undefined;
 			void save();
@@ -229,9 +221,9 @@ export function createTextFileEditor(
 		timer = undefined;
 		if (saving) {
 			await saving;
-			return proceeds() && sendable() && dirty() ? save() : undefined;
+			return proceeds() && dirty() ? save() : undefined;
 		}
-		if (!proceeds() || !sendable() || !dirty()) return;
+		if (!proceeds() || !dirty()) return;
 		await run();
 	}
 
@@ -259,22 +251,15 @@ export function createTextFileEditor(
 		get path() {
 			return baseline.path;
 		},
+		/** Whether `input` takes typing now; a view shows the text read-only while it does not. */
+		get editable() {
+			return admits() && !disposed;
+		},
 		/** Replace the whole buffer, as a source editor does. */
 		input(text: string) {
 			if (!admits() || disposed) return;
 			buffer = text;
 			schedule();
-		},
-		/**
-		 * Take text the draft of this file at its old path already accepted,
-		 * when the file moved here. It is not new input, so admission does not
-		 * gate it. False once this draft is put down.
-		 */
-		carry(text: string): boolean {
-			if (disposed) return false;
-			buffer = text;
-			schedule();
-			return true;
 		},
 		save,
 		/**
@@ -337,7 +322,7 @@ export function createTextFileEditor(
 		},
 		/** Conflict choice: save my input over the version I reviewed, once. */
 		async keepMine() {
-			if (!admits() || !sendable() || saving) return;
+			if (!admits() || disposed || saving) return;
 			if (saveState.kind !== 'conflict' || saveState.current === undefined)
 				return;
 			baseline = saveState.current;
@@ -369,7 +354,7 @@ export function createTextFileEditor(
 		 * included, is shown for review instead of being written over.
 		 */
 		async retry() {
-			if (!admits() || !sendable() || saving) return;
+			if (!admits() || disposed || saving) return;
 			if (saveState.kind !== 'failed' && saveState.kind !== 'unconfirmed')
 				return;
 			await run();
@@ -382,10 +367,6 @@ export function createTextFileEditor(
 		async settle(): Promise<boolean> {
 			await save();
 			return !dirty() && proceeds();
-		},
-		/** Saving may go on again after writes were held: batch held typing. */
-		resume() {
-			if (timer === undefined && !saving && dirty()) schedule();
 		},
 		/** Write nothing more and take no typing. A save already out still settles. */
 		dispose() {

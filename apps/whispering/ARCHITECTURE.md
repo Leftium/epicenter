@@ -582,13 +582,21 @@ gone; discarding then puts the editor down. An editor holding nothing whose
 file a listing no longer finds is put down. A text draft's save the folder
 refuses as stale holds both versions for review.
 
-Renaming or deleting a row's file first stops the editor's input and waits
-until no write runs; a save that stopped refuses the operation. The file is
-read after that, and the rename or the confirmed deletion is conditional on
-what was read. A rename that did not end as asked puts the row's editor down,
-since it saved everything it took; a text draft's later typing is held until
-the person chooses where it goes. Closing waits for every admitted row write
-before the folder is released, and never tries a stopped one again.
+Renaming or deleting a file first stops its draft's input, a row's editor or
+a text draft alike, and waits until no write runs. A draft that still holds
+anything then refuses the operation and keeps its exact input: a save that
+failed, was not confirmed, or is in review, or a typed value the file cannot
+hold. So a rename moves saved files and never carries unsaved edits to another
+path. The file is read after that, and the rename or the confirmed deletion is
+conditional on what was read; a rename never replaces a file at the new name,
+and a draft there holding edits refuses it. Neither name's draft takes input
+until the move has an outcome, and its views show it read-only meanwhile
+(each editor's `editable`). Transformations and deletions settle the same
+way: they act on a file only when its draft holds nothing else. Any outcome but a refusal puts both drafts down,
+since neither holds anything; a rename whose reply was lost, or that left the
+file at both paths, says so, and opening either name shows what the folder
+holds. Closing waits for every admitted row write before the folder is
+released, and never tries a stopped one again.
 
 ## Closing
 

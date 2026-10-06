@@ -21,6 +21,9 @@
  *   nothing
  * - A rename and a deletion that share a path, as source or destination,
  *   never overlap: the later one is refused before it reads or writes
+ * - A rename moves saved files, never unsaved edits: drafts at both names
+ *   take no input until it has an outcome, and a draft that still holds
+ *   anything after settling refuses it and keeps its exact input
  * - A recording is edited through the folder's row editor, which saves the
  *   whole row as it is typed; its Source shows what a save writes, and its
  *   whole text can be edited instead
@@ -2511,33 +2514,30 @@ test('a rename where the destination landed and the source could not be removed 
 
 	const problem = await library.rename('notes.md', 'renamed.md');
 
-	expect(problem).toBe(
+	expect(problem).toContain(
 		'"renamed.md" was written, but "notes.md" could not be removed, so both are in the folder now: ' +
 			"Could not remove 'notes.md': permission denied",
 	);
+	expect(problem).toContain('Open either name');
 	expect(
 		(await readdir(root)).filter((name) => name.endsWith('.md')).sort(),
 	).toEqual(['notes.md', 'renamed.md']);
-	// No draft was open, so there are no edits to hold.
-	expect(library.unresolvedMoves).toEqual([]);
 	expect(library.holdsUnsavedWork).toBe(false);
 });
 
-test('a rename that left the file at both paths holds the open draft’s typing until the person keeps it at one of them', async () => {
+test('a text file rename that left the file at both paths saved the typing first, puts the draft down, and either name opens as it is', async () => {
 	const { library, root } = await open();
 	await writeFile(join(root, 'notes.md'), 'original\n');
 	await library.refreshAll();
-	await library.open('notes.md');
-	const selection = library.selection;
-	if (selection?.kind !== 'file' || selection.file.kind !== 'text')
-		throw new Error('expected notes.md open as text');
-	const { editor } = selection.file;
+	library.autosave.paused = true;
+	const editor = await textDraft(library, 'notes.md');
+	editor.input('typed before the rename\n');
 	const { files } = library.folder;
 	const move = files.move;
 	Object.assign(files, {
 		async move(...args: Parameters<typeof move>) {
 			const [file, destination] = args;
-			// The person types while the file is copied.
+			// Typing while the file is copied is not taken.
 			editor.input('typed during the move\n');
 			const copied = expectOk(await files.read(file.path));
 			const written = expectOk(await files.create(destination, copied.bytes));
@@ -2555,38 +2555,28 @@ test('a rename that left the file at both paths holds the open draft’s typing 
 		},
 	});
 
-	expect(await library.rename('notes.md', 'renamed.md')).toContain(
-		'both are in the folder now',
-	);
-	await Bun.sleep(600);
-	await library.refreshAll();
-
-	// Both paths hold the file as it was; the typing waits for the person.
-	expect(library.unresolvedMoves).toEqual([
-		expect.objectContaining({
-			from: 'notes.md',
-			to: 'renamed.md',
-			found: { from: 'matches', to: 'matches' },
-		}),
-	]);
-	expect(editor.buffer).toBe('typed during the move\n');
-	expect(await readFile(join(root, 'notes.md'), 'utf8')).toBe('original\n');
-	expect(await readFile(join(root, 'renamed.md'), 'utf8')).toBe('original\n');
-	expect(await library.prepareToLeave()).toBe(false);
-
-	expect(
-		await library.resolveMove('notes.md', 'keepAtDestination'),
-	).toBeUndefined();
-	const moved = library.selection;
-	if (moved?.kind !== 'file' || moved.file.kind !== 'text')
-		throw new Error('expected renamed.md open as text');
-	expect(moved.path).toBe('renamed.md');
-	expect(await moved.file.editor.settle()).toBe(true);
-	expect(await readFile(join(root, 'renamed.md'), 'utf8')).toBe(
-		'typed during the move\n',
-	);
-	expect(await readFile(join(root, 'notes.md'), 'utf8')).toBe('original\n');
+	const said = await library.rename('notes.md', 'renamed.md');
+	expect(said).toContain('both are in the folder now');
+	expect(said).toContain('Your edits were saved before the rename');
+	expect(editor.buffer).toBe('typed before the rename\n');
+	expect(library.selection).toBeUndefined();
 	expect(library.holdsUnsavedWork).toBe(false);
+	expect(await library.prepareToLeave()).toBe(true);
+	expect(await readFile(join(root, 'notes.md'), 'utf8')).toBe(
+		'typed before the rename\n',
+	);
+	expect(await readFile(join(root, 'renamed.md'), 'utf8')).toBe(
+		'typed before the rename\n',
+	);
+
+	// Opening the new name edits it as any file.
+	const moved = await textDraft(library, 'renamed.md');
+	expect(moved.buffer).toBe('typed before the rename\n');
+	moved.input('typed at the new name\n');
+	expect(await moved.settle()).toBe(true);
+	expect(await readFile(join(root, 'renamed.md'), 'utf8')).toBe(
+		'typed at the new name\n',
+	);
 });
 
 // ============================================================================
@@ -2655,9 +2645,16 @@ test('a transcript’s editor is settled before it moves, takes no typing while 
 	const to = 'transcriptions/renamed.md';
 	expect(await Bun.file(join(root, transcript.path)).exists()).toBe(false);
 	expect(draft.released).toBe(true);
+	// Its card opens the new name, as a transcript card does for its path.
+	await library.openTranscript(to);
 	const moved = editingOf(library.transcriptAt(to));
 	expect(moved.row).toMatchObject({ body: 'Typed before the rename.\n' });
 	expect(moved.holds).toBe(false);
+	expect(typeBody(moved, 'Typed at the new name.\n')).toBe(true);
+	await saved(moved);
+	expect(await readFile(join(root, to), 'utf8')).toContain(
+		'Typed at the new name.',
+	);
 	expect(await Bun.file(join(root, transcript.path)).exists()).toBe(false);
 	expect(library.holdsUnsavedWork).toBe(false);
 });
@@ -2730,34 +2727,34 @@ test('a transcript renamed while the page decides to close takes its settled typ
 	expect(leaving).toBe(true);
 	expect(await readFile(join(root, to), 'utf8')).toContain(TYPED);
 	expect(await Bun.file(join(root, transcript.path)).exists()).toBe(false);
-	expect(editingOf(library.transcriptAt(to)).holds).toBe(false);
+	expect(draft.released).toBe(true);
 	expect(library.unsavedWork).toEqual([]);
 });
 
-test('a text file renamed while the page decides to close carries its typing to the new name', async () => {
+test('a text file renamed while the page decides to close takes its settled typing to the new name, and typing while it moves is not taken', async () => {
 	const { library, root } = await open();
 	await writeFile(join(root, 'notes.md'), 'original\n');
 	await library.refreshAll();
-	await library.open('notes.md');
-	const selection = library.selection;
-	if (selection?.kind !== 'file' || selection.file.kind !== 'text')
-		throw new Error('expected notes.md open as text');
-	const { editor } = selection.file;
+	const editor = await textDraft(library, 'notes.md');
+	editor.input(TYPED);
 
 	const { said, leaving } = await renameWhileClosing(
 		library,
 		'notes.md',
 		'renamed.md',
 		() => {
-			editor.input(TYPED);
-			return editor.buffer === TYPED;
+			editor.input('Typed while it moved, refused.\n');
+			return editor.buffer !== TYPED;
 		},
+		undefined,
+		false,
 	);
 
 	expect(said).toBeUndefined();
 	expect(leaving).toBe(true);
 	expect(await readFile(join(root, 'renamed.md'), 'utf8')).toBe(TYPED);
 	expect(await Bun.file(join(root, 'notes.md')).exists()).toBe(false);
+	expect(library.unsavedWork).toEqual([]);
 });
 
 test('a rename refused while the page decides to close leaves the settled typing at the file', async () => {
@@ -2821,7 +2818,6 @@ test('a transcript rename whose reply is lost while the page decides to close pu
 	// at a path the move may have left.
 	expect(said).toContain('did not confirm the rename');
 	expect(leaving).toBe(true);
-	expect(library.unresolvedMoves).toEqual([]);
 	expect(library.unsavedWork).toEqual([]);
 	expect(draft.released).toBe(true);
 	expect(library.transcriptAt(transcript.path)).toBeUndefined();
@@ -2832,7 +2828,8 @@ test('a transcript rename whose reply is lost while the page decides to close pu
 	expect(await Bun.file(join(root, transcript.path)).exists()).toBe(false);
 });
 
-// Edits never move onto a draft that already holds someone's edits.
+// A rename never migrates unsaved edits: a draft holding any refuses it, and
+// once it runs, neither name's draft takes input until it has an outcome.
 
 /** The folder's move, held until `release`, landing and then losing its reply. */
 function lostReplyMove(library: Library) {
@@ -2906,7 +2903,6 @@ test('a transcript rename that left the file at both paths puts its editor down,
 	);
 
 	expect(draft.released).toBe(true);
-	expect(library.unresolvedMoves).toEqual([]);
 	expect(library.holdsUnsavedWork).toBe(false);
 	const before = await readFile(join(root, transcript.path), 'utf8');
 	expect(await readFile(join(root, to), 'utf8')).toBe(before);
@@ -2919,63 +2915,112 @@ test('a transcript rename that left the file at both paths puts its editor down,
 	expect(await readFile(join(root, transcript.path), 'utf8')).toBe(before);
 });
 
-test('keeping held edits at a text file whose own draft has typing is refused, and both drafts are kept with nothing written', async () => {
+test('a text file rename whose reply is lost saved the typing first, takes none while it moves, and holds nothing after', async () => {
 	const { library, root } = await open();
 	await writeFile(join(root, 'notes.md'), 'original\n');
 	await library.refreshAll();
-	const source = await textDraft(library, 'notes.md');
 	library.autosave.paused = true;
+	const source = await textDraft(library, 'notes.md');
+	source.input(TYPED);
 	const move = lostReplyMove(library);
+
 	const renaming = library.rename('notes.md', 'renamed.md');
 	await move.reached;
-	source.input(TYPED);
-	move.release();
-	expect(await renaming).toContain('did not confirm the rename');
-
-	const destination = await textDraft(library, 'renamed.md');
-	destination.input('Typed at the destination.\n');
-
-	expect(await library.resolveMove('notes.md', 'keepAtDestination')).toContain(
-		'edits of its own',
-	);
-
-	expect(destination.buffer).toBe('Typed at the destination.\n');
+	expect(await readFile(join(root, 'notes.md'), 'utf8')).toBe(TYPED);
+	source.input('Typed while it moved.\n');
 	expect(source.buffer).toBe(TYPED);
-	expect(library.unresolvedMoves).toHaveLength(1);
-	await Bun.sleep(600);
-	expect(await readFile(join(root, 'renamed.md'), 'utf8')).toBe('original\n');
+	move.release();
+	const said = await renaming;
+
+	expect(said).toContain('did not confirm the rename');
+	expect(said).toContain('Open either name');
+	expect(library.selection).toBeUndefined();
+	expect(library.holdsUnsavedWork).toBe(false);
+	expect(await readFile(join(root, 'renamed.md'), 'utf8')).toBe(TYPED);
 	expect(await Bun.file(join(root, 'notes.md')).exists()).toBe(false);
-	// Discarding the held edits leaves the destination's typing as it is.
-	expect(await library.resolveMove('notes.md', 'discard')).toBeUndefined();
-	expect(destination.buffer).toBe('Typed at the destination.\n');
-	expect(library.unsavedWork).toEqual(['renamed.md has unsaved edits.']);
 });
 
-test('a text file’s held edits copied out while typing goes on keep the newer typing and the rename’s hold', async () => {
+for (const outcome of ['failed', 'unconfirmed'] as const)
+	test(`a text file whose last save ${outcome === 'failed' ? 'failed' : 'was not confirmed'} refuses the rename and keeps its exact typing`, async () => {
+		const { library, root } = await open();
+		await writeFile(join(root, 'notes.md'), 'original\n');
+		await library.refreshAll();
+		library.autosave.paused = true;
+		const editor = await textDraft(library, 'notes.md');
+		const { files } = library.folder;
+		const replace = files.replace;
+		Object.assign(files, {
+			async replace(...args: Parameters<typeof replace>) {
+				Object.assign(files, { replace });
+				const [file] = args;
+				if (outcome === 'unconfirmed')
+					return FileError.Unconfirmed({
+						path: file.path,
+						operation: 'replace',
+						cause: 'reply lost',
+					});
+				return FileError.Io({
+					path: file.path,
+					operation: 'replace',
+					cause: new Error('disk full'),
+				});
+			},
+		});
+		const move = files.move;
+		let moves = 0;
+		Object.assign(files, {
+			move(...args: Parameters<typeof move>) {
+				moves += 1;
+				return move(...args);
+			},
+		});
+		editor.input('typed \uD800 and kept\n');
+		expect(await editor.settle()).toBe(false);
+		expect(editor.saveState.kind).toBe(outcome);
+
+		expect(await library.rename('notes.md', 'renamed.md')).toBe(
+			'"notes.md" has edits that are not saved. Save or discard them before renaming it. Nothing was renamed.',
+		);
+
+		expect(editor.buffer).toBe('typed \uD800 and kept\n');
+		expect(editor.saveState.kind).toBe(outcome);
+		expect(library.selection?.path).toBe('notes.md');
+		expect(await readFile(join(root, 'notes.md'), 'utf8')).toBe('original\n');
+		expect(await Bun.file(join(root, 'renamed.md')).exists()).toBe(false);
+		// The move was never asked for, and the draft takes typing again.
+		expect(moves).toBe(0);
+		editor.input('typed again\n');
+		expect(editor.buffer).toBe('typed again\n');
+	});
+
+test('a transcript body no file can hold refuses the rename and stays in its editor; discarded, the transcript renames', async () => {
 	const { library, root } = await open();
-	await writeFile(join(root, 'notes.md'), 'original\n');
-	await library.refreshAll();
-	const source = await textDraft(library, 'notes.md');
-	library.autosave.paused = true;
-	bothPathsMove(library);
-	expect(await library.rename('notes.md', 'renamed.md')).toContain(
-		'both are in the folder now',
+	const { transcript, draft } = await openTranscript(library);
+	const before = await readFile(join(root, transcript.path), 'utf8');
+	const unsavable = 'Half a pair: \uD800\n';
+	expect(typeBody(draft, unsavable)).toBe(false);
+	expect(draft.status.kind).toBe('refused');
+
+	expect(await library.rename(transcript.path, 'renamed.md')).toContain(
+		'Save or discard them before renaming it',
 	);
-	source.input('Copied.\n');
-	const create = holdNext(library.folder.files, 'create');
 
-	const copying = library.copyHeldEdits('notes.md');
-	await create.reached;
-	// A text draft takes typing while its file moves, so it may change here.
-	source.input('Typed after the copy began.\n');
-	create.release();
-	const copy = expectOk(await copying);
-
-	expect(await readFile(join(root, copy), 'utf8')).toBe('Copied.\n');
-	expect(source.buffer).toBe('Typed after the copy began.\n');
-	expect(library.unresolvedMoves).toHaveLength(1);
+	expect(draft.released).toBe(false);
+	expect(draft.bodyText()).toBe(unsavable);
+	expect(draft.status.kind).toBe('refused');
+	expect(library.transcriptAt(transcript.path)).toBeDefined();
 	expect(library.holdsUnsavedWork).toBe(true);
-	expect(await readFile(join(root, 'notes.md'), 'utf8')).toBe('original\n');
+	expect(await readFile(join(root, transcript.path), 'utf8')).toBe(before);
+	expect(
+		await Bun.file(join(root, 'transcriptions', 'renamed.md')).exists(),
+	).toBe(false);
+
+	draft.dropRefused('body');
+	expect(await library.rename(transcript.path, 'renamed.md')).toBeUndefined();
+	expect(draft.released).toBe(true);
+	expect(
+		await readFile(join(root, 'transcriptions', 'renamed.md'), 'utf8'),
+	).toBe(before);
 });
 
 test('a rename onto a name whose draft still holds edits is refused before anything moves', async () => {
@@ -2998,10 +3043,38 @@ test('a rename onto a name whose draft still holds edits is refused before anyth
 	expect(await readFile(join(root, 'notes.md'), 'utf8')).toBe('original\n');
 	expect(await Bun.file(join(root, 'renamed.md')).exists()).toBe(false);
 	expect(stale.buffer).toBe('Typed into renamed.\n');
-	expect(library.unresolvedMoves).toEqual([]);
+	expect(library.unsavedWork).toEqual(['renamed.md has edits held in a conflict.']);
 });
 
-test('typing into the new name’s draft while the file moves keeps both: the moved edits are held at the old name until the person chooses', async () => {
+test('a clean draft at the new name is put down after a rename whose reply is lost, so opening that name reads what the folder holds', async () => {
+	const { library, root } = await open();
+	await writeFile(join(root, 'notes.md'), 'original\n');
+	await writeFile(join(root, 'renamed.md'), 'the old renamed\n');
+	await library.refreshAll();
+	library.autosave.paused = true;
+	const destination = await textDraft(library, 'renamed.md');
+	await rm(join(root, 'renamed.md'));
+	const source = await textDraft(library, 'notes.md');
+	source.input(TYPED);
+	const move = lostReplyMove(library);
+
+	const renaming = library.rename('notes.md', 'renamed.md');
+	await move.reached;
+	expect(destination.editable).toBe(false);
+	destination.input('Typed at the new name while it moved.\n');
+	expect(destination.buffer).toBe('the old renamed\n');
+	move.release();
+	expect(await renaming).toContain('did not confirm the rename');
+
+	expect(destination.editable).toBe(false);
+	expect(library.holdsUnsavedWork).toBe(false);
+	const reopened = await textDraft(library, 'renamed.md');
+	expect(reopened).not.toBe(destination);
+	expect(reopened.buffer).toBe(TYPED);
+	expect(reopened.editable).toBe(true);
+});
+
+test('a clean draft at the new name takes no typing while the file moves there, and the new name then opens on the moved file', async () => {
 	const { library, root } = await open();
 	await writeFile(join(root, 'notes.md'), 'original\n');
 	await writeFile(join(root, 'renamed.md'), 'the old renamed\n');
@@ -3011,99 +3084,28 @@ test('typing into the new name’s draft while the file moves keeps both: the mo
 	// Another program removes it; no refresh has noticed yet, so its draft holds nothing.
 	await rm(join(root, 'renamed.md'));
 	const source = await textDraft(library, 'notes.md');
+	source.input(TYPED);
 	const move = holdNext(library.folder.files, 'move');
 
 	const renaming = library.rename('notes.md', 'renamed.md');
 	await move.reached;
-	source.input(TYPED);
-	destination.input('Typed at the destination while it moved.\n');
+	source.input('Typed at the old name while it moved.\n');
+	destination.input('Typed at the new name while it moved.\n');
+	expect(source.buffer).toBe(TYPED);
+	expect(destination.buffer).toBe('the old renamed\n');
 	move.release();
-	const said = await renaming;
+	expect(await renaming).toBeUndefined();
 
-	expect(said).toContain('was renamed to "renamed.md"');
-	expect(said).toContain('edits of its own');
-	expect(source.buffer).toBe(TYPED);
-	expect(destination.buffer).toBe('Typed at the destination while it moved.\n');
-	expect(library.unresolvedMoves).toEqual([
-		expect.objectContaining({
-			from: 'notes.md',
-			to: 'renamed.md',
-			found: { from: 'missing', to: 'matches' },
-		}),
-	]);
-	await Bun.sleep(600);
-	await library.refreshAll();
-	expect(await readFile(join(root, 'renamed.md'), 'utf8')).toBe('original\n');
-	expect(await Bun.file(join(root, 'notes.md')).exists()).toBe(false);
-	expect(source.buffer).toBe(TYPED);
-	expect(await library.prepareToLeave()).toBe(false);
-
-	// The held edits can still be saved as a copy; the destination's typing stays.
-	const copy = expectOk(await library.copyHeldEdits('notes.md'));
-	expect(await readFile(join(root, copy), 'utf8')).toBe(TYPED);
-	expect(destination.buffer).toBe('Typed at the destination while it moved.\n');
-	expect(await readFile(join(root, 'renamed.md'), 'utf8')).toBe('original\n');
-});
-
-// Edits move only onto the file as it was: another program may write the
-// new name while its draft is being opened.
-
-test('a file another program rewrites at the new name while a rename opens it there keeps the moved edits held at the old name', async () => {
-	const { library, root } = await open();
-	await writeFile(join(root, 'notes.md'), 'original\n');
-	await library.refreshAll();
-	const source = await textDraft(library, 'notes.md');
-	library.autosave.paused = true;
-	const move = holdNext(library.folder.files, 'move');
-	// The new name's draft reads it after another program rewrote it.
-	const { files } = library.folder;
-	const read = files.read;
-	Object.assign(files, {
-		async read(...args: Parameters<typeof read>) {
-			if (args[0] === 'renamed.md') {
-				Object.assign(files, { read });
-				await writeFile(join(root, 'renamed.md'), 'Someone else\n');
-			}
-			return read(...args);
-		},
-	});
-
-	const renaming = library.rename('notes.md', 'renamed.md');
-	await move.reached;
-	source.input(TYPED);
-	move.release();
-	const said = await renaming;
-
-	expect(said).toContain('was renamed to "renamed.md"');
-	expect(said).toContain('no longer holds the file as it was');
-	expect(source.buffer).toBe(TYPED);
-	const destination = await textDraft(library, 'renamed.md');
-	expect(destination.buffer).toBe('Someone else\n');
-	expect(destination.dirty).toBe(false);
-	expect(library.unresolvedMoves).toEqual([
-		expect.objectContaining({
-			from: 'notes.md',
-			to: 'renamed.md',
-			found: { from: 'missing', to: 'different' },
-		}),
-	]);
-	await Bun.sleep(600);
-	await library.refreshAll();
-	expect(await readFile(join(root, 'renamed.md'), 'utf8')).toBe(
-		'Someone else\n',
-	);
-	expect(await Bun.file(join(root, 'notes.md')).exists()).toBe(false);
-	expect(await library.resolveMove('notes.md', 'keepAtDestination')).toContain(
-		'does not hold the file as it was',
-	);
-
-	// Discarding the held edits is the way out; the rewritten file stays as written.
-	expect(await library.resolveMove('notes.md', 'discard')).toBeUndefined();
-	expect(library.unresolvedMoves).toEqual([]);
-	expect(await readFile(join(root, 'renamed.md'), 'utf8')).toBe(
-		'Someone else\n',
-	);
 	expect(library.holdsUnsavedWork).toBe(false);
+	expect(await Bun.file(join(root, 'notes.md')).exists()).toBe(false);
+	const moved = await textDraft(library, 'renamed.md');
+	expect(moved).not.toBe(destination);
+	expect(moved.buffer).toBe(TYPED);
+	moved.input('Typed at the new name.\n');
+	expect(await moved.settle()).toBe(true);
+	expect(await readFile(join(root, 'renamed.md'), 'utf8')).toBe(
+		'Typed at the new name.\n',
+	);
 });
 
 test('a recording being deleted takes no typing, and nothing writes its row again', async () => {
@@ -3317,7 +3319,8 @@ test('a recording whose result is being renamed is not deleted, and the result�
 	expect(await renaming).toBeUndefined();
 
 	const to = 'transcriptions/renamed.md';
-	expect(editingOf(library.transcriptAt(to)).holds).toBe(false);
+	expect(draft.released).toBe(true);
+	expect(library.holdsUnsavedWork).toBe(false);
 	expect(await readFile(join(root, to), 'utf8')).toContain(
 		'Typed before it moved.',
 	);

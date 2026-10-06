@@ -190,6 +190,14 @@ export function createRowEditing<TFields>(
 		get released() {
 			return released;
 		},
+		/**
+		 * Whether input is taken now, by the same rule every setter applies; a
+		 * view shows its controls read-only while it is not. Each setter's own
+		 * view rules (fields or source, a valid row) still apply.
+		 */
+		get editable() {
+			return takes();
+		},
 		/** Whether a reload the person asked for is reading the file; input waits for it. */
 		get reloading() {
 			return reloads > 0;
@@ -327,17 +335,6 @@ export function createRowEditing<TFields>(
 			} finally {
 				reloads -= 1;
 			}
-		},
-		/**
-		 * Write text a draft of another file held, when that file moved here.
-		 * It was typed before, so admission does not gate it; only a row whose
-		 * saves are idle takes it.
-		 */
-		carry(text: string): boolean {
-			if (released || native.get().save.status !== 'idle') return false;
-			native.setText(text);
-			source = true;
-			return true;
 		},
 		/** Wait for the writes already admitted. Never saves anything again. */
 		waitForSaves: (): Promise<Result<undefined, RowSaveError>> =>

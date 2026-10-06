@@ -198,7 +198,6 @@ test('a row put down takes nothing, and a write it had admitted still settles', 
 	expect(editing.holds).toBe(false);
 	editing.setBody('Late.\n');
 	expect(editing.retry()).toContain('no longer open');
-	expect(editing.carry('Carried.\n')).toBe(false);
 	expectOk(await native.waitForSaves());
 	expect(native.get().save.status).toBe('idle');
 	expect(await file()).toContain('Admitted.\n');
@@ -268,16 +267,4 @@ test('a missing file keeps input on screen and later typing saves after the file
 	editing.setBody('Second.\n');
 	expectOk(await editing.waitForSaves());
 	expect(await file()).toContain('Second.\n');
-});
-
-test('carried text lands only in an editor whose saves are idle, shown as its source', async () => {
-	const { editing, file } = await open();
-	editing.setBody('Own.\n');
-	expect(editing.carry(`${SEED}Carried.\n`)).toBe(false);
-	expectOk(await editing.waitForSaves());
-
-	expect(editing.carry(`${SEED}Carried.\n`)).toBe(true);
-	expect(editing.view).toBe('source');
-	expectOk(await editing.waitForSaves());
-	expect(await file()).toBe(`${SEED}Carried.\n`);
 });

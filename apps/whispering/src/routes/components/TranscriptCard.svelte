@@ -77,6 +77,7 @@
 			class="min-h-32 resize-y font-sans"
 			get={() => editing?.bodyText() ?? ''}
 			set={(value) => editing?.setBody(value)}
+			readonly={!editing?.editable}
 			placeholder="This transcript has no text."
 			aria-label="Transcript of {formatTime(result.fields.createdAt) || result.path}"
 			data-testid="transcript-text"

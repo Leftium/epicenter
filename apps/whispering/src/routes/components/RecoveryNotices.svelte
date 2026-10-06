@@ -4,14 +4,7 @@
 	import { Spinner } from '@epicenter/ui/spinner';
 	import { rowPath } from '@epicenter/folder';
 	import { TRANSFORMATIONS } from '$lib/definition.js';
-	import { toast } from '@epicenter/ui/sonner';
-	import type {
-		Library,
-		MoveChoice,
-		PendingRecording,
-		TransformationRun,
-		UnresolvedMove,
-	} from '$lib/library.svelte.js';
+	import type { Library, PendingRecording, TransformationRun } from '$lib/library.svelte.js';
 	import AudioPlayer from './AudioPlayer.svelte';
 	import { copyText, recordingTitle } from './file-actions.js';
 
@@ -46,42 +39,9 @@
 		})),
 	);
 	const runs = $derived(library.transformationRuns);
-	const moves = $derived(library.unresolvedMoves);
 	const any = $derived(
-		library.pending.length > 0 ||
-			unsavedTranscripts.length > 0 ||
-			runs.length > 0 ||
-			heldText.length > 0 ||
-			moves.length > 0,
+		library.pending.length > 0 || unsavedTranscripts.length > 0 || runs.length > 0 || heldText.length > 0,
 	);
-
-	/** What a path holds now, against the file as it was before the rename. */
-	const pathStates = {
-		matches: 'holds the file as it was',
-		different: 'holds something else',
-		missing: 'has no file',
-		unreadable: 'could not be read',
-	} satisfies Record<UnresolvedMove['found']['from'], string>;
-
-	async function choose(move: UnresolvedMove, choice: MoveChoice) {
-		const problem = await library.resolveMove(move.from, choice);
-		if (problem) toast.error('Nothing was changed', { description: problem });
-	}
-
-	async function copyToFile(move: UnresolvedMove) {
-		const { data: copyPath, error: copyError } = await library.copyHeldEdits(move.from);
-		if (copyError !== null) toast.error('The edits were not saved', { description: copyError });
-		else toast.success(`Your edits were saved to ${copyPath}`);
-	}
-
-	function discardMove(move: UnresolvedMove) {
-		confirmationDialog.open({
-			title: 'Discard these edits?',
-			description: `The edits held in this window are dropped. Nothing at ${move.from} or ${move.to} is changed.`,
-			confirm: { text: 'Discard', variant: 'destructive' },
-			onConfirm: () => void choose(move, 'discard'),
-		});
-	}
 
 	function pendingHeadline(item: PendingRecording) {
 		const { state } = item;
@@ -173,41 +133,6 @@
 {#if any}
 	<section class="max-h-64 shrink-0 overflow-y-auto border-b bg-destructive/5 text-sm" aria-label="Needs your attention" data-testid="recovery">
 		<ul class="divide-y">
-			{#each moves as move (move.from)}
-				{@const text = library.heldText(move.from)}
-				<li class="flex flex-col gap-2 px-3 py-3 sm:px-4" data-testid="unresolved-move">
-					<p class="font-medium">{move.message}</p>
-					<ul class="text-xs text-muted-foreground">
-						<li><code class="font-mono">{move.from}</code> {pathStates[move.found.from]}.</li>
-						<li><code class="font-mono">{move.to}</code> {pathStates[move.found.to]}.</li>
-					</ul>
-					<p class="text-xs text-muted-foreground">
-						What a path holds now does not say what the rename did. Your edits are kept in this window and nothing is
-						saved until you choose where they go.
-					</p>
-					<div class="flex flex-wrap items-center gap-2">
-						{#if move.found.from === 'matches'}
-							<Button size="sm" onclick={() => void choose(move, 'keepAtSource')}>Keep my edits at {move.from}</Button>
-						{/if}
-						{#if move.found.to === 'matches'}
-							<Button size="sm" onclick={() => void choose(move, 'keepAtDestination')}>Keep my edits at {move.to}</Button>
-						{/if}
-						<Button size="sm" variant="outline" onclick={() => void copyToFile(move)}>Save my edits as a copy</Button>
-						{#if text !== undefined}
-							<Button size="sm" variant="outline" onclick={() => void copyText(text, 'your edits')}>Copy my edits</Button>
-						{/if}
-						{#if move.found.from === 'matches' || move.found.from === 'different'}
-							<Button size="sm" variant="ghost" onclick={() => void choose(move, 'openSource')}>Open {move.from} as it is</Button>
-						{/if}
-						{#if move.found.to === 'matches' || move.found.to === 'different'}
-							<Button size="sm" variant="ghost" onclick={() => void choose(move, 'openDestination')}>Open {move.to} as it is</Button>
-						{/if}
-						<Button size="sm" variant="ghost" onclick={() => void library.checkMove(move.from)}>Check again</Button>
-						<Button size="sm" variant="ghost-destructive" onclick={() => discardMove(move)}>Discard my edits</Button>
-					</div>
-				</li>
-			{/each}
-
 			{#each library.pending as item (item.capture.id)}
 				<li class="flex flex-col gap-2 px-3 py-3 sm:px-4" data-testid="pending-recording" data-pending-state={item.state.kind}>
 					<div class="flex items-center gap-2">

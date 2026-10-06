@@ -36,7 +36,7 @@ import type {
 	TableSnapshot,
 	TableWriteError,
 } from '@epicenter/folder';
-import { hashBytes, inspectRow, rowPath, rowStemOf } from '@epicenter/folder';
+import { inspectRow, rowPath, rowStemOf } from '@epicenter/folder';
 import {
 	ancestorsOf,
 	basename,
@@ -71,7 +71,6 @@ import {
 } from './definition.js';
 import {
 	type Autosave,
-	conflictCopyPath,
 	createTextFileEditor,
 	type SavedText,
 	type TextFileEditor,
@@ -380,38 +379,6 @@ function isThisResult(
 	return Object.entries(fields).every(([key, value]) => saved[key] === value);
 }
 
-/** What one path holds, against the file as it was before a move. */
-export type PathState = 'matches' | 'different' | 'missing' | 'unreadable';
-
-/**
- * A rename whose reply was lost, or that left the file at both paths, while
- * the text draft at `from` was open. The draft holds its edits until the
- * person chooses where they go. A row's editor holds no edits of its own
- * after settling, so a row is put down instead.
- */
-export type UnresolvedMove = {
-	readonly from: string;
-	readonly to: string;
-	/** The SHA-256 of the file as it was when the rename was asked for. */
-	readonly expected: string;
-	/** What the folder said, in the words the person is shown. */
-	readonly message: string;
-	/** What each path held when last read. It says nothing about what the move did. */
-	readonly found: { readonly from: PathState; readonly to: PathState };
-};
-
-/**
- * How the person ends an unresolved rename: keep the edits at a path that
- * holds the file as it was, open a path as it is without them, or discard
- * them.
- */
-export type MoveChoice =
-	| 'keepAtSource'
-	| 'keepAtDestination'
-	| 'openSource'
-	| 'openDestination'
-	| 'discard';
-
 /** A table whose rows the window edits, and the one slot kept for each row path. */
 type RowTable<TFields> = {
 	readonly table: FileTable<TFields>;
@@ -432,9 +399,6 @@ function rowRefusal(
 	return { kind: 'unopened', message: error.message };
 }
 
-/** The SHA-256 of text as a file holds it. */
-const textSha256 = (text: string) => hashBytes(new TextEncoder().encode(text));
-
 export function createLibrary(workspace: Workspace) {
 	const { folder } = workspace;
 	let closing = false;
@@ -448,19 +412,18 @@ export function createLibrary(workspace: Workspace) {
 	 */
 	let admitting = $state(true);
 	/**
-	 * Paths whose file is being moved or deleted. Their drafts write nothing
-	 * until that has an outcome, so no late save recreates the file or moves
-	 * it out from under the operation.
+	 * Paths whose file is being moved or deleted. Their drafts take no input
+	 * until that has an outcome, so the operation acts on what was saved
+	 * before it and no later save recreates the file or moves it. Reactive, so
+	 * the views show those drafts read-only.
 	 */
-	const fenced = new Set<string>();
-	/** Paths whose file is being deleted. Their drafts take no typing either. */
-	const retiring = new Set<string>();
+	const fenced = new SvelteSet<string>();
 	/**
-	 * Paths whose row is being settled and read for an operation that changes
-	 * the path. Their editors take no input, so nothing typed after the
-	 * operation began changes what it acts on; they still finish saving.
+	 * Paths whose draft is being settled and read for an operation that
+	 * changes the path. Their drafts take no input, so nothing typed after the
+	 * operation began changes what it acts on; saves already admitted finish.
 	 */
-	const settling = new Set<string>();
+	const settling = new SvelteSet<string>();
 	/**
 	 * Paths a move or deletion owns, from its admission until it has an
 	 * outcome. Only that operation sets or clears their fences, so two of
@@ -468,23 +431,13 @@ export function createLibrary(workspace: Workspace) {
 	 */
 	const claimed = new Set<string>();
 	/**
-	 * Renames of ordinary files that did not end as asked, by the path whose
-	 * text draft holds the edits. The draft takes typing and writes nothing,
-	 * and holds the close, its source, and its path, until the person chooses
-	 * where the edits go.
+	 * Whether a draft, a row's editor or a text draft alike, takes input now:
+	 * none while its file is settled for, moved, or deleted, so nothing typed
+	 * meanwhile is left to follow the file or to be lost with it. Each editor
+	 * reads it as its own `editable`, which its views show.
 	 */
-	const unresolvedMoves = new SvelteMap<string, UnresolvedMove>();
-	/** A text draft takes typing while its file moves, and carries it to where it went. */
-	const typingAt = (path: string) => () => admitting && !retiring.has(path);
-	/**
-	 * A row's editor saves what it takes at once, so it takes no input at all
-	 * while its file is moved or deleted: the operation acts on what was
-	 * settled before it.
-	 */
-	const rowInputAt = (path: string) => () =>
+	const inputAt = (path: string) => () =>
 		admitting && !fenced.has(path) && !settling.has(path);
-	const writesAt = (path: string) => () =>
-		!fenced.has(path) && !unresolvedMoves.has(path);
 	/** Each caller owns its result; this promise joins accepted file commands. */
 	let fileChanges: Promise<unknown> = Promise.resolve();
 	function submitFileChange<TArgs extends unknown[]>(
@@ -724,14 +677,16 @@ export function createLibrary(workspace: Workspace) {
 	 * Settle the draft kept for a file. For an ordinary file, say which saved
 	 * version it settled on; a row's editor exposes none, so a caller that
 	 * needs one reads the file after this. Undefined when no version is known.
-	 * A row whose save stopped, or a text draft whose input cannot be saved
-	 * without the person, refuses.
+	 * Success means the file holds everything the draft holds: a draft that
+	 * still holds anything once its saves settle refuses, so the file is never
+	 * acted on while a view shows other text. That is a row whose save stopped
+	 * or was not confirmed, a typed value it could not take, or input that
+	 * started another save meanwhile, and a text draft whose input cannot be
+	 * saved without the person.
 	 */
 	async function settleDraft(
 		path: string,
 	): Promise<Result<string | undefined, string>> {
-		const moved = unresolvedMoves.get(path);
-		if (moved !== undefined) return Err(unresolvedHold(moved));
 		const slot = slotAt(path);
 		if (slot?.kind === 'opening') {
 			await slot.done;
@@ -739,7 +694,9 @@ export function createLibrary(workspace: Workspace) {
 		}
 		if (slot?.kind === 'open') {
 			const { error: saveError } = await slot.editing.waitForSaves();
-			return saveError === null ? Ok(undefined) : Err(UNSETTLED);
+			return saveError === null && !slot.editing.holds
+				? Ok(undefined)
+				: Err(UNSETTLED);
 		}
 		const editor = textDraftAt(path);
 		if (editor === undefined) return Ok(undefined);
@@ -747,13 +704,8 @@ export function createLibrary(workspace: Workspace) {
 		return Ok(editor.baseline.sha256);
 	}
 
-	/** Why a draft whose rename did not end as asked is held, in the words the person is shown. */
-	const unresolvedHold = (moved: UnresolvedMove) =>
-		`The rename of "${basename(moved.from)}" to "${basename(moved.to)}" did not end as asked. Its edits are kept in this window and not saved until you choose where they go.`;
-
-	/** Whether the draft kept for a file holds typing, a save in question, or an unresolved rename. */
+	/** Whether the draft kept for a file holds typing, a save in question, or a value it could not take. */
 	function draftHolds(path: string): boolean {
-		if (unresolvedMoves.has(path)) return true;
 		const slot = slotAt(path);
 		if (slot?.kind === 'open') return slot.editing.holds;
 		const editor = textDraftAt(path);
@@ -808,7 +760,7 @@ export function createLibrary(workspace: Workspace) {
 					kind: 'open',
 					editing: createRowEditing(editor, {
 						path,
-						admits: rowInputAt(path),
+						admits: inputAt(path),
 					}),
 				};
 				rows.set(path, slot);
@@ -844,15 +796,14 @@ export function createLibrary(workspace: Workspace) {
 		return opened as ReturnType<typeof openRow<unknown>> | undefined;
 	}
 
-	/** A text draft of an ordinary file, under the same admission and write fences as every draft. */
+	/** A text draft of an ordinary file, under the same input fence as every draft. */
 	function textEditorOf(file: SavedText): TextFileEditor {
 		return createTextFileEditor(
 			folder.files,
 			file,
 			autosave,
 			() => void refresh(),
-			typingAt(file.path),
-			writesAt(file.path),
+			inputAt(file.path),
 		);
 	}
 
@@ -921,8 +872,6 @@ export function createLibrary(workspace: Workspace) {
 		}
 		for (const { path, editor, putDown } of drafts) {
 			if (stale()) return;
-			// A draft held by an unresolved rename stays as it is until the person chooses.
-			if (unresolvedMoves.has(path)) continue;
 			if (!present.has(path)) {
 				if (textHolds(editor)) editor.observeRemoved();
 				else {
@@ -1263,166 +1212,50 @@ export function createLibrary(workspace: Workspace) {
 	}
 
 	/**
-	 * Write a recovery copy of text under `conflicts/`, exclusively. Text a
-	 * file cannot hold exactly (a lone surrogate) is refused before anything
-	 * is written.
+	 * Delete the file at `path` with its draft fenced. The caller checked
+	 * that the draft holds nothing and, with nothing awaited since, fenced it
+	 * or calls this; from then until the outcome it takes no input, so it has
+	 * nothing to save. A refusal changed nothing and the draft goes on. A
+	 * deletion whose reply was lost may or may not have happened: the draft,
+	 * which holds nothing, is put down, and what the folder holds is shown
+	 * when the person opens the file again.
 	 */
-	async function writeRecoveryCopy(
-		path: string,
-		text: string,
-	): Promise<Result<string, string>> {
-		if (!text.isWellFormed())
-			return Err(
-				'Your edits contain a character a file cannot hold exactly (a lone surrogate), so no copy was written. They are kept here; fix that character, then copy them again.',
-			);
-		const copy = conflictCopyPath(path);
-		const { error: createError } = await folder.files.create(copy, text);
-		if (createError !== null) return Err(describeWriteError(createError));
-		return Ok(copy);
-	}
-
-	/**
-	 * Retire the draft at `path` for its file's deletion: from now until that
-	 * has an outcome it takes no typing and writes nothing. `unfence` or
-	 * `deleteRetired` ends it.
-	 */
-	function retire(path: string) {
-		fenced.add(path);
-		retiring.add(path);
-	}
-
-	/**
-	 * Delete the file at `path` with its draft retired. The caller checked
-	 * that the draft holds nothing and, with nothing awaited since, retired it
-	 * or calls this; from then until the outcome it takes no typing and writes
-	 * nothing, so no late save reaches the file. A refusal changed nothing
-	 * and the draft goes on. A deletion whose reply was lost may or may not
-	 * have happened: the draft, which holds nothing, is put down, and what the
-	 * folder holds is shown when the person opens the file again.
-	 */
-	async function deleteRetired(
+	async function deleteFenced(
 		path: string,
 		remove: () => Promise<Result<undefined, FileError>>,
 	): Promise<Result<undefined, string>> {
-		retire(path);
+		fenced.add(path);
 		let removed: Result<undefined, FileError>;
 		try {
 			removed = await remove();
 		} catch (cause) {
-			unfence(path);
+			fenced.delete(path);
 			throw cause;
 		}
 		const { error: removeError } = removed;
 		if (removeError === null || removeError.name === 'Unconfirmed') {
 			forget(path);
 			fenced.delete(path);
-			retiring.delete(path);
 			if (removeError === null) return Ok(undefined);
 			return Err(
 				`The folder did not confirm the deletion of "${basename(path)}", so it may or may not be gone. Nothing else was deleted. Open it again to see what the folder holds.`,
 			);
 		}
-		unfence(path);
+		fenced.delete(path);
 		return Err(describeWriteError(removeError));
 	}
 
-	/** Let the draft at `path` take input and write again, and save what it held back meanwhile. */
-	function unfence(path: string) {
-		fenced.delete(path);
-		retiring.delete(path);
-		textDraftAt(path)?.resume();
-	}
-
 	/**
-	 * Carry the draft of a moved file to its new path: open a draft there,
-	 * hand it the typing the old text draft holds unsaved, and only once the
-	 * new draft holds it, put the old one down. A row's editor saved all its
-	 * input before the move, so it has nothing to carry and is put down. The
-	 * typing was taken before, so it is carried even while new input is not
-	 * admitted, as when the page is deciding whether to close. Between reading
-	 * that typing and putting the old draft down nothing is awaited. Returns
-	 * why it could not be carried; the old draft is then kept with it, writing
-	 * nothing and holding the close.
-	 *
-	 * A draft already kept at `to` belongs to whoever typed into it. It is
-	 * read again first, and the typing is carried into it only if, at the
-	 * moment of carrying, it holds nothing: no input, no write running or
-	 * failed, no unresolved rename. Otherwise both drafts are kept as they are.
-	 */
-	async function handOff(
-		from: string,
-		to: string,
-		/** The SHA-256 of the file as it was before it moved. */
-		expected: string,
-	): Promise<string | undefined> {
-		const kept = slotAt(to) ?? openFiles.get(to);
-		const row = openRowAt(to);
-		if (row !== undefined) await row;
-		else if (openFiles.get(to)?.kind !== 'text') await load(to);
-		/** Whether a row editor kept at `to` could not read the file there again. */
-		let unread = false;
-		if (kept !== undefined && !draftHolds(to)) {
-			// It was opened before the file moved here: read what is there now.
-			const editing = rowEditingAt(to);
-			if (editing !== undefined)
-				unread = (await editing.reload()).error !== null;
-			else {
-				const editor = textDraftAt(to);
-				const { data: opened, error: readError } = await readTextFile(
-					folder.files,
-					to,
-				);
-				if (
-					editor !== undefined &&
-					readError === null &&
-					opened.kind === 'text'
-				)
-					editor.observe(opened.file);
-			}
-		}
-		// The draft at `to` must have read the file as it was before it moved:
-		// another program may have written `to` while it was opened or read.
-		// This holds for that read; a write after it is not ruled out.
-		const destination = rowEditingAt(to);
-		const destinationText = destination?.row.text;
-		const read =
-			destination === undefined
-				? textDraftAt(to)?.baseline.sha256
-				: unread || destinationText === undefined
-					? undefined
-					: await textSha256(destinationText);
-		// Nothing is awaited from here until the old draft is put down.
-		const typed = textDraftAt(from);
-		if (typed === undefined || !typed.dirty) {
-			forget(from);
-			return undefined;
-		}
-		const text = typed.buffer;
-		if (draftHolds(to) || unresolvedMoves.has(to))
-			return `"${basename(to)}" has edits of its own open, so your edits from "${basename(from)}" were not moved there. Both are kept, and nothing is saved until you choose.`;
-		if (
-			read !== expected ||
-			(destination !== undefined && destination.row.text !== destinationText)
-		)
-			return `"${basename(to)}" no longer holds the file as it was, so your edits from "${basename(from)}" were not moved there. Both are kept, and nothing is saved until you choose.`;
-		const notCarried = `"${basename(from)}" was renamed to "${basename(to)}", and your typing could not be moved with it, so it stays in the old draft and is not saved.`;
-		const carried =
-			destination !== undefined
-				? destination.carry(text)
-				: (textDraftAt(to)?.carry(text) ?? false);
-		if (!carried) return notCarried;
-		forget(from);
-		return undefined;
-	}
-
-	/**
-	 * Move a file to a new name in its folder. Its draft is settled first and
-	 * the file read after that, so the move is conditional on what was settled.
-	 * A row's editor takes no input from the start of settling until the move
-	 * has an outcome. An ordinary file's draft still takes typing while the file
-	 * moves and writes nothing: a save at the old path could recreate it, or
-	 * make the move refuse. The draft and that typing then follow the file to
-	 * where it is.
+	 * Move a file to a new name in its folder. Its draft, a row's editor or a
+	 * text draft, takes no input from the start until the move has an outcome,
+	 * and saves already admitted settle first. A draft that then still holds
+	 * anything (a save that failed, was not confirmed, or is in review, or a
+	 * typed value the file cannot hold) refuses the rename and keeps it as it
+	 * is. Otherwise every input is in the file, so the move takes the edits
+	 * with it and nothing is left to follow. The move is conditional on the
+	 * version settled and never replaces a file at the new name. A draft kept
+	 * at the new name that holds edits refuses it too; one that holds nothing
+	 * takes no input until the outcome either.
 	 */
 	async function renameFile(
 		from: string,
@@ -1432,7 +1265,8 @@ export function createLibrary(workspace: Workspace) {
 		try {
 			const { data: settledSha256, error: settleError } =
 				await settleDraft(from);
-			if (settleError !== null) return settleError;
+			if (settleError !== null)
+				return `"${basename(from)}" has edits that are not saved. Save or discard them before renaming it. Nothing was renamed.`;
 			let expected = settledSha256;
 			if (expected === undefined) {
 				const { data: file, error: readError } = await folder.files.read(from);
@@ -1440,245 +1274,67 @@ export function createLibrary(workspace: Workspace) {
 				expected = file.sha256;
 			}
 			// A draft at the new name that holds edits is someone's work: nothing
-			// moves onto it. Nothing is awaited from this check to the move.
-			if (draftHolds(to) || unresolvedMoves.has(to))
+			// moves onto it. Nothing is awaited from this check to the fences.
+			if (draftHolds(to))
 				return `"${basename(to)}" has edits open that are not saved. Save or discard them before renaming another file to that name. Nothing was renamed.`;
 			fenced.add(from);
-			return moveFenced(from, to, expected);
+			fenced.add(to);
+			try {
+				return await moveFenced(from, to, expected);
+			} finally {
+				fenced.delete(from);
+				fenced.delete(to);
+			}
 		} finally {
 			settling.delete(from);
 		}
 	}
 
-	/** The move itself, with the draft at `from` fenced. */
+	/**
+	 * The move itself, with the drafts at both paths fenced and holding
+	 * nothing unsaved. A refusal changed nothing, and the draft goes on at its
+	 * file. Any other outcome may have moved the file, so the draft at `from`
+	 * is put down, and so is one kept at `to`: it read that path before the
+	 * move. A rename whose reply was lost, or that left the file at both
+	 * paths, says so; opening either name shows what the folder holds.
+	 */
 	async function moveFenced(
 		from: string,
 		to: string,
 		expected: string,
 	): Promise<string | undefined> {
 		const wasSelected = selectedPath === from;
-		let moved: Awaited<ReturnType<typeof folder.files.move>>;
-		try {
-			moved = await folder.files.move({ path: from, sha256: expected }, to);
-		} catch (cause) {
-			unfence(from);
-			throw cause;
-		}
-		const { error: moveError } = moved;
-		/**
-		 * Follow the file to `to`, then show it there. When the edits cannot
-		 * follow, as when a draft at `to` took typing of its own meanwhile, the
-		 * move happened and the edits stay held at the old path, writing
-		 * nothing, until the person chooses where they go.
-		 */
-		const follow = async () => {
-			const problem = await handOff(from, to, expected);
-			if (problem === undefined) {
-				fenced.delete(from);
-				await refreshAll();
-				if (wasSelected) await open(to);
-				return undefined;
-			}
-			const message = `"${basename(from)}" was renamed to "${basename(to)}". ${problem}`;
-			unresolvedMoves.set(from, {
-				from,
-				to,
-				expected,
-				message,
-				found: await inspectMove(from, to, expected),
-			});
-			fenced.delete(from);
-			await refreshAll();
-			return message;
-		};
-		if (moveError === null) return follow();
-		// A refusal changed nothing: the old draft goes on at its file.
+		const { error: moveError } = await folder.files.move(
+			{ path: from, sha256: expected },
+			to,
+		);
 		if (
+			moveError !== null &&
 			moveError.name !== 'Unconfirmed' &&
 			moveError.name !== 'SourceNotRemoved'
 		) {
-			unfence(from);
 			await refreshAll();
 			return describeWriteError(moveError);
 		}
-		// No reply, or a move that left the file at both paths: the rename did
-		// not end as asked, and only the person says where the draft goes. Until
-		// then the draft keeps its typing and writes nothing, whatever either
-		// path is found to hold: a matching file says what is there now, not
-		// what this move did.
-		const message =
+		forget(from);
+		// It held nothing when fenced, and has taken nothing since.
+		if (!draftHolds(to)) forget(to);
+		await refreshAll();
+		if (moveError === null) {
+			if (wasSelected) await open(to);
+			return undefined;
+		}
+		const outcome =
 			moveError.name === 'Unconfirmed'
 				? `The folder did not confirm the rename of "${basename(from)}" to "${basename(to)}", so it may or may not have happened.`
 				: describeWriteError(moveError);
-		// With no text draft open there are no edits to hold: the message is
-		// all. A row's editor saved everything it took before the move, and is
-		// put down rather than kept on a path the move may have left; opening
-		// either path again shows what the folder holds.
-		if (textDraftAt(from) === undefined) {
-			forget(from);
-			fenced.delete(from);
-			await refreshAll();
-			return message;
-		}
-		unresolvedMoves.set(from, {
-			from,
-			to,
-			expected,
-			message,
-			found: await inspectMove(from, to, expected),
-		});
-		fenced.delete(from);
-		await refreshAll();
-		return message;
-	}
-
-	/** What one path holds, against the file as it was before a move. */
-	async function pathState(path: string, expected: string): Promise<PathState> {
-		const { data: file, error: readError } = await folder.files.read(path);
-		if (readError !== null)
-			return readError.name === 'NotFound' ? 'missing' : 'unreadable';
-		return file.sha256 === expected ? 'matches' : 'different';
-	}
-
-	async function inspectMove(from: string, to: string, expected: string) {
-		const [atFrom, atTo] = await Promise.all([
-			pathState(from, expected),
-			pathState(to, expected),
-		]);
-		return { from: atFrom, to: atTo };
-	}
-
-	/**
-	 * End an unresolved rename the way the person chose. Each choice reads
-	 * both paths again first and is refused when what it needs is no longer
-	 * there: keeping the edits at a path needs that path to hold the file as
-	 * it was before the move, so they are never saved over anything else.
-	 * Opening a path as it is, or discarding, drops the edits.
-	 *
-	 * It owns both paths while it runs: it releases the fence at `from`, and
-	 * it may carry the edits into the draft at `to`.
-	 */
-	async function resolveMove(
-		from: string,
-		choice: MoveChoice,
-	): Promise<string | undefined> {
-		if (!admitting) return LEAVING;
-		const held = unresolvedMoves.get(from);
-		if (held === undefined) return 'There is no rename to finish.';
-		return track(owning([from, held.to], () => finishMove(held, choice)));
-	}
-
-	async function finishMove(
-		held: UnresolvedMove,
-		choice: MoveChoice,
-	): Promise<string | undefined> {
-		const { from } = held;
-		const found = await inspectMove(held.from, held.to, held.expected);
-		if (unresolvedMoves.get(from) !== held)
-			return 'This rename was already finished.';
-		unresolvedMoves.set(from, { ...held, found });
-		const wasSelected = selectedPath === from;
-		const end = async (show: string | undefined) => {
-			unresolvedMoves.delete(from);
-			await refreshAll();
-			if (show !== undefined && wasSelected) await open(show);
-			return undefined;
-		};
-		switch (choice) {
-			case 'keepAtSource': {
-				if (found.from !== 'matches')
-					return `"${basename(from)}" does not hold the file as it was, so your edits were not kept there.`;
-				unresolvedMoves.delete(from);
-				// The draft reads its file again, then saves what it held back.
-				const { data: opened, error: readError } = await readTextFile(
-					folder.files,
-					from,
-				);
-				if (readError === null && opened.kind === 'text')
-					textDraftAt(from)?.observe(opened.file);
-				unfence(from);
-				await refreshAll();
-				return undefined;
-			}
-			case 'keepAtDestination': {
-				if (found.to !== 'matches')
-					return `"${basename(held.to)}" does not hold the file as it was, so your edits were not moved there.`;
-				const problem = await handOff(from, held.to, held.expected);
-				if (problem !== undefined) {
-					// Show what the paths hold after the refusal, not before it.
-					const after = unresolvedMoves.get(from);
-					const now = await inspectMove(held.from, held.to, held.expected);
-					// Unless the person ended it meanwhile.
-					if (after !== undefined && unresolvedMoves.get(from) === after)
-						unresolvedMoves.set(from, { ...after, found: now });
-					return problem;
-				}
-				return end(held.to);
-			}
-			case 'openSource':
-			case 'openDestination': {
-				const path = choice === 'openSource' ? from : held.to;
-				const state = choice === 'openSource' ? found.from : found.to;
-				if (state === 'missing' || state === 'unreadable')
-					return `"${basename(path)}" cannot be opened: ${state === 'missing' ? 'there is no file there' : 'it could not be read'}.`;
-				forget(from);
-				return end(path);
-			}
-			case 'discard':
-				forget(from);
-				return end(undefined);
-			default:
-				return choice satisfies never;
-		}
-	}
-
-	/**
-	 * Write the edits held after an unresolved rename to a new file under
-	 * `conflicts/`, then stop tracking the rename. Neither path is written.
-	 * The draft takes no input while the copy is written, and is put down
-	 * only if it still holds exactly what was copied; anything newer, or a
-	 * copy that failed, keeps the draft, its edits, and the rename's hold.
-	 * Returns the copy's path.
-	 */
-	function copyHeldEdits(from: string): Promise<Result<string, string>> {
-		if (closing || !admitting) return Promise.resolve(Err(LEAVING));
-		const held = unresolvedMoves.get(from);
-		if (held === undefined)
-			return Promise.resolve(Err('There is no rename to finish.'));
-		const release = claim([from]);
-		if (typeof release === 'string') return Promise.resolve(Err(release));
-		fenced.add(from);
-		const editor = textDraftAt(from);
-		const buffer = editor?.buffer;
-		return track(
-			(async (): Promise<Result<string, string>> => {
-				try {
-					if (buffer === undefined)
-						return Err('There are no edits of yours to copy.');
-					const written = await writeRecoveryCopy(from, buffer);
-					if (written.error !== null) return written;
-					const still =
-						textDraftAt(from) === editor && editor?.buffer === buffer;
-					if (unresolvedMoves.get(from) === held && still) {
-						forget(from);
-						unresolvedMoves.delete(from);
-					}
-					await refreshAll();
-					return written;
-				} finally {
-					unfence(from);
-					release();
-				}
-			})(),
-		);
+		return `${outcome} Your edits were saved before the rename. Open either name to see what the folder holds now.`;
 	}
 
 	/** Everything held only in this window, in the words the leave prompt shows. */
 	function unsavedWork(): string[] {
 		const held: string[] = [];
 		if (recorder.phase !== 'idle') held.push('A recording is in progress.');
-		for (const moved of unresolvedMoves.values())
-			held.push(unresolvedHold(moved));
 		// A confirmed publication is saved even when its current row cannot be read.
 		const unresolved = pending.filter(
 			(item) => item.state.kind !== 'published',
@@ -1741,7 +1397,7 @@ export function createLibrary(workspace: Workspace) {
 				);
 			}
 		for (const editor of textEditors())
-			if (textHolds(editor) && !unresolvedMoves.has(editor.path))
+			if (textHolds(editor))
 				held.push(
 					editor.saveState.kind === 'conflict'
 						? `${editor.path} has edits held in a conflict.`
@@ -2704,26 +2360,6 @@ export function createLibrary(workspace: Workspace) {
 		},
 		discardDraft,
 		reloadRow,
-		/**
-		 * Renames of ordinary files that did not end as asked: the folder lost
-		 * the reply, or left the file at both paths. Each holds its draft's edits
-		 * until the person chooses with `resolveMove` or `copyHeldEdits`.
-		 */
-		get unresolvedMoves(): UnresolvedMove[] {
-			return [...unresolvedMoves.values()];
-		},
-		/** Read both paths of an unresolved rename again, and show what they hold now. */
-		async checkMove(from: string) {
-			const held = unresolvedMoves.get(from);
-			if (held === undefined) return;
-			const found = await inspectMove(held.from, held.to, held.expected);
-			if (unresolvedMoves.get(from) === held)
-				unresolvedMoves.set(from, { ...held, found });
-		},
-		resolveMove,
-		copyHeldEdits,
-		/** The whole text of the edits an unresolved rename holds, for copying out. */
-		heldText: (from: string) => textDraftAt(from)?.buffer,
 		/** Edit a row's whole text instead of its fields, through the same editor. */
 		editSource(path: string): string | undefined {
 			if (!admitting) return LEAVING;
@@ -3196,8 +2832,8 @@ export function createLibrary(workspace: Workspace) {
 				// Nothing repairs a row's `audioPath` when the file it names moves.
 				if (entries.some((entry) => audioPathIn(entry.fields) === path))
 					return RECORDING_AUDIO_NAME;
-				// The destination too: edits carried there must not land in a
-				// draft that a deletion of that path is about to put down.
+				// The destination too: its draft is fenced for the move, so no
+				// deletion or other rename of that path may run beside it.
 				return owning([path, to], () => renameFile(path, to));
 			},
 		),
@@ -3453,7 +3089,7 @@ export function createLibrary(workspace: Workspace) {
 				if (id !== undefined) deleting.add(id);
 				try {
 					// Only this file, as the exact bytes confirmed; its results stay.
-					const { error: deleteError } = await deleteRetired(path, () =>
+					const { error: deleteError } = await deleteFenced(path, () =>
 						folder.files.remove({ path, sha256: deletion.sha256 }),
 					);
 					await refreshAll();
@@ -3466,7 +3102,7 @@ export function createLibrary(workspace: Workspace) {
 		if (deletion.kind !== 'recording')
 			return owning([path], async () => {
 				// A transformation's saved results are separate files and stay.
-				const { error: deleteError } = await deleteRetired(path, () =>
+				const { error: deleteError } = await deleteFenced(path, () =>
 					deletion.kind === 'transformation'
 						? profiles.delete(deletion.entry.stem, {
 								expectedSha256: deletion.entry.sha256,
@@ -3508,16 +3144,16 @@ export function createLibrary(workspace: Workspace) {
 		// a result cannot run beside this deletion or release its fence.
 		return owning([path, ...confirmed], async () => {
 			// From here until the rows are gone, nothing new starts for it, and
-			// no draft of a result takes typing or writes: there is no await
-			// between the checks above and this.
+			// no draft of a result takes input: there is no await between the
+			// checks above and this.
 			deleting.add(id);
-			/** Results retired and not yet asked to be deleted. */
+			/** Results fenced and not yet asked to be deleted. */
 			const waiting = new Set(confirmed);
-			waiting.forEach(retire);
+			for (const result of waiting) fenced.add(result);
 			try {
 				// The table removes the row file and nothing else. The audio the row
 				// names is an ordinary file; it stays, and Files can delete it.
-				const { error: deleteError } = await deleteRetired(path, () =>
+				const { error: deleteError } = await deleteFenced(path, () =>
 					table.delete(deletion.entry.stem, {
 						expectedSha256: deletion.entry.sha256,
 					}),
@@ -3536,7 +3172,7 @@ export function createLibrary(workspace: Workspace) {
 				const leftovers: string[] = [];
 				for (const result of deletion.results) {
 					waiting.delete(result.path);
-					const { error: deleteError } = await deleteRetired(result.path, () =>
+					const { error: deleteError } = await deleteFenced(result.path, () =>
 						results.delete(result.stem, {
 							expectedSha256: result.sha256,
 						}),
@@ -3546,7 +3182,7 @@ export function createLibrary(workspace: Workspace) {
 				}
 				for (const output of deletion.outputs) {
 					waiting.delete(output.path);
-					const { error: deleteError } = await deleteRetired(output.path, () =>
+					const { error: deleteError } = await deleteFenced(output.path, () =>
 						outputs.delete(output.stem, {
 							expectedSha256: output.sha256,
 						}),
@@ -3561,7 +3197,7 @@ export function createLibrary(workspace: Workspace) {
 			} finally {
 				// The recording was refused, or a deletion threw: what was not
 				// reached is unchanged, and its draft goes on.
-				waiting.forEach(unfence);
+				for (const result of waiting) fenced.delete(result);
 				deleting.delete(id);
 			}
 		});

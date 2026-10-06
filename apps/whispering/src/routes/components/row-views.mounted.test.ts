@@ -18,6 +18,9 @@
  * - after a failed save the typing stays on screen and editable; later typing
  *   saves again, and Discard loads the file into the same editor and view
  * - another program's change is shown only after Reload from file
+ * - a transcript or an ordinary file being renamed shows read-only, input
+ *   delivered meanwhile is replaced on screen by what the draft holds, and a
+ *   refused rename makes the same control editable again
  * - a transformation's title and source are one editor, and its Source
  *   preference outlives the view
  *
@@ -37,7 +40,7 @@ import { click, type } from '../svelte-dom.test-support.js';
 const { openTestWorkspace } = await import(
 	'../../lib/workspace.test-support.js'
 );
-const { flushSync, mount, unmount } = await import('svelte');
+const { flushSync, mount, tick, unmount } = await import('svelte');
 const { createLibrary } = await import('../../lib/library.svelte.js');
 const { pageState } = await import('../page-state.test-support.svelte.js');
 const Host = (await import('./test-fixtures/SelectionHost.svelte')).default;
@@ -63,7 +66,24 @@ async function open(
 	for (const [path, text] of Object.entries(files)) {
 		await Bun.write(join(stubs.root, path), text);
 	}
-	const library = createLibrary(stubs.workspace);
+	/** Run before the folder's next move, if a test sets it. */
+	const hooks: { beforeMove?: () => Promise<void> } = {};
+	const { folder } = stubs.workspace;
+	const library = createLibrary({
+		...stubs.workspace,
+		folder: {
+			...folder,
+			files: {
+				...folder.files,
+				async move(...args: Parameters<typeof folder.files.move>) {
+					const before = hooks.beforeMove;
+					hooks.beforeMove = undefined;
+					await before?.();
+					return folder.files.move(...args);
+				},
+			},
+		},
+	});
 	await library.start();
 	const page = pageState({ shown: true, tab });
 	const target = document.createElement('main');
@@ -80,6 +100,16 @@ async function open(
 		page,
 		target,
 		root: stubs.root,
+		/** Hold the folder's next move until `release`; `reached` once it is asked for. */
+		holdMove() {
+			const reached = Promise.withResolvers<void>();
+			const held = Promise.withResolvers<void>();
+			hooks.beforeMove = () => {
+				reached.resolve();
+				return held.promise;
+			};
+			return { reached: reached.promise, release: () => held.resolve() };
+		},
 		unmountHost() {
 			mounted = false;
 			unmount(host);
@@ -392,6 +422,76 @@ test('controls from an earlier mode stay inert after that mode returns: fields, 
 	expect(editor.row).toMatchObject({
 		body: 'Typed into the fields shown now.\n',
 	});
+});
+
+test('a transcript being renamed is read-only, typing delivered meanwhile is not left on screen, and a refused rename makes it editable again', async () => {
+	const { library, target, root, holdMove } = await open({
+		[A]: transcript('Alpha.\n'),
+		[B]: transcript('Beta.\n'),
+	});
+	await show(library, A);
+	const field = bodyField(target, 'a.md');
+	const editor = editorAt(library, A);
+	expect(field?.readOnly).toBe(false);
+	const move = holdMove();
+
+	// b.md exists, so the folder refuses the move once it is released.
+	const renaming = library.rename(A, 'b.md');
+	await move.reached;
+	flushSync();
+	expect(field?.readOnly).toBe(true);
+	type(field, 'Typed while it moved.\n');
+	await tick();
+	expect(field?.value).toBe('Alpha.\n');
+	expect(editor.row).toMatchObject({ body: 'Alpha.\n' });
+
+	move.release();
+	expect(await renaming).toContain('already exists');
+	flushSync();
+	expect(bodyField(target, 'a.md')).toBe(field);
+	expect(field?.readOnly).toBe(false);
+	type(field, 'Typed after the refusal.\n');
+	expect(editor.row).toMatchObject({ body: 'Typed after the refusal.\n' });
+	expectOk(await editor.waitForSaves());
+	expect(await readFile(join(root, A), 'utf8')).toContain(
+		'---\nTyped after the refusal.\n',
+	);
+});
+
+test('an ordinary text file being renamed is read-only, typing delivered meanwhile is not left on screen, and a refused rename makes it editable again', async () => {
+	const { library, target, root, holdMove } = await open({
+		'notes.md': 'Saved.\n',
+		'taken.md': 'Someone else.\n',
+	});
+	await show(library, 'notes.md');
+	const selection = library.selection;
+	if (selection?.kind !== 'file' || selection.file.kind !== 'text')
+		throw new Error('expected notes.md open as text');
+	const { editor } = selection.file;
+	const field = bodyField(target, 'notes.md');
+	expect(field?.readOnly).toBe(false);
+	const move = holdMove();
+
+	const renaming = library.rename('notes.md', 'taken.md');
+	await move.reached;
+	flushSync();
+	expect(field?.readOnly).toBe(true);
+	type(field, 'Typed while it moved.\n');
+	await tick();
+	expect(field?.value).toBe('Saved.\n');
+	expect(editor.buffer).toBe('Saved.\n');
+
+	move.release();
+	expect(await renaming).toContain('already exists');
+	flushSync();
+	expect(field?.readOnly).toBe(false);
+	type(field, 'Typed after the refusal.\n');
+	expect(editor.buffer).toBe('Typed after the refusal.\n');
+	expect(await editor.settle()).toBe(true);
+	expect(await readFile(join(root, 'notes.md'), 'utf8')).toBe(
+		'Typed after the refusal.\n',
+	);
+	expect(await readFile(join(root, 'taken.md'), 'utf8')).toBe('Someone else.\n');
 });
 
 const RECORDING = 'recordings/take.md';

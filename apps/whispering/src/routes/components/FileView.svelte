@@ -2,7 +2,6 @@
 	import { Button } from '@epicenter/ui/button';
 	import * as Empty from '@epicenter/ui/empty';
 	import { Loading } from '@epicenter/ui/loading';
-	import { Textarea } from '@epicenter/ui/textarea';
 	import ArrowLeftIcon from '@lucide/svelte/icons/arrow-left';
 	import AudioLinesIcon from '@lucide/svelte/icons/audio-lines';
 	import CopyIcon from '@lucide/svelte/icons/copy';
@@ -116,7 +115,7 @@
 					The transcript’s text, the body of its file. Its fields are kept as they are.
 					<LiveButton size="xs" variant="outline" class="ml-1" onclick={() => showSource(true)}>Edit the whole file</LiveButton>
 				</p>
-				<LiveTextarea class="min-h-40 flex-1 resize-none font-sans" get={() => editing?.bodyText() ?? ''} set={(value) => editing?.setBody(value)} aria-label="Contents of {name}" />
+				<LiveTextarea class="min-h-40 flex-1 resize-none font-sans" get={() => editing?.bodyText() ?? ''} set={(value) => editing?.setBody(value)} readonly={!editing.editable} aria-label="Contents of {name}" />
 			{:else if editing.view === 'source'}
 				<p class="text-xs text-muted-foreground" data-testid="needs-repair">
 					{editing.row.status === 'invalid' ? 'The whole file, as its text, until it reads as a transcript again.' : 'The whole file, as its text.'}
@@ -127,6 +126,7 @@
 					class="min-h-40 flex-1 resize-none font-mono text-xs"
 					get={() => editing?.sourceValue() ?? ''}
 					set={(value) => editing?.setText(value)}
+					readonly={!editing.editable}
 					aria-label="Contents of {name}"
 					spellcheck={false}
 				/>
@@ -136,12 +136,15 @@
 		{@const editor = text.editor}
 		<SaveStatus {editor} autosavePaused={library.autosave.paused} onDiscardRemoved={() => void library.discardDraft(editor.path)} />
 		<div class="flex min-h-0 flex-1 flex-col gap-2 px-3 py-3 sm:px-4">
-			<Textarea
+			<LiveTextarea
 				class="min-h-40 flex-1 resize-none font-mono text-xs"
-				value={editor.buffer}
+				get={() => editor.buffer ?? ''}
+				set={(value) => {
+					editor.input(withFileNewlines(value, editor.buffer));
+				}}
+				readonly={!editor.editable}
 				aria-label="Contents of {name}"
 				spellcheck={false}
-				oninput={(event) => editor.input(withFileNewlines(event.currentTarget.value, editor.buffer))}
 			/>
 		</div>
 	{:else if file.kind === 'audio'}

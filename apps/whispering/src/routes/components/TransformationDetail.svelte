@@ -273,6 +273,7 @@
 				class="flex-1 text-base font-medium"
 				get={() => editing?.fieldText('title') ?? ''}
 				set={(value) => editing?.setField('title', value)}
+				readonly={!editing?.editable}
 				placeholder="Title"
 				aria-label="Transformation title"
 				data-testid="transformation-title"
@@ -362,6 +363,7 @@
 									size="xs"
 									variant="outline"
 									class="self-start"
+									disabled={!editing?.editable}
 									onclick={() => editing?.setField('endpoint', null)}
 									data-testid="remove-endpoint-constraint"
 								>
@@ -380,6 +382,7 @@
 							class="min-h-36 resize-y font-sans"
 							get={() => editing?.bodyText() ?? ''}
 							set={(value) => editing?.setBody(value)}
+							readonly={!editing?.editable}
 							placeholder="Say what to do with the text, such as: Fix punctuation and remove filler words. Answer with the text only."
 							data-testid="transformation-prompt"
 						/>
@@ -415,6 +418,7 @@
 										// An empty model uses the text connection's model.
 										editing?.setField('model', value.trim() === '' ? null : value);
 									}}
+									readonly={!editing?.editable}
 									placeholder={connection?.model ? `The text connection’s model: ${connection.model}` : 'The text connection’s model'}
 									autocomplete="off"
 									spellcheck={false}
@@ -638,6 +642,7 @@
 					class="h-full min-h-40 flex-1 resize-none font-mono text-xs"
 					get={() => editing?.sourceValue() ?? ''}
 					set={(value) => editing?.setText(value)}
+					readonly={!editing?.editable}
 					aria-label="Markdown source"
 					spellcheck={false}
 					data-testid="transformation-source"

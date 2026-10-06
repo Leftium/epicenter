@@ -531,7 +531,6 @@ test('a move that landed with its reply lost takes no typing meanwhile, puts the
 	expect(owner.text(ONE)).toBeUndefined();
 	expect(owner.text(TWO)).toBe(TRANSCRIPT);
 	expect(editor.released).toBe(true);
-	expect(library.unresolvedMoves).toEqual([]);
 	expect(library.holdsUnsavedWork).toBe(false);
 	expect(kinds()).toEqual(['move']);
 

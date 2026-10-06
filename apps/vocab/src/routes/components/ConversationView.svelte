@@ -5,10 +5,8 @@
 	import { Button } from '@epicenter/ui/button';
 	import { CopyButton } from '@epicenter/ui/copy-button';
 	import { Markdown } from '@epicenter/ui/markdown';
-	import { Textarea } from '@epicenter/ui/textarea';
+	import * as InputGroup from '@epicenter/ui/input-group';
 	import RotateCcwIcon from '@lucide/svelte/icons/rotate-ccw';
-	import SendIcon from '@lucide/svelte/icons/send';
-	import SquareIcon from '@lucide/svelte/icons/square';
 	import { toast } from '@epicenter/ui/sonner';
 	import { onDestroy, onMount } from 'svelte';
 	import type { AgentMessage } from '@epicenter/agent';
@@ -82,13 +80,13 @@
 {#snippet message(msg: AgentMessage, streaming: boolean)}
 	{#if msg.role === 'user' || streaming}
 		<!-- Render Markdown only after the answer settles. -->
-		<div class="whitespace-pre-wrap">{agentMessageText(msg)}</div>
+		<div class="vocab-reply whitespace-pre-wrap">{agentMessageText(msg)}</div>
 	{:else}
 		<!-- A tutor answer is a phrase source only once the folder holds its file:
 		     an unsaved one stays readable and copyable without the marker. -->
 		{@const saved = !unsavedIds.has(msg.id)}
 		<div data-phrase-source={saved ? msg.id : undefined}>
-			<Markdown content={agentMessageText(msg)} />
+			<Markdown class="vocab-reply" content={agentMessageText(msg)} />
 		</div>
 		{#if saved}
 			<Button class="mt-1" variant="ghost" size="xs" data-capture-skip data-save-phrase={msg.id}>Save a phrase</Button>
@@ -97,24 +95,24 @@
 {/snippet}
 
 <div class="flex min-h-0 flex-1 flex-col">
-	<div class="min-h-0 flex-1 overflow-y-auto" bind:this={list}>
+	<div class="min-h-0 flex-1 overflow-hidden" bind:this={list}>
 		{#if chat.messages.length === 0 && !chat.streaming && !chat.isThinking}
 			<div class="flex h-full items-center justify-center px-4 text-center text-muted-foreground">
 				<p>{chat.isReading ? 'Reading this chat…' : 'The tutor is ready to open this conversation.'}</p>
 			</div>
 		{:else}
-			<Chat.List>
+			<Chat.List class="mx-auto max-w-prose">
 				{#each chat.messages as msg (msg.id)}
-					<Chat.Bubble variant={msg.role === 'user' ? 'sent' : 'received'}>
-						<Chat.BubbleMessage>{@render message(msg, false)}</Chat.BubbleMessage>
+					<Chat.Bubble variant={msg.role === 'user' ? 'sent' : 'received'} style={msg.role === 'user' ? undefined : 'max-width: 100%'}>
+						<Chat.BubbleMessage class="min-w-0">{@render message(msg, false)}</Chat.BubbleMessage>
 					</Chat.Bubble>
 				{/each}
 				{#if chat.streaming}
-					<Chat.Bubble variant="received">
-						<Chat.BubbleMessage>{@render message(chat.streaming, true)}</Chat.BubbleMessage>
+					<Chat.Bubble variant="received" style="max-width: 100%">
+						<Chat.BubbleMessage class="min-w-0">{@render message(chat.streaming, true)}</Chat.BubbleMessage>
 					</Chat.Bubble>
 				{:else if chat.isThinking}
-					<Chat.Bubble variant="received"><Chat.BubbleMessage typing /></Chat.Bubble>
+					<Chat.Bubble variant="received" style="max-width: 100%"><Chat.BubbleMessage typing /></Chat.Bubble>
 				{/if}
 					{#if lastMessage?.role === 'user' && !chat.isGenerating && chat.unsaved.length === 0}
 						<div class="flex justify-start px-2 py-1">
@@ -194,28 +192,36 @@
 	{#if !chat.canServe}
 		<p class="px-3 pb-1 text-xs text-muted-foreground">Choose a model to chat. Connect your own endpoint in the picker{account ? '' : ", or sign in for Epicenter's hosted models"}.</p>
 	{/if}
-	<form class="flex items-end gap-1.5 border-t bg-background px-2 py-1.5" aria-label="Chat message" aria-busy={chat.isSaving} onsubmit={(event) => { event.preventDefault(); void chat.sendMessage(); }}>
-		{#if visible && catalog.ai.account}<DictationButton {catalog} disabled={chat.isGenerating} onTranscript={(text) => {
-			const draft = chat.inputValue.trim();
-			chat.inputValue = draft ? `${draft} ${text}` : text;
-		}} />{/if}
-		<Textarea
-			class="min-h-0 max-h-32 flex-1 resize-none overflow-y-auto"
-			rows={1}
-			placeholder="Reply to your tutor..."
-			aria-label="Message input"
-			bind:value={chat.inputValue}
-			onkeydown={(event: KeyboardEvent) => {
-				if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) {
-					event.preventDefault();
-					void chat.sendMessage();
-				}
-			}}
-		/>
-		{#if chat.isGenerating}
-			<Button variant="outline" size="icon-lg" type="button" onclick={() => chat.stop()} aria-label="Stop generating"><SquareIcon /></Button>
-		{:else}
-			<Button type="submit" size="icon-lg" disabled={!chat.canSend} aria-label="Send message"><SendIcon /></Button>
-		{/if}
+	<form class="border-t bg-background px-2 py-2" aria-label="Chat message" aria-busy={chat.isSaving} onsubmit={(event) => { event.preventDefault(); void chat.sendMessage(); }}>
+		<InputGroup.Root>
+			<InputGroup.Textarea
+				class="max-h-40 overflow-y-auto"
+				rows={2}
+				placeholder="Reply to your tutor..."
+				aria-label="Message input"
+				aria-describedby="composer-hint"
+				bind:value={chat.inputValue}
+				onkeydown={(event: KeyboardEvent) => {
+					if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) {
+						event.preventDefault();
+						void chat.sendMessage();
+					}
+				}}
+			/>
+			<InputGroup.Addon align="block-end">
+				{#if visible && catalog.ai.account}<DictationButton {catalog} disabled={chat.isGenerating} onTranscript={(text) => {
+					const draft = chat.inputValue.trim();
+					chat.inputValue = draft ? `${draft} ${text}` : text;
+				}} />{/if}
+				<InputGroup.Text id="composer-hint" class="min-w-0 flex-1 text-xs">
+					{chat.isGenerating ? 'The tutor is replying.' : 'Enter sends. Shift+Enter adds a line.'}
+				</InputGroup.Text>
+				{#if chat.isGenerating}
+					<InputGroup.Button variant="outline" size="sm" type="button" onclick={() => chat.stop()} aria-label="Stop generating">Stop</InputGroup.Button>
+				{:else}
+					<InputGroup.Button type="submit" variant="default" size="sm" disabled={!chat.canSend} aria-label="Send message">Send</InputGroup.Button>
+				{/if}
+			</InputGroup.Addon>
+		</InputGroup.Root>
 	</form>
 </div>

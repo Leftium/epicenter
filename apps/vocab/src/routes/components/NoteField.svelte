@@ -25,7 +25,7 @@
 </script>
 
 <Textarea
-	class="min-h-20"
+	class="min-h-20 max-h-48 overflow-y-auto"
 	aria-label={label}
 	placeholder={word.row === undefined && word.opening ? 'Opening…' : 'Your note'}
 	disabled={word.row === undefined}

@@ -3,6 +3,7 @@
 	import { Checkbox } from '@epicenter/ui/checkbox';
 	import { confirmationDialog } from '@epicenter/ui/confirmation-dialog';
 	import { Label } from '@epicenter/ui/label';
+	import { cn } from '@epicenter/ui/utils';
 	import { toast } from '@epicenter/ui/sonner';
 	import { onDestroy, untrack } from 'svelte';
 	import { type Entry, STAGE_LABELS, STAGES } from '$lib/data.js';
@@ -84,10 +85,10 @@
 	}
 </script>
 
-<article class="rounded-lg border p-4">
-	<div class="flex items-center justify-between gap-2">
-		<Label class="min-h-11 text-base leading-normal select-text"><Checkbox aria-label="Choose {entry.text} for chat" checked={chosen} disabled={!canChoose} onCheckedChange={onToggle} />{entry.text}</Label>
-		<Button size="sm" variant="ghost" disabled={word.fenced} onclick={confirmDelete}>Delete</Button>
+<article class={cn("rounded-lg border p-4", chosen && "border-primary bg-accent/30")}>
+	<div class="flex items-start justify-between gap-2">
+		<Label class="min-h-11 min-w-0 flex-1 items-start text-base leading-relaxed select-text"><Checkbox class="mt-1 shrink-0" aria-label="Choose {entry.text} for chat" checked={chosen} disabled={!canChoose} onCheckedChange={onToggle} /><span class="min-w-0 flex-1 wrap-anywhere">{entry.text}</span></Label>
+		<Button size="sm" variant="ghost-destructive" class="shrink-0" disabled={word.fenced} onclick={confirmDelete}>Delete</Button>
 	</div>
 	{#if view === 'source'}
 		<!-- The file's exact text, through the same editor: each change is saved as typed. -->
@@ -127,7 +128,7 @@
 				{#if word.row !== undefined}
 					<Button size="sm" variant="outline" disabled={word.fenced} onclick={() => act(() => word.reload())}>Check again</Button>
 				{/if}
-				<Button size="sm" variant="ghost" disabled={word.fenced} onclick={() => { if (mounted) void entries.letGo(entry.id); }}>Let it go</Button>
+				<Button size="sm" variant="ghost-destructive" class="shrink-0" disabled={word.fenced} onclick={() => { if (mounted) void entries.letGo(entry.id); }}>Let it go</Button>
 			</div>
 		</div>
 	{:else if word.deletion !== undefined}
@@ -136,7 +137,7 @@
 			<p>Deleting this word could not be confirmed. ({word.deletion})</p>
 			<div class="flex flex-wrap gap-1">
 				<Button size="sm" variant="outline" disabled={word.fenced} onclick={() => act(() => word.reload())}>Check again</Button>
-				<Button size="sm" variant="ghost" disabled={word.fenced} onclick={() => { if (mounted) void entries.letGo(entry.id); }}>Let it go</Button>
+				<Button size="sm" variant="ghost-destructive" class="shrink-0" disabled={word.fenced} onclick={() => { if (mounted) void entries.letGo(entry.id); }}>Let it go</Button>
 			</div>
 		</div>
 	{:else if failure}
@@ -145,13 +146,11 @@
 			<p>{describeSaveError(failure)} {word.save?.status === 'saving' ? 'Saving your latest edit.' : ''} Your text stays here. Your next edit saves again, or choose Try again without changing it.</p>
 			<div class="flex flex-wrap gap-1">
 				<Button size="sm" variant="outline" disabled={word.fenced || word.save?.status === 'saving'} onclick={() => { if (mounted) word.retry(); }}>Try again</Button>
-				<Button size="sm" variant="ghost" disabled={word.fenced} onclick={() => act(() => word.reload())}>Discard mine and reload the file</Button>
+				<Button size="sm" variant="ghost-destructive" class="shrink-0" disabled={word.fenced} onclick={() => act(() => word.reload())}>Discard mine and reload the file</Button>
 			</div>
 		</div>
 	{:else if word.row !== undefined}
 		<!-- The editor read the file once; another tab's change shows only when the learner asks. -->
-		<div class="mt-2">
-			<Button size="sm" variant="ghost" disabled={word.fenced || word.refusedNote !== undefined} onclick={() => act(() => word.reload())}>Reload file</Button>
-		</div>
+		<Button class="mt-2" size="sm" variant="ghost" disabled={word.fenced || word.refusedNote !== undefined} onclick={() => act(() => word.reload())}>Reload file</Button>
 	{/if}
 </article>

@@ -28,7 +28,7 @@
 	let focusIds = $state<string[]>([]);
 	const selectedFocus = $derived(focusIds.map((id) => entries.entries.find((entry) => entry.id === id)).filter((entry): entry is Entry => !!entry));
 	const shown = $derived(entries.entries.filter((entry) =>
-		(stage === 'all' || entry.stage === stage) && entry.text.toLowerCase().includes(search.toLowerCase()),
+		(stage === 'all' || entry.stage === stage) && `${entry.text} ${entry.note}`.toLowerCase().includes(search.trim().toLowerCase()),
 	));
 	function openReview(raw: string) {
 		review = reviewImport(raw, new Set(entries.entries.map((entry) => entry.text)));
@@ -80,9 +80,9 @@
 			<p class="text-sm text-muted-foreground">Save expressions, write your own notes, and choose up to three for a tutor-led chat. Everything is saved in this browser; no sign-in is needed.</p>
 		</div>
 		<div class="flex flex-wrap items-end gap-2">
-			<form class="flex flex-1 gap-2" onsubmit={(event) => { event.preventDefault(); void addSingle(); }}>
+			<form class="flex min-w-0 basis-full gap-2 sm:flex-1 sm:basis-auto" onsubmit={(event) => { event.preventDefault(); void addSingle(); }}>
 				<Input aria-label="New expression" placeholder="Add an expression" bind:value={single} />
-				<Button type="submit" disabled={adding}>Add</Button>
+				<Button type="submit" disabled={adding || !single.trim()}>Add</Button>
 			</form>
 			<Button variant="outline" aria-expanded={pasteOpen} aria-controls="paste-expressions-panel" onclick={() => pasteOpen = !pasteOpen}>Add multiple<ChevronDownIcon class="transition-transform group-aria-expanded/button:rotate-180" /></Button>
 			<Button variant="outline" onclick={() => openReview(STARTER_LIST)}>Browse starter list</Button>
@@ -98,15 +98,15 @@
 				<h3 class="font-semibold">Review expressions</h3>
 				<p class="text-sm text-muted-foreground">{review.eligible.length} available; {review.repeated} repeated; {review.alreadySaved} already saved.</p>
 				{#each review.eligible as text (text)}
-					<Label class="min-h-11 leading-normal font-normal select-text"><Checkbox checked={selected.includes(text)} onCheckedChange={(checked) => selected = checked ? [...selected, text] : selected.filter((item) => item !== text)} />{text}</Label>
+					<Label class="min-h-11 min-w-0 leading-normal font-normal select-text"><Checkbox checked={selected.includes(text)} onCheckedChange={(checked) => selected = checked ? [...selected, text] : selected.filter((item) => item !== text)} /><span class="min-w-0 flex-1 wrap-anywhere">{text}</span></Label>
 				{/each}
 				<div class="flex gap-2"><Button disabled={!selected.length || adding} onclick={confirmImport}>{adding ? 'Saving…' : 'Add selected'}</Button><Button variant="ghost" onclick={() => review = null}>Cancel</Button></div>
 			</section>
 		{/if}
 		<div class="flex flex-wrap items-center gap-2">
-			<Input aria-label="Search words" placeholder="Search words" class="max-w-xs" bind:value={search} />
+			<Input aria-label="Search words" placeholder="Search expressions or notes" class="max-w-xs" bind:value={search} />
 			{#each ['all', ...STAGES] as const as option}
-				<Button size="sm" variant={stage === option ? 'default' : 'outline'} onclick={() => stage = option}>{option === 'all' ? 'All' : STAGE_LABELS[option]}</Button>
+				<Button size="sm" variant={stage === option ? 'default' : 'outline'} aria-pressed={stage === option} onclick={() => stage = option}>{option === 'all' ? 'All' : STAGE_LABELS[option]}</Button>
 			{/each}
 		</div>
 		{#if entries.entries.length === 0}
@@ -122,6 +122,15 @@
 		{/if}
 	</div>
 	{#if selectedFocus.length}
-		<div class="flex justify-center border-t p-2"><Button disabled={starting} onclick={start}>{starting ? 'Saving the chat…' : `Start chat with ${selectedFocus.length} ${selectedFocus.length === 1 ? 'word' : 'words'}`}</Button></div>
+		<section aria-label="Selected practice focus" class="border-t bg-background py-3">
+			<div class="mx-auto flex w-full max-w-5xl flex-wrap items-center gap-2 px-4 md:px-8">
+				<p class="min-w-0 flex-1 basis-full text-sm sm:basis-auto">
+					<span class="font-medium">{selectedFocus.length} of 3 selected</span>
+					<span class="block max-h-20 overflow-y-auto wrap-anywhere text-muted-foreground">{selectedFocus.map((entry) => entry.text).join(' · ')}</span>
+				</p>
+				<Button class="ml-auto" variant="ghost" disabled={starting} onclick={() => focusIds = []}>Clear</Button>
+				<Button disabled={starting} onclick={start}>{starting ? 'Saving the chat…' : 'Start chat'}</Button>
+			</div>
+		</section>
 	{/if}
 </div>

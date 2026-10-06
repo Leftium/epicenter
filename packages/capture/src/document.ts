@@ -663,11 +663,10 @@ const STALE = refuse(
  */
 function itemFor(
 	document: CaptureDocument,
-	layout: Layout,
 	seen: Thought,
 ): ItemSpan | undefined {
 	if (document.thoughts[seen.index] !== seen) return undefined;
-	return layout.items[seen.index];
+	return document.layout?.items[seen.index];
 }
 
 /** Replace one thought's text. Only that item's span is rewritten. */
@@ -678,7 +677,7 @@ export function editThought(
 ): Edit {
 	const state = ready(document);
 	if ('code' in state) return { ok: false, refusal: state };
-	const item = itemFor(document, state.layout, seen);
+	const item = itemFor(document, seen);
 	if (item === undefined) return STALE;
 	const thought = normalizeThought(text);
 	if (thought === '')
@@ -706,7 +705,7 @@ export function deleteThought(document: CaptureDocument, seen: Thought): Edit {
 	if ('code' in state) return { ok: false, refusal: state };
 	const { layout } = state;
 	const { source } = document;
-	const item = itemFor(document, layout, seen);
+	const item = itemFor(document, seen);
 	if (item === undefined) return STALE;
 	const following = layout.items[seen.index + 1];
 	const preceding = layout.items[seen.index - 1];
@@ -743,13 +742,12 @@ export function swapThoughts(
 ): Edit {
 	const state = ready(document);
 	if ('code' in state) return { ok: false, refusal: state };
-	const { layout } = state;
 	const { source } = document;
 	if (Math.abs(seen.index - neighbour.index) !== 1) return STALE;
 	const [first, second] =
 		seen.index < neighbour.index ? [seen, neighbour] : [neighbour, seen];
-	const upper = itemFor(document, layout, first);
-	const lower = itemFor(document, layout, second);
+	const upper = itemFor(document, first);
+	const lower = itemFor(document, second);
 	if (upper === undefined || lower === undefined) return STALE;
 	const order = document.thoughts.map((thought) => thought.text);
 	order[first.index] = second.text;

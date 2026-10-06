@@ -9,8 +9,7 @@
 	import { type Entry, STAGE_LABELS, STAGES } from '$lib/data.js';
 	import { type EntriesState, entryErrorMessage } from '$lib/entries.svelte.js';
 	import { describeRowError, describeSaveError } from '$lib/word.svelte.js';
-	import NoteField from './NoteField.svelte';
-	import RepairField from './RepairField.svelte';
+	import { Textarea } from '@epicenter/ui/textarea';
 
 	let { entry, entries, chosen, canChoose, onToggle }: {
 		entry: Entry;
@@ -96,13 +95,34 @@
 			{#if word.row?.status === 'invalid'}
 				<p role="alert" class="text-destructive">This word’s file is not a valid word, so its note and stage cannot be shown. Edit its text here; each change is saved. ({describeRowError(word.row.error)})</p>
 			{/if}
-			<RepairField {word} label="File text for {entry.text}" oninput={() => { sourceOf = entry.id; }} />
+			<Textarea
+				class="min-h-24 font-mono text-xs"
+				aria-label="File text for {entry.text}"
+				readonly={word.fenced}
+				bind:value={
+					() => word.repairText(),
+					(text) => {
+						word.inputRepair(text);
+						sourceOf = entry.id;
+					}
+				}
+			/>
 			{#if word.row?.status === 'valid'}
 				<Button size="sm" variant="ghost" onclick={() => { sourceOf = undefined; }}>Show note and stage</Button>
 			{/if}
 		</div>
 	{:else}
-		<NoteField {word} label="Your note for {entry.text}" />
+		<Textarea
+			class="min-h-20 max-h-48 overflow-y-auto"
+			aria-label="Your note for {entry.text}"
+			placeholder={word.row === undefined && word.opening ? 'Opening…' : 'Your note'}
+			disabled={word.row === undefined}
+			readonly={word.fenced}
+			bind:value={
+				() => word.note(),
+				(text) => word.inputNote(text)
+			}
+		/>
 		{#if word.refusedNote !== undefined}
 			<!-- The note as typed stays in the field above; nothing was sent. -->
 			<div role="alert" class="mt-2 space-y-2 text-xs text-destructive">

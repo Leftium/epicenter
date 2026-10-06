@@ -7,6 +7,7 @@
 	import { Input } from '@epicenter/ui/input';
 	import { Link } from '@epicenter/ui/link';
 	import * as SectionHeader from '@epicenter/ui/section-header';
+	import * as Select from '@epicenter/ui/select';
 	import { toast } from '@epicenter/ui/sonner';
 	import { Spinner } from '@epicenter/ui/spinner';
 	import * as Table from '@epicenter/ui/table';
@@ -20,6 +21,7 @@
 		captureDeletions,
 		describeDeletions,
 		nextSort,
+		type RecordingSort,
 		type RecordingSortKey,
 		type RecordingStatus,
 		removeCaptured,
@@ -55,12 +57,34 @@
 	const allSelected = $derived(rows.length > 0 && selection.rows.length === rows.length);
 	const busy = $derived(view.recordingBulk !== undefined);
 
-	const columns: { key: RecordingSortKey; label: string; class?: string }[] = [
-		{ key: 'title', label: 'Recording' },
-		{ key: 'recordedAt', label: 'Recorded', class: 'hidden @2xl:table-cell' },
-		{ key: 'durationMs', label: 'Length', class: 'hidden @xl:table-cell' },
-		{ key: 'status', label: 'Status' },
+	/**
+	 * The columns beside the title, shown only when the list is wide. Narrower,
+	 * as on a phone or in a split pane, the title and excerpt take the row's
+	 * whole width and these read as one line under them.
+	 */
+	const wideColumn = 'hidden @3xl:table-cell';
+	const columns: { key: RecordingSortKey; label: string; class: string }[] = [
+		{ key: 'title', label: 'Recording', class: 'w-auto' },
+		{ key: 'recordedAt', label: 'Recorded', class: `w-44 ${wideColumn}` },
+		{ key: 'durationMs', label: 'Length', class: `w-20 ${wideColumn}` },
+		{ key: 'status', label: 'Status', class: `w-40 ${wideColumn}` },
 	];
+
+	/** Status sorts in the order its labels are listed. */
+	const statusLabels = Object.values(STATUS_LABELS);
+	/** Every order the columns can be sorted in, in words: the narrow list's sort, without its column headers. */
+	const orders: { sort: RecordingSort; label: string }[] = [
+		{ sort: { key: 'recordedAt', direction: 'desc' }, label: 'Newest first' },
+		{ sort: { key: 'recordedAt', direction: 'asc' }, label: 'Oldest first' },
+		{ sort: { key: 'title', direction: 'asc' }, label: 'Title A to Z' },
+		{ sort: { key: 'title', direction: 'desc' }, label: 'Title Z to A' },
+		{ sort: { key: 'durationMs', direction: 'desc' }, label: 'Longest first' },
+		{ sort: { key: 'durationMs', direction: 'asc' }, label: 'Shortest first' },
+		{ sort: { key: 'status', direction: 'asc' }, label: `${statusLabels[0]} first` },
+		{ sort: { key: 'status', direction: 'desc' }, label: `${statusLabels[statusLabels.length - 1]} first` },
+	];
+	const orderValue = ({ key, direction }: RecordingSort) => `${key} ${direction}`;
+	const order = $derived(orders.find(({ sort }) => orderValue(sort) === orderValue(view.recordingSort)));
 
 	const statusTone: Record<RecordingStatus, string> = {
 		repair: 'text-destructive',
@@ -167,7 +191,24 @@
 					{several(library.entries.length, 'recording', 'recordings')} in the folder{#if hidden > 0}, {hidden} hidden by the search{/if}
 				</SectionHeader.Description>
 			</SectionHeader.Root>
-			<div class="relative w-full @xl:w-72">
+			<Select.Root
+				type="single"
+				bind:value={
+					() => orderValue(view.recordingSort),
+					(value) => (view.recordingSort = orders.find(({ sort }) => orderValue(sort) === value)?.sort ?? view.recordingSort)
+				}
+			>
+				<Select.Trigger size="sm" class="@3xl:hidden" aria-label="Sort recordings" data-testid="recording-sort">
+					{order?.label}
+				</Select.Trigger>
+				<Select.Content align="end" class="whitespace-nowrap">
+					{#each orders as { sort, label }, i (orderValue(sort))}
+						{#if i > 0 && orders[i - 1]?.sort.key !== sort.key}<Select.Separator />{/if}
+						<Select.Item value={orderValue(sort)} {label} />
+					{/each}
+				</Select.Content>
+			</Select.Root>
+			<div class="relative w-full @3xl:w-72">
 				<SearchIcon class="pointer-events-none absolute start-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
 				<Input
 					type="search"
@@ -251,7 +292,7 @@
 						{#each columns as column (column.key)}
 							{@const sorted = view.recordingSort.key === column.key ? view.recordingSort.direction : undefined}
 							<Table.Head
-								class={cn(column.key === 'title' ? 'w-auto' : column.key === 'recordedAt' ? 'w-44' : column.key === 'durationMs' ? 'w-20' : 'w-40', column.class)}
+								class={column.class}
 								aria-sort={sorted === 'asc' ? 'ascending' : sorted === 'desc' ? 'descending' : 'none'}
 							>
 								<Button
@@ -272,6 +313,8 @@
 					{#each rows as row (row.path)}
 						{@const open = view.showingDetail && library.selectedPath === row.path}
 						{@const excerpt = transcriptExcerpt(row, view.recordingQuery)}
+						{@const recorded = formatTime(row.entry.fields.recordedAt, 'short')}
+						{@const duration = length(row.entry.fields.durationMs)}
 						<!--
 							The title is the row's button, so the keyboard reaches and opens a row the usual way.
 							A click anywhere else on the row opens it too, except in the tick's own cell.
@@ -307,14 +350,24 @@
 										</button>
 										{#if row.entry.fields.capture === 'fixture'}<Badge variant="outline" class="shrink-0">Fixture</Badge>{/if}
 									</span>
-									<span class="truncate text-xs text-muted-foreground" data-testid="row-excerpt">
-										{excerpt ?? 'No transcript yet'}
+									{#if excerpt !== undefined}
+										<span class="line-clamp-2 text-xs break-words text-muted-foreground @3xl:line-clamp-1" data-testid="row-excerpt">
+											{excerpt}
+										</span>
+									{/if}
+									<span class="flex min-w-0 flex-wrap items-center gap-x-1.5 text-xs text-muted-foreground @3xl:hidden" data-testid="row-meta">
+										<span class={statusTone[row.status]}>
+											{#if row.status === 'transcribing'}<Spinner class="mr-1 inline size-3" />{/if}
+											{STATUS_LABELS[row.status]}
+										</span>
+										{#if recorded}<span aria-hidden="true">·</span><span>{recorded}</span>{/if}
+										{#if duration}<span aria-hidden="true">·</span><span class="tabular-nums">{duration}</span>{/if}
 									</span>
 								</div>
 							</Table.Cell>
-							<Table.Cell variant="muted" class={columns[1]?.class}>{formatTime(row.entry.fields.recordedAt, 'short')}</Table.Cell>
-							<Table.Cell variant="muted" class={cn('tabular-nums', columns[2]?.class)}>{length(row.entry.fields.durationMs)}</Table.Cell>
-							<Table.Cell class={cn('truncate', statusTone[row.status])} data-testid="row-status">
+							<Table.Cell variant="muted" class={wideColumn}>{recorded}</Table.Cell>
+							<Table.Cell variant="muted" class={cn('tabular-nums', wideColumn)}>{duration}</Table.Cell>
+							<Table.Cell class={cn('truncate', statusTone[row.status], wideColumn)} data-testid="row-status">
 								{#if row.status === 'transcribing'}<Spinner class="mr-1 inline size-3.5" />{/if}
 								{STATUS_LABELS[row.status]}
 							</Table.Cell>

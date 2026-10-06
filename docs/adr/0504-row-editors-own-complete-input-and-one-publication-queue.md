@@ -7,7 +7,7 @@
 
 Capture's body composition is described in [ADR-0506](0506-capture-composes-values-through-a-source-preserving-body-codec.md). Both views use the same complete row editor and publication queue.
 
-Editor view and control ownership is described in [ADR-0507](0507-editor-views-compose-current-input-and-own-only-interaction-state.md).
+The default validity branch, optional view selection, and control ownership are described in [ADR-0507](0507-editor-views-compose-current-input-and-own-only-interaction-state.md).
 
 ## Context
 

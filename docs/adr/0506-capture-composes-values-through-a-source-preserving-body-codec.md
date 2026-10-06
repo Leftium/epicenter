@@ -58,7 +58,7 @@ thoughts. For a body without a Thoughts section, appending one preserves the
 existing text bytes and consumes its trailing separator lines. Decode reports
 that text without those separators, matching the existing append behavior.
 
-[ADR-0507](0507-editor-views-compose-current-input-and-own-only-interaction-state.md) records the shared view-selection, control-lifetime, and complete-replacement patterns. Capture retains one view selection above its disposable panels.
+[ADR-0507](0507-editor-views-compose-current-input-and-own-only-interaction-state.md) records the default validity branch, optional view selection, control lifetimes, and complete replacements. Capture offers an explicit choice between its interpreted body and whole-file Source, so it retains one selection above its disposable panels.
 
 ## Consequences
 

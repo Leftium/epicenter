@@ -900,61 +900,60 @@ Svelte 5.9 or later is an optional peer; no other entry loads it.
   import { withFileNewlines } from '@epicenter/folder/file-browser';
   import { fromRowEditor } from '@epicenter/folder/svelte';
   import { Input } from '@epicenter/ui/input';
-  import * as Tabs from '@epicenter/ui/tabs';
   import { Textarea } from '@epicenter/ui/textarea';
 
   let { rowEditor } = $props(); // retained above this view
   const editor = $derived(fromRowEditor(rowEditor));
-  let tab = $state('fields');
   const lf = (text: string) => text.replace(/\r\n?/g, '\n');
-
-  // Open repair automatically; repair itself never switches back.
-  $effect(() => {
-    if (editor.row.status === 'invalid') tab = 'source';
-  });
 </script>
 
 {#if editor.save.status === 'failed'}
   <SaveFailure error={editor.save.error} />
   <button onclick={editor.retry}>Save this text again</button>
 {/if}
-<Tabs.Root bind:value={tab}>
-  <Tabs.List>
-    <Tabs.Trigger value="fields" disabled={editor.row.status !== 'valid'}>Fields</Tabs.Trigger>
-    <Tabs.Trigger value="source">Source</Tabs.Trigger>
-  </Tabs.List>
-  <Tabs.Content value="fields">
-    {#if editor.row.status === 'valid'}
-      {@const row = editor.row}
-      <Input aria-label="Title" bind:value={
-        () => row.fields.title,
-        (title) => {
-          if (tab !== 'fields' || editor.row.status !== 'valid') return;
-          const { error } = editor.set({
-            ...editor.row,
-            fields: { ...editor.row.fields, title },
-          });
-          if (error !== null) showRefusal(error);
-        }
-      } />
-    {/if}
-  </Tabs.Content>
-  <Tabs.Content value="source">
-    <Textarea aria-label="Markdown source" bind:value={
-      () => lf(editor.row.text),
-      (text) => editor.setText(withFileNewlines(text, editor.row.text))
-    } />
-  </Tabs.Content>
-</Tabs.Root>
+{#if editor.row.status === 'valid'}
+  {@const row = editor.row}
+  <Input aria-label="Title" bind:value={
+    () => row.fields.title,
+    (title) => {
+      if (editor.row.status !== 'valid') return;
+      const { error } = editor.set({
+        ...editor.row,
+        fields: { ...editor.row.fields, title },
+      });
+      if (error !== null) showRefusal(error);
+    }
+  } />
+  <Textarea aria-label="Body" bind:value={
+    () => lf(row.body),
+    (body) => {
+      if (editor.row.status !== 'valid') return;
+      const { error } = editor.set({
+        ...editor.row,
+        body: withFileNewlines(body, editor.row.body),
+      });
+      if (error !== null) showRefusal(error);
+    }
+  } />
+{:else}
+  <RowProblem error={editor.row.error} />
+  <Textarea aria-label="Markdown source" bind:value={
+    () => lf(editor.row.text),
+    (text) => editor.setText(withFileNewlines(text, editor.row.text))
+  } />
+{/if}
 ```
 
-The render-time `row` makes the title getter total. Writes use the current
-`editor.row`, so another field's edit is preserved. The application supplies
+The reactive render-time `row` makes the structured getters total. Writes use the
+current `editor.row`, so another field's edit is preserved. The application supplies
 `showRefusal` and retains any input the editor refuses.
 
 The shared view doctrine is [ADR-0507](../../docs/adr/0507-editor-views-compose-current-input-and-own-only-interaction-state.md).
-Source, field forms, and body codecs share this owner. Keep one view selection;
-derive validity and save presentation from the editor. Shared `Tabs.Content`
+Source, field forms, and body codecs share this owner. The default renders
+structured controls for valid rows and source for invalid rows, with no selection
+state. Repair that validates returns to structured rendering. Add Tabs only for
+a real choice among views of valid input; that choice has one selection owner.
+Derive validity and save presentation from the editor. Shared `Tabs.Content`
 unmounts inactive children and shared `Input`/`Textarea` retire destroyed value
 bindings. Keep refused input and unfinished sessions above those views, and check
 current-row eligibility in structured setters. A view component earns its place

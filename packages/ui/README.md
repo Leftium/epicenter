@@ -104,6 +104,11 @@ element and dispatches input on it. The last displayed value is retained only fo
 that retired control. Other event handlers, file bindings, and controls own their
 separate eligibility rules.
 
+Default editor composition needs no tabs: render structured controls for valid
+rows and a text editor for invalid rows. Bind to current editor values and submit
+complete replacements. Add tabs when the app offers a choice among views of valid
+input.
+
 `Tabs.Content` unmounts inactive children by default, including custom `child`
 snippets. Do not repeat the selected-tab condition inside every panel. Keep editor
 input, refused input, and unfinished forms above disposable panels. Use

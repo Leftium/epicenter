@@ -68,7 +68,10 @@ when one bindable value removes that custom API. Trace transformations and
 lifecycle guards before collapsing them; commands and draft ownership may earn
 their boundaries.
 
-For file editor consumers, also hunt copied row/valid/save state, duplicate tab and
+For file editor consumers, first ask whether one validity branch can render
+structured controls for valid rows and source for invalid rows, with no selection
+state. Keep Tabs for an actual choice among views of valid input. Also hunt copied
+row/valid/save state, duplicate tab and
 raw-mode selections, selected-tab conditions inside shared `Tabs.Content`, and
 thin Source or Capture components. Follow
 [the Svelte editor ownership patterns](../svelte/references/component-ui-patterns.md#file-editor-views).

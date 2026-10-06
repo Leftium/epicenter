@@ -151,22 +151,44 @@ status into runes and synchronize them with effects.
 
 There are three ordinary bindings: raw `row.text` to `setText`, valid fields to
 `set({ ...editor.row, fields: { ...editor.row.fields, key: input } })`, and a
-codec-decoded body to `set({ ...editor.row, body: encodedBody })`. Read the current
-row at the event. Keep refused input and unfinished forms in the application
+body text to `set({ ...editor.row, body: input })`. Add a codec when controls
+present a different representation, such as text and thoughts; encode that
+complete value into the same body replacement. Read the current row at the event. Keep refused input and unfinished forms in the application
 session above disposable views, and preserve the file's newline convention.
 
-One selection owns each editor view group: bind Tabs to an existing retained
-owner's selection, or use one local `$state`. Do not introduce another raw flag,
-preferred view, shown view, or validity flag for that same selection. Eligibility
-is derived. A narrow effect can reset actual selection to Source when structured
-input becomes unavailable; it is an interaction action, not row synchronization.
-Repair stays in Source until the person chooses the structured view.
+Default to one validity branch, with no tab or raw-mode state:
+
+```svelte
+{#if editor.row.status === 'valid'}
+  <!-- Bind fields to row.fields and the body editor to row.body.
+       Setters read editor.row now and submit complete replacements. -->
+{:else}
+  <Textarea bind:value={
+    () => editor.row.text,
+    (text) => editor.setText(text)
+  } />
+{/if}
+```
+
+Render structured controls for valid rows and a text editor for invalid rows.
+Bind directly to current editor values. Source repair that validates returns to
+structured rendering. Keep diagnostics visible and preserve file newlines in
+actual textarea bindings. A body codec with a narrower interpretation supplies
+its own source repair path when it cannot edit a valid row's body.
+
+Add Tabs only when a person needs to choose among views of valid input. One
+selection owns that view group: bind to an existing retained owner, or use one
+local `$state`. Do not add raw, preferred-view, shown-view, or validity flags for
+the same selection. In this explicit-selection pattern, invalid input opens
+Source, and repair keeps Source selected until the person chooses otherwise. A
+narrow reset effect is an interaction action, not row synchronization.
 
 Shared `Tabs.Content` unmounts inactive children, so do not repeat `tab === value`
-inside each panel. Keep the structured panel's validity condition: disabling a
-trigger neither resets an active selection nor proves that later input has valid
-fields. Use `forceMount` only for an identified retained lifetime, such as chat
-input or rich-editor undo history. Other event gates may remain during outros or
+inside each panel. Keep structured validity conditions: disabling a trigger
+neither resets selection nor proves a later event has valid fields. Use
+`forceMount` for a named lifetime, such as chat input or rich-editor undo history.
+Workflow panels can remain available to inspect unfinished results even while
+structured editing is unavailable. Event gates may remain during outros or
 before Svelte removes a view.
 
 Shared `Textarea` and `Input` retire their value-binding reads and writes on
@@ -182,9 +204,10 @@ For a hunt, inventory `fromRowEditor`, `ReactiveRowEditor`, and row-table `.edit
 callers, then follow their view components. Search those consumers for `$state`,
 `$effect`, raw/view/tab flags, local input wrappers, paired `get`/`set` or
 `read`/`write` props, repeated selected-tab conditions, and `editor.set` calls.
-Classify each retained value as selection, refused input, an editing session, an
-operation, or copied editor data. Collapse the last category, duplicate selection,
-and forwarding components. Verify invalid repair, refusal retention, tab changes,
+First ask whether there is a real view choice; a validity branch may remove
+selection altogether. Classify each retained value as selection, refused input,
+an editing session, an operation, or copied editor data. Collapse copied editor
+data, duplicate selection, and forwarding components. Verify invalid repair, refusal retention, tab changes,
 current-owner replacement, and delivered input after destruction. Existing
 session tests earn their boundaries when they protect those behaviors.
 

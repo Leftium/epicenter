@@ -212,17 +212,24 @@ export function createDraft(
 	/** Let go for good: nothing is taken or submitted again. */
 	let retired = $state(false);
 
-	const documentOf = memo((text: string) => {
-		const { parseError } = store.inspect(text);
-		return parseError === undefined
-			? parseCapture(text)
-			: unparsedCapture(text, parseError.message);
+	const interpretationOf = memo((text: string) => {
+		const reading = store.inspect(text);
+		let document: CaptureDocument | undefined;
+		return {
+			reading,
+			get document(): CaptureDocument {
+				document ??=
+					reading.parseError === undefined
+						? parseCapture(text)
+						: unparsedCapture(text, reading.parseError.message);
+				return document;
+			},
+		};
 	});
-	const readingOf = memo((text: string) => store.inspect(text));
 
 	/** The editor's text now, valid or not: what Source shows and every view reads. */
 	const source = () => editor?.row.text ?? '';
-	const document = (): CaptureDocument => documentOf(source());
+	const document = (): CaptureDocument => interpretationOf(source()).document;
 
 	// --- Admission ------------------------------------------------------
 
@@ -476,7 +483,7 @@ export function createDraft(
 		},
 		/** That text read as a row: a parse failure, or its fields and their issues. */
 		get reading() {
-			return readingOf(source());
+			return interpretationOf(source()).reading;
 		},
 		/** The Capture view's controls apply: a valid row. */
 		get structured() {
@@ -512,7 +519,11 @@ export function createDraft(
 		inputSource(value: string) {
 			if (undecided() || !editor) return;
 			const current = source();
-			const next = fromTextarea(current, value, documentOf(current).newline);
+			const next = fromTextarea(
+				current,
+				value,
+				interpretationOf(current).document.newline,
+			);
 			if (next === current) return;
 			editor.setText(next);
 			tookInput();

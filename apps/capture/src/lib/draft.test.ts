@@ -411,6 +411,28 @@ test('a draft let go while its editor opens takes no editor and saves nothing', 
 	await t.done();
 });
 
+test('reading changed input invalidates an earlier thought edit even when the original text returns', async () => {
+	const t = await setup();
+	try {
+		const first = t.draft.document.thoughts[0];
+		if (first === undefined) throw new Error('fixture');
+		t.draft.startEditing(first);
+		const edit = t.draft.editing?.id;
+		if (edit === undefined) throw new Error('fixture');
+		t.draft.inputEditing('kept correction', edit);
+		const native = t.editors[0];
+		if (native === undefined) throw new Error('fixture');
+		native.setText(D);
+		expect(t.draft.reading.parseError).toBeUndefined();
+		native.setText(A);
+		expect(t.draft.commitEditing(edit)).toBe(false);
+		expect(t.draft.editing?.text).toBe('kept correction');
+		expect(t.draft.refusal).toContain('changed since this thought was shown');
+	} finally {
+		await t.done();
+	}
+});
+
 test('a thought edit begun before the document changed is refused and its text kept', async () => {
 	const t = await setup();
 	const [first, second] = t.draft.document.thoughts;

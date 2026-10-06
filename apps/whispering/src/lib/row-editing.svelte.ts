@@ -317,7 +317,7 @@ export function createRowEditing<TFields>(
 		retry(): string | undefined {
 			if (released) return RELEASED;
 			if (!takes()) return CLOSING;
-			if (native.get().save.status === 'failed') native.retry();
+			native.retry();
 			return undefined;
 		},
 		/**
@@ -337,8 +337,7 @@ export function createRowEditing<TFields>(
 			}
 		},
 		/** Wait for the writes already admitted. Never saves anything again. */
-		waitForSaves: (): Promise<Result<undefined, RowSaveError>> =>
-			native.waitForSaves(),
+		waitForSaves: native.waitForSaves,
 		/**
 		 * Put the row down: it takes no input. A write already admitted still
 		 * settles in the editor.

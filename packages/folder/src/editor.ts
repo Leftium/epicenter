@@ -427,7 +427,7 @@ function createRowEditor<TFields>(
 			commit({
 				row: next,
 				save: startWrite(
-					text,
+					next,
 					state.save.status === 'idle' ? undefined : state.save.error,
 				),
 			});
@@ -435,7 +435,7 @@ function createRowEditor<TFields>(
 	}
 
 	/**
-	 * Start writing `text`, or fail at once when no bytes encode it exactly.
+	 * Start writing the interpreted input, or fail with its encoding refusal.
 	 * The write is installed before this returns, so before any subscriber
 	 * hears the state that names it.
 	 *
@@ -444,16 +444,19 @@ function createRowEditor<TFields>(
 	 * installed before subscribers hear anything, so input they set waits
 	 * behind it.
 	 */
-	function startWrite(text: string, previousError?: RowSaveError): SaveState {
-		if (!text.isWellFormed())
+	function startWrite(
+		input: RowState<TFields>,
+		previousError?: RowSaveError,
+	): SaveState {
+		if (input.status === 'invalid' && input.error.name === 'Unencodable')
 			return Object.freeze({
 				status: 'failed',
-				error: RowEditorError.Unencodable({ path }).error,
+				error: input.error,
 			});
-		writeInFlight = write(text).then((error) => {
+		writeInFlight = write(input.text).then((error) => {
 			writeInFlight = undefined;
 			// Setters own the latest text; reload cannot adopt until writes settle.
-			const next = pendingWrite ? state.row.text : undefined;
+			const next = pendingWrite ? state.row : undefined;
 			pendingWrite = false;
 			if (next === undefined) {
 				commit({
@@ -537,7 +540,7 @@ function createRowEditor<TFields>(
 		retry(): void {
 			if (state.save.status !== 'failed') return;
 			inputRevision += 1;
-			commit({ save: startWrite(state.row.text, state.save.error) });
+			commit({ save: startWrite(state.row, state.save.error) });
 		},
 		waitForSaves,
 		reload(): Promise<Result<undefined, RowReloadError>> {

@@ -58,39 +58,23 @@ export type SaveState =
 			readonly current: SavedText | undefined;
 	  };
 
-/** Where a draft saves: one conditional write, and a fresh read for conflict review. */
-type DraftStore = {
-	/** The accepted file's `text` is the text of the submitted bytes. */
-	write(
-		baseline: SavedText,
-		submitted: ReturnType<typeof submittedText>,
-	): Promise<
-		Result<SavedText, { readonly name: string; readonly message: string }>
-	>;
-	/**
-	 * The saved file now. Only absence is `undefined`; a file that could not be
-	 * read, or is no longer editable text, is an error and never reads as removed.
-	 */
-	read(
-		baseline: SavedText,
-	): Promise<Result<SavedText | undefined, { readonly message: string }>>;
-};
-
 /** Typing batches for this long before a save; the folder adds no Git delay. */
 const TYPING_BATCH_MS = 400;
 
 const messageOf = (cause: unknown) =>
 	cause instanceof Error ? cause.message : String(cause);
 
-export type TextFileEditor = ReturnType<typeof createDraft>;
-
-function createDraft(
-	store: DraftStore,
-	initial: SavedText,
+/**
+ * A text file editor whose saves replace the baseline's captured bytes. The
+ * replacement receipt and the submitted bytes' text become the next baseline.
+ */
+export function createTextFileEditor(
+	files: FolderFiles,
+	file: SavedText,
 	onSaved: () => void,
 ) {
-	let baseline = $state.raw<SavedText>(initial);
-	let buffer = $state(initial.text);
+	let baseline = $state.raw<SavedText>(file);
+	let buffer = $state(file.text);
 	let saveState = $state.raw<SaveState>({ kind: 'saved' });
 	let timer: ReturnType<typeof setTimeout> | undefined;
 	let saving: Promise<void> | undefined;
@@ -128,13 +112,30 @@ function createDraft(
 		schedule();
 	}
 
+	/** The saved file now for conflict review. Only absence is `undefined`. */
+	async function current(
+		observed: SavedText,
+	): Promise<Result<SavedText | undefined, { readonly message: string }>> {
+		const { data: read, error } = await readTextFile(files, observed.path);
+		if (error) return error.name === 'NotFound' ? Ok(undefined) : Err(error);
+		if (read.kind === 'text') return Ok(read.file);
+		return Err({
+			message:
+				read.kind === 'binary'
+					? 'the saved file is not text'
+					: 'the saved file is larger than 1 MB',
+		});
+	}
+
 	async function saveOnce() {
 		const captured = buffer;
 		const observed = baseline;
 		saveState = { kind: 'saving' };
-		let result: Awaited<ReturnType<DraftStore['write']>>;
+		let result: Awaited<ReturnType<FolderFiles['replace']>>;
+		let submitted: ReturnType<typeof submittedText>;
 		try {
-			result = await store.write(observed, submittedText(captured));
+			submitted = submittedText(captured);
+			result = await files.replace(observed, submitted.bytes);
 		} catch (cause) {
 			// A store that throws (its host went away mid-call) must not leave the
 			// draft saving forever, and cannot say whether the bytes landed: the
@@ -149,10 +150,10 @@ function createDraft(
 		}
 		const { data: receipt, error: writeError } = result;
 		if (writeError === null) {
-			baseline = receipt;
+			baseline = { ...receipt, text: submitted.text };
 			// The same text unless encoding replaced an unpaired surrogate.
 			// Newer typing is a later generation and stays as typed.
-			if (buffer === captured) buffer = receipt.text;
+			if (buffer === captured) buffer = submitted.text;
 			saveState = { kind: 'saved' };
 			onSaved();
 			return;
@@ -168,9 +169,9 @@ function createDraft(
 			return;
 		}
 		// The conflict wrote nothing; a read that throws only hides the file.
-		const { data: current, error: currentError } = await store
-			.read(observed)
-			.catch((cause: unknown) => Err({ message: messageOf(cause) }));
+		const { data: saved, error: currentError } = await current(observed).catch(
+			(cause: unknown) => Err({ message: messageOf(cause) }),
+		);
 		// Without the saved file there is nothing to review or replace. The
 		// baseline stays, so a retry repeats this save and this read.
 		saveState = currentError
@@ -181,7 +182,7 @@ function createDraft(
 			: {
 					kind: 'conflict',
 					message: writeError.message,
-					current,
+					current: saved,
 				};
 	}
 
@@ -236,11 +237,7 @@ function createDraft(
 		},
 		/** The input cannot save on its own until the person chooses. */
 		get hasProblem() {
-			return (
-				saveState.kind === 'failed' ||
-				saveState.kind === 'unknown' ||
-				saveState.kind === 'conflict'
-			);
+			return isHeld();
 		},
 		/** Discarding is offered only when the input cannot save. */
 		get isDiscardable() {
@@ -445,41 +442,4 @@ function createDraft(
 	};
 }
 
-/**
- * A text file editor whose conditional saves follow the folder's history
- * policy. A save replaces the baseline's captured bytes with the submitted
- * ones; the capture it returns, with the text of those bytes, is the next
- * baseline.
- */
-export function createTextFileEditor(
-	files: FolderFiles,
-	file: SavedText,
-	onSaved: () => void,
-): TextFileEditor {
-	return createDraft(
-		{
-			async write(baseline, { bytes, text }) {
-				const { data: replaced, error: replacedError } = await files.replace(
-					baseline,
-					bytes,
-				);
-				if (replacedError) return Err(replacedError);
-				return Ok({ ...replaced, text });
-			},
-			async read(baseline) {
-				const { data: read, error } = await readTextFile(files, baseline.path);
-				if (error)
-					return error.name === 'NotFound' ? Ok(undefined) : Err(error);
-				if (read.kind === 'text') return Ok(read.file);
-				return Err({
-					message:
-						read.kind === 'binary'
-							? 'the saved file is not text'
-							: 'the saved file is larger than 1 MB',
-				});
-			},
-		},
-		file,
-		onSaved,
-	);
-}
+export type TextFileEditor = ReturnType<typeof createTextFileEditor>;

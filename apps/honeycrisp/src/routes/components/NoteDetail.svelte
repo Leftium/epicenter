@@ -165,25 +165,19 @@
 						/>
 					</Tabs.Content>
 					<Tabs.Content value="source" class="flex min-h-0 flex-1 flex-col">
-						<Lifetime>
-							{#snippet children(shown)}
-								<!-- A body the editor refuses stays here with the reason. -->
-								{@const markdown = noteBody(() => session, { mounted: shown, keep: true })}
-								<div class="flex min-h-0 flex-1 flex-col p-3">
-									<Textarea
-										class="min-h-40 flex-1 resize-none font-mono text-xs"
-										bind:value={
-											() => lf(session.refused.body?.value ?? (session.row.status === 'valid' ? session.row.body : '')),
-											(value) => {
-												if (shown()) markdown.input(withFileNewlines(value, markdown.body));
-											}
-										}
-										aria-label="Markdown source"
-										spellcheck={false}
-									/>
-								</div>
-							{/snippet}
-						</Lifetime>
+						<!-- A body the editor refuses stays here with the reason. -->
+						{@const markdown = noteBody(() => session, { keep: true })}
+						<div class="flex min-h-0 flex-1 flex-col p-3">
+							<Textarea
+								class="min-h-40 flex-1 resize-none font-mono text-xs"
+								bind:value={
+									() => lf(session.refused.body?.value ?? (session.row.status === 'valid' ? session.row.body : '')),
+									(value) => markdown.input(withFileNewlines(value, markdown.body))
+								}
+								aria-label="Markdown source"
+								spellcheck={false}
+							/>
+						</div>
 					</Tabs.Content>
 				</Tabs.Root>
 			{/snippet}

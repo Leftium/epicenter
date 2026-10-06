@@ -41,12 +41,11 @@ import {
 } from '@epicenter/capture/legacy';
 import {
 	type FileCapture,
-	type GitSnapshot,
 	inspectRow,
 	rowPath,
 	type TableWriteReceipt,
 } from '@epicenter/folder';
-import { SvelteMap } from 'svelte/reactivity';
+import { createSubscriber, SvelteMap } from 'svelte/reactivity';
 import {
 	type CaptureEntry,
 	type Current,
@@ -137,10 +136,7 @@ export function createCaptures(host: Pick<CaptureHost, 'folder' | 'location'>) {
 	let loaded = $state(false);
 	const drafts = new SvelteMap<string, Draft>();
 	let newCapture = $state('');
-	let git = $state.raw<GitSnapshot>(folder.git.snapshot);
-	const stopGit = folder.git.subscribe((snapshot) => {
-		git = snapshot;
-	});
+	const trackGit = createSubscriber((update) => folder.git.subscribe(update));
 	/** The Epicenter service that served this page has stopped. */
 	let serviceStopped = $state(false);
 	/** Leaving is deciding: nothing a person does is taken. */
@@ -427,14 +423,16 @@ export function createCaptures(host: Pick<CaptureHost, 'folder' | 'location'>) {
 			return loaded;
 		},
 		get git() {
-			return git;
+			trackGit();
+			return folder.git.snapshot;
 		},
 		/**
 		 * The folder's owner closed it: nothing saves from this window again.
 		 * The folder reports this itself, on its Git snapshot.
 		 */
 		get folderStopped() {
-			return git.closed;
+			trackGit();
+			return folder.git.snapshot.closed;
 		},
 		get serviceStopped() {
 			return serviceStopped;
@@ -686,7 +684,6 @@ export function createCaptures(host: Pick<CaptureHost, 'folder' | 'location'>) {
 					await settleAll();
 					await refreshing;
 				} finally {
-					stopGit();
 					for (const [path, draft] of [...drafts]) drop(path, draft);
 				}
 			})();

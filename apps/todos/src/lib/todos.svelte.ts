@@ -25,7 +25,6 @@ import type {
 	CommitAndPushResult,
 	FileCapture,
 	FileListing,
-	GitSnapshot,
 	MergeOutcome,
 	MoveError,
 	PullError,
@@ -49,7 +48,7 @@ import {
 	dirname,
 	joinPath,
 } from '@epicenter/folder/file-browser';
-import { SvelteMap, SvelteSet } from 'svelte/reactivity';
+import { createSubscriber, SvelteMap, SvelteSet } from 'svelte/reactivity';
 import { createLogger } from 'wellcrafted/logger';
 import { Err, Ok, type Result } from 'wellcrafted/result';
 import type { TodoFields } from './definition.js';
@@ -221,7 +220,7 @@ export function createTodos(folder: TodosFolder) {
 	let listError = $state<string | undefined>();
 	let listing = $state.raw<FileListing | undefined>();
 	let listingError = $state<string | undefined>();
-	let git = $state.raw<GitSnapshot>(folder.git.snapshot);
+	const trackGit = createSubscriber((update) => folder.git.subscribe(update));
 	let selectedPath = $state<string | undefined>();
 	let refreshSequence = 0;
 	/** Folders open in the file browser; kept while the browser is hidden. */
@@ -352,9 +351,6 @@ export function createTodos(folder: TodosFolder) {
 		// its command, history, and output stay as they are.
 		() => departing,
 	);
-	const unsubscribe = folder.git.subscribe((snapshot) => {
-		git = snapshot;
-	});
 	let rereading: Promise<void> | undefined;
 	let rereadAgain = false;
 	// Subscribed here, before the first read, so no change falls between them.
@@ -726,7 +722,8 @@ export function createTodos(folder: TodosFolder) {
 		},
 		expanded,
 		get git() {
-			return git;
+			trackGit();
+			return folder.git.snapshot;
 		},
 		get selectedPath() {
 			return selectedPath;
@@ -1340,7 +1337,6 @@ export function createTodos(folder: TodosFolder) {
 			// The app's running Git network waits stop; terminal commands do not.
 			leaving.abort();
 			stopListening();
-			unsubscribe();
 			// An open that is still reading finds its claim gone and retains nothing.
 			for (const [path, item] of retained)
 				if (item.kind === 'loading') retained.delete(path);

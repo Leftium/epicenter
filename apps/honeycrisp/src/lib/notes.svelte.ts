@@ -37,7 +37,6 @@ import {
 	type TextCapture as Capture,
 	type FileCapture,
 	type FileListing,
-	type GitSnapshot,
 	inspectRow,
 	rowPath,
 	rowStemOf,
@@ -52,7 +51,7 @@ import {
 	dirname,
 	joinPath,
 } from '@epicenter/folder/file-browser';
-import { SvelteMap, SvelteSet } from 'svelte/reactivity';
+import { createSubscriber, SvelteMap, SvelteSet } from 'svelte/reactivity';
 import { Err, Ok, type Result } from 'wellcrafted/result';
 import {
 	type FolderEntry,
@@ -337,7 +336,7 @@ export function createNotes(host: NotesHost) {
 	let listError = $state<string | undefined>();
 	let listing = $state.raw<FileListing | undefined>();
 	let listingError = $state<string | undefined>();
-	let git = $state.raw<GitSnapshot>(folder.git.snapshot);
+	const trackGit = createSubscriber((update) => folder.git.subscribe(update));
 	let selectedPath = $state<string | undefined>();
 	/** Bumped when a note is selected, so its editor takes focus. */
 	let focusRequest = $state(0);
@@ -391,9 +390,6 @@ export function createNotes(host: NotesHost) {
 		refreshAll,
 		() => !fenced,
 	);
-	const unsubscribeGit = folder.git.subscribe((snapshot) => {
-		git = snapshot;
-	});
 	// A hint says to read again; it is never used as what was read. The
 	// folder hints this page's own saves too, so a note's write reaches the
 	// list this way. Hints that arrive during a refresh share its next pass.
@@ -1317,7 +1313,8 @@ export function createNotes(host: NotesHost) {
 		},
 		expanded,
 		get git() {
-			return git;
+			trackGit();
+			return folder.git.snapshot;
 		},
 		get view() {
 			return view;
@@ -1995,7 +1992,6 @@ export function createNotes(host: NotesHost) {
 					await session.waitForSaves();
 					session.release();
 				}
-				unsubscribeGit();
 				await host.close();
 			})();
 			return closing;

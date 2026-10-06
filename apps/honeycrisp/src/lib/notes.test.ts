@@ -94,6 +94,64 @@ async function open() {
 /** Give scheduled Svelte effects a turn to run after the state change. */
 const rendered = () => new Promise((resolve) => setTimeout(resolve, 0));
 
+test('Git reads see the owner during notification and subscribe only while a view reads them', async () => {
+	const fixture = await openNotesFolder();
+	const git = fixture.folder.git;
+	let subscriptions = 0;
+	let notes: ReturnType<typeof createNotes> | undefined;
+	const currentDuringNotification: boolean[] = [];
+	const stopObserver = git.subscribe((snapshot) => {
+		if (notes !== undefined)
+			currentDuringNotification.push(notes.git === snapshot);
+	});
+	notes = createNotes({
+		...fixture.host,
+		folder: {
+			...fixture.host.folder,
+			git: {
+				...git,
+				get snapshot() {
+					return git.snapshot;
+				},
+				subscribe(listener) {
+					subscriptions += 1;
+					const stop = git.subscribe(listener);
+					return () => {
+						subscriptions -= 1;
+						stop();
+					};
+				},
+			},
+		},
+	});
+	const state = notes;
+	let stopView = () => {};
+	try {
+		expect(state.git).toBe(git.snapshot);
+		expect(subscriptions).toBe(0);
+		const shown: (typeof git.snapshot)[] = [];
+		stopView = watch(() => {
+			shown.push(state.git);
+		});
+		await rendered();
+		expect(subscriptions).toBe(1);
+		await git.commit();
+		await rendered();
+		expect(shown.at(-1)).toBe(git.snapshot);
+		expect(currentDuringNotification.length).toBeGreaterThan(0);
+		expect(currentDuringNotification.every(Boolean)).toBe(true);
+		stopView();
+		await rendered();
+		expect(subscriptions).toBe(0);
+		await git.status();
+		expect(state.git).toBe(git.snapshot);
+	} finally {
+		stopView();
+		stopObserver();
+		await state.close();
+	}
+});
+
 test('a raw file opened after a note shows its text once it is read, whatever read the selection during teardown', async () => {
 	const { notes, release } = await open();
 	// The view holds the selection the way its template does.

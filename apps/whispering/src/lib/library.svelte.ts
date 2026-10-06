@@ -29,7 +29,6 @@ import type {
 	FileError,
 	FileListing,
 	FileTable,
-	GitSnapshot,
 	KvSnapshot,
 	KvWriteError,
 	TableEditError,
@@ -45,7 +44,7 @@ import {
 	joinPath,
 } from '@epicenter/folder/file-browser';
 import { customAlphabet } from 'nanoid';
-import { SvelteMap, SvelteSet } from 'svelte/reactivity';
+import { createSubscriber, SvelteMap, SvelteSet } from 'svelte/reactivity';
 import { Err, Ok, type Result } from 'wellcrafted/result';
 import { audioMimeTypeOf } from './audio-format.js';
 import type { ActiveCapture, CapturedAudio } from './capture.js';
@@ -543,7 +542,7 @@ export function createLibrary(workspace: Workspace) {
 	let selectedTransformationPath = $state<string | undefined>();
 	let listing = $state.raw<FileListing | undefined>();
 	let listingError = $state<string | undefined>();
-	let git = $state.raw<GitSnapshot>(folder.git.snapshot);
+	const trackGit = createSubscriber((update) => folder.git.subscribe(update));
 	let kv = $state.raw<KvSnapshot<LegacySettings> | undefined>();
 	let settingsError = $state<string | undefined>();
 	/** What the device has set up, never a key; undefined until read or when the read failed. */
@@ -659,9 +658,6 @@ export function createLibrary(workspace: Workspace) {
 		capture: workspace.capture,
 		preferences: workspace.preferences,
 		recording: () => recorder.phase !== 'idle',
-	});
-	const unsubscribe = folder.git.subscribe((snapshot) => {
-		git = snapshot;
 	});
 	const unwatch = workspace.onExternalChange(rereadHinted);
 
@@ -2414,7 +2410,8 @@ export function createLibrary(workspace: Workspace) {
 		},
 		expanded,
 		get git() {
-			return git;
+			trackGit();
+			return folder.git.snapshot;
 		},
 		/**
 		 * The transcription endpoint and model an earlier build saved in
@@ -3288,7 +3285,6 @@ export function createLibrary(workspace: Workspace) {
 				editor.dispose();
 			}
 			unwatch();
-			unsubscribe();
 			recordingsListed.clear();
 			await workspace.close();
 		},

@@ -6,15 +6,12 @@
 	let {
 		prefix,
 		name,
-		suffix = '',
 		onRename,
 		onDelete,
 	}: {
 		/** The fixed folder part shown before the editable name, such as `todos/`. */
 		prefix: string;
 		name: string;
-		/** A fixed extension shown after the editable name, such as `.md`. */
-		suffix?: string;
 		/** Returns a problem to show, or undefined when the rename is done. */
 		onRename: (name: string) => Promise<string | undefined>;
 		onDelete: () => void;
@@ -28,7 +25,7 @@
 	async function rename(event: SubmitEvent) {
 		event.preventDefault();
 		const value = next;
-		if ((suffix === '' && value === '') || value === name || renaming) return;
+		if (value === '' || value === name || renaming) return;
 		renaming = true;
 		const problem = await onRename(value);
 		renaming = false;
@@ -41,9 +38,8 @@
 	<div class="flex min-w-0 items-center gap-1">
 		{#if prefix}<span class="font-mono text-xs text-muted-foreground">{prefix}</span>{/if}
 		<Input {id} class="h-8 w-44 font-mono md:text-xs" bind:value={next} autocomplete="off" spellcheck={false} />
-		{#if suffix}<span class="font-mono text-xs text-muted-foreground">{suffix}</span>{/if}
 	</div>
-	<Button type="submit" size="sm" variant="outline" disabled={renaming || (suffix === '' && next === '') || next === name}>
+	<Button type="submit" size="sm" variant="outline" disabled={renaming || next === '' || next === name}>
 		Rename file
 	</Button>
 	<Button class="ml-auto" size="sm" variant="ghost-destructive" onclick={onDelete}>Delete</Button>

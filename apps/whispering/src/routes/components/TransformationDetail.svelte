@@ -393,10 +393,6 @@
 							placeholder="Say what to do with the text, such as: Fix punctuation and remove filler words. Answer with the text only."
 							data-testid="transformation-prompt"
 						/>
-					{:else if editing?.view === 'source'}
-						<p class="text-sm text-muted-foreground" data-testid="instructions-in-source">
-							The instructions are edited in Source while it is shown, or until the file reads as a transformation again.
-						</p>
 					{/if}
 					<Field.Description>Sent first. The transcript or pasted text follows, unchanged.</Field.Description>
 				</Field.Field>

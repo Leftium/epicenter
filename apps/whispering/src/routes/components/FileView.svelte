@@ -13,7 +13,7 @@
 	import { toast } from '@epicenter/ui/sonner';
 	import type { Library, OpenFile, RowSlot } from '$lib/library.svelte.js';
 	import AudioPlayer from './AudioPlayer.svelte';
-	import { confirmDelete, copyPath, lf } from './file-actions.js';
+	import { confirmDelete, copyPath } from './file-actions.js';
 	import FileNameBar from './FileNameBar.svelte';
 	import LiveButton from './LiveButton.svelte';
 	import { Textarea } from '@epicenter/ui/textarea';

@@ -238,10 +238,6 @@
 							placeholder="Notes in Markdown, saved in the recording’s file"
 							aria-label="Notes"
 						/>
-					{:else if editing?.view === 'source'}
-						<p class="text-sm text-muted-foreground" data-testid="notes-in-source">
-							The notes are edited in Source while it is shown, or until the file reads as a recording again.
-						</p>
 					{/if}
 				</div>
 

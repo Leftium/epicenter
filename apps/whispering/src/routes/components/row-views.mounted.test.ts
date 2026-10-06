@@ -557,7 +557,7 @@ test('a recording’s Source edits the same editor, and a source control from an
 	expect(
 		target.querySelector('input[aria-label="Recording title"]'),
 	).toBeNull();
-	expect(target.querySelector('[data-testid="notes-in-source"]')).toBeNull();
+	expect(target.querySelector('textarea[aria-label="Notes"]')).toBeNull();
 	click(target, 'Source');
 	flushSync();
 	const source = target.querySelector<HTMLTextAreaElement>(

@@ -277,9 +277,9 @@ export type GitBackend = {
 	): Promise<DeclaredAttribute | undefined>;
 	/**
 	 * Make every index entry match `commit`'s tree, including staged-only
-	 * additions and deletions. Returns the paths it reset.
+	 * additions and deletions. Working files are not touched.
 	 */
-	reconcileIndex(commit: string): Promise<string[]>;
+	reconcileIndex(commit: string): Promise<void>;
 	/** Which untracked candidates `.gitignore` (and native excludes) ignore. */
 	ignoredPaths(
 		candidates: readonly string[],

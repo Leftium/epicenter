@@ -539,7 +539,6 @@ export async function createNativeGitBackend({
 			]);
 			const paths = text(differing.stdout).split('\0').filter(Boolean);
 			await syncIndex(commit, paths);
-			return paths;
 		},
 		async ignoredPaths(candidates) {
 			// `--no-index` evaluates the rules alone; the caller keeps tracked files.

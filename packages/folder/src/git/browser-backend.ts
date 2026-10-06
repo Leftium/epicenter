@@ -514,7 +514,6 @@ export async function createStoredGitBackend<TSession extends GitFsSession>({
 						filepath,
 						ref: commit,
 					});
-				return mismatched;
 			});
 		},
 		async ignoredPaths(candidates, current) {

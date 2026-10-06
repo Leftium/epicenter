@@ -2,8 +2,10 @@
 	import { Button } from '@epicenter/ui/button';
 	import { toast } from '@epicenter/ui/sonner';
 	import type { TextFileEditor } from '$lib/editor.svelte.js';
+	import type { Library } from '$lib/library.svelte.js';
 
-	let { editor, autosavePaused, onDiscardRemoved }: {
+	let { library, editor, autosavePaused, onDiscardRemoved }: {
+		library: Library;
 		/** A text draft: an ordinary file. */
 		editor: TextFileEditor;
 		autosavePaused: boolean;
@@ -13,9 +15,9 @@
 	let showSaved = $state(false);
 
 	async function keepBoth() {
-		const { data: copyPath, error: keepError } = await editor.keepBoth();
+		const { data: copyPath, error: keepError } = await library.keepBoth(editor.path);
 		if (keepError !== null) toast.error('Could not keep a copy', { description: keepError });
-		else toast.success(`Your edits were saved to ${copyPath}`);
+		else toast.success(`A copy was saved to ${copyPath}`);
 	}
 </script>
 

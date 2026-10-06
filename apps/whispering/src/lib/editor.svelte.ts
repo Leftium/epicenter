@@ -331,18 +331,27 @@ export function createTextFileEditor(
 		/**
 		 * Conflict choice: write my input to a new file, then take the saved one.
 		 * Returns the copy's path, or the reason it could not be written; on a
-		 * failure the conflict and my input stay as they were.
+		 * failure the conflict and my input stay as they were. Newer input or a
+		 * changed review stays after the copy, rather than being discarded.
+		 * The library tracks this operation so departure waits for the copy.
 		 */
 		async keepBoth(): Promise<Result<string, string>> {
 			if (!admits() || disposed) return Err(CLOSING);
 			if (saveState.kind !== 'conflict')
 				return Err('There is no conflict to resolve.');
+			const reviewed = saveState;
+			const captured = buffer;
 			const copy = conflictCopyPath(baseline.path);
-			const { error: createError } = await files.create(copy, buffer);
+			const { error: createError } = await files.create(copy, captured);
 			if (createError !== null) return Err(createError.message);
-			if (saveState.kind === 'conflict' && saveState.current !== undefined) {
-				baseline = saveState.current;
-				buffer = saveState.current.text;
+			if (
+				!disposed &&
+				saveState === reviewed &&
+				buffer === captured &&
+				reviewed.current !== undefined
+			) {
+				baseline = reviewed.current;
+				buffer = reviewed.current.text;
 				saveState = { kind: 'saved' };
 			}
 			return Ok(copy);

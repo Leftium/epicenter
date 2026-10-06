@@ -2360,6 +2360,16 @@ export function createLibrary(workspace: Workspace) {
 		},
 		discardDraft,
 		reloadRow,
+		/** Copy the reviewed text conflict; departure waits for this admitted file work. */
+		keepBoth(path: string): Promise<Result<string, string>> {
+			if (closing || !admitting) return Promise.resolve(Err(LEAVING));
+			const editor = textDraftAt(path);
+			if (editor === undefined)
+				return Promise.resolve(Err('There is no text draft to copy.'));
+			return track(
+				editor.keepBoth().catch((cause: unknown) => Err(describe(cause))),
+			);
+		},
 		/** Edit a row's whole text instead of its fields, through the same editor. */
 		editSource(path: string): string | undefined {
 			if (!admitting) return LEAVING;

@@ -44,6 +44,8 @@
  * - A received transcript has one file name: saving it again never calls the
  *   endpoint, recognizes a save that landed with its reply lost, leaves
  *   another file at that name alone, and cannot write a second result
+ * - A conflict copy resolves only the input and file version it copied;
+ *   departure and close wait for the copy even with autosave paused
  * - A held transcript refuses a new request, and a save that finishes late
  *   restores nothing that was discarded and replaces nothing newer
  */
@@ -64,7 +66,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { FileError, inspectRow, MoveError } from '@epicenter/folder/bun';
 import { Ok } from 'wellcrafted/result';
-import { expectOk } from 'wellcrafted/testing';
+import { expectErr, expectOk } from 'wellcrafted/testing';
 import { loadAudio } from './audio-source.js';
 import { createFixtureDevice, toneWav } from './capture.js';
 import { whisperingDefinition } from './definition.js';
@@ -2864,6 +2866,120 @@ async function textDraft(library: Library, path: string) {
 		throw new Error(`expected ${path} open as text`);
 	return selection.file.editor;
 }
+
+/** A paused ordinary-file conflict whose recovery copy can be held before publication. */
+async function conflictCopy() {
+	const { library, root } = await open();
+	const path = 'notes.md';
+	library.autosave.paused = true;
+	await writeFile(join(root, path), 'original');
+	const editor = await textDraft(library, path);
+	editor.input('mine');
+	await writeFile(join(root, path), 'outside');
+	await library.refresh();
+	expect(editor.saveState).toMatchObject({ kind: 'conflict' });
+	const started = Promise.withResolvers<void>();
+	const held = Promise.withResolvers<void>();
+	const { create } = library.folder.files;
+	Object.assign(library.folder.files, {
+		async create(...args: Parameters<typeof create>) {
+			started.resolve();
+			await held.promise;
+			return create(...args);
+		},
+	});
+	return {
+		library,
+		root,
+		path,
+		editor,
+		started: started.promise,
+		release: () => held.resolve(),
+	};
+}
+
+for (const change of ['typing', 'review', 'choice'] as const) {
+	test(`a conflict copy preserves newer ${change} instead of loading its earlier review`, async () => {
+		const { library, root, path, editor, started, release } =
+			await conflictCopy();
+		const copying = library.keepBoth(path);
+		await started;
+		if (change === 'typing') editor.input('mine, then more');
+		else if (change === 'review') {
+			await writeFile(join(root, path), 'new outside version');
+			await library.refresh();
+		} else {
+			editor.loadSaved();
+			editor.input('typed after loading');
+		}
+		const buffer = editor.buffer;
+		const review = editor.saveState;
+		release();
+		const copy = expectOk(await copying);
+		expect(await readFile(join(root, copy), 'utf8')).toBe('mine');
+		expect(editor.buffer).toBe(buffer);
+		expect(editor.saveState).toBe(review);
+		expect(await readFile(join(root, path), 'utf8')).toBe(
+			change === 'review' ? 'new outside version' : 'outside',
+		);
+	});
+}
+
+test('departure waits for a conflict copy even with autosave paused and its original draft already loaded', async () => {
+	const { library, root, path, editor, started, release } =
+		await conflictCopy();
+	const copying = library.keepBoth(path);
+	await started;
+	editor.loadSaved();
+	let prepared = false;
+	const preparing = library.prepareToLeave().then((answer) => {
+		prepared = true;
+		return answer;
+	});
+	let closed = false;
+	const closing = library.close().then(() => {
+		closed = true;
+	});
+	await Bun.sleep(20);
+	expect(prepared).toBe(false);
+	expect(closed).toBe(false);
+	release();
+	const copy = expectOk(await copying);
+	expect(await preparing).toBe(true);
+	await closing;
+	expect(await readFile(join(root, copy), 'utf8')).toBe('mine');
+	expect(editor.buffer).toBe('outside');
+});
+
+test('an admitted conflict copy resolves its reviewed input while departure refuses new choices', async () => {
+	const { library, root, path, editor, started, release } =
+		await conflictCopy();
+	const copying = library.keepBoth(path);
+	await started;
+	library.pauseAdmission();
+	release();
+	const copy = expectOk(await copying);
+	expect(await readFile(join(root, copy), 'utf8')).toBe('mine');
+	expect(editor.buffer).toBe('outside');
+	expect(editor.saveState.kind).toBe('saved');
+	expect(await library.prepareToLeave()).toBe(true);
+});
+
+test('a thrown conflict copy keeps its input and review and reports the failure', async () => {
+	const { library, path, editor } = await conflictCopy();
+	Object.assign(library.folder.files, {
+		create: async () => {
+			throw new Error('copy storage unreachable');
+		},
+	});
+	const reviewed = editor.saveState;
+	expect(expectErr(await library.keepBoth(path))).toBe(
+		'copy storage unreachable',
+	);
+	expect(editor.buffer).toBe('mine');
+	expect(editor.saveState).toBe(reviewed);
+	expect(await library.prepareToLeave()).toBe(false);
+});
 
 /**
  * The folder's next move writes the destination and cannot remove the

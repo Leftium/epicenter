@@ -134,7 +134,7 @@
 		</div>
 	{:else if text}
 		{@const editor = text.editor}
-		<SaveStatus {editor} autosavePaused={library.autosave.paused} onDiscardRemoved={() => void library.discardDraft(editor.path)} />
+		<SaveStatus {library} {editor} autosavePaused={library.autosave.paused} onDiscardRemoved={() => void library.discardDraft(editor.path)} />
 		<div class="flex min-h-0 flex-1 flex-col gap-2 px-3 py-3 sm:px-4">
 			<LiveTextarea
 				class="min-h-40 flex-1 resize-none font-mono text-xs"

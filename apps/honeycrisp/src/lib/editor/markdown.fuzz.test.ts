@@ -6,8 +6,10 @@
  * `document -> Markdown -> document` is equivalent, and the Markdown is one
  * the editor would open again.
  *
- * Three generators, three promises:
+ * Four generators, four promises:
  * - typing: any characters, in any block, without formatting. Never refused.
+ * - table-shaped typing: lines of `|`, `-`, `:`, and backslashes, some in
+ *   code, joined by line breaks. Never refused, and never written as a table.
  * - formatting: marks on whole words. Never refused.
  * - adversarial: marks on any text. Some are not expressible in Markdown
  *   (bold that starts with punctuation right after a letter); those must be
@@ -138,6 +140,28 @@ const typed: Inline = (rng, breaks) => {
 	for (let count = rng.int(5); count > 0; count -= 1)
 		if (breaks && rng.chance(0.15)) nodes.push(schema.node('hard_break'));
 		else nodes.push(schema.text(pieces(rng)));
+	return nodes;
+};
+
+/** What a table's lines are made of. */
+const TABLE_PIECES = ['|', '|', '-', '---', ':', ' ', 'a', '\\', '\\|'];
+
+/** Lines of table syntax, typed, with a line break between most of them. */
+const tableShaped: Inline = (rng, breaks) => {
+	const nodes: Node[] = [];
+	for (let count = 1 + rng.int(4); count > 0; count -= 1) {
+		if (breaks && nodes.length > 0 && rng.chance(0.7))
+			nodes.push(schema.node('hard_break'));
+		let text = '';
+		for (let length = 1 + rng.int(6); length > 0; length -= 1)
+			text += rng.pick(TABLE_PIECES);
+		const last = nodes.at(-1);
+		// Adjacent text joins into one node; code makes a separate span.
+		const code = rng.chance(0.2) ? [schema.mark('code')] : [];
+		if (last?.isText && code.length === 0 && last.marks.length === 0)
+			nodes[nodes.length - 1] = schema.text(`${last.text}${text}`);
+		else nodes.push(schema.text(text, code));
+	}
 	return nodes;
 };
 
@@ -279,6 +303,15 @@ test('typing any characters in any block is never refused', () => {
 	expectNone(
 		unopenable,
 		'typed documents wrote Markdown the editor would not reopen',
+	);
+});
+
+test('typing table syntax across line breaks is never refused, and never reopens as a table', () => {
+	const { refused, unopenable } = run(tableShaped, 5000);
+	expectNone(refused, 'table-shaped documents were refused');
+	expectNone(
+		unopenable,
+		'table-shaped documents wrote Markdown the editor would not reopen',
 	);
 });
 

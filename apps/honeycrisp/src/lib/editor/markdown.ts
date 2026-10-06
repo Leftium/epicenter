@@ -18,9 +18,10 @@
  * setext heading becomes `#`), which changes no document.
  *
  * `checkNoteDoc` is the gate for a rich-text edit: it returns the Markdown
- * only when the round trip is equivalent. `inspectNoteBody` is the gate for
- * opening source as rich text. Source the schema cannot represent is refused
- * with reasons and stays editable as text in the Source view.
+ * only when the round trip is equivalent and the Markdown holds nothing the
+ * gate for opening refuses. `inspectNoteBody` is the gate for opening source
+ * as rich text. Source the schema cannot represent is refused with reasons and
+ * stays editable as text in the Source view.
  */
 import MarkdownIt from 'markdown-it';
 import {
@@ -159,6 +160,10 @@ function escapeMore(text: string, startOfLine: boolean): string {
 			.replace(/^(\s*\d+)([.)])(?=\s|$)/, '$1\\$2')
 			// `=` under a line of text makes that line a heading.
 			.replace(/^=/, '\\=')
+			// A line starting `|`, `-`, or `:` can be a table's delimiter row
+			// (`|---|`, `:--`) under any line with a pipe, even an escaped one or
+			// one in code. The default escapes `-` already.
+			.replace(/^[|:]/, '\\$&')
 	);
 }
 
@@ -531,14 +536,16 @@ const WOULD_CHANGE =
 	'This cannot be written as Markdown without changing it. Use Source for this part.';
 
 /**
- * Serialize a document only if its Markdown parses back to an equivalent
- * document. An edit that fails this is refused before it is shown, so what
- * is on screen and what is in the draft never differ in content.
+ * Serialize a document only if its Markdown opens again as the same document:
+ * it holds nothing `inspectNoteBody` refuses, and it parses back to an
+ * equivalent document. An edit that fails this is refused before it is shown,
+ * so what is on screen and what is in the note never differ in content.
  */
 export function checkNoteDoc(doc: Node): DocCheck {
 	try {
 		const markdown = serializeNoteBody(doc);
-		return equivalentNoteDocs(parseNoteBody(markdown), doc)
+		return refusedIn(markdown).size === 0 &&
+			equivalentNoteDocs(parseNoteBody(markdown), doc)
 			? { ok: true, markdown }
 			: { ok: false, reason: WOULD_CHANGE };
 	} catch {
@@ -564,6 +571,21 @@ const REFUSED: Record<string, string> = {
 	table_open: 'a table',
 };
 
+/** What in `text` the editor refuses: HTML, an image, a table. */
+function refusedIn(text: string): Set<string> {
+	const reasons = new Set<string>();
+	type Token = ReturnType<typeof detector.parse>[number];
+	const visit = (tokens: readonly Token[]) => {
+		for (const token of tokens) {
+			const reason = REFUSED[token.type];
+			if (reason !== undefined) reasons.add(reason);
+			if (token.children) visit(token.children);
+		}
+	};
+	visit(detector.parse(text, {}));
+	return reasons;
+}
+
 export type BodyInspection =
 	| { readonly supported: true; readonly doc: Node }
 	| { readonly supported: false; readonly reasons: readonly string[] };
@@ -575,16 +597,7 @@ export type BodyInspection =
  * parsed document passes `checkNoteDoc`.
  */
 export function inspectNoteBody(text: string): BodyInspection {
-	const reasons = new Set<string>();
-	type Token = ReturnType<typeof detector.parse>[number];
-	const visit = (tokens: readonly Token[]) => {
-		for (const token of tokens) {
-			const reason = REFUSED[token.type];
-			if (reason !== undefined) reasons.add(reason);
-			if (token.children) visit(token.children);
-		}
-	};
-	visit(detector.parse(text, {}));
+	const reasons = refusedIn(text);
 	if (reasons.size > 0)
 		return {
 			supported: false,

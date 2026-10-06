@@ -357,6 +357,84 @@ describe('what counts as the same document', () => {
 	});
 });
 
+describe('text shaped like a table stays text', () => {
+	/** One paragraph of plain lines joined by line breaks. */
+	const lines = (...texts: string[]) =>
+		doc(
+			p(
+				...texts.flatMap((text, index) =>
+					index === 0 ? [t(text)] : [n('hard_break', null), t(text)],
+				),
+			),
+		);
+	const shaped: Record<string, [Node, string]> = {
+		'a header line with pipes over a delimiter line': [
+			lines('a | b', '|---|---|'),
+			'a | b\\\n\\|---|---|',
+		],
+		'a delimiter line that starts with a colon': [
+			lines('a | b', ':-|-:'),
+			'a | b\\\n\\:-|-:',
+		],
+		'a delimiter line that starts with a dash': [
+			lines('a | b', '-|-'),
+			'a | b\\\n\\-|-',
+		],
+		'an escaped pipe over a one-column delimiter': [
+			lines('a \\| b', ':-'),
+			'a \\\\| b\\\n\\:-',
+		],
+		'a line starting with a pipe over a delimiter': [
+			lines('|a', ':--'),
+			'\\|a\\\n\\:--',
+		],
+		'a code span with a pipe over a delimiter': [
+			doc(p(t('a|b', ['code']), n('hard_break', null), t(':-|-'))),
+			'`a|b`\\\n\\:-|-',
+		],
+		'pipes and colons inside a line are left alone': [
+			doc(p(t('a | b: c |'))),
+			'a | b: c |',
+		],
+	};
+	for (const [name, [document, markdown]] of Object.entries(shaped))
+		test(name, () => {
+			expect(checkNoteDoc(document)).toEqual({ ok: true, markdown });
+			const reopened = inspectNoteBody(markdown);
+			expect(reopened.supported).toBe(true);
+			if (reopened.supported)
+				expect(equivalentNoteDocs(reopened.doc, document)).toBe(true);
+		});
+
+	test('a code block holding a table is code, not a table', () => {
+		const code = doc(
+			n('code_block', { params: '' }, t('| a | b |\n|---|---|\n| 1 | 2 |')),
+		);
+		expect(checkNoteDoc(code)).toEqual({
+			ok: true,
+			markdown: '```\n| a | b |\n|---|---|\n| 1 | 2 |\n```',
+		});
+		expect(inspectNoteBody('```\n| a | b |\n|---|---|\n```').supported).toBe(
+			true,
+		);
+	});
+
+	test('a table typed in Source still opens in Source only', () => {
+		for (const source of [
+			'a | b\n|---|---|',
+			'a | b  \n|---|---|\n',
+			'a \\| b\n:-',
+			'`a|b`\n:-|-',
+		]) {
+			const inspection = inspectNoteBody(source);
+			expect(inspection).toEqual({
+				supported: false,
+				reasons: ['It contains a table.'],
+			});
+		}
+	});
+});
+
 describe('task markers', () => {
 	test('a literal [x] in a bullet list stays text when every item has one', () => {
 		const literal = doc(

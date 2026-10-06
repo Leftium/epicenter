@@ -391,17 +391,20 @@ test('a failed receipt is reported, and the retry records the identical files', 
 	await folder.close();
 });
 
-test('a differing destination is reported, left alone, and not recorded', async () => {
+test('a destination with an added BOM is reported, left alone, and not recorded', async () => {
 	const { folder, text } = await setup();
 	const plan = await planLegacyImport(DINNER, undefined);
-	const destination = plan.documents[0]?.path ?? '';
-	await folder.files.create(destination, 'someone else wrote this');
+	const document = plan.documents[0];
+	if (document === undefined) throw new Error('fixture');
+	const destination = document.path;
+	const changed = `\uFEFF${document.source}`;
+	expectOk(await folder.files.create(destination, changed));
 
 	const report = await runLegacyImport(folder.files, DINNER);
 	expect(report.documents.map((item) => item.status)).toEqual(['differs']);
 	expect(report.complete).toBe(false);
 	expect(report.receipt.status).toBe('unchanged');
-	expect(await text(destination)).toBe('someone else wrote this');
+	expect(await text(destination)).toBe(changed);
 	expect(expectErr(await folder.files.read(report.receiptPath)).name).toBe(
 		'NotFound',
 	);

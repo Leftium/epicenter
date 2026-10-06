@@ -495,14 +495,10 @@ async function createExclusive(
 		const { data: existing, error: readError } = await files.read(path);
 		if (readError !== null)
 			return { status: 'failed', message: readError.message };
-		try {
-			return {
-				status:
-					decoder.decode(existing.bytes) === source ? 'identical' : 'differs',
-			};
-		} catch {
-			return { status: 'differs' };
-		}
+		return {
+			status:
+				existing.sha256 === (await sha256Hex(source)) ? 'identical' : 'differs',
+		};
 	} catch (cause) {
 		return {
 			status: 'failed',

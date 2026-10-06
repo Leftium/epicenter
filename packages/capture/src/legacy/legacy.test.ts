@@ -21,7 +21,7 @@
  * - Each account has its own receipt and file names
  */
 import { afterAll, expect, test } from 'bun:test';
-import { mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openMemory } from '@epicenter/app/memory';
@@ -59,7 +59,10 @@ async function setup() {
 		}),
 	);
 	const captureFiles = async () =>
-		(await readdir(join(root, 'captures')).catch(() => [])).sort();
+		expectOk(await folder.files.list())
+			.files.filter(({ path }) => path.startsWith('captures/'))
+			.map(({ path }) => path.slice('captures/'.length))
+			.sort();
 	return {
 		root,
 		folder,
@@ -363,13 +366,13 @@ test('a failed receipt is reported, and the retry records the identical files', 
 	const { folder, captureFiles, text } = await setup();
 	let failReceipt = true;
 	const files: ImportFiles = {
-		read: (path) => folder.files.read(path),
+		read: folder.files.read,
 		create: async (path, content) => {
 			if (failReceipt && path.includes('receipt'))
 				throw new Error('disk went away');
 			return folder.files.create(path, content);
 		},
-		replace: (file, content) => folder.files.replace(file, content),
+		replace: folder.files.replace,
 	};
 	const partial = await runLegacyImport(files, DINNER);
 	expect(partial.documents.map((item) => item.status)).toEqual(['created']);

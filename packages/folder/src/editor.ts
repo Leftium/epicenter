@@ -411,8 +411,8 @@ function createRowEditor<TFields>(
 	 * resolves after whatever follows it is installed.
 	 */
 	let writeInFlight: Promise<void> | undefined;
-	/** The latest text set while a write runs, written when it completes. */
-	let pendingText: string | undefined;
+	/** Whether the current row's text must follow the running write. */
+	let pendingWrite = false;
 	// Counts setters and retries, which a reload must not overwrite even when
 	// they leave the snapshot as it was.
 	let inputRevision = 0;
@@ -421,7 +421,7 @@ function createRowEditor<TFields>(
 		inputRevision += 1;
 		const next = parseRow(text);
 		if (writeInFlight !== undefined) {
-			pendingText = text;
+			pendingWrite = true;
 			commit({ row: next });
 		} else {
 			commit({
@@ -452,8 +452,9 @@ function createRowEditor<TFields>(
 			});
 		writeInFlight = write(text).then((error) => {
 			writeInFlight = undefined;
-			const next = pendingText;
-			pendingText = undefined;
+			// Setters own the latest text; reload cannot adopt until writes settle.
+			const next = pendingWrite ? state.row.text : undefined;
+			pendingWrite = false;
 			if (next === undefined) {
 				commit({
 					save:

@@ -642,6 +642,24 @@ test('A active, B then C pending: A publishes, then C; B is never submitted; no 
 	expect(saves()).toEqual(['saving', 'saving', 'saving', 'idle']);
 });
 
+test('submitting identical text during its write still saves it next, empty text included', async () => {
+	for (const text of [row('A1'), '']) {
+		const fake = await openPlan();
+		const { editor } = fake;
+		fake.holdReplies();
+		editor.setText(text);
+		await until(() => fake.heldReplies() === 1);
+		editor.setText(text);
+		fake.releaseReply();
+		await until(() => fake.attempts.length === 2);
+		expect(editor.get().save.status).toBe('saving');
+		fake.releaseReplies();
+		expectOk(await editor.waitForSaves());
+		expect(fake.attempts).toEqual([text, text]);
+		expect(fake.disk()).toBe(text);
+	}
+});
+
 test("A's receipt with B public leaves B public: no rollback and no mixture", async () => {
 	const fake = await openPlan();
 	const { editor } = fake;

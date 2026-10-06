@@ -13,7 +13,7 @@
 	 *
 	 * Three panes and nothing else. Apps launches the crafted views, which the
 	 * OS then switches between. The session is owned here, above the visual
-	 * contents, and `Tabs.Content` hides an inactive pane rather than unmounting
+	 * contents, and `Tabs.Content forceMount` hides an inactive pane rather than unmounting
 	 * it, so switching panes never disturbs the live socket, the transcript, or
 	 * an unsent draft.
 	 *
@@ -77,15 +77,15 @@
 
 	<!-- Each pane owns its own padding so a full-height empty or loading state
 	     can center against the whole pane instead of a padded box. -->
-	<Tabs.Content value="apps" class="min-h-0 overflow-y-auto">
+	<Tabs.Content forceMount value="apps" class="min-h-0 overflow-y-auto">
 		<Applications ready={sessionReady} />
 	</Tabs.Content>
 
-	<Tabs.Content value="chat" class="min-h-0">
+	<Tabs.Content forceMount value="chat" class="min-h-0">
 		<Chat {session} />
 	</Tabs.Content>
 
-	<Tabs.Content value="settings" class="min-h-0 overflow-y-auto">
+	<Tabs.Content forceMount value="settings" class="min-h-0 overflow-y-auto">
 		<Settings />
 	</Tabs.Content>
 </Tabs.Root>

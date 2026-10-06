@@ -5,6 +5,10 @@
 - **Amends:** [ADR-0483](0483-honeycrisp-shares-one-canonical-editor-per-open-row.md), replacing partial changes, schema-gated acquisition and saving, raw-session transfers, recreation, and automatic file adoption. One owner per open row and application close consent remain.
 - **Amends:** [ADR-0471](0471-a-data-folder-handle-exposes-tables-kv-and-files.md), replacing the retained table editor's surface. Ordinary table and file commands remain.
 
+Capture's body composition is described in [ADR-0506](0506-capture-composes-values-through-a-source-preserving-body-codec.md). Both views use the same complete row editor and publication queue.
+
+Editor view and control ownership is described in [ADR-0507](0507-editor-views-compose-current-input-and-own-only-interaction-state.md).
+
 ## Context
 
 A second application draft requires its own timer, baseline, interpretation,
@@ -32,7 +36,8 @@ const { data: owner, error } = await notes.edit(stem, { signal });
 if (error !== null) return showOpenError(error);
 const editor = fromRowEditor(owner);
 
-editor.set({ fields: { ...editor.row.fields, title }, body: editor.row.body });
+if (editor.row.status === 'valid')
+  editor.set({ ...editor.row, fields: { ...editor.row.fields, title } });
 editor.setText(source);
 editor.retry();
 await editor.waitForSaves();

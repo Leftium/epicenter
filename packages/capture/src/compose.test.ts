@@ -20,7 +20,7 @@ import { join } from 'node:path';
 import { openFolder } from '@epicenter/folder/bun';
 import { expectOk } from 'wellcrafted/testing';
 import {
-	addThought,
+	captureBody,
 	captureDefinition,
 	composeBody,
 	parseCapture,
@@ -44,7 +44,7 @@ test('ordinary text is followed by the section and its thoughts', () => {
 	});
 	const reopened = parseCapture(HEAD + composeBody('Text', ['one']).body);
 	expect(reopened.text).toBe('Text');
-	expect(reopened.thoughts.map((thought) => thought.text)).toEqual(['one']);
+	expect(reopened.thoughts).toEqual(['one']);
 });
 
 test('its own Thoughts list then an open fence: marked, refused on reopening, bytes intact', () => {
@@ -59,15 +59,16 @@ test('its own Thoughts list then an open fence: marked, refused on reopening, by
 	expect(reopened.refusal?.code).toBe('duplicate-heading');
 	expect(reopened.thoughts).toEqual([]);
 	expect(reopened.text).toBeUndefined();
-	const refused = addThought(reopened, 'mine');
-	expect(refused.ok).toBe(false);
+	const refused = captureBody.encode(
+		{ text: 'mine', thoughts: [] },
+		composed.body,
+	);
+	expect(refused.error?.code).toBe('duplicate-heading');
 	// Without the mark, the article's list would have read as thoughts.
 	const unmarked = parseCapture(
 		`${HEAD}\n${OWN_LIST_THEN_OPEN_FENCE}\n\n## Thoughts\n`,
 	);
-	expect(unmarked.thoughts.map((thought) => thought.text)).toEqual([
-		'This belongs to the original article',
-	]);
+	expect(unmarked.thoughts).toEqual(['This belongs to the original article']);
 });
 
 test('the legacy import writes the marked file and reports it as source-only', async () => {

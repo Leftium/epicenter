@@ -52,6 +52,24 @@ When a file's layout is ambiguous (two "Thoughts" headings, text between the
 heading and the list, two lists), the Capture view says why and offers
 Source. Nothing is rewritten to make it fit.
 
+## The editor and its views
+
+Source and Capture share the editor acquired for the open file. Source binds
+its complete text. Capture decodes only its Markdown body as `{ text, thoughts }`
+and composes a complete desired value. The body codec reconstructs and checks
+that value, then the draft calls `editor.set({ ...editor.row, body })`.
+Thoughts are strings selected by position. A changed list uses consistent bullet
+formatting and preserves surrounding Markdown. A delayed edit or confirmation
+checks that its starting list is still current. Both views share the same save
+queue.
+
+The draft keeps text that a structured edit cannot represent. The editor keeps
+accepted text even when publication fails. A row with invalid fields or
+frontmatter, or a body with ambiguous Thoughts markup, opens Source with the
+reason visible. Repair leaves Source selected. Shared Tabs unmount inactive
+panels; shared Textarea stops retired controls from reading or delivering input.
+The draft keeps its single view selection above those panels.
+
 ## Saving
 
 Every change saves at once. The header shows the state, and shows it in red

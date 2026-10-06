@@ -899,48 +899,67 @@ Svelte 5.9 or later is an optional peer; no other entry loads it.
 <script lang="ts">
   import { withFileNewlines } from '@epicenter/folder/file-browser';
   import { fromRowEditor } from '@epicenter/folder/svelte';
+  import { Input } from '@epicenter/ui/input';
+  import * as Tabs from '@epicenter/ui/tabs';
+  import { Textarea } from '@epicenter/ui/textarea';
 
-  let { rowEditor } = $props();                  // retained above this view
+  let { rowEditor } = $props(); // retained above this view
   const editor = $derived(fromRowEditor(rowEditor));
-  let rawMode = $state(false);
-  const lf = (text: string) => text.replace(/\r\n?/g, '\n'); // what textareas report
+  let tab = $state('fields');
+  const lf = (text: string) => text.replace(/\r\n?/g, '\n');
 
-  function title() {
-    return editor.row.status === 'valid' ? editor.row.fields.title : '';
-  }
-  function setTitle(title: string) {
-    if (editor.row.status !== 'valid' || rawMode) return; // only while the fields view exists
-    const { error } = editor.set({ fields: { ...editor.row.fields, title }, body: editor.row.body });
-    if (error !== null) showRefusal(error);      // nothing changed
-  }
-  function text() {
-    return lf(editor.row.text);
-  }
-  function setText(next: string) {
-    // Only while the raw view exists: invalid, or valid in raw mode.
-    if (editor.row.status === 'valid' && !rawMode) return;
-    rawMode = true;
-    editor.setText(withFileNewlines(next, editor.row.text));
-  }
-  async function reload() {
-    const { error } = await editor.reload();
-    if (error !== null) showReloadFailure(error); // the row and its save state stay
-  }
+  // Open repair automatically; repair itself never switches back.
+  $effect(() => {
+    if (editor.row.status === 'invalid') tab = 'source';
+  });
 </script>
 
-{#if 'error' in editor.save && editor.save.error}
-  <SaveFailure error={editor.save.error} />
-{/if}
 {#if editor.save.status === 'failed'}
+  <SaveFailure error={editor.save.error} />
   <button onclick={editor.retry}>Save this text again</button>
 {/if}
-{#if editor.row.status === 'invalid' || rawMode}
-  <textarea aria-label="Markdown source" bind:value={text, setText}></textarea>
-{:else}
-  <input aria-label="Title" bind:value={title, setTitle} />
-{/if}
-<button onclick={reload}>Reload</button>
+<Tabs.Root bind:value={tab}>
+  <Tabs.List>
+    <Tabs.Trigger value="fields" disabled={editor.row.status !== 'valid'}>Fields</Tabs.Trigger>
+    <Tabs.Trigger value="source">Source</Tabs.Trigger>
+  </Tabs.List>
+  <Tabs.Content value="fields">
+    {#if editor.row.status === 'valid'}
+      {@const row = editor.row}
+      <Input aria-label="Title" bind:value={
+        () => row.fields.title,
+        (title) => {
+          if (tab !== 'fields' || editor.row.status !== 'valid') return;
+          const { error } = editor.set({
+            ...editor.row,
+            fields: { ...editor.row.fields, title },
+          });
+          if (error !== null) showRefusal(error);
+        }
+      } />
+    {/if}
+  </Tabs.Content>
+  <Tabs.Content value="source">
+    <Textarea aria-label="Markdown source" bind:value={
+      () => lf(editor.row.text),
+      (text) => editor.setText(withFileNewlines(text, editor.row.text))
+    } />
+  </Tabs.Content>
+</Tabs.Root>
 ```
+
+The render-time `row` makes the title getter total. Writes use the current
+`editor.row`, so another field's edit is preserved. The application supplies
+`showRefusal` and retains any input the editor refuses.
+
+The shared view doctrine is [ADR-0507](../../docs/adr/0507-editor-views-compose-current-input-and-own-only-interaction-state.md).
+Source, field forms, and body codecs share this owner. Keep one view selection;
+derive validity and save presentation from the editor. Shared `Tabs.Content`
+unmounts inactive children and shared `Input`/`Textarea` retire destroyed value
+bindings. Keep refused input and unfinished sessions above those views, and check
+current-row eligibility in structured setters. A view component earns its place
+through substantial UI, transformation, or lifetime ownership; forwarding one
+binding does not require a component.
 
 - Reads. `row` and `save` return the owner's current `get()` parts every
   time; the wrapper copies nothing. A read inside an effect, or inside a
@@ -950,22 +969,22 @@ Svelte 5.9 or later is an optional peer; no other entry loads it.
   watches nothing. Reads outside any effect or derived subscribe to nothing.
   Read the native `rowEditor.get()` imperatively for nonreactive work. A
   destructured `row` is a snapshot, not a tracked read.
+
 - Commands. `set`, `setText`, `retry`, `waitForSaves`, and `reload` are the owner's
   own functions, safe to pass as handlers. Adapting the same owner again
   returns the same wrapper. Switching a view to another owner ends the
   subscription to the first; its admitted writes finish.
-- Binding guards are caller code. Each binding guards both directions against
-  its own view's gate: getters narrow `row`, and setters return unless the
-  row still supports their view. A leaving view keeps its input listener:
+- Binding eligibility is caller code. Structured controls render under a valid
+  row, and setters check the current row and application eligibility at the event. A leaving view keeps its input listener:
   Svelte pauses an outroing view's effects rather than destroying them and
   marks it `inert`. Ordinary typing stops in a browser, but a committing IME
   composition, assistive technology, script, or a form reset can still
   deliver input, and an unguarded setter then replaces the whole row. A
   destroyed view keeps them too: Svelte never removes the listeners its
   bindings add to an element, so a control something still holds can call a
-  setter after the view unmounts, with or without an outro. Where that
-  matters, a setter can also check a flag cleared in `onDestroy`, as the
-  callers page in `evidence/edit-handle/canonical-web` does. The adapter and
+  setter after the view unmounts, with or without an outro. The shared UI
+  `Input` and `Textarea` guard destroyed value bindings. Native controls,
+  other handlers, and leaving views still need their own lifetime rules. The adapter and
   the native setters guard nothing.
 - Forms. Live-bound fields do not belong in a resettable form: a reset submits
   each field's `defaultValue` through its setter. An application draft can

@@ -14,7 +14,7 @@
 	import { Button } from '@epicenter/ui/button';
 	import { onDestroy, untrack } from 'svelte';
 	import type { Draft, ThoughtEdit } from '$lib/draft.svelte.js';
-	import BoundText from './BoundText.svelte';
+	import { Textarea } from '@epicenter/ui/textarea';
 
 	let {
 		draft,
@@ -57,26 +57,21 @@
 		node.setSelectionRange(node.value.length, node.value.length);
 	}
 
-	function save(event: SubmitEvent) {
-		event.preventDefault();
-		if (own() && draft.commitEditing(id)) onSaved();
-	}
-
-	function cancel() {
-		if (!own()) return;
-		draft.cancelEditing(id);
-		onCancelled();
-	}
 </script>
 
-<form class="flex flex-col gap-2 py-1" onsubmit={save}>
-	<BoundText
+<form class="flex flex-col gap-2 py-1" onsubmit={(event) => {
+		event.preventDefault();
+		if (own() && draft.commitEditing(id)) onSaved();
+	}}>
+	<Textarea
 		aria-label="Thought text"
 		readonly={held}
-		read={() => (draft.editing?.id === id ? draft.editing.text : '')}
-		write={(value) => {
-			if (own()) draft.inputEditing(value, id);
-		}}
+		bind:value={
+			() => (draft.editing?.id === id ? draft.editing.text : ''),
+			(value) => {
+				if (own()) draft.inputEditing(value, id);
+			}
+		}
 		onkeydown={submitOnModEnter}
 		rows={rowsFor(draft.editing?.id === id ? draft.editing.text : '')}
 		class="leading-relaxed"
@@ -84,6 +79,10 @@
 	/>
 	<div class="flex flex-wrap gap-2">
 		<Button type="submit" size="sm" disabled={held}>Save thought</Button>
-		<Button size="sm" variant="outline" disabled={held} onclick={cancel}>Cancel</Button>
+		<Button size="sm" variant="outline" disabled={held} onclick={() => {
+			if (!own()) return;
+			draft.cancelEditing(id);
+			onCancelled();
+		}}>Cancel</Button>
 	</div>
 </form>

@@ -1,7 +1,7 @@
 /**
- * Capture Document Tests
+ * Capture Body Composition Tests
  *
- * Reads capture Markdown as text and thoughts, and checks every operation's
+ * Reads capture Markdown as text and thoughts, and checks composed values'
  * output against the literal bytes it must produce. The expectations are
  * written out by hand: they do not come from parsing the result again.
  *
@@ -17,35 +17,92 @@
  * - Edits replace one span: unknown frontmatter, a byte-order mark, CRLF
  *   lines, original leading and trailing whitespace, and trailing blocks stay
  * - An unclosed fence refuses an append that it would absorb
- * - Edit, delete, and either side of a reorder refuse a thought from another
- *   parse, even with equal text at the same index
+ * - List edits format positional thought strings as consistent bullet items
  */
 import { expect, test } from 'bun:test';
+import { frameRowText } from '@epicenter/folder';
 import {
-	addThought,
+	type CaptureBody,
 	type CaptureDocument,
+	captureBody,
 	composeBody,
-	deleteThought,
-	type Edit,
-	editThought,
 	fromTextarea,
 	normalizeThought,
-	parseCapture,
-	setText,
-	swapThoughts,
-	type Thought,
+	parseCapture as parseFile,
 } from './index.js';
+
+type Edit =
+	| { ok: true; source: string }
+	| { ok: false; refusal: { code: string; message: string } };
+
+// Golden file expectations retain their original headers. Only the body goes
+// through the codec; Folder's own tests cover frontmatter serialization.
+function parseCapture(source: string): CaptureDocument {
+	const frame = frameRowText(source);
+	if (frame.kind !== 'frontmatter') return parseFile(source);
+	const result = captureBody.decode(source.slice(frame.bodyStart));
+	return result.data
+		? { ...parseFile(source), ...result.data, source }
+		: { ...parseFile(source), refusal: result.error };
+}
+function write(document: CaptureDocument, value: CaptureBody): Edit {
+	if (document.refusal) return { ok: false, refusal: document.refusal };
+	const frame = frameRowText(document.source);
+	if (frame.kind !== 'frontmatter') throw new Error('fixture');
+	const result = captureBody.encode(
+		value,
+		document.source.slice(frame.bodyStart),
+	);
+	return result.error === null
+		? {
+				ok: true,
+				source: document.source.slice(0, frame.bodyStart) + result.data,
+			}
+		: { ok: false, refusal: result.error };
+}
+const setText = (document: CaptureDocument, text: string) =>
+	write(document, { text, thoughts: document.thoughts });
+const addThought = (document: CaptureDocument, text: string) =>
+	write(document, {
+		text: document.text ?? '',
+		thoughts: [...document.thoughts, text],
+	});
+const editThought = (document: CaptureDocument, index: number, text: string) =>
+	write(document, {
+		text: document.text ?? '',
+		thoughts: document.thoughts.map((thought, at) =>
+			at === index ? text : thought,
+		),
+	});
+const deleteThought = (document: CaptureDocument, index: number) =>
+	write(document, {
+		text: document.text ?? '',
+		thoughts: document.thoughts.filter((_, at) => at !== index),
+	});
+function swapThoughts(
+	document: CaptureDocument,
+	from: number,
+	to: number,
+): Edit {
+	if (document.refusal) return { ok: false, refusal: document.refusal };
+	const thoughts = [...document.thoughts];
+	const first = thoughts[from];
+	const second = thoughts[to];
+	if (first === undefined || second === undefined) throw new Error('fixture');
+	thoughts[from] = second;
+	thoughts[to] = first;
+	return write(document, { text: document.text ?? '', thoughts });
+}
 
 function sourceOf(edit: Edit): string {
 	if (!edit.ok) throw new Error(`Refused: ${edit.refusal.message}`);
 	return edit.source;
 }
 
-/** A thought of this document, as a caller holding the parse would pass it. */
-function nth(document: CaptureDocument, index: number): Thought {
-	const thought = document.thoughts[index];
-	if (thought === undefined) throw new Error(`No thought ${index}`);
-	return thought;
+function nth(document: CaptureDocument, index: number): number {
+	if (document.thoughts[index] === undefined)
+		throw new Error(`No thought ${index}`);
+	return index;
 }
 
 function refusalOf(edit: Edit) {
@@ -58,7 +115,7 @@ const read = (source: string) => {
 	return {
 		refusal: document.refusal?.code,
 		text: document.text,
-		thoughts: document.thoughts.map((thought) => thought.text),
+		thoughts: document.thoughts,
 	};
 };
 
@@ -167,7 +224,7 @@ test('blocks after the list and after the next heading are never thoughts', () =
 	const document = parseCapture(
 		`${HEAD}T\n\n## Thoughts\n\n- one\n\nTrailing paragraph.\n\n## Later\n\n- not a thought\n`,
 	);
-	expect(document.thoughts.map((thought) => thought.text)).toEqual(['one']);
+	expect(document.thoughts).toEqual(['one']);
 	expect(document.hasOtherContent).toBe(true);
 });
 
@@ -219,13 +276,13 @@ test.each([
 	expect(document.refusal?.code).toBe(code);
 	expect(document.text).toBeUndefined();
 	expect(document.thoughts).toEqual([]);
-	const seen = { index: 0, text: 'x' };
+	const seen = 0;
 	for (const edit of [
 		setText(document, 'new'),
 		addThought(document, 'new'),
 		editThought(document, seen, 'new'),
 		deleteThought(document, seen),
-		swapThoughts(document, seen, { index: 1, text: 'y' }),
+		swapThoughts(document, seen, 1),
 	])
 		expect(refusalOf(edit).code).toBe(code);
 });
@@ -285,15 +342,15 @@ test('swapping exchanges the two items and keeps the bytes between them', () => 
 	).toBe(swapped);
 });
 
-test('a loose list keeps its blank lines through add, swap, and delete', () => {
+test('list edits use consistent spacing while retaining surrounding blank lines', () => {
 	const source = `${HEAD}T\n\n## Thoughts\n\n- a\n\n- b\n\nAfter.\n`;
 	const document = parseCapture(source);
 	expect(sourceOf(addThought(document, 'c'))).toBe(
-		`${HEAD}T\n\n## Thoughts\n\n- a\n\n- b\n\n- c\n\nAfter.\n`,
+		`${HEAD}T\n\n## Thoughts\n\n- a\n- b\n- c\n\nAfter.\n`,
 	);
 	expect(
 		sourceOf(swapThoughts(document, nth(document, 0), nth(document, 1))),
-	).toBe(`${HEAD}T\n\n## Thoughts\n\n- b\n\n- a\n\nAfter.\n`);
+	).toBe(`${HEAD}T\n\n## Thoughts\n\n- b\n- a\n\nAfter.\n`);
 	expect(sourceOf(deleteThought(document, nth(document, 0)))).toBe(
 		`${HEAD}T\n\n## Thoughts\n\n- b\n\nAfter.\n`,
 	);
@@ -398,7 +455,11 @@ test('a heading typed inside a thought stays inside that thought', () => {
 	);
 	expect(next).toBe(`${HEAD}a\n\n## Thoughts\n\n- x\n\n  ## Thoughts\n- u\n`);
 	expect(read(next).thoughts).toEqual(['x\n\n## Thoughts', 'u']);
-	expect(refusalOf(addThought(document, '  \n ')).code).toBe('empty');
+	expect(read(sourceOf(addThought(document, '  \n '))).thoughts).toEqual([
+		't',
+		'u',
+		'',
+	]);
 });
 
 test('thought normalization removes blank edges and preserves interior lines and text whitespace', () => {
@@ -409,46 +470,6 @@ test('thought normalization removes blank edges and preserves interior lines and
 	).toBe('  first  \n\n  continuation  ');
 	expect(normalizeThought(' \t\r\n \n\t')).toBe('');
 	expect(normalizeThought('  only  ')).toBe('  only  ');
-});
-
-// ============================================================================
-// Stale thoughts
-// ============================================================================
-
-test('a thought from another parse is refused, even with equal text at the same index', () => {
-	const source = `${HEAD}a\n\n## Thoughts\n\n- same\n- same\n- three\n`;
-	const shown = parseCapture(source);
-	// The same bytes parsed again are a different generation.
-	const reparsed = parseCapture(source);
-	// A changed source that still has "same" at index 0.
-	const changed = parseCapture(
-		`${HEAD}a changed\n\n## Thoughts\n\n- same\n- same\n- three\n`,
-	);
-	for (const document of [reparsed, changed]) {
-		expect(refusalOf(editThought(document, nth(shown, 0), 'x')).code).toBe(
-			'stale',
-		);
-		expect(refusalOf(deleteThought(document, nth(shown, 0))).code).toBe(
-			'stale',
-		);
-		// Either operand alone from the other parse refuses the swap.
-		expect(
-			refusalOf(swapThoughts(document, nth(shown, 0), nth(document, 1))).code,
-		).toBe('stale');
-		expect(
-			refusalOf(swapThoughts(document, nth(document, 0), nth(shown, 1))).code,
-		).toBe('stale');
-	}
-	expect(
-		refusalOf(editThought(shown, { index: 0, text: 'same' }, 'x')).code,
-	).toBe('stale');
-	expect(
-		refusalOf(swapThoughts(shown, nth(shown, 0), nth(shown, 2))).code,
-	).toBe('stale');
-	// The thoughts of the document itself are accepted.
-	expect(sourceOf(deleteThought(shown, nth(shown, 0)))).toBe(
-		`${HEAD}a\n\n## Thoughts\n\n- same\n- three\n`,
-	);
 });
 
 // ============================================================================

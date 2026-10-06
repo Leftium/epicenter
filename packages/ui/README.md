@@ -95,6 +95,27 @@ Use the component whose interaction contract matches the job:
 Dialog, Modal, Sheet, and Drawer surfaces need accessible titles. Use an
 `sr-only` title when the visual design already supplies equivalent context.
 
+### Editor control and panel lifetimes
+
+`Textarea` and `Input` expose `bind:value`, including function bindings for values
+read from an editor. Once a component is destroyed, its native value binding
+stops reading the caller and stops writing, even if something still holds its DOM
+element and dispatches input on it. The last displayed value is retained only for
+that retired control. Other event handlers, file bindings, and controls own their
+separate eligibility rules.
+
+`Tabs.Content` unmounts inactive children by default, including custom `child`
+snippets. Do not repeat the selected-tab condition inside every panel. Keep editor
+input, refused input, and unfinished forms above disposable panels. Use
+`forceMount` when an inactive panel intentionally owns state that must survive:
+Epicenter's main app panes preserve the chat draft and session that way. The
+retained panel stays hidden and its controls remain alive.
+
+A structured panel still renders only while the current row is valid. Its setters
+check current row and application eligibility because input may arrive before
+Svelte removes a leaving control. The common ownership pattern is recorded in
+[ADR-0507](../../docs/adr/0507-editor-views-compose-current-input-and-own-only-interaction-state.md).
+
 ### Loading and Empty State Guidelines
 
 Use `Loading` for generic full-surface pending states that only need the
@@ -224,6 +245,8 @@ These differences survive this migration:
 | --- | --- | --- |
 | Button and Link | `tooltip` prop and composed trigger props | Apps need one-label tooltips on buttons and links, including controls nested in popovers. Button also keeps anchor and disabled behavior, eight sizes, `ghost-destructive`, and the public `buttonVariants` export. |
 | Dialog and Drawer | Button close control, viewport scrolling, and Drawer content scroll wrapper | Long recording details remain usable, and mobile content can scroll without losing drag behavior. Installed Vaul `1.0.0-next.7` already suppresses autofocus by default. |
+| Input and Textarea | Value bindings retire on destruction | Capture and Whispering retained DOM controls must never read or overwrite later input. |
+| Tabs.Content | Inactive children unmount; `forceMount` retains them explicitly | Editor panels share one selection and disposable controls; the main app shell preserves its chat and settings state. |
 | Modal | One responsive Dialog or Drawer with a shared open state | Forms use Dialog on desktop and a draggable Drawer below 768px. |
 | Menus and Select | Translucent surfaces, menu item state styling, logical submenu slides, and Select's minimum-content width | Shared menu appearance and long, scrollable app menus. |
 | Table | Hover fills cells rather than the row | Svelte's row wrapper and opaque cells otherwise hide the hover fill. |

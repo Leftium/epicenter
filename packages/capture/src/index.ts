@@ -4,12 +4,12 @@ export {
 	captureDefinition,
 } from './definition.js';
 export {
-	addThought,
+	type CaptureBody,
+	type CaptureBodyCodec,
+	type CaptureBodyReading,
 	type CaptureDocument,
+	captureBody,
 	composeBody,
-	deleteThought,
-	type Edit,
-	editThought,
 	excerpt,
 	fromTextarea,
 	type Newline,
@@ -18,9 +18,6 @@ export {
 	type Refusal,
 	type RefusalCode,
 	renderThought,
-	setText,
-	swapThoughts,
-	type Thought,
 	toTextarea,
 	unparsedCapture,
 } from './document.js';

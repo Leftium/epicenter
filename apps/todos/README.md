@@ -303,8 +303,8 @@ without the push.
 2. Edit the title or notes. Each edit saves the todo's whole standard form
    at once: keys quoted, values in JSON spelling, keys Todos does not
    declare kept. A key you remove in the source is removed from the file.
-   **Edit source** in the Source tab edits the file's exact text through the
-   same todo; it stays in the source until you choose **Edit fields**. Saves
+   The **Source** tab edits the file's exact text through the
+   same todo; it stays in Source after repair until you choose **Notes** or **Edit fields**. Saves
    of one todo run one at a time, and the latest edit follows the save that
    is running. The todo does not follow changes made elsewhere: **Reload**
    reads the file and shows it, and otherwise your next edit writes over

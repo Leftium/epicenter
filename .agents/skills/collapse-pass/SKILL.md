@@ -61,6 +61,21 @@ state, dead exports, obsolete compatibility paths, and files that only pass work
 elsewhere. Use [code-audit](../code-audit/SKILL.md) and the
 [smell catalog](references/smell-catalog.md) when a concrete search helps.
 
+For Svelte input wrappers, hunt paired `read`/`write`, `getValue`/`setValue`,
+and forwarding value-change props that recreate the binding protocol. Use
+[Svelte function bindings](../svelte/references/component-ui-patterns.md#function-bindings-for-transformed-values)
+when one bindable value removes that custom API. Trace transformations and
+lifecycle guards before collapsing them; commands and draft ownership may earn
+their boundaries.
+
+For file editor consumers, also hunt copied row/valid/save state, duplicate tab and
+raw-mode selections, selected-tab conditions inside shared `Tabs.Content`, and
+thin Source or Capture components. Follow
+[the Svelte editor ownership patterns](../svelte/references/component-ui-patterns.md#file-editor-views).
+Use shared `Input` and `Textarea` lifetime behavior instead of app-local wrappers.
+A retained draft, edit identity, confirmation, fence, or rich-editor undo history
+is application information to preserve, not a rune-count target.
+
 Trace callers and mentally inline the candidate. Preserve evaluation timing,
 receiver binding, caching, and snapshot semantics when inlining. Keep a boundary when it names
 non-obvious work, enforces a shared rule, owns a lifecycle, isolates unsafe input,

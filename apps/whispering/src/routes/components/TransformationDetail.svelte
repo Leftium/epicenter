@@ -25,10 +25,9 @@
 	import type { Library, RowSlot, TextRun, TransformationEntry } from '$lib/library.svelte.js';
 	import { recipeEndpoint } from '$lib/recipe.js';
 	import { committedState } from '$lib/status.js';
-	import { confirmDelete, copyText, formatTime, lf, recordingTitle } from './file-actions.js';
+	import { confirmDelete, copyText, formatTime, recordingTitle } from './file-actions.js';
 	import LiveButton from './LiveButton.svelte';
-	import LiveInput from './LiveInput.svelte';
-	import LiveTextarea from './LiveTextarea.svelte';
+	import { Input } from '@epicenter/ui/input';
 	import RowSaveStatus from './RowSaveStatus.svelte';
 	import SettingsForm from './SettingsForm.svelte';
 	import TransformationOutput from './TransformationOutput.svelte';
@@ -82,7 +81,7 @@
 	/*
 	 * Fields and instructions are live controls only while the fields are the
 	 * view, and the source only while it is. Each live control has its own
-	 * lifetime (LiveInput, LiveTextarea, LiveButton): one that is gone
+	 * lifetime (Input, Textarea, LiveButton): one that is gone
 	 * delivers nothing, even after its view returns.
 	 */
 	const fieldsEditable = $derived(editing?.view === 'fields');
@@ -128,7 +127,11 @@
 	/** This recipe's run on pasted text that is not a saved result: running, failed, or waiting for Save. */
 	const textRun = $derived<TextRun | undefined>(library.textRuns.find((run) => run.fields.transformationId === id));
 	/** Authoring comes first, unless a result on pasted text is waiting here to be saved or retried. */
-	let tab = $state(untrack(() => textRun) ? 'try' : 'instructions');
+	// Workflow selection within the fields view; source selection belongs to editing.
+	let tab = $state<'instructions' | 'try'>(untrack(() => textRun) ? 'try' : 'instructions');
+	$effect(() => {
+		if (editing?.row.status === 'invalid') tab = 'instructions';
+	});
 	let editor = $state<HTMLElement | null>(null);
 	let tabTriggers = $state<Record<'instructions' | 'try', HTMLElement | null>>({ instructions: null, try: null });
 	/** Where focus was when this editor first saw the request for Try it, while it waits to show it. */
@@ -218,6 +221,11 @@
 	/** Show Instructions with the model notes open. The button pressed leaves with Try it, so focus moves to the tab. */
 	function goToInstructions() {
 		const from = document.activeElement;
+		const problem = library.useForm(path);
+		if (problem) {
+			toast.error('The fields were not opened', { description: problem });
+			return;
+		}
 		tab = 'instructions';
 		notesOpen = true;
 		void focusTab('instructions', from);
@@ -245,16 +253,6 @@
 		(blocked === undefined ? runButtons[applySource] : (goToInstructionsButton ?? blockedReason))?.focus();
 	}
 
-	function editText() {
-		const problem = library.editSource(path);
-		if (problem) toast.error('The text was not opened for editing', { description: problem });
-	}
-
-	function editFields() {
-		const problem = library.useForm(path);
-		if (problem) toast.error('The fields were not opened', { description: problem });
-	}
-
 	async function retryOpen() {
 		const problem = await library.retryOpen(path);
 		if (problem) toast.error('The transformation was not opened', { description: problem });
@@ -269,10 +267,9 @@
 			</Button>
 		{/if}
 		{#if fieldsEditable}
-			<LiveInput
+			<Input
 				class="flex-1 text-base font-medium"
-				get={() => editing?.fieldText('title') ?? ''}
-				set={(value) => editing?.setField('title', value)}
+				bind:value={() => editing?.fieldText('title') ?? '', (value) => editing?.setField('title', value)}
 				readonly={!editing?.editable}
 				placeholder="Title"
 				aria-label="Transformation title"
@@ -298,9 +295,6 @@
 			<p class="mb-1 flex flex-wrap items-center gap-2 font-medium">
 				<Badge variant="destructive">Needs repair</Badge>
 				{reading.parseError.message}. Edit the source to fix it.
-				{#if tab !== 'source'}
-					<Button size="xs" variant="outline" onclick={() => (tab = 'source')}>Edit Source</Button>
-				{/if}
 			</p>
 			<ul class="space-y-0.5 text-muted-foreground">
 				{#each reading.parseError.diagnostics as diagnostic, index (index)}
@@ -313,9 +307,6 @@
 			<p class="mb-1 flex flex-wrap items-center gap-2 font-medium">
 				<Badge variant="destructive">Needs repair</Badge>
 				Some fields need fixing in Source.
-				{#if tab !== 'source'}
-					<Button size="xs" variant="outline" onclick={() => (tab = 'source')}>Edit Source</Button>
-				{/if}
 			</p>
 			<ul class="space-y-0.5 text-muted-foreground">
 				{#each reading.issues as issue, index (index)}
@@ -333,9 +324,26 @@
 			<LiveButton size="sm" variant="outline" onclick={() => void retryOpen()}>Try again</LiveButton>
 		</div>
 	{:else}
-	<Tabs.Root bind:value={tab} class="flex min-h-0 flex-1 flex-col px-3 py-3 sm:px-4">
+	<Tabs.Root bind:value={
+		() => tab === 'try' ? 'try' : editing?.view === 'source' ? 'source' : 'instructions',
+		(value) => {
+			if (value === 'source') {
+				const problem = library.editSource(path);
+				if (problem) toast.error('The text was not opened for editing', { description: problem });
+				else tab = 'instructions';
+				return;
+			}
+			if (value === 'try') {
+				tab = 'try';
+				return;
+			}
+			const problem = library.useForm(path);
+			if (problem) toast.error('The fields were not opened', { description: problem });
+			else tab = 'instructions';
+		}
+	} class="flex min-h-0 flex-1 flex-col px-3 py-3 sm:px-4">
 		<Tabs.List>
-			<Tabs.Trigger bind:ref={tabTriggers.instructions} value="instructions" data-testid="tab-instructions">Instructions</Tabs.Trigger>
+			<Tabs.Trigger bind:ref={tabTriggers.instructions} value="instructions" disabled={editing?.row.status !== 'valid'} data-testid="tab-instructions">Instructions</Tabs.Trigger>
 			<Tabs.Trigger bind:ref={tabTriggers.try} value="try" data-testid="tab-try">
 				Try it
 				{#if running || textRun?.state.kind === 'running'}
@@ -377,11 +385,10 @@
 				<Field.Field>
 					<Field.Label for="transformation-prompt">Instructions</Field.Label>
 					{#if fieldsEditable}
-						<LiveTextarea
+						<Textarea
 							id="transformation-prompt"
 							class="min-h-36 resize-y font-sans"
-							get={() => editing?.bodyText() ?? ''}
-							set={(value) => editing?.setBody(value)}
+							bind:value={() => editing?.bodyText() ?? '', (value) => editing?.setBody(value)}
 							readonly={!editing?.editable}
 							placeholder="Say what to do with the text, such as: Fix punctuation and remove filler words. Answer with the text only."
 							data-testid="transformation-prompt"
@@ -411,10 +418,9 @@
 						<Field.Field>
 							<Field.Label for="transformation-model">Model (optional)</Field.Label>
 							{#if fieldsEditable}
-								<LiveInput
+								<Input
 									id="transformation-model"
-									get={() => editing?.fieldText('model') ?? ''}
-									set={(value) => {
+									bind:value={() => editing?.fieldText('model') ?? '', (value) => {
 										// An empty model uses the text connection's model.
 										editing?.setField('model', value.trim() === '' ? null : value);
 									}}
@@ -620,28 +626,13 @@
 			</div>
 		</Tabs.Content>
 		<Tabs.Content value="source" class="flex min-h-0 flex-1 flex-col gap-2">
-			{#if editing?.view === 'fields'}
+			{#if editing?.view === 'source'}
 				<p class="text-xs text-muted-foreground">
-					What a save writes: the title, model, and endpoint as frontmatter in a fixed form, then the instructions as the Markdown body.
-					Fields the app does not know are kept.
-					<LiveButton size="xs" variant="outline" class="ml-1" onclick={editText} data-testid="edit-text">Edit the text</LiveButton>
+					The file’s exact text. It saves as typed, readable or not.
 				</p>
 				<Textarea
 					class="h-full min-h-40 flex-1 resize-none font-mono text-xs"
-					value={lf(editing.row.text)}
-					aria-label="Markdown source"
-					readonly
-					spellcheck={false}
-				/>
-			{:else if editing?.view === 'source'}
-				<p class="text-xs text-muted-foreground">
-					The file’s exact text. It saves as typed, readable or not.
-					<LiveButton size="xs" variant="outline" class="ml-1" onclick={editFields} data-testid="edit-fields">Edit the fields</LiveButton>
-				</p>
-				<LiveTextarea
-					class="h-full min-h-40 flex-1 resize-none font-mono text-xs"
-					get={() => editing?.sourceValue() ?? ''}
-					set={(value) => editing?.setText(value)}
+					bind:value={() => editing?.sourceValue() ?? '', (value) => editing?.setText(value)}
 					readonly={!editing?.editable}
 					aria-label="Markdown source"
 					spellcheck={false}

@@ -297,11 +297,11 @@ export function createWord({
 			const { row } = editor.get();
 			if (row.status !== 'valid') return null;
 			const { error: setError } = editor.set({
+				...row,
 				fields: {
 					...row.fields,
 					note: withFileNewlines(text, row.fields.note),
 				},
-				body: row.body,
 			});
 			if (setError !== null) {
 				refusedNote = { text, reason: setError.refusal.reason };
@@ -329,8 +329,8 @@ export function createWord({
 			if (row.status !== 'valid')
 				return `This word’s file needs repair before its stage can change: ${describeRowError(row.error)}`;
 			const { error: setError } = current.set({
+				...row,
 				fields: { ...row.fields, stage },
-				body: row.body,
 			});
 			if (setError !== null)
 				return `This word cannot be saved: ${setError.refusal.reason}`;
@@ -414,9 +414,7 @@ export function createWord({
 					readonly message: string;
 				} | null;
 			},
-		>(
-			remove: (shown: string | undefined) => Promise<T>,
-		): Promise<T | 'busy'> {
+		>(remove: (shown: string | undefined) => Promise<T>): Promise<T | 'busy'> {
 			if (stopped() !== null) return Promise.resolve('busy');
 			const shown = editor?.get().row.text;
 			fence = 'deleting';

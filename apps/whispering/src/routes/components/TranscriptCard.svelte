@@ -13,7 +13,7 @@
 	import { transformationName } from '$lib/post-processing.js';
 	import { copyText, formatTime, lf } from './file-actions.js';
 	import LiveButton from './LiveButton.svelte';
-	import LiveTextarea from './LiveTextarea.svelte';
+	import { Textarea } from '@epicenter/ui/textarea';
 	import RowSaveStatus from './RowSaveStatus.svelte';
 	import TransformationOutput from './TransformationOutput.svelte';
 
@@ -48,7 +48,7 @@
 		return inspectRow(whisperingDefinition.tables.transcriptions, editing.row.text).body;
 	});
 	const unsettled = $derived(editing !== undefined && editing.status.kind !== 'saved');
-	// The live textarea has its own lifetime (LiveTextarea): one that is gone
+	// The live textarea has its own lifetime (Textarea): one that is gone
 	// delivers nothing, even after the fields view returns.
 
 	const outputs = $derived(library.outputsFor(result.stem));
@@ -73,10 +73,9 @@
 
 <article class="flex flex-col gap-2 rounded border p-3 text-sm" data-testid="transcription-result">
 	{#if editable}
-		<LiveTextarea
+		<Textarea
 			class="min-h-32 resize-y font-sans"
-			get={() => editing?.bodyText() ?? ''}
-			set={(value) => editing?.setBody(value)}
+			bind:value={() => editing?.bodyText() ?? '', (value) => editing?.setBody(value)}
 			readonly={!editing?.editable}
 			placeholder="This transcript has no text."
 			aria-label="Transcript of {formatTime(result.fields.createdAt) || result.path}"

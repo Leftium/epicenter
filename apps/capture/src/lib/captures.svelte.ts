@@ -28,10 +28,10 @@ import {
 	CAPTURES_TABLE,
 	type CaptureDocument,
 	type CaptureFields,
+	captureBody,
 	captureDefinition,
 	composeBody,
 	excerpt,
-	parseCapture,
 	unparsedCapture,
 } from '@epicenter/capture';
 import {
@@ -318,10 +318,22 @@ export function createCaptures(host: Pick<CaptureHost, 'folder' | 'location'>) {
 		if (document === undefined) {
 			if (parsed.size > 2000) parsed.clear();
 			// Text and thoughts are read only from a file that parses as a capture.
-			document =
-				parseError === undefined
-					? parseCapture(text)
-					: unparsedCapture(text, parseError.message);
+			if (parseError !== undefined)
+				document = unparsedCapture(text, parseError.message);
+			else {
+				const decoded = captureBody.decode(entry.body ?? '');
+				document =
+					decoded.error === null
+						? {
+								...unparsedCapture(entry.body ?? '', ''),
+								...decoded.data,
+								refusal: undefined,
+							}
+						: {
+								...unparsedCapture(entry.body ?? '', decoded.error.message),
+								refusal: decoded.error,
+							};
+			}
 			parsed.set(text, document);
 		}
 		return document;

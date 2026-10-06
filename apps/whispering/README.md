@@ -241,7 +241,8 @@ sent is the text connection in Settings, never the file.
 - A transformation's page has three tabs. **Instructions** opens first and
   edits the title and instructions; **Model and connection** below them holds
   the optional model and where requests go. **Try it** runs it (below).
-  **Source** shows the file's text; **Edit the text** edits it there. The
+  **Source** directly edits the file's text. Invalid input opens Source for repair;
+  repair keeps Source selected until you choose Instructions or Try it. The
   fields and the text are one editor of the one file, and typing in either
   saves as you type. A save from
   Instructions keeps fields the app does not know and writes the frontmatter

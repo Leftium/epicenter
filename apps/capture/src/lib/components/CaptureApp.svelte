@@ -211,7 +211,9 @@
 			{#if draft?.opened}
 				<!-- One view per capture; the draft above it keeps its editor across every view and state. -->
 				{#key draft}
-					<CaptureDetail {draft} {captures} {stem} focusNewThought={created === stem} onBack={() => show()} onOpen={(capture) => show({ capture })} />
+					<CaptureDetail {draft} {captures} {stem} focusNewThought={created === stem} onBack={() => show()} onDeleted={(deletedStem) => {
+						if (stem === deletedStem) void show();
+					}} onOpen={(capture) => show({ capture })} />
 				{/key}
 			{:else if draft || captures.has(stem)}
 				<!-- Its saved file is listed; the editor over it is opening. -->

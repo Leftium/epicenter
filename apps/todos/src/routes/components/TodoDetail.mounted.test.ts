@@ -15,7 +15,7 @@
  *   and Close shows that it is gone
  * - Raw repair stays in raw mode after it validates until Edit fields. A
  *   control of a mode that left (source, Edit fields, title, notes,
- *   checkbox, Edit source) admits nothing, even after that mode returns;
+ *   checkbox, Source tab) admits nothing, even after that mode returns;
  *   the returned mode's new controls edit the todo
  * - A failed save keeps the input on screen; disk C written by
  *   another writer replaces nothing, and Discard mine and reload shows C in
@@ -256,8 +256,7 @@ test('raw repair stays raw after it validates until Edit fields, and controls of
 	// are gone for good: neither acts in the mode they belonged to.
 	const notes = get(NOTES);
 	const done = get<HTMLButtonElement>('button[aria-label="Done"]');
-	const editSource = button(target, 'Edit source');
-	expect(editor.editSource()).toBeUndefined();
+	click(target, 'Source');
 	flushSync();
 	expect(get(SOURCE)).not.toBe(source);
 	type(source, 'junk from the first source');
@@ -267,14 +266,13 @@ test('raw repair stays raw after it validates until Edit fields, and controls of
 	expect(editor.rawMode).toBe(true);
 
 	// The fields return as new blocks. The first title, notes, checkbox, and
-	// Edit source take nothing; the new ones edit the todo.
+	// take nothing; the new ones edit the todo.
 	click(target, 'Edit fields');
 	flushSync();
 	expect(get<HTMLInputElement>(TITLE)).not.toBe(title);
 	type(title, 'from the first title');
 	type(notes, 'from the first notes\n');
 	press(done);
-	press(editSource);
 	flushSync();
 	expect(editor.editor.row.text).toBe(ROW('Fixed'));
 	expect(editor.rawMode).toBe(false);
@@ -400,7 +398,9 @@ test('a file made unreadable elsewhere keeps the form: Reload replaces nothing, 
 	click(target, 'Try again');
 	await eventually(() => editor.isIdle);
 	expect(
-		new TextDecoder().decode(expectOk(await todos.folder.files.read(path)).bytes),
+		new TextDecoder().decode(
+			expectOk(await todos.folder.files.read(path)).bytes,
+		),
 	).toBe(sent);
 	expect(get<HTMLInputElement>(TITLE).value).toBe('Mine');
 });

@@ -491,7 +491,9 @@ test('an ordinary text file being renamed is read-only, typing delivered meanwhi
 	expect(await readFile(join(root, 'notes.md'), 'utf8')).toBe(
 		'Typed after the refusal.\n',
 	);
-	expect(await readFile(join(root, 'taken.md'), 'utf8')).toBe('Someone else.\n');
+	expect(await readFile(join(root, 'taken.md'), 'utf8')).toBe(
+		'Someone else.\n',
+	);
 });
 
 const RECORDING = 'recordings/take.md';
@@ -536,7 +538,9 @@ test('a recording’s title and notes stay live, with the typing on screen, afte
 	});
 	expectOk(await editor.waitForSaves());
 	expect(await readFile(join(root, RECORDING), 'utf8')).toContain('Retitled');
-	expect(await readFile(join(root, RECORDING), 'utf8')).toContain('Typed notes.');
+	expect(await readFile(join(root, RECORDING), 'utf8')).toContain(
+		'Typed notes.',
+	);
 });
 
 test('a recording’s Source edits the same editor, and a source control from an earlier mode stays inert', async () => {
@@ -548,14 +552,12 @@ test('a recording’s Source edits the same editor, and a source control from an
 	if (slot?.kind !== 'recording') throw new Error('expected the recording');
 	const editor = untyped(editingOf(slot.slot));
 
-	expect(library.editSource(RECORDING)).toBeUndefined();
+	click(target, 'Source');
 	flushSync();
 	expect(
 		target.querySelector('input[aria-label="Recording title"]'),
 	).toBeNull();
-	expect(
-		target.querySelector('[data-testid="notes-in-source"]'),
-	).not.toBeNull();
+	expect(target.querySelector('[data-testid="notes-in-source"]')).toBeNull();
 	click(target, 'Source');
 	flushSync();
 	const source = target.querySelector<HTMLTextAreaElement>(
@@ -579,4 +581,49 @@ test('a recording’s Source edits the same editor, and a source control from an
 	expect(await readFile(join(root, RECORDING), 'utf8')).toBe(
 		recording('Typed as text', 'Notes.\n'),
 	);
+});
+
+test('an invalid recipe opens Source while Try it remains available to inspect results', async () => {
+	const { library, target } = await open(
+		{
+			[RECIPE]:
+				'---\ntitle: Recipe\nmodel: null\nendpoint: null\n---\nInstructions.\n',
+		},
+		'transformations',
+	);
+	await library.open(RECIPE);
+	flushSync();
+	click(target, 'Source');
+	flushSync();
+	const source = target.querySelector<HTMLTextAreaElement>(
+		'[data-testid="transformation-source"]',
+	);
+	type(source, 'broken');
+	flushSync();
+	expect(target.querySelector('[data-testid="transformation-source"]')).toBe(
+		source,
+	);
+	expect(
+		target.querySelector<HTMLButtonElement>('[data-testid="tab-instructions"]')
+			?.disabled,
+	).toBe(true);
+	const tryTab = target.querySelector<HTMLButtonElement>(
+		'[data-testid="tab-try"]',
+	);
+	expect(tryTab?.disabled).toBe(false);
+	tryTab?.click();
+	flushSync();
+	expect(
+		target.querySelector('[data-testid="apply-transcript"]'),
+	).not.toBeNull();
+	expect(
+		target.querySelector('[data-testid="transformation-source"]'),
+	).toBeNull();
+	click(target, 'Source');
+	flushSync();
+	expect(
+		target.querySelector<HTMLTextAreaElement>(
+			'[data-testid="transformation-source"]',
+		)?.value,
+	).toBe('broken');
 });

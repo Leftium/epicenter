@@ -6,7 +6,8 @@ document, no thought rows, and no IDs for thoughts.
 
 `captureDefinition` is declared with `defineFolder` from `@epicenter/folder`
 and the `defineTable` and `field` vocabulary of `@epicenter/definition`. This
-package opens nothing; an application passes the definition to an opener.
+package opens nothing and names no folder; an application passes the
+definition and the folder's ID to an opener.
 
 ```markdown
 ---
@@ -57,30 +58,55 @@ offered, and the source stays editable as text:
 
 ## Changing a capture
 
-Every operation takes a parsed document and returns
-`{ ok: true, source }` or `{ ok: false, refusal }`. It replaces one span of
-the source and leaves every other byte alone: unknown YAML, a byte-order
-mark, CRLF lines, original whitespace, nested content, and trailing blocks.
+The open file has one Folder row editor. Source reads and replaces
+`editor.row.text`. Capture reads `editor.row.body` through `captureBody.decode`
+and submits the encoded body through `editor.set({ ...editor.row, body })`.
+Folder owns frontmatter, validation, the current input, and its save queue.
+Capture owns body interpretation and reconstruction.
 
-| Operation | Replaces |
-| --- | --- |
-| `setText(document, text)` | The capture text. Untouched lines keep their own line endings. |
-| `addThought(document, text)` | Nothing; inserts after the last thought, or adds the section when there is none. |
-| `editThought(document, thought, text)` | That item. |
-| `deleteThought(document, thought)` | That item and its separator. |
-| `swapThoughts(document, thought, neighbour)` | Exchanges two neighbouring items; the bytes between them stay. |
+```text
+editor.row.body -> decode -> { text, thoughts }
+                              | compose the desired value
+editor.set       <- body <- encode(desired, editor.row.body)
+```
 
-Two rules make these safe:
+Both codec operations return Wellcrafted Results. Decoding reports ambiguous
+Thoughts layouts. Encoding verifies that the body reads back as the intended
+text and thoughts before returning anything to submit.
 
-- The result is parsed again and accepted only if it reads back as exactly
-  the intended text and thoughts. A splice that an unclosed code fence would
-  absorb, or that would change a neighbouring thought, is refused
-  (`unverified`) and nothing is returned to write.
-- A `Thought` belongs to the parse that produced it. An operation accepts
-  only a thought of the document it is given, by object identity. A thought
-  from any other parse is refused (`stale`) before a span is touched, even
-  when the same text sits at the same index. Parse once per source, and pass
-  that document and its thoughts.
+Thoughts are `string[]`, selected by position. Callers compose a complete value:
+
+```ts
+const current = expectOk(captureBody.decode(body));
+
+// Edit the capture text.
+captureBody.encode({ ...current, text: input }, body);
+
+// Edit the thought at the selected position.
+captureBody.encode({
+  text: current.text,
+  thoughts: current.thoughts.map((text, i) => i === index ? input : text),
+}, body);
+
+// Add a thought. Delete and move with ordinary array operations.
+captureBody.encode({ ...current, thoughts: [...current.thoughts, input] }, body);
+```
+
+A changed list uses consistent `-` bullets, two-space continuation indentation,
+and the body's line ending. An unchanged list retains its original bytes.
+Encoding preserves surrounding body content and verifies the resulting text and
+thoughts. Folder formats frontmatter canonically for `set`; Source preserves the
+whole typed file through `setText`.
+
+An editing session holds its starting list and selected index. The draft decodes
+once per observed source generation, and a delayed edit applies only while its
+starting list is still current. Delete confirmation holds the list it showed,
+too. The form also has an edit-instance identity. These checks live in the app,
+so the codec needs no thought IDs or provenance. Refused input stays above the
+view, including when source changes away and back to the same bytes.
+
+`parseCapture(source)` remains the whole-file reader for snapshots and legacy
+inspection. It does not participate in the open Capture editor's write path.
 
 `fromTextarea(original, value, newline)` carries a textarea's value (always
 LF) back into source that may use CRLF, rewriting only the changed middle.

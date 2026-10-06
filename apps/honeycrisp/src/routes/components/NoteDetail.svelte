@@ -4,6 +4,7 @@
 	import { Input } from '@epicenter/ui/input';
 	import { toast } from '@epicenter/ui/sonner';
 	import { Textarea } from '@epicenter/ui/textarea';
+	import * as Tabs from '@epicenter/ui/tabs';
 	import HistoryIcon from '@lucide/svelte/icons/history';
 	import PinIcon from '@lucide/svelte/icons/pin';
 	import { withFileNewlines } from '@epicenter/folder/file-browser';
@@ -148,59 +149,43 @@
 		<Lifetime>
 			{#snippet children(live)}
 				{@const draft = noteBody(() => session, { mounted: live })}
-				<div class="flex items-center gap-1 border-b px-3 py-1.5" role="tablist" aria-label="View">
-					<Button
-						size="xs"
-						variant={tab === 'rich' ? 'secondary' : 'ghost'}
-						role="tab"
-						aria-selected={tab === 'rich'}
-						onclick={() => (tab = 'rich')}
-					>
-						Rich text
-					</Button>
-					<Button
-						size="xs"
-						variant={tab === 'source' ? 'secondary' : 'ghost'}
-						role="tab"
-						aria-selected={tab === 'source'}
-						onclick={() => (tab = 'source')}
-					>
-						Source
-					</Button>
-					<span class="ml-auto text-xs text-muted-foreground">Both views edit one note</span>
-				</div>
-
-				<!-- The rich-text view stays mounted while Source shows, so its undo history
-				     survives a look at the source that changes nothing. -->
-				<div class="min-h-0 flex-1" hidden={tab !== 'rich'}>
-					<RichEditor
-						{draft}
-						admitting={session.admitting}
-						focusRequest={notes.focusRequest}
-						onOpenSource={() => (tab = 'source')}
-					/>
-				</div>
-				{#if tab === 'source'}
-					<Lifetime>
-						{#snippet children(shown)}
-							<!-- A body the editor refuses stays here with the reason. -->
-							{@const markdown = noteBody(() => session, { mounted: shown, keep: true })}
-							<div class="flex min-h-0 flex-1 flex-col p-3">
-								<Textarea
-									class="min-h-40 flex-1 resize-none font-mono text-xs"
-									bind:value={
-										() => lf(session.refused.body?.value ?? (session.row.status === 'valid' ? session.row.body : '')),
-										(value) => {
-											if (shown()) markdown.input(withFileNewlines(value, markdown.body));
+				<Tabs.Root bind:value={tab} class="flex min-h-0 flex-1 flex-col">
+					<Tabs.List class="mx-3">
+						<Tabs.Trigger value="rich">Rich text</Tabs.Trigger>
+						<Tabs.Trigger value="source">Source</Tabs.Trigger>
+					</Tabs.List>
+					<!-- The rich-text view stays mounted while Source shows, so its undo history
+					     survives a look at the source that changes nothing. -->
+					<Tabs.Content value="rich" forceMount class="min-h-0 flex-1">
+						<RichEditor
+							{draft}
+							admitting={session.admitting}
+							focusRequest={notes.focusRequest}
+							onOpenSource={() => (tab = 'source')}
+						/>
+					</Tabs.Content>
+					<Tabs.Content value="source" class="flex min-h-0 flex-1 flex-col">
+						<Lifetime>
+							{#snippet children(shown)}
+								<!-- A body the editor refuses stays here with the reason. -->
+								{@const markdown = noteBody(() => session, { mounted: shown, keep: true })}
+								<div class="flex min-h-0 flex-1 flex-col p-3">
+									<Textarea
+										class="min-h-40 flex-1 resize-none font-mono text-xs"
+										bind:value={
+											() => lf(session.refused.body?.value ?? (session.row.status === 'valid' ? session.row.body : '')),
+											(value) => {
+												if (shown()) markdown.input(withFileNewlines(value, markdown.body));
+											}
 										}
-									}
-									aria-label="Markdown source"
-									spellcheck={false}
-								/>
-							</div>
-						{/snippet}
-					</Lifetime>
-				{/if}
+										aria-label="Markdown source"
+										spellcheck={false}
+									/>
+								</div>
+							{/snippet}
+						</Lifetime>
+					</Tabs.Content>
+				</Tabs.Root>
 			{/snippet}
 		</Lifetime>
 	{:else}

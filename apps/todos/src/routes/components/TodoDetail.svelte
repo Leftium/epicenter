@@ -38,12 +38,11 @@
 	//
 	// A binding's input listener stays on a node after its block leaves the
 	// document, and the todo stays retained by the owner, so a delivered event
-	// could still reach its setter. Each conditional block has its own
-	// `Lifetime`: a control from a block that is gone takes nothing, even after
-	// the same kind of block mounts again.
+	// could still reach its setter. Shared Input and Textarea retire destroyed
+	// value bindings; Lifetime protects the checkbox and commands. Old controls
+	// stay inert even after the same kind of block mounts again.
 	const stem = $derived(rowStemOf(todos.folder.tables.todos.name, todo.path) ?? '');
 	const diagnostics = $derived(todo.diagnostics());
-	let tab = $state('notes');
 
 	/** Run a command only while the block it belongs to lives. */
 	function command(live: () => boolean, title: string, run: () => string | undefined) {
@@ -93,70 +92,55 @@
 
 	<TodoStatus {todos} {todo} />
 
-	{#if todo.editor.row.status === 'invalid' || todo.rawMode}
-		{#if diagnostics}
-			<div class="shrink-0 border-b bg-destructive/5 px-4 py-2 text-xs">
-				<p class="mb-1 flex flex-wrap items-center gap-2 font-medium">
-					<Badge variant="destructive">Needs repair</Badge>
-					{diagnostics.summary} Edit the source to fix it.
-				</p>
-				<ul class="space-y-0.5 text-muted-foreground">
-					{#each diagnostics.details as detail, index (index)}
-						<li>{detail}</li>
-					{/each}
-				</ul>
-			</div>
-		{/if}
-		<Lifetime>
-			{#snippet children(live)}
-				<div class="flex min-h-48 flex-1 flex-col px-3 py-3 sm:px-4">
-					<Textarea
-						class="min-h-0 flex-1 field-sizing-fixed resize-none font-mono text-xs"
-						aria-label="Markdown source"
-						spellcheck={false}
-						disabled={todo.isFenced}
-						bind:value={() => todo.text(), (text) => live() && todo.setText(text)}
-					/>
-				</div>
-			{/snippet}
-		</Lifetime>
-	{:else}
-		<!-- Tabs.Content keeps an inactive panel mounted and hidden, so the notes share this block's lifetime. -->
-		<Lifetime>
-			{#snippet children(live)}
-				<Tabs.Root bind:value={tab} class="flex min-h-48 flex-1 flex-col px-3 py-3 sm:px-4">
-					<Tabs.List>
-						<Tabs.Trigger value="notes">Notes</Tabs.Trigger>
-						<Tabs.Trigger value="source">Source</Tabs.Trigger>
-					</Tabs.List>
-					<Tabs.Content value="notes" class="flex min-h-0 flex-1 flex-col">
-						<Textarea
-							class="min-h-0 flex-1 field-sizing-fixed resize-none"
-							placeholder="Notes in Markdown"
-							aria-label="Notes"
-							disabled={todo.isFenced}
-							bind:value={() => todo.notes(), (notes) => live() && todo.setNotes(notes)}
-						/>
-					</Tabs.Content>
-					<Tabs.Content value="source" class="flex min-h-0 flex-1 flex-col gap-2">
-						<p class="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-							Saving the fields writes this text, the whole file, in one standard form.
-							<Button size="xs" variant="outline" onclick={() => command(live, 'Could not open the source', todo.editSource)}>
-								Edit source
-							</Button>
-						</p>
-						<Textarea
-							class="min-h-0 flex-1 field-sizing-fixed resize-none font-mono text-xs"
-							value={todo.text()}
-							aria-label="Markdown source preview"
-							readonly
-							spellcheck={false}
-						/>
-					</Tabs.Content>
-				</Tabs.Root>
-			{/snippet}
-		</Lifetime>
+	{#if diagnostics}
+		<div class="shrink-0 border-b bg-destructive/5 px-4 py-2 text-xs">
+			<p class="mb-1 flex flex-wrap items-center gap-2 font-medium">
+				<Badge variant="destructive">Needs repair</Badge>
+				{diagnostics.summary} Edit the source to fix it.
+			</p>
+			<ul class="space-y-0.5 text-muted-foreground">
+				{#each diagnostics.details as detail, index (index)}
+					<li>{detail}</li>
+				{/each}
+			</ul>
+		</div>
 	{/if}
+
+	<Tabs.Root
+		bind:value={
+			() => todo.editor.row.status === 'invalid' || todo.rawMode ? 'source' : 'notes',
+			(next) => {
+				const problem = next === 'source' ? todo.editSource() : todo.editFields();
+				if (problem) toast.error('Could not change the editor view', { description: problem });
+			}
+		}
+		class="flex min-h-48 flex-1 flex-col px-3 py-3 sm:px-4"
+	>
+		<Tabs.List>
+			<Tabs.Trigger value="notes" disabled={todo.isFenced || todo.editor.row.status !== 'valid'}>Notes</Tabs.Trigger>
+			<Tabs.Trigger value="source" disabled={todo.isFenced}>Source</Tabs.Trigger>
+		</Tabs.List>
+		<Tabs.Content value="notes" class="flex min-h-0 flex-1 flex-col">
+			{#if todo.editor.row.status === 'valid'}
+				<Textarea
+					class="min-h-0 flex-1 field-sizing-fixed resize-none"
+					placeholder="Notes in Markdown"
+					aria-label="Notes"
+					disabled={todo.isFenced}
+					bind:value={() => todo.notes(), (notes) => todo.setNotes(notes)}
+				/>
+			{/if}
+		</Tabs.Content>
+		<Tabs.Content value="source" class="flex min-h-0 flex-1 flex-col gap-2">
+			<Textarea
+				class="min-h-0 flex-1 field-sizing-fixed resize-none font-mono text-xs"
+				aria-label="Markdown source"
+				spellcheck={false}
+				disabled={todo.isFenced}
+				bind:value={() => todo.text(), (text) => todo.setText(text)}
+			/>
+		</Tabs.Content>
+	</Tabs.Root>
 
 	<FileNameBar
 		prefix="todos/"

@@ -8,7 +8,7 @@
 	import * as Modal from '@epicenter/ui/modal';
 	import { onDestroy } from 'svelte';
 	import type { Captures } from '$lib/captures.svelte.js';
-	import BoundText from './BoundText.svelte';
+	import { Textarea } from '@epicenter/ui/textarea';
 
 	let {
 		captures,
@@ -88,15 +88,17 @@
 			<Field.Field>
 				<Field.Label for="new-capture">Capture text</Field.Label>
 				<!-- Its own lifetime: the collection keeps the text after this view is gone. -->
-				<BoundText
+				<Textarea
 					id="new-capture"
 					readonly={captures.fenced}
-					read={() => captures.newCapture}
-					write={(value) => {
-						if (!mounted) return;
-						createProblem = '';
-						captures.inputNewCapture(value);
-					}}
+					bind:value={
+						() => captures.newCapture,
+						(value) => {
+							if (!mounted) return;
+							createProblem = '';
+							captures.inputNewCapture(value);
+						}
+					}
 					onkeydown={(event) => {
 						if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
 							event.preventDefault();

@@ -221,10 +221,7 @@ test('a capture imports as its exact text and its thoughts in position order', a
 	expect(String(entry.fields.capturedAt)).toBe('2026-01-01T00:00:00.000Z');
 	const document = parseCapture(entry.text);
 	expect(document.text).toBe('  Dinner\nFriday  \n');
-	expect(document.thoughts.map((thought) => thought.text)).toEqual([
-		'first',
-		'second\nline two',
-	]);
+	expect(document.thoughts).toEqual(['first', 'second\nline two']);
 	await folder.close();
 });
 

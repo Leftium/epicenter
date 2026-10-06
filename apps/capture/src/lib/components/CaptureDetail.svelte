@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { type Thought, toTextarea } from '@epicenter/capture';
+	import { toTextarea } from '@epicenter/capture';
 	import * as Alert from '@epicenter/ui/alert';
 	import { Button } from '@epicenter/ui/button';
 	import { confirmationDialog } from '@epicenter/ui/confirmation-dialog';
@@ -13,7 +13,7 @@
 	import type { Captures } from '$lib/captures.svelte.js';
 	import { copyText, downloadText } from '$lib/download.js';
 	import type { Draft, DraftView } from '$lib/draft.svelte.js';
-	import BoundText from './BoundText.svelte';
+	import { Textarea } from '@epicenter/ui/textarea';
 	import DraftRecovery from './DraftRecovery.svelte';
 	import TechnicalDetails from './TechnicalDetails.svelte';
 	import ThoughtEditForm from './ThoughtEditForm.svelte';
@@ -24,6 +24,7 @@
 		stem,
 		focusNewThought = false,
 		onBack,
+		onDeleted,
 		onOpen,
 	}: {
 		draft: Draft;
@@ -32,6 +33,8 @@
 		/** The capture was just added: the next thing to type is a thought. */
 		focusNewThought?: boolean;
 		onBack: () => void;
+		/** Completion belongs to the app container even after deletion removes this view. */
+		onDeleted: (stem: string) => void;
 		onOpen: (stem: string) => void;
 	} = $props();
 
@@ -39,7 +42,7 @@
 
 	/**
 	 * Cleared on destroy, for this view's commands. Each text box also has its
-	 * own lifetime (`BoundText`): a block inside this view can go and come back
+	 * own lifetime (`Textarea`): a block inside this view can go and come back
 	 * while the view stays, and its old text box must not write again.
 	 */
 	let mounted = true;
@@ -53,6 +56,10 @@
 			return `This file cannot be edited as a capture until it is repaired: ${draft.rowProblem}`;
 		return draft.document.refusal?.message;
 	});
+	$effect(() => {
+		if (draft.loaded && sourceOnly !== undefined) draft.setView('source');
+	});
+
 	const capturedAt = $derived.by(() => {
 		const value = draft.reading.fields.capturedAt;
 		if (value === undefined) return undefined;
@@ -63,7 +70,7 @@
 	const issues = $derived(draft.loaded ? draft.reading.issues.map((issue) => issue.message) : []);
 	// A thought edit whose thought is no longer in the document as shown.
 	const strandedEdit = $derived(
-		draft.editing !== undefined && !draft.document.thoughts.includes(draft.editing.thought)
+		draft.editing !== undefined && draft.document.thoughts !== draft.editing.thoughts
 			? draft.editing
 			: undefined,
 	);
@@ -123,10 +130,9 @@
 		sourceField?.focus();
 	}
 
-	function move(thought: Thought, to: number) {
+	function move(from: number, to: number, shown: readonly string[]) {
 		if (!fieldsLive()) return;
-		const neighbour = draft.document.thoughts[to];
-		if (neighbour && draft.swapThoughts(thought, neighbour)) afterMenu = () => void focusThought(to);
+		if (draft.swapThoughts(from, to, shown)) afterMenu = () => void focusThought(to);
 	}
 
 	async function copy(text: string, what: string) {
@@ -134,13 +140,14 @@
 		else toast.error(`Could not copy. Select the text and copy it.`);
 	}
 
-	function confirmDeleteThought(thought: Thought, index: number) {
+	function confirmDeleteThought(thought: string, index: number, shown: readonly string[]) {
+		if (!fieldsLive() || draft.document.thoughts !== shown) return;
 		confirmationDialog.open({
 			title: 'Delete this thought?',
-			description: thought.text.length > 300 ? `${thought.text.slice(0, 300)}…` : thought.text,
+			description: thought.length > 300 ? `${thought.slice(0, 300)}…` : thought,
 			confirm: { text: 'Delete thought', variant: 'destructive' },
 			onConfirm: () => {
-				if (fieldsLive() && draft.deleteThought(thought)) void focusThought(index);
+				if (fieldsLive() && draft.deleteThought(index, shown)) void focusThought(index);
 			},
 		});
 	}
@@ -157,7 +164,9 @@
 	}
 	async function confirmDeletion() {
 		if (!mounted || !mayDelete) return;
-		if ((await captures.remove(draft)) && mounted) onBack();
+		const deletedStem = stem;
+		const completed = onDeleted;
+		if (await captures.remove(draft)) completed(deletedStem);
 	}
 </script>
 
@@ -183,7 +192,7 @@
 				{/if}
 			</h1>
 			<Tabs.List aria-label="View">
-				<Tabs.Trigger value="capture" disabled={held}>Capture</Tabs.Trigger>
+				<Tabs.Trigger value="capture" disabled={held || !draft.structured || draft.document.refusal !== undefined}>Capture</Tabs.Trigger>
 				<Tabs.Trigger value="source" disabled={held}>Source</Tabs.Trigger>
 			</Tabs.List>
 			<DropdownMenu.Root>
@@ -236,32 +245,18 @@
 		{/if}
 
 		<Tabs.Content value="capture" class="flex flex-col gap-8">
-			{#if sourceOnly !== undefined}
-				<Alert.Root aria-label="Source only">
-					<Alert.Title>This capture can only be edited as Source</Alert.Title>
-					<Alert.Description>
-						<p>{sourceOnly}</p>
-						{#if draft.reading.parseError}
-							<ul class="list-disc pl-5">
-								{#each draft.reading.parseError.diagnostics as diagnostic, index (index)}
-									{#if diagnostic.message !== draft.reading.parseError.message}<li>{diagnostic.message}</li>{/if}
-								{/each}
-							</ul>
-						{/if}
-						Nothing was changed. The whole file is in Source, where you can edit it directly.
-					</Alert.Description>
-					<div class="mt-2"><Button variant="outline" size="sm" disabled={held} onclick={showSource}>Edit Source</Button></div>
-				</Alert.Root>
-			{:else}
+			{#if sourceOnly === undefined}
 				<Field.Field>
 					<Field.Label for="capture-text">Capture text</Field.Label>
-					<BoundText
+					<Textarea
 						id="capture-text"
 						readonly={held}
-						read={() => draft.text}
-						write={(value) => {
-							if (fieldsLive()) draft.inputText(value);
-						}}
+						bind:value={
+							() => draft.text,
+							(value) => {
+								if (fieldsLive()) draft.inputText(value);
+							}
+						}
 						rows={rowsFor(draft.text)}
 						class="max-h-96 resize-y leading-relaxed"
 						placeholder="Write here…"
@@ -284,14 +279,16 @@
 						<Alert.Root aria-label="Kept thought edit">
 							<Alert.Title>Your edit to a thought was not applied</Alert.Title>
 							<Alert.Description>The capture changed after you started editing, so it is unclear which thought this belongs to. Your text is kept here. Copy it, then edit the thought again.</Alert.Description>
-							<BoundText
+							<Textarea
 								aria-label="Kept thought text"
 								readonly={held}
-								read={() => strandedEdit?.text ?? ''}
-								write={(value) => {
-									// Only the edit this box shows: the one still stranded now.
-									if (fieldsLive() && strandedEdit) draft.inputEditing(value, strandedEdit.id);
-								}}
+								bind:value={
+									() => strandedEdit?.text ?? '',
+									(value) => {
+										// Only the edit this box shows: the one still stranded now.
+										if (fieldsLive() && strandedEdit) draft.inputEditing(value, strandedEdit.id);
+									}
+								}
 								rows={3}
 								class="mt-2"
 							/>
@@ -310,51 +307,54 @@
 					{/if}
 
 					{#if draft.document.thoughts.length}
-						<ol bind:this={thoughtList} aria-label="Thoughts" class="list-decimal divide-y border-y pl-6 marker:text-muted-foreground">
-							{#each draft.document.thoughts as thought, index (index)}
-								<li class="py-1 pl-1">
-									{#if draft.editing !== undefined && draft.editing.thought === thought}
-										{@const edit = draft.editing}
-										<!-- One form per edit: a new edit, even of this same thought, gets a new form. -->
-										{#key edit.id}
-											<ThoughtEditForm
-												{draft}
-												{edit}
-												{held}
-												eligible={fieldsLive}
-												onSaved={() => void focusThought(index)}
-												onCancelled={() => void focusThought(index)}
-											/>
-										{/key}
-									{:else}
-										<div class="flex items-start gap-2">
-											<p class="min-w-0 flex-1 whitespace-pre-wrap break-words py-1.5 leading-relaxed {thought.text ? '' : 'text-muted-foreground'}">{thought.text || 'Empty thought'}</p>
-											<DropdownMenu.Root>
-												<DropdownMenu.Trigger>
-													{#snippet child({ props })}
-														<Button {...props} variant="ghost" size="sm" class="text-muted-foreground" aria-label="Thought actions" data-thought-actions>Actions</Button>
-													{/snippet}
-												</DropdownMenu.Trigger>
-												<DropdownMenu.Content align="end" class="w-48" onCloseAutoFocus={onMenuClosed}>
-													<DropdownMenu.Item disabled={held || draft.editing !== undefined} onclick={() => {
-														if (!fieldsLive()) return;
-														draft.startEditing(thought);
-														// The editor takes focus as it appears; the menu must not take it back.
-														afterMenu = () => {};
-													}}>Edit</DropdownMenu.Item>
-													<DropdownMenu.Item disabled={held || index === 0} onclick={() => move(thought, index - 1)}>Move up</DropdownMenu.Item>
-													<DropdownMenu.Item disabled={held || index === draft.document.thoughts.length - 1} onclick={() => move(thought, index + 1)}>Move down</DropdownMenu.Item>
-													<DropdownMenu.Separator />
-													<DropdownMenu.Item onclick={() => copy(thought.text, 'Thought')}>Copy text</DropdownMenu.Item>
-													<DropdownMenu.Separator />
-													<DropdownMenu.Item variant="destructive" disabled={held} onclick={() => confirmDeleteThought(thought, index)}>Delete thought…</DropdownMenu.Item>
-												</DropdownMenu.Content>
-											</DropdownMenu.Root>
-										</div>
-									{/if}
-								</li>
-							{/each}
-						</ol>
+						{#key draft.document.thoughts}
+							<ol bind:this={thoughtList} aria-label="Thoughts" class="list-decimal divide-y border-y pl-6 marker:text-muted-foreground">
+								{#each draft.document.thoughts as thought, index (index)}
+									{@const shown = draft.document.thoughts}
+									<li class="py-1 pl-1">
+										{#if draft.editing !== undefined && draft.editing.thoughts === draft.document.thoughts && draft.editing.index === index}
+											{@const edit = draft.editing}
+											<!-- One form per edit: a new edit, even of this same thought, gets a new form. -->
+											{#key edit.id}
+												<ThoughtEditForm
+													{draft}
+													{edit}
+													{held}
+													eligible={fieldsLive}
+													onSaved={() => void focusThought(index)}
+													onCancelled={() => void focusThought(index)}
+												/>
+											{/key}
+										{:else}
+											<div class="flex items-start gap-2">
+												<p class="min-w-0 flex-1 whitespace-pre-wrap break-words py-1.5 leading-relaxed {thought ? '' : 'text-muted-foreground'}">{thought || 'Empty thought'}</p>
+												<DropdownMenu.Root>
+													<DropdownMenu.Trigger>
+														{#snippet child({ props })}
+															<Button {...props} variant="ghost" size="sm" class="text-muted-foreground" aria-label="Thought actions" data-thought-actions>Actions</Button>
+														{/snippet}
+													</DropdownMenu.Trigger>
+													<DropdownMenu.Content align="end" class="w-48" onCloseAutoFocus={onMenuClosed}>
+														<DropdownMenu.Item disabled={held || draft.editing !== undefined} onclick={() => {
+															if (!fieldsLive()) return;
+															draft.startEditing(index, shown);
+															// The editor takes focus as it appears; the menu must not take it back.
+															afterMenu = () => {};
+														}}>Edit</DropdownMenu.Item>
+														<DropdownMenu.Item disabled={held || index === 0} onclick={() => move(index, index - 1, shown)}>Move up</DropdownMenu.Item>
+														<DropdownMenu.Item disabled={held || index === draft.document.thoughts.length - 1} onclick={() => move(index, index + 1, shown)}>Move down</DropdownMenu.Item>
+														<DropdownMenu.Separator />
+														<DropdownMenu.Item onclick={() => copy(thought, 'Thought')}>Copy text</DropdownMenu.Item>
+														<DropdownMenu.Separator />
+														<DropdownMenu.Item variant="destructive" disabled={held} onclick={() => confirmDeleteThought(thought, index, shown)}>Delete thought…</DropdownMenu.Item>
+													</DropdownMenu.Content>
+												</DropdownMenu.Root>
+											</div>
+										{/if}
+									</li>
+								{/each}
+							</ol>
+						{/key}
 					{/if}
 
 					<form onsubmit={(event) => {
@@ -365,14 +365,16 @@
 					}} class="flex flex-col gap-2">
 						<Field.Field>
 							<Field.Label for="new-thought">Add a thought</Field.Label>
-							<BoundText
+							<Textarea
 								id="new-thought"
 								bind:ref={newThoughtField}
 								readonly={held}
-								read={() => draft.newThought}
-								write={(value) => {
-									if (fieldsLive()) draft.inputNewThought(value);
-								}}
+								bind:value={
+									() => draft.newThought,
+									(value) => {
+										if (fieldsLive()) draft.inputNewThought(value);
+									}
+								}
 								onkeydown={submitOnModEnter}
 								rows={2}
 								class="leading-relaxed"
@@ -403,19 +405,37 @@
 		</Tabs.Content>
 
 		<Tabs.Content value="source" class="flex flex-col gap-4">
+			{#if sourceOnly !== undefined}
+				<Alert.Root aria-label="Source only">
+					<Alert.Title>This capture can only be edited as Source</Alert.Title>
+					<Alert.Description>
+						<p>{sourceOnly}</p>
+						{#if draft.reading.parseError}
+							<ul class="list-disc pl-5">
+								{#each draft.reading.parseError.diagnostics as diagnostic, index (index)}
+									{#if diagnostic.message !== draft.reading.parseError.message}<li>{diagnostic.message}</li>{/if}
+								{/each}
+							</ul>
+						{/if}
+						Nothing was changed. The whole file is in Source, where you can edit it directly.
+					</Alert.Description>
+				</Alert.Root>
+			{/if}
 			<Field.Field>
 				<Field.Label for="capture-source">Markdown source</Field.Label>
 				<Field.Description>
 					This is <code class="break-all">{draft.path}</code>. It saves exactly as you type, frontmatter included.
 				</Field.Description>
-				<BoundText
+				<Textarea
 					id="capture-source"
 					bind:ref={sourceField}
 					readonly={held}
-					read={() => toTextarea(draft.source)}
-					write={(value) => {
-						if (sourceLive()) draft.inputSource(value);
-					}}
+					bind:value={
+						() => toTextarea(draft.source),
+						(value) => {
+							if (sourceLive()) draft.inputSource(value);
+						}
+					}
 					rows={18}
 					spellcheck={false}
 					class="min-h-64 resize-y font-mono"
@@ -426,7 +446,7 @@
 					<Alert.Title>This file needs repair</Alert.Title>
 					<Alert.Description>
 						<p>{draft.rowProblem}</p>
-						<p>It is saved as you type it, so you can fix it here. The Capture view returns once it is a valid capture.</p>
+						<p>It is saved as you type it, so you can fix it here. The Capture tab becomes available once it is a valid capture.</p>
 					</Alert.Description>
 				</Alert.Root>
 			{/if}

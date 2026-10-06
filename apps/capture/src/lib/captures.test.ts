@@ -305,10 +305,10 @@ test('structured edits save as the whole canonical file, metadata Capture does n
 	}
 	const [, two, three] = draft.document.thoughts;
 	if (!two || !three) throw new Error('fixture');
-	expect(draft.swapThoughts(three, two)).toBe(true);
+	expect(draft.swapThoughts(2, 1)).toBe(true);
 	const first = draft.document.thoughts[0];
 	if (!first) throw new Error('fixture');
-	expect(draft.deleteThought(first)).toBe(true);
+	expect(draft.deleteThought(0)).toBe(true);
 	await draft.settle();
 
 	expect(await text(stem)).toBe(

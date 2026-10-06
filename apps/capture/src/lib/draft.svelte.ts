@@ -30,26 +30,19 @@
  */
 
 import {
-	addThought,
+	type CaptureBody,
 	type CaptureDocument,
 	type CaptureFields,
-	deleteThought,
-	type Edit,
-	editThought,
+	captureBody,
 	fromTextarea,
-	parseCapture,
-	setText,
-	swapThoughts,
-	type Thought,
 	unparsedCapture,
 } from '@epicenter/capture';
-import {
-	frameRowText,
-	type RowEditor,
-	type RowError,
-	type TableEditError,
-	type TableReading,
-	type TableSnapshot,
+import type {
+	RowEditor,
+	RowError,
+	TableEditError,
+	TableReading,
+	TableSnapshot,
 } from '@epicenter/folder';
 import {
 	fromRowEditor,
@@ -116,8 +109,10 @@ export type Notice =
 
 /** One edit of a thought, from Edit until it is saved or cancelled. */
 export type ThoughtEdit = {
-	/** The thought as shown, bound to the parse it came from. */
-	readonly thought: Thought;
+	/** The selected position in the list shown when the edit started. */
+	readonly index: number;
+	/** The list shown when the editing session started. */
+	readonly thoughts: readonly string[];
 	readonly text: string;
 	/** This edit's identity: a later edit, of the same thought or another, has its own. */
 	readonly id: object;
@@ -218,16 +213,32 @@ export function createDraft(
 		return {
 			reading,
 			get document(): CaptureDocument {
-				document ??=
-					reading.parseError === undefined
-						? parseCapture(text)
-						: unparsedCapture(text, reading.parseError.message);
+				if (document !== undefined) return document;
+				if (editor?.row.status !== 'valid') {
+					document = unparsedCapture(
+						text,
+						editor?.row.error.message ?? 'The capture has not opened.',
+					);
+					return document;
+				}
+				const decoded = captureBody.decode(editor.row.body);
+				document =
+					decoded.error === null
+						? {
+								...unparsedCapture(editor.row.body, ''),
+								...decoded.data,
+								refusal: undefined,
+							}
+						: {
+								...unparsedCapture(editor.row.body, decoded.error.message),
+								refusal: decoded.error,
+							};
 				return document;
 			},
 		};
 	});
 
-	/** The editor's text now, valid or not: what Source shows and every view reads. */
+	/** The editor's current text, including source that needs repair. */
 	const source = () => editor?.row.text ?? '';
 	const document = (): CaptureDocument => interpretationOf(source()).document;
 
@@ -394,27 +405,23 @@ export function createDraft(
 	 * has, unknown keys included, and the edited body. A refusal submits
 	 * nothing and says why.
 	 */
-	function apply(edit: Edit): boolean {
+	function setCapture(value: CaptureBody): boolean {
 		if (undecided()) return false;
 		if (!editor || editor.row.status !== 'valid') {
 			refusal = 'This capture cannot be edited here now.';
 			return false;
 		}
-		if (!edit.ok) {
-			refusal = edit.refusal.message;
+		const { data: body, error: encodeError } = captureBody.encode(
+			value,
+			editor.row.body,
+		);
+		if (encodeError !== null) {
+			refusal = encodeError.message;
 			return false;
 		}
 		refusal = undefined;
-		if (edit.source === editor.row.text) return true;
-		const frame = frameRowText(edit.source);
-		if (frame.kind !== 'frontmatter') {
-			refusal = 'The edited capture has no frontmatter.';
-			return false;
-		}
-		const { error } = editor.set({
-			fields: editor.row.fields,
-			body: edit.source.slice(frame.bodyStart),
-		});
+		if (body === editor.row.body) return true;
+		const { error } = editor.set({ ...editor.row, body });
 		if (error !== null) {
 			refusal = error.message;
 			return false;
@@ -522,7 +529,7 @@ export function createDraft(
 			const next = fromTextarea(
 				current,
 				value,
-				interpretationOf(current).document.newline,
+				current.includes('\r\n') ? '\r\n' : '\n',
 			);
 			if (next === current) return;
 			editor.setText(next);
@@ -542,7 +549,8 @@ export function createDraft(
 		/** Type in the capture text box. Text that cannot be applied yet is kept. */
 		inputText(value: string) {
 			if (fenced()) return;
-			if (apply(setText(document(), value))) pendingText = undefined;
+			if (setCapture({ text: value, thoughts: document().thoughts }))
+				pendingText = undefined;
 			else pendingText = value;
 		},
 		dropPendingText() {
@@ -561,7 +569,17 @@ export function createDraft(
 		/** Add the new-thought text as the last thought. The text stays if refused. */
 		addThought(): boolean {
 			if (fenced()) return false;
-			if (!apply(addThought(document(), newThought))) return false;
+			if (newThought.trim() === '') {
+				refusal = 'Write something first.';
+				return false;
+			}
+			if (
+				!setCapture({
+					text: document().text ?? '',
+					thoughts: [...document().thoughts, newThought],
+				})
+			)
+				return false;
 			newThought = '';
 			return true;
 		},
@@ -569,10 +587,15 @@ export function createDraft(
 		get editing() {
 			return editing;
 		},
-		/** Begin an edit of `thought`: a new edit, even of the thought edited before. */
-		startEditing(thought: Thought) {
-			if (fenced()) return;
-			editing = { thought, text: thought.text, id: {} };
+		/** Begin a session at this position in the currently shown list. */
+		startEditing(
+			index: number,
+			thoughts: readonly string[] = document().thoughts,
+		) {
+			if (fenced() || document().thoughts !== thoughts) return;
+			const text = thoughts[index];
+			if (text === undefined) return;
+			editing = { index, thoughts, text, id: {} };
 			refusal = undefined;
 		},
 		/** Type into the edit `id`; refused unless that is the edit open now. */
@@ -586,7 +609,24 @@ export function createDraft(
 		 */
 		commitEditing(id: ThoughtEdit['id']): boolean {
 			if (fenced() || editing?.id !== id) return false;
-			if (!apply(editThought(document(), editing.thought, editing.text)))
+			if (document().thoughts !== editing.thoughts) {
+				refusal =
+					'The capture changed since this thought was shown. Nothing was changed.';
+				return false;
+			}
+			const { index: selected, text } = editing;
+			if (text.trim() === '') {
+				refusal = 'A thought needs text. Delete it instead.';
+				return false;
+			}
+			if (
+				!setCapture({
+					text: document().text ?? '',
+					thoughts: document().thoughts.map((thought, index) =>
+						index === selected ? text : thought,
+					),
+				})
+			)
 				return false;
 			editing = undefined;
 			return true;
@@ -597,10 +637,40 @@ export function createDraft(
 			editing = undefined;
 			refusal = undefined;
 		},
-		deleteThought: (thought: Thought) =>
-			!fenced() && apply(deleteThought(document(), thought)),
-		swapThoughts: (thought: Thought, neighbour: Thought) =>
-			!fenced() && apply(swapThoughts(document(), thought, neighbour)),
+		deleteThought(
+			index: number,
+			shown: readonly string[] = document().thoughts,
+		): boolean {
+			if (
+				fenced() ||
+				document().thoughts !== shown ||
+				shown[index] === undefined
+			)
+				return false;
+			return setCapture({
+				text: document().text ?? '',
+				thoughts: document().thoughts.filter((_, at) => at !== index),
+			});
+		},
+		swapThoughts(
+			from: number,
+			to: number,
+			shown: readonly string[] = document().thoughts,
+		): boolean {
+			if (
+				fenced() ||
+				document().thoughts !== shown ||
+				Math.abs(from - to) !== 1
+			)
+				return false;
+			const thoughts = [...shown];
+			const first = thoughts[from];
+			const second = thoughts[to];
+			if (first === undefined || second === undefined) return false;
+			thoughts[from] = second;
+			thoughts[to] = first;
+			return setCapture({ text: document().text ?? '', thoughts });
+		},
 
 		/**
 		 * Send the latest input again after a failed or unconfirmed save. A new

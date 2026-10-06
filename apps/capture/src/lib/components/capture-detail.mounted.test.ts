@@ -106,6 +106,7 @@ async function setup(sources: Record<string, string>) {
 						return show.value.stem;
 					},
 					onBack() {},
+					onDeleted() {},
 					onOpen() {},
 				},
 			});
@@ -287,7 +288,7 @@ test("a thought's edit form acts only for its own edit: once gone, its text box,
 		click(cancel);
 	};
 
-	draft.startEditing(first);
+	draft.startEditing(0);
 	flushSync();
 	const editorA = editor();
 	const formA = editorA?.closest('form');
@@ -296,7 +297,7 @@ test("a thought's edit form acts only for its own edit: once gone, its text box,
 	expect(draft.editing?.text).toBe('first, edited');
 
 	cancelIn(formA);
-	draft.startEditing(second);
+	draft.startEditing(1);
 	flushSync();
 	const editorB = editor();
 	expect(editorB).not.toBe(editorA);
@@ -307,12 +308,9 @@ test("a thought's edit form acts only for its own edit: once gone, its text box,
 	type(editorA, 'A, delivered late');
 	submit(formA);
 	cancelIn(formA);
-	expect(draft.editing?.thought).toBe(second);
+	expect(draft.editing?.index).toBe(1);
 	expect(draft.editing?.text).toBe('second, typed');
-	expect(draft.document.thoughts.map((thought) => thought.text)).toEqual([
-		'first',
-		'second',
-	]);
+	expect(draft.document.thoughts).toEqual(['first', 'second']);
 	expect(draft.saving).toBe(false);
 
 	// The same thought opened again is a new edit with a new form; A's old
@@ -320,7 +318,7 @@ test("a thought's edit form acts only for its own edit: once gone, its text box,
 	cancelIn(editorB?.closest('form'));
 	const [firstAgain] = draft.document.thoughts;
 	if (!firstAgain) throw new Error('fixture');
-	draft.startEditing(firstAgain);
+	draft.startEditing(0);
 	flushSync();
 	const editorA2 = editor();
 	const formA2 = editorA2?.closest('form');
@@ -335,10 +333,7 @@ test("a thought's edit form acts only for its own edit: once gone, its text box,
 	submit(formA2);
 	flushSync();
 	expect(draft.editing).toBeUndefined();
-	expect(draft.document.thoughts.map((thought) => thought.text)).toEqual([
-		'first, again',
-		'second',
-	]);
+	expect(draft.document.thoughts).toEqual(['first, again', 'second']);
 	// Submitted at once: the save is already on its way.
 	expect(draft.saving).toBe(true);
 	unmount(view);
@@ -382,5 +377,33 @@ test('the deletion review outlives the view, and while leaving it deletes nothin
 	expect(draft.deletionReview).toBeUndefined();
 	expect(draft.admitted).toBe(true);
 	unmount(second.view);
+	await t.done();
+});
+
+test('invalid input opens Source, repair stays there, and tab changes retire the old controls', async () => {
+	const t = await setup({ one: fileOf('Kept') });
+	const draft = await t.open('one');
+	const { view } = t.mount(draft);
+	const capture = field('capture-text');
+	draft.inputSource('broken');
+	flushSync();
+	expect(draft.view).toBe('source');
+	expect(button('Capture').disabled).toBe(true);
+	expect(field('capture-text')).toBeNull();
+	const source = field('capture-source');
+	expect(source?.value).toBe('broken');
+	type(capture, 'late capture');
+	expect(draft.source).toBe('broken');
+	type(source, fileOf('Repaired'));
+	flushSync();
+	expect(draft.view).toBe('source');
+	expect(button('Capture').disabled).toBe(false);
+	click(button('Capture'));
+	flushSync();
+	expect(field('capture-source')).toBeNull();
+	expect(field('capture-text')?.value).toBe('Repaired');
+	type(source, 'late source');
+	expect(draft.text).toBe('Repaired');
+	unmount(view);
 	await t.done();
 });

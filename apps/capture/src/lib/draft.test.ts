@@ -412,12 +412,30 @@ test('a draft let go while its editor opens takes no editor and saves nothing', 
 	await t.done();
 });
 
+test('positions select one duplicate thought for editing and deletion', async () => {
+	const t = await setup();
+	try {
+		t.draft.inputSource(A.replace('- second', '- first'));
+		t.draft.startEditing(1);
+		const edit = t.draft.editing?.id;
+		if (edit === undefined) throw new Error('fixture');
+		t.draft.inputEditing('second occurrence', edit);
+		expect(t.draft.commitEditing(edit)).toBe(true);
+		expect(t.draft.document.thoughts).toEqual(['first', 'second occurrence']);
+		t.draft.inputSource(A.replace('- second', '- first'));
+		expect(t.draft.deleteThought(1)).toBe(true);
+		expect(t.draft.document.thoughts).toEqual(['first']);
+	} finally {
+		await t.done();
+	}
+});
+
 test('reading changed input invalidates an earlier thought edit even when the original text returns', async () => {
 	const t = await setup();
 	try {
 		const first = t.draft.document.thoughts[0];
 		if (first === undefined) throw new Error('fixture');
-		t.draft.startEditing(first);
+		t.draft.startEditing(0);
 		const edit = t.draft.editing?.id;
 		if (edit === undefined) throw new Error('fixture');
 		t.draft.inputEditing('kept correction', edit);
@@ -436,13 +454,14 @@ test('reading changed input invalidates an earlier thought edit even when the or
 
 test('a thought edit begun before the document changed is refused and its text kept', async () => {
 	const t = await setup();
-	const [first, second] = t.draft.document.thoughts;
+	const shown = t.draft.document.thoughts;
+	const [first, second] = shown;
 	if (!first || !second) throw new Error('fixture');
-	t.draft.startEditing(second);
+	t.draft.startEditing(1);
 	const earlier = t.draft.editing?.id;
 	if (earlier === undefined) throw new Error('fixture');
 	t.draft.cancelEditing(earlier);
-	t.draft.startEditing(first);
+	t.draft.startEditing(0);
 	const edit = t.draft.editing?.id;
 	if (edit === undefined) throw new Error('fixture');
 	// Only the edit open now takes text, is saved, or is cancelled.
@@ -457,20 +476,11 @@ test('a thought edit begun before the document changed is refused and its text k
 	expect(t.draft.commitEditing(edit)).toBe(false);
 	expect(t.draft.editing?.text).toBe('first, edited');
 	expect(t.draft.refusal).toContain('changed since this thought was shown');
-	expect(t.draft.document.thoughts.map((thought) => thought.text)).toEqual([
-		'first',
-		'second',
-	]);
-	// The stale operands are refused for delete and for both sides of a swap.
-	expect(t.draft.deleteThought(first)).toBe(false);
-	const [nowFirst, nowSecond] = t.draft.document.thoughts;
-	if (!nowFirst || !nowSecond) throw new Error('fixture');
-	expect(t.draft.swapThoughts(first, nowSecond)).toBe(false);
-	expect(t.draft.swapThoughts(nowFirst, second)).toBe(false);
-	expect(t.draft.swapThoughts(nowFirst, nowSecond)).toBe(true);
-	expect(t.draft.document.thoughts.map((thought) => thought.text)).toEqual([
-		'second',
-		'first',
-	]);
+	expect(t.draft.document.thoughts).toEqual(['first', 'second']);
+	// Delayed positional commands must still name the list they showed.
+	expect(t.draft.deleteThought(0, shown)).toBe(false);
+	expect(t.draft.swapThoughts(0, 1, shown)).toBe(false);
+	expect(t.draft.swapThoughts(0, 1)).toBe(true);
+	expect(t.draft.document.thoughts).toEqual(['second', 'first']);
 	await t.done();
 });

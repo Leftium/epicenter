@@ -193,8 +193,8 @@ export function createTodoEditor(
 			if (editor.row.status !== 'valid' || rawMode || refused() !== undefined)
 				return undefined;
 			const result = editor.set({
+				...editor.row,
 				fields: { ...editor.row.fields, title },
-				body: editor.row.body,
 			});
 			return recordRefusal('title', title, result);
 		},
@@ -205,8 +205,8 @@ export function createTodoEditor(
 			if (editor.row.status !== 'valid' || rawMode || refused() !== undefined)
 				return undefined;
 			const { error } = editor.set({
+				...editor.row,
 				fields: { ...editor.row.fields, done },
-				body: editor.row.body,
 			});
 			return error === null
 				? undefined
@@ -220,7 +220,7 @@ export function createTodoEditor(
 			if (editor.row.status !== 'valid' || rawMode || refused() !== undefined)
 				return undefined;
 			const result = editor.set({
-				fields: editor.row.fields,
+				...editor.row,
 				body: withFileNewlines(notes, editor.row.text),
 			});
 			return recordRefusal('notes', notes, result);
@@ -306,8 +306,8 @@ export function createTodoEditor(
 			if (editor.row.status !== 'valid' || rawMode)
 				return 'This todo is open in its source editor. Change it there.';
 			const { error: unrepresentable } = editor.set({
+				...editor.row,
 				fields: { ...editor.row.fields, done },
-				body: editor.row.body,
 			});
 			if (unrepresentable !== null)
 				return `This value cannot be saved: ${unrepresentable.refusal.reason}.`;

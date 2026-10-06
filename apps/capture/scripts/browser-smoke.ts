@@ -275,7 +275,11 @@ try {
 	await second.getByRole('alert', { name: 'Source only' }).waitFor();
 	await second.reload();
 	await second.getByRole('alert', { name: 'Source only' }).waitFor();
-	await second.getByRole('button', { name: 'Edit Source' }).click();
+	assert(
+		await second
+			.getByRole('tab', { name: 'Capture', exact: true })
+			.isDisabled(),
+	);
 	assert(
 		(await second.getByLabel('Markdown source').inputValue()).includes(
 			'- belongs to the article\n\n## Thoughts\n',
@@ -352,6 +356,19 @@ try {
 	);
 } catch (cause) {
 	console.error(cause);
+	console.error('Browser errors:', errors);
+	for (const context of browser?.contexts() ?? []) {
+		for (const page of context.pages()) {
+			console.error(
+				'Page:',
+				page.url(),
+				await page
+					.locator('body')
+					.innerText({ timeout: 5000 })
+					.catch(() => 'Page unavailable'),
+			);
+		}
+	}
 	console.error(logs.slice(-35).join(''));
 	throw cause;
 } finally {

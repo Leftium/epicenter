@@ -102,6 +102,92 @@ bindable just so a child can edit their fields. Domain actions such as archive,
 delete, select, save, or rename should usually be callback props or mutations,
 not two-way bound booleans.
 
+## Function bindings for transformed values
+
+For a controlled input wrapper, expose a `$bindable` value and use Svelte's
+[`bind:value={get, set}`](https://svelte.dev/docs/svelte/bind#Function-bindings)
+when the caller must transform reads or writes. Paired `read`/`write` or
+`getValue`/`setValue` props recreate that protocol. Trace their callers and replace
+them when they only control the same value. Keep commands as callback props.
+
+```svelte
+<Textarea
+	bind:value={
+		() => draft.text,
+		(input) => {
+			if (fieldsLive()) draft.inputText(input);
+		}
+	}
+/>
+```
+
+Keep reads connected to the current owner: use `editor.row.body` and
+`editor.row.fields` directly in the getter and synchronous setter rather than
+introducing a forwarding `const row = editor.row`. Read at the event so a
+replacement preserves the other fields as they exist then. Keep a snapshot only
+when one consistent read is necessary, such as across `await`, or repeated reads
+have side effects; name that reason. A render-narrowed valid row can make a getter total; its setter still reads
+the current owner. A snapshot captured when the component mounts can overwrite
+later edits.
+
+When the transformation has substantial format rules, keep its read and
+write-back operations together in the format's codec or module. Give the write
+operation the current source when it must preserve unrelated spans, newline
+style, or other source information. A projection and a source-preserving update
+are not necessarily total inverses: retain refused input in the draft and show
+the problem when a structured edit cannot represent what was typed. Do not turn
+those rules into binding infrastructure or remove draft, identity, eligibility,
+or destroyed-control guards just because the syntax becomes shorter. Use `encode`/`decode` for a complete structured value when the encoder also
+takes current source as preservation context. Name a genuinely partial operation
+after the region it changes. A generic signature pairs types; tests establish whether the operations reverse
+each other and which source information survives.
+
+## File editor views
+
+Use [ADR-0507](../../../../docs/adr/0507-editor-views-compose-current-input-and-own-only-interaction-state.md)
+as the ownership doctrine. One native row editor owns accepted input and saving.
+Read it through `fromRowEditor`; do not copy its row, validity, body, or save
+status into runes and synchronize them with effects.
+
+There are three ordinary bindings: raw `row.text` to `setText`, valid fields to
+`set({ ...editor.row, fields: { ...editor.row.fields, key: input } })`, and a
+codec-decoded body to `set({ ...editor.row, body: encodedBody })`. Read the current
+row at the event. Keep refused input and unfinished forms in the application
+session above disposable views, and preserve the file's newline convention.
+
+One selection owns each editor view group: bind Tabs to an existing retained
+owner's selection, or use one local `$state`. Do not introduce another raw flag,
+preferred view, shown view, or validity flag for that same selection. Eligibility
+is derived. A narrow effect can reset actual selection to Source when structured
+input becomes unavailable; it is an interaction action, not row synchronization.
+Repair stays in Source until the person chooses the structured view.
+
+Shared `Tabs.Content` unmounts inactive children, so do not repeat `tab === value`
+inside each panel. Keep the structured panel's validity condition: disabling a
+trigger neither resets an active selection nor proves that later input has valid
+fields. Use `forceMount` only for an identified retained lifetime, such as chat
+input or rich-editor undo history. Other event gates may remain during outros or
+before Svelte removes a view.
+
+Shared `Textarea` and `Input` retire their value-binding reads and writes on
+component destruction. Use their `bind:value={get, set}` API instead of local
+lifetime wrappers or paired get/set props. This does not protect unrelated event
+handlers or eliminate current-row, edit-instance, and operation checks. Inline a
+source or field component that only forwards a binding; keep a component when it
+owns substantial UI, a resource, a transformation, or an editing session. Typed
+valid-row props can make render getters total, while writers still use the current
+owner instead of the render snapshot.
+
+For a hunt, inventory `fromRowEditor`, `ReactiveRowEditor`, and row-table `.edit`
+callers, then follow their view components. Search those consumers for `$state`,
+`$effect`, raw/view/tab flags, local input wrappers, paired `get`/`set` or
+`read`/`write` props, repeated selected-tab conditions, and `editor.set` calls.
+Classify each retained value as selection, refused input, an editing session, an
+operation, or copied editor data. Collapse the last category, duplicate selection,
+and forwarding components. Verify invalid repair, refusal retention, tab changes,
+current-owner replacement, and delivered input after destruction. Existing
+session tests earn their boundaries when they protect those behaviors.
+
 ## Inline Simple Props Types
 
 Inline small, component-local prop shapes directly in `$props()`. A separate

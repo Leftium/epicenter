@@ -20,10 +20,9 @@
 	import type { Library, RecordingEntry, RowSlot } from '$lib/library.svelte.js';
 	import { committedState } from '$lib/status.js';
 	import AudioPlayer from './AudioPlayer.svelte';
-	import { confirmDelete, lf } from './file-actions.js';
+	import { confirmDelete } from './file-actions.js';
 	import LiveButton from './LiveButton.svelte';
-	import LiveInput from './LiveInput.svelte';
-	import LiveTextarea from './LiveTextarea.svelte';
+	import { Input } from '@epicenter/ui/input';
 	import RowSaveStatus from './RowSaveStatus.svelte';
 	import TranscriptCard from './TranscriptCard.svelte';
 
@@ -68,7 +67,7 @@
 	/*
 	 * The title and notes are live controls only while the fields are the
 	 * view, and the source only while it is. Each live control has its own
-	 * lifetime (LiveInput, LiveTextarea, LiveButton): one that is gone
+	 * lifetime (Input, Textarea, LiveButton): one that is gone
 	 * delivers nothing, even after its view returns.
 	 */
 	const id = $derived(rowStemOf(RECORDINGS, path) ?? path);
@@ -79,7 +78,6 @@
 	const history = $derived(
 		entry ? committedState(library.git, [entry.path, ...(audioPath ? [audioPath] : [])]) : undefined,
 	);
-	let tab = $state('details');
 
 	function when(value: unknown) {
 		if (typeof value !== 'string') return 'Unknown';
@@ -115,7 +113,7 @@
 			</Button>
 		{/if}
 		{#if editing?.view === 'fields'}
-			<LiveInput class="flex-1 text-base font-medium" get={() => editing?.fieldText('title') ?? ''} set={(value) => editing?.setField('title', value)} readonly={!editing.editable} placeholder="Title" aria-label="Recording title" />
+			<Input class="flex-1 text-base font-medium" bind:value={() => editing?.fieldText('title') ?? '', (value) => editing?.setField('title', value)} readonly={!editing.editable} placeholder="Title" aria-label="Recording title" />
 		{:else}
 			<h2 class="min-w-0 flex-1 truncate text-base font-medium" data-testid="recording-title-text">{title || id}</h2>
 		{/if}
@@ -135,9 +133,6 @@
 			<p class="mb-1 flex flex-wrap items-center gap-2 font-medium">
 				<Badge variant="destructive">Needs repair</Badge>
 				{reading.parseError.message}. Edit the source to fix it.
-				{#if tab !== 'source'}
-					<Button size="xs" variant="outline" onclick={() => (tab = 'source')}>Edit Source</Button>
-				{/if}
 			</p>
 			<ul class="space-y-0.5 text-muted-foreground">
 				{#each reading.parseError.diagnostics as diagnostic, index (index)}
@@ -150,9 +145,6 @@
 			<p class="mb-1 flex flex-wrap items-center gap-2 font-medium">
 				<Badge variant="destructive">Needs repair</Badge>
 				Some fields need fixing in Source. The rest of the recording still works.
-				{#if tab !== 'source'}
-					<Button size="xs" variant="outline" onclick={() => (tab = 'source')}>Edit Source</Button>
-				{/if}
 			</p>
 			<ul class="space-y-0.5 text-muted-foreground">
 				{#each reading.issues as issue, index (index)}
@@ -171,9 +163,12 @@
 		</div>
 	{:else}
 
-	<Tabs.Root bind:value={tab} class="flex min-h-0 flex-1 flex-col px-3 py-3 sm:px-4">
+	<Tabs.Root bind:value={
+		() => editing?.view === 'source' ? 'source' : 'details',
+		(value) => value === 'source' ? editText() : editFields()
+	} class="flex min-h-0 flex-1 flex-col px-3 py-3 sm:px-4">
 		<Tabs.List>
-			<Tabs.Trigger value="details">Details</Tabs.Trigger>
+			<Tabs.Trigger value="details" disabled={editing?.row.status !== 'valid'}>Details</Tabs.Trigger>
 			<Tabs.Trigger value="source">Source</Tabs.Trigger>
 		</Tabs.List>
 		<Tabs.Content value="details" class="min-h-0 flex-1 overflow-y-auto">
@@ -236,10 +231,9 @@
 				<div class="flex flex-col gap-1.5">
 					<h3 class="text-sm font-medium">Notes</h3>
 					{#if editing?.view === 'fields'}
-						<LiveTextarea
+						<Textarea
 							class="min-h-28 resize-y font-sans"
-							get={() => editing?.bodyText() ?? ''}
-							set={(value) => editing?.setBody(value)}
+							bind:value={() => editing?.bodyText() ?? '', (value) => editing?.setBody(value)}
 							readonly={!editing.editable}
 							placeholder="Notes in Markdown, saved in the recording’s file"
 							aria-label="Notes"
@@ -300,27 +294,13 @@
 			</div>
 		</Tabs.Content>
 		<Tabs.Content value="source" class="flex min-h-0 flex-1 flex-col gap-2">
-			{#if editing?.view === 'fields'}
+			{#if editing?.view === 'source'}
 				<p class="text-xs text-muted-foreground">
-					What a save writes: the fields above in a fixed form, then the notes. Fields the app does not know are kept.
-					<LiveButton size="xs" variant="outline" class="ml-1" onclick={editText} data-testid="edit-text">Edit the text</LiveButton>
+					The file’s exact text. It saves as typed, readable or not.
 				</p>
 				<Textarea
 					class="h-full min-h-40 flex-1 resize-none font-mono text-xs"
-					value={lf(editing.row.text)}
-					aria-label="Markdown source"
-					readonly
-					spellcheck={false}
-				/>
-			{:else if editing?.view === 'source'}
-				<p class="text-xs text-muted-foreground">
-					The file’s exact text. It saves as typed, readable or not.
-					<LiveButton size="xs" variant="outline" class="ml-1" onclick={editFields} data-testid="edit-fields">Edit the fields</LiveButton>
-				</p>
-				<LiveTextarea
-					class="h-full min-h-40 flex-1 resize-none font-mono text-xs"
-					get={() => editing?.sourceValue() ?? ''}
-					set={(value) => editing?.setText(value)}
+					bind:value={() => editing?.sourceValue() ?? '', (value) => editing?.setText(value)}
 					readonly={!editing.editable}
 					aria-label="Markdown source"
 					spellcheck={false}

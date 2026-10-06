@@ -226,6 +226,7 @@ export function createNoteSession(
 			}
 		}
 		const { error } = editor.set({
+			...editor.row,
 			fields: withChange(editor.row.fields, fields),
 			body: body ?? editor.row.body,
 		});

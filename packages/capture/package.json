@@ -16,13 +16,13 @@
 		"@epicenter/app": "workspace:*",
 		"@epicenter/definition": "workspace:*",
 		"@epicenter/folder": "workspace:*",
-		"markdown-it": "^14.0.0"
+		"markdown-it": "^14.0.0",
+		"wellcrafted": "catalog:"
 	},
 	"devDependencies": {
 		"@types/bun": "catalog:",
 		"@types/markdown-it": "^14.0.0",
 		"@y/y": "14.0.0-rc.26",
-		"typescript": "catalog:",
-		"wellcrafted": "catalog:"
+		"typescript": "catalog:"
 	}
 }

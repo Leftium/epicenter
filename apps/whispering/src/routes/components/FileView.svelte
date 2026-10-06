@@ -16,7 +16,7 @@
 	import { confirmDelete, copyPath, lf } from './file-actions.js';
 	import FileNameBar from './FileNameBar.svelte';
 	import LiveButton from './LiveButton.svelte';
-	import LiveTextarea from './LiveTextarea.svelte';
+	import { Textarea } from '@epicenter/ui/textarea';
 	import RowSaveStatus from './RowSaveStatus.svelte';
 	import SaveStatus from './SaveStatus.svelte';
 
@@ -38,12 +38,12 @@
 	} = $props();
 
 	/** An ordinary file's text draft. */
-	const text = $derived(file.kind === 'text' ? { editor: file.editor } : undefined);
+	const textEditor = $derived(file.kind === 'text' ? file.editor : undefined);
 	/**
 	 * A transcript's one row editor: its body as fields, or its whole text.
 	 * This view is reused for every selected file, so each binding reads
 	 * `editing` when it runs, never the editor it first saw. Each live control
-	 * has its own lifetime (LiveTextarea, LiveButton): one that is gone
+	 * has its own lifetime (Textarea, LiveButton): one that is gone
 	 * delivers nothing, even after its mode returns.
 	 */
 	const editing = $derived(file.kind === 'row' && file.slot.kind === 'open' ? file.slot.editing : undefined);
@@ -115,34 +115,31 @@
 					The transcript’s text, the body of its file. Its fields are kept as they are.
 					<LiveButton size="xs" variant="outline" class="ml-1" onclick={() => showSource(true)}>Edit the whole file</LiveButton>
 				</p>
-				<LiveTextarea class="min-h-40 flex-1 resize-none font-sans" get={() => editing?.bodyText() ?? ''} set={(value) => editing?.setBody(value)} readonly={!editing.editable} aria-label="Contents of {name}" />
+				<Textarea class="min-h-40 flex-1 resize-none font-sans" bind:value={() => editing?.bodyText() ?? '', (value) => editing?.setBody(value)} readonly={!editing.editable} aria-label="Contents of {name}" />
 			{:else if editing.view === 'source'}
 				<p class="text-xs text-muted-foreground" data-testid="needs-repair">
 					{editing.row.status === 'invalid' ? 'The whole file, as its text, until it reads as a transcript again.' : 'The whole file, as its text.'}
 					It saves as typed, readable or not.
 					<LiveButton size="xs" variant="outline" class="ml-1" onclick={() => showSource(false)}>Edit the text only</LiveButton>
 				</p>
-				<LiveTextarea
+				<Textarea
 					class="min-h-40 flex-1 resize-none font-mono text-xs"
-					get={() => editing?.sourceValue() ?? ''}
-					set={(value) => editing?.setText(value)}
+					bind:value={() => editing?.sourceValue() ?? '', (value) => editing?.setText(value)}
 					readonly={!editing.editable}
 					aria-label="Contents of {name}"
 					spellcheck={false}
 				/>
 			{/if}
 		</div>
-	{:else if text}
-		{@const editor = text.editor}
-		<SaveStatus {library} {editor} autosavePaused={library.autosave.paused} onDiscardRemoved={() => void library.discardDraft(editor.path)} />
+	{:else if textEditor}
+		<SaveStatus {library} editor={textEditor} autosavePaused={library.autosave.paused} onDiscardRemoved={() => void library.discardDraft(textEditor.path)} />
 		<div class="flex min-h-0 flex-1 flex-col gap-2 px-3 py-3 sm:px-4">
-			<LiveTextarea
+			<Textarea
 				class="min-h-40 flex-1 resize-none font-mono text-xs"
-				get={() => editor.buffer ?? ''}
-				set={(value) => {
-					editor.input(withFileNewlines(value, editor.buffer));
+				bind:value={() => textEditor?.buffer ?? '', (value) => {
+					if (textEditor) textEditor.input(withFileNewlines(value, textEditor.buffer));
 				}}
-				readonly={!editor.editable}
+				readonly={!textEditor.editable}
 				aria-label="Contents of {name}"
 				spellcheck={false}
 			/>

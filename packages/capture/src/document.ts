@@ -1,58 +1,18 @@
 /**
- * A capture's Markdown, read as the capture text and its ordered thoughts.
+ * Capture's interpretation of a Markdown body. Folder owns frontmatter and
+ * publication; this module owns the capture text, ordered thoughts, and source
+ * spans that must survive structured edits.
  *
- * The source string is the only representation. markdown-it decides what the
- * blocks are and which source lines each one owns; this module maps those line
- * ranges to offsets and replaces one span at a time. Every result is parsed
- * again and accepted only if it reads back as exactly the intended text and
- * thoughts, so a splice can never be absorbed by an unclosed code fence, merge
- * two blocks, or change a thought it did not name. Bytes outside the replaced
- * span are not rewritten.
- *
- * The layout:
- *
- *   ---
- *   capturedAt: 2026-10-01T10:30:00+08:00
- *   ---
- *
- *   The capture text.
- *
- *   ## Thoughts
- *
- *   - First thought.
- *   - Another thought.
- *     It can continue across lines, and nest.
- *
- * - The capture text is everything between the frontmatter and the one
- *   root-level `## Thoughts` heading. With no such heading it is the whole
- *   body, and adding a thought appends the section.
- * - Thoughts are the items of the one bullet list directly under that
- *   heading. Whatever an item owns in Markdown (continuation lines, later
- *   paragraphs, nested lists, code) is part of that thought.
- * - Blocks after that list, and everything from the next root heading on, are
- *   kept and never read as thoughts.
- * - A thought is a span in this source. It has an index, not an identity, and
- *   belongs to the one parse that produced it. An operation takes a thought
- *   of the document it is given and refuses one from any other parse.
- *
- * Structured operations are refused, with the reason, when the source is not
- * a capture's (no opening frontmatter line, or no closing one) or its layout
- * is ambiguous: more than one root heading reading "Thoughts", a Thoughts
- * heading that is not `## Thoughts`, anything but a bullet list first under
- * the heading, or a second bullet list in the section. The source stays
- * editable as text.
+ * Thoughts are strings selected by position. List edits use consistent bullet
+ * formatting; the editing session owns protection against stale positions.
+ * Encode accepts one complete desired value and the current body, then verifies
+ * that Markdown reads back as intended. Source remains available for repair.
  */
 import { frameRowText } from '@epicenter/folder';
 import MarkdownIt from 'markdown-it';
+import { Err, Ok, type Result } from 'wellcrafted/result';
 
 export type Newline = '\n' | '\r\n';
-
-export type Thought = {
-	/** Position among this document's thoughts. */
-	readonly index: number;
-	/** The item's Markdown with its marker and indentation removed, LF lines. */
-	readonly text: string;
-};
 
 export type RefusalCode =
 	| 'missing-frontmatter'
@@ -62,23 +22,15 @@ export type RefusalCode =
 	| 'duplicate-heading'
 	| 'heading-form'
 	| 'section-shape'
-	| 'empty'
-	| 'stale'
 	| 'unverified';
 
 export type Refusal = { readonly code: RefusalCode; readonly message: string };
 
-export type Edit =
+type Edit =
 	| { readonly ok: true; readonly source: string }
 	| { readonly ok: false; readonly refusal: Refusal };
 
 type Span = { readonly start: number; readonly end: number };
-
-type ItemSpan = Span & {
-	/** The item's leading whitespace on its marker line. */
-	readonly lead: string;
-	readonly marker: string;
-};
 
 /** Offsets into `source`. Meaningful only with the document that holds them. */
 type Layout = {
@@ -90,7 +42,7 @@ type Layout = {
 	readonly regionEnd: number;
 	/** The `## Thoughts` line, without its terminator. */
 	readonly heading: Span | undefined;
-	readonly items: readonly ItemSpan[];
+	readonly items: readonly Span[];
 };
 
 export type CaptureDocument = {
@@ -102,7 +54,7 @@ export type CaptureDocument = {
 	/** The capture text with LF lines; `undefined` when refused. */
 	readonly text: string | undefined;
 	/** Empty when refused or when there is no Thoughts section. */
-	readonly thoughts: readonly Thought[];
+	readonly thoughts: string[];
 	/** Whether the source has its `## Thoughts` heading. */
 	readonly hasSection: boolean;
 	/**
@@ -110,7 +62,7 @@ export type CaptureDocument = {
 	 * blocks after the thoughts list, or anything from the next heading on.
 	 */
 	readonly hasOtherContent: boolean;
-	/** Internal offsets for the operations below. */
+	/** Source offsets used internally for reconstruction. */
 	readonly layout: Layout | undefined;
 };
 
@@ -271,7 +223,14 @@ export function parseCapture(source: string): CaptureDocument {
 				? 'The frontmatter opening line has no closing --- line.'
 				: 'The file does not start with a --- line opening its frontmatter.',
 		);
-	const { bodyStart, newline } = frame;
+	return parseBody(source, frame.bodyStart, frame.newline);
+}
+
+function parseBody(
+	source: string,
+	bodyStart = 0,
+	newline: Newline = source.includes('\r\n') ? '\r\n' : '\n',
+): CaptureDocument {
 	const lines = lineTable(source, bodyStart);
 	const blocks = rootBlocks(source.slice(bodyStart));
 	const lineText = (at: number) => {
@@ -322,8 +281,8 @@ export function parseCapture(source: string): CaptureDocument {
 			textEnd -= trail[0].length;
 		}
 
-	const items: ItemSpan[] = [];
-	const thoughts: Thought[] = [];
+	const items: Span[] = [];
+	const thoughts: string[] = [];
 	let hasOtherContent = false;
 	if (heading !== undefined) {
 		const from = blocks.indexOf(heading) + 1;
@@ -372,10 +331,8 @@ export function parseCapture(source: string): CaptureDocument {
 			items.push({
 				start: (lines[item.first] as Line).start,
 				end: (lines[last] as Line).end,
-				lead,
-				marker,
 			});
-			thoughts.push({ index: thoughts.length, text: body.join('\n') });
+			thoughts.push(body.join('\n'));
 		}
 	}
 
@@ -485,13 +442,10 @@ export function renderThought(text: string, newline: Newline = '\n'): string {
 	return renderItem('', '-', normalizeThought(text), newline);
 }
 
-function sameThoughts(
-	actual: readonly Thought[],
-	expected: readonly string[],
-): boolean {
+function sameThoughts(actual: string[], expected: readonly string[]): boolean {
 	return (
 		actual.length === expected.length &&
-		actual.every((thought, index) => thought.text === expected[index])
+		actual.every((thought, index) => thought === expected[index])
 	);
 }
 
@@ -500,7 +454,7 @@ function readsBack(
 	source: string,
 	expected: { text: string; thoughts: readonly string[] },
 ): Refusal | undefined {
-	const result = parseCapture(source);
+	const result = parseBody(source);
 	if (result.refusal !== undefined) return result.refusal;
 	if (
 		result.text !== expected.text ||
@@ -551,9 +505,9 @@ const splice = (source: string, span: Span, replacement: string) =>
  * The separators around the text are kept as they are. Only when the text
  * could not read back between them (text ending in a line break before a
  * heading with no blank line, for example) are they written as one blank line
- * after frontmatter and one before the heading.
+ * at the body's start and one before the heading.
  */
-export function setText(document: CaptureDocument, text: string): Edit {
+function setText(document: CaptureDocument, text: string): Edit {
 	const state = ready(document);
 	if ('code' in state) return { ok: false, refusal: state };
 	const { layout } = state;
@@ -563,7 +517,7 @@ export function setText(document: CaptureDocument, text: string): Edit {
 	if (next === current) return { ok: true, source };
 	const expected = {
 		text: toTextarea(next),
-		thoughts: document.thoughts.map((thought) => thought.text),
+		thoughts: document.thoughts,
 	};
 	const kept = splice(source, layout.text, next);
 	if (readsBack(kept, expected) === undefined)
@@ -581,186 +535,110 @@ export function setText(document: CaptureDocument, text: string): Edit {
 	);
 }
 
-/** Append a thought, adding the `## Thoughts` section when there is none. */
-export function addThought(document: CaptureDocument, text: string): Edit {
-	const state = ready(document);
-	if ('code' in state) return { ok: false, refusal: state };
-	const { layout } = state;
-	const { source, newline } = document;
-	const thought = normalizeThought(text);
-	if (thought === '') return refuse('empty', 'Write something first.');
-	const thoughts = [...document.thoughts.map((item) => item.text), thought];
+/** The complete structured value written by the Capture view. */
+export type CaptureBody = {
+	text: string;
+	thoughts: string[];
+};
 
-	const last = layout.items.at(-1);
-	if (last !== undefined) {
-		// Follow the list's own spacing: a blank line if its items are separated by one.
-		const previous = layout.items.at(-2);
-		const loose =
-			previous !== undefined &&
-			/\n[ \t]*\n/.test(toTextarea(source.slice(previous.end, last.start)));
-		let next = splice(
-			source,
-			{ start: last.end, end: last.end },
-			`${newline}${loose ? newline : ''}${renderItem(last.lead, last.marker, thought, newline)}`,
-		);
-		if (last.end === source.length) next += newline;
-		return verified(next, { text: state.text, thoughts }, 'This thought');
-	}
-	if (layout.heading !== undefined) {
-		const at = layout.heading.end;
-		let next = splice(
-			source,
-			{ start: at, end: at },
-			`${newline}${newline}${renderItem('', '-', thought, newline)}`,
-		);
-		if (at === source.length) next += newline;
-		return verified(next, { text: state.text, thoughts }, 'This thought');
-	}
+/** Information a view needs in addition to the complete structured value. */
+export type CaptureBodyReading = CaptureBody & {
+	newline: Newline;
+	hasSection: boolean;
+	hasOtherContent: boolean;
+};
 
-	// No section yet: the existing bytes stay, and the section follows them.
-	const body = source.slice(layout.bodyStart);
-	const gap =
-		body === ''
-			? newline
-			: /\n[ \t]*\n$/.test(toTextarea(body)) ||
-					/^[ \t]*\n$/.test(toTextarea(body))
-				? ''
-				: TERMINATOR.test(body)
-					? newline
-					: `${newline}${newline}`;
-	const next = `${source}${gap}## Thoughts${newline}${newline}${renderItem('', '-', thought, newline)}${newline}`;
-	// The text ran to the end of the file; with the section it ends before the
-	// separator. Its bytes are untouched, so compare without trailing lines.
-	const result = parseCapture(next);
-	const trimmed = (value: string | undefined) =>
-		(value ?? '').replace(/\n+$/, '');
-	if (
-		result.refusal !== undefined ||
-		!result.hasSection ||
-		!sameThoughts(result.thoughts, thoughts) ||
-		trimmed(result.text) !== trimmed(state.text)
-	)
-		return refuse(
-			'unverified',
-			'A Thoughts section added here would not read back as written. Markdown above it, such as an unclosed code fence or HTML comment, would absorb it.',
-		);
-	return { ok: true, source: next };
-}
+/** Reads and reconstructs a Markdown body while preserving untouched source. */
+export const captureBody = {
+	decode(body: string): Result<CaptureBodyReading, Refusal> {
+		const document = parseBody(body);
+		if (document.refusal !== undefined) return Err(document.refusal);
+		return Ok({
+			text: document.text as string,
+			thoughts: document.thoughts,
+			newline: document.newline,
+			hasSection: document.hasSection,
+			hasOtherContent: document.hasOtherContent,
+		});
+	},
+	encode(value: CaptureBody, body: string): Result<string, Refusal> {
+		const document = parseBody(body);
+		if (document.refusal !== undefined) return Err(document.refusal);
+		const layout = document.layout as Layout;
+		let source = body;
+		const changedThoughts = !sameThoughts(document.thoughts, value.thoughts);
+		const desired = changedThoughts
+			? value.thoughts.map(normalizeThought)
+			: value.thoughts;
+		if (changedThoughts) {
+			const first = layout.items[0];
+			const last = layout.items.at(-1);
+			if (first && last) {
+				const replacement = desired
+					.map((text) => renderItem('', '-', text, document.newline))
+					.join(document.newline);
+				const terminator = /^(?:\r\n|\n|\r)/.exec(body.slice(last.end));
+				const end =
+					desired.length === 0
+						? last.end + (terminator?.[0].length ?? 0)
+						: last.end;
+				source = splice(body, { start: first.start, end }, replacement);
+				if (desired.length > 0 && last.end === body.length)
+					source += document.newline;
+			} else if (desired.length > 0) {
+				const list = desired
+					.map((text) => renderItem('', '-', text, document.newline))
+					.join(document.newline);
+				const newline = document.newline;
+				if (layout.heading !== undefined) {
+					const at = layout.heading.end;
+					source = splice(
+						body,
+						{ start: at, end: at },
+						`${newline}${newline}${list}`,
+					);
+					if (at === body.length) source += newline;
+				} else {
+					// Append a section without rewriting the original text's separators.
+					const gap =
+						body === ''
+							? newline
+							: /\n[ \t]*\n$/.test(toTextarea(body)) ||
+									/^[ \t]*\n$/.test(toTextarea(body))
+								? ''
+								: TERMINATOR.test(body)
+									? newline
+									: `${newline}${newline}`;
+					source = `${body}${gap}## Thoughts${newline}${newline}${list}${newline}`;
+				}
+			}
+		}
+		// With no original section, appending one keeps existing text bytes and
+		// consumes its trailing separator lines, as creating that section always did.
+		if (value.text !== document.text) {
+			const edit = setText(parseBody(source), value.text);
+			if (!edit.ok) return Err(edit.refusal);
+			source = edit.source;
+		}
+		const expectedText =
+			!document.hasSection && desired.length > 0 && value.text === document.text
+				? value.text.replace(/\n+$/, '')
+				: toTextarea(value.text);
+		const problem = readsBack(source, {
+			text: expectedText,
+			thoughts: desired,
+		});
+		return problem === undefined
+			? Ok(source)
+			: Err({
+					code: 'unverified',
+					message: `This capture would not read back as written. ${problem.message}`,
+				});
+	},
+};
 
-const STALE = refuse(
-	'stale',
-	'The capture changed since this thought was shown. Nothing was changed.',
-);
-
-/**
- * The span of a thought, if `seen` is one of this document's own thoughts.
- *
- * A thought is bound to the parse that produced it: the check is object
- * identity, not index or text. A thought taken from any other parse is
- * refused before a span is touched, even when the same text sits at the same
- * index, so a selection can never be carried across a change of source.
- */
-function itemFor(
-	document: CaptureDocument,
-	seen: Thought,
-): ItemSpan | undefined {
-	if (document.thoughts[seen.index] !== seen) return undefined;
-	return document.layout?.items[seen.index];
-}
-
-/** Replace one thought's text. Only that item's span is rewritten. */
-export function editThought(
-	document: CaptureDocument,
-	seen: Thought,
-	text: string,
-): Edit {
-	const state = ready(document);
-	if ('code' in state) return { ok: false, refusal: state };
-	const item = itemFor(document, seen);
-	if (item === undefined) return STALE;
-	const thought = normalizeThought(text);
-	if (thought === '')
-		return refuse('empty', 'A thought needs text. Delete it instead.');
-	if (thought === seen.text) return { ok: true, source: document.source };
-	return verified(
-		splice(
-			document.source,
-			item,
-			renderItem(item.lead, item.marker, thought, document.newline),
-		),
-		{
-			text: state.text,
-			thoughts: document.thoughts.map((other) =>
-				other.index === seen.index ? thought : other.text,
-			),
-		},
-		'This thought',
-	);
-}
-
-/** Remove one thought and the separator that belonged to it. */
-export function deleteThought(document: CaptureDocument, seen: Thought): Edit {
-	const state = ready(document);
-	if ('code' in state) return { ok: false, refusal: state };
-	const { layout } = state;
-	const { source } = document;
-	const item = itemFor(document, seen);
-	if (item === undefined) return STALE;
-	const following = layout.items[seen.index + 1];
-	const preceding = layout.items[seen.index - 1];
-	let span: Span;
-	if (following !== undefined)
-		span = { start: item.start, end: following.start };
-	else if (preceding !== undefined)
-		span = { start: preceding.end, end: item.end };
-	else {
-		const terminator = /^(?:\r\n|\n|\r)/.exec(source.slice(item.end));
-		span = { start: item.start, end: item.end + (terminator?.[0].length ?? 0) };
-	}
-	return verified(
-		splice(source, span, ''),
-		{
-			text: state.text,
-			thoughts: document.thoughts
-				.filter((other) => other.index !== seen.index)
-				.map((other) => other.text),
-		},
-		'Removing this thought',
-	);
-}
-
-/**
- * Exchange two neighbouring thoughts. Each keeps its own bytes, and the
- * separator between them stays where it is. Both must be as the caller saw
- * them.
- */
-export function swapThoughts(
-	document: CaptureDocument,
-	seen: Thought,
-	neighbour: Thought,
-): Edit {
-	const state = ready(document);
-	if ('code' in state) return { ok: false, refusal: state };
-	const { source } = document;
-	if (Math.abs(seen.index - neighbour.index) !== 1) return STALE;
-	const [first, second] =
-		seen.index < neighbour.index ? [seen, neighbour] : [neighbour, seen];
-	const upper = itemFor(document, first);
-	const lower = itemFor(document, second);
-	if (upper === undefined || lower === undefined) return STALE;
-	const order = document.thoughts.map((thought) => thought.text);
-	order[first.index] = second.text;
-	order[second.index] = first.text;
-	return verified(
-		source.slice(0, upper.start) +
-			source.slice(lower.start, lower.end) +
-			source.slice(upper.end, lower.start) +
-			source.slice(upper.start, upper.end) +
-			source.slice(lower.end),
-		{ text: state.text, thoughts: order },
-		'Moving this thought',
-	);
-}
+/** Capture's fallible, source-preserving body conversion contract. */
+export type CaptureBodyCodec = typeof captureBody;
 
 // ============================================================================
 // New captures
@@ -798,9 +676,8 @@ export function composeBody(
 		expected.length === 0
 			? ''
 			: `\n${expected.map((thought) => renderThought(thought)).join('\n')}\n`;
-	const frame = '---\nx: 0\n---\n';
 	const body = `\n${text}\n\n## Thoughts\n${list}`;
-	const read = parseCapture(frame + body);
+	const read = parseBody(body);
 	if (read.refusal !== undefined)
 		return { body, refusal: read.refusal, absorbed: false };
 	if (
@@ -813,7 +690,7 @@ export function composeBody(
 	// thoughts and says so. A heading still read is the text's own.
 	if (!read.hasSection) return { body, refusal: undefined, absorbed: true };
 	const marked = `\n## Thoughts\n${body}`;
-	const reread = parseCapture(frame + marked);
+	const reread = parseBody(marked);
 	return reread.refusal?.code === 'duplicate-heading'
 		? { body: marked, refusal: reread.refusal, absorbed: true }
 		: { body, refusal: undefined, absorbed: true };

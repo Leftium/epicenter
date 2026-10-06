@@ -253,7 +253,7 @@ export function createRowEditing<TFields>(
 			const fields: Record<string, CanonicalValue> = { ...editor.row.fields };
 			if (value === undefined) delete fields[key];
 			else fields[key] = value;
-			const { error } = editor.set({ fields, body: editor.row.body });
+			const { error } = editor.set({ ...editor.row, fields });
 			if (error === null) hold({ field: key }, undefined);
 			// Only a typed string can be refused: other values come from the row.
 			else if (typeof value === 'string')
@@ -269,7 +269,7 @@ export function createRowEditing<TFields>(
 		setBody(typed: string) {
 			if (!takes() || source || editor.row.status !== 'valid') return;
 			const { error } = editor.set({
-				fields: editor.row.fields,
+				...editor.row,
 				body: withFileNewlines(typed, editor.row.body),
 			});
 			hold(

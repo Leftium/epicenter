@@ -754,3 +754,5 @@ When you add an ADR, add its row here.
 | [0503](0503-file-authoritative-workflows-preserve-information-and-tolerate-repairable-states.md) | File-authoritative workflows preserve information and tolerate repairable states | Proposed (application refusal review and simpler Honeycrisp folder deletion unbuilt) |
 | [0504](0504-row-editors-own-complete-input-and-one-publication-queue.md) | Row editors own complete input and one publication queue | Proposed (implementation and verification complete) |
 | [0505](0505-automatic-commits-carry-one-coalesced-request-until-the-folder-is-free.md) | Automatic commits carry one coalesced request until the folder is free | Proposed (amends 0468) |
+| [0506](0506-capture-composes-values-through-a-source-preserving-body-codec.md) | Capture composes values through a source-preserving body codec | Proposed |
+| [0507](0507-editor-views-compose-current-input-and-own-only-interaction-state.md) | Editor views compose current input and own only interaction state | Proposed |

@@ -16,6 +16,12 @@
  *   nothing for good and B works
  * - Switching between rich text and Source, or typing a title, keeps the one
  *   rich-text view, so its focus and undo history stay
+ * - Rich-text typing and Enter reach the note through ProseMirror's own DOM
+ *   reading, and stay undoable; the same content respelled in Source keeps
+ *   that history, different Source text replaces it, and typing goes on
+ * - A rich-text command that arrives before the view followed Source is
+ *   dropped; Source the editor cannot hold shows Source only and writes
+ *   nothing, and a repair opens rich text again
  * - Another program's change shows only on Reload file; with text not saved
  *   the person confirms first, and a reload that fails keeps the text
  * - A failed save keeps the text editable and offers Try again; typing
@@ -36,6 +42,13 @@ import {
 	until,
 } from '../../lib/folder.test-support.js';
 import type { NoteSession } from '../../lib/notes.svelte.js';
+
+// jsdom has no layout, and its ranges cannot be measured. ProseMirror
+// measures the cursor to scroll it into view after typing; it gets no boxes.
+Range.prototype.getClientRects ??= () =>
+	[] as unknown as ReturnType<Range['getClientRects']>;
+Range.prototype.getBoundingClientRect ??= () =>
+	({ top: 0, bottom: 0, left: 0, right: 0, width: 0, height: 0 }) as DOMRect;
 
 const { flushSync, mount, unmount } = await import('svelte');
 const { createNotes } = await import('../../lib/notes.svelte.ts');
@@ -237,6 +250,144 @@ test('switching between rich text and Source, or typing a title, keeps the one r
 	await a.waitForSaves();
 	flushSync();
 	expect(rich.isConnected).toBe(true);
+});
+
+/**
+ * Type into the rich-text view the way the browser reports typing: change the
+ * text in its paragraph and let ProseMirror's observer read the change.
+ */
+async function typeRich(rich: HTMLElement, text: string) {
+	const line = rich.querySelector('p')?.firstChild;
+	if (!(line instanceof Text)) throw new Error('No text to type into');
+	line.data += text;
+	await tick();
+}
+
+/** The rich-text view's Undo button. */
+const undoButton = (target: ParentNode) =>
+	only<HTMLButtonElement>(target, 'button[aria-label="Undo"]');
+
+test('rich-text typing and Enter go into the note, keep the one view, and stay undoable', async () => {
+	const { a, target } = await view();
+	const rich = only<HTMLElement>(target, '[aria-label="Note text"]');
+	await typeRich(rich, ' Typed');
+	expect(a.row).toMatchObject({ body: 'Body. Typed\n' });
+	await typeRich(rich, ' more');
+	expect(a.row).toMatchObject({ body: 'Body. Typed more\n' });
+	rich.dispatchEvent(
+		new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }),
+	);
+	flushSync();
+	expect(rich.querySelectorAll('p')).toHaveLength(2);
+	// The view wrote that body itself: it stays, with its history.
+	expect(only(target, '[aria-label="Note text"]')).toBe(rich);
+	expect(undoButton(target).disabled).toBe(false);
+	// The cursor is at the start: Enter made an empty first paragraph, which
+	// Markdown cannot spell, so the note did not change.
+	expect(a.row).toMatchObject({ body: 'Body. Typed more\n' });
+	while (!undoButton(target).disabled) {
+		undoButton(target).dispatchEvent(
+			new MouseEvent('click', { bubbles: true }),
+		);
+		flushSync();
+	}
+	expect(a.row).toMatchObject({ body: 'Body.\n' });
+	expect(rich.textContent).toBe('Body.');
+});
+
+test('Source with the same content keeps rich text’s undo; different Source text replaces it', async () => {
+	const { a, target } = await view();
+	const rich = only<HTMLElement>(target, '[aria-label="Note text"]');
+	await typeRich(rich, ' Typed');
+	click(target, 'Source');
+	flushSync();
+	const source = only<HTMLTextAreaElement>(
+		target,
+		'textarea[aria-label="Markdown source"]',
+	);
+	// Trailing blank lines: another spelling of the same document.
+	type(source, 'Body. Typed\n\n\n');
+	await tick();
+	click(target, 'Rich text');
+	flushSync();
+	expect(only(target, '[aria-label="Note text"]')).toBe(rich);
+	expect(undoButton(target).disabled).toBe(false);
+	undoButton(target).dispatchEvent(new MouseEvent('click', { bubbles: true }));
+	flushSync();
+	expect(a.row).toMatchObject({ body: 'Body.\n' });
+
+	click(target, 'Source');
+	flushSync();
+	type(
+		only<HTMLTextAreaElement>(target, 'textarea[aria-label="Markdown source"]'),
+		'Different\n',
+	);
+	await tick();
+	click(target, 'Rich text');
+	flushSync();
+	expect(only(target, '[aria-label="Note text"]')).toBe(rich);
+	expect(rich.textContent).toBe('Different');
+	expect(undoButton(target).disabled).toBe(true);
+	// Typing goes on in the replaced document.
+	await typeRich(rich, ' again');
+	expect(a.row).toMatchObject({ body: 'Different again\n' });
+});
+
+test('a rich-text command that arrives before the view followed Source is dropped', async () => {
+	const { a, target } = await view();
+	const rich = only<HTMLElement>(target, '[aria-label="Note text"]');
+	click(target, 'Source');
+	flushSync();
+	type(
+		only<HTMLTextAreaElement>(target, 'textarea[aria-label="Markdown source"]'),
+		'From Source\n',
+	);
+	// Nothing has flushed: the rich-text view still shows the old document.
+	expect(rich.textContent).toBe('Body.');
+	only<HTMLButtonElement>(target, 'button[aria-label="Divider"]').dispatchEvent(
+		new MouseEvent('click', { bubbles: true }),
+	);
+	expect(a.row).toMatchObject({ body: 'From Source\n' });
+	expect(rich.textContent).toBe('From Source');
+	expect(rich.querySelector('hr')).toBeNull();
+	flushSync();
+	expect(undoButton(target).disabled).toBe(true);
+});
+
+test('Source the editor cannot hold shows rich text as Source only, writes nothing, and a repair opens rich text again', async () => {
+	const { opened, shown, target, write } = await view();
+	await write(
+		'notes/c.md',
+		noteText({ title: 'Tags', body: '\\<b>x\\</b>\n' }),
+	);
+	const c = await opened('notes/c.md');
+	shown.value = c;
+	flushSync();
+	expect(only(target, '[aria-label="Note text"]').textContent).toBe('<b>x</b>');
+	click(target, 'Source');
+	flushSync();
+	// Raw HTML reads as the same text, and the editor still refuses it.
+	type(
+		only<HTMLTextAreaElement>(target, 'textarea[aria-label="Markdown source"]'),
+		'<b>x</b>\n',
+	);
+	await tick();
+	expect(target.querySelector('[aria-label="Note text"]')).toBeNull();
+	expect(target.textContent).toContain('This note opens in Source only');
+	expect(target.textContent).toContain('It contains HTML.');
+	expect(c.row).toMatchObject({ body: '<b>x</b>\n' });
+
+	type(
+		only<HTMLTextAreaElement>(target, 'textarea[aria-label="Markdown source"]'),
+		'Repaired\n',
+	);
+	await tick();
+	click(target, 'Rich text');
+	flushSync();
+	const reopened = only<HTMLElement>(target, '[aria-label="Note text"]');
+	expect(reopened.textContent).toBe('Repaired');
+	await typeRich(reopened, ' and typed');
+	expect(c.row).toMatchObject({ body: 'Repaired and typed\n' });
 });
 
 test('another program’s change shows only on Reload file, and with text not saved the person confirms first', async () => {

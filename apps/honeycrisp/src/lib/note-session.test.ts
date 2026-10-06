@@ -16,8 +16,7 @@
  *   saves again
  * - Another program's change leaves the open text alone until the person
  *   reloads; a reload that fails keeps the text and its save state
- * - Typed text the editor refuses stays in its own control with the reason,
- *   and a refused rich-text transaction changes nothing
+ * - Typed text the editor refuses stays in its own control with the reason
  * - Fences and release refuse input; flushing waits for admitted writes
  */
 import './svelte-modules.test-support.js';
@@ -26,10 +25,8 @@ import {
 	formatCanonicalDocument,
 	parseCanonicalDocument,
 } from '@epicenter/folder';
-import { undoDepth } from 'prosemirror-history';
 import { expectOk } from 'wellcrafted/testing';
 import { honeycrispDefinition } from './data.js';
-import { createRichSession } from './editor/rich-session.js';
 import {
 	noteText,
 	openNotesFolder,
@@ -388,33 +385,11 @@ describe('input the row editor cannot take', () => {
 		);
 	});
 
-	test('a rich-text edit the editor refuses is not shown, and its undo history stays as it was', async () => {
-		const { session } = await open();
-		const rich = createRichSession(noteBody(() => session));
-		if (rich === undefined) throw new Error('The note is not rich text');
-		const before = rich.state;
-		// Half of an emoji: Markdown can spell it, and a file cannot hold it.
-		expect(rich.apply(rich.state.tr.insertText('\uD800', 1))).toBeUndefined();
-		expect(rich.state).toBe(before);
-		expect(undoDepth(rich.state)).toBe(0);
-		expect(session.refusal).toContain('lone surrogate');
-		expect(session.refused.body).toBeUndefined();
-		expect(session.save.status).toBe('idle');
-		// The next edit it can take is shown and kept in its history.
-		expect(rich.apply(rich.state.tr.insertText('ok ', 1))).toBeDefined();
-		expect(undoDepth(rich.state)).toBe(1);
-		expect(rich.sync()).toBeUndefined();
-	});
-
-	test('a Source body the editor refuses stays in Source, and rich text does not write over it', async () => {
+	test('a Source body the editor refuses stays in Source with the reason', async () => {
 		const { session } = await open();
 		const source = noteBody(() => session, { keep: true });
-		const rich = createRichSession(noteBody(() => session));
-		if (rich === undefined) throw new Error('The note is not rich text');
 		expect(source.input('Half \uD800\n')).toBe(false);
 		expect(session.refused.body?.value).toBe('Half \uD800\n');
-		expect(rich.apply(rich.state.tr.insertText('x', 1))).toBeUndefined();
-		expect(session.refusal).toContain('Markdown source');
 		expect(source.input('Whole\n')).toBe(true);
 		expect(session.refused.body).toBeUndefined();
 	});

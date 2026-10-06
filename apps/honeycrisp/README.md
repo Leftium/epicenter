@@ -138,6 +138,12 @@ dividers, and line breaks. There is no underline and there are no images.
 - Spaces at the start or end of a line are kept. In Source they appear as
   `&#32;` (and a tab as `&#9;`), since Markdown would drop them otherwise.
 - Inline code is literal: it can be a link, but not bold, italic, or struck.
+- Text typed to look like a table stays text. A line that would start a
+  table's divider row (`|---|`, `:--`) is written with a backslash, so the
+  note still opens as rich text.
+- Changing the text in Source to say something different starts the
+  rich-text view over: its cursor goes to the start and Undo begins again.
+  Respelling the same content in Source, or switching views, keeps both.
 
 ## When the file changes underneath you
 
@@ -434,10 +440,10 @@ and delivers events to it, including to controls that outlived it.
 | `src/lib/data.ts` | The inert declaration: the `notes` and `folders` tables. |
 | `src/lib/editor/schema.ts` | The bounded ProseMirror schema. |
 | `src/lib/editor/markdown.ts` | Markdown to document and back, the equivalence it is held to, and the check that gates opening and editing. |
-| `src/lib/editor/rich-session.ts` | The rich-text view's state, undo history, and tie to the note's body. No DOM. |
+| `src/lib/editor/rich-text.ts` | ProseMirror commands, plugins, transaction admission, and semantic state replacement. `EditorView.state` owns live editing state. |
 | `src/lib/note-session.svelte.ts` | One open note's policy around the folder's row editor (`table.edit`): the fields or file view, when input is taken, typed text the editor refused, the person's Try again and Reload file, and the fences around a rename, delete, or close. The row editor owns the note's text and its writes. |
 | `src/lib/file-session.svelte.ts` | One open text file's session (any file that is not a note): saved capture, buffer, submitted attempt, external version, and the conditional file calls. |
-| `src/lib/note-source.ts` | A note's body for the rich-text and Source views, list previews, and the field repair offered in a note's file view. |
+| `src/lib/note-source.ts` | Current-body reads and writes for Rich and Source, checked document serialization, list previews, and field repair. |
 | `src/lib/notes.svelte.ts` | Listings, selection, the one session kept per path, note and folder actions, and the input fence. |
 | `src/lib/platform/` | The `#platform/notes-host` seam, its two leaves, and `shell.tauri.ts`, the page side of the shell's commands. |
 | `src/routes/components/` | Header, folder list, note list, editors, files, terminal. |

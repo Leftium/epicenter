@@ -10,30 +10,45 @@
  * for it.
  */
 import { patchRowText, type TableReading } from '@epicenter/folder';
+import type { Node } from 'prosemirror-model';
 import { Err, Ok, type Result } from 'wellcrafted/result';
 import { instantNow, type NoteFields } from './data.js';
-import { type BodyInspection, inspectNoteBody } from './editor/markdown.js';
-import type { BodyDraft } from './editor/rich-session.js';
+import {
+	type BodyInspection,
+	checkNoteDoc,
+	inspectNoteBody,
+} from './editor/markdown.js';
 import type { NoteSession } from './note-session.svelte.js';
 
 export type RichAvailability =
 	| {
 			readonly editable: true;
-			/** The body text the document was parsed from. */
-			readonly body: string;
 			readonly inspection: Extract<BodyInspection, { supported: true }>;
 	  }
 	| { readonly editable: false; readonly reasons: readonly string[] };
 
 /**
+ * The last body asked about, and its answer. The view, its edits, and its
+ * check of the body all ask about one body until it changes, and an answer
+ * depends on nothing but the text.
+ */
+let decoded:
+	| { readonly body: string; readonly availability: RichAvailability }
+	| undefined;
+
+/**
  * Whether this body can be edited as rich text, and why not when it cannot:
- * the editor must be able to write it back as the Markdown it read.
+ * the editor must be able to write it back as the Markdown it read. The same
+ * text gets the same answer, and is decoded once while it is the last asked.
  */
 export function richAvailability(body: string): RichAvailability {
+	if (decoded?.body === body) return decoded.availability;
 	const inspection = inspectNoteBody(body);
-	if (!inspection.supported)
-		return { editable: false, reasons: inspection.reasons };
-	return { editable: true, body, inspection };
+	const availability: RichAvailability = inspection.supported
+		? { editable: true, inspection }
+		: { editable: false, reasons: inspection.reasons };
+	decoded = { body, availability };
+	return availability;
 }
 
 /**
@@ -46,6 +61,23 @@ export function bodyText(markdown: string, previousBody: string): string {
 	const body = markdown === '' ? lead : `${lead}${markdown}\n`;
 	return previousBody.includes('\r\n') ? body.replace(/\r?\n/g, '\r\n') : body;
 }
+
+/**
+ * A note's body as its views read and write it: text for Source, a document
+ * for rich text. Both read the note's current body and write the whole note.
+ */
+export type BodyDraft = {
+	readonly body: string;
+	/** Take the whole new body text. False means it was not taken. */
+	input(body: string): boolean;
+	/** The body as a rich-text document, or why it cannot be one. */
+	readonly rich: RichAvailability;
+	/**
+	 * Take a document as the body, written as Markdown that opens as the same
+	 * document. False means it was not taken.
+	 */
+	inputDoc(doc: Node): boolean;
+};
 
 /**
  * A note's body, as the rich-text and Source views edit it, in whichever
@@ -70,29 +102,48 @@ export function noteBody(
 		keep?: boolean;
 	} = {},
 ): BodyDraft {
+	function body() {
+		const session = current();
+		return session.row.status === 'valid' ? session.row.body : '';
+	}
+	function input(text: string) {
+		if (!mounted()) return false;
+		const session = current();
+		return (
+			session.edit(
+				{
+					body: text,
+					fields:
+						session.row.status === 'valid' &&
+						session.row.fields.updatedAt !== undefined
+							? { updatedAt: now() }
+							: {},
+				},
+				{ keep },
+			) === undefined
+		);
+	}
 	return {
 		get body() {
-			const session = current();
-			return session.row.status === 'valid' ? session.row.body : '';
+			return body();
 		},
-		input(body) {
+		input,
+		get rich() {
+			return richAvailability(body());
+		},
+		inputDoc(doc) {
 			if (!mounted()) return false;
-			const session = current();
-			return (
-				session.edit(
-					{
-						body,
-						fields:
-							session.row.status === 'valid' &&
-							session.row.fields.updatedAt !== undefined
-								? { updatedAt: now() }
-								: {},
-					},
-					{ keep },
-				) === undefined
-			);
+			const check = checkNoteDoc(doc);
+			if (!check.ok) {
+				current().refuse(check.reason);
+				return false;
+			}
+			const previous = body();
+			const next = bodyText(check.markdown, previous);
+			// An edit Markdown has no spelling for (a new empty paragraph) leaves
+			// the body as it is, so it does not make the note newer.
+			return next === previous || input(next);
 		},
-		refuse: (reason) => current().refuse(reason),
 	};
 }
 

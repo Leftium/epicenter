@@ -24,21 +24,21 @@
 	import { redo, redoDepth, undo, undoDepth } from 'prosemirror-history';
 	import type { MarkType } from 'prosemirror-model';
 	import { liftListItem, wrapInList } from 'prosemirror-schema-list';
-	import { type Command, type EditorState, Plugin } from 'prosemirror-state';
+	import { type Command, EditorState, Plugin } from 'prosemirror-state';
 	import { Decoration, DecorationSet, EditorView } from 'prosemirror-view';
 	import 'prosemirror-view/style/prosemirror.css';
 	import { untrack } from 'svelte';
 	import {
-		type BodyDraft,
-		createRichSession,
+		editingPlugins,
 		marks,
 		nodeActive,
 		nodes,
-		type RichSession,
+		stateAfter,
+		stateShowing,
 		toggleQuote,
-	} from '$lib/editor/rich-session.js';
+	} from '$lib/editor/rich-text.js';
 	import { noteSchema as schema } from '$lib/editor/schema.js';
-	import { richAvailability } from '$lib/note-source.js';
+	import type { BodyDraft } from '$lib/note-source.js';
 	import Lifetime from './Lifetime.svelte';
 
 	let {
@@ -56,26 +56,25 @@
 	} = $props();
 
 	/**
-	 * The rich session owns the document and its undo history; the view below
-	 * only displays it. Both live from the moment the draft is editable as rich
-	 * text until it stops being so, and no edit in between recreates them.
+	 * The view's state is the one rich-text state: the document, cursor,
+	 * pending formatting, and undo history. The view lives from the moment the
+	 * body is editable as rich text until it stops being so, and no edit in
+	 * between recreates it.
 	 */
-	let rich = $state.raw<RichSession>();
 	let view = $state.raw<EditorView>();
 	let element = $state<HTMLDivElement>();
 
-	/** Why the body cannot be edited as rich text, or undefined when it can. */
-	const reasons = $derived.by((): readonly string[] | undefined => {
-		// While the document stands for the draft's body there is nothing to decide.
-		if (rich?.inSync) return undefined;
-		const availability = richAvailability(draft.body);
-		return availability.editable ? undefined : availability.reasons;
-	});
+	/**
+	 * The body as a document, or why it cannot be one. A change elsewhere in the
+	 * note, such as its title, gives the same body and the same answer, so
+	 * nothing below runs again.
+	 */
+	const rich = $derived(draft.rich);
 	/**
 	 * A boolean, on purpose: the view's lifetime depends on this and nothing
 	 * else, and a boolean only notifies when it flips. Typing never flips it.
 	 */
-	const editable = $derived(reasons === undefined);
+	const editable = $derived(rich.editable);
 
 	let active = $state.raw({
 		bold: false,
@@ -155,53 +154,52 @@
 		},
 	});
 
+	function show(shown: EditorView, state: EditorState) {
+		shown.updateState(state);
+		readActive(state);
+	}
+
 	// Mount once per editable stretch. `editable` and `element` are the only
 	// things read here, so an edit does not come back through this effect.
 	$effect(() => {
 		if (!element || !editable) return;
-		const opened = untrack(() =>
-			createRichSession(draft, { viewPlugins: [placeholder, taskCheckbox] }),
-		);
-		if (!opened) return;
+		const opened = untrack(() => rich);
+		if (!opened.editable) return;
 		/** Cleared with this view: a transaction it is handed afterwards changes nothing. */
 		let alive = true;
 		const created = new EditorView(element, {
-			state: opened.state,
+			state: EditorState.create({
+				doc: opened.inspection.doc,
+				plugins: [...editingPlugins(), placeholder, taskCheckbox],
+			}),
 			attributes: { class: 'focus:outline-none', 'aria-label': 'Note text' },
 			dispatchTransaction(this: EditorView, transaction) {
 				// Something that kept this view, a command or a timer, can still
-				// dispatch after it was destroyed. Its document is not the draft's.
+				// dispatch after it was destroyed. Its document is not the note's.
 				if (!alive || this.isDestroyed) return;
-				// The rich session decides. A refused transaction changes nothing on
-				// screen; an accepted one is already in the draft.
-				const next = opened.apply(transaction);
-				if (next === undefined) return;
-				this.updateState(next);
-				readActive(next);
+				// A refused or stale transaction changes nothing on screen; an
+				// accepted one is already in the note.
+				const next = stateAfter(this.state, transaction, draft);
+				if (next !== undefined) show(this, next);
 			},
 		});
-		rich = opened;
 		view = created;
-		readActive(opened.state);
+		readActive(created.state);
 		return () => {
 			alive = false;
 			created.destroy();
 			view = undefined;
-			rich = undefined;
 		};
 	});
 
-	// The draft's body changed from outside this view: the rich session replaces
-	// the document and drops the undo history that described the old text.
+	// Follow the body. A body this view wrote, or the same content respelled,
+	// keeps the state; one changed elsewhere replaces it with a new history.
 	$effect(() => {
-		draft.body;
-		const current = untrack(() => rich);
+		const current = rich;
 		const mounted = untrack(() => view);
-		if (!current || !mounted) return;
-		const next = untrack(() => current.sync());
-		if (next === undefined) return;
-		mounted.updateState(next);
-		readActive(next);
+		if (!mounted || !current.editable) return;
+		const next = stateShowing(mounted.state, current.inspection.doc);
+		if (next !== mounted.state) show(mounted, next);
 	});
 
 	$effect(() => {
@@ -358,7 +356,7 @@
 			file was changed.
 		</p>
 		<ul class="list-disc space-y-0.5 ps-5 text-muted-foreground">
-			{#each reasons ?? [] as reason (reason)}
+			{#each rich.editable ? [] : rich.reasons as reason (reason)}
 				<li>{reason}</li>
 			{/each}
 		</ul>

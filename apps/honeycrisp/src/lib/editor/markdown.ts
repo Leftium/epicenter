@@ -353,10 +353,15 @@ const serializer = new MarkdownSerializer(
 );
 
 export function serializeNoteBody(body: Node): string {
-	return serializer
-		.serialize(keepEdgeWhitespace(body), { tightLists: true })
-		.replaceAll(KEPT_SPACE, '&#32;')
-		.replaceAll(KEPT_TAB, '&#9;');
+	return (
+		serializer
+			.serialize(keepEdgeWhitespace(body), { tightLists: true })
+			// An empty paragraph at the start writes a blank line: no content, and
+			// a change to the body all the same.
+			.replace(/^\n+/, '')
+			.replaceAll(KEPT_SPACE, '&#32;')
+			.replaceAll(KEPT_TAB, '&#9;')
+	);
 }
 
 // ── Parsing ─────────────────────────────────────────────────────────────────

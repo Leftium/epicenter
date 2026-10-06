@@ -265,6 +265,11 @@ describe('Markdown that the editor respells keeps its meaning', () => {
 		expect(roundTrip(withEmpty).eq(doc(p(t('a')), p(t('b'))))).toBe(true);
 	});
 
+	test('empty paragraphs at the start write nothing', () => {
+		expect(serializeNoteBody(doc(p(), p(t('a'))))).toBe('a');
+		expect(serializeNoteBody(doc(p(), p(), p(t('a')), p()))).toBe('a');
+	});
+
 	test('an empty body is an empty document and back', () => {
 		expect(serializeNoteBody(parseNoteBody(''))).toBe('');
 		expect(inspectNoteBody('').supported).toBe(true);

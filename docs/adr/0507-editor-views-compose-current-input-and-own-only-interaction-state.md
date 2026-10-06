@@ -111,6 +111,26 @@ editor or a value. Keep a boundary that owns substantial UI, a codec, a resource
 lifetime, or an editing session. A typed valid-row prop can make a getter total;
 its setter still composes from the current owner rather than that render snapshot.
 
+A rich widget owns its live interaction state. For ProseMirror, `EditorView.state`
+holds the document being edited, selection, pending marks, and plugin history.
+Do not retain another `EditorState` in an application session. Parsing the body
+into fresh state on every read loses ordinary typing state even when the body
+has not changed.
+
+Inspect the current body before comparing it with the widget document. Supported,
+semantically equivalent Markdown keeps the live state, including empty paragraphs
+that Markdown does not spell. Different content creates fresh state with the same
+plugins; selection and history may reset. Unsupported content exposes Source for
+repair. A decode cache may depend on body content, but does not track which view
+wrote it.
+
+Before a content-changing transaction, reconcile against the current accepted
+body and discard a transaction based on replaced content. Check the encoded body
+and submit it successfully before displaying the changed state. Successful
+encoding must reopen as supported, equivalent content. Selection and pending-mark
+changes write nothing. This admits one widget-state owner without a last-written
+body marker or separate synchronization API.
+
 ## Consequences
 
 Apps share a finite set of editing patterns and a visible owner for each rule.
@@ -126,6 +146,11 @@ checks. These protect different information from destruction guards.
 
 ## Considered alternatives
 
+- A lazy getter that creates fresh ProseMirror state from Markdown on every
+  read. The same content still loses selection, pending marks, and history.
+- A rich session that retains another state and the body it last wrote.
+  The view already owns interaction state; current-body inspection and semantic
+  comparison decide whether to keep it without recording write provenance.
 - Mandatory tabs and source preference for every editor. A validity branch
   already chooses the only editable representation; add selection for an actual
   view choice.

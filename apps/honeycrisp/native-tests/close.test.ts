@@ -32,8 +32,9 @@ import '../src/lib/svelte-modules.test-support.js';
 import { afterEach, expect, test } from 'bun:test';
 import { type FileCapture, inspectRow } from '@epicenter/folder';
 import { undoDepth } from 'prosemirror-history';
+import { EditorState, type Transaction } from 'prosemirror-state';
 import { honeycrispDefinition } from '../src/lib/data.js';
-import { createRichSession } from '../src/lib/editor/rich-session.js';
+import { editingPlugins, stateAfter } from '../src/lib/editor/rich-text.js';
 import { openNotesFolder } from '../src/lib/folder.test-support.js';
 import { noteBody } from '../src/lib/note-source.js';
 import {
@@ -216,8 +217,21 @@ async function editingNote() {
 	if (draft === undefined)
 		throw new Error(`${NOTE_PATH} did not open as a note`);
 	cleanup.push(() => draft.release());
-	const rich = createRichSession(noteBody(() => draft));
-	if (rich === undefined) throw new Error('The note is not rich text');
+	const body = noteBody(() => draft);
+	const opened = body.rich;
+	if (!opened.editable) throw new Error('The note is not rich text');
+	/** The rich-text view's state, and the state it shows after a transaction. */
+	const rich = {
+		state: EditorState.create({
+			doc: opened.inspection.doc,
+			plugins: editingPlugins(),
+		}),
+		apply(transaction: Transaction) {
+			const next = stateAfter(rich.state, transaction, body);
+			if (next !== undefined) rich.state = next;
+			return next;
+		},
+	};
 	return { gate, disk, notes, draft, rich, prompts, problems };
 }
 
@@ -375,7 +389,7 @@ test('a rich-text edit whose save failed is kept, with its undo history, when th
 	// Nothing was written, and nothing was tried again.
 	expect(disk.saved(NOTE_PATH)).toBe(NOTE);
 	expect(gate.accepted('approve')).toEqual([]);
-	// The same rich-text session goes on, with the undo history it had.
+	// The same rich-text state goes on, with the undo history it had.
 	expect(notes.fenced).toBe(false);
 	expect(undoDepth(rich.state)).toBe(history);
 	expect(rich.apply(rich.state.tr.insertText('more ', 1))).toBeDefined();

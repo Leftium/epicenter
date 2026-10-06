@@ -125,9 +125,9 @@ against the code. The constraints below apply to every edit here.
   path after a create whose reply was lost. Keep the exact text on screen
   until an editor opens over the new file, or the person dismisses it.
 - Every ProseMirror transaction that changes the document goes through
-  `RichSession.apply`, which checks it before it is displayed and gives its
-  body to the note's editor in the same step. Do not call `view.updateState`
-  with a document the session did not return.
+  current-body reconciliation and checked Markdown serialization before it is
+  displayed. Submit the body to the note's editor before `view.updateState`.
+  Discard a transaction based on content that reconciliation replaced.
 - Do not weaken `checkNoteDoc` to let an edit through. If Markdown cannot
   spell it, the edit is refused. If it should be spellable, fix the
   serializer and add the case to `markdown.test.ts`; the property tests in
@@ -138,7 +138,7 @@ against the code. The constraints below apply to every edit here.
   `inspectNoteBody`, not dropped.
 - A view shows only input the note's editor accepted, apart from refused
   typed text kept in its own control. If the editor refuses a change,
-  `RichSession.apply` refuses that transaction too.
+  the rich view refuses that transaction too.
 - The rich-text view's lifetime depends on one boolean (`editable`) and its
   element. Do not make its mount effect read anything that changes on a
   keystroke; that recreates the view and erases undo history.

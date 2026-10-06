@@ -43,13 +43,6 @@
 	// stay inert even after the same kind of block mounts again.
 	const stem = $derived(rowStemOf(todos.folder.tables.todos.name, todo.path) ?? '');
 	const diagnostics = $derived(todo.diagnostics());
-
-	/** Run a command only while the block it belongs to lives. */
-	function command(live: () => boolean, title: string, run: () => string | undefined) {
-		if (!live()) return;
-		const problem = run();
-		if (problem) toast.error(title, { description: problem });
-	}
 </script>
 
 <section class="flex h-full min-h-0 flex-col overflow-y-auto" aria-label="Todo">
@@ -72,7 +65,7 @@
 						placeholder="Title"
 						aria-label="Title"
 						disabled={todo.isFenced}
-						bind:value={() => todo.title(), (title) => live() && todo.setTitle(title)}
+						bind:value={() => todo.title(), (title) => todo.setTitle(title)}
 					/>
 				{/snippet}
 			</Lifetime>
@@ -81,7 +74,11 @@
 			{#if todo.editor.row.status === 'valid'}
 				<Lifetime>
 					{#snippet children(live)}
-						<Button size="sm" variant="outline" onclick={() => command(live, 'Could not edit the fields', todo.editFields)}>
+						<Button size="sm" variant="outline" onclick={() => {
+							if (!live()) return;
+							const problem = todo.editFields();
+							if (problem) toast.error('Could not edit the fields', { description: problem });
+						}}>
 							Edit fields
 						</Button>
 					{/snippet}

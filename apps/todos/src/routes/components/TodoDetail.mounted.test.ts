@@ -17,6 +17,8 @@
  *   control of a mode that left (source, Edit fields, title, notes,
  *   checkbox, Source tab) admits nothing, even after that mode returns;
  *   the returned mode's new controls edit the todo
+ * - List completion reflects the owner after a source-mode refusal; ordinary
+ *   completion and reopening preserve the current title, body, and metadata
  * - A failed save keeps the input on screen; disk C written by
  *   another writer replaces nothing, and Discard mine and reload shows C in
  *   the same editor
@@ -512,4 +514,53 @@ test("a hidden view's detached Try again and Discard mine and reload do nothing 
 	await eventually(() => editor.editor.save.status === 'idle');
 	expect(selected()).toBe(editor);
 	expect((await reading(path)).fields.title).toBe('Mine');
+});
+
+test('list completion follows the owner after a source-mode refusal, and completion and reopening keep unrelated input', async () => {
+	const { todos, selected, reading, text } = await setup();
+	await todos.create('Milk');
+	const path = todos.selectedPath!;
+	const editor = selected();
+	expect(editor.editSource()).toBeUndefined();
+	editor.setText('---\ntitle: Milk\ndone: false\nowner: keep-me\n---\nCurrent notes.');
+	await eventually(() => editor.isIdle);
+	const before = editor.editor.row.text;
+
+	const { default: TodoList } = await import('./TodoList.svelte');
+	const listTarget = document.createElement('div');
+	document.body.append(listTarget);
+	const list = mount(TodoList, { target: listTarget, props: { todos } });
+	cleanup.push(async () => {
+		await unmount(list);
+		listTarget.remove();
+	});
+	flushSync();
+	const completion = listTarget.querySelector<HTMLButtonElement>('[role="checkbox"]');
+	if (completion === null) throw new Error('No list completion control');
+
+	press(completion);
+	await settle();
+	expect(completion.getAttribute('aria-checked')).toBe('false');
+	expect(editor.rawMode).toBe(true);
+	expect(editor.editor.row.text).toBe(before);
+	expect((await reading(path)).fields.done).toBe(false);
+
+	expect(editor.editFields()).toBeUndefined();
+	flushSync();
+	press(completion);
+	await eventually(() => editor.done() && editor.isIdle);
+	expect(completion.getAttribute('aria-checked')).toBe('true');
+	expect(await reading(path)).toMatchObject({
+		fields: { title: 'Milk', done: true },
+		body: 'Current notes.',
+	});
+	expect(await text(path)).toContain('keep-me');
+	press(completion);
+	await eventually(() => !editor.done() && editor.isIdle);
+	expect(completion.getAttribute('aria-checked')).toBe('false');
+	expect(await reading(path)).toMatchObject({
+		fields: { title: 'Milk', done: false },
+		body: 'Current notes.',
+	});
+	expect(await text(path)).toContain('keep-me');
 });

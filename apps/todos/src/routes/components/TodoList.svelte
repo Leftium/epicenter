@@ -12,8 +12,8 @@
 	let adding = $state(false);
 	/**
 	 * Whether this list is mounted. The new todo's typed title belongs to the
-	 * owner, which outlives the list on narrow screens; a field that left the
-	 * document must not change it.
+	 * owner, which outlives the list on narrow screens; a form that left the
+	 * document must not submit it.
 	 */
 	const view = { mounted: true };
 	onDestroy(() => {
@@ -38,17 +38,12 @@
 		adding = false;
 		if (problem) toast.error('Could not add the todo', { description: problem });
 	}
-
-	async function toggle(entry: TodoEntry) {
-		const problem = await todos.toggle(entry);
-		if (problem) toast.error('Could not change the todo', { description: problem });
-	}
 </script>
 
 <section class="flex h-full min-h-0 flex-col" aria-label="Todo list">
 	<form class="flex shrink-0 items-center gap-2 border-b p-3" onsubmit={add}>
 		<Input
-			bind:value={() => todos.newTitle, (title) => view.mounted && (todos.newTitle = title)}
+			bind:value={() => todos.newTitle, (title) => todos.newTitle = title}
 			placeholder="Add a todo"
 			aria-label="New todo title"
 			disabled={adding || todos.departing}
@@ -74,10 +69,16 @@
 					: ''}"
 			>
 				<Checkbox
-					checked={done}
+					bind:checked={
+						() => done,
+						() => {
+							void todos.toggle(entry).then((problem) => {
+								if (problem) toast.error('Could not change the todo', { description: problem });
+							});
+						}
+					}
 					disabled={typeof entry.fields.done !== 'boolean' || todos.departing}
 					aria-label="{done ? 'Reopen' : 'Complete'} {titleOf(entry)}"
-					onCheckedChange={() => void toggle(entry)}
 				/>
 				<Button
 					variant="ghost"

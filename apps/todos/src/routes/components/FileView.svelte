@@ -39,8 +39,8 @@
 	}
 </script>
 
-<section class="flex h-full min-h-0 flex-col" aria-label="File">
-	<div class="flex items-center gap-2 border-b px-3 py-3 sm:px-4">
+<section class="flex h-full min-h-0 flex-col overflow-y-auto" aria-label="File">
+	<div class="flex shrink-0 items-center gap-2 border-b px-3 py-3 sm:px-4">
 		{#if onBack}
 			<Button variant="ghost" size="icon-sm" aria-label="Back to todos" onclick={onBack} {@attach (node: HTMLElement) => node.focus()}>
 				<ArrowLeftIcon />
@@ -68,9 +68,9 @@
 	{:else if file.kind === 'text'}
 		{@const editor = file.editor}
 		<SaveStatus {editor} onDiscard={() => void todos.discard(editor.path)} />
-		<div class="flex min-h-0 flex-1 flex-col px-3 py-3 sm:px-4">
+		<div class="flex min-h-48 flex-1 flex-col px-3 py-3 sm:px-4">
 			<Textarea
-				class="min-h-40 flex-1 resize-none font-mono text-xs"
+				class="min-h-0 flex-1 field-sizing-fixed resize-none font-mono text-xs"
 				value={editor.buffer}
 				aria-label="Contents of {name}"
 				spellcheck={false}

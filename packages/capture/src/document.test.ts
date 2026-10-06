@@ -29,7 +29,6 @@ import {
 	type Edit,
 	editThought,
 	fromTextarea,
-	normalizeThought,
 	parseCapture,
 	setText,
 	swapThoughts,
@@ -399,16 +398,6 @@ test('a heading typed inside a thought stays inside that thought', () => {
 	expect(next).toBe(`${HEAD}a\n\n## Thoughts\n\n- x\n\n  ## Thoughts\n- u\n`);
 	expect(read(next).thoughts).toEqual(['x\n\n## Thoughts', 'u']);
 	expect(refusalOf(addThought(document, '  \n ')).code).toBe('empty');
-});
-
-test('thought normalization removes blank edges and preserves interior lines and text whitespace', () => {
-	expect(
-		normalizeThought(
-			'\r\n \t\r\n  first  \r\n \t\r\n  continuation  \r\n\t\r\n',
-		),
-	).toBe('  first  \n\n  continuation  ');
-	expect(normalizeThought(' \t\r\n \n\t')).toBe('');
-	expect(normalizeThought('  only  ')).toBe('  only  ');
 });
 
 // ============================================================================

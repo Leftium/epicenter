@@ -459,11 +459,12 @@ const refuse = (code: RefusalCode, message: string): Edit => ({
 
 /** A thought's text as it is stored: LF lines, no blank edges, no whitespace-only lines. */
 export function normalizeThought(text: string): string {
-	return toTextarea(text)
+	const lines = toTextarea(text)
 		.split('\n')
-		.map((line) => (line.trim() === '' ? '' : line))
-		.join('\n')
-		.replace(/^\n+|\n+$/g, '');
+		.map((line) => (line.trim() === '' ? '' : line));
+	while (lines.length > 0 && lines[0] === '') lines.shift();
+	while (lines.length > 0 && lines.at(-1) === '') lines.pop();
+	return lines.join('\n');
 }
 
 function renderItem(

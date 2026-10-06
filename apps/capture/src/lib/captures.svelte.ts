@@ -39,7 +39,12 @@ import {
 	type LegacyBundle,
 	runLegacyImport,
 } from '@epicenter/capture/legacy';
-import { type FileCapture, inspectRow, rowPath } from '@epicenter/folder';
+import {
+	type FileCapture,
+	inspectRow,
+	rowPath,
+	type TableWriteReceipt,
+} from '@epicenter/folder';
 import { createSubscriber, SvelteMap } from 'svelte/reactivity';
 import {
 	type CaptureEntry,
@@ -172,6 +177,14 @@ export function createCaptures(host: Pick<CaptureHost, 'folder' | 'location'>) {
 		}
 	}
 
+	async function read(stem: string): Promise<Current> {
+		const { data: found, error: foundError } = await table.get(stem);
+		if (foundError !== null)
+			return { kind: 'unreadable', message: foundError.message };
+		if (found === undefined) return { kind: 'removed' };
+		return { kind: 'present', entry: found };
+	}
+
 	/**
 	 * Write exact source as the capture at a stem, whose file must be absent.
 	 * Resolves the entry of what was sent: the text of the submitted bytes, how
@@ -206,15 +219,14 @@ export function createCaptures(host: Pick<CaptureHost, 'folder' | 'location'>) {
 		return { data: entry, error: null } as const;
 	}
 
+	/** A write receipt names the bytes sent; the entry is how they read. */
+	const entryOf = (receipt: TableWriteReceipt): CaptureEntry =>
+		Object.freeze({ ...receipt, ...inspect(receipt.text) });
+
 	const storeFor = (stem: string): DraftStore => ({
 		inspect,
 		edit: (signal) => table.edit(stem, { signal }),
-		async read(): Promise<Current> {
-			const { data: found, error } = await table.get(stem);
-			if (error !== null) return { kind: 'unreadable', message: error.message };
-			if (found === undefined) return { kind: 'removed' };
-			return { kind: 'present', entry: found };
-		},
+		read: () => read(stem),
 		async create(source) {
 			const created = await createExact(stem, source);
 			if (created.error === null) noteSaved(created.data);
@@ -499,9 +511,7 @@ export function createCaptures(host: Pick<CaptureHost, 'folder' | 'location'>) {
 							}),
 						);
 						if (createdError === null) {
-							noteSaved(
-								Object.freeze({ ...created, ...inspect(created.text) }),
-							);
+							noteSaved(entryOf(created));
 							if (newCapture === text) newCapture = '';
 							return { ok: true, stem: created.stem };
 						}

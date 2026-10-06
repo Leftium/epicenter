@@ -768,14 +768,14 @@ test('a copy holds the capture while it is written, so nothing typed meanwhile i
 });
 
 test('whitespace typed into the new-capture form is refused and still protected', async () => {
-	const { captures, folder } = await setup();
+	const { captures, root, folder } = await setup();
 	captures.inputNewCapture('  \n');
 	expect(captures.unsettled).toBe(1);
 	const created = await captures.create();
 	expect(created.ok).toBe(false);
 	expect(captures.newCapture).toBe('  \n');
 	expect(await captures.departure.settle()).toBe(1);
-	expect(expectOk(await folder.files.list()).files).toEqual([]);
+	expect(await readdir(join(root, 'captures')).catch(() => [])).toEqual([]);
 	captures.inputNewCapture('');
 	expect(captures.unsettled).toBe(0);
 	await captures.close();

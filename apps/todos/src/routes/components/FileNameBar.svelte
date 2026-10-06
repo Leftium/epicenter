@@ -50,7 +50,7 @@
 	}
 </script>
 
-<form class="flex flex-wrap items-center gap-2 border-t px-4 py-2" onsubmit={rename}>
+<form class="flex shrink-0 flex-wrap items-center gap-2 border-t px-4 py-2" onsubmit={rename}>
 	<label class="text-xs text-muted-foreground" for={id}>File name</label>
 	<div class="flex min-w-0 items-center gap-1">
 		{#if prefix}<span class="font-mono text-xs text-muted-foreground">{prefix}</span>{/if}

@@ -53,8 +53,8 @@
 	}
 </script>
 
-<section class="flex h-full min-h-0 flex-col" aria-label="Todo">
-	<div class="flex items-center gap-2 border-b px-3 py-3 sm:px-4">
+<section class="flex h-full min-h-0 flex-col overflow-y-auto" aria-label="Todo">
+	<div class="flex shrink-0 items-center gap-2 border-b px-3 py-3 sm:px-4">
 		{#if onBack}
 			<Button variant="ghost" size="icon-sm" aria-label="Back to todos" onclick={onBack} {@attach (node: HTMLElement) => node.focus()}>
 				<ArrowLeftIcon />
@@ -95,7 +95,7 @@
 
 	{#if todo.editor.row.status === 'invalid' || todo.rawMode}
 		{#if diagnostics}
-			<div class="border-b bg-destructive/5 px-4 py-2 text-xs">
+			<div class="shrink-0 border-b bg-destructive/5 px-4 py-2 text-xs">
 				<p class="mb-1 flex flex-wrap items-center gap-2 font-medium">
 					<Badge variant="destructive">Needs repair</Badge>
 					{diagnostics.summary} Edit the source to fix it.
@@ -109,9 +109,9 @@
 		{/if}
 		<Lifetime>
 			{#snippet children(live)}
-				<div class="flex min-h-0 flex-1 flex-col px-3 py-3 sm:px-4">
+				<div class="flex min-h-48 flex-1 flex-col px-3 py-3 sm:px-4">
 					<Textarea
-						class="min-h-40 flex-1 resize-none font-mono text-xs"
+						class="min-h-0 flex-1 field-sizing-fixed resize-none font-mono text-xs"
 						aria-label="Markdown source"
 						spellcheck={false}
 						disabled={todo.isFenced}
@@ -124,14 +124,14 @@
 		<!-- Tabs.Content keeps an inactive panel mounted and hidden, so the notes share this block's lifetime. -->
 		<Lifetime>
 			{#snippet children(live)}
-				<Tabs.Root bind:value={tab} class="flex min-h-0 flex-1 flex-col px-3 py-3 sm:px-4">
+				<Tabs.Root bind:value={tab} class="flex min-h-48 flex-1 flex-col px-3 py-3 sm:px-4">
 					<Tabs.List>
 						<Tabs.Trigger value="notes">Notes</Tabs.Trigger>
 						<Tabs.Trigger value="source">Source</Tabs.Trigger>
 					</Tabs.List>
-					<Tabs.Content value="notes" class="min-h-0 flex-1">
+					<Tabs.Content value="notes" class="flex min-h-0 flex-1 flex-col">
 						<Textarea
-							class="h-full min-h-40 resize-none font-sans"
+							class="min-h-0 flex-1 field-sizing-fixed resize-none"
 							placeholder="Notes in Markdown"
 							aria-label="Notes"
 							disabled={todo.isFenced}
@@ -146,7 +146,7 @@
 							</Button>
 						</p>
 						<Textarea
-							class="min-h-40 flex-1 resize-none font-mono text-xs"
+							class="min-h-0 flex-1 field-sizing-fixed resize-none font-mono text-xs"
 							value={todo.text()}
 							aria-label="Markdown source preview"
 							readonly

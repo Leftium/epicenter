@@ -30,7 +30,7 @@
 </script>
 
 <!-- One todo's save state, and the choices that settle a write that did not finish. -->
-<div class="flex min-h-9 flex-wrap items-center gap-2 border-b px-4 py-1.5 text-xs">
+<div class="flex min-h-9 shrink-0 flex-wrap items-center gap-2 border-b px-4 py-1.5 text-xs">
 	{#if todo.isFenced}
 		<span class="text-muted-foreground">Working on this file…</span>
 	{:else if todo.editor.save.status === 'saving'}

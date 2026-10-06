@@ -10,7 +10,7 @@
 </script>
 
 <!-- One raw text editor's save state, including the conflict choice that keeps or replaces the input. -->
-<div class="flex min-h-9 flex-wrap items-center gap-2 border-b px-4 py-1.5 text-xs">
+<div class="flex min-h-9 shrink-0 flex-wrap items-center gap-2 border-b px-4 py-1.5 text-xs">
 	{#if editor.saveState.kind === 'saving'}
 		<span class="text-muted-foreground">Saving…</span>
 	{:else if editor.saveState.kind === 'failed'}

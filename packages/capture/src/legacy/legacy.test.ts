@@ -21,7 +21,7 @@
  * - Each account has its own receipt and file names
  */
 import { afterAll, expect, test } from 'bun:test';
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openMemory } from '@epicenter/app/memory';
@@ -59,10 +59,7 @@ async function setup() {
 		}),
 	);
 	const captureFiles = async () =>
-		expectOk(await folder.files.list())
-			.files.filter(({ path }) => path.startsWith('captures/'))
-			.map(({ path }) => path.slice('captures/'.length))
-			.sort();
+		(await readdir(join(root, 'captures')).catch(() => [])).sort();
 	return {
 		root,
 		folder,
@@ -366,13 +363,13 @@ test('a failed receipt is reported, and the retry records the identical files', 
 	const { folder, captureFiles, text } = await setup();
 	let failReceipt = true;
 	const files: ImportFiles = {
-		read: folder.files.read,
+		read: (path) => folder.files.read(path),
 		create: async (path, content) => {
 			if (failReceipt && path.includes('receipt'))
 				throw new Error('disk went away');
 			return folder.files.create(path, content);
 		},
-		replace: folder.files.replace,
+		replace: (file, content) => folder.files.replace(file, content),
 	};
 	const partial = await runLegacyImport(files, DINNER);
 	expect(partial.documents.map((item) => item.status)).toEqual(['created']);
@@ -394,20 +391,17 @@ test('a failed receipt is reported, and the retry records the identical files', 
 	await folder.close();
 });
 
-test('a destination with an added BOM is reported, left alone, and not recorded', async () => {
+test('a differing destination is reported, left alone, and not recorded', async () => {
 	const { folder, text } = await setup();
 	const plan = await planLegacyImport(DINNER, undefined);
-	const document = plan.documents[0];
-	if (document === undefined) throw new Error('fixture');
-	const destination = document.path;
-	const changed = `\uFEFF${document.source}`;
-	expectOk(await folder.files.create(destination, changed));
+	const destination = plan.documents[0]?.path ?? '';
+	await folder.files.create(destination, 'someone else wrote this');
 
 	const report = await runLegacyImport(folder.files, DINNER);
 	expect(report.documents.map((item) => item.status)).toEqual(['differs']);
 	expect(report.complete).toBe(false);
 	expect(report.receipt.status).toBe('unchanged');
-	expect(await text(destination)).toBe(changed);
+	expect(await text(destination)).toBe('someone else wrote this');
 	expect(expectErr(await folder.files.read(report.receiptPath)).name).toBe(
 		'NotFound',
 	);

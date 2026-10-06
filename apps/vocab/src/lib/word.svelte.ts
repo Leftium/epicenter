@@ -10,7 +10,7 @@
  * editor's row. The one exception is a note the editor refused because no
  * row can hold it, such as one with half of a surrogate pair: that note text
  * alone stays in the field with the reason until the learner corrects or
- * discards it, and the word is not deleted or left without asking meanwhile.
+ * discards it, and the word is not reloaded or left without asking meanwhile.
  *
  * - A failed save, or one whose answer was lost, keeps the learner's input
  *   shown with the error. Waiting and later input saves again; "Try again"
@@ -20,8 +20,11 @@
  * - A file that is not a valid word shows its exact text for repair through
  *   the same editor. No save ever creates a file that is gone.
  * - Deletion and closing stop every view of the word from taking input
- *   first, and let admitted saves settle. A delete whose answer was lost
- *   keeps the word until the learner reads the file again or lets it go.
+ *   first, and let admitted saves settle. A delete destroys the word with
+ *   whatever it holds unsaved: a failed save or a refused note does not stop
+ *   it, and nothing is saved again first. A delete that does not happen
+ *   keeps all of it. One whose answer was lost keeps the word until the
+ *   learner reads the file again or lets it go.
  */
 import {
 	FileError,
@@ -393,14 +396,16 @@ export function createWord({
 		// --- Deletion and closing --------------------------------------------
 
 		/**
-		 * Delete the word. The exact text this word's editor shows is fixed
-		 * when this is called, before anything waits. Input stops at once; the
-		 * saves already admitted settle; then `remove` decides, from that text
-		 * and what the caller fixed with it, whether the file as it is then
-		 * may go. Refused, the word goes on; done, it is closed. With no
-		 * answer, thrown or `Unconfirmed`, it is kept until the file is read or
-		 * the learner lets it go. `'busy'` while another delete holds the word;
-		 * `'held'` while a refused note waits to be corrected or discarded.
+		 * Delete the word, discarding what it holds unsaved: a failed save and
+		 * a refused note do not stop it, and nothing is saved again first. The
+		 * exact text this word's editor shows is fixed when this is called,
+		 * before anything waits. Input stops at once; the saves already
+		 * admitted settle; then `remove` decides, from that text and what the
+		 * caller fixed with it, whether the file as it is then may go. Refused,
+		 * the word goes on with its input, failure, and refused note as they
+		 * were; done, it is closed and they go. With no answer, thrown or
+		 * `Unconfirmed`, it is kept until the file is read or the learner lets
+		 * it go. `'busy'` while another operation holds the word.
 		 */
 		remove<
 			T extends {
@@ -411,16 +416,15 @@ export function createWord({
 			},
 		>(
 			remove: (shown: string | undefined) => Promise<T>,
-		): Promise<T | 'busy' | 'held'> {
+		): Promise<T | 'busy'> {
 			if (stopped() !== null) return Promise.resolve('busy');
-			if (refusedNote !== undefined) return Promise.resolve('held');
 			const shown = editor?.get().row.text;
 			fence = 'deleting';
 			const running = (async () => {
 				let removed: T;
 				try {
 					if (opening !== undefined) await opening;
-					// A failed save is left as it is; the delete is decided below.
+					// A failed save is not tried again: deleting discards it.
 					await editor?.waitForSaves();
 					removed = await remove(shown);
 				} catch (cause) {
@@ -430,6 +434,7 @@ export function createWord({
 				if (removed.error === null) {
 					ended = 'This word was deleted.';
 					editor = undefined;
+					refusedNote = undefined;
 				} else if (removed.error.name === 'Unconfirmed' && ended === undefined)
 					deletion = removed.error.message;
 				return removed;

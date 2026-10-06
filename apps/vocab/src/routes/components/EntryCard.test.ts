@@ -11,8 +11,13 @@
  * - A shown card opens its word, and a card given another word opens that
  *   one; the note field is disabled until the word opens
  * - "Reload file" shows a change saved elsewhere while the word was open
- * - A note no file can hold stays in the field with why, holds Delete and
- *   Reload file, and goes only when discarded
+ * - A note no file can hold stays in the field with why, holds Reload file,
+ *   and goes only when discarded or deleted with the word
+ * - Delete asks first and says unsaved changes are discarded; Cancel changes
+ *   nothing, and confirming deletes the word named when Delete was pressed,
+ *   discarding a failed save or a refused note, through the list it was
+ *   named in, even after its card is gone; a version another program saved
+ *   and a refresh listed meanwhile is not deleted
  * - A card given another word, then the first again, edits whichever word it
  *   shows, in the same field; no note crosses between words
  * - A card that is gone takes nothing from its retained field or buttons
@@ -27,6 +32,9 @@
  *   one: each field has its own lifetime
  * - After an unconfirmed delete that landed, "Check again" shows the file is
  *   gone and "Let it go" removes the word without creating anything
+ *
+ * The confirmation is the shared dialog's state, answered as its buttons
+ * would; the dialog's own markup is not mounted here.
  * - The focus list offers stages only while the word is a valid row
  *
  * See also:
@@ -46,6 +54,7 @@ import { button, click, type } from './svelte-dom.test-support.js';
 
 const { flushSync, mount, unmount } = await import('svelte');
 const { createEntriesState } = await import('../../lib/entries.svelte.js');
+const { confirmationDialog } = await import('@epicenter/ui/confirmation-dialog');
 const { cardProps } = await import('./card-props.test-support.svelte.js');
 const { default: EntryCard } = await import('./EntryCard.svelte');
 
@@ -142,7 +151,16 @@ async function setup(
 				return 'fail';
 			};
 		},
+		/** Press Delete and answer the dialog it opens, as its buttons would. */
+		async deleteShown(answer: 'confirm' | 'cancel') {
+			click(target, 'Delete');
+			if (!confirmationDialog.isOpen) throw new Error('Delete asked nothing');
+			if (answer === 'cancel') confirmationDialog.cancel();
+			else await confirmationDialog.confirm();
+			flushSync();
+		},
 		async [Symbol.asyncDispose]() {
+			confirmationDialog.close();
 			destroy();
 			await entries.close();
 			await browser[Symbol.asyncDispose]();
@@ -207,7 +225,7 @@ test('Reload file shows a change another program saved while the word was open',
 	expect(await context.file('lucid')).toBe(theirs);
 });
 
-test('a note no file can hold stays in the field with why, holds Delete and Reload file, and goes only when discarded', async () => {
+test('a note no file can hold stays in the field with why, holds Reload file, and goes only when discarded', async () => {
 	await using context = await setup(['lucid']);
 	const { entries, field, target } = context;
 	const word = await context.opened('lucid');
@@ -219,11 +237,6 @@ test('a note no file can hold stays in the field with why, holds Delete and Relo
 	expect(note?.value).toBe('half a pair: \uD800');
 	expect(target.textContent).toContain('cannot be saved as typed');
 	expect(button(target, 'Reload file')?.disabled).toBe(true);
-	click(target, 'Delete');
-	await Bun.sleep(10);
-	expect(entries.entries).toHaveLength(1);
-	expect(await context.file('lucid')).toBe(before);
-	expect(note?.value).toBe('half a pair: \uD800');
 	expect(entries.unsettled).toBe(1);
 
 	click(target, 'Discard this note');
@@ -232,6 +245,131 @@ test('a note no file can hold stays in the field with why, holds Delete and Relo
 	expect(target.textContent).not.toContain('cannot be saved as typed');
 	expect(word.unsettled).toBe(false);
 	expect(await context.file('lucid')).toBe(before);
+});
+
+test('Delete asks first, says unsaved changes are discarded, and Cancel changes nothing', async () => {
+	await using context = await setup(['lucid']);
+	const { entries, field } = context;
+	const word = await context.opened('lucid');
+	const before = await context.file('lucid');
+	const note = field('Your note for lucid');
+	type(note, 'half a pair: \uD800');
+	flushSync();
+
+	click(context.target, 'Delete');
+	expect(confirmationDialog.isOpen).toBe(true);
+	expect(confirmationDialog.options?.title).toContain('lucid');
+	expect(confirmationDialog.options?.description).toContain('discarded');
+	expect(word.fenced).toBe(false);
+
+	confirmationDialog.cancel();
+	flushSync();
+	expect(confirmationDialog.isOpen).toBe(false);
+	await Bun.sleep(10);
+	expect(entries.entries).toHaveLength(1);
+	expect(await context.file('lucid')).toBe(before);
+	expect(note?.value).toBe('half a pair: \uD800');
+	expect(word.refusedNote).toBeDefined();
+});
+
+test('confirming Delete after a failed save discards the unsaved note and deletes the word', async () => {
+	await using context = await setup(['lucid']);
+	const { entries, field, folder } = context;
+	const word = await context.opened('lucid');
+	const path = context.path('lucid');
+	context.failWrite('lucid');
+	type(field('Your note for lucid'), 'never saved');
+	await until(() => word.save?.status === 'failed', 'the save to fail');
+
+	await context.deleteShown('confirm');
+	expect(confirmationDialog.isOpen).toBe(false);
+	expect(entries.entries).toEqual([]);
+	expect(entries.unsettled).toBe(0);
+	expect(await fileText(folder, path)).toBeUndefined();
+});
+
+test('confirming Delete with a note no file can hold discards that note and deletes the word', async () => {
+	await using context = await setup(['lucid']);
+	const { entries, field, folder } = context;
+	await context.opened('lucid');
+	const path = context.path('lucid');
+	type(field('Your note for lucid'), 'half a pair: \uD800');
+	flushSync();
+
+	await context.deleteShown('confirm');
+	expect(entries.entries).toEqual([]);
+	expect(entries.unsettled).toBe(0);
+	expect(await fileText(folder, path)).toBeUndefined();
+});
+
+test('a card given another word while Delete is being confirmed deletes the word that was named', async () => {
+	await using context = await setup(['lucid', 'candid']);
+	const { entries, props, byText } = context;
+	await context.opened('lucid');
+	const candid = await context.opened('candid');
+	const path = context.path('lucid');
+
+	click(context.target, 'Delete');
+	props.entry = byText('candid');
+	flushSync();
+	await confirmationDialog.confirm();
+	expect(entries.entries.map((entry) => entry.text)).toEqual(['candid']);
+	expect(await fileText(context.folder, path)).toBeUndefined();
+	expect(candid.fenced).toBe(false);
+	expect(await context.file('candid')).toBeDefined();
+});
+
+test('a card given another words list while Delete is being confirmed deletes the named word through the list it was named in', async () => {
+	await using context = await setup(['lucid']);
+	const { entries, folder, props } = context;
+	await context.opened('lucid');
+	const path = context.path('lucid');
+	const other = createEntriesState({ table: folder.tables.entries });
+	await other.refresh();
+
+	click(context.target, 'Delete');
+	props.entries = other;
+	flushSync();
+	await confirmationDialog.confirm();
+
+	expect(await fileText(folder, path)).toBeUndefined();
+	expect(entries.entries).toEqual([]);
+	// The other list was not asked; it lists the word until it reads again.
+	expect(other.entries.map((entry) => entry.text)).toEqual(['lucid']);
+	await other.close();
+});
+
+test('a card gone from the page while Delete is being confirmed leaves the confirmation to delete the named word', async () => {
+	await using context = await setup(['lucid']);
+	const { entries, folder } = context;
+	await context.opened('lucid');
+	const path = context.path('lucid');
+
+	click(context.target, 'Delete');
+	context.destroy();
+	expect(confirmationDialog.isOpen).toBe(true);
+	await confirmationDialog.confirm();
+
+	expect(await fileText(folder, path)).toBeUndefined();
+	expect(entries.entries).toEqual([]);
+});
+
+test('a change another program saves and a refresh lists while Delete is being confirmed is not deleted', async () => {
+	await using context = await setup(['lucid']);
+	const { browser, entries } = context;
+	const word = await context.opened('lucid');
+	const theirs =
+		(await context.file('lucid'))?.replace('note: ""', 'note: "theirs"') ?? '';
+
+	click(context.target, 'Delete');
+	browser.put(context.path('lucid'), theirs);
+	await entries.refresh();
+	expect(entries.entries[0]?.note).toBe('theirs');
+	await confirmationDialog.confirm();
+
+	expect(await context.file('lucid')).toBe(theirs);
+	expect(entries.entries.map((entry) => entry.text)).toEqual(['lucid']);
+	expect(word.fenced).toBe(false);
 });
 
 test('a card given another word, then the first again, edits the word it shows in the same field', async () => {
@@ -443,7 +581,7 @@ test('after an unconfirmed delete that landed, Check again shows the file is gon
 	const word = await context.opened('lucid');
 	const path = context.path('lucid');
 
-	click(target, 'Delete');
+	await context.deleteShown('confirm');
 	await until(() => word.deletion !== undefined, 'the delete to go unanswered');
 	expect(target.textContent).toContain('could not be confirmed');
 

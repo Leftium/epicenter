@@ -39,8 +39,6 @@ import { createWord, type Word } from './word.svelte.js';
 
 export const EntryError = defineErrors({
 	Empty: () => ({ message: 'There is no text to save.' }),
-	/** The word is no longer in the list this edit was made from. */
-	Gone: () => ({ message: 'This word is no longer in your words.' }),
 	/** The file differs from what was read here. Nothing was written. */
 	Changed: () => ({
 		message:
@@ -61,10 +59,9 @@ export const EntryError = defineErrors({
 		message:
 			'This word is busy with another change. Nothing was deleted; try again once it finishes.',
 	}),
-	/** A note typed for the word could not be saved and is still shown. Nothing was sent. */
-	NoteHeld: () => ({
-		message:
-			'This word has a note that could not be saved. Correct it or discard it before deleting the word.',
+	/** The words list is closing with the page. Nothing was read or deleted. */
+	Closed: () => ({
+		message: 'This page is closing, so the word was not deleted.',
 	}),
 	/** The folder did not confirm the save. */
 	NotSaved: ({ cause }: { cause: unknown }) => ({
@@ -163,22 +160,21 @@ export function createEntriesState({
 	/**
 	 * Delete the word's file as it is now, only when that is what the learner
 	 * chose: `listed`, the capture the list showed when they pressed Delete,
-	 * or `shown`, the exact text the word's editor showed then. Both were
-	 * fixed at that moment; nothing read since can stand in for them. The
-	 * file is read after the word's saves settled, and the delete is
+	 * or `shown`, the exact text the word's editor held once its own admitted
+	 * saves settled. Nothing read from elsewhere since can stand in for them.
+	 * The file is read after the word's saves settled, and the delete is
 	 * conditional on exactly that read.
 	 */
 	async function deleteChosen(
 		id: string,
-		listed: Entry['file'] | undefined,
+		listed: Entry['file'],
 		shown: string | undefined,
 	): Promise<Result<undefined, EntryError>> {
-		if (listed === undefined && shown === undefined) return EntryError.Gone();
 		const { data: current, error: readError } = await table.get(id);
 		if (readError !== null) return EntryError.NotSaved({ cause: readError });
 		// Already removed elsewhere: the word is gone, which is what was asked.
 		if (current === undefined) return Ok(undefined);
-		if (current.sha256 !== listed?.sha256 && current.text !== shown)
+		if (current.sha256 !== listed.sha256 && current.text !== shown)
 			return EntryError.Changed();
 		const { error: deleteError } = await table.delete(id, {
 			expectedSha256: current.sha256,
@@ -301,15 +297,19 @@ export function createEntriesState({
 
 		/**
 		 * Remove the entry's file, if it is still a version the learner was
-		 * shown when they asked. That choice is fixed at the call; the word's
-		 * input stops at once, its saves already admitted settle, and only
-		 * then is the file read and deleted on that read's condition. Done, its
-		 * editor and any note typed there go with it; refused, they stay.
+		 * shown: `chosen`, the entry as the list showed it when they asked,
+		 * which the caller fixes then, before any confirmation, so no listing
+		 * read meanwhile widens it. The word's input stops at once, its saves
+		 * already admitted settle, and only then is the file read and deleted
+		 * on that read's condition. A save that failed, or a note no file can
+		 * hold, does not stop it: the learner chose to destroy the word with
+		 * them. Done, its editor and everything typed there go with it;
+		 * refused, they stay as they were. Once the list is closing, nothing
+		 * is read or deleted.
 		 */
-		remove(id: string): Promise<Result<undefined, EntryError>> {
-			// What the learner chose, fixed now: nothing listed or read after
-			// this press can widen it.
-			const listed = rows.find((row) => row.id === id)?.file;
+		remove(chosen: Entry): Promise<Result<undefined, EntryError>> {
+			if (closing) return Promise.resolve(EntryError.Closed());
+			const { id, file: listed } = chosen;
 			const word = words.get(id);
 			const destroy = (shown: string | undefined) =>
 				queued(id, () => deleteChosen(id, listed, shown));
@@ -320,7 +320,6 @@ export function createEntriesState({
 					const answer = await removing;
 					// Another operation holds the word; it is left to finish.
 					if (answer === 'busy') return EntryError.Busy();
-					if (answer === 'held') return EntryError.NoteHeld();
 					removed = answer;
 				} catch (cause) {
 					// The folder threw instead of answering: the word may be gone.

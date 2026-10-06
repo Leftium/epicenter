@@ -1,11 +1,12 @@
 <script lang="ts">
 	import { Button } from '@epicenter/ui/button';
 	import { Checkbox } from '@epicenter/ui/checkbox';
+	import { confirmationDialog } from '@epicenter/ui/confirmation-dialog';
 	import { Label } from '@epicenter/ui/label';
 	import { toast } from '@epicenter/ui/sonner';
 	import { onDestroy, untrack } from 'svelte';
 	import { type Entry, STAGE_LABELS, STAGES } from '$lib/data.js';
-	import { type EntriesState, type EntryError, entryErrorMessage } from '$lib/entries.svelte.js';
+	import { type EntriesState, entryErrorMessage } from '$lib/entries.svelte.js';
 	import { describeRowError, describeSaveError } from '$lib/word.svelte.js';
 	import NoteField from './NoteField.svelte';
 	import RepairField from './RepairField.svelte';
@@ -59,15 +60,34 @@
 		const message = await command();
 		if (message !== null) toast.error(message);
 	}
-	function reportEntry(error: EntryError | null) {
-		if (error !== null) toast.error(entryErrorMessage(error));
+
+	/**
+	 * Ask before deleting the word this card shows now. The words list and the
+	 * entry as listed are fixed at the press, so a card given another entry or
+	 * list while the dialog is open, or gone from the page, still deletes only
+	 * the word that was named, at the version that was shown. Deleting
+	 * discards what the word holds unsaved, so the dialog says so every time.
+	 */
+	function confirmDelete() {
+		if (!mounted) return;
+		const words = entries;
+		const chosen = entry;
+		confirmationDialog.open({
+			title: `Delete “${chosen.text}”?`,
+			description: 'Its note and stage are deleted with it. Any change not saved yet, including a note that could not be saved, is discarded.',
+			confirm: { text: 'Delete', variant: 'destructive' },
+			async onConfirm() {
+				const { error: removeError } = await words.remove(chosen);
+				if (removeError !== null) toast.error(entryErrorMessage(removeError));
+			},
+		});
 	}
 </script>
 
 <article class="rounded-lg border p-4">
 	<div class="flex items-center justify-between gap-2">
 		<Label class="min-h-11 text-base leading-normal select-text"><Checkbox aria-label="Choose {entry.text} for chat" checked={chosen} disabled={!canChoose} onCheckedChange={onToggle} />{entry.text}</Label>
-		<Button size="sm" variant="ghost" disabled={word.fenced} onclick={async () => { if (!mounted) return; const { error: removeError } = await entries.remove(entry.id); reportEntry(removeError); }}>Delete</Button>
+		<Button size="sm" variant="ghost" disabled={word.fenced} onclick={confirmDelete}>Delete</Button>
 	</div>
 	{#if view === 'source'}
 		<!-- The file's exact text, through the same editor: each change is saved as typed. -->
@@ -85,7 +105,7 @@
 		{#if word.refusedNote !== undefined}
 			<!-- The note as typed stays in the field above; nothing was sent. -->
 			<div role="alert" class="mt-2 space-y-2 text-xs text-destructive">
-				<p>Your note cannot be saved as typed, so nothing was sent. It stays in the field until you correct it or discard it. ({word.refusedNote.reason})</p>
+				<p>Your note cannot be saved as typed, so nothing was sent. It stays in the field until you correct it, discard it, or delete the word. ({word.refusedNote.reason})</p>
 				<Button size="sm" variant="ghost" onclick={() => { if (mounted) word.discardRefusedNote(); }}>Discard this note</Button>
 			</div>
 		{/if}

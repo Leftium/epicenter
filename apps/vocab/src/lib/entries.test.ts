@@ -27,6 +27,7 @@ import {
 	entriesOf,
 	fileText,
 	gated,
+	listed,
 	tableFiles,
 	until,
 } from './folder.test-support.js';
@@ -172,13 +173,12 @@ test('removing deletes exactly the word shown, and refuses one that changed else
 	const { browser, folder, entries } = context;
 	expectOk(await entries.add('resilient'));
 	expectOk(await entries.add('ambiguous'));
-	const byText = (text: string) =>
-		entries.entries.find((entry) => entry.text === text)?.id ?? '';
+	const byText = (text: string) => listed(entries, text);
 
 	const otherTab = createEntriesState(entriesOf(await browser.open()));
 	await otherTab.refresh();
 	expect(
-		await editWord(otherTab, byText('resilient'), { stage: 'usable' }),
+		await editWord(otherTab, byText('resilient').id, { stage: 'usable' }),
 	).toBeNull();
 
 	expect(expectErr(await entries.remove(byText('resilient'))).name).toBe(
@@ -194,11 +194,7 @@ test('removing deletes exactly the word shown, and refuses one that changed else
 		{ text: 'resilient', note: '', stage: 'usable' },
 	]);
 	// A word the other tab still lists is already gone: that is not a failure.
-	expectOk(
-		await otherTab.remove(
-			otherTab.entries.find((entry) => entry.text === 'ambiguous')?.id ?? '',
-		),
-	);
+	expectOk(await otherTab.remove(listed(otherTab, 'ambiguous')));
 });
 
 test('a refused save lists nothing, and saving again adds one file', async () => {
@@ -233,7 +229,9 @@ test('a closed folder answers with an error for a new word, an edit, and a remov
 	await until(() => word.save?.status === 'failed', 'the save to fail');
 	expect(word.note()).toBe('looking back');
 	expect(word.unsettled).toBe(true);
-	expect(expectErr(await entries.remove(id)).name).toBe('NotSaved');
+	expect(
+		expectErr(await entries.remove(listed(entries, 'in hindsight'))).name,
+	).toBe('NotSaved');
 	expect(summary(entries)).toEqual([
 		{ text: 'in hindsight', note: '', stage: 'new' },
 	]);
@@ -375,7 +373,7 @@ test('a word another tab removed, with no hint yet read here, is saved again ins
 	const otherTab = createEntriesState(entriesOf(await browser.open()));
 	await otherTab.refresh();
 	for (const entry of otherTab.entries)
-		expectOk(await otherTab.remove(entry.id));
+		expectOk(await otherTab.remove(entry));
 	expect(await tableFiles(folder, 'entries')).toEqual([]);
 	expect(entries.has('resilient') && entries.has('ambiguous')).toBe(true);
 

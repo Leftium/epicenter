@@ -15,6 +15,7 @@ import {
 	opfsOf,
 } from '../../../../packages/folder/src/browser-storage.test-support.js';
 import {
+	type Entry,
 	type Stage,
 	type VocabFolder,
 	type VocabTables,
@@ -62,6 +63,18 @@ export async function editWord(
 		'the list to show the saved word',
 	);
 	return null;
+}
+
+/**
+ * The word as the list shows it now, by its text or its ID: what a Delete
+ * press fixes as the learner's choice.
+ */
+export function listed(entries: EntriesState, key: string): Entry {
+	const entry = entries.entries.find(
+		(candidate) => candidate.text === key || candidate.id === key,
+	);
+	if (entry === undefined) throw new Error(`${key} is not listed`);
+	return entry;
 }
 
 /** What the words list is given from an open folder, as the page gives it. */

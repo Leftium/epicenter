@@ -43,6 +43,7 @@ import {
 } from './index-file.js';
 import {
 	commitTree,
+	EMPTY_TREE,
 	logCommits,
 	type ObjectAccess,
 	readBlob,
@@ -616,13 +617,8 @@ export async function createStoredGitBackend<TSession extends GitFsSession>({
 			if (merge === undefined) {
 				const tree = await commitTree(access, oid);
 				const parentTree =
-					parent === undefined ? undefined : await commitTree(access, parent);
-				const indexEntries = await git.listFiles({ ...access, dir: WORKDIR });
-				if (
-					tree === parentTree ||
-					(parent === undefined && indexEntries.length === 0)
-				)
-					return { status: 'nothing' };
+					parent === undefined ? EMPTY_TREE : await commitTree(access, parent);
+				if (tree === parentTree) return { status: 'nothing' };
 			}
 			await session.flush();
 			const moved = await store.casRef(branchKey, parent, oid);

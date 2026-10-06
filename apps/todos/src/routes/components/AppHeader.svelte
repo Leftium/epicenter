@@ -4,6 +4,7 @@
 	import { toast } from '@epicenter/ui/sonner';
 	import { Spinner } from '@epicenter/ui/spinner';
 	import ArrowDownToLineIcon from '@lucide/svelte/icons/arrow-down-to-line';
+	import ArrowUpFromLineIcon from '@lucide/svelte/icons/arrow-up-from-line';
 	import ChevronDownIcon from '@lucide/svelte/icons/chevron-down';
 	import FolderIcon from '@lucide/svelte/icons/folder';
 	import GitMergeIcon from '@lucide/svelte/icons/git-merge';
@@ -173,7 +174,7 @@
 		<Button
 			variant="ghost"
 			size="sm"
-			class="max-w-[22rem] min-w-0 shrink font-mono text-xs font-normal text-muted-foreground max-md:hidden"
+			class="max-w-88 min-w-0 shrink font-mono text-xs font-normal text-muted-foreground max-md:hidden"
 			tooltip="Your todos are files in this folder. Click to copy its path."
 			aria-label="Todos folder: {directory}. Copy path"
 			data-testid="folder-path"
@@ -287,13 +288,13 @@
 			tooltip={pending
 				? INCOMING_WAITS
 				: hasRemote
-					? undefined
+					? 'Commit the saved files and push to the remote.'
 					: 'Commit the saved files. There is no remote to push to.'}
 			data-testid="commit-and-push"
 			onclick={commitAndPush}
 		>
-			{#if working === 'commit'}<Spinner class="size-3.5" />{/if}
-			{hasRemote ? 'Commit and push' : 'Commit'}
+			{#if working === 'commit'}<Spinner class="size-3.5" />{:else}<ArrowUpFromLineIcon class="sm:hidden" />{/if}
+			<span class="max-sm:sr-only">{hasRemote ? 'Commit and push' : 'Commit'}</span>
 		</Button>
 		<Button
 			variant={terminalOpen ? 'secondary' : 'ghost'}

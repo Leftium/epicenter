@@ -6,22 +6,14 @@
 	so nothing can be typed that would not be taken. A note no row can hold is
 	kept in the field as typed, and the card says why.
 
-	It has its own lifetime: Svelte never removes the listeners its bindings
-	add to an element, so this textarea, once removed, can still deliver input.
-	Its setter returns once this field is destroyed. It reads `word` when it
-	runs, so a field given another word edits that word.
+	The shared Textarea retires its binding when destroyed. The binding reads
+	`word` at the event, so a field given another word edits that word.
 -->
 <script lang="ts">
 	import { Textarea } from '@epicenter/ui/textarea';
-	import { onDestroy } from 'svelte';
 	import type { Word } from '$lib/word.svelte.js';
 
 	let { word, label }: { word: Word; label: string } = $props();
-
-	let live = true;
-	onDestroy(() => {
-		live = false;
-	});
 </script>
 
 <Textarea
@@ -32,8 +24,6 @@
 	readonly={word.fenced}
 	bind:value={
 		() => word.note(),
-		(text) => {
-			if (live) word.inputNote(text);
-		}
+		(text) => word.inputNote(text)
 	}
 />

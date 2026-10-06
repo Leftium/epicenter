@@ -15,7 +15,7 @@
  *   only on request, and a file that came back is written over only by Try
  *   again
  * - Save as a copy creates a new file exclusively, leaves the original as it
- *   is, and lets go of the draft it was made from
+ *   is, preserves BOM, CRLF, and Unicode, and lets go of its draft
  * - A capture with an unusual or empty file name is an ordinary capture
  * - A file whose text does not parse is listed, opens through its editor as
  *   Source, and is repaired there with no other writer
@@ -707,9 +707,15 @@ test('a draft whose file was removed stays open and on the timeline with its uns
 test('save as a copy is refused, writing nothing, while unsent input would be dropped; otherwise it is all of the draft', async () => {
 	const { captures, create, open, file, root, folder } = await setup();
 	const stem = await create('Original');
+	const initial = await readFile(file(stem), 'utf8');
+	await writeFile(file(stem), `\uFEFF${initial.replaceAll('\n', '\r\n')}`);
 	const draft = await open(stem);
 	await rm(file(stem));
-	draft.inputText('My draft');
+	const source = draft.source.replace(
+		'\r\nOriginal\r\n',
+		'\r\nMy draft, café 🍊\r\n',
+	);
+	draft.inputSource(source);
 	draft.inputNewThought('typed, not added');
 	await draft.settle();
 
@@ -726,7 +732,7 @@ test('save as a copy is refused, writing nothing, while unsent input would be dr
 	const copied = await captures.saveCopy(draft);
 	if (!copied.ok) throw new Error(copied.message);
 	const saved = await readFile(file(copied.stem), 'utf8');
-	expect(saved).toContain('My draft');
+	expect(saved).toBe(source);
 	expect(captures.draft(stem)).toBeUndefined();
 	// The original is not written back by letting go of the draft.
 	expect(await Bun.file(file(stem)).exists()).toBe(false);

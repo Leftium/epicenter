@@ -77,10 +77,6 @@ const describe = (cause: unknown) =>
 
 const pathOf = (stem: string) => rowPath(CAPTURES_TABLE, stem);
 
-const encoder = new TextEncoder();
-// The decoder that reads row files: a byte order mark stays in the text.
-const utf8 = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true });
-
 /** A readable, sortable stem: the capture's UTC time and a short random suffix. */
 function newStem(at: Date): string {
 	const stamp = at
@@ -200,17 +196,15 @@ export function createCaptures(host: Pick<CaptureHost, 'folder' | 'location'>) {
 	 * surrogate is refused before it is encoded, because encoding would
 	 * replace it: this is recovery text, and a copy must be exact.
 	 */
-	async function createExact(stem: string, source: string) {
-		if (!source.isWellFormed())
+	async function createExact(stem: string, text: string) {
+		if (!text.isWellFormed())
 			return {
 				data: null,
 				error: { name: 'Unencodable', message: UNENCODABLE },
 			} as const;
-		const bytes = encoder.encode(source);
-		const text = utf8.decode(bytes);
 		const reading = inspect(text);
 		const { data: written, error: writtenError } = await writing(() =>
-			folder.files.create(pathOf(stem), bytes),
+			folder.files.create(pathOf(stem), text),
 		);
 		if (writtenError !== null)
 			return { data: null, error: writtenError } as const;

@@ -17,6 +17,7 @@
  *   through the one editor; the Capture view returns once the text is valid
  * - A failed save keeps text visible; later input saves and Reload replaces it
  * - An operation that holds the capture takes no input through any path
+ * - Restoring preserves the source's BOM, CRLF lines, and Unicode text
  *
  * See also:
  * - `platform/folder.epicenter-host.test.ts` for failed and unconfirmed
@@ -72,7 +73,6 @@ async function setup(initial: string | undefined = A) {
 	const editors: RowEditor<CaptureFields>[] = [];
 	/** Held before the next acquisition reads anything. */
 	const next: { edit?: Promise<void> } = {};
-	const fence = { on: false };
 	const creates: string[] = [];
 	const store: DraftStore = {
 		inspect: (text) => inspectRow(captureDefinition.tables.captures, text),
@@ -101,7 +101,7 @@ async function setup(initial: string | undefined = A) {
 		},
 		remove: (reviewed) =>
 			table.delete('one', { expectedSha256: reviewed.sha256 }),
-		fenced: () => fence.on,
+		fenced: () => false,
 	};
 	const draft = createDraft(store, { path: PATH, stem: 'one' });
 	await draft.ready;
@@ -188,14 +188,15 @@ test('typing while a reload reads keeps the typing and loads nothing', async () 
 });
 
 test('a file removed elsewhere is never written back; putting it back is an exclusive create through the same editor', async () => {
-	const t = await setup();
+	const t = await setup(`\uFEFF${A.replaceAll('\n', '\r\n')}`);
 	await t.outside(undefined);
-	t.draft.inputText('mine');
-	const mine = t.draft.source;
+	const source = t.draft.source.replace('\r\nA\r\n', '\r\ncafé 🍊\r\n');
+	t.draft.inputSource(source);
+	expect(t.draft.source).toBe(source);
 	await t.draft.settle();
 
 	expect(t.draft.notice).toMatchObject({ kind: 'failed', missing: true });
-	expect(t.draft.source).toBe(mine);
+	expect(t.draft.source).toBe(source);
 	expect(t.draft.unsettled).toBe(true);
 	// Neither settling nor Try again creates it.
 	t.draft.retry();
@@ -203,8 +204,8 @@ test('a file removed elsewhere is never written back; putting it back is an excl
 	expect(await t.exists()).toBe(false);
 
 	expect(await t.draft.restore()).toEqual({ ok: true });
-	expect(t.creates).toEqual([mine]);
-	expect(await t.disk()).toBe(mine);
+	expect(t.creates).toEqual([source]);
+	expect(await t.disk()).toBe(source);
 	expect(t.editors).toHaveLength(1);
 	expect(t.draft.status).toBe('valid');
 	expect(t.draft.notice).toBeUndefined();

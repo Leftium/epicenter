@@ -51,3 +51,5 @@ export {
 	prepareData,
 	prepareSchema,
 } from './prepare.js';
+
+export { exportSchema, DefinitionExportError } from './export.js';

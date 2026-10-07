@@ -231,9 +231,10 @@ describes the schema its validator checks.
 ### What survives JSON
 
 Helpers add portable keywords and editor hints, without introducing a
-refinement callback or codec. A keyword-based schema read back through
-`JSON.parse(JSON.stringify(schema))` prepares to the same checks, issues, and
-editor. Constraints supplied as native callbacks remain local.
+refinement callback or codec. Their JSON preserves those keywords and hints,
+including the distinction between a select and an unannotated enum. Native
+schemas need additional checks: ordinary `JSON.stringify` drops hidden
+keywords and callbacks. Constraints supplied as native callbacks remain local.
 
 A native `Type.Refine` works wherever a schema is declared, including over a
 helper (`Type.Refine(field.string(), ...)`), and runs locally. Its callback is
@@ -241,7 +242,34 @@ a function, so it is not in the schema's JSON form. The same holds for a
 codec. A declaration that uses either cannot be serialized faithfully. A codec
 is carried and never run: the reads call TypeBox's `Check` and `Errors`, which
 do not decode or encode, so no value is transformed here.
-This package has no exporter and no importer for other JSON Schema dialects.
+`exportSchema(prepared)` returns a Result containing discovery JSON: optional
+`title`, `kv`, and `tables`, with two-space indentation and a trailing newline.
+It accepts only the prepared result of `prepareSchema` or `prepareData` and
+omits dataset identity. It preserves declared order, editor hints, and portable
+hidden data properties, including TypeBox's inert markers. Hidden members in
+validation maps are refused because making them enumerable changes TypeBox's
+checks. Export also refuses schemas whose compiled reference sharing changes
+when hidden keywords become enumerable. Each field remains a standalone
+TypeBox 1.x schema: references resolve within that field, and
+TypeBox's named recursive references keep their native dialect. The root
+object describes a definition; it is not itself one JSON Schema document.
+Native TypeBox extensions such as `type: 'bigint'` are outside the standard JSON
+Schema type vocabulary. Export preserves the native dialect rather than
+converting it into another validator's dialect.
+
+Fidelity is checked against TypeBox 1.1.23 under the same evaluation mode.
+TypeBox's compiled and interpreted validators can already disagree on
+scope-dependent references. Export preserves each mode's checks; it does not
+make readers using different modes or library versions agree.
+
+Export refuses the whole definition when JSON cannot preserve it: refinements,
+codecs, guards, body conversions, RegExp patterns, or other non-JSON values.
+Formats require TypeBox's stock registered handler; custom or replaced handlers
+are runtime validation dependencies. The descriptor walk invokes no callbacks
+or `toJSON`. It conservatively refuses guard keys and unsupported format strings
+even inside annotations, rather than guessing which objects are schema nodes.
+Export is checked on every call because guards and the format registry can
+change after preparation. There is no importer for other JSON Schema dialects.
 
 A spread (`{ ...field.string() }`) keeps the enumerable keywords and drops any
 hidden refinement an author added. The result is a valid native schema and is

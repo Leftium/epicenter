@@ -67,6 +67,14 @@ type Memo = WeakMap<object, Result<DataSchema, DataDefinitionParseError>>;
 const preparedDefinitions: Memo = new WeakMap();
 const preparedSchemas: Memo = new WeakMap();
 
+/** Internal export boundary: only the owned result, never its raw memo key. */
+export function isPreparedSchema(value: DataSchema): boolean {
+	return [preparedDefinitions, preparedSchemas].some((memo) => {
+		const result = memo.get(value);
+		return result?.error === null && result.data === value;
+	});
+}
+
 /**
  * Check one definition and return the copy every read uses (ADR-0266).
  *
@@ -310,6 +318,16 @@ type Validation = {
  * preparation's validator.
  */
 const validations = new WeakMap<object, Validation>();
+
+/** Export must remember guards even if an author later removes their marker. */
+export function hasSchemaCallbacks(prepared: DataSchema): boolean {
+	return [
+		prepared.kv,
+		...Object.values(prepared.tables).map((table) => table.fields),
+	].some((fields) =>
+		Object.values(fields).some((schema) => validationOf(schema).callbacks),
+	);
+}
 
 /**
  * The validation of a prepared schema.

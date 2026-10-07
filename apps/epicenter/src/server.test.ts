@@ -73,7 +73,7 @@ import {
 	type HomeServerOptions,
 	type HomeSessionResponse,
 } from './server.ts';
-import type { ReadyFrame } from './sidecar-runtime.ts';
+import { type ReadyFrame, SIDECAR_PROTOCOL_VERSION } from './sidecar-runtime.ts';
 import {
 	type EpicenterStaticAssets,
 	loadStaticAssets,
@@ -1858,13 +1858,13 @@ const FINAL_TEXT_TURN = [
  * Rejects with the buffered stdout (or the sidecar's stderr, if it exited)
  * so a failed launch names its cause instead of timing out silently.
  */
-async function readPortAnnouncement(
+async function readReadyFrame(
 	sidecar: {
 		stdout: ReadableStream<Uint8Array>;
 		stderr: ReadableStream<Uint8Array>;
 	},
 	timeoutMs: number,
-): Promise<number> {
+): Promise<ReadyFrame> {
 	const reader = sidecar.stdout.getReader();
 	const decoder = new TextDecoder();
 	let buffer = '';
@@ -1889,10 +1889,11 @@ async function readPortAnnouncement(
 					const ready = JSON.parse(line) as ReadyFrame;
 					expect(ready).toEqual({
 						type: 'ready',
-						protocolVersion: 8,
+						protocolVersion: SIDECAR_PROTOCOL_VERSION,
 						port: ready.port,
+						installedAppIds: ready.installedAppIds,
 					});
-					return ready.port;
+					return ready;
 				}
 			}
 			if (done) {
@@ -2012,12 +2013,15 @@ describe('sidecar end-to-end smoke', () => {
 		try {
 			// The credential and Rust-resolved port travel in the boot frame.
 			sidecar.stdin.write(
-				`${JSON.stringify({ type: 'boot', protocolVersion: 8, token: TOKEN, port, authCell: null, authServer: { baseURL: 'https://api.epicenter.so', authorityId: 'epicenter-api' }, accountManagement: true, dataDir, folderDir })}\n`,
+				`${JSON.stringify({ type: 'boot', protocolVersion: SIDECAR_PROTOCOL_VERSION, token: TOKEN, port, authCell: null, authServer: { baseURL: 'https://api.epicenter.so', authorityId: 'epicenter-api' }, accountManagement: true, dataDir, folderDir })}\n`,
 			);
 			await sidecar.stdin.flush();
-			const announcedPort = await readPortAnnouncement(sidecar, 30_000);
-			expect(announcedPort).toBe(port);
-			const origin = `http://127.0.0.1:${announcedPort}`;
+			const ready = await readReadyFrame(sidecar, 30_000);
+			expect(ready.port).toBe(port);
+			// The membership Rust admits windows and folders for is the list
+			// this generation discovered and serves below.
+			expect(ready.installedAppIds).toEqual([installedAppId]);
+			const origin = `http://127.0.0.1:${ready.port}`;
 
 			const shell = await fetch(HOME_ROUTE.url(origin));
 			expect(shell.status).toBe(200);
@@ -2147,7 +2151,7 @@ describe('sidecar end-to-end smoke', () => {
 		);
 		try {
 			sidecar.stdin.write(
-				`${JSON.stringify({ type: 'boot', protocolVersion: 8, token: TOKEN, port: occupiedPort, authCell: null, authServer: { baseURL: 'https://api.epicenter.so', authorityId: 'epicenter-api' }, accountManagement: true, dataDir: testDataDir(), folderDir: testDataDir() })}\n`,
+				`${JSON.stringify({ type: 'boot', protocolVersion: SIDECAR_PROTOCOL_VERSION, token: TOKEN, port: occupiedPort, authCell: null, authServer: { baseURL: 'https://api.epicenter.so', authorityId: 'epicenter-api' }, accountManagement: true, dataDir: testDataDir(), folderDir: testDataDir() })}\n`,
 			);
 			await sidecar.stdin.flush();
 			expect(await exitWithin(sidecar, 30_000)).not.toBe(0);
@@ -2187,10 +2191,12 @@ describe('sidecar end-to-end smoke', () => {
 		);
 		try {
 			sidecar.stdin.write(
-				`${JSON.stringify({ type: 'boot', protocolVersion: 8, token: TOKEN, port, authCell: null, authServer: { baseURL: 'https://api.epicenter.so', authorityId: 'epicenter-api' }, accountManagement: true, dataDir: testDataDir(), folderDir: testDataDir() })}\n`,
+				`${JSON.stringify({ type: 'boot', protocolVersion: SIDECAR_PROTOCOL_VERSION, token: TOKEN, port, authCell: null, authServer: { baseURL: 'https://api.epicenter.so', authorityId: 'epicenter-api' }, accountManagement: true, dataDir: testDataDir(), folderDir: testDataDir() })}\n`,
 			);
 			await sidecar.stdin.flush();
-			expect(await readPortAnnouncement(sidecar, 30_000)).toBe(port);
+			const ready = await readReadyFrame(sidecar, 30_000);
+			expect(ready.port).toBe(port);
+			expect(ready.installedAppIds).toEqual([]);
 			sidecar.stdin.end();
 			expect(await exitWithin(sidecar, 30_000)).toBe(0);
 

@@ -104,7 +104,7 @@ fn evidence_result(app: DesktopAppHandle, error: Option<String>) {
             window.destroy().unwrap();
             receive.recv_timeout(Duration::from_secs(10)).unwrap();
             let state = app.state::<HostState>();
-            let token = state.active_token.lock().unwrap().clone().unwrap();
+            let token = state.active_token().unwrap();
             launch_on_main_thread(
                 &app,
                 Application::Admitted(APP_ID.into()),
@@ -665,14 +665,16 @@ pub fn run() {
             record(&app, serde_json::json!({"event":"host","cycle":cycle,"pid":std::process::id()}));
             thread::spawn(move || {
                 let result = (|| -> Result<()> {
-                    let LaunchedHost { child, mut stdin, stdout, token } = launch_host(&app, port)?;
+                    let LaunchedHost { child, mut stdin, stdout, token, installed_app_ids } = launch_host(&app, port)?;
                     let pid = child.id();
                     let (sender, receiver) = mpsc::sync_channel::<String>(64);
                     let writer = thread::spawn(move || { for line in receiver { if writeln!(stdin,"{line}").and_then(|_| stdin.flush()).is_err() { break; } } });
                     let sqlite = sqlite::Worker::new(app.state::<app_data::DesktopPaths>().data_dir.clone(), 1, sender.clone(), Arc::new(AtomicBool::new(false)));
                     let state = app.state::<HostState>();
                     *state.process.lock().unwrap() = Some(ManagedChild { generation:1, child, stdin:Some(sender), sqlite, writer:Some(writer) });
-                    state.activate(&token);
+                    // The evidence app is admitted the production way: Bun
+                    // discovered its installed bundle and named it here.
+                    state.activate(&token, installed_app_ids);
                     for frame in [
                         BunToRustNativeFrame::StoreAuth { request_id: "stale".into(), serialized: None },
                         BunToRustNativeFrame::PrepareRelaunch { request_id: "stale".into() },

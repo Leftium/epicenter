@@ -26,6 +26,7 @@ Local Mail, and Todos. Application routes live below `/apps/<id>/`. The
 Honeycrisp has a separate desktop shell.
 
 Capture and Todos reach native file folders through the shared Folder plugin.
+Installed applications also reach the native folder registered for their ID.
 Local Mail uses its account-bound store and SQLite capability. The shared-host
 Whispering bundle currently has no supported folder bridge and refuses before
 acquiring a folder; its inclusion in the catalog does not establish usable
@@ -324,6 +325,19 @@ Epicenter validates the manifest and static files, copies them into
 `<data-root>/apps/<app-id>/bundle`, and preserves every existing app-owned file
 outside `bundle/`. Restart Epicenter after installation so startup discovers the
 new application and composes it with the compiled applications.
+
+An installed app opens `@epicenter/folder` with its manifest ID. Native launch
+registers that scope at `<folderDir>/local/<app-id>` for the app's exact window
+label. The shell supplies the path; the page never chooses a native directory.
+The folder uses the repository's author and `origin` when configured, with
+local history otherwise. Git credentials stay with the native Git transport.
+
+Bun discovers installed IDs once and names them in its versioned ready frame.
+Rust admits launches against that list and its matching launch token before
+registering a folder. Unknown IDs open nothing. Registrations survive Bun
+restarts for the native process's lifetime. Closing an installed app hides its
+window and keeps its drafts; host restart destroys its page. Installed apps do
+not yet enroll drafts in the full-quit departure flow.
 
 ## Build and verify
 

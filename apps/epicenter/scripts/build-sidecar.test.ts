@@ -176,6 +176,7 @@ test('compiled host refuses a mis-bound production boot, serves packaged apps, a
 			type: 'ready',
 			protocolVersion: SIDECAR_PROTOCOL_VERSION,
 			port,
+			installedAppIds: [],
 		});
 		const origin = `http://127.0.0.1:${port}`;
 		const bootstrap = await fetch(`${origin}/_epicenter/bootstrap`, {

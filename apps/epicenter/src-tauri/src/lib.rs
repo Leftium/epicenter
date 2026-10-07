@@ -1,6 +1,7 @@
 #[cfg(feature = "runtime-evidence")]
 pub mod runtime_evidence;
 
+use std::collections::BTreeSet;
 use std::fs::{self, File, OpenOptions};
 use std::io::{BufRead, BufReader, Read, Write};
 use std::path::PathBuf;
@@ -35,6 +36,7 @@ mod command_names;
 pub mod app_data;
 mod departure;
 mod device_owner;
+mod installed_apps;
 mod sqlite;
 
 pub mod audio;
@@ -94,15 +96,17 @@ pub mod overlay;
 #[cfg(target_os = "macos")]
 pub mod clipboard;
 
-/// Reserved label prefix for derived-catalog app windows (ADR-0153). One
-/// capability glob (`app-*`) grants every such window the first trusted-app
-/// authority slice, so no host-internal window label may ever start with it.
+/// Reserved label prefix for installed app windows (ADR-0153). One capability
+/// glob (`app-*`) grants every such window the first trusted-app authority
+/// slice and the Folder plugin's commands, so no host-internal window label may
+/// ever start with it. Which folder a window reaches is the plugin's per-label
+/// registration, not the glob.
 const APP_WINDOW_PREFIX: &str = "app-";
 #[cfg(any(not(debug_assertions), test))]
 const PRODUCTION_PORT: u16 = 39_130;
 #[cfg(any(debug_assertions, test))]
 const DEVELOPMENT_PORT: u16 = 39_131;
-const PROTOCOL_VERSION: u8 = 8;
+const PROTOCOL_VERSION: u8 = 9;
 const HOSTED_AUTH_ORIGIN: &str = "https://api.epicenter.so";
 const READY_TIMEOUT: Duration = Duration::from_secs(15);
 /// How long Bun gets to shut down after its stdin closes before it is killed.
@@ -214,6 +218,9 @@ struct ReadyFrame {
     r#type: String,
     protocol_version: u8,
     port: u16,
+    /// The installed applications this Bun generation discovered and serves.
+    /// `read_ready_frame` refuses the whole frame when one is invalid.
+    installed_app_ids: Vec<String>,
 }
 
 #[derive(Debug, Deserialize, PartialEq)]
@@ -319,11 +326,24 @@ struct ManagedChild {
     writer: Option<thread::JoinHandle<()>>,
 }
 
+/// The Bun generation windows are admitted for: its launch token and the
+/// installed applications its ready frame named.
+struct ActiveHost {
+    token: String,
+    installed_app_ids: BTreeSet<String>,
+}
+
 struct HostState {
     port: std::result::Result<u16, String>,
     next_generation: AtomicU64,
     process: Mutex<Option<ManagedChild>>,
-    active_token: Mutex<Option<String>>,
+    /// One lock for the token and the membership, so a launch never pairs one
+    /// generation's token with another generation's installed applications.
+    active: Mutex<Option<ActiveHost>>,
+    /// Installed applications whose Folder scope is registered. This outlives
+    /// every Bun generation because the plugin keeps a scope for the native
+    /// process and refuses to register one twice.
+    installed_folders: Mutex<BTreeSet<String>>,
     pending_apps: Mutex<Vec<BuiltInApp>>,
     pending_auth_callback: Mutex<Option<String>>,
     /// A section of Home an application asked the shell to open, held until Home
@@ -340,7 +360,8 @@ impl HostState {
             port: port.map_err(|error| format!("{error:#}")),
             next_generation: AtomicU64::new(1),
             process: Mutex::new(None),
-            active_token: Mutex::new(None),
+            active: Mutex::new(None),
+            installed_folders: Mutex::new(BTreeSet::new()),
             pending_apps: Mutex::new(Vec::new()),
             pending_auth_callback: Mutex::new(None),
             pending_home_section: Mutex::new(None),
@@ -395,33 +416,41 @@ impl HostState {
             .take()
     }
 
-    fn activate(&self, token: &str) {
-        *self
-            .active_token
-            .lock()
-            .expect("active token lock poisoned") = Some(token.to_string());
+    fn activate(&self, token: &str, installed_app_ids: BTreeSet<String>) {
+        *self.active.lock().expect("active host lock poisoned") = Some(ActiveHost {
+            token: token.to_string(),
+            installed_app_ids,
+        });
     }
 
     fn deactivate(&self) {
-        *self
-            .active_token
-            .lock()
-            .expect("active token lock poisoned") = None;
+        *self.active.lock().expect("active host lock poisoned") = None;
     }
 
     fn active_token(&self) -> Option<String> {
-        self.active_token
+        self.active
             .lock()
-            .expect("active token lock poisoned")
-            .clone()
+            .expect("active host lock poisoned")
+            .as_ref()
+            .map(|active| active.token.clone())
     }
 
     fn token_is_active(&self, token: &str) -> bool {
-        self.active_token
+        self.active
             .lock()
-            .expect("active token lock poisoned")
-            .as_deref()
-            == Some(token)
+            .expect("active host lock poisoned")
+            .as_ref()
+            .is_some_and(|active| active.token == token)
+    }
+
+    /// Whether `id` is an installed application of the generation `token`
+    /// belongs to, read under one lock.
+    fn admits_installed(&self, token: &str, id: &str) -> bool {
+        self.active
+            .lock()
+            .expect("active host lock poisoned")
+            .as_ref()
+            .is_some_and(|active| active.token == token && active.installed_app_ids.contains(id))
     }
 }
 
@@ -430,6 +459,7 @@ struct LaunchedHost {
     stdin: ChildStdin,
     stdout: BufReader<ChildStdout>,
     token: String,
+    installed_app_ids: BTreeSet<String>,
 }
 
 enum FailureChoice {
@@ -574,14 +604,16 @@ fn take_pending_home_section(app: DesktopAppHandle) -> Option<HomeSection> {
 /// that is a distinction a person makes, so it is resolved here from the ID
 /// rather than by the caller (ADR-0189).
 ///
-/// `Admitted` says how the window is built, not that the ID is admitted. Rust
-/// keeps no catalog: the immutable generation and its membership are Bun's
-/// alone (ADR-0179), and nothing here can or should re-derive them.
+/// `Admitted` says how the window would be built, not that the ID is admitted.
+/// Membership is decided on the main thread against the installed IDs the
+/// active Bun generation named in its ready frame (ADR-0179); Rust never reads
+/// the catalog from disk.
 enum Application {
     /// A compiled application with its own stable window label and enumerated
     /// capabilities.
     Compiled(BuiltInApp),
-    /// Anything else: opened in an `app-` window pointed at `/apps/<id>/`.
+    /// Anything else: an installed application's `app-` window pointed at
+    /// `/apps/<id>/`, opened only for a member of the active generation.
     Admitted(String),
 }
 
@@ -602,16 +634,17 @@ enum Application {
 ///
 /// # Who decides an ID is real
 ///
-/// Not this function. Rust validates the ID's *shape* and resolves it against
-/// its own compiled app table; it never asks whether a folder was admitted,
-/// because the catalog is one immutable generation owned by Bun (ADR-0179) and
-/// a second copy in Rust would be a second answer. What keeps a made-up ID from
-/// arriving is that Home only offers IDs from the authenticated list Bun serves.
+/// Bun, once per generation. It discovers the installed releases at boot,
+/// serves exactly those, and names their IDs in its ready frame; Rust holds
+/// that list beside the generation's launch token and never reads the catalog
+/// itself (ADR-0179). This function validates the ID's *shape* and resolves it
+/// against the compiled app table; the main thread then opens an `app-` window
+/// only for an ID the active generation named.
 ///
-/// An ID that shape-checks but names no member still cannot reach anything: it
-/// opens an `app-` window at `/apps/<id>/`, which is a URL Rust derived itself
-/// (the frontend never supplies one), and Bun answers it 404. That is a
-/// contained dead end, not a privilege.
+/// That check matters because an installed app's window is a grant, not only
+/// a page: it gets a native Folder registered for its label under
+/// `<folderDir>/local/<id>`. An ID that shape-checks but names no member opens
+/// nothing and registers nothing, even though Home only offers listed IDs.
 ///
 /// # Why it waits
 ///
@@ -660,20 +693,16 @@ fn launch_on_main_thread(
     let window_app = app.clone();
     let token = token.to_string();
     app.run_on_main_thread(move || {
-        let result = if window_app.state::<HostState>().token_is_active(&token) {
-            match application {
-                Application::Compiled(built_in) => {
+        let result = match application {
+            Application::Compiled(built_in) => {
+                if window_app.state::<HostState>().token_is_active(&token) {
                     ensure_window(&window_app, built_in, port, &token, reveal)
+                } else {
+                    Err(anyhow!(HOST_RESTARTED))
                 }
-                Application::Admitted(id) => ensure_app_window(&window_app, &id, port, &token),
             }
-        } else {
-            // The host restarted between the click and the main thread reaching
-            // this: every window from the old generation is being torn down, so
-            // opening one now would create a window against a dead token.
-            Err(anyhow!(
-                "the Epicenter host restarted before the window opened"
-            ))
+            Application::Admitted(id) => admit_installed_app(&window_app, &token, &id)
+                .and_then(|label| ensure_app_window(&window_app, &id, &label, port, &token)),
         };
         let _ = sender.send(result);
     })
@@ -694,7 +723,8 @@ fn launch_on_main_thread(
 /// side constrains them: an ID names a directory, and `.` or `..` would name one
 /// outside it.
 ///
-/// This is a shape check, not a membership check. A reserved built-in app Home
+/// This is a shape check; `admit_installed_app` checks membership on the main
+/// thread before an `Admitted` window or folder exists. A reserved built-in app Home
 /// does not offer (Home itself, a placeholder) and an ID with characters no ID
 /// may contain are the same refusal, because Home offers neither.
 fn parse_application_id(id: &str) -> Option<Application> {
@@ -734,9 +764,52 @@ fn app_window_label(id: &str) -> String {
     format!("{APP_WINDOW_PREFIX}{}", id.replace('.', "_"))
 }
 
-fn ensure_app_window(app: &DesktopAppHandle, id: &str, port: u16, token: &str) -> Result<()> {
+/// The host restarted between a launch and the main thread reaching it: every
+/// window from the old generation is being torn down, so opening one now would
+/// create a window against a dead token.
+const HOST_RESTARTED: &str = "the Epicenter host restarted before the window opened";
+
+/// Admit one launch of an installed application on the main thread, and return
+/// the label of the window it may open.
+///
+/// The active generation must be the one `token` came from, and it must have
+/// named `id` in its ready frame; both are read under one lock before anything
+/// is created. The launch that creates the window first prepares
+/// `<folderDir>/local/<id>` under the root native startup captured and
+/// registers it as the Folder scope `id` for exactly this label, so the page
+/// names a scope and never a path. A refusal there opens no window. A window
+/// that already exists was registered when it was created and is revealed as
+/// it is, with whatever its page holds.
+fn admit_installed_app<R: Runtime>(app: &AppHandle<R>, token: &str, id: &str) -> Result<String> {
+    let state = app.state::<HostState>();
+    if !state.admits_installed(token, id) {
+        if state.token_is_active(token) {
+            bail!("{id} is not an installed application");
+        }
+        bail!(HOST_RESTARTED);
+    }
     let label = app_window_label(id);
-    if let Some(window) = app.get_webview_window(&label) {
+    if app.get_webview_window(&label).is_none() {
+        let paths = app.state::<app_data::DesktopPaths>();
+        installed_apps::ensure_folder(
+            app,
+            &state.installed_folders,
+            &paths.folder_dir,
+            id,
+            &label,
+        )?;
+    }
+    Ok(label)
+}
+
+fn ensure_app_window(
+    app: &DesktopAppHandle,
+    id: &str,
+    label: &str,
+    port: u16,
+    token: &str,
+) -> Result<()> {
+    if let Some(window) = app.get_webview_window(label) {
         focus(window);
         return Ok(());
     }
@@ -745,7 +818,7 @@ fn ensure_app_window(app: &DesktopAppHandle, id: &str, port: u16, token: &str) -
     let url: tauri::Url = format!("{origin}/apps/{id}/").parse()?;
     let initialization_script = initialization_script(&origin, token)?;
     let account_opener = app.clone();
-    let builder = WebviewWindowBuilder::new(app, &label, WebviewUrl::External(url));
+    let builder = WebviewWindowBuilder::new(app, label, WebviewUrl::External(url));
     #[cfg(feature = "runtime-evidence")]
     let builder = runtime_evidence::isolate_webview(builder);
     let window = builder
@@ -757,6 +830,18 @@ fn ensure_app_window(app: &DesktopAppHandle, id: &str, port: u16, token: &str) -
         .on_new_window(move |url, _| open_account_website(&account_opener, &url))
         .build()
         .with_context(|| format!("create the {id} app WebView"))?;
+
+    // Closing hides the window, as it does Capture and Todos, so a draft its
+    // page has not saved survives an ordinary close. A host restart still
+    // destroys it in `invalidate_windows`, because its page holds the dead
+    // host's token.
+    let close_window = window.clone();
+    window.on_window_event(move |event| {
+        if let WindowEvent::CloseRequested { api, .. } = event {
+            api.prevent_close();
+            let _ = close_window.hide();
+        }
+    });
     release_host_resources_on_destroy(&window);
     focus(window);
     Ok(())
@@ -767,9 +852,9 @@ fn ensure_app_window(app: &DesktopAppHandle, id: &str, port: u16, token: &str) -
 /// A hidden window keeps capture. Destruction releases its document; the
 /// builder's page-load hook also releases it before a replacement page loads.
 ///
-/// Built-in windows are hidden rather than destroyed when the user closes them,
-/// so this fires for them only on a host restart teardown. App windows have no
-/// close interception and are destroyed on close, which is the live path.
+/// Built-in and installed app windows are hidden rather than destroyed when the
+/// user closes them, so this fires for them on a host restart teardown, and
+/// for any window the host destroys directly.
 fn release_host_resources_on_destroy(window: &WebviewWindow<Wry>) {
     let app = window.app_handle().clone();
     let label = window.label().to_string();
@@ -1171,6 +1256,7 @@ fn start_once(app: &DesktopAppHandle) -> Result<()> {
         stdin,
         stdout,
         token,
+        installed_app_ids,
     } = launched;
 
     {
@@ -1219,7 +1305,7 @@ fn start_once(app: &DesktopAppHandle) -> Result<()> {
         .context("deliver the queued auth callback")?;
     }
 
-    state.activate(&token);
+    state.activate(&token, installed_app_ids);
     let mut built_ins = state.take_pending_apps();
     if built_ins.is_empty() {
         built_ins.push(BuiltInApp::Home);
@@ -1287,16 +1373,20 @@ fn launch_host(app: &DesktopAppHandle, port: u16) -> Result<LaunchedHost> {
         }
     };
 
-    if let Err(error) = ready {
-        stop_starting_child(child, stdin);
-        return Err(error);
-    }
+    let installed_app_ids = match ready {
+        Ok(installed_app_ids) => installed_app_ids,
+        Err(error) => {
+            stop_starting_child(child, stdin);
+            return Err(error);
+        }
+    };
 
     Ok(LaunchedHost {
         child,
         stdin,
         stdout,
         token,
+        installed_app_ids,
     })
 }
 
@@ -1964,8 +2054,10 @@ fn invalidate_windows(app: &DesktopAppHandle) {
                 }
             }
         }
-        // Derived-catalog app windows carry the dead host's launch token in
-        // their initialization script, so a restart must tear them down too.
+        // Installed app windows carry the dead host's launch token in their
+        // initialization script, and the next generation may not name them, so
+        // a restart tears them down too. Their Folder scopes stay registered:
+        // only a window the next generation admits reaches one again.
         for (label, window) in app.webview_windows() {
             if label.starts_with(APP_WINDOW_PREFIX) && window.destroy().is_err() {
                 let _ = window.hide();
@@ -2082,7 +2174,11 @@ fn boot_frame_json(
     .context("serialize the Bun boot frame")
 }
 
-fn read_ready_frame(reader: &mut impl BufRead, expected_port: u16) -> Result<()> {
+/// Read Bun's one ready frame and return the installed application IDs it
+/// named. Any ID that cannot name a managed folder, repeats, or names a
+/// compiled application's Folder scope refuses the whole frame, so the
+/// generation never starts with a partial reading of its membership.
+fn read_ready_frame(reader: &mut impl BufRead, expected_port: u16) -> Result<BTreeSet<String>> {
     let mut line = String::new();
     let count = reader
         .read_line(&mut line)
@@ -2114,7 +2210,9 @@ fn read_ready_frame(reader: &mut impl BufRead, expected_port: u16) -> Result<()>
             expected_port
         );
     }
-    Ok(())
+    let installed_app_ids = installed_apps::validate_installed_ids(frame.installed_app_ids)
+        .context("Bun named an installed application Epicenter cannot admit")?;
+    Ok(installed_app_ids.into_iter().collect())
 }
 
 fn initialization_script(origin: &str, token: &str) -> Result<String> {
@@ -2275,23 +2373,68 @@ mod tests {
         }
     }
 
+    fn ready_line(version: u8, port: u16, installed: &str) -> String {
+        format!(
+            "{{\"type\":\"ready\",\"protocolVersion\":{version},\"port\":{port},\"installedAppIds\":{installed}}}\n"
+        )
+    }
+
     #[test]
-    fn parses_only_the_expected_v8_ready_frame() {
+    fn parses_only_the_expected_v9_ready_frame_and_its_installed_apps() {
+        assert!(read_ready_frame(
+            &mut Cursor::new(ready_line(9, PRODUCTION_PORT, "[]")),
+            PRODUCTION_PORT,
+        )
+        .unwrap()
+        .is_empty());
+        assert_eq!(
+            read_ready_frame(
+                &mut Cursor::new(ready_line(
+                    9,
+                    PRODUCTION_PORT,
+                    "[\"com.example.notes\",\"com.bradenwong.zhongwen\"]"
+                )),
+                PRODUCTION_PORT,
+            )
+            .unwrap(),
+            BTreeSet::from([
+                "com.bradenwong.zhongwen".to_string(),
+                "com.example.notes".to_string(),
+            ])
+        );
+
+        let longest = format!("\"a.{}\"", "b".repeat(126));
+        let too_long = format!("[\"a.{}\"]", "b".repeat(127));
         read_ready_frame(
-            &mut Cursor::new(b"{\"type\":\"ready\",\"protocolVersion\":8,\"port\":39130}\n"),
+            &mut Cursor::new(ready_line(9, PRODUCTION_PORT, &format!("[{longest}]"))),
             PRODUCTION_PORT,
         )
         .unwrap();
-
         for invalid in [
-            "preamble\n",
-            "{\"type\":\"ready\",\"protocolVersion\":1,\"port\":39130}\n",
-            "{\"type\":\"ready\",\"protocolVersion\":7,\"port\":39130}\n",
-            "{\"type\":\"ready\",\"protocolVersion\":8,\"port\":39131}\n",
-            "{\"type\":\"ready\",\"protocolVersion\":8,\"port\":39130,\"extra\":true}\n",
-            "{\"type\":\"ready\",\"protocolVersion\":8,\"port\":39130}",
+            "preamble\n".to_string(),
+            // The previous protocol, which named no installed applications.
+            "{\"type\":\"ready\",\"protocolVersion\":8,\"port\":39130}\n".to_string(),
+            ready_line(8, PRODUCTION_PORT, "[]"),
+            "{\"type\":\"ready\",\"protocolVersion\":9,\"port\":39130}\n".to_string(),
+            ready_line(9, 39_131, "[]"),
+            "{\"type\":\"ready\",\"protocolVersion\":9,\"port\":39130,\"installedAppIds\":[],\"extra\":true}\n".to_string(),
+            ready_line(9, PRODUCTION_PORT, "[]").trim_end().to_string(),
+            ready_line(9, PRODUCTION_PORT, "\"com.example.notes\""),
+            ready_line(9, PRODUCTION_PORT, "[null]"),
+            // One bad ID refuses the frame, not just that ID.
+            ready_line(9, PRODUCTION_PORT, "[\"com.example.notes\",\"zhongwen\"]"),
+            ready_line(9, PRODUCTION_PORT, "[\"com.example.notes\",\"../escape\"]"),
+            ready_line(9, PRODUCTION_PORT, "[\"com.example.notes\",\"com.example.notes\"]"),
+            ready_line(9, PRODUCTION_PORT, "[\"con.example\"]"),
+            ready_line(9, PRODUCTION_PORT, &too_long),
+            // The compiled applications' Folder scopes are not installable.
+            ready_line(9, PRODUCTION_PORT, "[\"so.epicenter.todos\"]"),
+            ready_line(9, PRODUCTION_PORT, "[\"so.epicenter.capture\"]"),
         ] {
-            assert!(read_ready_frame(&mut Cursor::new(invalid), PRODUCTION_PORT).is_err());
+            assert!(
+                read_ready_frame(&mut Cursor::new(invalid.as_bytes()), PRODUCTION_PORT).is_err(),
+                "{invalid:?}"
+            );
         }
     }
 
@@ -2377,11 +2520,10 @@ mod tests {
         ));
 
         // Every well-formed non-reserved ID resolves to the app-window path,
-        // including ones no generation ever admitted. That is the ownership
-        // boundary, not an oversight: the catalog is Bun's (ADR-0179), Home
-        // only offers IDs from the list Bun served it, and an ID that names no
-        // member opens a window Bun answers with 404. Re-deriving membership
-        // here would be a second catalog with a second answer.
+        // including ones no generation ever admitted. This is the shape check
+        // only: the main thread then opens a window, and registers a Folder,
+        // only for an ID the active generation named in its ready frame
+        // (`admit_installed_app`).
         for accepted in [
             "hello-http",
             "a",
@@ -2873,6 +3015,14 @@ mod tests {
             ),
             (include_str!("../tauri.dev.conf.json"), "departure-development"),
             (include_str!("../tauri.conf.json"), "departure-production"),
+            (
+                include_str!("../tauri.dev.conf.json"),
+                "installed-app-folder-development",
+            ),
+            (
+                include_str!("../tauri.conf.json"),
+                "installed-app-folder-production",
+            ),
         ] {
             let config: serde_json::Value = serde_json::from_str(encoded).unwrap();
             let selected = config["app"]["security"]["capabilities"]
@@ -2956,6 +3106,8 @@ mod tests {
             include_str!("../capabilities/capture-folder-production.json"),
             include_str!("../capabilities/todos-folder-development.json"),
             include_str!("../capabilities/todos-folder-production.json"),
+            include_str!("../capabilities/installed-app-folder-development.json"),
+            include_str!("../capabilities/installed-app-folder-production.json"),
         ] {
             assert!(
                 !encoded.contains("departure"),
@@ -3046,6 +3198,282 @@ mod tests {
                 "an app window must not be able to reveal another application"
             );
         }
+    }
+
+    /// Installed app windows call the Folder plugin through its one preset,
+    /// on the same loopback origin as the shared app slice. The grant only
+    /// lets a window call the plugin; which folder it reaches is the scope
+    /// registered for its exact label, proved through invoke below.
+    #[test]
+    fn installed_app_windows_reach_the_folder_plugin_through_its_preset() {
+        for (encoded, shared) in [
+            (
+                include_str!("../capabilities/installed-app-folder-development.json"),
+                include_str!("../capabilities/trusted-app-windows-development.json"),
+            ),
+            (
+                include_str!("../capabilities/installed-app-folder-production.json"),
+                include_str!("../capabilities/trusted-app-windows-production.json"),
+            ),
+        ] {
+            let capability: serde_json::Value = serde_json::from_str(encoded).unwrap();
+            let shared: serde_json::Value = serde_json::from_str(shared).unwrap();
+            assert_eq!(capability["windows"], serde_json::json!(["app-*"]));
+            assert_eq!(capability["local"], serde_json::json!(false));
+            assert_eq!(capability["remote"], shared["remote"]);
+            assert_eq!(
+                capability["permissions"],
+                serde_json::json!(["epicenter-folder:default"])
+            );
+        }
+        // Whispering shares the app slice and has no installed folder.
+        for encoded in APP_WINDOW_CAPABILITIES {
+            assert!(!encoded.contains("epicenter-folder"));
+        }
+    }
+
+    struct TestDirectory(PathBuf);
+
+    impl Drop for TestDirectory {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.0);
+        }
+    }
+
+    fn test_directory(label: &str) -> TestDirectory {
+        let path =
+            std::env::temp_dir().join(format!("epicenter-lib-{label}-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&path);
+        fs::create_dir_all(&path).unwrap();
+        TestDirectory(fs::canonicalize(path).unwrap())
+    }
+
+    fn git(directory: &std::path::Path, args: &[&str]) -> String {
+        let output = Command::new("git")
+            .args(args)
+            .current_dir(directory)
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        String::from_utf8_lossy(&output.stdout).trim().to_string()
+    }
+
+    fn folder_invoke(
+        window: &WebviewWindow<tauri::test::MockRuntime>,
+        command: &str,
+        args: serde_json::Value,
+    ) -> std::result::Result<serde_json::Value, serde_json::Value> {
+        tauri::test::get_ipc_response(
+            window,
+            tauri::webview::InvokeRequest {
+                cmd: format!("plugin:epicenter-folder|{command}"),
+                callback: tauri::ipc::CallbackFn(0),
+                error: tauri::ipc::CallbackFn(1),
+                url: "tauri://localhost".parse().unwrap(),
+                body: tauri::ipc::InvokeBody::Json(args),
+                headers: Default::default(),
+                invoke_key: tauri::test::INVOKE_KEY.to_string(),
+            },
+        )
+        .map(|body| body.deserialize::<serde_json::Value>().unwrap())
+    }
+
+    fn attach_folder(
+        window: &WebviewWindow<tauri::test::MockRuntime>,
+        scope: &str,
+    ) -> std::result::Result<serde_json::Value, serde_json::Value> {
+        folder_invoke(
+            window,
+            "attach",
+            serde_json::json!({ "scope": scope, "protocol": tauri_plugin_epicenter_folder::PROTOCOL }),
+        )
+    }
+
+    /// An installed app's launch, through the admission the main thread runs
+    /// and the Folder plugin's real invoke path on the mock runtime. The
+    /// repository is disposable and prepared the way a person's would be: its
+    /// own author and an `origin`, here a local bare repository, so no
+    /// credential is involved.
+    #[test]
+    fn an_installed_launch_opens_its_folder_only_for_the_active_generation() {
+        // No person's Git configuration, helpers, or credentials take part.
+        std::env::set_var("GIT_CONFIG_GLOBAL", "/dev/null");
+        std::env::set_var("GIT_CONFIG_NOSYSTEM", "1");
+        let directory = test_directory("installed-launch");
+        let folder_dir = directory.0.join("Epicenter Dev");
+        let id = "com.bradenwong.zhongwen";
+        let unknown = "com.example.unknown";
+        let label = app_window_label(id);
+        let root = folder_dir.join("local").join(id);
+
+        let origin = directory.0.join("origin.git");
+        fs::create_dir_all(&origin).unwrap();
+        git(
+            &origin,
+            &["init", "--quiet", "--bare", "--initial-branch=main"],
+        );
+        fs::create_dir_all(&root).unwrap();
+        git(&root, &["init", "--quiet", "--initial-branch=main"]);
+        git(&root, &["config", "user.name", "Zhongwen Learner"]);
+        git(&root, &["config", "user.email", "learner@example.com"]);
+        git(
+            &root,
+            &["remote", "add", "origin", &origin.display().to_string()],
+        );
+
+        let mut context = tauri::test::mock_context(tauri::test::noop_assets());
+        for command in tauri_plugin_epicenter_folder::COMMANDS {
+            context.runtime_authority_mut().__allow_command(
+                format!("plugin:epicenter-folder|{command}"),
+                tauri::utils::acl::ExecutionContext::Local,
+            );
+        }
+        let app = tauri::test::mock_builder()
+            .plugin(tauri_plugin_epicenter_folder::init())
+            .manage(HostState::new(Ok(PRODUCTION_PORT)))
+            .manage(app_data::DesktopPaths {
+                data_dir: directory.0.join("data"),
+                folder_dir: folder_dir.clone(),
+            })
+            .build(context)
+            .unwrap();
+        let handle = app.handle();
+        let state = handle.state::<HostState>();
+        let window = |label: &str| {
+            WebviewWindowBuilder::new(&app, label, Default::default())
+                .build()
+                .unwrap()
+        };
+        let refusal = |token: &str, id: &str| {
+            admit_installed_app(handle, token, id)
+                .unwrap_err()
+                .to_string()
+        };
+
+        // Before any generation is ready, nothing is admitted.
+        assert_eq!(refusal("first", id), HOST_RESTARTED);
+
+        state.activate("first", BTreeSet::from([id.to_string()]));
+        // An ID that has the right shape but was never installed opens no
+        // window, creates no folder, and registers no scope.
+        assert_eq!(
+            refusal("first", unknown),
+            format!("{unknown} is not an installed application")
+        );
+        assert!(!folder_dir.join("local").join(unknown).exists());
+        assert_eq!(
+            attach_folder(&window(&app_window_label(unknown)), unknown).unwrap_err()["name"],
+            "UnknownScope"
+        );
+        // A token from another generation is refused even for a member.
+        assert_eq!(refusal("zero", id), HOST_RESTARTED);
+        assert!(state.installed_folders.lock().unwrap().is_empty());
+
+        assert_eq!(admit_installed_app(handle, "first", id).unwrap(), label);
+        assert_eq!(
+            state
+                .installed_folders
+                .lock()
+                .unwrap()
+                .iter()
+                .collect::<Vec<_>>(),
+            [id]
+        );
+
+        // A restart retires the token. The next generation that names the
+        // app admits it again without registering the scope a second time,
+        // which the plugin would refuse.
+        state.deactivate();
+        assert_eq!(refusal("first", id), HOST_RESTARTED);
+        state.activate("second", BTreeSet::from([id.to_string()]));
+        assert_eq!(admit_installed_app(handle, "second", id).unwrap(), label);
+        // A generation that no longer names it does not admit it.
+        state.activate("third", BTreeSet::new());
+        assert_eq!(
+            refusal("third", id),
+            format!("{id} is not an installed application")
+        );
+        state.activate("fourth", BTreeSet::from([id.to_string()]));
+        assert_eq!(admit_installed_app(handle, "fourth", id).unwrap(), label);
+
+        // The window Rust labels for the app reaches exactly its folder.
+        let zhongwen = window(&label);
+        let attached = attach_folder(&zhongwen, id).unwrap();
+        assert_eq!(attached["root"], root.display().to_string());
+        assert_eq!(
+            attached["snapshot"]["remote"],
+            serde_json::json!({ "url": origin.display().to_string(), "branch": "main" })
+        );
+        // Another app's window, and a compiled app's, are refused by the
+        // plugin's per-label registration, whatever the capability grants.
+        for other in [
+            window(&app_window_label("com.example.notes")),
+            window("todos"),
+        ] {
+            assert_eq!(
+                attach_folder(&other, id).unwrap_err()["name"],
+                "WindowNotPermitted"
+            );
+        }
+
+        let session = attached["session"].as_u64().unwrap();
+        folder_invoke(
+            &zhongwen,
+            "apply",
+            serde_json::json!({
+                "session": session,
+                "changes": [{ "kind": "create", "path": "decks/hsk1.md", "bytes": "你好".as_bytes() }],
+            }),
+        )
+        .unwrap();
+        let read = folder_invoke(
+            &zhongwen,
+            "read",
+            serde_json::json!({ "session": session, "path": "decks/hsk1.md" }),
+        )
+        .unwrap();
+        assert_eq!(read["bytes"], serde_json::json!("你好".as_bytes()));
+        assert_eq!(
+            fs::read_to_string(root.join("decks/hsk1.md")).unwrap(),
+            "你好"
+        );
+
+        // The save is committed by the repository's own author, and a push
+        // goes to the repository's own origin. An explicit commit waits for
+        // the automatic one the save asked for, so the history is settled.
+        folder_invoke(
+            &zhongwen,
+            "commit",
+            serde_json::json!({ "session": session }),
+        )
+        .unwrap();
+        assert_eq!(
+            git(&root, &["log", "-1", "--format=%an <%ae>"]),
+            "Zhongwen Learner <learner@example.com>"
+        );
+        let request = folder_invoke(
+            &zhongwen,
+            "open_request",
+            serde_json::json!({ "session": session }),
+        )
+        .unwrap();
+        let pushed = folder_invoke(
+            &zhongwen,
+            "push",
+            serde_json::json!({ "session": session, "request": request }),
+        )
+        .unwrap();
+        assert_eq!(pushed["status"], "pushed", "{pushed}");
+        assert_eq!(
+            git(&origin, &["rev-parse", "main"]),
+            git(&root, &["rev-parse", "HEAD"])
+        );
+
+        handle.folders().shutdown();
     }
 
     #[test]
@@ -3268,7 +3696,7 @@ mod tests {
         assert_eq!(
             frame,
             serde_json::json!({
-                "type": "boot", "protocolVersion": 8, "token": "safe_token",
+                "type": "boot", "protocolVersion": 9, "token": "safe_token",
                 "port": PRODUCTION_PORT, "authCell": "opaque",
                 "authServer": configured_auth_server().unwrap().server,
                 "accountManagement": configured_auth_server().unwrap().account_management,

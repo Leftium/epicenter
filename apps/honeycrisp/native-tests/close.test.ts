@@ -516,6 +516,7 @@ test('a reply lost while the close is being answered is counted by that close', 
 
 test('a rename still reading its file when the close begins is never sent', async () => {
 	const { gate, disk, notes, prompts } = await browsing();
+	const pathsBefore = disk.paths();
 	disk.holdReads();
 	const renaming = notes.rename(RAW_PATH, 'renamed.json');
 	await until(() => disk.waitingReads === 1, 'the read before the rename');
@@ -528,7 +529,7 @@ test('a rename still reading its file when the close begins is never sent', asyn
 	expect(prompts).toEqual([]);
 	expect(await renaming).toContain('closing');
 	expect(disk.moves).toBe(0);
-	expect(disk.paths()).toEqual([RAW_PATH, NOTE_PATH].sort());
+	expect(disk.paths()).toEqual(pathsBefore);
 	expect(notes.pending).toEqual([]);
 });
 

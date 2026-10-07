@@ -4,13 +4,9 @@
 declare namespace Cloudflare {
 	interface GlobalProps {
 		mainModule: typeof import('./worker/index');
-		durableNamespaces:
-			| 'StoreAuthority'
-			| 'GenerationsLedger'
-			| 'DemoGenerationBudget';
+		durableNamespaces: 'StoreAuthority' | 'GenerationsLedger';
 	}
 	interface Env {
-		GEMINI_DEMO_MODEL: 'gemini-3.5-flash-lite';
 		HYPERDRIVE: Hyperdrive;
 		ASSETS: Fetcher;
 		BETTER_AUTH_SECRET: string;
@@ -31,9 +27,6 @@ declare namespace Cloudflare {
 		>;
 		GENERATIONS_LEDGER: DurableObjectNamespace<
 			import('./worker/index').GenerationsLedger
-		>;
-		DEMO_GENERATION_BUDGET: DurableObjectNamespace<
-			import('./worker/index').DemoGenerationBudget
 		>;
 	}
 }
@@ -58,7 +51,6 @@ declare namespace NodeJS {
 				| 'OPENAI_API_KEY'
 				| 'AUTUMN_SECRET_KEY'
 				| 'GEMINI_API_KEY'
-				| 'GEMINI_DEMO_MODEL'
 				| 'BLOBS_S3_ENDPOINT'
 				| 'BLOBS_S3_ACCESS_KEY_ID'
 				| 'BLOBS_S3_SECRET_ACCESS_KEY'

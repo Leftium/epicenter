@@ -43,9 +43,7 @@
 	// worker bakes `PRODUCTION_API_URL` from @epicenter/constants and local dev
 	// overrides it via `API_PUBLIC_ORIGIN` (apps/api/scripts/dev.ts). This keeps
 	// a single source of truth in TypeScript instead of a duplicated string.
-	"vars": {
-		"GEMINI_DEMO_MODEL": "gemini-3.5-flash-lite"
-	},
+	"vars": {},
 	// --- Durable Objects ---
 	"durable_objects": {
 		"bindings": [
@@ -64,18 +62,12 @@
 			{
 				"name": "GENERATIONS_LEDGER",
 				"class_name": "GenerationsLedger"
-			},
-			// One DemoGenerationBudget, under a fixed server-owned name, holds the
-			// global attempt caps for the anonymous demo generation route
-			// (worker/demo-budget.ts). It stores two counters and no prompts.
-			{
-				"name": "DEMO_GENERATION_BUDGET",
-				"class_name": "DemoGenerationBudget"
 			}
 		]
 	},
 	// The deployed Worker already uses the current authority and ledger names.
-	// These class migrations preserve their existing state and add the demo budget.
+	// These class migrations preserve their existing state and retire the former
+	// anonymous demo attempt counter. Only that counter namespace is deleted.
 	// No address rename or Worker reset is part of this deployment.
 	//
 	// The class is stable; the NAMES are not, and no migration tag can express
@@ -98,6 +90,10 @@
 		{
 			"tag": "v3",
 			"new_sqlite_classes": ["DemoGenerationBudget"]
+		},
+		{
+			"tag": "v4",
+			"deleted_classes": ["DemoGenerationBudget"]
 		}
 	],
 	// --- Secrets (set via `wrangler secret put`, typed via `wrangler types`) ---

@@ -42,11 +42,6 @@ import {
 	chargeOpenAiTranscriptionCredits,
 } from './billing/policies.js';
 import { mountBillingApi } from './billing/routes.js';
-import {
-	DEMO_BUDGET_OBJECT_NAME,
-	DemoGenerationBudget,
-} from './demo-budget.js';
-import { mountDemoInference } from './demo-inference.js';
 import { buildSessionCallbacks } from './session-callbacks.js';
 import { buildEpicenterTrustedOrigins } from './trusted-origins.js';
 
@@ -161,17 +156,6 @@ mountInferenceApp(app, {
 	auth: bearer,
 	policies: [chargeOpenAiCreditsWithAutumn],
 });
-// Anonymous Zhongwen demo generation, outside `cloudContext`: no Postgres, no
-// principal, no Autumn. Spend is capped by one global Durable Object budget
-// under a fixed server-owned name (demo-budget.ts). Temporary until accounts
-// work again; the gateway above keeps its bearer and metering.
-mountDemoInference(app, {
-	resolveModel: (c) => (c.env as Cloudflare.Env).GEMINI_DEMO_MODEL,
-	consumeAttempt: (c) => {
-		const budgets = (c.env as Cloudflare.Env).DEMO_GENERATION_BUDGET;
-		return budgets.get(budgets.idFromName(DEMO_BUDGET_OBJECT_NAME)).consume();
-	},
-});
 // OpenAI-compatible STT gateway (OpenAI whisper-1, house key). Metered by audio
 // duration, settled after the call (per-minute); see chargeOpenAiTranscriptionCredits.
 mountTranscriptionApp(app, {
@@ -211,4 +195,4 @@ app.get('/billing', (c) => c.redirect('/dashboard'));
 export default {
 	fetch: app.fetch,
 };
-export { DemoGenerationBudget, GenerationsLedger, StoreAuthority };
+export { GenerationsLedger, StoreAuthority };

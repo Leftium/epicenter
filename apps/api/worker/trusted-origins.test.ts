@@ -45,6 +45,11 @@ describe('buildEpicenterTrustedOrigins', () => {
 	test('both deployments trust the production app origins', () => {
 		expect(PROD).toContain(APPS.HONEYCRISP.url);
 		expect(LOCAL).toContain(APPS.HONEYCRISP.url);
+		expect(PROD).toContain('https://zhongwen.bradenwong.com');
+		expect(LOCAL).toContain('https://zhongwen.bradenwong.com');
+		expect(PROD).not.toContain('http://localhost:5207');
+		expect(LOCAL).toContain('http://localhost:5207');
+		expect(PROD).not.toContain('https://zhongwen.bradenwong.com.attacker.test');
 	});
 
 	test('is frozen so Cloudflare isolates cannot accumulate mutations', () => {

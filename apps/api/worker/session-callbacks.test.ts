@@ -11,6 +11,7 @@ const appCallbacks = [
 	'https://whispering.epicenter.so/auth/callback',
 	'https://vocab.epicenter.so/auth/callback',
 	'https://capture.epicenter.so/auth/callback',
+	'https://zhongwen.bradenwong.com/auth/callback',
 ];
 const localAppCallbacks = [
 	'http://127.0.0.1:39131/_epicenter/sign-in/callback',
@@ -19,6 +20,7 @@ const localAppCallbacks = [
 	'http://localhost:1420/auth/callback',
 	'http://localhost:8888/auth/callback',
 	'http://localhost:5179/auth/callback',
+	'http://localhost:5207/auth/callback',
 ];
 
 test('only a local issuer admits the exact configured desktop callback port', () => {

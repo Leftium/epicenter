@@ -310,7 +310,19 @@ void root.openFolder({
 type Contract = typeof contract;
 type EntryPoint<T> = Omit<T, 'openFolder'>;
 expectTypeOf<EntryPoint<typeof root>>().toEqualTypeOf<Contract>();
-expectTypeOf<EntryPoint<typeof browser>>().toEqualTypeOf<Contract>();
+// Creating is the default; an opener can be told not to create.
+expectTypeOf<contract.BrowserFolderOptions['createIfMissing']>().toEqualTypeOf<
+	boolean | undefined
+>();
+expectTypeOf<Extract<contract.OpenFolderError, { name: 'Absent' }>>()
+	.toHaveProperty('directory')
+	.toEqualTypeOf<string>();
+
+// The browser entry adds only its download, which no other entry has.
+expectTypeOf<Pick<typeof browser, keyof Contract>>().toEqualTypeOf<Contract>();
+expectTypeOf<
+	Exclude<keyof typeof browser, keyof Contract | 'openFolder'>
+>().toEqualTypeOf<'downloadFolder' | 'DownloadFolderError'>();
 expectTypeOf<EntryPoint<typeof tauri>>().toEqualTypeOf<Contract>();
 expectTypeOf<Pick<typeof bun, keyof Contract>>().toEqualTypeOf<Contract>();
 

@@ -352,6 +352,15 @@ export const OpenFolderError = defineErrors({
 		root,
 	}),
 	/**
+	 * A browser opener told not to create found no folder: the directory is
+	 * missing, or empty apart from what an interrupted first open leaves.
+	 * Nothing was created or written.
+	 */
+	Absent: ({ directory }: { directory: string }) => ({
+		message: `No folder exists at '${directory}'; none was created`,
+		directory,
+	}),
+	/**
 	 * The folder's storage could not be reached or made ready. In a browser
 	 * this includes a directory that is not this folder's: marked for another
 	 * address, with a marker naming none, or holding entries without a marker.
@@ -369,6 +378,57 @@ export const OpenFolderError = defineErrors({
 	}),
 });
 export type OpenFolderError = InferErrors<typeof OpenFolderError>;
+
+/**
+ * Why a browser download did not land. Refusals it shares with opening
+ * (`InvalidId`, `InvalidBrowserScope`, `NoFileSystem`, `InsideTauri`) are
+ * `OpenFolderError`s and acquire nothing.
+ */
+export const DownloadFolderError = defineErrors({
+	/**
+	 * The destination is already a folder, holds anything without a marker,
+	 * or its marker records another download (address, URL, or branch).
+	 * Nothing was written: no marker, file, or Git configuration changed.
+	 * `origin` is its configured `remote.origin.url`, when it has one; it is
+	 * reported, never used to decide ownership.
+	 */
+	Exists: ({
+		directory,
+		reason,
+		origin,
+	}: {
+		directory: string;
+		reason: string;
+		origin: string | undefined;
+	}) => ({
+		message: `Nothing was downloaded: '${directory}' ${reason}${origin === undefined ? '' : `, with origin ${origin}`}. It was left unchanged`,
+		directory,
+		reason,
+		origin,
+	}),
+	/**
+	 * The download did not confirm that it finished. Whatever it wrote, Git
+	 * objects, refs, an incoming record, or some files, is kept; nothing is
+	 * rolled back. Usually its marker still records the pending download, the
+	 * opener refuses the directory, and downloading again with the same
+	 * address, URL, and branch continues it. When `cause` says the ready
+	 * marker's write was not confirmed, the folder may already be ready:
+	 * opening with `createIfMissing: false`, or downloading again (`Exists`),
+	 * shows which.
+	 */
+	Incomplete: ({
+		directory,
+		cause,
+	}: {
+		directory: string;
+		cause: unknown;
+	}) => ({
+		message: `The download into '${directory}' did not confirm that it finished, and what it wrote was kept: ${describe(cause)}`,
+		directory,
+		cause,
+	}),
+});
+export type DownloadFolderError = InferErrors<typeof DownloadFolderError>;
 
 /**
  * Internal: a private write whose outcome is unknown, such as a stream that

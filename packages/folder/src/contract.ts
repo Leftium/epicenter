@@ -194,6 +194,15 @@ export type BrowserFolderOptions = {
 	 */
 	readonly commitOnEdit?: boolean;
 	/**
+	 * Whether opening makes a folder where none exists. Default `true`. With
+	 * `false`, a missing or empty directory is `Absent`, decided under the
+	 * same open lock that would create it, and nothing is created: no
+	 * directory, marker, private Git state, or `definition.json`. A folder
+	 * already there opens either way. An account app can then offer an
+	 * explicit download or start instead of creating one at startup.
+	 */
+	readonly createIfMissing?: boolean;
+	/**
 	 * Injected origin private file system, Web Locks, and hint channel; for
 	 * tests. Defaults to the browser globals.
 	 */

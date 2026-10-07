@@ -82,9 +82,11 @@ history settles separately, and identical trees create no additional commit.
 Publication never explicitly commits or pushes. Opening an empty folder before
 pulling an existing remote changes bootstrap behavior: with history disabled,
 the uncommitted `definition.json` blocks incoming updates; with history enabled,
-its local initial commit creates unrelated history. Initialize a clone before
-opening when that runtime provides a clone operation. The current Todos browser
-startup opens first and requires a separate remote-bootstrap repair.
+its local initial commit creates unrelated history. Get the remote's history
+before the first opening: a browser account folder uses
+[`downloadFolder`](#downloading-an-account-folder), and a runtime with a clone
+operation clones first. The current Todos browser startup opens first and
+requires a separate remote-bootstrap repair.
 
 ```ts
 const personal = await openFolder({ id: 'so.epicenter.todos', definition });
@@ -113,19 +115,20 @@ The managed native layout is described in
 | Import | Opens | Use it when |
 | --- | --- | --- |
 | `@epicenter/folder` | The desktop app's folder when the page runs in Tauri, this browser's storage otherwise. Decided when `openFolder` is called, and only the chosen adapter is loaded. | Ordinary application code. |
-| `@epicenter/folder/browser` | This browser's origin private file system (OPFS) only. Refuses inside the desktop app. | A web-only build, or a test that injects an OPFS stand-in with `browser.opfs`. |
+| `@epicenter/folder/browser` | This browser's origin private file system (OPFS) only. Refuses inside the desktop app. Also exports `downloadFolder`. | A web-only build, a browser account folder downloaded before its first opening, or a test that injects an OPFS stand-in with `browser.opfs`. |
 | `@epicenter/folder/tauri` | The desktop shell's folder only. Refuses outside it. | A desktop-only build. |
 | `@epicenter/folder/bun` | An existing directory, in Bun. | Command-line tools, recovery scripts, and tests that are given a directory. |
 
 The first three export the same `openFolder` signature and the same contract,
-so one application source builds against any of them. Importing an entry opens
+so one application source builds against any of them. `downloadFolder` is
+the browser entry's alone; import it from `@epicenter/folder/browser`. Importing an entry opens
 nothing. On a server, opening returns a refusal.
 
 ```ts
 openFolder({
   id,        // required: which folder, such as 'so.epicenter.todos'. Never a path.
   definition,
-  browser,   // optional: { scope, author, remote, httpFetch, commitOnEdit, opfs }
+  browser,   // optional: { scope, author, remote, httpFetch, commitOnEdit, createIfMissing, opfs }
 }): Promise<Result<Folder, OpenFolderError>>
 ```
 
@@ -215,15 +218,135 @@ at once.
 | The directory holds | Opening |
 | --- | --- |
 | A marker naming this address | Opens it. Other properties the marker records are kept and ignored. |
-| Nothing (or it does not exist), or only an empty `.git` with at most an empty marker | Writes the marker, then opens it. |
+| Nothing (or it does not exist), or only an empty `.git` with at most an empty marker | Writes the marker, then opens it. With `createIfMissing: false`, `Absent` and nothing is written. |
 | A marker naming another address, or one that names none | `Unavailable`. |
+| A marker recording an unfinished download (`{ download: { address, remote } }`) | `Unavailable`, naming the download. Downloading again finishes it. |
 | Anything else without a marker, or the path is not a directory | `Unavailable`. |
+
+A pending download record has no top-level `address`, so an opener that
+predates it refuses it as a marker naming no address.
+
+`browser.createIfMissing` defaults to `true`. With `false`, opening decides
+under the same open lock and creates nothing where no folder exists: no
+directory, marker, `.git`, or `definition.json`. `Absent` names the
+directory. A folder that exists opens as usual, offline too, and publishes
+its `definition.json`; every refusal above is unchanged. An opener queued
+behind one that creates sees the folder it made. Nothing remembers an
+`Absent` answer, and nothing polls; each opening decides again.
 
 Identity refusals write nothing, so no marker is replaced and no unknown file is
 adopted. A marker write that fails, or whose stream close is unconfirmed, is
 `Unavailable` too, and no folder is started. Opening again starts over only
 where the marker is absent or empty; a marker the close did publish opens,
 and one naming another address stays refused.
+
+### Downloading an account folder
+
+A fresh browser signed into an account whose folder already has a paired
+remote gets that history before the folder is first opened:
+
+```ts
+import { downloadFolder, openFolder } from '@epicenter/folder/browser';
+
+const scope = { channel: 'release', account };   // the captured { authorityId, principalId }
+const { data: landed, error } = await downloadFolder({
+  id: 'com.bradenwong.zhongwen',
+  scope,
+  remote: { url, branch: 'main' },               // the paired repository
+  httpFetch,                                     // the session-bound transport
+  signal,
+});
+if (error !== null) return show(error.message);
+const opened = await openFolder({ id, definition, browser: { scope, author, remote, httpFetch } });
+```
+
+Account startup that must not make a folder before the person chooses opens
+with `createIfMissing: false`:
+
+```text
+openFolder(createIfMissing: false) -> Ok           use the folder
+                                   -> Absent       offer Download, or start empty
+                                   -> Unavailable  show the cause; an unfinished download continues when downloaded again
+Download    -> downloadFolder -> Ok or Exists -> openFolder
+Start empty -> openFolder (default), which creates the folder
+```
+
+Only an explicit call downloads. Sign-in, discovery, and opening never do.
+A download needs an account scope; without one it is `InvalidBrowserScope`
+and nothing is created. It opens no folder, publishes no `definition.json`,
+and writes no settings. It first records the pending download in the marker
+file, `{ download: { address, remote: { url, branch } } }`, and confirms that
+write before any Git state exists. It then fetches the remote branch into the
+address's `.git`, fast-forwards the unborn local `main` to it through the
+ordinary incoming publication, and replaces the record with the ready marker
+`{ address }` last. `landed.head` is the
+downloaded commit. Opening afterward publishes `definition.json` as an
+ordinary save over that history, so its commit has the downloaded head as
+parent, or there is none when the bytes match.
+
+A remote without the branch is downloaded as `head: undefined`: local `main`
+stays unborn, `origin` names the remote, and the folder is marked ready with
+no files. No fast-forward checks the folder then, so a folder file the
+download did not write, such as one put beside a pending record, is
+`Incomplete`, named and kept, and the record stays. The first opening
+publishes `definition.json` as the root commit, and the first push creates
+the branch.
+
+| The directory holds | Download |
+| --- | --- |
+| Nothing, or it does not exist, or only an empty `.git` with at most an empty marker | Records the pending download, then downloads. |
+| A pending record with this exact address, URL, and branch | Continues: recovers an incoming update left pending, fetches again, fast-forwards, and marks it ready. |
+| A pending record for another address, URL, or branch | `Exists`, naming that download. Nothing is written. |
+| A ready marker, for this address or another, or one that names nothing | `Exists`, with its `origin`. Nothing is written. |
+| Any entry without a marker, or the path is not a directory | `Exists`, naming the entry and any `origin`. Nothing is written. |
+
+Only the record decides ownership. A configured `origin` is reported in
+`Exists` and never makes Git state or files without a record continuable.
+
+After `Exists`, opening the same address succeeds exactly when the
+directory is already this folder, so a caller that finds the folder present
+can open it without a separate check.
+
+The download holds the address's open Web Lock throughout. An opener of the
+same address waits, then opens what landed; a second download gets
+`Exists`. No handle can be open on the directory meanwhile, because the
+opener refuses a pending record and an unmarked directory that holds anything.
+
+A download that fails, or whose `signal` aborts, is `Incomplete`, and nothing
+is rolled back. What landed stays for inspection: the record, Git objects,
+refs, configuration, an incoming record, and any files it wrote. The
+transfer is cancelled. Usually the record still stands, so opening refuses
+the directory as `Unavailable` and publishes nothing there, and calling
+`downloadFolder` again with the same address, URL, and branch continues.
+
+`Incomplete` does not always mean the folder is not ready. Two marker writes
+can end unconfirmed:
+
+| Write | Did not publish | Published, unconfirmed |
+| --- | --- | --- |
+| The pending record | Nothing else was written; at most an empty marker remains. Opening without creating is `Absent`; downloading again starts over. | The record stands alone. Opening refuses it; downloading again continues. |
+| The ready marker | The record stands beside the complete download. Opening refuses it; downloading again marks it ready. | The folder is ready. Opening with `createIfMissing: false` opens the complete history; downloading again is `Exists`. |
+
+Opening with `createIfMissing: false`, or downloading again, shows which
+state is durable. A path that holds neither an incoming update's before nor
+its after state, such as an empty file a closed tab never finished writing,
+is named in the `Incomplete` cause, and nothing is written. Remove that path;
+the next download continues. Nothing removes or resets the directory, and the
+folder API cannot open a pending one.
+
+Every download fetches before it marks anything ready, and the tracking ref
+`refs/remotes/origin/<branch>` must then name exactly what that fetch found.
+Isomorphic-git's fetch leaves the ref an earlier attempt wrote when the
+remote no longer has the branch, and a later pull would adopt that cached
+commit. Such a download is `Incomplete`, naming the cached commit; the ref,
+its objects, and any files stay. The next download after the remote has the
+branch again replaces the ref with the fresh head and continues. If the branch
+is gone for good, the cached ref is the entry to remove.
+
+`httpFetch` is used for this download only. Credentials stay in it, and the
+folder's Git configuration records only the canonical `remote.url`. A download
+never rewrites the `origin` of a directory it refuses. Opening with
+`browser.remote` still writes that remote's URL as `origin` at each opening.
 
 ### Building for one environment
 
@@ -1613,7 +1736,7 @@ dangle.
 | --- | --- |
 | `src/contract.ts` | Everything an application names besides the opener. Every entry exports it unchanged. Loads no storage, Git implementation, or runtime module. |
 | `src/index.ts`, `browser.ts`, `tauri.ts`, `bun.ts` | The entries. |
-| `src/browser-adapter.ts`, `tauri-adapter.ts` | The adapters the automatic entry loads lazily. The browser adapter also decides which OPFS directory is the folder. |
+| `src/browser-adapter.ts`, `tauri-adapter.ts` | The adapters the automatic entry loads lazily. The browser adapter also decides which OPFS directory is the folder and downloads an account folder before its first opening. |
 | `src/folder.ts`, `table.ts`, `kv.ts`, `markdown.ts` | The handle and its interpretation of files, shared by every adapter. |
 | `src/editor.ts`, `canonical.ts` | The optional row editor `table.edit` opens, and the public complete-document codec usable independently of it. |
 | `src/svelte/` | `@epicenter/folder/svelte`: tracked reads over a row editor, and its mounted jsdom tests and fixtures. The only code that loads Svelte. |

@@ -304,6 +304,115 @@ describe('a first open that cannot write its marker is refused', () => {
 	});
 });
 
+describe('an opener that does not create', () => {
+	const openExisting = (opfs: MemoryOpfs) =>
+		openFolder({
+			id,
+			definition,
+			browser: {
+				commitOnEdit: false,
+				createIfMissing: false,
+				opfs: opfsEnvironment(opfs),
+			},
+		});
+
+	test('a missing folder is Absent, and nothing is created', async () => {
+		const opfs = memoryOpfs();
+		const absent = expectErr(await openExisting(opfs));
+		expect(absent).toMatchObject({ name: 'Absent', directory: ROOT });
+		expect(everything(opfs)).toEqual({ files: new Map(), directories: [] });
+	});
+
+	test('an empty directory, or one an interrupted first open left, is Absent and unchanged', async () => {
+		const leftovers: ((opfs: MemoryOpfs) => Promise<void> | void)[] = [
+			async (opfs) => {
+				await ensureDirectory(await opfs.getDirectory(), ROOT);
+			},
+			(opfs) => opfs.put(MARKER, new Uint8Array()),
+		];
+		for (const leave of leftovers) {
+			const opfs = memoryOpfs();
+			await leave(opfs);
+			const before = everything(opfs);
+			expect(expectErr(await openExisting(opfs)).name).toBe('Absent');
+			expect(everything(opfs)).toEqual(before);
+		}
+	});
+
+	test('a ready folder opens as it is; the default still creates one', async () => {
+		const opfs = memoryOpfs();
+		const created = expectOk(await open(opfs));
+		expectOk(await created.files.create('notes/a.md', '# A\n'));
+		await created.close();
+		const marker = opfs.files().get(MARKER);
+
+		const existing = expectOk(await openExisting(opfs));
+		expect(existing.location).toEqual({ kind: 'opfs', directory: ROOT });
+		expect(
+			decoder.decode(expectOk(await existing.files.read('notes/a.md')).bytes),
+		).toBe('# A\n');
+		await existing.close();
+		expect(marker).toBeDefined();
+		expect(opfs.files().get(MARKER)).toEqual(marker);
+	});
+
+	test('a pending download record is refused unchanged, with or without creating', async () => {
+		const opfs = memoryOpfs();
+		const pending = {
+			download: {
+				address: ADDRESS,
+				remote: { url: 'https://example.test/data.git', branch: 'main' },
+			},
+		};
+		opfs.put(MARKER, encoder.encode(JSON.stringify(pending)));
+		expect(await refusedUnchanged(opfs)).toContain(
+			'holds an unfinished download for',
+		);
+		const before = everything(opfs);
+		expect(expectErr(await openExisting(opfs)).name).toBe('Unavailable');
+		expect(everything(opfs)).toEqual(before);
+	});
+
+	test('what is not this folder is refused as Unavailable, unchanged, exactly as by the default', async () => {
+		const opfs = memoryOpfs();
+		opfs.put(`${ROOT}/found.txt`, encoder.encode('found'));
+		const before = everything(opfs);
+		const refused = expectErr(await openExisting(opfs));
+		expect(refused.name).toBe('Unavailable');
+		expect(refused.message).toBe(expectErr(await open(opfs)).message);
+		expect(everything(opfs)).toEqual(before);
+	});
+
+	test('the decision waits for the open lock and sees what the opener ahead of it made', async () => {
+		const lock = `epicenter-folder-opfs-open:${ADDRESS}`;
+		const opfs = memoryOpfs();
+		let release!: () => void;
+		const held = navigator.locks.request(
+			lock,
+			() => new Promise<void>((resolve) => (release = resolve)),
+		);
+		const creating = open(opfs);
+		const existing = openExisting(opfs);
+		await new Promise((resolve) => setTimeout(resolve, 20));
+		expect(opfs.directories()).toEqual([]);
+		release();
+		await held;
+		const first = expectOk(await creating);
+		const second = expectOk(await existing);
+		expect(second.location).toEqual(first.location);
+		await first.close();
+		await second.close();
+
+		// Ahead of a creating opener instead, it finds nothing and makes nothing.
+		const fresh = memoryOpfs();
+		const absent = openExisting(fresh);
+		const made = open(fresh);
+		expect(expectErr(await absent).name).toBe('Absent');
+		await expectOk(await made).close();
+		expect(markerOf(fresh)).toEqual({ address: ADDRESS });
+	});
+});
+
 /** Define `globals` on `globalThis` for `work`, then put back what was there. */
 async function withGlobals<T>(
 	globals: PropertyDescriptorMap,

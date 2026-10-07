@@ -39,7 +39,7 @@ import { STARTER_TRANSFORMATIONS, whisperingDefinition } from './definition.js';
 import type { Library } from './library.svelte.js';
 import { resolvePostProcessing } from './post-processing.js';
 import { resolveRecipe } from './recipe.js';
-import { editingOf } from './row-slot.test-support.js';
+import { editingOf, typeBody, typeField } from './row-slot.test-support.js';
 import { filesLineOf } from './status.js';
 import { TransformationError } from './transformation.js';
 import {
@@ -306,7 +306,7 @@ test('removing an earlier endpoint from a recipe lets it run with the text conne
 		'runs only at https://api.openai.com/v1',
 	);
 
-	editor.setField('endpoint', null);
+	typeField(editor, 'endpoint', null);
 	expect(editor.row).toMatchObject({ fields: { endpoint: null } });
 	expect(await library.transform(transcript.path, path)).toBeUndefined();
 
@@ -418,15 +418,15 @@ test('what is saved is what was sent: edits to the recipe or the connection whil
 	const path = await recipe(library);
 	const editor = editingOf(library.selectedTransformation?.slot);
 	const stem = selectedStem(library);
-	editor.setBody('Draft instructions.\n');
+	typeBody(editor, 'Draft instructions.\n');
 
 	const running = library.transformText(path, PASTED);
 	await new Promise((resolve) => setTimeout(resolve, 20));
 	// Its save settled first, and the saved file is what went out.
 	expect(transformed[0]!.prompt).toBe('Draft instructions.\n');
 	const id = library.textRuns[0]!.id;
-	editor.setBody('Edited while running.\n');
-	editor.setField('model', 'other');
+	typeBody(editor, 'Edited while running.\n');
+	typeField(editor, 'model', 'other');
 	expectOk(await editor.waitForSaves());
 	expect(
 		await library.saveConnection('text', {

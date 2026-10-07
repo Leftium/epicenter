@@ -20,7 +20,7 @@
 	import type { Library, RecordingEntry, RowSlot } from '$lib/library.svelte.js';
 	import { committedState } from '$lib/status.js';
 	import AudioPlayer from './AudioPlayer.svelte';
-	import { confirmDelete } from './file-actions.js';
+	import { confirmDelete, lf } from './file-actions.js';
 	import LiveButton from './LiveButton.svelte';
 	import { Input } from '@epicenter/ui/input';
 	import RowSaveStatus from './RowSaveStatus.svelte';
@@ -113,7 +113,20 @@
 			</Button>
 		{/if}
 		{#if editing?.view === 'fields'}
-			<Input class="flex-1 text-base font-medium" bind:value={() => editing?.fieldText('title') ?? '', (value) => editing?.setField('title', value)} readonly={!editing.editable} placeholder="Title" aria-label="Recording title" />
+			<Input
+				class="flex-1 text-base font-medium"
+				bind:value={
+					() => editing?.held.fields.get('title')?.value ?? (editing?.row.status === 'valid' ? editing.row.fields.title : ''),
+					(value) => {
+						const row = editing?.row;
+						if (row?.status === 'valid')
+							editing?.set({ ...row, fields: { ...row.fields, title: value } }, { control: { field: 'title' } });
+					}
+				}
+				readonly={!editing.editable}
+				placeholder="Title"
+				aria-label="Recording title"
+			/>
 		{:else}
 			<h2 class="min-w-0 flex-1 truncate text-base font-medium" data-testid="recording-title-text">{title || id}</h2>
 		{/if}
@@ -233,7 +246,13 @@
 					{#if editing?.view === 'fields'}
 						<Textarea
 							class="min-h-28 resize-y font-sans"
-							bind:value={() => editing?.bodyText() ?? '', (value) => editing?.setBody(value)}
+							bind:value={
+								() => editing?.held.body?.value ?? (editing?.row.status === 'valid' ? lf(editing.row.body) : ''),
+								(value) => {
+									const row = editing?.row;
+									if (row?.status === 'valid') editing?.set({ ...row, body: value }, { control: 'body' });
+								}
+							}
 							readonly={!editing.editable}
 							placeholder="Notes in Markdown, saved in the recording’s file"
 							aria-label="Notes"
@@ -296,7 +315,7 @@
 				</p>
 				<Textarea
 					class="h-full min-h-40 flex-1 resize-none font-mono text-xs"
-					bind:value={() => editing?.sourceValue() ?? '', (value) => editing?.setText(value)}
+					bind:value={() => lf(editing?.row.text ?? ''), (value) => editing?.setText(value)}
 					readonly={!editing.editable}
 					aria-label="Markdown source"
 					spellcheck={false}

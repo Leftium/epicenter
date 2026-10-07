@@ -17,12 +17,13 @@
  * - When input is taken: not while the library holds the path (a move, a
  *   deletion, or a close being decided), not while a reload the person asked
  *   for reads the file, and never once the row is put down.
- * - A typed field value the row cannot take. The fields' controls send
- *   strings (and `null` for an empty model or a removed endpoint); the codec
- *   refuses only a string with a lone surrogate, which a paste can carry. Each
- *   such value is kept for the one control it was typed in, shown there to
- *   repair, and holds the close, until that control takes a value, the person
- *   discards it, or a reload takes the file. Others are kept meanwhile, and
+ * - A typed value the row cannot take. Each input is a complete row, named by
+ *   the control it was typed in: a field or the body. The codec refuses only a
+ *   string with a lone surrogate, which a paste can carry. The string typed is
+ *   kept for its control, shown there to repair, and holds the close, until
+ *   that control takes a value, the person discards it, or a reload takes the
+ *   file. Others are kept meanwhile: a row that would change what a held
+ *   control's row value is is refused unless it comes from that control, and
  *   the source is not shown over them. It is never a second copy of the row.
  * - One line of status, most pressing first.
  *
@@ -30,14 +31,17 @@
  * not from here.
  */
 import type {
+	CanonicalDocument,
 	CanonicalValue,
 	RowEditor,
 	RowError,
 	RowReloadError,
 	RowSaveError,
+	RowSetError,
 } from '@epicenter/folder';
 import { withFileNewlines } from '@epicenter/folder/file-browser';
 import { fromRowEditor } from '@epicenter/folder/svelte';
+import { defineErrors, type InferErrors } from 'wellcrafted/error';
 import type { Result } from 'wellcrafted/result';
 import type { Admits } from './editor.svelte.js';
 
@@ -69,9 +73,6 @@ const CLOSING =
 	'Nothing was changed: this file is being moved or deleted, or Whispering is deciding whether to close.';
 const RELEASED = 'This file is no longer open here, so nothing was changed.';
 
-/** Textareas report LF. */
-const lf = (text: string) => text.replace(/\r\n?/g, '\n');
-
 /** A typed value the row did not take, kept for the one control it was typed in. */
 type Refused = {
 	/** Exactly as typed, in LF for the body. */
@@ -89,6 +90,47 @@ const NONE: Held = Object.freeze({ fields: new Map(), body: undefined });
 
 const SOURCE_HELD =
 	'Fix or discard what you typed that cannot be saved first, so it is not hidden behind the source.';
+
+/** The control a row was typed in: one field, or the body. */
+type Control = { readonly field: string } | 'body';
+
+const RowEditingError = defineErrors({
+	/**
+	 * `set` would change the row value of a control that holds a typed value
+	 * the row could not take, and the row did not come from that control.
+	 * Nothing changed.
+	 */
+	HeldInput: ({ path, control }: { path: string; control: string }) => ({
+		message: `The row for '${path}' was not changed: ${control} holds typed text that cannot be saved yet`,
+		path,
+		control,
+	}),
+});
+type HeldInputError = InferErrors<typeof RowEditingError>;
+
+const isList = (value: CanonicalValue): value is readonly CanonicalValue[] =>
+	Array.isArray(value);
+
+/** Whether two field values are the same value; `undefined` is an absent field. */
+function same(
+	a: CanonicalValue | undefined,
+	b: CanonicalValue | undefined,
+): boolean {
+	if (a === b) return true;
+	if (typeof a !== 'object' || typeof b !== 'object' || !a || !b) return false;
+	if (isList(a) || isList(b))
+		return (
+			isList(a) &&
+			isList(b) &&
+			a.length === b.length &&
+			a.every((item, index) => same(item, b[index]))
+		);
+	const keys = Object.keys(a);
+	return (
+		keys.length === Object.keys(b).length &&
+		keys.every((key) => Object.hasOwn(b, key) && same(a[key], b[key]))
+	);
+}
 
 /** Why the codec refused a typed value, in the words the person is shown. */
 const refusalReason = (reason: string) =>
@@ -148,10 +190,7 @@ export function createRowEditing<TFields>(
 	const holding = () => held.fields.size > 0 || held.body !== undefined;
 
 	/** Keep, or with `undefined` let go of, the value held for one control. */
-	function hold(
-		control: { field: string } | 'body',
-		value: Refused | undefined,
-	) {
+	function hold(control: Control, value: Refused | undefined) {
 		if (control === 'body') {
 			if (held.body !== value) held = { ...held, body: value };
 			return;
@@ -228,56 +267,62 @@ export function createRowEditing<TFields>(
 			return !released && (editor.save.status !== 'idle' || holding());
 		},
 		/**
-		 * What a field's control shows: the value typed there that the row
-		 * could not take, else the valid row's string value, else empty.
+		 * The typed values the row did not take, per control. A control shows
+		 * its own over the valid row's value.
 		 */
-		fieldText(key: string): string {
-			const kept = held.fields.get(key);
-			if (kept !== undefined) return kept.value;
-			const value =
-				editor.row.status === 'valid' ? editor.row.fields[key] : undefined;
-			return typeof value === 'string' ? value : '';
-		},
-		/** What the body's textarea shows, in LF: a refused typed body, else the valid row's. */
-		bodyText(): string {
-			if (held.body !== undefined) return held.body.value;
-			return editor.row.status === 'valid' ? lf(editor.row.body) : '';
+		get held(): Held {
+			return held;
 		},
 		/**
-		 * Set one field of the valid row; `undefined` removes it. Every other
-		 * field and the body stay. A refused string is kept for this field's
-		 * control; a value the row takes lets that control's go.
+		 * Set a complete row: every field to keep, and the body. Omitted fields
+		 * are deleted. Taken only while the fields are the view of a valid row;
+		 * otherwise nothing changes and this returns `undefined`.
+		 *
+		 * `control` names where it was typed. A body typed in a textarea is in
+		 * LF and is saved in the body's own line endings; any other body is
+		 * saved exactly. A row that changes what a held control's row value is
+		 * is refused unless it comes from that control. When the row cannot be
+		 * written, the string typed in `control` is kept for it; when it is
+		 * taken, that control's held value is let go. A row from no control
+		 * keeps and lets go of nothing.
 		 */
-		setField(key: string, value: CanonicalValue | undefined) {
-			if (!takes() || source || editor.row.status !== 'valid') return;
-			const fields: Record<string, CanonicalValue> = { ...editor.row.fields };
-			if (value === undefined) delete fields[key];
-			else fields[key] = value;
-			const { error } = editor.set({ ...editor.row, fields });
-			if (error === null) hold({ field: key }, undefined);
-			// Only a typed string can be refused: other values come from the row.
-			else if (typeof value === 'string')
-				hold(
-					{ field: key },
-					{ value, reason: refusalReason(error.refusal.reason) },
-				);
-		},
-		/**
-		 * Set the valid row's body, typed in a textarea, in the body's own line
-		 * endings. A refused body is kept for the textarea; a taken one lets it go.
-		 */
-		setBody(typed: string) {
-			if (!takes() || source || editor.row.status !== 'valid') return;
-			const { error } = editor.set({
-				...editor.row,
-				body: withFileNewlines(typed, editor.row.body),
+		set(
+			next: CanonicalDocument,
+			{ control }: { control?: Control } = {},
+		): Result<undefined, RowSetError | HeldInputError> | undefined {
+			const row = editor.row;
+			if (!takes() || source || row.status !== 'valid') return undefined;
+			for (const key of held.fields.keys())
+				if (
+					(control === 'body' || control?.field !== key) &&
+					!same(next.fields[key], row.fields[key])
+				)
+					return RowEditingError.HeldInput({ path, control: key });
+			if (
+				held.body !== undefined &&
+				control !== 'body' &&
+				next.body !== row.body
+			)
+				return RowEditingError.HeldInput({ path, control: 'body' });
+			const result = editor.set({
+				fields: next.fields,
+				body:
+					control === 'body'
+						? withFileNewlines(next.body, row.body)
+						: next.body,
 			});
-			hold(
-				'body',
-				error === null
-					? undefined
-					: { value: typed, reason: refusalReason(error.refusal.reason) },
-			);
+			if (control === undefined) return result;
+			if (result.error === null) {
+				hold(control, undefined);
+				return result;
+			}
+			const typed = control === 'body' ? next.body : next.fields[control.field];
+			if (typeof typed === 'string')
+				hold(control, {
+					value: typed,
+					reason: refusalReason(result.error.refusal.reason),
+				});
+			return result;
 		},
 		/**
 		 * Let go of the typed value one control holds, as the person asked: a
@@ -293,10 +338,6 @@ export function createRowEditing<TFields>(
 			native.setText(withFileNewlines(typed, native.get().row.text));
 			// Typing here keeps the source shown after the text becomes a valid row.
 			source = true;
-		},
-		/** The text the source view shows, in LF, while it is the view. */
-		sourceValue(): string {
-			return view() === 'source' ? lf(editor.row.text) : '';
 		},
 		/**
 		 * Show the source, or the fields. Fields are shown only for a valid row,

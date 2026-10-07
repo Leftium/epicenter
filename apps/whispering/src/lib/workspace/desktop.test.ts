@@ -25,6 +25,7 @@ import type { GitSnapshot } from '../../../../../packages/folder/src/native/bind
 import { createHost, type HostOptions } from '../../../native/host.js';
 import { encode } from '../bridge/codec.js';
 import { toneWav } from '../capture.js';
+import { typeBody } from '../row-slot.test-support.js';
 
 type Call = { cmd: string; args: Record<string, unknown> };
 
@@ -496,7 +497,7 @@ test('a row save whose reply the shell never sent stays unknown, and later input
 		admits: () => true,
 	});
 
-	editing.setBody('Tidy it.\n');
+	typeBody(editing, 'Tidy it.\n');
 	expect((await editing.waitForSaves()).error?.name).toBe('Unconfirmed');
 	expect(written).toHaveLength(1);
 	expect(editing.status).toMatchObject({
@@ -506,7 +507,7 @@ test('a row save whose reply the shell never sent stays unknown, and later input
 	expect(editing.holds).toBe(true);
 
 	// Later input starts another write, whose reply is lost too.
-	editing.setBody('Tidy it more.\n');
+	typeBody(editing, 'Tidy it more.\n');
 	expect(editing.row).toMatchObject({
 		status: 'valid',
 		body: 'Tidy it more.\n',

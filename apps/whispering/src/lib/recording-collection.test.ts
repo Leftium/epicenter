@@ -60,7 +60,7 @@ import {
 	transcriptExcerpt,
 	transcriptsToCopy,
 } from './recording-collection.js';
-import { editingOf } from './row-slot.test-support.js';
+import { editingOf, typeBody } from './row-slot.test-support.js';
 import type { Session } from './session.svelte.js';
 import type { Workspace } from './workspace/types.js';
 import { deferred, openTestWorkspace } from './workspace.test-support.js';
@@ -640,7 +640,7 @@ test('a transcript is edited through the one editor kept for its file, and its r
 	expect(library.selection?.kind).toBe('recording');
 	const slot = library.transcriptAt(TRANSCRIPT);
 	const editor = editingOf(slot);
-	editor.setBody('Yesterday I finished the importer. Today: the exporter.\n');
+	typeBody(editor, 'Yesterday I finished the importer. Today: the exporter.\n');
 	// Saving from the moment it is typed: leaving now would wait for it.
 	expect(editor.save.status).toBe('saving');
 	expect(library.holdsUnsavedWork).toBe(true);
@@ -703,7 +703,7 @@ test('a transcript changed outside is listed but not loaded into its open editor
 		outside.replace('migration', 'rewrite'),
 	);
 	await library.refreshAll();
-	editor.setBody('What I typed.\n');
+	typeBody(editor, 'What I typed.\n');
 	expectOk(await editor.waitForSaves());
 	const saved = await readFile(join(root, TRANSCRIPT), 'utf8');
 	expect(saved).toBe(editor.row.text);
@@ -721,7 +721,7 @@ test('closing the details and changing page lose no typing: the editor is the se
 	await library.openTranscript(TRANSCRIPT);
 	const slot = library.transcriptAt(TRANSCRIPT);
 	const editor = editingOf(slot);
-	editor.setBody('Typed just before closing the details.\n');
+	typeBody(editor, 'Typed just before closing the details.\n');
 	view.recordingQuery = 'standup';
 
 	// Closing the pane, then a change of page: neither unloads the document.
@@ -879,7 +879,8 @@ test('a transcript opening that answers after the session closed makes no draft,
 test('typing in a transcript that was opened before closing is saved before the folder closes', async () => {
 	const { session, library, root } = await history();
 	await library.openTranscript(TRANSCRIPT);
-	editingOf(library.transcriptAt(TRANSCRIPT)).setBody(
+	typeBody(
+		editingOf(library.transcriptAt(TRANSCRIPT)),
 		'Typed just before quitting.\n',
 	);
 

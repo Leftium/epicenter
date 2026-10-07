@@ -25,7 +25,7 @@
 	import type { Library, RowSlot, TextRun, TransformationEntry } from '$lib/library.svelte.js';
 	import { recipeEndpoint } from '$lib/recipe.js';
 	import { committedState } from '$lib/status.js';
-	import { confirmDelete, copyText, formatTime, recordingTitle } from './file-actions.js';
+	import { confirmDelete, copyText, formatTime, lf, recordingTitle } from './file-actions.js';
 	import LiveButton from './LiveButton.svelte';
 	import { Input } from '@epicenter/ui/input';
 	import RowSaveStatus from './RowSaveStatus.svelte';
@@ -269,7 +269,14 @@
 		{#if fieldsEditable}
 			<Input
 				class="flex-1 text-base font-medium"
-				bind:value={() => editing?.fieldText('title') ?? '', (value) => editing?.setField('title', value)}
+				bind:value={
+					() => editing?.held.fields.get('title')?.value ?? (editing?.row.status === 'valid' ? editing.row.fields.title : ''),
+					(value) => {
+						const row = editing?.row;
+						if (row?.status === 'valid')
+							editing?.set({ ...row, fields: { ...row.fields, title: value } }, { control: { field: 'title' } });
+					}
+				}
 				readonly={!editing?.editable}
 				placeholder="Title"
 				aria-label="Transformation title"
@@ -372,7 +379,10 @@
 									variant="outline"
 									class="self-start"
 									disabled={!editing?.editable}
-									onclick={() => editing?.setField('endpoint', null)}
+									onclick={() => {
+										const row = editing?.row;
+										if (row?.status === 'valid') editing?.set({ ...row, fields: { ...row.fields, endpoint: null } });
+									}}
 									data-testid="remove-endpoint-constraint"
 								>
 									Remove the endpoint and use the text connection
@@ -388,7 +398,13 @@
 						<Textarea
 							id="transformation-prompt"
 							class="min-h-36 resize-y font-sans"
-							bind:value={() => editing?.bodyText() ?? '', (value) => editing?.setBody(value)}
+							bind:value={
+								() => editing?.held.body?.value ?? (editing?.row.status === 'valid' ? lf(editing.row.body) : ''),
+								(value) => {
+									const row = editing?.row;
+									if (row?.status === 'valid') editing?.set({ ...row, body: value }, { control: 'body' });
+								}
+							}
 							readonly={!editing?.editable}
 							placeholder="Say what to do with the text, such as: Fix punctuation and remove filler words. Answer with the text only."
 							data-testid="transformation-prompt"
@@ -416,10 +432,18 @@
 							{#if fieldsEditable}
 								<Input
 									id="transformation-model"
-									bind:value={() => editing?.fieldText('model') ?? '', (value) => {
-										// An empty model uses the text connection's model.
-										editing?.setField('model', value.trim() === '' ? null : value);
-									}}
+									bind:value={
+										() => editing?.held.fields.get('model')?.value ?? (editing?.row.status === 'valid' ? (editing.row.fields.model ?? '') : ''),
+										(value) => {
+											const row = editing?.row;
+											// An empty model uses the text connection's model.
+											if (row?.status === 'valid')
+												editing?.set(
+													{ ...row, fields: { ...row.fields, model: value.trim() === '' ? null : value } },
+													{ control: { field: 'model' } },
+												);
+										}
+									}
 									readonly={!editing?.editable}
 									placeholder={connection?.model ? `The text connection’s model: ${connection.model}` : 'The text connection’s model'}
 									autocomplete="off"
@@ -628,7 +652,7 @@
 				</p>
 				<Textarea
 					class="h-full min-h-40 flex-1 resize-none font-mono text-xs"
-					bind:value={() => editing?.sourceValue() ?? '', (value) => editing?.setText(value)}
+					bind:value={() => lf(editing?.row.text ?? ''), (value) => editing?.setText(value)}
 					readonly={!editing?.editable}
 					aria-label="Markdown source"
 					spellcheck={false}

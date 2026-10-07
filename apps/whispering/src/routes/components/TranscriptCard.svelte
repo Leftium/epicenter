@@ -75,7 +75,13 @@
 	{#if editable}
 		<Textarea
 			class="min-h-32 resize-y font-sans"
-			bind:value={() => editing?.bodyText() ?? '', (value) => editing?.setBody(value)}
+			bind:value={
+				() => editing?.held.body?.value ?? (editing?.row.status === 'valid' ? lf(editing.row.body) : ''),
+				(value) => {
+					const row = editing?.row;
+					if (row?.status === 'valid') editing?.set({ ...row, body: value }, { control: 'body' });
+				}
+			}
 			readonly={!editing?.editable}
 			placeholder="This transcript has no text."
 			aria-label="Transcript of {formatTime(result.fields.createdAt) || result.path}"

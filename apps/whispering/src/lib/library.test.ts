@@ -73,7 +73,14 @@ import { whisperingDefinition } from './definition.js';
 import { describeDeletion } from './deletion-copy.js';
 import type { Library } from './library.svelte.js';
 import type { RowEditing } from './row-editing.svelte.js';
-import { editingOf } from './row-slot.test-support.js';
+import {
+	bodyShown,
+	editingOf,
+	fieldShown,
+	sourceShown,
+	typeBody,
+	typeField,
+} from './row-slot.test-support.js';
 import { needsRepair } from './rows.js';
 import {
 	commitLine,
@@ -494,8 +501,8 @@ test('the title and notes are one row editor saved whole as they are typed, and 
 	const editor = recordingEditor(library);
 	const { path } = editor;
 
-	editor.setField('title', 'Standup notes');
-	editor.setBody('Typed as notes\n');
+	typeField(editor, 'title', 'Standup notes');
+	typeBody(editor, 'Typed as notes\n');
 	// The row is the latest input at once, and Source shows exactly what a save writes.
 	expect(editor.save.status).toBe('saving');
 	expect(editor.row.text).toContain('"title": "Standup notes"');
@@ -512,8 +519,8 @@ test('the title and notes are one row editor saved whole as they are typed, and 
 	// Editing the whole text is the same editor, shown as its source.
 	expect(library.editSource(path)).toBeUndefined();
 	expect(recordingEditor(library)).toBe(editor);
-	expect(editor.sourceValue()).toBe(await readFile(join(root, path), 'utf8'));
-	editor.setText(`${editor.sourceValue()}Typed in the source view\n`);
+	expect(sourceShown(editor)).toBe(await readFile(join(root, path), 'utf8'));
+	editor.setText(`${sourceShown(editor)}Typed in the source view\n`);
 	await saved(editor);
 	expect(await readFile(join(root, path), 'utf8')).toContain(
 		'Typed in the source view',
@@ -534,14 +541,14 @@ test('rapid title typing keeps the recording path and audio link, and switching 
 	const editor = recordingEditor(library);
 	const path = join(root, editor.path);
 
-	editor.setField('title', 'T');
-	editor.setField('title', 'Ty');
-	editor.setField('title', 'Typed');
+	typeField(editor, 'title', 'T');
+	typeField(editor, 'title', 'Ty');
+	typeField(editor, 'title', 'Typed');
 	expect(editor.row).toMatchObject({ fields: { title: 'Typed' } });
 	// Nothing waits on a switch: the source shows the same latest input.
 	expect(library.editSource(editor.path)).toBeUndefined();
 	expect(editor.view).toBe('source');
-	expect(editor.sourceValue()).toContain('"title": "Typed"');
+	expect(sourceShown(editor)).toContain('"title": "Typed"');
 	await saved(editor);
 	expect(await readFile(path, 'utf8')).toBe(editor.row.text);
 	expect(await readFile(path, 'utf8')).toContain('"title": "Typed"');
@@ -571,7 +578,7 @@ test('an outside edit is listed but not loaded into an open recording, and the n
 	expect(editor.status.kind).toBe('saved');
 	expect(library.saveProblems).toBe(0);
 
-	editor.setField('title', 'Mine');
+	typeField(editor, 'title', 'Mine');
 	await saved(editor);
 
 	expect(await readFile(path, 'utf8')).toBe(editor.row.text);
@@ -597,15 +604,16 @@ test("a row's own saves reach the list through the folder's hint, with no refres
 	const { path } = editor;
 	const listed = () => library.entries.find((entry) => entry.path === path);
 
-	editor.setField('title', 'Standup notes');
+	typeField(editor, 'title', 'Standup notes');
 	await saved(editor);
 	await until(() => listed()?.fields.title === 'Standup notes');
 	expect(listed()?.fields.title).toBe('Standup notes');
 
 	expect(library.editSource(path)).toBeUndefined();
-	const malformed = editor
-		.sourceValue()
-		.replace(/"title": .*\n/, '"title": [unclosed\n');
+	const malformed = sourceShown(editor).replace(
+		/"title": .*\n/,
+		'"title": [unclosed\n',
+	);
 	editor.setText(malformed);
 	await saved(editor);
 	expect(await readFile(join(root, path), 'utf8')).toBe(malformed);
@@ -729,7 +737,7 @@ test('reloading takes the outside version and writes nothing, and typing while i
 
 	const reloading = library.reloadRow(editor.path);
 	expect(editor.reloading).toBe(true);
-	editor.setField('title', 'Typed while it was read');
+	typeField(editor, 'title', 'Typed while it was read');
 	expect(await reloading).toBeUndefined();
 
 	expect(editor.reloading).toBe(false);
@@ -763,7 +771,7 @@ test('typing in a row removed outside is kept on screen, and saving never create
 	const editor = recordingEditor(library);
 	const path = join(root, editor.path);
 	await rm(path);
-	editor.setField('title', 'Mine');
+	typeField(editor, 'title', 'Mine');
 	expect((await editor.waitForSaves()).error?.name).toBe('NotFound');
 	await library.refreshAll();
 
@@ -780,12 +788,12 @@ test('typing in a row removed outside is kept on screen, and saving never create
 	expect(await Bun.file(path).exists()).toBe(false);
 
 	// A failed Reload keeps input, including a scalar the row refused.
-	editor.setField('title', 'kept\uD800');
+	typeField(editor, 'title', 'kept\uD800');
 	expect(await library.reloadRow(editor.path)).toContain(
 		'no longer in the folder',
 	);
 	expect(recordingEditor(library)).toBe(editor);
-	expect(editor.fieldText('title')).toBe('kept\uD800');
+	expect(fieldShown(editor, 'title')).toBe('kept\uD800');
 	expect(library.holdsUnsavedWork).toBe(true);
 
 	// Discarding puts the editor down; there is no file to show.
@@ -820,7 +828,7 @@ test('a malformed row stays listed and selectable, saves while malformed, and it
 	// It opens in its editor as its exact text: no fields to edit until it is repaired.
 	const editor = recordingEditor(library);
 	expect(editor.view).toBe('source');
-	expect(editor.sourceValue()).toBe(broken);
+	expect(sourceShown(editor)).toBe(broken);
 	expect(library.useForm('recordings/broken.md')).toContain(
 		'still cannot be edited as fields',
 	);
@@ -874,9 +882,9 @@ test('a field value that does not conform is saved as given, the other fields st
 	const editor = recordingEditor(library);
 
 	// No control of this page produces it; the row editor still saves it whole.
-	editor.setField('title', 'Renamed');
-	editor.setBody('Notes\n');
-	editor.setField('durationMs', 'long');
+	typeField(editor, 'title', 'Renamed');
+	typeBody(editor, 'Notes\n');
+	typeField(editor, 'durationMs', 'long');
 	await saved(editor);
 
 	const reading = inspectRow(
@@ -893,12 +901,12 @@ test('a field value that does not conform is saved as given, the other fields st
 	expect(editor.status.kind).toBe('invalid');
 	expect(editor.view).toBe('source');
 	const before = editor.row.text;
-	editor.setField('title', 'Again');
+	typeField(editor, 'title', 'Again');
 	expect(editor.row.text).toBe(before);
 	expect(library.holdsUnsavedWork).toBe(false);
 	expect(library.saveProblems).toBe(0);
 
-	editor.setText(editor.sourceValue().replace('"long"', '1000'));
+	editor.setText(sourceShown(editor).replace('"long"', '1000'));
 	await saved(editor);
 	await library.refresh();
 	expect(library.entries[0]!.fields).toMatchObject({
@@ -949,7 +957,7 @@ test('a recording with an unusual file name is an ordinary recording: it is tran
 		fields: { title: 'Theirs' },
 	});
 
-	editor.setField('title', 'Mine');
+	typeField(editor, 'title', 'Mine');
 	await saved(editor);
 	expect(editor.status.kind).toBe('saved');
 	expect(await readFile(join(root, path), 'utf8')).toContain('"title": "Mine"');
@@ -1162,7 +1170,7 @@ test('a row written before audioPath names no audio: it needs repair, and no sam
 	await library.open('recordings/old.md');
 	const editor = recordingEditor(library);
 	expect(editor.view).toBe('source');
-	expect(editor.sourceValue()).toBe(old);
+	expect(sourceShown(editor)).toBe(old);
 	editor.setText(
 		old.replace(
 			'capture: fixture\n',
@@ -2617,8 +2625,11 @@ async function openTranscript(library: Library) {
 }
 
 /** Type a body into a row editor's fields; true when its row then has that body. */
-function typeBody<TFields>(editor: RowEditing<TFields>, body: string): boolean {
-	editor.setBody(body);
+function bodyTaken<TFields>(
+	editor: RowEditing<TFields>,
+	body: string,
+): boolean {
+	typeBody(editor, body);
 	const { row } = editor;
 	return row.status === 'valid' && row.body === body;
 }
@@ -2626,7 +2637,7 @@ function typeBody<TFields>(editor: RowEditing<TFields>, body: string): boolean {
 test('a transcript’s editor is settled before it moves, takes no typing while it moves, and its file opens at the new name', async () => {
 	const { library, root } = await open();
 	const { transcript, draft } = await openTranscript(library);
-	draft.setBody('Typed before the rename.\n');
+	typeBody(draft, 'Typed before the rename.\n');
 	const move = holdNext(library.folder.files, 'move');
 
 	const renaming = library.rename(transcript.path, 'renamed.md');
@@ -2635,7 +2646,7 @@ test('a transcript’s editor is settled before it moves, takes no typing while 
 	expect(await readFile(join(root, transcript.path), 'utf8')).toContain(
 		'Typed before the rename.',
 	);
-	expect(typeBody(draft, 'Typed while it moved.\n')).toBe(false);
+	expect(bodyTaken(draft, 'Typed while it moved.\n')).toBe(false);
 	expect(draft.save.status).toBe('idle');
 	// Nothing is written at the old path while the file moves.
 	expect(await readFile(join(root, transcript.path), 'utf8')).toContain(
@@ -2652,7 +2663,7 @@ test('a transcript’s editor is settled before it moves, takes no typing while 
 	const moved = editingOf(library.transcriptAt(to));
 	expect(moved.row).toMatchObject({ body: 'Typed before the rename.\n' });
 	expect(moved.holds).toBe(false);
-	expect(typeBody(moved, 'Typed at the new name.\n')).toBe(true);
+	expect(bodyTaken(moved, 'Typed at the new name.\n')).toBe(true);
 	await saved(moved);
 	expect(await readFile(join(root, to), 'utf8')).toContain(
 		'Typed at the new name.',
@@ -2669,11 +2680,11 @@ test('a move the folder refuses leaves the editor at its file, which takes typin
 
 	const renaming = library.rename(transcript.path, 'taken.md');
 	await move.reached;
-	expect(typeBody(draft, 'Typed while it did not move.\n')).toBe(false);
+	expect(bodyTaken(draft, 'Typed while it did not move.\n')).toBe(false);
 	move.release();
 	expect(await renaming).toContain('already exists');
 
-	expect(typeBody(draft, 'Typed while it did not move.\n')).toBe(true);
+	expect(bodyTaken(draft, 'Typed while it did not move.\n')).toBe(true);
 	await saved(draft);
 	expect(await readFile(join(root, transcript.path), 'utf8')).toContain(
 		'Typed while it did not move.',
@@ -2713,13 +2724,13 @@ async function renameWhileClosing(
 test('a transcript renamed while the page decides to close takes its settled typing to the new name, and the close waits for the move', async () => {
 	const { library, root } = await open();
 	const { transcript, draft } = await openTranscript(library);
-	draft.setBody(TYPED);
+	typeBody(draft, TYPED);
 
 	const { said, leaving } = await renameWhileClosing(
 		library,
 		transcript.path,
 		'renamed.md',
-		() => typeBody(draft, 'Typed while it moved, refused.\n'),
+		() => bodyTaken(draft, 'Typed while it moved, refused.\n'),
 		undefined,
 		false,
 	);
@@ -2763,13 +2774,13 @@ test('a rename refused while the page decides to close leaves the settled typing
 	const { library, root } = await open();
 	const { transcript, draft } = await openTranscript(library);
 	await writeFile(join(root, 'transcriptions', 'taken.md'), 'Someone else\n');
-	draft.setBody(TYPED);
+	typeBody(draft, TYPED);
 
 	const { said, leaving } = await renameWhileClosing(
 		library,
 		transcript.path,
 		'taken.md',
-		() => typeBody(draft, 'Typed while it moved, refused.\n'),
+		() => bodyTaken(draft, 'Typed while it moved, refused.\n'),
 		undefined,
 		false,
 	);
@@ -2805,13 +2816,13 @@ test('a transcript rename whose reply is lost while the page decides to close pu
 					});
 		},
 	});
-	draft.setBody(TYPED);
+	typeBody(draft, TYPED);
 
 	const { said, leaving } = await renameWhileClosing(
 		library,
 		transcript.path,
 		'renamed.md',
-		() => typeBody(draft, 'Typed while it moved, refused.\n'),
+		() => bodyTaken(draft, 'Typed while it moved, refused.\n'),
 		{ reached: reached.promise, release: () => held.resolve() },
 		false,
 	);
@@ -3114,7 +3125,7 @@ test('a transcript body no file can hold refuses the rename and stays in its edi
 	const { transcript, draft } = await openTranscript(library);
 	const before = await readFile(join(root, transcript.path), 'utf8');
 	const unsavable = 'Half a pair: \uD800\n';
-	expect(typeBody(draft, unsavable)).toBe(false);
+	expect(bodyTaken(draft, unsavable)).toBe(false);
 	expect(draft.status.kind).toBe('refused');
 
 	expect(await library.rename(transcript.path, 'renamed.md')).toContain(
@@ -3122,7 +3133,7 @@ test('a transcript body no file can hold refuses the rename and stays in its edi
 	);
 
 	expect(draft.released).toBe(false);
-	expect(draft.bodyText()).toBe(unsavable);
+	expect(bodyShown(draft)).toBe(unsavable);
 	expect(draft.status.kind).toBe('refused');
 	expect(library.transcriptAt(transcript.path)).toBeDefined();
 	expect(library.holdsUnsavedWork).toBe(true);
@@ -3235,7 +3246,7 @@ test('a recording being deleted takes no typing, and nothing writes its row agai
 	const removing = library.remove(deletion);
 	await removal.reached;
 	const before = editor.row;
-	editor.setField('title', 'Typed while deleted');
+	typeField(editor, 'title', 'Typed while deleted');
 	expect(editor.row).toBe(before);
 	expect(editor.save.status).toBe('idle');
 	removal.release();
@@ -3263,7 +3274,7 @@ test('a deletion the folder refuses leaves the editor as it was, taking typing a
 
 	expect(await readFile(path, 'utf8')).toBe(outside);
 	await library.refreshAll();
-	expect(typeBody(editor, 'Typed after the refusal.\n')).toBe(true);
+	expect(bodyTaken(editor, 'Typed after the refusal.\n')).toBe(true);
 	await saved(editor);
 	expect(await readFile(path, 'utf8')).toContain('Typed after the refusal.');
 });
@@ -3292,7 +3303,7 @@ test('a recording is not deleted while a draft of one of its results holds typin
 
 	// A save of typing in the transcript, running since the person was asked.
 	let deletion = expectOk(await library.deletionFor(recording.path));
-	expect(typeBody(draft, 'Typed after confirming.\n')).toBe(true);
+	expect(bodyTaken(draft, 'Typed after confirming.\n')).toBe(true);
 	expect(draft.save.status).toBe('saving');
 	expect(await library.remove(deletion)).toContain('Save or discard');
 	await kept();
@@ -3312,7 +3323,7 @@ test('a recording is not deleted while a draft of one of its results holds typin
 	expect(library.editSource(transcript.path)).toBeUndefined();
 	chmodSync(join(root, 'transcriptions'), 0o555);
 	try {
-		draft.setText(`${draft.sourceValue()}Not saved.\n`);
+		draft.setText(`${sourceShown(draft)}Not saved.\n`);
 		expect((await draft.waitForSaves()).error).not.toBeNull();
 	} finally {
 		chmodSync(join(root, 'transcriptions'), 0o755);
@@ -3333,7 +3344,7 @@ test('a recording’s results take no typing while it is deleted, and nothing wr
 	const removing = library.remove(deletion);
 	await removal.reached;
 	// The recording's own file is still being deleted.
-	expect(typeBody(draft, 'Typed while its recording is deleted.\n')).toBe(
+	expect(bodyTaken(draft, 'Typed while its recording is deleted.\n')).toBe(
 		false,
 	);
 	expect(draft.save.status).toBe('idle');
@@ -3363,7 +3374,7 @@ test('each file of a recording’s deletion stands alone: a refused one keeps it
 		),
 	);
 	expect(await library.remove(deletion)).toContain('different content');
-	expect(typeBody(draft, 'Typed after the refusal.\n')).toBe(true);
+	expect(bodyTaken(draft, 'Typed after the refusal.\n')).toBe(true);
 	await saved(draft);
 	expect(await readFile(result, 'utf8')).toContain('Typed after the refusal.');
 
@@ -3383,7 +3394,9 @@ test('each file of a recording’s deletion stands alone: a refused one keeps it
 	// The editor takes typing again; not reloaded, it saves the whole row over
 	// the outside change.
 	await library.refreshAll();
-	expect(typeBody(draft, 'Typed after its deletion was refused.\n')).toBe(true);
+	expect(bodyTaken(draft, 'Typed after its deletion was refused.\n')).toBe(
+		true,
+	);
 	await saved(draft);
 	expect(await readFile(result, 'utf8')).not.toContain('Changed outside.');
 	expect(await readFile(result, 'utf8')).toContain(
@@ -3409,7 +3422,7 @@ test('a result being deleted with its recording is not renamed, and keeps taking
 	expect(await library.rename(transcript.path, 'renamed.md')).toContain(
 		'being moved or deleted',
 	);
-	expect(typeBody(draft, 'Typed after the renames.\n')).toBe(false);
+	expect(bodyTaken(draft, 'Typed after the renames.\n')).toBe(false);
 	expect(draft.save.status).toBe('idle');
 	removal.release();
 	expect(await removing).toBeUndefined();
@@ -3424,13 +3437,13 @@ test('a recording whose result is being renamed is not deleted, and the result�
 	const { transcript, draft } = await openTranscript(library);
 	const recording = library.entries[0]!;
 	const deletion = expectOk(await library.deletionFor(recording.path));
-	draft.setBody('Typed before it moved.\n');
+	typeBody(draft, 'Typed before it moved.\n');
 	const move = holdNext(library.folder.files, 'move');
 
 	const renaming = library.rename(transcript.path, 'renamed.md');
 	await move.reached;
 	expect(await library.remove(deletion)).toContain('being moved or deleted');
-	expect(typeBody(draft, 'Typed while it moved.\n')).toBe(false);
+	expect(bodyTaken(draft, 'Typed while it moved.\n')).toBe(false);
 	move.release();
 	expect(await renaming).toBeUndefined();
 

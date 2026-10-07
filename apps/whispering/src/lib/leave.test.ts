@@ -22,7 +22,7 @@ import { Ok } from 'wellcrafted/result';
 import { expectOk } from 'wellcrafted/testing';
 import { createFixtureDevice, toneWav } from './capture.js';
 import type { Library } from './library.svelte.js';
-import { editingOf } from './row-slot.test-support.js';
+import { editingOf, typeBody, typeField } from './row-slot.test-support.js';
 import type { CloseDecision, Workspace } from './workspace/types.js';
 import {
 	openTestFolder,
@@ -239,7 +239,7 @@ test('a row save still running is waited for, then the close proceeds', async ()
 	const selection = library.selection;
 	if (selection?.kind !== 'recording') throw new Error('expected a recording');
 	const editor = editingOf(selection.slot);
-	editor.setField('title', 'Typed just now');
+	typeField(editor, 'title', 'Typed just now');
 	expect(editor.save.status).toBe('saving');
 
 	await ask();
@@ -349,7 +349,7 @@ test('a transformation result whose file was not saved blocks the close and is k
 		}),
 	).toBeUndefined();
 	const profile = library.selectedTransformation!;
-	editingOf(profile.slot).setField('model', 'chat-model');
+	typeField(editingOf(profile.slot), 'model', 'chat-model');
 	const transcript = library.resultsFor(library.entries[0]!.stem)[0]!;
 	expect(
 		await library.transform(transcript.path, profile.path),
@@ -381,7 +381,7 @@ test('typing in a row whose file was removed blocks the close, stays in the edit
 	const editor = editingOf(selection.slot);
 	const path = join(root, editor.path);
 	await rm(path);
-	editor.setField('title', 'Typed after it was removed');
+	typeField(editor, 'title', 'Typed after it was removed');
 	expect((await editor.waitForSaves()).error?.name).toBe('NotFound');
 
 	await ask();
@@ -409,10 +409,10 @@ test('close keeps failed input visible, and typing after Keep working saves agai
 	// The row's directory refuses both saves; their latest input stays visible.
 	chmodSync(join(root, 'recordings'), 0o555);
 	try {
-		editor.setField('title', 'Typed before it failed');
+		typeField(editor, 'title', 'Typed before it failed');
 		expect((await editor.waitForSaves()).error).not.toBeNull();
 		expect(editor.status.kind).toBe('failed');
-		editor.setField('title', 'Typed after it failed');
+		typeField(editor, 'title', 'Typed after it failed');
 		expect((await editor.waitForSaves()).error).not.toBeNull();
 	} finally {
 		chmodSync(join(root, 'recordings'), 0o755);
@@ -432,7 +432,7 @@ test('close keeps failed input visible, and typing after Keep working saves agai
 	});
 
 	// Keep working admits later input, which starts another save.
-	editor.setField('title', 'Typed after staying');
+	typeField(editor, 'title', 'Typed after staying');
 	expectOk(await editor.waitForSaves());
 	expect(editor.status.kind).toBe('saved');
 	expect(await Bun.file(path).text()).toContain('Typed after staying');
@@ -590,8 +590,8 @@ test('a capture or typing asked for while the approval is on its way is refused'
 	expect(guard.phase).toBe('quitting');
 
 	await library.startRecording();
-	editor.setField('title', 'Typed after approval');
-	editor.setBody('typed straight into the editor');
+	typeField(editor, 'title', 'Typed after approval');
+	typeBody(editor, 'typed straight into the editor');
 	expect(editor.retry()).toBeDefined();
 
 	expect(library.recorder.phase).toBe('idle');
@@ -616,7 +616,7 @@ test('while the person decides nothing new starts, and keep working admits work 
 	const pending = library.pending[0]!;
 	await library.createTransformation({ title: 'Clean up', prompt: 'Tidy.\n' });
 	const editor = editingOf(library.selectedTransformation?.slot);
-	editor.setBody('Typed before the close.\n');
+	typeBody(editor, 'Typed before the close.\n');
 	expectOk(await editor.waitForSaves());
 
 	await ask();
@@ -629,7 +629,7 @@ test('while the person decides nothing new starts, and keep working admits work 
 	await library.retryPending(pending.capture.id);
 	expect(library.pending[0]!.attempts).toBe(pending.attempts);
 	expect(library.pending[0]!.state.kind).toBe('audioNotSaved');
-	editor.setBody('typed while asked');
+	typeBody(editor, 'typed while asked');
 	expect(editor.retry()).toBeDefined();
 	expect(editor.row).toMatchObject({ body: 'Typed before the close.\n' });
 	expect(editor.save.status).toBe('idle');
@@ -648,7 +648,7 @@ test('while the person decides nothing new starts, and keep working admits work 
 	expect(library.admitting).toBe(true);
 	expect(library.pending[0]!.capture.bytes).toEqual(toneWav());
 	expect(editor.row).toMatchObject({ body: 'Typed before the close.\n' });
-	editor.setBody('Typed before the close.\nMore.\n');
+	typeBody(editor, 'Typed before the close.\nMore.\n');
 	expect(editor.row).toMatchObject({
 		body: 'Typed before the close.\nMore.\n',
 	});
@@ -712,7 +712,7 @@ test('a transformation whose reads were under way when the person quit is never 
 	await library.transcribe(library.entries[0]!);
 	await library.createTransformation({ title: 'Clean up', prompt: 'Tidy.\n' });
 	const profile = library.selectedTransformation!;
-	editingOf(profile.slot).setField('model', 'chat-model');
+	typeField(editingOf(profile.slot), 'model', 'chat-model');
 	const transcript = library.resultsFor(library.entries[0]!.stem)[0]!;
 	hold = Promise.withResolvers<void>();
 	const running = library.transform(transcript.path, profile.path);
@@ -740,7 +740,7 @@ test('a recipe run on pasted text whose read was under way when the person quit 
 	const { library, guard, answers, ask } = started;
 	await library.createTransformation({ title: 'Clean up', prompt: 'Tidy.\n' });
 	const profile = library.selectedTransformation!;
-	editingOf(profile.slot).setField('model', 'chat-model');
+	typeField(editingOf(profile.slot), 'model', 'chat-model');
 	hold = Promise.withResolvers<void>();
 	const running = library.transformText(profile.path, 'pasted words\n');
 
@@ -893,7 +893,7 @@ test('released row editors cannot accept typing or resume admission', async () =
 	guard.dispose();
 	await library.close();
 	library.resumeAdmission();
-	editor.setField('title', 'Typed after release');
+	typeField(editor, 'title', 'Typed after release');
 	expect(editor.retry()).toContain('no longer open');
 	expect(library.admitting).toBe(false);
 	expect(editor.row).toBe(before);

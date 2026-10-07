@@ -13,7 +13,7 @@
 	import { toast } from '@epicenter/ui/sonner';
 	import type { Library, OpenFile, RowSlot } from '$lib/library.svelte.js';
 	import AudioPlayer from './AudioPlayer.svelte';
-	import { confirmDelete, copyPath } from './file-actions.js';
+	import { confirmDelete, copyPath, lf } from './file-actions.js';
 	import FileNameBar from './FileNameBar.svelte';
 	import LiveButton from './LiveButton.svelte';
 	import { Textarea } from '@epicenter/ui/textarea';
@@ -115,7 +115,18 @@
 					The transcript’s text, the body of its file. Its fields are kept as they are.
 					<LiveButton size="xs" variant="outline" class="ml-1" onclick={() => showSource(true)}>Edit the whole file</LiveButton>
 				</p>
-				<Textarea class="min-h-40 flex-1 resize-none font-sans" bind:value={() => editing?.bodyText() ?? '', (value) => editing?.setBody(value)} readonly={!editing.editable} aria-label="Contents of {name}" />
+				<Textarea
+					class="min-h-40 flex-1 resize-none font-sans"
+					bind:value={
+						() => editing?.held.body?.value ?? (editing?.row.status === 'valid' ? lf(editing.row.body) : ''),
+						(value) => {
+							const row = editing?.row;
+							if (row?.status === 'valid') editing?.set({ ...row, body: value }, { control: 'body' });
+						}
+					}
+					readonly={!editing.editable}
+					aria-label="Contents of {name}"
+				/>
 			{:else if editing.view === 'source'}
 				<p class="text-xs text-muted-foreground" data-testid="needs-repair">
 					{editing.row.status === 'invalid' ? 'The whole file, as its text, until it reads as a transcript again.' : 'The whole file, as its text.'}
@@ -124,7 +135,7 @@
 				</p>
 				<Textarea
 					class="min-h-40 flex-1 resize-none font-mono text-xs"
-					bind:value={() => editing?.sourceValue() ?? '', (value) => editing?.setText(value)}
+					bind:value={() => lf(editing?.row.text ?? ''), (value) => editing?.setText(value)}
 					readonly={!editing.editable}
 					aria-label="Contents of {name}"
 					spellcheck={false}

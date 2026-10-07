@@ -23,6 +23,9 @@
  *   refused rename makes the same control editable again
  * - a transformation's title and source are one editor, and its Source
  *   preference outlives the view
+ * - a value no file can hold stays in the control it was typed in, beside
+ *   its recording too, while other controls save around it; bodies show in
+ *   LF and save in the file's line endings
  *
  * jsdom has no layout, focus, selection, or IME; see svelte-dom.test-support.
  */
@@ -626,4 +629,104 @@ test('an invalid recipe opens Source while Try it remains available to inspect r
 			'[data-testid="transformation-source"]',
 		)?.value,
 	).toBe('broken');
+});
+
+test('a transcript beside its recording shows its body in LF, keeps a value no file can hold on screen, and saves in the file’s line endings', async () => {
+	const TRANSCRIPT = 'transcriptions/take-1.md';
+	const crlf =
+		'---\nrecordingId: take\ncreatedAt: 2026-10-01T00:00:00.000Z\nmodel: m\nendpoint: http://127.0.0.1:18080/v1\n---\nOne.\r\nTwo.\r\n';
+	const { library, page, target, root } = await open({
+		[RECORDING]: recording('Take', 'Notes.\n'),
+		[TRANSCRIPT]: crlf,
+	});
+	await library.openTranscript(TRANSCRIPT);
+	await show(library, RECORDING);
+	const text = () =>
+		target.querySelector<HTMLTextAreaElement>(
+			'[data-testid="transcript-text"]',
+		);
+	const editor = editorAt(library, TRANSCRIPT);
+	expect(text()?.value).toBe('One.\nTwo.\n');
+
+	const lone = 'One.\nHalf a pair: \uD800.\n';
+	type(text(), lone);
+	flushSync();
+	expect(text()?.value).toBe(lone);
+	expect(editor.row).toMatchObject({ body: 'One.\r\nTwo.\r\n' });
+	expect(
+		saveState(
+			target.querySelector('[data-testid="transcription-result"]') ?? target,
+		),
+	).toBe('refused');
+	// A new card for the same transcript shows it too.
+	page.shown = false;
+	flushSync();
+	page.shown = true;
+	flushSync();
+	expect(text()?.value).toBe(lone);
+
+	type(text(), 'One.\nTwo.\nThree.\n');
+	flushSync();
+	expect(text()?.value).toBe('One.\nTwo.\nThree.\n');
+	expectOk(await editor.waitForSaves());
+	expect(editor.holds).toBe(false);
+	const saved = await readFile(join(root, TRANSCRIPT), 'utf8');
+	expect(saved).toContain('"recordingId": "take"');
+	expect(saved).toEndWith('---\nOne.\r\nTwo.\r\nThree.\r\n');
+});
+
+test('a transformation’s title and instructions each keep a value no file can hold, its model saves around them, and each is discarded alone', async () => {
+	const seed =
+		'---\ntitle: Clean up\nmodel: null\nendpoint: null\n---\nTidy.\r\n';
+	const { library, target, root } = await open(
+		{ [RECIPE]: seed },
+		'transformations',
+	);
+	await library.open(RECIPE);
+	flushSync();
+	const title = () =>
+		target.querySelector<HTMLInputElement>(
+			'[data-testid="transformation-title"]',
+		);
+	const prompt = () =>
+		target.querySelector<HTMLTextAreaElement>(
+			'[data-testid="transformation-prompt"]',
+		);
+	const model = () =>
+		target.querySelector<HTMLInputElement>(
+			'[data-testid="transformation-model"]',
+		);
+	const editor = editingOf(library.selectedTransformation?.slot);
+	expect(prompt()?.value).toBe('Tidy.\n');
+
+	type(title(), 'Half \uD800');
+	type(prompt(), 'Half \uD801.\n');
+	flushSync();
+	expect(saveState(target)).toBe('refused');
+	expect(editor.row.text).toBe(seed);
+
+	target
+		.querySelector('[data-testid="transformation-notes"]')
+		?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+	flushSync();
+	expect(model()?.value).toBe('');
+	type(model(), 'chat-model');
+	expectOk(await editor.waitForSaves());
+	flushSync();
+	expect(await readFile(join(root, RECIPE), 'utf8')).toBe(
+		'---\n"title": "Clean up"\n"model": "chat-model"\n"endpoint": null\n---\nTidy.\r\n',
+	);
+	expect(title()?.value).toBe('Half \uD800');
+	expect(prompt()?.value).toBe('Half \uD801.\n');
+
+	// An emptied model is no model: the text connection's is used.
+	type(model(), ' ');
+	expectOk(await editor.waitForSaves());
+	expect(editor.row).toMatchObject({ fields: { model: null } });
+
+	click(target, 'Discard what was typed in title');
+	flushSync();
+	expect(title()?.value).toBe('Clean up');
+	expect(prompt()?.value).toBe('Half \uD801.\n');
+	expect(editor.status).toMatchObject({ kind: 'refused', controls: ['body'] });
 });

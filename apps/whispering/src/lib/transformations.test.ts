@@ -45,7 +45,13 @@ import { expectOk } from 'wellcrafted/testing';
 import { STARTER_TRANSFORMATIONS } from './definition.js';
 import type { Library } from './library.svelte.js';
 import type { RowEditing } from './row-editing.svelte.js';
-import { editingOf } from './row-slot.test-support.js';
+import {
+	bodyShown,
+	editingOf,
+	sourceShown,
+	typeBody,
+	typeField,
+} from './row-slot.test-support.js';
 import { needsRepair } from './rows.js';
 import { filesLineOf } from './status.js';
 import { TransformationError } from './transformation.js';
@@ -97,7 +103,7 @@ async function transcribed(library: Library, root: string) {
 async function cleanupProfile(library: Library) {
 	expect(await library.createTransformation(CLEANUP)).toBeUndefined();
 	const editor = editingOf(library.selectedTransformation?.slot);
-	editor.setField('model', 'chat-model');
+	typeField(editor, 'model', 'chat-model');
 	await saved(editor);
 	expect(editor.status.kind).toBe('saved');
 	return editor;
@@ -139,7 +145,7 @@ test('opening a folder seeds no transformation; creating one writes an ordinary 
 test('a new transformation copies no endpoint or model from another one', async () => {
 	const { library } = await open();
 	const editor = await cleanupProfile(library);
-	editor.setField('endpoint', 'http://127.0.0.1:11434/v1');
+	typeField(editor, 'endpoint', 'http://127.0.0.1:11434/v1');
 	await saved(editor);
 	await library.refresh();
 
@@ -166,8 +172,8 @@ test('editing a transformation saves the whole row in one form and keeps fields 
 	expect(editor.holds).toBe(false);
 	expect(await readFile(path, 'utf8')).toBe(source);
 
-	editor.setField('title', 'Renamed');
-	editor.setBody('A new prompt\n');
+	typeField(editor, 'title', 'Renamed');
+	typeBody(editor, 'A new prompt\n');
 	await saved(editor);
 
 	expect(editor.status.kind).toBe('saved');
@@ -211,7 +217,7 @@ test('a malformed transformation stays listed, cannot run, and is repaired in it
 	// It opens in its editor as its exact text: no fields to edit until it is repaired.
 	const editor = editingOf(library.selectedTransformation?.slot);
 	expect(editor.view).toBe('source');
-	expect(editor.sourceValue()).toBe(broken);
+	expect(sourceShown(editor)).toBe(broken);
 	expect(await library.transform(transcript.path, editor.path)).toBe(
 		'Repair this transformation before running it.',
 	);
@@ -261,7 +267,7 @@ test('an outside edit to an open transformation is listed but not loaded into it
 	expect(library.saveProblems).toBe(0);
 	expect(library.holdsUnsavedWork).toBe(false);
 
-	editor.setBody('My prompt\n');
+	typeBody(editor, 'My prompt\n');
 	await saved(editor);
 
 	const written = await readFile(path, 'utf8');
@@ -354,7 +360,7 @@ test('what is sent is the saved transformation: a save still running settles fir
 	const { library, root, transformed } = await open();
 	const { transcript } = await transcribed(library, root);
 	const editor = await cleanupProfile(library);
-	editor.setBody('Edited just now.\n');
+	typeBody(editor, 'Edited just now.\n');
 	expect(editor.save.status).toBe('saving');
 
 	expect(await library.transform(transcript.path, editor.path)).toBeUndefined();
@@ -378,7 +384,7 @@ test('a transformation with no instructions, or a transcript with no text, sends
 	expect(await library.transform(transcript.path, editor.path)).toBe(
 		'Write instructions to run this.',
 	);
-	editor.setBody('Fix it.\n');
+	typeBody(editor, 'Fix it.\n');
 	await writeFile(
 		join(root, transcript.path),
 		transcript.text.replace(transcript.body!, ' \n'),
@@ -427,8 +433,8 @@ test('a transcript whose editor shows a body no file can hold is not sent, so th
 	const profile = await cleanupProfile(library);
 	await library.openTranscript(transcript.path);
 	const editor = editingOf(library.transcriptAt(transcript.path));
-	editor.setBody('Half a pair: \uD800\n');
-	expect(editor.bodyText()).toBe('Half a pair: \uD800\n');
+	typeBody(editor, 'Half a pair: \uD800\n');
+	expect(bodyShown(editor)).toBe('Half a pair: \uD800\n');
 
 	expect(await library.transform(transcript.path, profile.path)).toContain(
 		'has edits that are not saved',
@@ -501,7 +507,7 @@ test('a save of the transcript’s file still running settles first, then what i
 	const { transcript } = await transcribed(library, root);
 	const editor = await cleanupProfile(library);
 	const source = await transcriptEditor(library, transcript.path);
-	source.setBody('Typed in Files.\n');
+	typeBody(source, 'Typed in Files.\n');
 	expect(source.save.status).toBe('saving');
 
 	expect(await library.transform(transcript.path, editor.path)).toBeUndefined();
@@ -520,7 +526,7 @@ test('a transcript whose save failed refuses, and the edits stay in its editor',
 	const source = await transcriptEditor(library, transcript.path);
 	chmodSync(join(root, 'transcriptions'), 0o555);
 	try {
-		source.setBody('Mine.\n');
+		typeBody(source, 'Mine.\n');
 		expect((await source.waitForSaves()).error).not.toBeNull();
 	} finally {
 		chmodSync(join(root, 'transcriptions'), 0o755);
@@ -692,8 +698,8 @@ test('a result outlives edits to its transformation and the transformation’s d
 	const output = library.outputsFor(transcript.stem)[0]!;
 	const result = await readFile(join(root, output.path), 'utf8');
 
-	editor.setField('title', 'Renamed');
-	editor.setBody('A different prompt.\n');
+	typeField(editor, 'title', 'Renamed');
+	typeBody(editor, 'A different prompt.\n');
 	await saved(editor);
 	await library.refreshAll();
 	expect(await readFile(join(root, output.path), 'utf8')).toBe(result);
@@ -1055,7 +1061,7 @@ test('two asks for the same transcript and transformation at once send one reque
 		await library.createTransformation(STARTER_TRANSFORMATIONS[1]!),
 	).toBeUndefined();
 	const summarize = editingOf(library.selectedTransformation?.slot);
-	summarize.setField('model', 'chat-model');
+	typeField(summarize, 'model', 'chat-model');
 	await saved(summarize);
 	expect(summarize.status.kind).toBe('saved');
 	const reading = deferred<void>();

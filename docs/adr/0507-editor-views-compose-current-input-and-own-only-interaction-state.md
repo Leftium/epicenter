@@ -40,6 +40,13 @@ control input. It still accepts complete replacements. Views compose changes;
 the editor decides admission and passes accepted input to the native publisher.
 Do not put a body draft or a patch-merging API between those owners.
 
+When the app adds admission rules, expose read-through `row` and `save` and keep
+the native mutators inside that owner. A public native editor would let callers
+bypass those rules. A control origin identifies where refused input belongs;
+it does not select a patch to merge. An unrelated replacement preserves held
+input and cannot change that control's accepted value without resolving it.
+Views read the held value over the row value until it is repaired or discarded.
+
 Source means the complete file, including frontmatter; body means its text after
 frontmatter. Both can use the same textarea or text editor component. The binding
 determines what it edits; a separate `SourceEditor` wrapper is unnecessary.

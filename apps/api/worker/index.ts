@@ -166,6 +166,7 @@ mountInferenceApp(app, {
 // under a fixed server-owned name (demo-budget.ts). Temporary until accounts
 // work again; the gateway above keeps its bearer and metering.
 mountDemoInference(app, {
+	resolveModel: (c) => (c.env as Cloudflare.Env).GEMINI_DEMO_MODEL,
 	consumeAttempt: (c) => {
 		const budgets = (c.env as Cloudflare.Env).DEMO_GENERATION_BUDGET;
 		return budgets.get(budgets.idFromName(DEMO_BUDGET_OBJECT_NAME)).consume();

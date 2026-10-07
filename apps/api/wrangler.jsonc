@@ -2,6 +2,7 @@
 	"$schema": "./node_modules/wrangler/config-schema.json",
 	"name": "api",
 	"main": "worker/index.ts",
+	"minify": true,
 	"compatibility_date": "2026-03-06",
 	"compatibility_flags": ["nodejs_compat", "enable_request_signal"],
 	"send_metrics": false,
@@ -42,7 +43,9 @@
 	// worker bakes `PRODUCTION_API_URL` from @epicenter/constants and local dev
 	// overrides it via `API_PUBLIC_ORIGIN` (apps/api/scripts/dev.ts). This keeps
 	// a single source of truth in TypeScript instead of a duplicated string.
-	"vars": {},
+	"vars": {
+		"GEMINI_DEMO_MODEL": "gemini-3.5-flash-lite"
+	},
 	// --- Durable Objects ---
 	"durable_objects": {
 		"bindings": [

@@ -98,6 +98,7 @@ function workerEnv(overrides: Record<string, unknown> = {}) {
 		API_PUBLIC_ORIGIN: ORIGIN,
 		BETTER_AUTH_SECRET: 'demo-inference-test-secret-not-a-real-key',
 		GEMINI_API_KEY: GEMINI_KEY,
+		GEMINI_DEMO_MODEL: 'gemini-3.5-flash-lite',
 		get HYPERDRIVE() {
 			hyperdriveReads++;
 			throw new Error('the demo route must not touch Postgres');
@@ -173,7 +174,7 @@ test('a valid request streams the provider bytes back over the OpenAI wire', asy
 		`Bearer ${GEMINI_KEY}`,
 	);
 	expect(JSON.parse(String(init.body))).toEqual({
-		model: DEMO_MODEL,
+		model: 'gemini-3.5-flash-lite',
 		messages: validBody.messages,
 		stream: true,
 		n: 1,
@@ -545,4 +546,35 @@ test('browser preflight allows the exact Zhongwen origin without reading the dat
 	expect(providerCalls).toHaveLength(0);
 	expect(budgetNames).toEqual([]);
 	expect(hyperdriveReads).toBe(0);
+});
+
+// The browser alias stays stable when deployment configuration selects a new model.
+test('deployment configuration selects the provider model without granting caller choice', async () => {
+	const response = await call(
+		demoRequest(validBody),
+		workerEnv({ GEMINI_DEMO_MODEL: 'gemini-3.5-flash' }),
+	);
+	expect(response.status).toBe(200);
+	expect(JSON.parse(String(providerCalls[0]?.init.body)).model).toBe(
+		'gemini-3.5-flash',
+	);
+	const denied = await call(
+		demoRequest({ ...validBody, model: 'gemini-3.5-flash' }),
+	);
+	expect(denied.status).toBe(400);
+	expect(providerCalls).toHaveLength(1);
+});
+
+test.each([
+	undefined,
+	'',
+	'   ',
+])('missing model configuration refuses before spending budget: %s', async (model) => {
+	const response = await call(
+		demoRequest(validBody),
+		workerEnv({ GEMINI_DEMO_MODEL: model }),
+	);
+	expect(response.status).toBe(503);
+	expect(budgetCount()).toBe(0);
+	expect(providerCalls).toHaveLength(0);
 });

@@ -17,7 +17,7 @@ The request body may hold only these fields:
 
 | Field | Rule |
 | --- | --- |
-| `model` | exactly `gemini-3.5-flash` |
+| `model` | exactly `zhongwen-tutor` |
 | `stream` | exactly `true` |
 | `messages` | a non-empty array, each `{ role, content }` with no other keys |
 
@@ -30,13 +30,22 @@ Anything else is refused with `400 invalid_request`: tools, functions,
 `name` or `tool_calls`, and any unknown field.
 
 The server sends Gemini a body it builds itself: the validated messages plus
-`model: gemini-3.5-flash`, `stream: true`, `n: 1`,
+the model selected by `GEMINI_DEMO_MODEL`, `stream: true`, `n: 1`,
 `reasoning_effort: minimal`, and
 `max_completion_tokens: 2048`. A successful response is the provider's
 OpenAI-format SSE stream, byte for byte. For an opening containing only system
 instructions, the gateway preserves those instructions under the provider's
 user role because Gemini requires contents. It adds no text or saved learner
 turn. Existing conversation roles pass through unchanged.
+
+## Model configuration
+
+`GEMINI_DEMO_MODEL` in `wrangler.jsonc` selects the Google model. It currently
+uses `gemini-3.5-flash-lite`. The browser requests the stable `zhongwen-tutor`
+alias; callers cannot select another provider model. Change the deployment
+variable and deploy the API to switch models without rebuilding Zhongwen.
+The selected model must support Google's OpenAI-compatible text streaming and
+`reasoning_effort: minimal`. The provider key remains a server secret.
 
 ## Budget
 
@@ -62,7 +71,7 @@ including any midstream provider error frames.
 | 400 | `invalid_request` | the body breaks the contract above |
 | 413 | `request_too_large` | the body exceeds 64 KiB |
 | 429 | `rate_limit_exceeded` | a cap is spent; `Retry-After` gives seconds until it resets |
-| 503 | `ProviderNotConfigured` | `GEMINI_API_KEY` is unset; no attempt is counted |
+| 503 | `ProviderNotConfigured` | `GEMINI_API_KEY` or `GEMINI_DEMO_MODEL` is unset; no attempt is counted |
 | 503 | `demo_unavailable` | the budget object failed or took over 5 s |
 | 502 | `upstream_unreachable`, `upstream_error` | the provider failed before streaming |
 | 504 | `upstream_timeout` | the provider did not answer within 90 s |

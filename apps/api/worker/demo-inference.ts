@@ -6,7 +6,7 @@
  * This is a temporary path that needs no account, so it touches no Postgres,
  * Better Auth, or Autumn. What bounds the house key's spend instead:
  *
- *   - One request shape: `gemini-3.5-flash`, `stream: true`, and text-only
+ *   - One request shape: `zhongwen-tutor`, `stream: true`, and text-only
  *     system/user/assistant messages. Any other field (tools, images, audio,
  *     `n`, a provider key) is rejected, not dropped, and the upstream body is
  *     rebuilt from the validated fields with a fixed output cap.
@@ -33,7 +33,7 @@ import { describeRoute } from 'hono-openapi';
 import type { DemoBudgetDecision } from './demo-budget.js';
 
 export const DEMO_COMPLETIONS_PATH = '/demo/v1/chat/completions';
-export const DEMO_MODEL = 'gemini-3.5-flash';
+export const DEMO_MODEL = 'zhongwen-tutor';
 
 export const DEMO_LIMITS = {
 	maxBodyBytes: 64 * 1024,
@@ -192,7 +192,10 @@ function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
  */
 export function mountDemoInference<E extends Env = Env>(
 	app: Hono<E>,
-	opts: { consumeAttempt: (c: Context<E>) => Promise<DemoBudgetDecision> },
+	opts: {
+		resolveModel: (c: Context<E>) => string | undefined;
+		consumeAttempt: (c: Context<E>) => Promise<DemoBudgetDecision>;
+	},
 ): void {
 	app.post(
 		DEMO_COMPLETIONS_PATH,
@@ -219,7 +222,8 @@ export function mountDemoInference<E extends Env = Env>(
 			if (!parsed.ok) return fail(400, parsed.message, 'invalid_request');
 
 			const apiKey = c.env.GEMINI_API_KEY;
-			if (!apiKey) {
+			const model = opts.resolveModel(c)?.trim();
+			if (!apiKey || !model) {
 				return fail(
 					503,
 					'Demo generation is not configured.',
@@ -259,7 +263,7 @@ export function mountDemoInference<E extends Env = Env>(
 						authorization: `Bearer ${apiKey}`,
 					},
 					body: JSON.stringify({
-						model: DEMO_MODEL,
+						model,
 						// Gemini requires contents even when the tutor opens before any
 						// learner turn. Preserve the instructions without inventing text.
 						messages: parsed.messages.every(({ role }) => role === 'system')

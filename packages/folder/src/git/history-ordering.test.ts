@@ -24,7 +24,7 @@
  * - `history-attempt.test.ts` for automatic attempts and lock failures
  */
 import { expect, test } from 'bun:test';
-import { expectOk } from 'wellcrafted/testing';
+import { expectErr, expectOk } from 'wellcrafted/testing';
 import type { FileBoundary } from '../boundary.js';
 import { rawBrowserFolder } from '../browser-storage.test-support.js';
 import { hashBytes } from '../capture.js';

@@ -56,9 +56,16 @@ function createConnectionDraft(library: Library, operation: Operation) {
 			model: defaults.model,
 		};
 	});
-	let baseUrl = $derived(saved?.baseUrl ?? start.baseUrl);
-	let model = $derived(saved?.model ?? start.model);
-	let keyAction = $derived<KeyAction>(saved?.keyPresent ? 'keep' : 'replace');
+	// A refreshed connections object must not reset typing when these values
+	// are unchanged. Writable overrides depend on the values, not the object.
+	const configuredBaseUrl = $derived(saved?.baseUrl ?? start.baseUrl);
+	const configuredModel = $derived(saved?.model ?? start.model);
+	const configuredKeyAction = $derived<KeyAction>(
+		saved?.keyPresent ? 'keep' : 'replace',
+	);
+	let baseUrl = $derived(configuredBaseUrl);
+	let model = $derived(configuredModel);
+	let keyAction = $derived<KeyAction>(configuredKeyAction);
 	let key = $state('');
 	let saving = $state(false);
 

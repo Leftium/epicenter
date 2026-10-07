@@ -317,6 +317,23 @@ test('the earlier key moves only into the connections chosen, at the endpoint ea
 	expect(transformed).toEqual([]);
 });
 
+test.each([true, false])(
+	'saving another connection preserves unsaved settings with configured connections: %s',
+	async (configured) => {
+		const { session } = await open(undefined, configured ? {} : { connections: {} });
+		const { text, transcription } = session.settings;
+		text.baseUrl = 'http://127.0.0.1:9001/v1';
+		text.model = 'unsaved-text-model';
+		text.keyAction = 'remove';
+		transcription.model = 'changed-transcription-model';
+
+		expect(await transcription.save()).toBeUndefined();
+		expect(text.baseUrl).toBe('http://127.0.0.1:9001/v1');
+		expect(text.model).toBe('unsaved-text-model');
+		expect(text.keyAction).toBe('remove');
+	},
+);
+
 test('saving uses the submitted key and keeps typing done while the save is under way', async () => {
 	const started = deferred<void>();
 	const finish = deferred<void>();

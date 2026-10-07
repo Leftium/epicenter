@@ -70,6 +70,7 @@ import type {
 	UnfinishedMerge,
 } from './backend.js';
 import {
+	type ConflictVersion,
 	GitError,
 	type MergeConflict,
 	MergeError,
@@ -194,6 +195,22 @@ export type MergeConflictPolicy = {
 	 * and commit; it requires `commitOnEdit: false`.
 	 */
 	readonly conflicts?: 'refuse' | 'leave';
+	/**
+	 * Merge histories that share no commit over an empty base, as
+	 * `git merge --allow-unrelated-histories` does. The merge commit's parents
+	 * are both heads, so both roots stay reachable. A path both sides hold
+	 * with different bytes is a two-sided addition and conflicts like any
+	 * competing change; root `kv.json` merges by key against no base. Default
+	 * `false`: such histories are `UnsupportedHistory` with `bases: 0`, and
+	 * nothing is written. Several merge bases are refused either way.
+	 */
+	readonly allowUnrelatedHistories?: boolean;
+	/**
+	 * With a refused conflict, carry each conflicted file's committed bytes
+	 * on both sides in `Conflicted.versions`, so a person can compare them
+	 * without anything being written. Default `false`.
+	 */
+	readonly versions?: boolean;
 };
 
 /** A staged commit that landed. */
@@ -1220,6 +1237,10 @@ export function createHistory({
 	 */
 	async function merge(
 		conflicts: 'refuse' | 'leave',
+		{
+			allowUnrelatedHistories = false,
+			versions = false,
+		}: { allowUnrelatedHistories?: boolean; versions?: boolean } = {},
 	): Promise<Result<MergeOutcome, MergeError | PullError | GitError>> {
 		const remote = backend.remote;
 		if (remote === undefined) return GitError.NoRemote();
@@ -1244,7 +1265,8 @@ export function createHistory({
 				const bases = await backend.withObjects((access) =>
 					mergeBases(access, head, fetched),
 				);
-				if (bases.length !== 1)
+				const unrelated = bases.length === 0 && allowUnrelatedHistories;
+				if (bases.length !== 1 && !unrelated)
 					return MergeError.UnsupportedHistory({
 						head,
 						fetched,
@@ -1253,7 +1275,7 @@ export function createHistory({
 				const message = `Merge remote-tracking branch 'origin/${remote.branch}'`;
 				const prepared = await backend.withObjects((access) =>
 					prepareMerge(access, {
-						base: bases[0]!,
+						base: unrelated ? undefined : bases[0]!,
 						head,
 						fetched,
 						author,
@@ -1264,7 +1286,18 @@ export function createHistory({
 					}),
 				);
 				if (prepared.kind === 'conflicted')
-					return MergeError.Conflicted({ conflicts: prepared.conflicts });
+					return MergeError.Conflicted({
+						conflicts: prepared.conflicts,
+						...(versions
+							? {
+									versions: await conflictVersions(
+										prepared.conflicts,
+										head,
+										fetched,
+									),
+								}
+							: {}),
+					});
 				if (prepared.kind === 'unmergeable')
 					return MergeError.Unmergeable({
 						paths: prepared.paths,
@@ -1306,6 +1339,42 @@ export function createHistory({
 	}
 
 	/**
+	 * Each conflicted file's committed bytes at the pinned head and the pinned
+	 * fetched commit, `null` where that side has no file. A path that is a
+	 * directory on one side (`shape`) has no file versions to compare.
+	 */
+	async function conflictVersions(
+		conflicts: readonly MergeConflict[],
+		head: string,
+		fetched: string,
+	): Promise<ConflictVersion[]> {
+		const shapes = new Set(
+			conflicts
+				.filter((conflict) => conflict.reason === 'shape')
+				.map((conflict) => conflict.path),
+		);
+		const paths = [
+			...new Set(conflicts.map((conflict) => conflict.path)),
+		].filter((path) => !shapes.has(path));
+		const [ours, theirs] = await Promise.all([
+			headFiles(head),
+			headFiles(fetched),
+		]);
+		return backend.withObjects(async (access) => {
+			const read = (entry: TreeFile | undefined) =>
+				entry === undefined ? null : readBlob(access, entry.oid);
+			const result: ConflictVersion[] = [];
+			for (const path of paths)
+				result.push({
+					path,
+					ours: await read(ours.get(path)),
+					theirs: await read(theirs.get(path)),
+				});
+			return result;
+		});
+	}
+
+	/**
 	 * One explicit incoming update, owned until it settles. Closing refuses it
 	 * while it still waits for the protection.
 	 */
@@ -1339,6 +1408,8 @@ export function createHistory({
 		});
 	function mergeNow({
 		conflicts = 'refuse',
+		allowUnrelatedHistories,
+		versions,
 	}: MergeConflictPolicy = {}): Promise<
 		Result<MergeOutcome, MergeError | PullError | GitError>
 	> {
@@ -1348,7 +1419,7 @@ export function createHistory({
 			return Promise.resolve(GitError.AutomaticHistory());
 		return incomingNow(
 			'merge',
-			() => merge(conflicts),
+			() => merge(conflicts, { allowUnrelatedHistories, versions }),
 			(attempt) => {
 				lastMerge = attempt;
 			},

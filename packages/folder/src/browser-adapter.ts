@@ -34,6 +34,7 @@ import { assembleFolder, createFileHints, type Folder } from './folder.js';
 import type { GitRemote } from './git/backend.js';
 import { createStoredGitBackend } from './git/browser-backend.js';
 import { createHistory } from './git/history.js';
+import type { GitFetch } from './git/http.js';
 import type { Author } from './git/objects.js';
 import { createOpfsGitStore } from './git/opfs-git.js';
 import { callObserver } from './observer.js';
@@ -270,6 +271,7 @@ export const openFolder: OpenFolder = async ({
 		owner,
 		author,
 		remote,
+		gitFetch: browser.gitFetch,
 		commitOnEdit,
 	});
 };
@@ -284,6 +286,7 @@ async function openOpfsFolder<TDefinition extends FolderDefinition>(
 		readonly owner: string | null;
 		readonly author: Author;
 		readonly remote: GitRemote | undefined;
+		readonly gitFetch: GitFetch | undefined;
 		readonly commitOnEdit: boolean;
 	},
 ): Promise<Result<Folder<TDefinition>, OpenFolderError>> {
@@ -359,6 +362,7 @@ async function openOpfsFolder<TDefinition extends FolderDefinition>(
 			lockName: gitLock,
 			branch: 'main',
 			remote: captured.remote,
+			gitFetch: captured.gitFetch,
 		});
 		// An incoming update a closed tab left half published stays pending:
 		// opening reads it into the snapshot and never resumes it.

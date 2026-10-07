@@ -264,6 +264,39 @@ pub enum MergeConflicts {
     Leave,
 }
 
+impl Default for MergeConflicts {
+    fn default() -> Self {
+        Self::Refuse
+    }
+}
+
+/// How `merge_incoming` merges, as `@epicenter/folder`'s
+/// `MergeConflictPolicy` names it. The default refuses every conflict, merges
+/// only over exactly one merge base, and returns no file bytes.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct MergePolicy {
+    pub conflicts: MergeConflicts,
+    /// Merge histories that share no commit over an empty base, as
+    /// `git merge --allow-unrelated-histories` does. The merge commit's
+    /// parents are both heads, so both roots stay reachable. Without it such
+    /// histories are `UnsupportedHistory` with `bases: 0`. Several merge
+    /// bases are refused either way.
+    pub allow_unrelated_histories: bool,
+    /// With a refused conflict, carry each conflicted file's committed bytes
+    /// on both sides in `MergeError::Conflicted`'s `versions`.
+    pub versions: bool,
+}
+
+/// One conflicted file's committed bytes on each side of a refused merge, as
+/// stored: `ours` at the local head, `theirs` at the fetched head, `null`
+/// where that side has no file. A submodule has no file bytes and is `null`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
+pub struct ConflictVersion {
+    pub path: String,
+    pub ours: Option<Vec<u8>>,
+    pub theirs: Option<Vec<u8>>,
+}
+
 /// Which version of `kv.json` is not a KV object. `ours` is the local branch.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Type)]
 #[serde(rename_all = "camelCase")]
@@ -366,7 +399,8 @@ pub enum MergeOutcome {
 pub enum MergeError {
     /// A refusal every incoming update can report, or a Git failure.
     Pull { error: PullError },
-    /// The two heads have no common commit, or more than one best one.
+    /// The two heads have no common commit, or more than one best one. No
+    /// common commit merges only with `allow_unrelated_histories`.
     UnsupportedHistory {
         head: String,
         fetched: String,
@@ -375,8 +409,14 @@ pub enum MergeError {
     /// A path would need a merge this folder does not perform faithfully.
     /// Nothing was written.
     Unmergeable { paths: Vec<String>, reason: String },
-    /// Competing changes need a person. Nothing was written.
-    Conflicted { conflicts: Vec<MergeConflict> },
+    /// Competing changes need a person. Nothing was written. Asked for
+    /// `versions`, it carries each conflicted file's committed bytes on both
+    /// sides to that caller; otherwise, and in the snapshot's `lastMerge`,
+    /// `versions` is `null`.
+    Conflicted {
+        conflicts: Vec<MergeConflict>,
+        versions: Option<Vec<ConflictVersion>>,
+    },
 }
 
 impl From<PullError> for MergeError {

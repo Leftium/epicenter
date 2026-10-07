@@ -100,13 +100,17 @@ nothing. On a server, opening returns a refusal.
 openFolder({
   id,        // required: which folder, such as 'so.epicenter.todos'. Never a path.
   definition,
-  browser,   // optional: { scope, author, remote, commitOnEdit, opfs }
+  browser,   // optional: { scope, author, remote, gitFetch, commitOnEdit, opfs }
 }): Promise<Result<Folder, OpenFolderError>>
 ```
 
 `browser` applies to a browser folder only. A browser folder uses a local
 author by default. Complete saves request automatic commits; requests made
 before a checkpoint starts share it. A `remote` needs an explicit `author`.
+`gitFetch` routes Git HTTP through an application's authenticated transport;
+it receives the canonical remote URL and the operation's abort signal. It does
+not replace global fetch or change the stored remote. Credentials belong to
+the transport, outside the folder's files and Git configuration.
 In the desktop app the shell owns the directory, the
 author, the remote, and the history policy. The policy in effect is on
 `folder.git.snapshot` either way.
@@ -1386,8 +1390,10 @@ branch that is behind fast-forwards; a branch that is ahead or equal changes
 nothing. It never fetches or pushes, and `pullFastForward()` still refuses
 divergence.
 
-Diverged histories need exactly one merge base; none or several is
-`UnsupportedHistory`. The merge writes one commit whose parents are the pinned
+Diverged histories normally need exactly one merge base; none or several is
+`UnsupportedHistory`. `mergeIncoming({ allowUnrelatedHistories: true })`
+explicitly combines histories with no common commit over an empty base. Both
+heads remain parents of the merge commit. Several bases are refused either way. The merge writes one commit whose parents are the pinned
 head and the pinned fetched commit, and publishes its files, a clean index,
 and the branch the way a fast-forward does, with the same record.
 
@@ -1407,7 +1413,11 @@ the raw base, ours, and theirs values of the key; `kvFile` when one side
 deleted `kv.json` and the other changed it; `kvInvalid`; `content` for
 competing lines; `binary`; `deleted` for a delete against a change; and
 `shape` for a file against a directory. By default a conflict or refusal
-writes no file, index entry, or ref; unreachable objects may remain.
+writes no file, index entry, or ref; unreachable objects may remain. With
+`versions: true`, `Conflicted.versions` carries the exact committed bytes of
+both sides at each conflicted file path, with `null` for an absent file. Shape
+conflicts have no file versions. The native snapshot records conflict reasons
+without broadcasting these bytes to other windows.
 
 Browser folders, Bun directory folders, and the desktop app's Rust owner all
 merge under these rules. The desktop owner merges a file both sides changed

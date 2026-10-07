@@ -13,6 +13,12 @@
 //! unmergeable, and so is a path a `merge` attribute would merge differently.
 //! A file on one side where the other has a directory is a `shape` conflict.
 //!
+//! Histories that share no commit merge over an empty base when the caller
+//! allows unrelated histories, as `git merge --allow-unrelated-histories`
+//! does: every file is an addition, a path both sides hold with different
+//! bytes conflicts like any competing change, and root `kv.json` merges by key
+//! against no base.
+//!
 //! Asked to leave conflicts for a person, the merge gives each conflicted path
 //! the bytes a person resolves: the changed side's file against a deletion,
 //! Git's conflict markers when every version is text, and otherwise our bytes,
@@ -28,7 +34,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::git::{Author, Failure, Git};
-use crate::history::{DeletedBy, MergeConflict, MergeSide};
+use crate::history::{ConflictVersion, DeletedBy, MergeConflict, MergeSide};
 use crate::incoming::UnmergedPath;
 use crate::kv_merge::{self, KvMerge};
 use crate::paths::ancestors;
@@ -36,6 +42,8 @@ use crate::paths::ancestors;
 /// The one file merged by key rather than by line.
 pub const ROOT_KV: &str = "kv.json";
 const PLAIN: &str = "100644";
+/// A submodule's tree entry: a commit, not file bytes.
+const GITLINK: &str = "160000";
 
 type Entry = (String, String);
 type Files = BTreeMap<String, Entry>;
@@ -93,11 +101,13 @@ fn terminated(text: &str) -> String {
     }
 }
 
-/// Merge `head` and `fetched` over their single merge base `base`. With
-/// `leave`, conflicts are prepared as files instead of refused.
+/// Merge `head` and `fetched` over their single merge base `base`, or over an
+/// empty tree when `base` is `None`: histories that share no commit, which a
+/// caller merges only when asked to allow unrelated histories. With `leave`,
+/// conflicts are prepared as files instead of refused.
 pub fn prepare(
     git: &Git,
-    base: &str,
+    base: Option<&str>,
     head: &str,
     fetched: &str,
     author: &Author,
@@ -105,7 +115,10 @@ pub fn prepare(
     labels: Labels<'_>,
     leave: bool,
 ) -> Result<Prepared, Failure> {
-    let b = git.tree_files(base)?;
+    let b = match base {
+        Some(base) => git.tree_files(base)?,
+        None => BTreeMap::new(),
+    };
     let o = git.tree_files(head)?;
     let t = git.tree_files(fetched)?;
     let mut conflicts: Vec<MergeConflict> = Vec::new();
@@ -278,7 +291,7 @@ pub fn prepare(
         }
     }
     if !as_text.is_empty() {
-        for commit in [base, head, fetched] {
+        for commit in [base, Some(head), Some(fetched)].into_iter().flatten() {
             if let Some((path, attribute)) =
                 git.merge_attribute(commit, as_text.iter().map(String::as_str))?
             {
@@ -429,6 +442,46 @@ pub fn prepare(
         commit,
         files: result,
     })
+}
+
+/// Each conflicted file's committed bytes at `head` and at `fetched`, once per
+/// path in the conflicts' order, `None` where that side has no file. Both are
+/// the commits the merge was prepared from, never a ref read again. A path
+/// that is a directory on one side (`shape`) has no file versions to compare
+/// and is left out.
+pub fn conflict_versions(
+    git: &Git,
+    conflicts: &[MergeConflict],
+    head: &str,
+    fetched: &str,
+) -> Result<Vec<ConflictVersion>, Failure> {
+    let shapes: BTreeSet<&str> = conflicts
+        .iter()
+        .filter(|conflict| matches!(conflict, MergeConflict::Shape { .. }))
+        .map(MergeConflict::path)
+        .collect();
+    let ours = git.tree_files(head)?;
+    let theirs = git.tree_files(fetched)?;
+    let bytes = |files: &Files, path: &str| -> Result<Option<Vec<u8>>, Failure> {
+        match files.get(path) {
+            Some((mode, oid)) if mode != GITLINK => git.read_blob(oid).map(Some),
+            _ => Ok(None),
+        }
+    };
+    let mut seen: BTreeSet<&str> = BTreeSet::new();
+    let mut versions = Vec::new();
+    for conflict in conflicts {
+        let path = conflict.path();
+        if shapes.contains(path) || !seen.insert(path) {
+            continue;
+        }
+        versions.push(ConflictVersion {
+            path: path.to_string(),
+            ours: bytes(&ours, path)?,
+            theirs: bytes(&theirs, path)?,
+        });
+    }
+    Ok(versions)
 }
 
 #[cfg(test)]

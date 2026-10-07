@@ -169,7 +169,9 @@ async function unresolvedBytes(
 }
 
 /**
- * Merge `head` and `fetched` over their single merge base `base`. Objects
+ * Merge `head` and `fetched` over their single merge base `base`, or over an
+ * empty tree when `base` is undefined: histories that share no commit, which
+ * a caller merges only when asked to allow unrelated histories. Objects
  * written on the way stay unreachable unless the caller publishes the merged
  * commit, which no ref names yet.
  */
@@ -183,7 +185,8 @@ export async function prepareMerge(
 		message,
 		leave,
 	}: {
-		base: string;
+		/** Undefined: no common commit, so every file of either side is an addition. */
+		base: string | undefined;
 		head: string;
 		fetched: string;
 		author: Author;
@@ -194,7 +197,9 @@ export async function prepareMerge(
 ): Promise<PreparedMerge> {
 	const [b, o, t] = (await Promise.all(
 		[base, head, fetched].map(async (commit) =>
-			readTreeFiles(access, await commitTree(access, commit)),
+			commit === undefined
+				? new Map<string, TreeFile>()
+				: readTreeFiles(access, await commitTree(access, commit)),
 		),
 	)) as [Map<string, TreeFile>, Map<string, TreeFile>, Map<string, TreeFile>];
 	const bytes = (entry: TreeFile) => readBlob(access, entry.oid);
@@ -357,6 +362,8 @@ export async function prepareMerge(
 				fastForward: false,
 				noUpdateBranch: true,
 				abortOnConflict: true,
+				// Its own base is then the empty tree, the same as `b` here.
+				allowUnrelatedHistories: base === undefined,
 				message,
 				author: signature,
 				committer: signature,

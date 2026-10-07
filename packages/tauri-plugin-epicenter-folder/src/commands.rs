@@ -19,8 +19,8 @@ use epicenter_folder_core::files::{
 use epicenter_folder_core::git::{CommitSummary, PathStatus};
 use epicenter_folder_core::history::{
     CommitOutcome, FetchOutcome, FilesObservation, GitError, GitSnapshot, MergeConflicts,
-    MergeError, MergeOutcome, OwnerEvent, PullError, PullOutcome, PushOutcome, RecoverOutcome,
-    Settled, StagedCommit,
+    MergeError, MergeOutcome, MergePolicy, OwnerEvent, PullError, PullOutcome, PushOutcome,
+    RecoverOutcome, Settled, StagedCommit,
 };
 use epicenter_folder_core::owner::{Caller, FolderOwner};
 use epicenter_folder_core::registry::AttachError;
@@ -73,6 +73,12 @@ pub struct FolderFilesChanged {
 /// the `Unmerged` refusal), and a staged commit's `incoming` and
 /// `mergeStateWarning`; a version 7 page would read a merge in progress as a
 /// clean folder. Any other version is refused at attach.
+///
+/// Within version 8, `merge_incoming` also takes optional
+/// `allowUnrelatedHistories` and `versions`, both `false` when absent, and a
+/// refused conflict carries `versions`, `null` unless asked for. A page that
+/// omits them is unchanged. An owner without them ignores both, which still
+/// refuses unrelated histories and returns no bytes.
 pub const PROTOCOL: u32 = 8;
 
 /// What a window receives when it attaches to a scope.
@@ -616,16 +622,27 @@ pub async fn pull_fast_forward<R: Runtime>(
 /// `leave`, for a folder that does not commit on edit, publishes the merge
 /// unfinished, with conflict markers, unmerged index stages, and Git's merge
 /// state, for a person to resolve, stage, and commit. Never fetches.
+///
+/// `allowUnrelatedHistories` merges histories that share no commit over an
+/// empty base; `versions` asks a refused conflict for each conflicted file's
+/// committed bytes on both sides. Both are `false` when absent or `null`.
 #[tauri::command]
 #[specta::specta]
 pub async fn merge_incoming<R: Runtime>(
     webview: Webview<R>,
     session: u32,
     conflicts: MergeConflicts,
+    allow_unrelated_histories: Option<bool>,
+    versions: Option<bool>,
 ) -> Result<MergeOutcome, MergeError> {
     let owner = owner(&webview, session).map_err(|reason| MergeError::from(git_denied(reason)))?;
+    let policy = MergePolicy {
+        conflicts,
+        allow_unrelated_histories: allow_unrelated_histories.unwrap_or(false),
+        versions: versions.unwrap_or(false),
+    };
     blocking(
-        move || owner.merge_incoming(conflicts),
+        move || owner.merge_incoming(policy),
         |cause| Err(git_unconfirmed("merge")(cause).into()),
     )
     .await

@@ -9,7 +9,13 @@
 //! Key behaviors:
 //! - A clean divergence records one commit with the original local head and
 //!   the pinned fetched head as parents; root `kv.json` merges by key.
-//! - By default a conflict writes no file, index entry, or ref.
+//! - By default a conflict writes no file, index entry, or ref. Asked for
+//!   `versions`, the refusal carries each conflicted file's exact committed
+//!   bytes on both sides, once per path and none for a shape conflict, while
+//!   the snapshot records the conflicts without bytes.
+//! - Histories with no common commit are refused, writing nothing, unless the
+//!   caller consents to unrelated histories; the merge then keeps both roots
+//!   as its parents. Several merge bases are refused even with consent.
 //! - `Leave` publishes Git's own unfinished merge: markers, exact unmerged
 //!   stages, `MERGE_HEAD`, `MERGE_MSG`, and `ORIG_HEAD`, with the branch where
 //!   it was. It is refused before anything runs with automatic history.
@@ -31,10 +37,22 @@
 
 use std::path::{Path, PathBuf};
 
+use crate::files::FileChange;
 use crate::git::Remote;
 use crate::history::{
-    CommitOutcome, GitError, MergeConflict, MergeConflicts, MergeError, MergeOutcome,
-    PendingIncoming, PullError, PullOutcome, RecoverOutcome,
+    CommitOutcome, ConflictVersion, DeletedBy, GitError, MergeConflict, MergeConflicts, MergeError,
+    MergeOutcome, MergePolicy, PendingIncoming, PullError, PullOutcome, RecoverOutcome,
+};
+
+/// Refuse conflicts, only one merge base, and no bytes: the default.
+const REFUSE: MergePolicy = MergePolicy {
+    conflicts: MergeConflicts::Refuse,
+    allow_unrelated_histories: false,
+    versions: false,
+};
+const LEAVE: MergePolicy = MergePolicy {
+    conflicts: MergeConflicts::Leave,
+    ..REFUSE
 };
 use crate::owner::{FolderConfig, FolderOwner};
 use crate::testing::{config, git, overwrite, TempDir};
@@ -206,8 +224,46 @@ impl Scene {
     }
 
     fn leave(&self) -> MergeOutcome {
-        self.owner().merge_incoming(MergeConflicts::Leave).unwrap()
+        self.owner().merge_incoming(LEAVE).unwrap()
     }
+}
+
+/// The remote's history and the folder's own first commit share no commit.
+/// Returns the folder's root commit and the fetched one, also a root.
+fn unrelated(
+    label: &str,
+    ours: &[(&str, &str)],
+    theirs: &[(&str, &str)],
+) -> (Scene, String, String) {
+    let temp = TempDir::new(label);
+    let bare = temp.folder("remote.git");
+    git(
+        &bare,
+        &["init", "--quiet", "--bare", "--initial-branch=main"],
+    );
+    let upstream = temp.folder("upstream");
+    git(&upstream, &["init", "--quiet", "--initial-branch=main"]);
+    git(
+        &upstream,
+        &["remote", "add", "origin", &bare.display().to_string()],
+    );
+    for (path, content) in theirs {
+        put(&upstream, path, content);
+    }
+    git(&upstream, &["add", "--all"]);
+    git(&upstream, &["commit", "--quiet", "-m", "their root"]);
+    git(&upstream, &["push", "--quiet", "origin", "main"]);
+    let root = temp.folder("local");
+    let scene = Scene {
+        _temp: temp,
+        owner: Some(open_local(&root, &bare, false)),
+        bare,
+        upstream,
+        root,
+    };
+    let ours = scene.ours(ours);
+    let theirs = scene.owner().fetch(None).unwrap().oid.unwrap();
+    (scene, ours, theirs)
 }
 
 fn red_green(label: &str) -> (Scene, String, String, String) {
@@ -248,10 +304,7 @@ fn a_clean_divergence_records_both_original_parents_and_merges_kv_by_key() {
         ("notes.md", "ONE\ntwo\nthree\nfour\nfive\n"),
     ]);
 
-    let merged = scene
-        .owner()
-        .merge_incoming(MergeConflicts::Refuse)
-        .unwrap();
+    let merged = scene.owner().merge_incoming(REFUSE).unwrap();
 
     let MergeOutcome::Merged {
         from,
@@ -291,17 +344,15 @@ fn by_default_a_conflict_writes_no_file_index_entry_or_ref() {
     let (scene, _, ours, _) = red_green("merge-refuse");
     let before = scene.untouched();
 
-    let refused = scene
-        .owner()
-        .merge_incoming(MergeConflicts::Refuse)
-        .unwrap_err();
+    let refused = scene.owner().merge_incoming(REFUSE).unwrap_err();
 
     assert_eq!(
         refused,
         MergeError::Conflicted {
             conflicts: vec![MergeConflict::Content {
                 path: "notes/color.txt".to_string()
-            }]
+            }],
+            versions: None,
         }
     );
     assert_eq!(scene.untouched(), before);
@@ -313,7 +364,7 @@ fn leaving_conflicts_with_automatic_history_is_refused_before_anything_runs() {
     let scene = scene("merge-automatic", &[("a.md", "a\n")], true);
     let before = scene.untouched();
     assert_eq!(
-        scene.owner().merge_incoming(MergeConflicts::Leave),
+        scene.owner().merge_incoming(LEAVE),
         Err(GitError::AutomaticHistory.into())
     );
     assert_eq!(scene.untouched(), before);
@@ -387,7 +438,7 @@ fn red_against_green_is_left_as_git_leaves_it_and_finished_by_a_staged_commit() 
         Err(PullError::Blocked { .. })
     ));
     assert!(matches!(
-        scene.owner().merge_incoming(MergeConflicts::Leave),
+        scene.owner().merge_incoming(LEAVE),
         Err(MergeError::Pull {
             error: PullError::Blocked { .. }
         })
@@ -551,10 +602,7 @@ fn a_publication_stopped_partway_is_recovered_only_when_asked_and_keeps_later_ed
     scene.owner().hooks().incoming_boundary =
         Some(std::sync::Arc::new(|name: &str| name == "file:theirs.md"));
 
-    let stopped = scene
-        .owner()
-        .merge_incoming(MergeConflicts::Leave)
-        .unwrap_err();
+    let stopped = scene.owner().merge_incoming(LEAVE).unwrap_err();
 
     assert!(matches!(
         stopped,
@@ -615,10 +663,7 @@ fn recovery_refuses_a_marker_file_edited_since_and_finishes_merge_state_that_sto
     let (mut scene, _, ours, theirs) = red_green("merge-partial-edited");
     scene.owner().hooks().incoming_boundary =
         Some(std::sync::Arc::new(|name: &str| name == "file:theirs.md"));
-    scene
-        .owner()
-        .merge_incoming(MergeConflicts::Leave)
-        .unwrap_err();
+    scene.owner().merge_incoming(LEAVE).unwrap_err();
     scene.reopen(false);
     scene
         .owner()
@@ -636,10 +681,7 @@ fn recovery_refuses_a_marker_file_edited_since_and_finishes_merge_state_that_sto
     let (mut scene, _, ours, theirs) = red_green("merge-partial-merge-state");
     scene.owner().hooks().incoming_boundary =
         Some(std::sync::Arc::new(|name: &str| name == "merge-state"));
-    scene
-        .owner()
-        .merge_incoming(MergeConflicts::Leave)
-        .unwrap_err();
+    scene.owner().merge_incoming(LEAVE).unwrap_err();
     assert!(!scene.root.join(".git/MERGE_HEAD").exists());
     assert_eq!(scene.git(&["ls-files", "-u"]).lines().count(), 3);
     scene.reopen(false);
@@ -663,10 +705,7 @@ fn a_published_merge_whose_record_stayed_is_cleared_without_replaying_over_a_res
     let (mut scene, base, ours, theirs) = red_green("merge-record-stayed");
     scene.owner().hooks().incoming_boundary =
         Some(std::sync::Arc::new(|name: &str| name == "clear"));
-    scene
-        .owner()
-        .merge_incoming(MergeConflicts::Leave)
-        .unwrap_err();
+    scene.owner().merge_incoming(LEAVE).unwrap_err();
     assert_eq!(scene.read(".git/MERGE_HEAD"), format!("{theirs}\n"));
     scene.reopen(false);
     assert!(scene.owner().snapshot().pending_incoming.is_some());
@@ -922,4 +961,250 @@ fn stages_left_without_merge_head_block_every_commit_and_change_nothing() {
     assert_eq!(scene.untouched(), before);
     assert_eq!(scene.head(), ours);
     assert_eq!(scene.git(&["ls-files", "-u"]).lines().count(), 3);
+}
+
+#[test]
+fn unrelated_histories_need_consent_and_then_keep_both_roots() {
+    let (scene, ours, theirs) = unrelated(
+        "merge-unrelated",
+        &[("ours.md", "ours\n"), ("kv.json", "{\"theme\":\"dark\"}")],
+        &[("theirs.md", "theirs\n"), ("kv.json", "{\"lang\":\"zh\"}")],
+    );
+    let before = scene.untouched();
+
+    // Without consent nothing is written, whatever else the policy asks.
+    for policy in [
+        REFUSE,
+        LEAVE,
+        MergePolicy {
+            versions: true,
+            ..REFUSE
+        },
+    ] {
+        assert_eq!(
+            scene.owner().merge_incoming(policy),
+            Err(MergeError::UnsupportedHistory {
+                head: ours.clone(),
+                fetched: theirs.clone(),
+                bases: 0,
+            }),
+            "{policy:?}"
+        );
+        assert_eq!(scene.untouched(), before);
+    }
+
+    let merged = scene
+        .owner()
+        .merge_incoming(MergePolicy {
+            allow_unrelated_histories: true,
+            ..REFUSE
+        })
+        .unwrap();
+
+    let MergeOutcome::Merged {
+        from, to, fetched, ..
+    } = merged
+    else {
+        panic!("expected a merge, got {merged:?}");
+    };
+    assert_eq!(
+        (from.as_str(), fetched.as_str()),
+        (ours.as_str(), theirs.as_str())
+    );
+    assert_eq!(scene.head(), to);
+    assert_eq!(scene.parents(&to), format!("{ours} {theirs}"));
+    // Both roots stay in the branch's history.
+    let mut roots: Vec<String> = scene
+        .git(&["rev-list", "--max-parents=0", &to])
+        .lines()
+        .map(str::to_string)
+        .collect();
+    roots.sort();
+    let mut expected = vec![ours, theirs];
+    expected.sort();
+    assert_eq!(roots, expected);
+    assert_eq!(scene.read("ours.md"), "ours\n");
+    assert_eq!(scene.read("theirs.md"), "theirs\n");
+    // Root kv.json merges by key against no base.
+    assert_eq!(
+        scene.read("kv.json"),
+        "{\n  \"lang\": \"zh\",\n  \"theme\": \"dark\"\n}\n"
+    );
+    assert_eq!(scene.git(&["status", "--porcelain"]), "");
+}
+
+#[test]
+fn several_merge_bases_are_refused_even_with_consent_to_unrelated_histories() {
+    let scene = scene("merge-criss-cross", &[("a.md", "a\n")], false);
+    scene.theirs(|upstream| put(upstream, "b.md", "b\n"));
+    let ours = scene.ours(&[("c.md", "c\n")]);
+    // The folder merges theirs, and upstream merges ours on its own: each
+    // side has a merge the other lacks, so both original commits are bases.
+    let local = match scene.owner().merge_incoming(REFUSE).unwrap() {
+        MergeOutcome::Merged { to, .. } => to,
+        other => panic!("expected a merge, got {other:?}"),
+    };
+    git(
+        &scene.upstream,
+        &[
+            "fetch",
+            "--quiet",
+            &scene.root.display().to_string(),
+            "main",
+        ],
+    );
+    git(
+        &scene.upstream,
+        &["merge", "--quiet", "--no-ff", "--no-edit", &ours],
+    );
+    git(&scene.upstream, &["push", "--quiet", "origin", "main"]);
+    let fetched = scene.owner().fetch(None).unwrap().oid.unwrap();
+    let before = scene.untouched();
+
+    for policy in [
+        REFUSE,
+        MergePolicy {
+            allow_unrelated_histories: true,
+            ..REFUSE
+        },
+    ] {
+        assert_eq!(
+            scene.owner().merge_incoming(policy),
+            Err(MergeError::UnsupportedHistory {
+                head: local.clone(),
+                fetched: fetched.clone(),
+                bases: 2,
+            }),
+            "{policy:?}"
+        );
+        assert_eq!(scene.untouched(), before);
+    }
+}
+
+#[test]
+fn a_refused_conflict_carries_each_files_committed_bytes_and_writes_nothing() {
+    const OURS_BIN: &[u8] = &[0, 255, 1, 2, b'\r'];
+    const THEIRS_BIN: &[u8] = &[0, 254, 9];
+    const OURS_KV: &str = "{\"a\":2,\"b\":2}";
+    const THEIRS_KV: &str = "{\"a\":3,\"b\":3}";
+    let scene = scene(
+        "merge-versions",
+        &[
+            ("bin.dat", "start\n"),
+            ("gone.md", "keep me\n"),
+            ("kv.json", "{\"a\":1,\"b\":1}"),
+        ],
+        false,
+    );
+    let theirs = scene.theirs(|upstream| {
+        std::fs::write(upstream.join("bin.dat"), THEIRS_BIN).unwrap();
+        put(upstream, "gone.md", "changed\n");
+        put(upstream, "kv.json", THEIRS_KV);
+        put(upstream, "shape/inner.md", "inner\n");
+    });
+    scene
+        .owner()
+        .apply(&[
+            FileChange::Overwrite {
+                path: "bin.dat".to_string(),
+                bytes: OURS_BIN.to_vec(),
+            },
+            FileChange::Remove {
+                path: "gone.md".to_string(),
+                expected_sha256: None,
+            },
+            overwrite("kv.json", OURS_KV),
+            overwrite("shape", "a file\n"),
+        ])
+        .unwrap();
+    let ours = match scene.owner().commit() {
+        CommitOutcome::Committed { oid, .. } => oid,
+        other => panic!("expected a commit, got {other:?}"),
+    };
+    let before = scene.untouched();
+    let key = |key: &str, base: &str, ours: &str, theirs: &str| MergeConflict::KvKey {
+        path: "kv.json".to_string(),
+        key: key.to_string(),
+        base: Some(base.to_string()),
+        ours: Some(ours.to_string()),
+        theirs: Some(theirs.to_string()),
+    };
+    let conflicts = vec![
+        MergeConflict::Binary {
+            path: "bin.dat".to_string(),
+        },
+        MergeConflict::Deleted {
+            path: "gone.md".to_string(),
+            deleted_by: DeletedBy::Ours,
+        },
+        key("a", "1", "2", "3"),
+        key("b", "1", "2", "3"),
+        MergeConflict::Shape {
+            path: "shape".to_string(),
+        },
+    ];
+
+    let refused = scene
+        .owner()
+        .merge_incoming(MergePolicy {
+            versions: true,
+            ..REFUSE
+        })
+        .unwrap_err();
+
+    // One version per conflicted path, kv.json once for its two keys, the
+    // exact committed bytes of each side, and nothing for the shape conflict.
+    assert_eq!(
+        refused,
+        MergeError::Conflicted {
+            conflicts: conflicts.clone(),
+            versions: Some(vec![
+                ConflictVersion {
+                    path: "bin.dat".to_string(),
+                    ours: Some(OURS_BIN.to_vec()),
+                    theirs: Some(THEIRS_BIN.to_vec()),
+                },
+                ConflictVersion {
+                    path: "gone.md".to_string(),
+                    ours: None,
+                    theirs: Some(b"changed\n".to_vec()),
+                },
+                ConflictVersion {
+                    path: "kv.json".to_string(),
+                    ours: Some(OURS_KV.as_bytes().to_vec()),
+                    theirs: Some(THEIRS_KV.as_bytes().to_vec()),
+                },
+            ]),
+        }
+    );
+    assert_eq!(scene.untouched(), before);
+    assert_eq!(scene.head(), ours);
+    assert_eq!(
+        scene.git(&["rev-parse", "refs/remotes/origin/main"]),
+        theirs
+    );
+    // The snapshot every window receives names the conflicts, not the bytes.
+    assert_eq!(
+        scene
+            .owner()
+            .snapshot()
+            .last_merge
+            .as_ref()
+            .map(|attempt| &attempt.result),
+        Some(&crate::history::Settled::Err {
+            error: MergeError::Conflicted {
+                conflicts: conflicts.clone(),
+                versions: None,
+            }
+        })
+    );
+    // Without `versions`, the same refusal carries none.
+    assert_eq!(
+        scene.owner().merge_incoming(REFUSE),
+        Err(MergeError::Conflicted {
+            conflicts,
+            versions: None,
+        })
+    );
+    assert_eq!(scene.untouched(), before);
 }

@@ -78,8 +78,8 @@ use crate::git::{Author, Capture, Cas, CommitSummary, Git, IndexCommit, PathStat
 use crate::history::{
     Activities, Activity, Attempt, CommitOutcome, FetchOutcome, FilesObservation, GitError,
     GitSnapshot, MergeConflict, MergeConflicts, MergeError, MergeInProgress, MergeOutcome,
-    Observation, OwnerEvent, PendingIncoming, PullError, PullOutcome, PushOutcome, RecoverOutcome,
-    StagedCommit, SyncObservation,
+    MergePolicy, Observation, OwnerEvent, PendingIncoming, PullError, PullOutcome, PushOutcome,
+    RecoverOutcome, StagedCommit, SyncObservation,
 };
 use crate::incoming::{self, Record, UnfinishedMerge, Written};
 use crate::merge::{self, Labels, Prepared};
@@ -815,19 +815,23 @@ impl FolderOwner {
     /// `Leave` asks to publish it unfinished: files a person resolves,
     /// unmerged index stages, and Git's merge state, with the branch unmoved.
     /// `Leave` requires `commit_on_edit: false` and is refused before
-    /// anything runs otherwise. Never fetches or pushes.
-    pub fn merge_incoming(&self, conflicts: MergeConflicts) -> Result<MergeOutcome, MergeError> {
+    /// anything runs otherwise. Histories without exactly one merge base are
+    /// refused, except that `allow_unrelated_histories` merges ones with none
+    /// over an empty base. A refused conflict carries both sides' committed
+    /// bytes of each conflicted file when `versions` asks. Never fetches or
+    /// pushes.
+    pub fn merge_incoming(&self, policy: MergePolicy) -> Result<MergeOutcome, MergeError> {
         if self.inner.closing.load(Ordering::SeqCst) {
             return Err(GitError::Closed.into());
         }
-        if conflicts == MergeConflicts::Leave && self.inner.config.commit_on_edit {
+        if policy.conflicts == MergeConflicts::Leave && self.inner.config.commit_on_edit {
             return Err(GitError::AutomaticHistory.into());
         }
         let Ok(_admitted) = self.inner.admit() else {
             return Err(GitError::Closed.into());
         };
         let _running = self.inner.running(&self.inner.merges);
-        self.inner.run_merge(conflicts == MergeConflicts::Leave)
+        self.inner.run_merge(policy)
     }
 
     /// The incoming update whose record exists, read now.
@@ -2028,7 +2032,7 @@ impl Inner {
         result
     }
 
-    fn run_merge(&self, leave: bool) -> Result<MergeOutcome, MergeError> {
+    fn run_merge(&self, policy: MergePolicy) -> Result<MergeOutcome, MergeError> {
         let result = if self.git.remote.is_none() {
             Err(GitError::NoRemote.into())
         } else {
@@ -2037,7 +2041,7 @@ impl Inner {
             if self.closing.load(Ordering::SeqCst) {
                 return Err(GitError::Closed.into());
             }
-            self.incoming(files, git, Some(leave))
+            self.incoming(files, git, Some(policy))
                 .unwrap_or_else(|cause| Err(GitError::failed("merge", cause).into()))
         };
         if !matches!(
@@ -2051,8 +2055,20 @@ impl Inner {
             self.refresh_sync();
         }
         let _ = self.read_merging();
+        // The snapshot goes to every window on every change, so it records
+        // which paths conflicted and not their bytes; those went to the caller.
+        let recorded = match &result {
+            Err(MergeError::Conflicted {
+                conflicts,
+                versions: Some(_),
+            }) => Err(MergeError::Conflicted {
+                conflicts: conflicts.clone(),
+                versions: None,
+            }),
+            other => other.clone(),
+        };
         lock(&self.state).last_merge = Some(Attempt {
-            result: result.clone(),
+            result: recorded,
             at: now_ms(),
         });
         self.emit();
@@ -2121,15 +2137,16 @@ impl Inner {
     }
 
     /// One incoming update: a fast-forward for a pull (`merge` is `None`), or
-    /// for a merge a fast-forward or a two-parent merge, published or, with
-    /// `Some(true)`, left unfinished. The outer error is an unexpected Git
-    /// failure; the inner one is a reported outcome. The file gate and the
-    /// Git lock are both held until the files and the branch agree.
+    /// for a merge a fast-forward or a two-parent merge under its policy,
+    /// published or, with `Leave`, left unfinished. The outer error is an
+    /// unexpected Git failure; the inner one is a reported outcome. The file
+    /// gate and the Git lock are both held until the files and the branch
+    /// agree.
     fn incoming(
         &self,
         _files: MutexGuard<'_, ()>,
         _git: MutexGuard<'_, ()>,
-        merge: Option<bool>,
+        merge: Option<MergePolicy>,
     ) -> Result<Result<MergeOutcome, MergeError>, String> {
         // One update at a time: an earlier one is recovered explicitly first.
         if let Some(pending) = self.read_pending().pending() {
@@ -2196,15 +2213,21 @@ impl Inner {
         let (next_head, target, destination, kind) = if !diverged {
             (fetched.clone(), incoming, None, Kind::FastForward)
         } else {
+            let policy = merge.expect("only a merge goes on past a divergence");
             let local = head.clone().expect("a diverged branch has a head");
             let bases = self.git.merge_bases(&local, &fetched)?;
-            if bases.len() != 1 {
-                return Ok(Err(MergeError::UnsupportedHistory {
-                    head: local,
-                    fetched,
-                    bases: bases.len() as u32,
-                }));
-            }
+            let base = match bases.as_slice() {
+                [base] => Some(base.as_str()),
+                // Consent to unrelated histories: both roots become parents.
+                [] if policy.allow_unrelated_histories => None,
+                _ => {
+                    return Ok(Err(MergeError::UnsupportedHistory {
+                        head: local,
+                        fetched,
+                        bases: bases.len() as u32,
+                    }))
+                }
+            };
             let remote_branch = self
                 .git
                 .remote
@@ -2214,7 +2237,7 @@ impl Inner {
             let theirs = format!("origin/{remote_branch}");
             let prepared = merge::prepare(
                 &self.git,
-                &bases[0],
+                base,
                 &local,
                 &fetched,
                 &self.config.author,
@@ -2223,11 +2246,21 @@ impl Inner {
                     ours: "HEAD",
                     theirs: &theirs,
                 },
-                merge == Some(true),
+                policy.conflicts == MergeConflicts::Leave,
             )?;
             match prepared {
                 Prepared::Conflicted { conflicts } => {
-                    return Ok(Err(MergeError::Conflicted { conflicts }))
+                    let versions = if policy.versions {
+                        Some(merge::conflict_versions(
+                            &self.git, &conflicts, &local, &fetched,
+                        )?)
+                    } else {
+                        None
+                    };
+                    return Ok(Err(MergeError::Conflicted {
+                        conflicts,
+                        versions,
+                    }));
                 }
                 Prepared::Unmergeable { paths, reason } => {
                     return Ok(Err(MergeError::Unmergeable { paths, reason }))

@@ -68,8 +68,12 @@ export const commands = {
 	 *  `leave`, for a folder that does not commit on edit, publishes the merge
 	 *  unfinished, with conflict markers, unmerged index stages, and Git's merge
 	 *  state, for a person to resolve, stage, and commit. Never fetches.
+	 *
+	 *  `allowUnrelatedHistories` merges histories that share no commit over an
+	 *  empty base; `versions` asks a refused conflict for each conflicted file's
+	 *  committed bytes on both sides. Both are `false` when absent or `null`.
 	 */
-	mergeIncoming: (session: number, conflicts: MergeConflicts) => typedError<MergeOutcome, MergeError>(__TAURI_INVOKE("plugin:epicenter-folder|merge_incoming", { session, conflicts })),
+	mergeIncoming: (session: number, conflicts: MergeConflicts, allowUnrelatedHistories: boolean | null, versions: boolean | null) => typedError<MergeOutcome, MergeError>(__TAURI_INVOKE("plugin:epicenter-folder|merge_incoming", { session, conflicts, allowUnrelatedHistories, versions })),
 	/**
 	 *  Finish or clear this folder's pending incoming update, only because the
 	 *  page asked. Opening and status report a pending update and never resume
@@ -189,6 +193,17 @@ export type CommitSummary = {
 	parents: string[],
 	message: string,
 	author: CommitAuthor,
+};
+
+/**
+ *  One conflicted file's committed bytes on each side of a refused merge, as
+ *  stored: `ours` at the local head, `theirs` at the fetched head, `null`
+ *  where that side has no file. A submodule has no file bytes and is `null`.
+ */
+export type ConflictVersion = {
+	path: string,
+	ours: number[] | null,
+	theirs: number[] | null,
 };
 
 /**  Which side deleted a file the other changed. */
@@ -372,15 +387,23 @@ export type MergeConflicts =
 export type MergeError =
 /**  A refusal every incoming update can report, or a Git failure. */
 { name: "Pull"; error: PullError } |
-/**  The two heads have no common commit, or more than one best one. */
+/**
+ *  The two heads have no common commit, or more than one best one. No
+ *  common commit merges only with `allow_unrelated_histories`.
+ */
 { name: "UnsupportedHistory"; head: string; fetched: string; bases: number } |
 /**
  *  A path would need a merge this folder does not perform faithfully.
  *  Nothing was written.
  */
 { name: "Unmergeable"; paths: string[]; reason: string } |
-/**  Competing changes need a person. Nothing was written. */
-{ name: "Conflicted"; conflicts: MergeConflict[] };
+/**
+ *  Competing changes need a person. Nothing was written. Asked for
+ *  `versions`, it carries each conflicted file's committed bytes on both
+ *  sides to that caller; otherwise, and in the snapshot's `lastMerge`,
+ *  `versions` is `null`.
+ */
+{ name: "Conflicted"; conflicts: MergeConflict[]; versions: ConflictVersion[] | null };
 
 /**
  *  Git's merge state as the repository holds it: a merge that began and has
@@ -525,9 +548,10 @@ export type StagedCommit = {
 	/**  Set when the commit finished a merge: its second parent. */
 	incoming: string | null,
 	/**
-	 *  The merge commit landed, but Git's merge state could not be removed.
-	 *  The next staged commit removes it once it confirms the branch holds
-	 *  `incoming`.
+	 *  The merge commit landed, but removing its metadata failed. While
+	 *  `MERGE_HEAD` remains, the next staged commit retries cleanup if the
+	 *  branch names a commit with exactly `ORIG_HEAD` and `MERGE_HEAD` as
+	 *  its parents. A leftover `MERGE_MSG` alone does not keep a merge active.
 	 */
 	mergeStateWarning: string | null,
 };

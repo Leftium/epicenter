@@ -27,9 +27,11 @@
  * - Closing stops a terminal command's later steps and waits for the one
  *   already sent
  * - Snapshot events replace the snapshot in order; a stale one is dropped
- * - A merge is one `merge_incoming` with its conflict policy; its outcomes,
- *   refusals, the snapshot's merge state, and a staged commit's merge parent
- *   arrive in the shared shapes, and a lost reply is `Unconfirmed`
+ * - A merge is one `merge_incoming` with its conflict policy, its
+ *   unrelated-history consent, and whether it wants conflict versions; its
+ *   outcomes, refusals, the snapshot's merge state, and a staged commit's
+ *   merge parent arrive in the shared shapes, conflict versions as
+ *   `Uint8Array`, and a lost reply is `Unconfirmed`
  * - Closing detaches this window once and does not shut the folder down
  *
  * See also:
@@ -1205,10 +1207,76 @@ test('a merge sends one command with its conflict policy and maps each outcome',
 		to: FETCHED,
 		changedPaths: [],
 	});
+	// Both options are always sent, `false` unless asked for.
+	const defaults = { allowUnrelatedHistories: false, versions: false };
 	expect(sent('merge_incoming').map((call) => call.args)).toEqual([
-		{ session: 7, conflicts: 'refuse' },
-		{ session: 7, conflicts: 'leave' },
-		{ session: 7, conflicts: 'refuse' },
+		{ session: 7, conflicts: 'refuse', ...defaults },
+		{ session: 7, conflicts: 'leave', ...defaults },
+		{ session: 7, conflicts: 'refuse', ...defaults },
+	]);
+	await folder.close();
+});
+
+test('merge options reach the owner, and conflict versions arrive as exact bytes', async () => {
+	const folder = await attached();
+	const conflicts = [
+		{ reason: 'binary', path: 'same.bin' },
+		{ reason: 'deleted', path: 'gone.md', deletedBy: 'ours' },
+	] as const;
+	replies.merge_incoming = ({ args }) =>
+		refuse({
+			name: 'Conflicted',
+			conflicts,
+			versions: args.versions
+				? [
+						{ path: 'same.bin', ours: [0, 255, 1], theirs: [0, 254, 9] },
+						{ path: 'gone.md', ours: null, theirs: [99, 10] },
+					]
+				: null,
+		});
+
+	const asked = expectErr(
+		await folder.git.mergeIncoming({
+			allowUnrelatedHistories: true,
+			versions: true,
+		}),
+	);
+	expect(asked.name).toBe('Conflicted');
+	if (asked.name !== 'Conflicted') throw new Error('unreachable');
+	expect(asked.conflicts).toEqual(conflicts);
+	expect(asked.versions).toEqual([
+		{
+			path: 'same.bin',
+			ours: new Uint8Array([0, 255, 1]),
+			theirs: new Uint8Array([0, 254, 9]),
+		},
+		{ path: 'gone.md', ours: null, theirs: new Uint8Array([99, 10]) },
+	]);
+	for (const version of asked.versions ?? []) {
+		for (const side of [version.ours, version.theirs])
+			expect(side === null || side instanceof Uint8Array).toBe(true);
+	}
+
+	// Not asked: the owner's `null` is no `versions` at all, as elsewhere.
+	const plain = expectErr(
+		await folder.git.mergeIncoming({ allowUnrelatedHistories: true }),
+	);
+	if (plain.name !== 'Conflicted') throw new Error(`got ${plain.name}`);
+	expect(plain.versions).toBeUndefined();
+
+	expect(sent('merge_incoming').map((call) => call.args)).toEqual([
+		{
+			session: 7,
+			conflicts: 'refuse',
+			allowUnrelatedHistories: true,
+			versions: true,
+		},
+		{
+			session: 7,
+			conflicts: 'refuse',
+			allowUnrelatedHistories: true,
+			versions: false,
+		},
 	]);
 	await folder.close();
 });

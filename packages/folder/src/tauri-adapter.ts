@@ -74,6 +74,7 @@ import type {
 	UnfinishedMerge,
 } from './git/backend.js';
 import {
+	type ConflictVersion,
 	GitError,
 	type MergeConflict,
 	MergeError,
@@ -94,6 +95,7 @@ import {
 	FOLDER_PROTOCOL,
 	type ApplyError as WireApplyError,
 	type CommitOutcome as WireCommitOutcome,
+	type ConflictVersion as WireConflictVersion,
 	type FileChange as WireFileChange,
 	type FileError as WireFileError,
 	type FileStep as WireFileStep,
@@ -293,8 +295,21 @@ function mergeError(error: WireMergeError): MergeError | PullError | GitError {
 		case 'Conflicted':
 			return MergeError.Conflicted({
 				conflicts: conflictsFromWire(error.conflicts),
+				// Absent unless asked for, as every folder reports it.
+				...(error.versions === null || error.versions === undefined
+					? {}
+					: { versions: error.versions.map(versionFromWire) }),
 			}).error;
 	}
+}
+
+/** The owner sends bytes as number arrays; every folder hands out `Uint8Array`. */
+function versionFromWire(version: WireConflictVersion): ConflictVersion {
+	return {
+		path: version.path,
+		ours: version.ours === null ? null : Uint8Array.from(version.ours),
+		theirs: version.theirs === null ? null : Uint8Array.from(version.theirs),
+	};
 }
 
 function mergeOutcome(outcome: WireMergeOutcome): MergeOutcome {
@@ -927,14 +942,26 @@ function createHistory(
 				},
 			),
 		// The owner refuses `leave` under automatic history before anything
-		// runs, as every folder does.
-		mergeIncoming: ({ conflicts = 'refuse' } = {}) =>
+		// runs, as every folder does. Both options are sent explicitly, so the
+		// owner never reads a missing one as anything but `false`.
+		mergeIncoming: ({
+			conflicts = 'refuse',
+			allowUnrelatedHistories = false,
+			versions = false,
+		} = {}) =>
 			client.local(
 				closed,
 				async (): Promise<
 					Result<MergeOutcome, MergeError | PullError | GitError>
 				> => {
-					const result = await call(commands.mergeIncoming(session, conflicts));
+					const result = await call(
+						commands.mergeIncoming(
+							session,
+							conflicts,
+							allowUnrelatedHistories,
+							versions,
+						),
+					);
 					// A lost reply may have published the merge, finished or not.
 					if (!result.sent)
 						return GitError.Unconfirmed({

@@ -19,6 +19,9 @@
 //! - A push request withdrawn before the owner starts its transport never
 //!   reaches the remote; one already started finishes, and ending a session
 //!   withdraws only what had not started.
+//! - `merge_incoming`'s unrelated-history consent and conflict versions are
+//!   optional arguments: absent or `null` is `false`, and sent they reach the
+//!   owner, with each side's bytes on the wire.
 
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
@@ -1905,5 +1908,125 @@ fn recovering_an_incoming_update_is_a_command_of_a_session_on_that_scope() {
     assert_eq!(
         attached["snapshot"]["pendingIncoming"]["state"],
         "unreadable"
+    );
+}
+
+/// The merge options are optional arguments: a request without them is the
+/// version 8 request it always was, and each one reaches the owner when sent.
+#[test]
+fn merge_options_are_optional_arguments_that_reach_the_owner() {
+    let directory = temp("merge-options");
+    let bare = directory.0.join("remote.git");
+    std::fs::create_dir(&bare).unwrap();
+    git(
+        &bare,
+        &["init", "--quiet", "--bare", "--initial-branch=main"],
+    );
+    // The remote's history shares no commit with the folder's.
+    let upstream = directory.0.join("upstream");
+    std::fs::create_dir(&upstream).unwrap();
+    git(&upstream, &["init", "--quiet", "--initial-branch=main"]);
+    std::fs::write(upstream.join("same.bin"), [0u8, 254, 9]).unwrap();
+    std::fs::write(upstream.join("theirs.md"), "theirs\n").unwrap();
+    git(&upstream, &["add", "--all"]);
+    git(
+        &upstream,
+        &[
+            "-c",
+            "user.name=Upstream",
+            "-c",
+            "user.email=upstream@example.com",
+            "commit",
+            "--quiet",
+            "-m",
+            "their root",
+        ],
+    );
+    git(
+        &upstream,
+        &["push", "--quiet", &bare.display().to_string(), "main"],
+    );
+    let remote = Remote {
+        url: bare.display().to_string(),
+        branch: "main".to_string(),
+    };
+    let fixture = fixture_in(directory, &["main"], false, Some(remote));
+    let main = window(&fixture.app, "main");
+    let session = attach(&main);
+    apply(
+        &main,
+        session,
+        json!([
+            { "kind": "create", "path": "same.bin", "bytes": [0, 255, 1] },
+            create("ours.md", "ours\n"),
+        ]),
+    )
+    .unwrap();
+    let committed = invoke(&main, "commit", json!({ "session": session })).unwrap();
+    assert_eq!(committed["status"], "committed", "{committed}");
+    let ours = committed["oid"].clone();
+    let request = open_request(&main, session);
+    let theirs = invoke(
+        &main,
+        "fetch",
+        json!({ "session": session, "request": request }),
+    )
+    .unwrap()["oid"]
+        .clone();
+    let merge = |args: Value| invoke(&main, "merge_incoming", args).unwrap_err();
+    let conflicts = json!([{ "reason": "binary", "path": "same.bin" }]);
+
+    // Neither option: unrelated histories are refused.
+    assert_eq!(
+        merge(json!({ "session": session, "conflicts": "refuse" })),
+        json!({ "name": "UnsupportedHistory", "head": ours, "fetched": theirs, "bases": 0 })
+    );
+    // Consent and versions: the two-sided addition conflicts, with the exact
+    // committed bytes of each side.
+    assert_eq!(
+        merge(json!({
+            "session": session,
+            "conflicts": "refuse",
+            "allowUnrelatedHistories": true,
+            "versions": true,
+        })),
+        json!({
+            "name": "Conflicted",
+            "conflicts": conflicts,
+            "versions": [{ "path": "same.bin", "ours": [0, 255, 1], "theirs": [0, 254, 9] }],
+        })
+    );
+    // `null` is `false`: consent alone refuses the conflict without bytes.
+    assert_eq!(
+        merge(json!({
+            "session": session,
+            "conflicts": "refuse",
+            "allowUnrelatedHistories": true,
+            "versions": null,
+        })),
+        json!({ "name": "Conflicted", "conflicts": conflicts, "versions": null })
+    );
+    // Nothing was written, and the snapshot carries no bytes.
+    assert_eq!(
+        git(&fixture.root, &["rev-parse", "main"]),
+        ours.as_str().unwrap()
+    );
+    assert!(!fixture.root.join("theirs.md").exists());
+    assert_eq!(
+        std::fs::read(fixture.root.join("same.bin")).unwrap(),
+        [0u8, 255, 1]
+    );
+    let reattached = invoke(
+        &main,
+        "attach",
+        json!({ "scope": "notes", "protocol": PROTOCOL }),
+    )
+    .unwrap();
+    assert_eq!(
+        reattached["snapshot"]["lastMerge"]["result"],
+        json!({
+            "status": "err",
+            "error": { "name": "Conflicted", "conflicts": conflicts, "versions": null },
+        })
     );
 }

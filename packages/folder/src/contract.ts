@@ -15,6 +15,7 @@ import type { FolderDefinition } from './definition.js';
 import type { OpenFolderError } from './errors.js';
 import type { Folder } from './folder.js';
 import type { GitRemote } from './git/backend.js';
+import type { GitFetch } from './git/http.js';
 import type { Author } from './git/objects.js';
 import type { OpfsEnvironment } from './opfs-store.js';
 
@@ -95,6 +96,7 @@ export type {
 	UnmergedPath,
 } from './git/backend.js';
 export {
+	type ConflictVersion,
 	GitError,
 	type MergeConflict,
 	MergeError,
@@ -117,6 +119,7 @@ export type {
 	StagedCommit,
 	SyncObservation,
 } from './git/history.js';
+export type { GitFetch } from './git/http.js';
 export { commitSubject, escapePath, type PathChange } from './git/messages.js';
 export type { Author, CommitSummary } from './git/objects.js';
 export type { FileKv, KvReading, KvSnapshot } from './kv.js';
@@ -177,6 +180,12 @@ export type BrowserFolderOptions = {
 	readonly author?: Author;
 	/** The remote branch to push to and fetch from. Requires `author`. */
 	readonly remote?: GitRemote;
+	/**
+	 * Git-only HTTP transport. An application can route the canonical remote
+	 * through its authenticated relay without replacing the page's fetch.
+	 * Defaults to global fetch; receives the operation's abort signal.
+	 */
+	readonly gitFetch?: GitFetch;
 	/**
 	 * Whether complete content saves request automatic local commits.
 	 * Transfers remain explicit. Default `true`.

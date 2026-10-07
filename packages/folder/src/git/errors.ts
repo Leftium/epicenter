@@ -234,8 +234,22 @@ export type MergeConflict =
 			readonly side: 'base' | 'ours' | 'theirs';
 	  };
 
+/**
+ * One conflicted file's committed bytes on each side of a refused merge, as
+ * stored: `ours` at the local head, `theirs` at the fetched head, `null`
+ * where that side has no file.
+ */
+export type ConflictVersion = {
+	readonly path: string;
+	readonly ours: Uint8Array | null;
+	readonly theirs: Uint8Array | null;
+};
+
 export const MergeError = defineErrors({
-	/** The two heads have no common commit, or more than one best one. */
+	/**
+	 * The two heads have no common commit, or more than one best one. No
+	 * common commit merges only with `allowUnrelatedHistories`.
+	 */
 	UnsupportedHistory: ({
 		head,
 		fetched,
@@ -269,12 +283,21 @@ export const MergeError = defineErrors({
 	 * Competing changes need a person. Nothing was written to files, the
 	 * index, or the branch. A merge asked to leave its conflicts gets this
 	 * only for conflicts it cannot leave as files: a file against a directory.
+	 * Asked for `versions`, it carries each conflicted file's bytes on both
+	 * sides; otherwise `versions` is undefined.
 	 */
-	Conflicted: ({ conflicts }: { conflicts: readonly MergeConflict[] }) => ({
+	Conflicted: ({
+		conflicts,
+		versions,
+	}: {
+		conflicts: readonly MergeConflict[];
+		versions?: readonly ConflictVersion[];
+	}) => ({
 		message: `${conflicts.length} ${conflicts.length === 1 ? 'conflict blocks' : 'conflicts block'} the merge: ${[
 			...new Set(conflicts.map((conflict) => conflict.path)),
 		].join(', ')}`,
 		conflicts,
+		versions,
 	}),
 });
 export type MergeError = InferErrors<typeof MergeError>;

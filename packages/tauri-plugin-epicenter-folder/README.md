@@ -159,17 +159,33 @@ anything if it cannot name one.
 
 ## Merging incoming history
 
-`merge_incoming(session, conflicts)` merges the already fetched remote head.
-A branch that is behind fast-forwards; one that is ahead or equal changes
-nothing; a diverged one with exactly one merge base is merged, under the same
-admission, record, and recovery as a fast-forward. Root `kv.json` changed on
-both sides merges by key (`kv_merge`); every other file follows Git's rules,
-with `git merge-file` for a file both sides changed. The same paths are
-refused as in `@epicenter/folder`'s browser merge: a file whose versions are
-not all UTF-8 text the browser's line merge keeps is a `binary` conflict, a
-link, executable, or submodule among a two-sided change's versions or a
-`merge` attribute other than Git's text merge is `Unmergeable`, and several
-merge bases are `UnsupportedHistory`.
+`merge_incoming(session, conflicts, allowUnrelatedHistories, versions)`
+merges the already fetched remote head. A branch that is behind
+fast-forwards; one that is ahead or equal changes nothing; a diverged one with
+exactly one merge base is merged, under the same admission, record, and
+recovery as a fast-forward. Root `kv.json` changed on both sides merges by key
+(`kv_merge`); every other file follows Git's rules, with `git merge-file` for
+a file both sides changed. The same paths are refused as in
+`@epicenter/folder`'s browser merge: a file whose versions are not all UTF-8
+text the browser's line merge keeps is a `binary` conflict, a link,
+executable, or submodule among a two-sided change's versions or a `merge`
+attribute other than Git's text merge is `Unmergeable`, and several merge
+bases are `UnsupportedHistory`.
+
+The two booleans are optional and `false` when absent, so a version 8 request
+without them is unchanged.
+
+- **`allowUnrelatedHistories`** merges histories with no common commit over
+  an empty base, as `git merge --allow-unrelated-histories` does: both heads
+  are the merge commit's parents, so both roots stay in history. A path both
+  sides hold with different bytes conflicts. Without it such histories are
+  `UnsupportedHistory` with `bases: 0` and nothing is written.
+- **`versions`** makes a refused `Conflicted` carry, for each conflicted path
+  that is not a `shape` conflict, `{ path, ours, theirs }`: the exact committed
+  bytes at the pinned head and the pinned fetched commit, `null` where that
+  side has no file. Otherwise `versions` is `null`. The snapshot's
+  `lastMerge` always records it as `null`, so file bytes are not sent to
+  every window with each snapshot.
 
 - **`refuse`** writes no file, index entry, or ref when anything conflicts:
   `MergeError` `Conflicted` with one entry per reason. Otherwise the merge

@@ -42,6 +42,12 @@ import {
 	chargeOpenAiTranscriptionCredits,
 } from './billing/policies.js';
 import { mountBillingApi } from './billing/routes.js';
+import { createGitHubConnectorApp } from './git-connector/app.js';
+import {
+	type GitConnectorWorkerBindings,
+	GitHubConnection,
+	resolveWorkerGitHubConnector,
+} from './git-connector/worker.js';
 import { buildSessionCallbacks } from './session-callbacks.js';
 import { buildEpicenterTrustedOrigins } from './trusted-origins.js';
 
@@ -49,6 +55,9 @@ import { buildEpicenterTrustedOrigins } from './trusted-origins.js';
 // binding the library reads. A missing or mistyped binding fails here,
 // not deep inside library files compiled in this program.
 ({}) as Cloudflare.Env satisfies ServerBindings;
+
+const resolveApiOrigin = (env: CloudEnv['Bindings']) =>
+	(env as Cloudflare.Env).API_PUBLIC_ORIGIN ?? PRODUCTION_API_URL;
 
 const app = createServerApp<CloudEnv>({
 	// The hosted cloud's public origin never changes per deploy, so it is
@@ -58,8 +67,7 @@ const app = createServerApp<CloudEnv>({
 	// falls through to PRODUCTION_API_URL. `API_PUBLIC_ORIGIN` is
 	// deployment-owned config, not a binding `ServerBindings` names, so casting
 	// to this deployment's own `Cloudflare.Env` is the honest edge (ADR-0066).
-	resolveOrigin: (env) =>
-		(env as Cloudflare.Env).API_PUBLIC_ORIGIN ?? PRODUCTION_API_URL,
+	resolveOrigin: resolveApiOrigin,
 	resolveTrustedOrigins: buildEpicenterTrustedOrigins,
 });
 
@@ -119,6 +127,17 @@ const bearer = every(
 
 // Principal-partitioned reusable surfaces.
 mountSessionApp(app, { auth: bearer });
+app.route(
+	'/',
+	createGitHubConnectorApp<CloudEnv>({
+		auth: bearer,
+		resolve: (env) =>
+			resolveWorkerGitHubConnector(
+				env as Cloudflare.Env & GitConnectorWorkerBindings,
+				resolveApiOrigin(env),
+			),
+	}),
+);
 // The store transport (ADR-0222, ADR-0292, ADR-0298): one Durable Object per
 // (principal, application id, generation) for the log, and one ledger per
 // (principal, application id) for which generations exist. Both are reached
@@ -195,4 +214,4 @@ app.get('/billing', (c) => c.redirect('/dashboard'));
 export default {
 	fetch: app.fetch,
 };
-export { GenerationsLedger, StoreAuthority };
+export { GenerationsLedger, GitHubConnection, StoreAuthority };

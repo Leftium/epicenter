@@ -21,6 +21,8 @@ export const corsMiddleware = createMiddleware<Env>(async (c, next) => {
 		credentials: true,
 		allowHeaders: [
 			'Content-Type',
+			'Content-Encoding',
+			'Git-Protocol',
 			'Authorization',
 			'Upgrade',
 			'X-Epicenter-Principal',

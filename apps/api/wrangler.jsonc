@@ -62,6 +62,10 @@
 			{
 				"name": "GENERATIONS_LEDGER",
 				"class_name": "GenerationsLedger"
+			},
+			{
+				"name": "GIT_GITHUB_CONNECTIONS",
+				"class_name": "GitHubConnection"
 			}
 		]
 	},
@@ -94,6 +98,10 @@
 		{
 			"tag": "v4",
 			"deleted_classes": ["DemoGenerationBudget"]
+		},
+		{
+			"tag": "v5",
+			"new_sqlite_classes": ["GitHubConnection"]
 		}
 	],
 	// --- Secrets (set via `wrangler secret put`, typed via `wrangler types`) ---

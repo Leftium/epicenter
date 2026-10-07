@@ -4,11 +4,7 @@
  * The bundled web client ignores cancellation. Passing the owner's signal to
  * `fetch` lets closing the folder stop an in-flight push or fetch transport.
  */
-import type {
-	GitHttpRequest,
-	GitHttpResponse,
-	HttpClient,
-} from 'isomorphic-git';
+import type { GitHttpRequest, HttpClient } from 'isomorphic-git';
 
 /** HTTP capability used for this folder's Git requests. */
 export type HttpFetch = (
@@ -22,7 +18,7 @@ async function collect(
 	if (body === undefined) return undefined;
 	const chunks: Uint8Array[] = [];
 	let size = 0;
-	for await (const chunk of body as AsyncIterable<Uint8Array>) {
+	for await (const chunk of body) {
 		chunks.push(chunk);
 		size += chunk.byteLength;
 	}
@@ -61,19 +57,14 @@ export function abortableHttp(
 				body: payload as Uint8Array<ArrayBuffer> | undefined,
 				signal,
 			});
-			const responseHeaders: Record<string, string> = {};
-			response.headers.forEach((value, key) => {
-				responseHeaders[key] = value;
-			});
-			const result: GitHttpResponse = {
+			return {
 				url: response.url,
 				method,
 				statusCode: response.status,
 				statusMessage: response.statusText,
-				headers: responseHeaders,
+				headers: Object.fromEntries(response.headers),
 				body: response.body ? chunks(response.body) : (async function* () {})(),
 			};
-			return result;
 		},
 	};
 }

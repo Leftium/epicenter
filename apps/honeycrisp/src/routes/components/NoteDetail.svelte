@@ -10,29 +10,30 @@
 	import { withFileNewlines } from '@epicenter/folder/file-browser';
 	import { folderLabel, honeycrispDefinition, instantNow } from '$lib/data.js';
 	import { inspectRow } from '@epicenter/folder';
-	import { fieldDefaults, noteBody, repairFields } from '$lib/note-source.js';
-	import { problemsOf } from '$lib/note-session.svelte.js';
-	import type { NoteSession, Notes } from '$lib/notes.svelte.js';
+	import { fieldDefaults, repairFields, withBody } from '$lib/note-source.js';
+	import { problemsOf, type NoteEditor } from '$lib/note-editor.svelte.js';
+	import type { Notes } from '$lib/notes.svelte.js';
 	import { confirmDelete } from './file-actions.js';
 	import Lifetime from './Lifetime.svelte';
 	import NoteHistory from './NoteHistory.svelte';
 	import RichEditor from './RichEditor.svelte';
 	import RowDraftStatus from './RowDraftStatus.svelte';
 
-	let { notes, session }: { notes: Notes; session: NoteSession } = $props();
+	let { notes, editor }: { notes: Notes; editor: NoteEditor } = $props();
 
 	/*
-	 * Every getter, setter, and handler below reads `session` when it runs: a
-	 * rename or a recovery hands this view a new session, and the view, with
+	 * Every getter, setter, and handler below reads `editor` when it runs: a
+	 * rename or a recovery hands this view a new editor, and the view, with
 	 * its undo history, stays mounted. Each conditional block has its own
 	 * `Lifetime`: a control from a block that is gone delivers nothing, even
-	 * after the same kind of block mounts again.
+	 * after the same kind of block mounts again. A setter composes the whole
+	 * note from the editor's row as it is at that event.
 	 */
 
 	/** The note's one input, as its row editor holds it. */
-	const row = $derived(session.row);
+	const row = $derived(editor.row);
 	/** The structured note, when its fields show. */
-	const note = $derived(row.status === 'valid' && !session.rawMode ? row : undefined);
+	const note = $derived(row.status === 'valid' && !editor.rawMode ? row : undefined);
 	const pinned = $derived(note?.fields.pinned === true);
 	/** The folder this note names. `null` is no folder; an id may be the empty string. */
 	const folderId = $derived(note?.fields.folderId ?? null);
@@ -55,23 +56,18 @@
 		if (live()) void command();
 	};
 
-	function edit(fields: Parameters<NoteSession['edit']>[0]['fields']) {
-		const problem = session.edit({ fields });
-		if (problem) session.refuse(problem);
-	}
-
 	function showFile(on: boolean) {
-		const problem = session.showFile(on);
+		const problem = editor.showFile(on);
 		if (problem)
 			toast.error(on ? 'Could not show the file' : 'Could not open it as a note', { description: problem });
 	}
 
 	function fillDefaults() {
-		if (session.row.status !== 'invalid' || defaults === undefined) return;
-		const { data: repaired, error } = repairFields(session.row.text, defaults);
+		if (editor.row.status !== 'invalid' || defaults === undefined) return;
+		const { data: repaired, error } = repairFields(editor.row.text, defaults);
 		if (error !== null) return void toast.error('Could not set the fields', { description: error });
-		const problem = session.setText(repaired);
-		if (problem) session.refuse(problem);
+		const problem = editor.setText(repaired);
+		if (problem) editor.refuse(problem);
 	}
 
 	/** A folder's option value. No folder is the empty value, so a folder id never is. */
@@ -87,11 +83,14 @@
 					<Input
 						class="flex-1 text-base font-medium"
 						bind:value={
-							() => session.refused.title?.value ?? (session.row.status === 'valid' ? (session.row.fields.title ?? '') : ''),
-							(value) => {
-								if (!live()) return;
-								const problem = session.edit({ fields: { title: value } }, { keep: true });
-								if (problem) session.refuse(problem);
+							() => editor.refused.title?.value ?? (editor.row.status === 'valid' ? (editor.row.fields.title ?? '') : ''),
+							(title) => {
+								if (!live() || editor.row.status !== 'valid') return;
+								const problem = editor.set(
+									{ ...editor.row, fields: { ...editor.row.fields, title } },
+									{ control: 'title' },
+								);
+								if (problem) editor.refuse(problem);
 							}
 						}
 						placeholder="Title"
@@ -102,7 +101,12 @@
 						aria-label="Folder"
 						value={optionOf(folderId)}
 						onchange={(event) => {
-							if (live()) edit({ folderId: idOf(event.currentTarget.value) });
+							if (!live() || editor.row.status !== 'valid') return;
+							const problem = editor.set({
+								...editor.row,
+								fields: { ...editor.row.fields, folderId: idOf(event.currentTarget.value) },
+							});
+							if (problem) editor.refuse(problem);
 						}}
 					>
 						<option value="">No folder</option>
@@ -119,7 +123,14 @@
 						aria-label={pinned ? 'Unpin' : 'Pin'}
 						aria-pressed={pinned}
 						tooltip={pinned ? 'Unpin' : 'Pin'}
-						onclick={within(live, () => edit({ pinned: !pinned }))}
+						onclick={within(live, () => {
+							if (editor.row.status !== 'valid') return;
+							const problem = editor.set({
+								...editor.row,
+								fields: { ...editor.row.fields, pinned: editor.row.fields.pinned !== true },
+							});
+							if (problem) editor.refuse(problem);
+						})}
 					>
 						<PinIcon class={pinned ? 'fill-current' : ''} />
 					</Button>
@@ -140,15 +151,14 @@
 	{/if}
 
 	<RowDraftStatus
-		{session}
-		onStopTracking={() => notes.stopTracking(session.path)}
-		onRecover={() => notes.recoverDraft(session.path)}
+		{editor}
+		onStopTracking={() => notes.stopTracking(editor.path)}
+		onRecover={() => notes.recoverDraft(editor.path)}
 	/>
 
 	{#if note}
 		<Lifetime>
 			{#snippet children(live)}
-				{@const draft = noteBody(() => session, { mounted: live })}
 				<Tabs.Root bind:value={tab} class="flex min-h-0 flex-1 flex-col">
 					<Tabs.List class="mx-3">
 						<Tabs.Trigger value="rich">Rich text</Tabs.Trigger>
@@ -158,21 +168,22 @@
 					     survives a look at the source that changes nothing. -->
 					<Tabs.Content value="rich" forceMount class="min-h-0 flex-1">
 						<RichEditor
-							{draft}
-							admitting={session.admitting}
+							{editor}
 							focusRequest={notes.focusRequest}
 							onOpenSource={() => (tab = 'source')}
 						/>
 					</Tabs.Content>
 					<Tabs.Content value="source" class="flex min-h-0 flex-1 flex-col">
 						<!-- A body the editor refuses stays here with the reason. -->
-						{@const markdown = noteBody(() => session, { keep: true })}
 						<div class="flex min-h-0 flex-1 flex-col p-3">
 							<Textarea
 								class="min-h-40 flex-1 resize-none font-mono text-xs"
 								bind:value={
-									() => lf(session.refused.body?.value ?? (session.row.status === 'valid' ? session.row.body : '')),
-									(value) => markdown.input(withFileNewlines(value, markdown.body))
+									() => lf(editor.refused.body?.value ?? (editor.row.status === 'valid' ? editor.row.body : '')),
+									(value) => {
+										if (!live() || editor.row.status !== 'valid') return;
+										editor.set(withBody(editor.row, withFileNewlines(value, editor.row.body)), { control: 'body' });
+									}
 								}
 								aria-label="Markdown source"
 								spellcheck={false}
@@ -192,7 +203,7 @@
 							<Badge variant="destructive">Needs repair</Badge>
 							This text does not read as a note yet. Fix it below; it saves as it is.
 							{#if defaults}
-								<Button size="xs" variant="outline" disabled={!session.admitting} onclick={within(live, fillDefaults)}>
+								<Button size="xs" variant="outline" disabled={!editor.admitting} onclick={within(live, fillDefaults)}>
 									Set the missing fields to their defaults
 								</Button>
 							{/if}
@@ -220,14 +231,14 @@
 					<Textarea
 						class="min-h-40 flex-1 resize-none font-mono text-xs"
 						bind:value={
-							() => lf(session.row.text),
+							() => lf(editor.row.text),
 							(value) => {
 								if (!live()) return;
-								const problem = session.setText(withFileNewlines(value, session.row.text));
-								if (problem) session.refuse(problem);
+								const problem = editor.setText(withFileNewlines(value, editor.row.text));
+								if (problem) editor.refuse(problem);
 							}
 						}
-						aria-label="Contents of {session.path}"
+						aria-label="Contents of {editor.path}"
 						spellcheck={false}
 					/>
 				</div>
@@ -236,7 +247,7 @@
 	{/if}
 
 	<div class="flex flex-wrap items-center gap-2 border-t px-4 py-2 text-xs text-muted-foreground">
-		<code class="font-mono">{session.path}</code>
+		<code class="font-mono">{editor.path}</code>
 		{#if note}
 			<Lifetime>
 				{#snippet children(live)}
@@ -259,7 +270,7 @@
 							size="sm"
 							variant="outline"
 							onclick={within(live, async () => {
-								const problem = await notes.restoreNote(session.path);
+								const problem = await notes.restoreNote(editor.path);
 								if (problem) toast.error('Could not restore the note', { description: problem });
 							})}
 						>
@@ -274,7 +285,7 @@
 							size="sm"
 							variant="ghost-destructive"
 							onclick={within(live, async () => {
-								const problem = await notes.trashNote(session.path);
+								const problem = await notes.trashNote(editor.path);
 								if (problem) toast.error('Could not delete the note', { description: problem });
 							})}
 						>
@@ -289,7 +300,7 @@
 						<Button
 							size="sm"
 							variant="ghost-destructive"
-							onclick={within(live, () => confirmDelete(notes, session.path))}
+							onclick={within(live, () => confirmDelete(notes, editor.path))}
 						>
 							Delete permanently
 						</Button>
@@ -306,9 +317,9 @@
 		{#snippet children(live)}
 			<NoteHistory
 				{history}
-				path={session.path}
-				admitting={session.admitting}
-				onUse={(source) => (live() ? notes.useVersion(session, source) : 'This history view was closed.')}
+				path={editor.path}
+				admitting={editor.admitting}
+				onUse={(source) => (live() ? notes.useVersion(editor, source) : 'This history view was closed.')}
 				bind:open={historyOpen}
 			/>
 		{/snippet}

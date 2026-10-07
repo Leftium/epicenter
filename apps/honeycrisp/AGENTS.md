@@ -66,7 +66,7 @@ against the code. The constraints below apply to every edit here.
 - The row editor owns the note's one input and the one queue that
   publishes it. Every accepted edit goes to it at once; there is no app
   draft, baseline, submission timer, or copy of submitted text beside it.
-  The note session (`note-session.svelte.ts`) owns only the raw or fields
+  The app-owned note editor (`note-editor.svelte.ts`) owns only the raw or fields
   view, input admission and fences, the rename or delete being tracked, and
   release. Views read the editor through `fromRowEditor`; do not copy its
   row, diagnostics, or save state into app state.
@@ -126,7 +126,8 @@ against the code. The constraints below apply to every edit here.
   until an editor opens over the new file, or the person dismisses it.
 - Every ProseMirror transaction that changes the document goes through
   current-body reconciliation and checked Markdown serialization before it is
-  displayed. Submit the body to the note's editor before `view.updateState`.
+  displayed. Get admission from the note's editor before `view.updateState`,
+  including when the encoded body is unchanged.
   Discard a transaction based on content that reconciliation replaced.
 - Do not weaken `checkNoteDoc` to let an edit through. If Markdown cannot
   spell it, the edit is refused. If it should be spellable, fix the
@@ -136,7 +137,7 @@ against the code. The constraints below apply to every edit here.
 - Adding a node or mark to `editor/schema.ts` requires its Markdown in both
   directions and tests for both. Source the schema cannot hold is refused by
   `inspectNoteBody`, not dropped.
-- A view shows only input the note's editor accepted, apart from refused
+- A view shows content only after the note's editor admits it, apart from refused
   typed text kept in its own control. If the editor refuses a change,
   the rich view refuses that transaction too.
 - The rich-text view's lifetime depends on one boolean (`editable`) and its

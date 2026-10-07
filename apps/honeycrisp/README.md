@@ -138,7 +138,9 @@ dividers, and line breaks. There is no underline and there are no images.
   The editor says so; add a space, or make the change in Source.
 - **Three things are not kept as content,** because Markdown has no spelling
   for them: an empty paragraph, a line break with nothing after it in its
-  block, and bold, italic, or strikethrough on a space by itself.
+  block, and bold, italic, or strikethrough on a space by itself. An empty
+  paragraph from Enter shows at once and saves nothing until you type in it.
+  Like any edit, it shows only while the note is taking typing.
 - Spaces at the start or end of a line are kept. In Source they appear as
   `&#32;` (and a tab as `&#9;`), since Markdown would drop them otherwise.
 - Inline code is literal: it can be a link, but not bold, italic, or struck.
@@ -430,7 +432,7 @@ What cannot be produced by hand in the running app is a save held open or
 slowed on purpose, so that typing lands while it runs, or a reply lost after
 the write landed. Those orders are fixed in tests instead, over the folder's
 own row editor with faults in its storage stand-in:
-`src/lib/note-session.test.ts` (one note) and `src/lib/file-session.test.ts`
+`src/lib/note-editor.test.ts` (one note) and `src/lib/file-session.test.ts`
 (text files) hold a save and type during it, lose a reply before or after the
 write lands, and change the file under an open editor; `src/lib/notes.folder.test.ts`
 does the same with the notes state, over a real directory and over the browser
@@ -443,11 +445,11 @@ and delivers events to it, including to controls that outlived it.
 | --- | --- |
 | `src/lib/data.ts` | The inert declaration: the `notes` and `folders` tables. |
 | `src/lib/editor/schema.ts` | The bounded ProseMirror schema. |
-| `src/lib/editor/markdown.ts` | Markdown to document and back, the equivalence it is held to, and the check that gates opening and editing. |
+| `src/lib/editor/markdown.ts` | Markdown to document and back, the equivalence it is held to, the check that gates opening and editing, and `bodyCodec`, which decodes and encodes a note's whole body. |
 | `src/lib/editor/rich-text.ts` | ProseMirror commands, plugins, transaction admission, and semantic state replacement. `EditorView.state` owns live editing state. |
-| `src/lib/note-session.svelte.ts` | One open note's policy around the folder's row editor (`table.edit`): the fields or file view, when input is taken, typed text the editor refused, the person's Try again and Reload file, and the fences around a rename, delete, or close. The row editor owns the note's text and its writes. |
+| `src/lib/note-editor.svelte.ts` | One open note's editor: the app's policy around the folder's row editor (`table.edit`). `set` takes the complete note from a view or command; it decides the fields or file view, when input is taken, typed text the editor refused, the person's Try again and Reload file, and the fences around a rename, delete, or close. The row editor owns the note's text and its writes. |
 | `src/lib/file-session.svelte.ts` | One open text file's session (any file that is not a note): saved capture, buffer, submitted attempt, external version, and the conditional file calls. |
-| `src/lib/note-source.ts` | Current-body reads and writes for Rich and Source, checked document serialization, list previews, and field repair. |
+| `src/lib/note-source.ts` | The body replacement Rich and Source share (`withBody`), list previews, and field repair. |
 | `src/lib/notes.svelte.ts` | Listings, selection, the one session kept per path, note and folder actions, and the input fence. |
 | `src/lib/platform/` | The `#platform/notes-host` seam, its two leaves, and `shell.tauri.ts`, the page side of the shell's commands. |
 | `src/routes/components/` | Header, folder list, note list, editors, files, terminal. |

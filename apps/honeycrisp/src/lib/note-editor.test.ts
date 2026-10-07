@@ -1,27 +1,34 @@
 /**
- * Note Session Tests
+ * Note Editor Tests
  *
- * Drives one note session, the app's policy around the folder's row editor,
+ * Drives one note's editor, the app's policy around the folder's row editor,
  * over Honeycrisp's real browser folder on the in-memory OPFS stand-in. The
- * editor is the production `table.edit`; a write is held, failed, or loses
- * its reply at the stand-in's file streams, and another program's writes and
- * removals go below the folder's API.
+ * row editor is the production `table.edit`; a write is held, failed, or
+ * loses its reply at the stand-in's file streams, and another program's
+ * writes and removals go below the folder's API.
  *
  * Key behaviors:
- * - Opening writes nothing; an edit gives the editor the complete note at
+ * - Opening writes nothing; `set` gives the editor the complete note at
  *   once, unknown keys included, and a field left out is removed
+ * - A body moves `updatedAt`; a title, or the same body, does not
  * - Typing during a held write saves only the latest input next, with no
  *   idle moment between the two writes
  * - A failed or unconfirmed write keeps the text editable; later typing
  *   saves again
  * - Another program's change leaves the open text alone until the person
  *   reloads; a reload that fails keeps the text and its save state
- * - Typed text the editor refuses stays in its own control with the reason
+ * - Typed text the editor refuses stays in its own control with the reason;
+ *   it blocks only a document that changes its field, and only its own
+ *   control clears it
+ * - The rich-text view's unchanged note is acknowledged without a save, and
+ *   only through every gate; any other unchanged note is saved again
  * - Fences and release refuse input; flushing waits for admitted writes
  */
 import './svelte-modules.test-support.js';
 import { afterEach, describe, expect, test } from 'bun:test';
+import type { InstantString } from '@epicenter/definition';
 import {
+	type CanonicalDocument,
 	formatCanonicalDocument,
 	parseCanonicalDocument,
 } from '@epicenter/folder';
@@ -33,15 +40,16 @@ import {
 	settle,
 	until,
 } from './folder.test-support.js';
-import type { NoteSession } from './note-session.svelte.js';
-import { noteBody } from './note-source.js';
+import type { NoteEditor } from './note-editor.svelte.js';
+import { withBody } from './note-source.js';
 
-const { createNoteSession, noteSaveProblem } = await import(
-	'./note-session.svelte.ts'
+const { createNoteEditor, noteSaveProblem } = await import(
+	'./note-editor.svelte.ts'
 );
 
 const PATH = 'notes/a.md';
 const DECLARED = Object.keys(honeycrispDefinition.tables.notes.fields);
+const NOW = '2026-10-02T00:00:00.000Z' as InstantString;
 const cleanup: (() => unknown)[] = [];
 
 afterEach(async () => {
@@ -75,7 +83,7 @@ async function open(initial = noteText()) {
 	await fixture.write(PATH, initial);
 	const editor = expectOk(await fixture.folder.tables.notes.edit('a'));
 	let admitting = true;
-	const session = createNoteSession(editor, {
+	const session = createNoteEditor(editor, {
 		path: PATH,
 		admits: () => admitting,
 	});
@@ -106,14 +114,33 @@ async function open(initial = noteText()) {
 }
 
 /** The structured note the views show, or a failure. */
-function fieldsOf(session: NoteSession) {
+function noteOf(session: NoteEditor) {
 	const { row } = session;
 	if (row.status !== 'valid') throw new Error('The note does not read');
-	return row.fields;
+	return row;
 }
 
+const fieldsOf = (session: NoteEditor) => noteOf(session).fields;
+
+/** The whole note as it is now with `fields` put in, as a field control composes it. */
+function withFields(
+	session: NoteEditor,
+	fields: Record<string, unknown>,
+): CanonicalDocument {
+	const row = noteOf(session);
+	return { ...row, fields: { ...row.fields, ...fields } as typeof row.fields };
+}
+
+/** What the title control gives the editor. */
+const typeTitle = (session: NoteEditor, title: string) =>
+	session.set(withFields(session, { title }), { control: 'title' });
+
+/** What Source gives the editor. */
+const typeSource = (session: NoteEditor, body: string) =>
+	session.set(withBody(noteOf(session), body, NOW), { control: 'body' });
+
 describe('typing and saving', () => {
-	test('opening writes nothing; an edit gives the editor the complete note at once, unknown keys kept', async () => {
+	test('opening writes nothing; set gives the editor the complete note at once, unknown keys kept', async () => {
 		const hand = [
 			'---',
 			'# kept until a save',
@@ -134,7 +161,9 @@ describe('typing and saving', () => {
 		expect(session.row).toMatchObject({ status: 'valid', text: hand });
 		expect(session.status).toBe('saved');
 
-		expect(session.edit({ fields: { title: 'Typed' } })).toBeUndefined();
+		expect(
+			session.set(withFields(session, { title: 'Typed' })),
+		).toBeUndefined();
 		const saved = canonical(hand, { title: 'Typed' });
 		// The editor holds it now; there is no draft beside it.
 		expect(session.row.text).toBe(saved);
@@ -148,40 +177,30 @@ describe('typing and saving', () => {
 		expect(session.unsettled).toBe(false);
 	});
 
-	test('a body typed in the rich text or Source moves updatedAt in the same edit', async () => {
+	test('a body moves updatedAt in the same edit; a title, or the same body, does not', async () => {
 		const { session, text } = await open();
-		const body = noteBody(() => session, {
-			now: () => '2026-10-02T00:00:00.000Z' as never,
-		});
-		expect(body.input('New body.\n')).toBe(true);
-		expect(body.body).toBe('New body.\n');
+		expect(typeSource(session, 'New body.\n')).toBeUndefined();
+		expect(noteOf(session).body).toBe('New body.\n');
 		await session.waitForSaves();
 		expect(text(PATH)).toBe(
-			canonical(
-				noteText(),
-				{ updatedAt: '2026-10-02T00:00:00.000Z' },
-				'New body.\n',
-			),
+			canonical(noteText(), { updatedAt: NOW }, 'New body.\n'),
 		);
-	});
-
-	test('a body from a view that is gone is not taken', async () => {
-		const { session, notes } = await open();
-		let mounted = true;
-		const body = noteBody(() => session, { mounted: () => mounted });
-		mounted = false;
-		expect(body.input('Late.\n')).toBe(false);
-		expect(session.save.status).toBe('idle');
-		expect(notes()).toBe(0);
+		expect(typeTitle(session, 'Retitled')).toBeUndefined();
+		expect(fieldsOf(session).updatedAt).toBe(NOW);
+		// The same body is the same note, not a newer one.
+		const row = noteOf(session);
+		expect(
+			withBody(row, row.body, '2026-10-03T00:00:00.000Z' as InstantString),
+		).toBe(row);
 	});
 
 	test('typing during a held write saves only the latest input next, with no idle moment', async () => {
 		const { session, text, hold, held, release, saves } = await open();
 		hold();
-		session.edit({ fields: { title: 'First' } });
+		session.set(withFields(session, { title: 'First' }));
 		await until(() => held().length === 1, 'the first write to wait');
-		session.edit({ fields: { title: 'Second' } });
-		session.edit({ fields: { title: 'Third' } });
+		session.set(withFields(session, { title: 'Second' }));
+		session.set(withFields(session, { title: 'Third' }));
 		expect(fieldsOf(session).title).toBe('Third');
 		release();
 		await until(() => held().length === 1, 'the next write to wait');
@@ -196,7 +215,8 @@ describe('typing and saving', () => {
 
 	test('a field left out is removed, and text that no longer reads as a note is saved all the same', async () => {
 		const { session, text } = await open();
-		expect(session.edit({ fields: { deletedAt: undefined } })).toBeUndefined();
+		const { deletedAt: _removed, ...kept } = fieldsOf(session);
+		expect(session.set({ ...noteOf(session), fields: kept })).toBeUndefined();
 		// Whole validity decides which view shows; the fields give way to the file.
 		expect(session.row.status).toBe('invalid');
 		await session.waitForSaves();
@@ -209,7 +229,7 @@ describe('a write that does not end saved', () => {
 	test('a failed write keeps the text editable and later typing saves again', async () => {
 		const { session, text, failWrites, saves, notes } = await open();
 		failWrites();
-		session.edit({ fields: { title: 'Lost?' } });
+		session.set(withFields(session, { title: 'Lost?' }));
 		const { error } = await session.waitForSaves();
 		expect(error?.name).toBe('Io');
 		expect(session.save).toMatchObject({
@@ -221,7 +241,9 @@ describe('a write that does not end saved', () => {
 		const attempts = notes();
 		failWrites(false);
 		// The text stays editable, and another edit starts another attempt.
-		expect(session.edit({ fields: { title: 'Newer' } })).toBeUndefined();
+		expect(
+			session.set(withFields(session, { title: 'Newer' })),
+		).toBeUndefined();
 		await settle();
 		expect(fieldsOf(session).title).toBe('Newer');
 		expect(notes()).toBe(attempts + 1);
@@ -234,7 +256,7 @@ describe('a write that does not end saved', () => {
 	test('an unconfirmed write is uncertainty in the folder’s own words, and Save again is a new attempt', async () => {
 		const { session, text, loseReplies } = await open();
 		loseReplies();
-		session.edit({ fields: { title: 'Maybe' } });
+		session.set(withFields(session, { title: 'Maybe' }));
 		await session.waitForSaves();
 		const { save } = session;
 		if (save.status !== 'failed') throw new Error('expected a failed save');
@@ -281,11 +303,11 @@ describe('a write that does not end saved', () => {
 	test('a deleted file fails the next save with the text kept editable, and nothing writes it back', async () => {
 		const { session, text, drop } = await open();
 		drop(PATH);
-		session.edit({ fields: { title: 'Mine' } });
+		session.set(withFields(session, { title: 'Mine' }));
 		expect((await session.waitForSaves()).error?.name).toBe('NotFound');
 		expect(session.missing).toBe(true);
 		expect(fieldsOf(session).title).toBe('Mine');
-		expect(session.edit({ fields: { title: 'More' } })).toBeUndefined();
+		expect(session.set(withFields(session, { title: 'More' }))).toBeUndefined();
 		session.retry();
 		expect((await session.waitForSaves()).error?.name).toBe('NotFound');
 		expect(text(PATH)).toBeUndefined();
@@ -309,7 +331,7 @@ describe('the file changes', () => {
 	test('typing over another program’s change saves over it: the last writer wins', async () => {
 		const { session, text, put } = await open();
 		put(PATH, noteText({ title: 'Theirs' }));
-		session.edit({ fields: { title: 'Mine' } });
+		session.set(withFields(session, { title: 'Mine' }));
 		await session.waitForSaves();
 		expect(text(PATH)).toBe(canonical(noteText(), { title: 'Mine' }));
 	});
@@ -318,17 +340,17 @@ describe('the file changes', () => {
 		const { session } = await open();
 		const reading = session.reload();
 		expect(session.admitting).toBe(false);
-		expect(session.edit({ fields: { title: 'x' } })).toContain(
+		expect(session.set(withFields(session, { title: 'x' }))).toContain(
 			'being read again',
 		);
 		expect(await reading).toBeUndefined();
-		expect(session.edit({ fields: { title: 'x' } })).toBeUndefined();
+		expect(session.set(withFields(session, { title: 'x' }))).toBeUndefined();
 	});
 
 	test('a reload after a failed save replaces the text and ends the failure', async () => {
 		const { session, text, failWrites } = await open();
 		failWrites();
-		session.edit({ fields: { title: 'Lost' } });
+		session.set(withFields(session, { title: 'Lost' }));
 		await session.waitForSaves();
 		failWrites(false);
 		expect(await session.reload()).toBeUndefined();
@@ -340,7 +362,7 @@ describe('the file changes', () => {
 	test('a reload that cannot read the file keeps the text and its failed save', async () => {
 		const { session, put, drop, failWrites } = await open();
 		failWrites();
-		session.edit({ fields: { title: 'Mine' } });
+		session.set(withFields(session, { title: 'Mine' }));
 		await session.waitForSaves();
 		const kept = session.row.text;
 		put(PATH, new Uint8Array([0xff, 0xfe]));
@@ -360,24 +382,22 @@ describe('input the row editor cannot take', () => {
 	test('a title with an unpaired surrogate stays in its control with the reason, and is never submitted', async () => {
 		const { session, text } = await open();
 		const before = session.row.text;
-		expect(
-			session.edit({ fields: { title: 'a\uD800' } }, { keep: true }),
-		).toContain('lone surrogate');
+		expect(typeTitle(session, 'a\uD800')).toContain('lone surrogate');
 		expect(session.refused.title).toMatchObject({ value: 'a\uD800' });
 		expect(session.refused.title?.reason).toContain('lone surrogate');
 		expect(session.row.text).toBe(before);
 		expect(session.status).toBe('dirty');
 		expect(session.unsettled).toBe(true);
 		// Nothing but the title control changes the title while it waits there.
-		expect(session.edit({ fields: { title: 'b' } })).toContain('the title');
+		expect(session.set(withFields(session, { title: 'b' }))).toContain(
+			'the title',
+		);
 		expect(session.showFile(true)).toContain('the title');
 		// Other fields go on saving.
-		expect(session.edit({ fields: { pinned: true } })).toBeUndefined();
+		expect(session.set(withFields(session, { pinned: true }))).toBeUndefined();
 		await session.waitForSaves();
 		expect(session.refused.title).toBeDefined();
-		expect(
-			session.edit({ fields: { title: 'a' } }, { keep: true }),
-		).toBeUndefined();
+		expect(typeTitle(session, 'a')).toBeUndefined();
 		expect(session.refused.title).toBeUndefined();
 		await session.waitForSaves();
 		expect(text(PATH)).toBe(
@@ -387,11 +407,102 @@ describe('input the row editor cannot take', () => {
 
 	test('a Source body the editor refuses stays in Source with the reason', async () => {
 		const { session } = await open();
-		const source = noteBody(() => session, { keep: true });
-		expect(source.input('Half \uD800\n')).toBe(false);
+		expect(typeSource(session, 'Half \uD800\n')).toContain('lone surrogate');
 		expect(session.refused.body?.value).toBe('Half \uD800\n');
-		expect(source.input('Whole\n')).toBe(true);
+		expect(typeSource(session, 'Whole\n')).toBeUndefined();
 		expect(session.refused.body).toBeUndefined();
+	});
+
+	test('held typed text blocks only a document that changes its field, and the other fields go on saving', async () => {
+		const { session, text } = await open();
+		expect(typeTitle(session, 'a\uD800')).toContain('lone surrogate');
+		expect(typeSource(session, 'Half \uD800\n')).toContain('lone surrogate');
+		// A command that leaves the title and body as the editor holds them is taken.
+		expect(
+			session.set(withFields(session, { pinned: true, folderId: 'f' })),
+		).toBeUndefined();
+		// Each control changes its own field; the other's typed text stays.
+		expect(typeSource(session, 'Typed\n')).toBeUndefined();
+		expect(session.refused.body).toBeUndefined();
+		expect(session.refused.title?.value).toBe('a\uD800');
+		// A document from anywhere else that changes the waiting title is not.
+		expect(session.set(withFields(session, { title: 'Other' }))).toContain(
+			'the title',
+		);
+		await session.waitForSaves();
+		expect(text(PATH)).toBe(
+			canonical(
+				noteText(),
+				{ pinned: true, folderId: 'f', updatedAt: NOW },
+				'Typed\n',
+			),
+		);
+	});
+
+	test('the accepted title typed again clears the title alone, and saves the same note', async () => {
+		const { session, notes } = await open();
+		expect(typeTitle(session, 'a\uD800')).toContain('lone surrogate');
+		expect(typeSource(session, 'Half \uD800\n')).toContain('lone surrogate');
+		const before = session.row.text;
+		expect(typeTitle(session, 'A')).toBeUndefined();
+		expect(session.refused.title).toBeUndefined();
+		expect(session.refused.body?.value).toBe('Half \uD800\n');
+		expect(session.row.text).toBe(before);
+		expect(session.save.status).toBe('saving');
+		await session.waitForSaves();
+		expect(notes()).toBe(1);
+	});
+});
+
+describe('the rich-text view', () => {
+	test('its unchanged note is acknowledged with no save; any other unchanged note saves again', async () => {
+		const { session, notes } = await open();
+		const row = noteOf(session);
+		expect(session.set(row, { control: 'rich' })).toBeUndefined();
+		expect(session.save.status).toBe('idle');
+		expect(notes()).toBe(0);
+		// An equal document that is not the row itself is saved.
+		expect(session.set({ ...row }, { control: 'rich' })).toBeUndefined();
+		await session.waitForSaves();
+		expect(notes()).toBe(1);
+		expect(session.set(noteOf(session))).toBeUndefined();
+		await session.waitForSaves();
+		expect(notes()).toBe(2);
+	});
+
+	test('its unchanged note passes every gate first: Source holding typed text, a stopped rename, a fence', async () => {
+		const { session, notes, fence } = await open();
+		const unchanged = () => session.set(noteOf(session), { control: 'rich' });
+		expect(typeSource(session, 'Half \uD800\n')).toContain('lone surrogate');
+		expect(unchanged()).toContain('Markdown source');
+		expect(typeSource(session, 'Body.\n')).toBeUndefined();
+		await session.waitForSaves();
+		const step = {
+			kind: 'remove',
+			from: { path: PATH, sha256: 'unknown' },
+		} as const;
+		session.track(step);
+		session.conclude(step, { kind: 'unconfirmed', message: 'no reply' });
+		expect(unchanged()).toContain('not finished');
+		expect(session.detach()).toBe(true);
+		expect(unchanged()).toContain('stopped tracking');
+		expect(session.saveHere()).toBeUndefined();
+		await session.waitForSaves();
+		const saves = notes();
+		fence();
+		expect(unchanged()).toContain('closing');
+		expect(notes()).toBe(saves);
+	});
+
+	test('a body the editor refuses from it is not kept as Source text', async () => {
+		const { session } = await open();
+		expect(
+			session.set(withBody(noteOf(session), 'Half \uD800\n', NOW), {
+				control: 'rich',
+			}),
+		).toContain('lone surrogate');
+		expect(session.refused).toEqual({});
+		expect(session.status).toBe('saved');
 	});
 });
 
@@ -400,7 +511,7 @@ describe('the file view', () => {
 		const broken = '---\ntitle: [open\n---\nHello\n';
 		const { session, text } = await open(broken);
 		expect(session.row).toMatchObject({ status: 'invalid', text: broken });
-		expect(session.edit({ fields: { title: 'x' } })).toBe(
+		expect(session.set({ fields: { title: 'x' }, body: '' })).toBe(
 			'This note is not showing its fields.',
 		);
 		const fixed = noteText({ title: 'Fixed', extra: '# a comment\n' });
@@ -411,7 +522,9 @@ describe('the file view', () => {
 		await session.waitForSaves();
 		expect(text(PATH)).toBe(fixed);
 		expect(session.showFile(false)).toBeUndefined();
-		expect(session.edit({ fields: { title: 'Again' } })).toBeUndefined();
+		expect(
+			session.set(withFields(session, { title: 'Again' })),
+		).toBeUndefined();
 	});
 
 	test('malformed text is saved as it is typed', async () => {
@@ -428,10 +541,12 @@ describe('fences and release', () => {
 	test('while input is fenced nothing is taken, and flushing waits for a write already admitted', async () => {
 		const { session, text, fence, hold, held, release } = await open();
 		hold();
-		session.edit({ fields: { title: 'Typed' } });
+		session.set(withFields(session, { title: 'Typed' }));
 		await until(() => held().length === 1, 'the write');
 		fence();
-		expect(session.edit({ fields: { title: 'After' } })).toContain('closing');
+		expect(session.set(withFields(session, { title: 'After' }))).toContain(
+			'closing',
+		);
 		expect(session.retry()).toContain('closing');
 		expect(await session.reload()).toContain('closing');
 		let saved = false;
@@ -450,13 +565,13 @@ describe('fences and release', () => {
 		await session.operate(async () => {
 			expect(session.admitting).toBe(false);
 			expect(session.canChoose).toBe(false);
-			expect(session.edit({ fields: { title: 'x' } })).toContain(
+			expect(session.set(withFields(session, { title: 'x' }))).toContain(
 				'rename or delete',
 			);
 			expect(session.retry()).toContain('rename or delete');
 			expect(await session.reload()).toContain('rename or delete');
 		});
-		expect(session.edit({ fields: { title: 'x' } })).toBeUndefined();
+		expect(session.set(withFields(session, { title: 'x' }))).toBeUndefined();
 	});
 
 	test('a rename or delete that stopped short takes no typing, since every edit publishes', async () => {
@@ -468,10 +583,12 @@ describe('fences and release', () => {
 		session.track(step);
 		session.conclude(step, { kind: 'unconfirmed', message: 'no reply' });
 		expect(session.status).toBe('unconfirmed');
-		expect(session.edit({ fields: { title: 'x' } })).toContain('not finished');
+		expect(session.set(withFields(session, { title: 'x' }))).toContain(
+			'not finished',
+		);
 		expect(await session.reload()).toContain('not finished');
 		expect(session.detach()).toBe(true);
-		expect(session.edit({ fields: { title: 'x' } })).toContain(
+		expect(session.set(withFields(session, { title: 'x' }))).toContain(
 			'stopped tracking',
 		);
 		expect(notes()).toBe(0);
@@ -479,16 +596,16 @@ describe('fences and release', () => {
 		expect(session.hold).toBeUndefined();
 		await session.waitForSaves();
 		expect(notes()).toBe(1);
-		expect(session.edit({ fields: { title: 'x' } })).toBeUndefined();
+		expect(session.set(withFields(session, { title: 'x' }))).toBeUndefined();
 	});
 
-	test('a released session refuses everything for good, and a write it admitted still lands', async () => {
+	test('a released editor refuses everything for good, and a write it admitted still lands', async () => {
 		const { session, text, hold, held, release } = await open();
 		hold();
-		session.edit({ fields: { title: 'Admitted' } });
+		session.set(withFields(session, { title: 'Admitted' }));
 		await until(() => held().length === 1, 'the write');
 		session.release();
-		expect(session.edit({ fields: { title: 'Late' } })).toBe(
+		expect(session.set(withFields(session, { title: 'Late' }))).toBe(
 			'This note was closed here.',
 		);
 		expect(session.setText('late')).toBe('This note was closed here.');

@@ -22,6 +22,10 @@
  * gate for opening refuses. `inspectNoteBody` is the gate for opening source
  * as rich text. Source the schema cannot represent is refused with reasons and
  * stays editable as text in the Source view.
+ *
+ * `bodyCodec` is the pair the rich-text view uses on a note's whole body:
+ * `decode` opens it through the opening gate, and `encode` writes a document
+ * through the edit gate in the body's own leading blank lines and line endings.
  */
 import MarkdownIt from 'markdown-it';
 import {
@@ -37,6 +41,7 @@ import {
 	type Node,
 	type NodeType,
 } from 'prosemirror-model';
+import { Err, Ok, type Result } from 'wellcrafted/result';
 
 import { noteSchema } from './schema.js';
 
@@ -628,3 +633,38 @@ export function inspectNoteBody(text: string): BodyInspection {
 		};
 	return { supported: true, doc };
 }
+
+// ── A note's body ───────────────────────────────────────────────────────────
+
+/**
+ * The last body decoded, and its answer. The view, its edits, and its check
+ * of the body all decode one body until it changes, and the answer depends on
+ * nothing but the text.
+ */
+let decoded:
+	| { readonly body: string; readonly inspection: BodyInspection }
+	| undefined;
+
+/** A note's whole body text, as the rich-text view reads and writes it. */
+export const bodyCodec = {
+	/** The body as a document (`inspectNoteBody`), or why it cannot be one. */
+	decode(body: string): BodyInspection {
+		if (decoded?.body === body) return decoded.inspection;
+		const inspection = inspectNoteBody(body);
+		decoded = { body, inspection };
+		return inspection;
+	},
+	/**
+	 * `doc` as the body that replaces `prior`, or why Markdown cannot spell it
+	 * (`checkNoteDoc`). The blank lines at the start of `prior` are kept, the
+	 * text ends with one line break, and CRLF line endings are kept when
+	 * `prior` uses them.
+	 */
+	encode(doc: Node, prior: string): Result<string, string> {
+		const check = checkNoteDoc(doc);
+		if (!check.ok) return Err(check.reason);
+		const lead = /^(?:\r?\n)*/.exec(prior)?.[0] ?? '';
+		const body = check.markdown === '' ? lead : `${lead}${check.markdown}\n`;
+		return Ok(prior.includes('\r\n') ? body.replace(/\r?\n/g, '\r\n') : body);
+	},
+};

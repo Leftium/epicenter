@@ -4,17 +4,17 @@
  *
  * The row editor owns the note's one input: the complete text it was last
  * given or deliberately read, and one queue that publishes that text over the
- * existing file, one write at a time with only the latest waiting. Every
- * accepted edit goes to it at once, a structured edit as the complete
+ * existing file, one write at a time with only the latest waiting. Accepted
+ * input goes to it at once, a structured replacement as the complete
  * document through `set` and the file view's exact text through `setText`;
  * there is no second draft here. A failed or unconfirmed write keeps the
  * input and error visible; newer input saves again. Try again (`retry`)
  * saves the current input without changing it. Every write replaces the file as it is; none creates it. The
  * editor never reads the file by itself: another program's change shows only
  * when the person reloads (`reload`), and a reload that fails changes nothing.
- * The views read the editor through `fromRowEditor` and never copy it.
+ * The views read the editor's row through this owner and never copy it.
  *
- * This session owns what the app decides around the editor:
+ * This app-owned editor keeps the native publisher internal and owns these rules:
  *
  * - Whether a valid note shows its fields or its file (`rawMode`).
  * - Admission. Input is refused while a close is answered (`admits`), while a
@@ -22,9 +22,9 @@
  *   stopped short or the person stopped tracking one, and for good once
  *   released. Refused input changes nothing in the editor.
  * - Typed text the editor refused. A title or Markdown source the file cannot
- *   hold exactly (an unpaired surrogate) stays in that field with the reason,
- *   because the field would otherwise snap back to the editor's value. It is
- *   never submitted, and it is not a draft of the note.
+ *   hold exactly (an unpaired surrogate) stays in that control with the
+ *   reason, because the control would otherwise snap back to the editor's
+ *   value. It is never submitted, and it is not a draft of the note.
  * - The rename or delete being tracked, and one the person stopped tracking.
  *
  * Views keep their own mount guard: a control something still holds can
@@ -48,13 +48,18 @@ import type {
 const UNENCODABLE =
 	'The text has a character UTF-8 cannot hold (an unpaired surrogate), so it is not written.';
 
-export type NoteEditor = RowEditor<NoteFields>;
 type ReloadError = NonNullable<
-	Awaited<ReturnType<NoteEditor['reload']>>['error']
+	Awaited<ReturnType<RowEditor<NoteFields>['reload']>>['error']
 >;
 
 /** A text control whose typed value the editor can refuse. */
 export type TypedField = 'title' | 'body';
+/**
+ * The control a complete document was composed in. A title or Source control
+ * keeps a value the editor refuses; the rich-text view shows only what the
+ * editor acknowledged.
+ */
+export type NoteControl = TypedField | 'rich';
 /** What the person typed in one control and the editor refused, and why. */
 export type RefusedInput = { readonly value: string; readonly reason: string };
 
@@ -65,7 +70,7 @@ export type NoteHold = {
 	readonly change: DetachedChange;
 };
 
-export type NoteSession = ReturnType<typeof createNoteSession>;
+export type NoteEditor = ReturnType<typeof createNoteEditor>;
 
 /** Why readable text has no structured form, in the library's words. */
 export function problemsOf(error: RowError): string[] {
@@ -114,25 +119,13 @@ export function reloadProblem(error: ReloadError): string {
 	}
 }
 
-/** A complete document: every field of `fields` with `change` applied. `undefined` removes a key. */
-function withChange(
-	fields: CanonicalDocument['fields'],
-	change: Partial<Record<keyof NoteFields, unknown>>,
-): CanonicalDocument['fields'] {
-	const next: Record<string, unknown> = { ...fields };
-	for (const [key, value] of Object.entries(change))
-		if (value === undefined) delete next[key];
-		else next[key] = value;
-	return next as CanonicalDocument['fields'];
-}
-
 const FIELD_NAMES: Record<TypedField, string> = {
 	title: 'the title',
 	body: 'the Markdown source',
 };
 
-export function createNoteSession(
-	native: NoteEditor,
+export function createNoteEditor(
+	native: RowEditor<NoteFields>,
 	{
 		path,
 		admits = () => true,
@@ -173,7 +166,7 @@ export function createNoteSession(
 	}
 
 	/**
-	 * Why typing is not taken now. Every accepted edit publishes, so nothing
+	 * Why typing is not taken now. A text change publishes, so nothing
 	 * is taken while a rename or delete stopped short or stopped being
 	 * tracked: it would write at a path whose file is not known.
 	 */
@@ -193,48 +186,53 @@ export function createNoteSession(
 	}
 
 	/**
-	 * Change fields and the body of the structured note, at once: every field
-	 * the editor holds, unknown keys included, with `fields` applied
-	 * (`undefined` removes a key), and `body` in place of the body. Taken only
-	 * while the note reads as valid and shows its fields. Answers why it was
-	 * not taken. `keep` comes from the control the title or body was typed in:
-	 * a value the editor refuses then stays in that control, with the reason,
-	 * and only that control changes the field until it is taken.
+	 * Give the structured note a complete document: every field to keep,
+	 * unknown keys included, and the body. A key left out is removed. Taken
+	 * only while the note reads as valid and shows its fields. Answers why it
+	 * was not taken.
+	 *
+	 * Typed text a control holds blocks a document that changes its field
+	 * from what the editor holds; the control it was typed in is the one that
+	 * changes it. A `title` or `body` control keeps its own value when the
+	 * editor refuses it, and an accepted one clears it. The rich-text view
+	 * (`rich`) never writes over Source that holds typed text, and keeps
+	 * nothing the editor refuses. For it alone, the current row unchanged is
+	 * taken without a save: a paragraph Markdown has no spelling for is shown
+	 * and changes nothing. Any other unchanged document is saved again, which
+	 * writes the file in its canonical form.
 	 */
-	function edit(
-		{
-			fields = {},
-			body,
-		}: {
-			fields?: Partial<Record<keyof NoteFields, unknown>>;
-			body?: string;
-		},
-		{ keep = false }: { keep?: boolean } = {},
+	function set(
+		next: CanonicalDocument,
+		{ control }: { control?: NoteControl } = {},
 	): string | undefined {
 		const why = blocked();
 		if (why !== undefined) return why;
-		if (editor.row.status !== 'valid' || raw)
+		const { row } = native.get();
+		if (row.status !== 'valid' || raw)
 			return 'This note is not showing its fields.';
-		const typed: [TypedField, string][] = [];
-		if (typeof fields.title === 'string') typed.push(['title', fields.title]);
-		if (body !== undefined) typed.push(['body', body]);
-		if (!keep) {
-			const held = typed.find(([field]) => refused[field] !== undefined);
-			if (held !== undefined) {
-				refusal = `What you typed in ${FIELD_NAMES[held[0]]} is not saved. Change it there first.`;
-				return refusal;
-			}
+		const changes: Record<TypedField, boolean> = {
+			title: next.fields.title !== row.fields.title,
+			body: next.body !== row.body,
+		};
+		const held = (Object.keys(refused) as TypedField[]).find(
+			(field) =>
+				(field === 'body' && control === 'rich') ||
+				(field !== control && changes[field]),
+		);
+		if (held !== undefined) {
+			refusal = `What you typed in ${FIELD_NAMES[held]} is not saved. Change it there first.`;
+			return refusal;
 		}
-		const { error } = editor.set({
-			...editor.row,
-			fields: withChange(editor.row.fields, fields),
-			body: body ?? editor.row.body,
-		});
-		const next = { ...refused };
-		for (const [field, value] of typed)
-			if (error === null) delete next[field];
-			else if (keep) next[field] = { value, reason: error.message };
-		refused = next;
+		if (control === 'rich' && next === row) return undefined;
+		const { error } = native.set(next);
+		if (control === 'title' || control === 'body') {
+			const { [control]: _settled, ...others } = refused;
+			const value = control === 'title' ? next.fields.title : next.body;
+			refused =
+				error === null || typeof value !== 'string'
+					? others
+					: { ...others, [control]: { value, reason: error.message } };
+		}
 		if (error !== null) {
 			refusal = error.message;
 			return refusal;
@@ -330,7 +328,7 @@ export function createNoteSession(
 		get unsettled() {
 			return unsettled();
 		},
-		edit,
+		set,
 		/**
 		 * Replace the whole text, as the file view does. Taken only while the
 		 * file view is showing. Typing here keeps the file view after the text
@@ -480,7 +478,7 @@ export function createNoteSession(
 			return true;
 		},
 		/**
-		 * Stop using the editor, for good: this session refuses every input and
+		 * Stop using the editor, for good: this owner refuses every input and
 		 * choice from now on. A write already admitted still settles in the
 		 * editor.
 		 */

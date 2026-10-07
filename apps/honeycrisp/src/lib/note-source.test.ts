@@ -1,29 +1,29 @@
 /**
  * Note Text Tests
  *
- * The rich-text view and the Markdown view edit one note body. These tests
- * cover the functions that body goes through, and the help a note file gets
- * while it is repaired as text.
+ * The rich-text view and the Markdown view replace one note body in the whole
+ * note. These tests cover that replacement, the text a list shows, and the
+ * help a note file gets while it is repaired as text.
  *
  * Key behaviors:
- * - Parsing a body for the rich view and writing nothing leaves it byte-identical
- * - Unsupported bodies refuse rich editing with reasons
- * - CRLF bodies and blank lines at the start of a body are kept
+ * - A new body moves an existing `updatedAt` and never adds one; the same
+ *   body gives back the same note
  * - Repairing a note file as text fills only the fields it lacks, as written
+ *
+ * See also:
+ * - `editor/markdown.test.ts` for the body codec the rich-text view uses
  */
 import { describe, expect, test } from 'bun:test';
 import type { InstantString } from '@epicenter/definition';
 import { expectErr, expectOk } from 'wellcrafted/testing';
-import { serializeNoteBody } from './editor/markdown.js';
 import { inspectNote as inspect } from './inspect.test-support.js';
 import { diffLines } from './line-diff.js';
 import {
-	bodyText,
 	displayTitle,
 	fieldDefaults,
 	previewText,
 	repairFields,
-	richAvailability,
+	withBody,
 } from './note-source.js';
 
 const NOW = '2026-10-02T00:00:00.000Z' as InstantString;
@@ -38,32 +38,28 @@ const SOURCE = [
 	BODY,
 ].join('\n');
 
-describe('rich availability', () => {
-	test('a supported body is editable, and re-serializing its unchanged document changes no byte', () => {
-		const availability = richAvailability(BODY);
-		expect(availability.editable).toBe(true);
-		if (!availability.editable) return;
-		expect(
-			bodyText(serializeNoteBody(availability.inspection.doc), BODY),
-		).toBe(BODY);
-	});
-
-	test('unsupported Markdown is refused with a reason', () => {
-		expect(richAvailability('<details>x</details>\n')).toEqual({
-			editable: false,
-			reasons: ['It contains HTML.'],
+describe('a new body in the whole note', () => {
+	test('a changed body moves updatedAt and keeps every other field', () => {
+		const note = {
+			fields: { title: 'T', owner: { a: 1 }, updatedAt: 'then' },
+			body: 'old\n',
+		};
+		expect(withBody(note, 'new\n', NOW)).toEqual({
+			fields: { title: 'T', owner: { a: 1 }, updatedAt: NOW },
+			body: 'new\n',
 		});
 	});
-});
 
-describe('writing a rich-text body', () => {
-	test('CRLF line endings are kept', () => {
-		expect(bodyText('one\n\ntwo', '\r\none\r\n')).toBe('\r\none\r\n\r\ntwo\r\n');
+	test('a note without updatedAt does not get one', () => {
+		const note = { fields: { title: 'T' }, body: 'old\n' };
+		const next = withBody(note, 'new\n', NOW);
+		expect(next).toEqual({ fields: { title: 'T' }, body: 'new\n' });
+		expect(Object.hasOwn(next.fields, 'updatedAt')).toBe(false);
 	});
 
-	test('an emptied body keeps the blank lines at its start and nothing else', () => {
-		expect(bodyText('', '\nold\n')).toBe('\n');
-		expect(bodyText('new', 'old')).toBe('new\n');
+	test('the same body is the same note', () => {
+		const note = { fields: { updatedAt: 'then' }, body: 'same\n' };
+		expect(withBody(note, 'same\n', NOW)).toBe(note);
 	});
 });
 

@@ -56,14 +56,14 @@ import {
 } from './data.js';
 import type { FileSession } from './file-session.svelte.js';
 import { openNotesFolder } from './folder.test-support.js';
-import { noteBody } from './note-source.js';
-import type { NoteSession } from './notes.svelte.js';
+import type { NoteControl, NoteEditor } from './note-editor.svelte.js';
+import { withBody } from './note-source.js';
 import { setUpFolder } from './platform/first-open.js';
 import type { NotesFolder, NotesHost } from './platform/types.js';
 import { draftsLine } from './status.js';
 
 const { createNotes } = await import('./notes.svelte.ts');
-const { noteSaveProblem } = await import('./note-session.svelte.ts');
+const { noteSaveProblem } = await import('./note-editor.svelte.ts');
 const { watch } = await import('./effects.test-support.svelte.ts');
 
 // Real git processes; generous under a loaded machine.
@@ -245,7 +245,7 @@ async function openedFile(state: State, path: string): Promise<FileSession> {
  * A note opened in the notes state, with its note session. Its editor read
  * the file when it opened and never reads it again by itself.
  */
-async function openedNote(state: State, path: string): Promise<NoteSession> {
+async function openedNote(state: State, path: string): Promise<NoteEditor> {
 	await state.refresh();
 	await state.open(path);
 	const session = state.noteAt(path);
@@ -253,12 +253,28 @@ async function openedNote(state: State, path: string): Promise<NoteSession> {
 	return session;
 }
 
-/** Replace a note's body as its views do. */
-const typeBody = (session: NoteSession, body: string) =>
-	noteBody(() => session).input(body);
+/** Replace a note's body as Source does. Whether it was taken. */
+function typeBody(session: NoteEditor, body: string): boolean {
+	const { row } = session;
+	return (
+		row.status === 'valid' &&
+		session.set(withBody(row, body), { control: 'body' }) === undefined
+	);
+}
+
+/** Put `fields` in a note as its controls do: the whole note, every other field kept. */
+function setFields(
+	session: NoteEditor,
+	fields: Partial<NoteEntry['fields']>,
+	options?: { control?: NoteControl },
+): string | undefined {
+	const { row } = session;
+	if (row.status !== 'valid') return 'This note is not showing its fields.';
+	return session.set({ ...row, fields: { ...row.fields, ...fields } }, options);
+}
 
 /** The structured note as its views show it. */
-function shown(session: NoteSession) {
+function shown(session: NoteEditor) {
 	const { row } = session;
 	if (row.status !== 'valid' || session.rawMode)
 		throw new Error(`${session.path} does not show its fields`);
@@ -266,10 +282,10 @@ function shown(session: NoteSession) {
 }
 
 /** The whole text the note's views show now. */
-const textOf = (session: NoteSession): string => session.row.text;
+const textOf = (session: NoteEditor): string => session.row.text;
 
 /** Wait for a note's admitted writes. Resolves why they did not end saved. */
-async function saved(session: NoteSession): Promise<string | undefined> {
+async function saved(session: NoteEditor): Promise<string | undefined> {
 	const { error } = await session.waitForSaves();
 	return error === null ? undefined : noteSaveProblem(error);
 }
@@ -279,7 +295,7 @@ async function saved(session: NoteSession): Promise<string | undefined> {
  * save finds no file. Resolves the exact text the editor keeps.
  */
 async function typedAfterDeletion(
-	session: NoteSession,
+	session: NoteEditor,
 	root: string,
 	body = 'Retained\n',
 ): Promise<string> {
@@ -510,7 +526,7 @@ describe('notes are files', () => {
 		const session = await openedNote(state, note.path);
 		const listed = () => state.notes.find((entry) => entry.path === note.path);
 
-		expect(session.edit({ fields: { title: 'Saved here' } })).toBeUndefined();
+		expect(setFields(session, { title: 'Saved here' })).toBeUndefined();
 		expect(await saved(session)).toBeUndefined();
 		await until(
 			() => listed()?.fields.title === 'Saved here',
@@ -863,7 +879,7 @@ describe('other writers', () => {
 		expect(session.showFile(false)).toBeUndefined();
 		expect(shown(session).fields.owner).toBe('sam');
 		// A title change keeps the key the fields do not show, and the body.
-		expect(session.edit({ fields: { title: 'Again' } })).toBeUndefined();
+		expect(setFields(session, { title: 'Again' })).toBeUndefined();
 		expect(await saved(session)).toBeUndefined();
 		const written = await readFile(join(root, note.path), 'utf8');
 		expect(written).toContain('"title": "Again"');
@@ -1029,7 +1045,7 @@ describe('kept sessions', () => {
 		const renaming = state.rename(note.path, 'renamed.md');
 		// No await yet: the fence is already up.
 		expect(session.admitting).toBe(false);
-		expect(session.edit({ fields: { title: 'Same turn' } })).toContain(
+		expect(setFields(session, { title: 'Same turn' })).toContain(
 			'rename or delete',
 		);
 		expect(typeBody(session, 'Same turn\n')).toBe(false);
@@ -1037,11 +1053,11 @@ describe('kept sessions', () => {
 		const renamed = state.noteAt('notes/renamed.md');
 		if (renamed === undefined) throw new Error('No note at the new name');
 		expect(shown(renamed).fields.title).toBe('First');
-		expect(renamed.edit({ fields: { title: 'Later' } })).toBeUndefined();
+		expect(setFields(renamed, { title: 'Later' })).toBeUndefined();
 
 		const deletion = expectOk(await state.deletionFor('notes/renamed.md'));
 		const removing = state.remove(deletion);
-		expect(renamed.edit({ fields: { title: 'Same turn' } })).toContain(
+		expect(setFields(renamed, { title: 'Same turn' })).toContain(
 			'rename or delete',
 		);
 		expect(await removing).toBeUndefined();
@@ -1200,12 +1216,118 @@ describe('kept sessions', () => {
 		expect(state.selection?.kind).toBe('note');
 	});
 
+	test('restoring an open note that is not deleted saves it again, in its canonical form', async () => {
+		const { state, root, seedNote } = await product();
+		const note = await seedNote();
+		const hand = [
+			'---',
+			'# by hand',
+			"title: 'First'",
+			'owner: sam',
+			'folderId: null',
+			'pinned: false',
+			'createdAt: "2026-10-01T00:00:00.000Z"',
+			'updatedAt: "2026-10-01T00:00:00.000Z"',
+			'deletedAt: null',
+			'---',
+			'Hello',
+			'',
+		].join('\n');
+		await writeFile(join(root, note.path), hand);
+		const session = await openedNote(state, note.path);
+		expect(textOf(session)).toBe(hand);
+		expect(await state.restoreNote(note.path)).toBeUndefined();
+		const saved = await readFile(join(root, note.path), 'utf8');
+		expect(saved).toBe(textOf(session));
+		expect(saved).not.toContain('# by hand');
+		expect(saved).toContain('"owner": "sam"');
+		expect(saved).toContain('"updatedAt": "2026-10-01T00:00:00.000Z"');
+	});
+
+	test('a version put in an open note brings its fields, body, and time, and keeps keys it lacks', async () => {
+		const { state, root, seedNote } = await product();
+		const note = await seedNote();
+		await writeFile(
+			join(root, note.path),
+			note.text.replace('---\n', '---\nowner: sam\n'),
+		);
+		const session = await openedNote(state, note.path);
+		const version = [
+			'---',
+			'title: Old',
+			'folderId: null',
+			'pinned: true',
+			'createdAt: "2026-10-01T00:00:00.000Z"',
+			'updatedAt: "2026-09-01T00:00:00.000Z"',
+			'deletedAt: null',
+			'---',
+			'Old body',
+			'',
+		].join('\n');
+		expect(state.useVersion(session, version)).toBeUndefined();
+		expect(await saved(session)).toBeUndefined();
+		expect(shown(session)).toMatchObject({
+			fields: {
+				title: 'Old',
+				pinned: true,
+				owner: 'sam',
+				updatedAt: '2026-09-01T00:00:00.000Z',
+			},
+			body: 'Old body\n',
+		});
+		expect(await readFile(join(root, note.path), 'utf8')).toBe(textOf(session));
+	});
+
+	test('typed text waiting in a control lets list actions and versions change other fields, never its own', async () => {
+		const { state, root, seedNote } = await product();
+		const note = await seedNote();
+		const session = await openedNote(state, note.path);
+		expect(
+			setFields(session, { title: 'Half \uD800' }, { control: 'title' }),
+		).toContain('lone surrogate');
+		expect(typeBody(session, 'Half \uD800\n')).toBe(false);
+		expect(await state.patchNote(note.path, { pinned: true })).toBeUndefined();
+		expect(await readFile(join(root, note.path), 'utf8')).toContain(
+			'"pinned": true',
+		);
+		const version = (title: string, body: string) =>
+			[
+				'---',
+				`title: ${title}`,
+				'folderId: null',
+				'pinned: false',
+				'createdAt: "2026-10-01T00:00:00.000Z"',
+				'updatedAt: "2026-09-01T00:00:00.000Z"',
+				'deletedAt: null',
+				'---',
+				body,
+			].join('\n');
+		expect(state.useVersion(session, version('Other', 'Hello\n'))).toContain(
+			'the title',
+		);
+		expect(state.useVersion(session, version('First', 'Other\n'))).toContain(
+			'the Markdown source',
+		);
+		// A version with the waiting fields as the editor holds them is taken,
+		// and the typed text stays where it was typed.
+		expect(
+			state.useVersion(session, version('First', 'Hello\n')),
+		).toBeUndefined();
+		expect(shown(session).fields).toMatchObject({
+			pinned: false,
+			updatedAt: '2026-09-01T00:00:00.000Z',
+		});
+		expect(session.refused.title?.value).toBe('Half \uD800');
+		expect(session.refused.body?.value).toBe('Half \uD800\n');
+		expect(await saved(session)).toBeUndefined();
+	});
+
 	test('metadata changes share the open session: a typed field and a list action each save at once', async () => {
 		const { state, root, seedNote } = await product();
 		const note = await seedNote();
 		const session = await openedNote(state, note.path);
 		// What the title control does.
-		expect(session.edit({ fields: { title: 'Typed title' } })).toBeUndefined();
+		expect(setFields(session, { title: 'Typed title' })).toBeUndefined();
 		expect(shown(session).fields.title).toBe('Typed title');
 		expect(await state.patchNote(note.path, { pinned: true })).toBeUndefined();
 		const saved = await readFile(join(root, note.path), 'utf8');
@@ -1436,7 +1558,7 @@ describe('kept sessions', () => {
 		await typedAfterDeletion(session, root);
 		// What the title control does with half of an emoji.
 		expect(
-			session.edit({ fields: { title: 'Half \uD800' } }, { keep: true }),
+			setFields(session, { title: 'Half \uD800' }, { control: 'title' }),
 		).toContain('lone surrogate');
 		const accepted = textOf(session);
 		expect(await state.recoverDraft(note.path)).toContain('not saved yet');
@@ -1449,7 +1571,7 @@ describe('kept sessions', () => {
 		expect(textOf(session)).toBe(accepted);
 		// Once the title is fixed in its control, the note is saved as a file.
 		expect(
-			session.edit({ fields: { title: 'Half' } }, { keep: true }),
+			setFields(session, { title: 'Half' }, { control: 'title' }),
 		).toBeUndefined();
 		expect(session.refused.title).toBeUndefined();
 		// The corrected title starts a replace; it still cannot create the missing file.
@@ -1582,9 +1704,7 @@ describe('kept sessions', () => {
 		expect(session.admitting).toBe(false);
 		const destination = await at;
 		expect(await readFile(join(root, destination), 'utf8')).toBe(typed);
-		expect(session.edit({ fields: { title: 'Late' } })).toContain(
-			'rename or delete',
-		);
+		expect(setFields(session, { title: 'Late' })).toContain('rename or delete');
 		expect(typeBody(session, 'Typed while it opens\n')).toBe(false);
 		// Neither asking again nor reloading nor opening the new note races it.
 		expect(await state.recoverDraft(note.path)).toContain('still running');
@@ -3070,7 +3190,7 @@ describe('field actions and what they were derived from', () => {
 	test('a folder is not deleted while an open member moved to another folder is not listed that way yet', async () => {
 		const { state, root, note, work, home } = await filed();
 		const session = await openedNote(state, note.path);
-		expect(session.edit({ fields: { folderId: home.stem } })).toBeUndefined();
+		expect(setFields(session, { folderId: home.stem })).toBeUndefined();
 		expect(await state.deleteFolder(work)).toContain(
 			'not in its file as listed',
 		);
@@ -3091,7 +3211,7 @@ describe('field actions and what they were derived from', () => {
 		const { state, root, note, work, inWork, seedNote } = await filed();
 		const other = await seedNote('Other');
 		const session = await openedNote(state, other.path);
-		expect(session.edit({ fields: { folderId: work.stem } })).toBeUndefined();
+		expect(setFields(session, { folderId: work.stem })).toBeUndefined();
 		expect(await state.deleteFolder(work)).toContain(
 			'not in its file as listed',
 		);

@@ -11,10 +11,14 @@
  * - Respelled Markdown parses to the same document as its source
  * - HTML, images, and tables are refused with a reason
  * - The schema has no underline and no image
+ * - A note's body decodes and encodes back byte-identical, keeping its
+ *   leading blank lines and CRLF line endings
  */
 import { describe, expect, test } from 'bun:test';
 import type { Node } from 'prosemirror-model';
+import { expectErr, expectOk } from 'wellcrafted/testing';
 import {
+	bodyCodec,
 	checkNoteDoc,
 	equivalentNoteDocs,
 	inspectNoteBody,
@@ -437,6 +441,45 @@ describe('text shaped like a table stays text', () => {
 				reasons: ['It contains a table.'],
 			});
 		}
+	});
+});
+
+describe("a note's whole body", () => {
+	const BODY = '\n# List\n\n- [ ] milk\n';
+
+	test('decoded and encoded again with nothing changed, it is the same bytes', () => {
+		const decoded = bodyCodec.decode(BODY);
+		if (!decoded.supported) throw new Error('The body is not rich text');
+		expect(expectOk(bodyCodec.encode(decoded.doc, BODY))).toBe(BODY);
+		// The same text decodes to the same answer.
+		expect(bodyCodec.decode(BODY)).toBe(decoded);
+	});
+
+	test('one the editor cannot hold decodes to its reasons', () => {
+		expect(bodyCodec.decode('<details>x</details>\n')).toEqual({
+			supported: false,
+			reasons: ['It contains HTML.'],
+		});
+		expect(bodyCodec.decode('a | b\n|---|---|\n')).toEqual({
+			supported: false,
+			reasons: ['It contains a table.'],
+		});
+	});
+
+	test('encoding keeps CRLF line endings and the blank lines at the start', () => {
+		const two = doc(p(t('one')), p(t('two')));
+		expect(expectOk(bodyCodec.encode(two, '\r\none\r\n'))).toBe(
+			'\r\none\r\n\r\ntwo\r\n',
+		);
+		expect(expectOk(bodyCodec.encode(doc(p()), '\nold\n'))).toBe('\n');
+		expect(expectOk(bodyCodec.encode(doc(p(t('new'))), 'old'))).toBe('new\n');
+	});
+
+	test('a document Markdown cannot spell is refused with the reason', () => {
+		const bold = doc(p(t('a'), t('(b)', ['strong'])));
+		expect(expectErr(bodyCodec.encode(bold, 'a(b)\n'))).toContain(
+			'cannot be written as Markdown',
+		);
 	});
 });
 

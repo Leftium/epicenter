@@ -2,7 +2,7 @@
  * Rich Text Tests
  *
  * Drives the rich-text view's two rules the way the view does, over a real
- * note session on Honeycrisp's folder: each transaction goes through
+ * note editor on Honeycrisp's folder: each transaction goes through
  * `stateAfter` before it is shown, and the body is followed with
  * `stateShowing`. The state the harness keeps is what the view would display;
  * there is no other copy.
@@ -10,9 +10,10 @@
  * Key behaviors:
  * - Every displayed edit is in the note, including spaces, Enter, and
  *   Shift-Enter; the whole note is written, with its fields
- * - Moving the cursor or setting pending formatting writes nothing
+ * - Moving the cursor or setting pending formatting writes nothing, and is
+ *   shown even while the note takes no input
  * - An edit Markdown cannot express, or the note is not taking, is refused
- *   before it is displayed
+ *   before it is displayed, even one that leaves the body as it is
  * - The same content keeps the state, its cursor, pending formatting, and
  *   undo history; different content replaces it; a body that is not rich
  *   text is never written over
@@ -20,7 +21,6 @@
  */
 import '../svelte-modules.test-support.js';
 import { afterEach, describe, expect, test } from 'bun:test';
-import type { InstantString } from '@epicenter/definition';
 import { toggleMark } from 'prosemirror-commands';
 import { redo, redoDepth, undo, undoDepth } from 'prosemirror-history';
 import {
@@ -32,9 +32,9 @@ import {
 import type { EditorView } from 'prosemirror-view';
 import { expectOk } from 'wellcrafted/testing';
 import { noteText, openNotesFolder } from '../folder.test-support.js';
-import type { NoteSession } from '../note-session.svelte.js';
-import { noteBody } from '../note-source.js';
-import { equivalentNoteDocs, parseNoteBody } from './markdown.js';
+import type { NoteEditor } from '../note-editor.svelte.js';
+import { withBody } from '../note-source.js';
+import { bodyCodec, equivalentNoteDocs, parseNoteBody } from './markdown.js';
 import {
 	editingPlugins,
 	marks,
@@ -43,17 +43,16 @@ import {
 	stateShowing,
 } from './rich-text.js';
 
-const { createNoteSession } = await import('../note-session.svelte.ts');
+const { createNoteEditor } = await import('../note-editor.svelte.ts');
 
-const NOW = '2026-10-02T00:00:00.000Z' as InstantString;
 const cleanup: (() => unknown)[] = [];
 
 afterEach(async () => {
 	for (const stop of cleanup.splice(0).reverse()) await stop();
 });
 
-/** A note session over `text` at `stem`, in a fresh folder unless one is given. */
-async function sessionOver(
+/** A note's editor over `text` at `stem`, in a fresh folder unless one is given. */
+async function editorOver(
 	text: string,
 	{
 		stem = 'a',
@@ -67,19 +66,23 @@ async function sessionOver(
 	if (fixture === undefined) cleanup.push(folder.close);
 	const path = `notes/${stem}.md`;
 	await folder.write(path, text);
-	const editor = expectOk(await folder.folder.tables.notes.edit(stem));
+	const native = expectOk(await folder.folder.tables.notes.edit(stem));
 	let admitting = true;
-	const session = createNoteSession(editor, {
+	const editor = createNoteEditor(native, {
 		path,
 		admits: () => admitting,
 	});
 	cleanup.push(async () => {
-		session.release();
-		await session.waitForSaves();
+		editor.release();
+		await editor.waitForSaves();
 	});
+	const attempts = () => folder.writes().filter((at) => at === path).length;
+	const opened = attempts();
 	return {
 		folder,
-		session,
+		editor,
+		/** Write attempts at the note since its editor opened. */
+		writes: () => attempts() - opened,
 		fence: (on = true) => {
 			admitting = !on;
 		},
@@ -91,24 +94,19 @@ async function open(
 	initialBody: string,
 	{ text = noteText({ body: initialBody }) } = {},
 ) {
-	const opened = await sessionOver(text);
-	let current: NoteSession = opened.session;
-	let mounted = true;
-	const draft = noteBody(() => current, {
-		mounted: () => mounted,
-		now: () => NOW,
-	});
-	const source = noteBody(() => current, { keep: true });
-	const initial = draft.rich;
-	if (!initial.editable) throw new Error('The note is not rich text');
+	const opened = await editorOver(text);
+	let current: NoteEditor = opened.editor;
+	const body = () => (current.row.status === 'valid' ? current.row.body : '');
+	const initial = bodyCodec.decode(body());
+	if (!initial.supported) throw new Error('The note is not rich text');
 	/** What the view displays. */
 	let state = EditorState.create({
-		doc: initial.inspection.doc,
+		doc: initial.doc,
 		plugins: editingPlugins(),
 	});
 	/** Deliver a transaction as the view does. Returns whether it was displayed. */
 	const dispatch = (transaction: Transaction) => {
-		const next = stateAfter(state, transaction, draft);
+		const next = stateAfter(state, transaction, current);
 		if (next !== undefined) state = next;
 		return next !== undefined;
 	};
@@ -152,16 +150,20 @@ async function open(
 		});
 	/** The view's effect after the body changed: show what the body holds now. */
 	const follow = () => {
-		const now = draft.rich;
-		if (now.editable) state = stateShowing(state, now.inspection.doc);
+		const now = bodyCodec.decode(body());
+		if (now.supported) state = stateShowing(state, now.doc);
 	};
-	const body = () => draft.body;
+	/** What the Source view gives the editor. Answers why it was not taken. */
+	const source = (text: string) => {
+		const { row } = current;
+		if (row.status !== 'valid') throw new Error('The note does not read');
+		return current.set(withBody(row, text), { control: 'body' });
+	};
 	/** What is on screen and what the note holds are the same content. */
 	const expectNoteHoldsScreen = () =>
 		expect(equivalentNoteDocs(parseNoteBody(body()), state.doc)).toBe(true);
 	return {
 		...opened,
-		draft,
 		source,
 		/** The state the view displays now. */
 		shown: () => state,
@@ -173,23 +175,20 @@ async function open(
 		follow,
 		body,
 		expectNoteHoldsScreen,
-		/** Hand the views to another session, as a rename does. */
-		handTo(next: NoteSession) {
+		/** Hand the view to another editor, as a rename does. */
+		handTo(next: NoteEditor) {
 			current = next;
-		},
-		unmount() {
-			mounted = false;
 		},
 	};
 }
 
 describe('every displayed edit is in the note', () => {
 	test('a trailing space is kept, on screen and in the note', async () => {
-		const { type, body, session, expectNoteHoldsScreen, ...view } =
+		const { type, body, editor, expectNoteHoldsScreen, ...view } =
 			await open('');
 		expect(type('A')).toBe(true);
 		expect(type(' ')).toBe(true);
-		expect(session.refusal).toBeUndefined();
+		expect(editor.refusal).toBeUndefined();
 		expect(view.shown().doc.textContent).toBe('A ');
 		expect(body()).toBe('A&#32;\n');
 		expect(parseNoteBody(body()).textContent).toBe('A ');
@@ -209,15 +208,24 @@ describe('every displayed edit is in the note', () => {
 	});
 
 	test('Enter and Shift-Enter are displayed, and what Markdown cannot spell yet does not make the note newer', async () => {
-		const { type, press, body, session, end, expectNoteHoldsScreen, ...view } =
-			await open('one\n');
+		const {
+			type,
+			press,
+			body,
+			editor,
+			end,
+			writes,
+			expectNoteHoldsScreen,
+			...view
+		} = await open('one\n');
 		end();
-		const before = session.row.text;
+		const before = editor.row;
 		press('Enter');
 		expect(view.shown().doc.childCount).toBe(2);
 		// An empty paragraph has no Markdown: the note, its time included, stays.
-		expect(session.row.text).toBe(before);
-		expect(session.save.status).toBe('idle');
+		expect(editor.row).toBe(before);
+		expect(editor.save.status).toBe('idle');
+		expect(writes()).toBe(0);
 		expectNoteHoldsScreen();
 		type('two');
 		expect(body()).toBe('one\n\ntwo\n');
@@ -249,26 +257,26 @@ describe('every displayed edit is in the note', () => {
 	});
 
 	test('lines typed like a table stay text, and the note stays rich text', async () => {
-		const { type, press, body, draft, follow, ...view } = await open('');
+		const { type, press, body, follow, ...view } = await open('');
 		type('a | b');
 		press('Enter', { shift: true });
 		type('|---|---|');
 		expect(body()).toBe('a | b\\\n\\|---|---|\n');
-		expect(draft.rich.editable).toBe(true);
+		expect(bodyCodec.decode(body()).supported).toBe(true);
 		const state = view.shown();
 		follow();
 		expect(view.shown()).toBe(state);
 	});
 
 	test('an edit gives the editor the whole note once: the body, a new time, and every other field', async () => {
-		const { type, session } = await open('one\n');
-		const before = session.row;
+		const { type, editor } = await open('one\n');
+		const before = editor.row;
 		type('x');
-		const row = session.row;
+		const row = editor.row;
 		if (row.status !== 'valid' || before.status !== 'valid')
 			throw new Error('The note does not read');
 		expect(row.body).toBe('xone\n');
-		expect(row.fields.updatedAt).toBe(NOW);
+		expect(row.fields.updatedAt).not.toBe(before.fields.updatedAt);
 		expect(row.text).toContain('"owner": {"name": "one", "tags": ["two"]}');
 		expect({ ...row.fields, updatedAt: undefined }).toEqual({
 			...before.fields,
@@ -285,23 +293,32 @@ describe('every displayed edit is in the note', () => {
 	});
 
 	test('moving the cursor or setting pending formatting writes nothing', async () => {
-		const { end, run, session, ...view } = await open('one\n');
-		const before = session.row.text;
+		const { end, run, editor, ...view } = await open('one\n');
+		const before = editor.row.text;
 		end();
 		expect(run(toggleMark(marks.em))).toBe(true);
 		expect(view.shown().storedMarks?.map((mark) => mark.type)).toEqual([
 			marks.em,
 		]);
-		expect(session.row.text).toBe(before);
-		expect(session.save.status).toBe('idle');
+		expect(editor.row.text).toBe(before);
+		expect(editor.save.status).toBe('idle');
+	});
+
+	test('moving the cursor is shown while the note takes no input, and writes nothing', async () => {
+		const { end, fence, editor, writes, ...view } = await open('one\n');
+		fence();
+		expect(end()).toBe(true);
+		expect(view.shown().selection.head).toBe(4);
+		expect(editor.save.status).toBe('idle');
+		expect(writes()).toBe(0);
 	});
 });
 
 describe('an edit that cannot be written', () => {
 	test('one Markdown cannot express is refused before it is displayed, and says why', async () => {
-		const { run, session, ...view } = await open('a(b)\n');
+		const { run, editor, ...view } = await open('a(b)\n');
 		const before = view.shown();
-		const text = session.row.text;
+		const text = editor.row.text;
 		// Bold on "(b)" directly after a letter has no Markdown spelling.
 		const displayed = run((state, send) => {
 			send?.(state.tr.addMark(2, 5, marks.strong.create()));
@@ -309,31 +326,31 @@ describe('an edit that cannot be written', () => {
 		});
 		expect(displayed).toBe(false);
 		expect(view.shown()).toBe(before);
-		expect(session.row.text).toBe(text);
-		expect(session.refusal).toContain('cannot be written as Markdown');
+		expect(editor.row.text).toBe(text);
+		expect(editor.refusal).toContain('cannot be written as Markdown');
 	});
 
 	test('a line break in a heading is refused; the heading text is untouched', async () => {
-		const { run, session, ...view } = await open('# Title\n');
+		const { run, editor, ...view } = await open('# Title\n');
 		const displayed = run((state, send) => {
 			send?.(state.tr.insert(3, nodes.hard_break.create()));
 			return true;
 		});
 		expect(displayed).toBe(false);
 		expect(view.shown().doc.textContent).toBe('Title');
-		expect(session.save.status).toBe('idle');
+		expect(editor.save.status).toBe('idle');
 	});
 
 	test('one the editor refuses is not displayed, and the undo history stays as it was', async () => {
-		const { dispatch, session, ...view } = await open('Body.\n');
+		const { dispatch, editor, ...view } = await open('Body.\n');
 		const before = view.shown();
 		// Half of an emoji: Markdown can spell it, and a file cannot hold it.
 		expect(dispatch(view.shown().tr.insertText('\uD800', 1))).toBe(false);
 		expect(view.shown()).toBe(before);
 		expect(undoDepth(view.shown())).toBe(0);
-		expect(session.refusal).toContain('lone surrogate');
-		expect(session.refused.body).toBeUndefined();
-		expect(session.save.status).toBe('idle');
+		expect(editor.refusal).toContain('lone surrogate');
+		expect(editor.refused.body).toBeUndefined();
+		expect(editor.save.status).toBe('idle');
 		// The next edit it can take is shown and kept in its history.
 		expect(dispatch(view.shown().tr.insertText('ok ', 1))).toBe(true);
 		expect(undoDepth(view.shown())).toBe(1);
@@ -358,20 +375,52 @@ describe('an edit that cannot be written', () => {
 	});
 
 	test('rich text does not write over a Source body the editor refused', async () => {
-		const { source, dispatch, session, ...view } = await open('Body.\n');
-		expect(source.input('Half \uD800\n')).toBe(false);
-		expect(session.refused.body?.value).toBe('Half \uD800\n');
+		const { source, dispatch, editor, ...view } = await open('Body.\n');
+		expect(source('Half \uD800\n')).toContain('lone surrogate');
+		expect(editor.refused.body?.value).toBe('Half \uD800\n');
 		expect(dispatch(view.shown().tr.insertText('x', 1))).toBe(false);
-		expect(session.refusal).toContain('Markdown source');
-		expect(session.refused.body?.value).toBe('Half \uD800\n');
+		expect(editor.refusal).toContain('Markdown source');
+		expect(editor.refused.body?.value).toBe('Half \uD800\n');
 	});
 
-	test('one from a view that is gone is not taken', async () => {
-		const { type, unmount, session, body } = await open('one\n');
-		unmount();
-		expect(type('late')).toBe(false);
-		expect(body()).toBe('one\n');
-		expect(session.save.status).toBe('idle');
+	test('Enter that leaves the body as it is is not displayed while the note takes no input', async () => {
+		const opened = await open('one\n');
+		const { press, end, fence, source, editor, writes, ...view } = opened;
+		end();
+		const unshown = (why: string) => {
+			const state = view.shown();
+			press('Enter');
+			expect(view.shown()).toBe(state);
+			expect(view.shown().doc.childCount).toBe(1);
+			expect(editor.refusal ?? '').toContain(why);
+		};
+		// Source holds text the editor refused.
+		expect(source('Half \uD800\n')).toContain('lone surrogate');
+		unshown('Markdown source');
+		expect(source('one\n')).toBeUndefined();
+		await editor.waitForSaves();
+		const saved = writes();
+		// A delete whose outcome is not known.
+		const step = {
+			kind: 'remove',
+			from: { path: editor.path, sha256: 'unknown' },
+		} as const;
+		editor.track(step);
+		editor.conclude(step, { kind: 'unconfirmed', message: 'no reply' });
+		const state = view.shown();
+		press('Enter');
+		expect(view.shown()).toBe(state);
+		editor.conclude(step, { kind: 'done' });
+		// The app is closing.
+		fence();
+		press('Enter');
+		expect(view.shown()).toBe(state);
+		expect(editor.save.status).toBe('idle');
+		expect(writes()).toBe(saved);
+		fence(false);
+		press('Enter');
+		expect(view.shown().doc.childCount).toBe(2);
+		expect(writes()).toBe(saved);
 	});
 });
 
@@ -415,7 +464,7 @@ describe('undo history', () => {
 		run(toggleMark(marks.strong));
 		const state = view.shown();
 		expect(body()).toBe('*a* b!\n');
-		expect(source.input('_a_ b!\n')).toBe(true);
+		expect(source('_a_ b!\n')).toBeUndefined();
 		follow();
 		expect(view.shown()).toBe(state);
 		expect(view.shown().selection.head).toBe(5);
@@ -424,15 +473,15 @@ describe('undo history', () => {
 	});
 
 	test('a different body replaces the state without writing, and new edits are undoable', async () => {
-		const { type, run, source, follow, session, body, end, ...view } =
+		const { type, run, source, follow, editor, body, end, ...view } =
 			await open('one\n');
 		end();
 		type('!');
-		expect(source.input('from source\n')).toBe(true);
-		const text = session.row.text;
+		expect(source('from source\n')).toBeUndefined();
+		const text = editor.row.text;
 		follow();
 		expect(view.shown().doc.textContent).toBe('from source');
-		expect(session.row.text).toBe(text);
+		expect(editor.row.text).toBe(text);
 		expect(undoDepth(view.shown())).toBe(0);
 		// The cursor starts at the start.
 		expect(view.shown().selection.head).toBe(1);
@@ -451,7 +500,7 @@ describe('a body that changed elsewhere', () => {
 	test('a transaction that arrives before the view followed is dropped, and the body is shown', async () => {
 		const { type, source, body, follow, ...view } = await open('one\n');
 		// Source took a body; the view has not followed it yet.
-		expect(source.input('from source\n')).toBe(true);
+		expect(source('from source\n')).toBeUndefined();
 		expect(type('x')).toBe(true);
 		expect(view.shown().doc.textContent).toBe('from source');
 		expect(body()).toBe('from source\n');
@@ -467,7 +516,7 @@ describe('a body that changed elsewhere', () => {
 		const moved = view
 			.shown()
 			.tr.setSelection(TextSelection.create(view.shown().doc, 4));
-		expect(source.input('from source\n')).toBe(true);
+		expect(source('from source\n')).toBeUndefined();
 		follow();
 		const state = view.shown();
 		expect(dispatch(late)).toBe(false);
@@ -477,10 +526,10 @@ describe('a body that changed elsewhere', () => {
 	});
 
 	test('a body that is not rich text is never written over', async () => {
-		const { type, source, body, draft, follow, ...view } = await open('one\n');
+		const { type, source, body, follow, ...view } = await open('one\n');
 		const state = view.shown();
-		expect(source.input('<div>x</div>\n')).toBe(true);
-		expect(draft.rich.editable).toBe(false);
+		expect(source('<div>x</div>\n')).toBeUndefined();
+		expect(bodyCodec.decode(body()).supported).toBe(false);
 		expect(type('x')).toBe(false);
 		follow();
 		expect(view.shown()).toBe(state);
@@ -488,36 +537,36 @@ describe('a body that changed elsewhere', () => {
 	});
 
 	test('HTML that reads as the same text as the document is still not rich text', async () => {
-		const { type, source, body, draft } = await open('');
+		const { type, source, body } = await open('');
 		type('<b>x</b>');
 		expect(body()).toBe('\\<b>x\\</b>\n');
 		// Raw HTML parses to the same literal text, and the editor refuses it.
-		expect(source.input('<b>x</b>\n')).toBe(true);
-		const rich = draft.rich;
-		expect(rich.editable).toBe(false);
-		if (!rich.editable) expect(rich.reasons).toEqual(['It contains HTML.']);
+		expect(source('<b>x</b>\n')).toBeUndefined();
+		const rich = bodyCodec.decode(body());
+		expect(rich.supported).toBe(false);
+		if (!rich.supported) expect(rich.reasons).toEqual(['It contains HTML.']);
 		expect(type('!')).toBe(false);
 		expect(body()).toBe('<b>x</b>\n');
 	});
 });
 
-describe('a rename hands the note to a new session', () => {
-	test('the same state and history write to the session that holds the note now', async () => {
-		const { type, end, follow, handTo, folder, session, ...view } =
+describe('a rename hands the note to a new editor', () => {
+	test('the same state and history write to the editor that holds the note now', async () => {
+		const { type, end, follow, handTo, folder, editor, ...view } =
 			await open('one\n');
 		end();
 		type('!');
-		const renamed = await sessionOver(noteText({ body: 'one!\n' }), {
+		const renamed = await editorOver(noteText({ body: 'one!\n' }), {
 			stem: 'b',
 			fixture: folder,
 		});
-		handTo(renamed.session);
+		handTo(renamed.editor);
 		const state = view.shown();
 		follow();
 		expect(view.shown()).toBe(state);
 		type('?');
-		expect(renamed.session.row).toMatchObject({ body: 'one!?\n' });
-		expect(session.row).toMatchObject({ body: 'one!\n' });
+		expect(renamed.editor.row).toMatchObject({ body: 'one!?\n' });
+		expect(editor.row).toMatchObject({ body: 'one!\n' });
 		expect(undoDepth(view.shown())).toBeGreaterThan(0);
 	});
 });

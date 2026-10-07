@@ -37,20 +37,21 @@
 		stateShowing,
 		toggleQuote,
 	} from '$lib/editor/rich-text.js';
+	import { bodyCodec } from '$lib/editor/markdown.js';
 	import { noteSchema as schema } from '$lib/editor/schema.js';
-	import type { BodyDraft } from '$lib/note-source.js';
+	import type { NoteEditor } from '$lib/note-editor.svelte.js';
 	import Lifetime from './Lifetime.svelte';
 
 	let {
-		draft,
-		admitting,
+		editor,
 		focusRequest,
 		onOpenSource,
 	}: {
-		/** The note's body, shared with its Markdown view. */
-		draft: BodyDraft;
-		/** Whether input is being taken; false while the app answers a close. */
-		admitting: boolean;
+		/**
+		 * The note's editor, read at each transaction: a rename hands this view
+		 * the editor at the new path, and the view and its history stay.
+		 */
+		editor: NoteEditor;
 		focusRequest: number;
 		onOpenSource: () => void;
 	} = $props();
@@ -69,12 +70,12 @@
 	 * note, such as its title, gives the same body and the same answer, so
 	 * nothing below runs again.
 	 */
-	const rich = $derived(draft.rich);
+	const rich = $derived(editor.row.status === 'valid' ? bodyCodec.decode(editor.row.body) : undefined);
 	/**
 	 * A boolean, on purpose: the view's lifetime depends on this and nothing
 	 * else, and a boolean only notifies when it flips. Typing never flips it.
 	 */
-	const editable = $derived(rich.editable);
+	const editable = $derived(rich?.supported === true);
 
 	let active = $state.raw({
 		bold: false,
@@ -164,12 +165,12 @@
 	$effect(() => {
 		if (!element || !editable) return;
 		const opened = untrack(() => rich);
-		if (!opened.editable) return;
+		if (!opened?.supported) return;
 		/** Cleared with this view: a transaction it is handed afterwards changes nothing. */
 		let alive = true;
 		const created = new EditorView(element, {
 			state: EditorState.create({
-				doc: opened.inspection.doc,
+				doc: opened.doc,
 				plugins: [...editingPlugins(), placeholder, taskCheckbox],
 			}),
 			attributes: { class: 'focus:outline-none', 'aria-label': 'Note text' },
@@ -178,8 +179,8 @@
 				// dispatch after it was destroyed. Its document is not the note's.
 				if (!alive || this.isDestroyed) return;
 				// A refused or stale transaction changes nothing on screen; an
-				// accepted one is already in the note.
-				const next = stateAfter(this.state, transaction, draft);
+				// acknowledged one is already in the note's editor.
+				const next = stateAfter(this.state, transaction, editor);
 				if (next !== undefined) show(this, next);
 			},
 		});
@@ -197,8 +198,8 @@
 	$effect(() => {
 		const current = rich;
 		const mounted = untrack(() => view);
-		if (!mounted || !current.editable) return;
-		const next = stateShowing(mounted.state, current.inspection.doc);
+		if (!mounted || !current?.supported) return;
+		const next = stateShowing(mounted.state, current.doc);
 		if (next !== mounted.state) show(mounted, next);
 	});
 
@@ -309,7 +310,7 @@
 							>
 								<Input class="h-8" placeholder="https://example.com" aria-label="Link address" bind:value={linkHref} />
 								<!-- The popover is outside the app's inert root. -->
-								<Button type="submit" size="sm" disabled={!admitting}>{linkHref.trim() === '' ? 'Remove' : 'Apply'}</Button>
+								<Button type="submit" size="sm" disabled={!editor.admitting}>{linkHref.trim() === '' ? 'Remove' : 'Apply'}</Button>
 							</form>
 						</Popover.Content>
 					</Popover.Root>
@@ -356,7 +357,7 @@
 			file was changed.
 		</p>
 		<ul class="list-disc space-y-0.5 ps-5 text-muted-foreground">
-			{#each rich.editable ? [] : rich.reasons as reason (reason)}
+			{#each rich?.supported === false ? rich.reasons : [] as reason (reason)}
 				<li>{reason}</li>
 			{/each}
 		</ul>

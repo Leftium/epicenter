@@ -41,7 +41,7 @@ import {
 	openNotesFolder,
 	until,
 } from '../../lib/folder.test-support.js';
-import type { NoteSession } from '../../lib/notes.svelte.js';
+import type { NoteEditor } from '../../lib/note-editor.svelte.js';
 
 // jsdom has no layout, and its ranges cannot be measured. ProseMirror
 // measures the cursor to scroll it into view after typing; it gets no boxes.
@@ -104,14 +104,14 @@ async function view() {
 	const shown = switchable(a);
 	const { target, close } = render(NoteDetail, {
 		notes,
-		get session() {
+		get editor() {
 			return shown.value;
 		},
 	});
 	return { ...fixture, notes, a, b, opened, shown, target, close };
 }
 
-const titleOf = (session: NoteSession) =>
+const titleOf = (session: NoteEditor) =>
 	session.row.status === 'valid' ? session.row.fields.title : undefined;
 
 /** Let a binding's after-input check run, then render. */
@@ -388,6 +388,71 @@ test('Source the editor cannot hold shows rich text as Source only, writes nothi
 	expect(reopened.textContent).toBe('Repaired');
 	await typeRich(reopened, ' and typed');
 	expect(c.row).toMatchObject({ body: 'Repaired and typed\n' });
+});
+
+test('a new editor with the same content keeps the rich-text view and its undo, and takes the next edit', async () => {
+	const { a, opened, shown, target, write } = await view();
+	const rich = only<HTMLElement>(target, '[aria-label="Note text"]');
+	await typeRich(rich, ' Typed');
+	expect(a.row).toMatchObject({ body: 'Body. Typed\n' });
+	// As a rename does: the same note at another path, here also respelled.
+	await write(
+		'notes/c.md',
+		noteText({ title: 'Alpha', body: 'Body. Typed\n\n\n' }),
+	);
+	const c = await opened('notes/c.md');
+	shown.value = c;
+	flushSync();
+	expect(only(target, '[aria-label="Note text"]')).toBe(rich);
+	expect(undoButton(target).disabled).toBe(false);
+	await typeRich(rich, ' more');
+	expect(c.row).toMatchObject({ body: 'Body. Typed more\n' });
+	expect(a.row).toMatchObject({ body: 'Body. Typed\n' });
+});
+
+test('rich-text Enter that leaves the body as it is shows nothing while Source holds text the editor refused', async () => {
+	const { a, target } = await view();
+	const rich = only<HTMLElement>(target, '[aria-label="Note text"]');
+	click(target, 'Source');
+	flushSync();
+	type(
+		only<HTMLTextAreaElement>(target, 'textarea[aria-label="Markdown source"]'),
+		'Half \uD800\n',
+	);
+	await tick();
+	expect(a.refused.body?.value).toBe('Half \uD800\n');
+	click(target, 'Rich text');
+	flushSync();
+	const before = a.row;
+	rich.dispatchEvent(
+		new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }),
+	);
+	flushSync();
+	expect(rich.querySelectorAll('p')).toHaveLength(1);
+	expect(a.row).toBe(before);
+	expect(a.save.status).toBe('idle');
+	expect(target.textContent).toContain(
+		'What you typed in the Markdown source is not saved',
+	);
+});
+
+test('a rich-text toolbar button from a view that is gone changes nothing', async () => {
+	const { a, target } = await view();
+	const divider = only<HTMLButtonElement>(
+		target,
+		'button[aria-label="Divider"]',
+	);
+	click(target, 'Edit as file');
+	flushSync();
+	click(target, 'Open as note');
+	flushSync();
+	const reopened = only<HTMLElement>(target, '[aria-label="Note text"]');
+	expect(divider.isConnected).toBe(false);
+	const before = a.row.text;
+	divider.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+	flushSync();
+	expect(a.row.text).toBe(before);
+	expect(reopened.querySelector('hr')).toBeNull();
 });
 
 test('another program’s change shows only on Reload file, and with text not saved the person confirms first', async () => {

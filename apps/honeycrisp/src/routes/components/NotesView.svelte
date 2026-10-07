@@ -92,9 +92,9 @@
 				<Resizable.Pane id="detail" order={3} defaultSize={filesOpen ? 40 : 60} minSize={30}>
 					{@const selection = notes.selection}
 					{#if selection?.kind === 'note'}
-						<!-- One mount per note; a rename hands it a new session without remounting. -->
+						<!-- One mount per note; a rename hands it a new editor without remounting. -->
 						{#key selection.key}
-							<NoteDetail {notes} session={selection.session} />
+							<NoteDetail {notes} editor={selection.session} />
 						{/key}
 					{:else if selection?.kind === 'file'}
 						<FileView {notes} path={selection.path} file={selection.file} />

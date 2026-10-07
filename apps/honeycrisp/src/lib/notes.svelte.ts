@@ -12,7 +12,7 @@
  * Every opened file has one session, kept by path, and never two:
  *
  * - A note is a row editor (`folder.tables.notes.edit`) retained in a
- *   `NoteSession`. Its title, folder, pin, rich-text, and Source controls,
+ *   `NoteEditor`. Its title, folder, pin, rich-text, and Source controls,
  *   and its file view, all change that one editor's input at once; a
  *   structured change gives it the complete canonical document, and the file
  *   view its exact text. A note whose text does not read as one opens the
@@ -38,6 +38,7 @@ import {
 	type FileCapture,
 	type FileListing,
 	inspectRow,
+	type RowEditor,
 	rowPath,
 	rowStemOf,
 	submittedText,
@@ -78,17 +79,15 @@ import {
 } from './file-session.svelte.js';
 import { nameProblem, readTextFile } from './files.js';
 import {
-	createNoteSession,
+	createNoteEditor,
 	type NoteEditor,
-	type NoteSession,
 	noteSaveProblem,
-} from './note-session.svelte.js';
+} from './note-editor.svelte.js';
 import { displayTitle } from './note-source.js';
 import type { NotesHost } from './platform/types.js';
 import { createTerminalSession } from './terminal.svelte.js';
 
 export type Notes = ReturnType<typeof createNotes>;
-export type { NoteSession };
 
 /** An opened file, including notes. */
 export type OpenFile =
@@ -96,7 +95,7 @@ export type OpenFile =
 	| { readonly kind: 'failed'; readonly message: string }
 	| {
 			readonly kind: 'note';
-			readonly session: NoteSession;
+			readonly session: NoteEditor;
 			/**
 			 * Which note this is to a view, kept when a rename hands the note to
 			 * a session at its new path, so the view and its undo history stay.
@@ -121,7 +120,7 @@ export type OpenFile =
 export type Selection =
 	| {
 			readonly kind: 'note';
-			readonly session: NoteSession;
+			readonly session: NoteEditor;
 			/** The same across a rename; a view of this note is keyed on it. */
 			readonly key: object;
 	  }
@@ -189,6 +188,8 @@ export type PendingChange = SentChange & {
 
 const UNSETTLED = 'Save or discard the open edits first.';
 const CLOSING = 'The app is closing, so nothing was changed.';
+const NEEDS_REPAIR =
+	'This note has a field that needs fixing. Fix it in the note first.';
 const NOTE_CHANGED =
 	'The file holds other text than this note shows, so nothing was changed. Reload the file to see it.';
 const FOLDERS = 'folders';
@@ -402,7 +403,7 @@ export function createNotes(host: NotesHost) {
 	}
 
 	/** The session for an opened note. */
-	function noteAt(path: string): NoteSession | undefined {
+	function noteAt(path: string): NoteEditor | undefined {
 		const file = openFiles.get(path);
 		return file?.kind === 'note' ? file.session : undefined;
 	}
@@ -413,7 +414,7 @@ export function createNotes(host: NotesHost) {
 		);
 	}
 
-	function allNotes(): NoteSession[] {
+	function allNotes(): NoteEditor[] {
 		return [...openFiles.values()].flatMap((file) =>
 			file.kind === 'note' ? [file.session] : [],
 		);
@@ -447,13 +448,13 @@ export function createNotes(host: NotesHost) {
 		return session;
 	}
 
-	/** A note session over an editor the caller opened. The caller keeps it under its path. */
-	function noteSession(
-		editor: NoteEditor,
+	/** A note's editor over the row editor the caller opened. The caller keeps it under its path. */
+	function noteEditor(
+		editor: RowEditor<NoteFields>,
 		path: string,
 		rawMode = false,
-	): NoteSession {
-		return createNoteSession(editor, {
+	): NoteEditor {
+		return createNoteEditor(editor, {
 			path,
 			rawMode,
 			admits: () => !fenced,
@@ -497,7 +498,7 @@ export function createNotes(host: NotesHost) {
 		if (error === null) {
 			openFiles.set(at, {
 				kind: 'note',
-				session: noteSession(editor, at, rawMode),
+				session: noteEditor(editor, at, rawMode),
 				key,
 			});
 			return undefined;
@@ -878,7 +879,7 @@ export function createNotes(host: NotesHost) {
 			else if (editError === null)
 				openFiles.set(path, {
 					kind: 'note',
-					session: noteSession(editor, path),
+					session: noteEditor(editor, path),
 					key: {},
 				});
 			// A recognized note is never handed to a text session: its file has
@@ -932,7 +933,7 @@ export function createNotes(host: NotesHost) {
 	 * text the values were derived from.
 	 */
 	function noteActionProblem(
-		session: NoteSession,
+		session: NoteEditor,
 		listed?: Capture,
 	): string | undefined {
 		if (session.busy)
@@ -942,8 +943,7 @@ export function createNotes(host: NotesHost) {
 			return 'This note has a change that is not settled. Choose what to do in the note first.';
 		if (session.rawMode)
 			return 'This note is open as a file. Open it as a note to change it here.';
-		if (row.status !== 'valid')
-			return 'This note has a field that needs fixing. Fix it in the note first.';
+		if (row.status !== 'valid') return NEEDS_REPAIR;
 		if (listed !== undefined && row.text !== listed.text)
 			return 'The open note does not hold the text that was listed, so nothing was changed. Check it and try again.';
 		return undefined;
@@ -973,10 +973,16 @@ export function createNotes(host: NotesHost) {
 		if (blocked !== undefined) return blocked;
 		const session = noteAt(path);
 		if (session !== undefined) {
-			const problem =
-				noteActionProblem(session, listed) ??
-				session.edit({ fields: owned as Partial<NoteFields> });
+			const problem = noteActionProblem(session, listed);
 			if (problem !== undefined) return problem;
+			const { row } = session.get();
+			if (row.status !== 'valid') return NEEDS_REPAIR;
+			// The same values still publish: the file gets the note's canonical form.
+			const refusal = session.set({
+				...row,
+				fields: { ...row.fields, ...owned },
+			});
+			if (refusal !== undefined) return refusal;
 			const { error } = await session.waitForSaves();
 			return error === null ? undefined : noteSaveProblem(error);
 		}
@@ -1036,7 +1042,7 @@ export function createNotes(host: NotesHost) {
 	 * seen. The editor keeps its text; the person reloads to see the file.
 	 */
 	async function captureNote(
-		session: NoteSession,
+		session: NoteEditor,
 	): Promise<Result<Capture, string>> {
 		const { error: saveError } = await session.waitForSaves();
 		if (saveError !== null || session.unsettled) return Err(UNSETTLED);
@@ -1071,7 +1077,7 @@ export function createNotes(host: NotesHost) {
 	 * slips in between.
 	 */
 	function renameNote(
-		session: NoteSession,
+		session: NoteEditor,
 		path: string,
 		to: string,
 	): Promise<FileOutcome<unknown> | { readonly kind: 'unsettled' }> {
@@ -1110,7 +1116,7 @@ export function createNotes(host: NotesHost) {
 					editError === null
 						? {
 								kind: 'note',
-								session: noteSession(editor, to, session.rawMode),
+								session: noteEditor(editor, to, session.rawMode),
 								key: file.key,
 							}
 						: {
@@ -1228,7 +1234,7 @@ export function createNotes(host: NotesHost) {
 	 */
 	function openNoteProblem(
 		path: string,
-		session: NoteSession,
+		session: NoteEditor,
 		id: string,
 	): string | undefined {
 		const name = basename(path);
@@ -1641,7 +1647,7 @@ export function createNotes(host: NotesHost) {
 			}
 			openFiles.set(path, {
 				kind: 'note',
-				session: noteSession(editor, path),
+				session: noteEditor(editor, path),
 				key: kept.key,
 			});
 			return undefined;
@@ -1677,12 +1683,18 @@ export function createNotes(host: NotesHost) {
 		 * invalid values for, and keys Honeycrisp does not declare, stay as the
 		 * editor has them.
 		 */
-		useVersion(session: NoteSession, source: string): string | undefined {
+		useVersion(session: NoteEditor, source: string): string | undefined {
 			if (fenced) return CLOSING;
 			const version = inspectRow(honeycrispDefinition.tables.notes, source);
 			if (version.body === undefined)
 				return `This version does not read as a note (${version.parseError?.message}). Use Edit as file to change the text by hand.`;
-			return session.edit({ fields: version.fields, body: version.body });
+			const { row } = session.get();
+			if (row.status !== 'valid') return NEEDS_REPAIR;
+			// The version's own `updatedAt` comes with it.
+			return session.set({
+				fields: { ...row.fields, ...version.fields },
+				body: version.body,
+			});
 		},
 		/**
 		 * Rename a file within its directory. An open file moves on the capture

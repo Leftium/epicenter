@@ -35,6 +35,11 @@ Direct body editing needs no codec. Add decode and encode only when controls
 present a different representation of the body, such as Capture's text and
 thoughts. The encoded body enters the same complete replacement.
 
+An app-owned editor may guard `set` with operation fences and preserve refused
+control input. It still accepts complete replacements. Views compose changes;
+the editor decides admission and passes accepted input to the native publisher.
+Do not put a body draft or a patch-merging API between those owners.
+
 Source means the complete file, including frontmatter; body means its text after
 frontmatter. Both can use the same textarea or text editor component. The binding
 determines what it edits; a separate `SourceEditor` wrapper is unnecessary.
@@ -130,6 +135,25 @@ and submit it successfully before displaying the changed state. Successful
 encoding must reopen as supported, equivalent content. Selection and pending-mark
 changes write nothing. This admits one widget-state owner without a last-written
 body marker or separate synchronization API.
+
+Some permitted document changes encode to unchanged body text: an empty trailing
+paragraph is one example. They still require admission before display. Otherwise
+an unchanged-text shortcut bypasses a close fence or held Source input. The rich
+control receives an explicit acknowledgment without publishing unchanged input.
+Ordinary commands can still request publication of the same document, such as
+restoring a hand-spelled file into its standard form.
+
+Use function bindings for ordinary controls. A rich widget that must display
+only admitted transactions calls the editor directly: Svelte function bindings
+discard a setter's return value. Reading the body back cannot distinguish a
+permitted empty paragraph from one refused by an operation fence.
+
+Honeycrisp names the submitting control in `set` when that intent matters.
+Title and Source retain their own refused text; rich text respects held Source
+input without turning a serialization failure into Source's typed value.
+Commands preserve held values when changing unrelated fields. A body replacement
+composer updates an existing edit timestamp only when the body changes.
+Historical restoration composes separately and preserves its historical timestamp.
 
 ## Consequences
 

@@ -8,11 +8,12 @@
  * compared by content:
  *
  * - `stateAfter` decides every transaction before it is shown. One that
- *   changes the document is checked against the current body first, then its
- *   Markdown goes to the note's editor in the same step. If the Markdown
- *   would not open as the same document, or the editor refuses it, the screen
- *   does not change. There is never text on screen that the editor does not
- *   hold.
+ *   changes the document is checked against the current body first, then the
+ *   whole note with its Markdown goes to the note's editor in the same step.
+ *   If the Markdown would not open as the same document, or the editor does
+ *   not acknowledge the note, the screen does not change. There is never text
+ *   on screen that the editor does not hold, and nothing is shown that the
+ *   editor would not take, even an edit that leaves the body as it is.
  * - `stateShowing` follows the body. The same content keeps the state, so a
  *   body this view wrote, or a respelling in Source, changes nothing on
  *   screen. Different content (Source, a reloaded file, a chosen version)
@@ -50,8 +51,9 @@ import {
 	type Plugin,
 	type Transaction,
 } from 'prosemirror-state';
-import type { BodyDraft } from '../note-source.js';
-import { equivalentNoteDocs } from './markdown.js';
+import type { NoteEditor } from '../note-editor.svelte.js';
+import { withBody } from '../note-source.js';
+import { bodyCodec, equivalentNoteDocs } from './markdown.js';
 import { noteSchema } from './schema.js';
 
 export const marks = noteSchema.marks as unknown as Record<
@@ -173,24 +175,38 @@ export function stateShowing(state: EditorState, doc: Node): EditorState {
  *
  * A transaction built on a document `state` no longer has is dropped: its
  * steps describe text that was replaced. One that changes the document first
- * meets the body as it is now. A body that changed elsewhere since `state`
- * showed it is shown instead and the transaction is dropped; a body that is
- * no longer rich text takes nothing, and the view leaves for Source. Then the
- * new document goes to the note's editor, and is shown only once it was taken.
+ * meets the body `editor` holds now. A body that changed elsewhere since
+ * `state` showed it is shown instead and the transaction is dropped; a body
+ * that is no longer rich text takes nothing, and the view leaves for Source.
+ * Then the whole note with the new body goes to `editor`, and the new state is
+ * shown only once the editor acknowledged it. Markdown that cannot spell the
+ * new document is refused with its reason. `editor` is the one holding the
+ * note at this transaction: a rename hands the view to another.
  */
 export function stateAfter(
 	state: EditorState,
 	transaction: Transaction,
-	draft: Pick<BodyDraft, 'rich' | 'inputDoc'>,
+	editor: NoteEditor,
 ): EditorState | undefined {
 	if (transaction.before !== state.doc) return undefined;
 	// A selection or pending formatting writes nothing: opening a note never
 	// changes its file.
 	if (!transaction.docChanged) return state.apply(transaction);
-	const current = draft.rich;
-	if (!current.editable) return undefined;
-	const shown = stateShowing(state, current.inspection.doc);
+	const { row } = editor;
+	if (row.status !== 'valid') return undefined;
+	const current = bodyCodec.decode(row.body);
+	if (!current.supported) return undefined;
+	const shown = stateShowing(state, current.doc);
 	if (shown !== state) return shown;
 	const next = state.apply(transaction);
-	return draft.inputDoc(next.doc) ? next : undefined;
+	const { data: body, error } = bodyCodec.encode(next.doc, row.body);
+	if (error !== null) {
+		editor.refuse(error);
+		return undefined;
+	}
+	// An edit Markdown has no spelling for (a new empty paragraph) gives the
+	// same note back; the editor acknowledges it without saving.
+	return editor.set(withBody(row, body), { control: 'rich' }) === undefined
+		? next
+		: undefined;
 }

@@ -1,7 +1,7 @@
 /**
  * One open raw file's editing session, and the folder calls every file change
  * goes through. A note is never a raw file: its row editor holds it, its file
- * view included, and repairs it (`note-session.svelte.ts`).
+ * view included, and repairs it (`note-editor.svelte.ts`).
  *
  * A session keeps these facts apart:
  *

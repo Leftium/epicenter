@@ -34,9 +34,9 @@ import { type FileCapture, inspectRow } from '@epicenter/folder';
 import { undoDepth } from 'prosemirror-history';
 import { EditorState, type Transaction } from 'prosemirror-state';
 import { honeycrispDefinition } from '../src/lib/data.js';
+import { bodyCodec } from '../src/lib/editor/markdown.js';
 import { editingPlugins, stateAfter } from '../src/lib/editor/rich-text.js';
 import { openNotesFolder } from '../src/lib/folder.test-support.js';
-import { noteBody } from '../src/lib/note-source.js';
 import {
 	type CloseRequest,
 	openGuarded,
@@ -217,17 +217,18 @@ async function editingNote() {
 	if (draft === undefined)
 		throw new Error(`${NOTE_PATH} did not open as a note`);
 	cleanup.push(() => draft.release());
-	const body = noteBody(() => draft);
-	const opened = body.rich;
-	if (!opened.editable) throw new Error('The note is not rich text');
+	const opened = bodyCodec.decode(
+		draft.row.status === 'valid' ? draft.row.body : '',
+	);
+	if (!opened.supported) throw new Error('The note is not rich text');
 	/** The rich-text view's state, and the state it shows after a transaction. */
 	const rich = {
 		state: EditorState.create({
-			doc: opened.inspection.doc,
+			doc: opened.doc,
 			plugins: editingPlugins(),
 		}),
 		apply(transaction: Transaction) {
-			const next = stateAfter(rich.state, transaction, body);
+			const next = stateAfter(rich.state, transaction, draft);
 			if (next !== undefined) rich.state = next;
 			return next;
 		},

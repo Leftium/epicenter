@@ -32,7 +32,7 @@ import type {
 	UnmergedPath,
 } from './backend.js';
 import { capturedIndexMatchesHead } from './captured-index.js';
-import { abortableHttp, type GitFetch } from './http.js';
+import { abortableHttp, type HttpFetch } from './http.js';
 import {
 	type IndexEntry,
 	orphanStagesProblem,
@@ -216,7 +216,7 @@ export async function createStoredGitBackend<TSession extends GitFsSession>({
 	lockName,
 	branch,
 	remote,
-	gitFetch,
+	httpFetch,
 }: {
 	store: BrowserGitStore<TSession>;
 	/** The Web Locks this folder's tabs share. */
@@ -224,7 +224,7 @@ export async function createStoredGitBackend<TSession extends GitFsSession>({
 	lockName: string;
 	branch: string;
 	remote: GitRemote | undefined;
-	gitFetch?: GitFetch;
+	httpFetch?: HttpFetch;
 }): Promise<GitBackend> {
 	const branchKey = `${GITDIR}/refs/heads/${branch}`;
 	const indexKey = `${GITDIR}/index`;
@@ -729,7 +729,7 @@ export async function createStoredGitBackend<TSession extends GitFsSession>({
 				try {
 					result = await git.push({
 						...access,
-						http: abortableHttp(signal, gitFetch),
+						http: abortableHttp(signal, httpFetch),
 						dir: WORKDIR,
 						url: remote.url,
 						remote: REMOTE_NAME,
@@ -763,7 +763,7 @@ export async function createStoredGitBackend<TSession extends GitFsSession>({
 				try {
 					const result = await git.fetch({
 						...access,
-						http: abortableHttp(signal, gitFetch),
+						http: abortableHttp(signal, httpFetch),
 						dir: WORKDIR,
 						url: remote.url,
 						remote: REMOTE_NAME,

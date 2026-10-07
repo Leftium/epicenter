@@ -756,3 +756,4 @@ When you add an ADR, add its row here.
 | [0505](0505-automatic-commits-carry-one-coalesced-request-until-the-folder-is-free.md) | Automatic commits carry one coalesced request until the folder is free | Proposed (amends 0468) |
 | [0506](0506-capture-composes-values-through-a-source-preserving-body-codec.md) | Capture composes values through a source-preserving body codec | Proposed |
 | [0507](0507-editor-views-compose-current-input-and-own-only-interaction-state.md) | Editor views compose current input and own only interaction state | Proposed |
+| [0509](0509-folder-remotes-and-http-fetch-have-separate-contracts.md) | Folder remotes and HTTP fetch have separate contracts | Proposed |

@@ -53,7 +53,7 @@ async function settled(folder: Pick<Folder<typeof definition>, 'git'>) {
 test('opening before downloading an existing browser remote preserves incoming protections', async () => {
 	const root = await scratch('definition-existing-remote-');
 	await createBareRemote(root);
-	const gitFetch = await gitHttpFetch(root);
+	const httpFetch = await gitHttpFetch(root);
 	const open = (commitOnEdit: boolean) =>
 		openBrowser({
 			id: 'publication-remote',
@@ -62,7 +62,7 @@ test('opening before downloading an existing browser remote preserves incoming p
 				author,
 				commitOnEdit,
 				remote: { url: 'http://git.test/remote.git', branch: 'main' },
-				gitFetch,
+				httpFetch,
 				...browserStorage(createTestStorage()),
 			},
 		});

@@ -6,7 +6,7 @@ import {
 	browserStorage,
 	createTestStorage,
 } from './browser-storage.test-support.js';
-import { abortableHttp, type GitFetch } from './git/http.js';
+import { abortableHttp, type HttpFetch } from './git/http.js';
 import {
 	createBareRemote,
 	git,
@@ -21,7 +21,7 @@ test('a folder routes only its Git requests through the injected transport and k
 	const canonical = 'https://github.com/example/private-data.git';
 	const requests: Request[] = [];
 	const originalFetch = globalThis.fetch;
-	const gitFetch: GitFetch = async (input, init) => {
+	const httpFetch: HttpFetch = async (input, init) => {
 		const request = new Request(input, init);
 		requests.push(request);
 		const url = new URL(request.url);
@@ -40,7 +40,7 @@ test('a folder routes only its Git requests through the injected transport and k
 			browser: {
 				author: { name: 'Test', email: 'test@example.test' },
 				remote: { url: canonical, branch: 'main' },
-				gitFetch,
+				httpFetch,
 				commitOnEdit: false,
 				...browserStorage(createTestStorage()),
 			},
@@ -81,7 +81,7 @@ test('the injected Git transport receives cancellation', async () => {
 	const started = new Promise<void>((resolve) => {
 		entered = resolve;
 	});
-	const gitFetch: GitFetch = async (_input, init) => {
+	const httpFetch: HttpFetch = async (_input, init) => {
 		expect(init?.signal).toBe(controller.signal);
 		entered();
 		return new Promise((_resolve, reject) => {
@@ -92,7 +92,7 @@ test('the injected Git transport receives cancellation', async () => {
 			);
 		});
 	};
-	const transfer = abortableHttp(controller.signal, gitFetch).request({
+	const transfer = abortableHttp(controller.signal, httpFetch).request({
 		url: 'https://example.test/data.git/info/refs',
 	});
 	await started;

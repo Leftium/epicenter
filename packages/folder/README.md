@@ -125,15 +125,16 @@ nothing. On a server, opening returns a refusal.
 openFolder({
   id,        // required: which folder, such as 'so.epicenter.todos'. Never a path.
   definition,
-  browser,   // optional: { scope, author, remote, gitFetch, commitOnEdit, opfs }
+  browser,   // optional: { scope, author, remote, httpFetch, commitOnEdit, opfs }
 }): Promise<Result<Folder, OpenFolderError>>
 ```
 
 `browser` applies to a browser folder only. A browser folder uses a local
 author by default. Complete saves request automatic commits; requests made
 before a checkpoint starts share it. A `remote` needs an explicit `author`.
-`gitFetch` routes Git HTTP through an application's authenticated transport;
-it receives the canonical remote URL and the operation's abort signal. It does
+`httpFetch` supplies a fetch-compatible HTTP function for Git fetch and push.
+It defaults to regular fetch; applications can supply an authenticated relay.
+It receives the canonical remote URL and the operation's abort signal. It does
 not replace global fetch or change the stored remote. Credentials belong to
 the transport, outside the folder's files and Git configuration.
 In the desktop app the shell owns the directory, the

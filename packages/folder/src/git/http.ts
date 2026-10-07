@@ -11,7 +11,7 @@ import type {
 } from 'isomorphic-git';
 
 /** HTTP capability used for this folder's Git requests. */
-export type GitFetch = (
+export type HttpFetch = (
 	input: RequestInfo | URL,
 	init?: RequestInit,
 ) => Promise<Response>;
@@ -50,12 +50,12 @@ async function* chunks(stream: ReadableStream<Uint8Array>) {
 
 export function abortableHttp(
 	signal: AbortSignal,
-	gitFetch: GitFetch = globalThis.fetch,
+	httpFetch: HttpFetch = globalThis.fetch,
 ): HttpClient {
 	return {
 		async request({ url, method = 'GET', headers = {}, body }) {
 			const payload = await collect(body);
-			const response = await gitFetch(url, {
+			const response = await httpFetch(url, {
 				method,
 				headers,
 				body: payload as Uint8Array<ArrayBuffer> | undefined,

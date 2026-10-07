@@ -15,7 +15,7 @@ import type { FolderDefinition } from './definition.js';
 import type { OpenFolderError } from './errors.js';
 import type { Folder } from './folder.js';
 import type { GitRemote } from './git/backend.js';
-import type { GitFetch } from './git/http.js';
+import type { HttpFetch } from './git/http.js';
 import type { Author } from './git/objects.js';
 import type { OpfsEnvironment } from './opfs-store.js';
 
@@ -119,7 +119,7 @@ export type {
 	StagedCommit,
 	SyncObservation,
 } from './git/history.js';
-export type { GitFetch } from './git/http.js';
+export type { HttpFetch } from './git/http.js';
 export { commitSubject, escapePath, type PathChange } from './git/messages.js';
 export type { Author, CommitSummary } from './git/objects.js';
 export type { FileKv, KvReading, KvSnapshot } from './kv.js';
@@ -181,11 +181,13 @@ export type BrowserFolderOptions = {
 	/** The remote branch to push to and fetch from. Requires `author`. */
 	readonly remote?: GitRemote;
 	/**
-	 * Git-only HTTP transport. An application can route the canonical remote
-	 * through its authenticated relay without replacing the page's fetch.
-	 * Defaults to global fetch; receives the operation's abort signal.
+	 * Fetch-compatible HTTP transport used for Git fetch and push. An application
+	 * can route the canonical remote through its authenticated relay without
+	 * replacing the page's fetch. Defaults to global fetch and receives the
+	 * operation's abort signal. Authentication belongs to the supplied transport,
+	 * not to the folder or remote configuration.
 	 */
-	readonly gitFetch?: GitFetch;
+	readonly httpFetch?: HttpFetch;
 	/**
 	 * Whether complete content saves request automatic local commits.
 	 * Transfers remain explicit. Default `true`.

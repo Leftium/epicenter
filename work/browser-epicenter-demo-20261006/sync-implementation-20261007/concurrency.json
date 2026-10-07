@@ -1,0 +1,8 @@
+{
+  "steps": [
+    "Independent edits merged through real GitHub; both actual browser profiles contain both additions",
+    "Overlapping edits refused without changing local bytes; both exact stored versions displayed",
+    "Explicit conflict choice merged and pushed successfully"
+  ],
+  "errors": []
+}

@@ -1,0 +1,50 @@
+[
+  {
+    "path": "apps/epicenter/src/main.ts",
+    "sha256": "6db2b1a9a4c7de7b8ef6863681c484c72c05bfd9eb79579002486fa8aa5fe8f2"
+  },
+  {
+    "path": "apps/epicenter/src/sidecar-runtime.ts",
+    "sha256": "07e002051804c2798e4e65b260c0f06c60c1be45e4fd8044fb0176261b6271b6"
+  },
+  {
+    "path": "apps/epicenter/src/sidecar-runtime.test.ts",
+    "sha256": "4a47d9e21f8925732e56c94fac08e964d99b55c1d9f12ee62ac0f8a9556d5e35"
+  },
+  {
+    "path": "apps/epicenter/src/server.test.ts",
+    "sha256": "0b442211c28a1a19d33fe7871a578f766f4734c163729e19465bfdea52d01700"
+  },
+  {
+    "path": "apps/epicenter/scripts/build-sidecar.test.ts",
+    "sha256": "a509ce24391c61104fb3eeedceecf4859420d37ae2a52d36d07f271bba150e6c"
+  },
+  {
+    "path": "apps/epicenter/src-tauri/src/lib.rs",
+    "sha256": "d77f13c8e38a2a55554b3b16bdd9e340129e89ba4f3c5391e5a0809240c260c0"
+  },
+  {
+    "path": "apps/epicenter/src-tauri/src/runtime_evidence.rs",
+    "sha256": "221582c0bbb34be19f1267c4e399a39a90ac9d497cb3edcbd267a4b688b9a606"
+  },
+  {
+    "path": "apps/epicenter/src-tauri/src/installed_apps.rs",
+    "sha256": "887ff6e70c4acab0e46cea5b8f21763889d1ae1c5a36d55fae4a9f164e36c005"
+  },
+  {
+    "path": "apps/epicenter/src-tauri/tauri.conf.json",
+    "sha256": "e9a87bd9d98401530017a6ad3181990c584e2a214c5bb26dbab5ee5f65766ee4"
+  },
+  {
+    "path": "apps/epicenter/src-tauri/tauri.dev.conf.json",
+    "sha256": "4e993dc7b4ad208772fa566a4c1e434911d88861ca26366eb77ef518fed2dbc7"
+  },
+  {
+    "path": "apps/epicenter/src-tauri/capabilities/installed-app-folder-development.json",
+    "sha256": "096170ce4620138d4799d234dace2b3ca45444b1839bb93cf3ead6fec3a060ec"
+  },
+  {
+    "path": "apps/epicenter/src-tauri/capabilities/installed-app-folder-production.json",
+    "sha256": "782957b3d675b310c1fec3723f7101bb344c5734303db6bd96313a3bd92c8f0c"
+  }
+]

@@ -1,0 +1,25 @@
+{
+  "origin": "https://zhongwen.bradenwong.com",
+  "steps": [
+    "New domain saved expression and note offline",
+    "Saved note survived reopening the actual public-site browser profile",
+    "Real anonymous Gemini tutor reply saved after an explicit retry on the new domain",
+    "Public Sync accurately reports local-only storage"
+  ],
+  "errors": [],
+  "requests": [
+    {
+      "url": "https://api.epicenter.so/demo/v1/chat/completions",
+      "status": 502
+    },
+    {
+      "url": "https://api.epicenter.so/demo/v1/chat/completions",
+      "status": 502
+    },
+    {
+      "url": "https://api.epicenter.so/demo/v1/chat/completions",
+      "status": 200
+    }
+  ],
+  "profile": "/var/folders/qx/9462vg517cvdtpjr4tt32_200000gn/T/zhongwen-domain-WGGOB9"
+}

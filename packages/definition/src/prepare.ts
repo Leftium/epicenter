@@ -320,13 +320,8 @@ type Validation = {
 const validations = new WeakMap<object, Validation>();
 
 /** Export must remember guards even if an author later removes their marker. */
-export function hasSchemaCallbacks(prepared: DataSchema): boolean {
-	return [
-		prepared.kv,
-		...Object.values(prepared.tables).map((table) => table.fields),
-	].some((fields) =>
-		Object.values(fields).some((schema) => validationOf(schema).callbacks),
-	);
+export function hasSchemaCallbacks(schema: TSchema & object): boolean {
+	return validationOf(schema).callbacks;
 }
 
 /**

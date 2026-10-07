@@ -1,4 +1,5 @@
 /** Portable discovery JSON from an application's prepared definition. */
+import type { TSchema } from 'typebox';
 import { Format } from 'typebox/format';
 import * as Schema from 'typebox/schema';
 import { Hashing } from 'typebox/system';
@@ -58,8 +59,6 @@ export function exportSchema(
 		try: () => {
 			if (!isPreparedSchema(prepared))
 				throw new Error('Export requires a prepared definition');
-			if (hasSchemaCallbacks(prepared))
-				throw new Error('The prepared validators depend on runtime callbacks');
 			for (const [name, table] of Object.entries(prepared.tables))
 				if (table.body !== undefined)
 					throw new Error(`tables.${name}.body is a runtime conversion`);
@@ -100,10 +99,12 @@ export function exportSchema(
  * The JSON copy above has already refused accessors and runtime dependencies.
  */
 function checkSchemaExport(
-	root: object,
+	root: TSchema & object,
 	path: string,
 	copies: WeakMap<object, JsonValue>,
 ) {
+	if (hasSchemaCallbacks(root))
+		throw new Error(`${path} has a prepared validator with runtime callbacks`);
 	const visited = new WeakMap<
 		object,
 		{

@@ -37,6 +37,7 @@
  * stream through the folder itself. The Bun suites cover interruption at
  * each step, and that removal, over an in-memory model of Chrome's OPFS.
  */
+import { exportSchema } from '@epicenter/definition';
 import type { Result } from 'wellcrafted/result';
 import {
 	defineFolder,
@@ -302,6 +303,115 @@ async function showLayout(folder: Folder<typeof definition>, id: string) {
 }
 
 const allBytes = Uint8Array.from({ length: 256 }, (_, index) => index);
+
+/** Publication uses real OPFS; history-enabled acquisition is a separate case. */
+async function publication(id: string) {
+	await check(
+		'opening publishes the prepared definition before returning, without manual-mode history',
+		async () => {
+			const folder = await open(id);
+			const expected = ok(exportSchema(definition));
+			const stored = decoder.decode(await rawRead(id, 'definition.json'));
+			assert(stored === expected, `stored ${stored}`);
+			assert(
+				ok(await folder.git.log(10)).length === 0,
+				'manual mode committed',
+			);
+			return `definition.json: ${stored}`;
+		},
+	);
+	await check(
+		'reopening replaces a manual description and changed declarations leave row bytes intact',
+		async () => {
+			const folder = await open(id);
+			ok(
+				await folder.files.create(
+					'rows/kept.md',
+					'---\ntitle: Kept\n---\nSaved body\n',
+				),
+			);
+			const before = await rawRead(id, 'rows/kept.md');
+			ok(
+				await folder.files.overwrite(
+					'definition.json',
+					'manual malformed description',
+				),
+			);
+			await folder.close();
+			const reopened = await open(id);
+			assert(
+				decoder.decode(await rawRead(id, 'definition.json')) ===
+					ok(exportSchema(definition)),
+				'manual description stayed',
+			);
+			await reopened.close();
+			const changed = defineFolder({
+				...definition,
+				title: 'Changed publication',
+			});
+			const next = ok(
+				await openFolder({
+					id,
+					definition: changed,
+					browser: { scope, author, commitOnEdit: false },
+				}),
+			);
+			opened.push(next);
+			assert(
+				decoder.decode(await rawRead(id, 'definition.json')) ===
+					ok(exportSchema(changed)),
+				'changed declaration was not published',
+			);
+			assert(
+				sameBytes(await rawRead(id, 'rows/kept.md'), before),
+				'row bytes changed',
+			);
+			return 'manual description replaced; changed title published; saved Markdown unchanged';
+		},
+	);
+	await check(
+		'history-enabled publication settles and identical reopening adds no commit',
+		async () => {
+			const historyId = `${id}-history`;
+			used.add(historyId);
+			const acquire = async () => {
+				const folder = ok(
+					await openFolder({
+						id: historyId,
+						definition,
+						browser: { scope, author, commitOnEdit: true },
+					}),
+				);
+				opened.push(folder);
+				return folder;
+			};
+			const settle = async (folder: Folder<typeof definition>) => {
+				for (let attempt = 0; attempt < 1000; attempt++) {
+					if (!folder.git.snapshot.activity.commit.active) return;
+					await new Promise((resolve) => setTimeout(resolve, 10));
+				}
+				throw new Error('automatic history did not settle');
+			};
+			const first = await acquire();
+			await settle(first);
+			const commits = ok(await first.git.log(10));
+			assert(commits.length === 1, `initial commits ${commits.length}`);
+			await first.close();
+			const second = await acquire();
+			await settle(second);
+			const after = ok(await second.git.log(10));
+			assert(
+				JSON.stringify(after) === JSON.stringify(commits),
+				'identical reopening added history',
+			);
+			assert(
+				ok(await second.git.status()).changes.length === 0,
+				'settled tree is dirty',
+			);
+			return `one settled commit ${commits[0]?.oid}; unchanged reopening keeps it`;
+		},
+	);
+}
 
 async function filesAndLayout(id: string) {
 	const large = randomBytes(4 * 1024 * 1024);
@@ -860,10 +970,7 @@ async function editing(id: string) {
 						`after set(${title}) the row is ${JSON.stringify(row)}`,
 					);
 				}
-				assert(
-					get().save.status === 'saving',
-					`save is ${get().save.status}`,
-				);
+				assert(get().save.status === 'saving', `save is ${get().save.status}`);
 				ok(await waitForSaves());
 				const accepted = get().row;
 				const stored = decoder.decode(await rawRead(id, path));
@@ -875,8 +982,16 @@ async function editing(id: string) {
 				// An outside save in another layout leaves the editor alone
 				// until reload replaces the accepted input with it, exactly.
 				const outside = "---\ntitle: 'From outside'\n---\n";
-				ok(await folder.files.replace(ok(await folder.files.read(path)), outside));
-				assert(get().row === accepted, 'the editor followed the file by itself');
+				ok(
+					await folder.files.replace(
+						ok(await folder.files.read(path)),
+						outside,
+					),
+				);
+				assert(
+					get().row === accepted,
+					'the editor followed the file by itself',
+				);
 				ok(await reload());
 				const followed = get().row;
 				assert(
@@ -897,7 +1012,9 @@ async function editing(id: string) {
 		async () => {
 			const folder = await open(id);
 			ok(await folder.files.create('rows/broken.md', '---\ntitle: [\n---\n'));
-			ok(await folder.files.create('rows/untitled.md', '---\nowner: sam\n---\n'));
+			ok(
+				await folder.files.create('rows/untitled.md', '---\nowner: sam\n---\n'),
+			);
 			const broken = ok(await folder.tables.rows.edit('broken'));
 			const untitled = ok(await folder.tables.rows.edit('untitled'));
 			const brokenRow = broken.get().row;
@@ -958,7 +1075,10 @@ async function editing(id: string) {
 				row.status === 'valid' && row.text === recreated,
 				`after reload the row is ${JSON.stringify(row)}`,
 			);
-			assert(save.status === 'idle', `after reload the save is ${JSON.stringify(save)}`);
+			assert(
+				save.status === 'idle',
+				`after reload the save is ${JSON.stringify(save)}`,
+			);
 			return `NotFound, nothing written; the made-again file keeps ${JSON.stringify(recreated)} until reload adopts it`;
 		},
 	);
@@ -1018,7 +1138,10 @@ async function streams(id: string) {
 				await (await directory.getFileHandle('sibling.md')).getFile()
 			).text();
 			assert(landed === 'landed', `the file holds ${JSON.stringify(landed)}`);
-			assert(sibling === 'sibling', `the sibling holds ${JSON.stringify(sibling)}`);
+			assert(
+				sibling === 'sibling',
+				`the sibling holds ${JSON.stringify(sibling)}`,
+			);
 			return `file removal ${fileRemoval}; ancestor removal ${ancestorRemoval}; the write landed and the sibling stayed`;
 		},
 	);
@@ -1103,14 +1226,26 @@ async function reloadCheck(stage: string) {
 	window.history.replaceState(null, '', location.pathname);
 	if (id === null) {
 		record(
-			'bytes survive a page reload',
+			'bytes and definition.json survive a page reload',
 			'note',
 			'not run: this page was not reached from a reload check that wrote a folder. Press "Reload persistence check" to run it.',
 		);
 		return true;
 	}
-	await check('bytes survive a page reload', async () => {
+	await check('bytes and definition.json survive a page reload', async () => {
+		const persistedDefinition = decoder.decode(
+			await rawRead(id, 'definition.json'),
+		);
+		assert(
+			persistedDefinition === ok(exportSchema(definition)),
+			'definition did not persist across page reload',
+		);
 		const folder = await open(id);
+		assert(
+			decoder.decode(await rawRead(id, 'definition.json')) ===
+				persistedDefinition,
+			'reopening changed definition bytes',
+		);
 		assert(
 			sameBytes(ok(await folder.files.read('persist.bin')).bytes, allBytes),
 			'bytes',
@@ -1137,6 +1272,7 @@ async function main() {
 		);
 		if (stage !== null) finished = await reloadCheck(stage);
 		else {
+			await publication(`${runId}-publication`);
 			await filesAndLayout(runId);
 			await twoContexts(runId);
 			await history(runId);

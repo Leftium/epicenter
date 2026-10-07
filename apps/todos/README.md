@@ -427,15 +427,20 @@ todo; `todos/a.MD` is an ordinary file.
 | `scripts/module-graph.ts` | Lists the modules a build of one entry pulls in, resolved with the conditions and aliases `vite.config.ts` declares, for the seam test. |
 
 `TodoDetail` is one view reused as the selection moves between todos, and
-each todo's input lives in its retained editor, not in the view. Its function
-bindings are closures that read the current todo on every call, such as
-`bind:value={() => todo.title(), (title) => todo.setTitle(title)}`. Svelte
-evaluates a function binding's expressions once, when the block is created,
-so `bind:value={todo.title, todo.setTitle}` would keep showing and writing the
-first todo after the selection moves. A view can also leave while its todo
-stays retained, as on narrow screens, and a node that left the document keeps
-its input and submit listeners; `TodoDetail`, `TodoStatus`, and `FileNameBar`
-therefore act only while mounted, and an editor the owner released refuses
+each todo's input lives in its retained editor, not in the view. The editor
+exposes its current `row`, `save` state, and `refused` values, and takes a
+whole row through `todo.set(next, { control })`. Each field's function binding
+reads the current todo on every call: the getter shows the row's field, or the
+value that field's control typed and the row refused; the setter composes the
+complete row from `todo.row` with the new value and passes the control it came
+from, such as `todo.set({ ...row, fields: { ...row.fields, title } }, { control: 'title' })`.
+Svelte evaluates a function binding's expressions once, when the block is
+created, so a binding that captured one todo would keep showing and writing
+it after the selection moves. A view can also leave while its todo stays
+retained, as on narrow screens, and a node that left the document keeps its
+input and submit listeners; `TodoDetail`, `TodoStatus`, and `FileNameBar`
+therefore act only while mounted, and the editor refuses a row unless it
+still shows its fields and takes input. An editor the owner released refuses
 input and commands for good.
 
 Checks: `bun run --cwd apps/todos typecheck` (both seam leaves and the Bun

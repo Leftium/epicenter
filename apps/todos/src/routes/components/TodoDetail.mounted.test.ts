@@ -51,6 +51,7 @@ import {
 } from '../../../../../packages/folder/src/browser-storage.test-support.js';
 import { todosDefinition } from '../../lib/definition.js';
 import { click, type } from '../../lib/svelte-dom.test-support.js';
+import type { TodoEditor } from '../../lib/todo-editor.svelte.js';
 import type { Todos } from '../../lib/todos.svelte.js';
 
 const { flushSync, mount, unmount } = await import('svelte');
@@ -144,6 +145,11 @@ async function eventually(done: () => boolean) {
 	flushSync();
 }
 
+/** Whether the todo's current row is checked done. */
+function isDone(editor: TodoEditor) {
+	return editor.row.status === 'valid' && editor.row.fields.done === true;
+}
+
 /** The next write of `path` fails before it publishes: a definite failure. */
 function failNextWrite(opfs: ReturnType<typeof opfsOf>, path: string) {
 	opfs.faults.write = (file) => {
@@ -167,7 +173,7 @@ test('the reused view shows each todo its own input: A then B then A, and each i
 	const a = selected();
 	expect(title.value).toBe('A');
 	type(title, 'A typed');
-	expect(a.title()).toBe('A typed');
+	expect(a.row).toMatchObject({ fields: { title: 'A typed' } });
 
 	// The same view and the same fields now belong to B.
 	await todos.open(pathB);
@@ -179,8 +185,11 @@ test('the reused view shows each todo its own input: A then B then A, and each i
 	expect(title.value).toBe('B');
 	type(title, 'B typed');
 	type(notes, 'B notes\n');
-	expect(a.title()).toBe('A typed');
-	expect(a.notes()).toBe('');
+	expect(a.row).toMatchObject({ fields: { title: 'A typed' }, body: '' });
+	expect(b.row).toMatchObject({
+		fields: { title: 'B typed' },
+		body: 'B notes\n',
+	});
 
 	await todos.open(pathA);
 	flushSync();
@@ -209,7 +218,7 @@ test('a todo removed elsewhere keeps its form and input when its write fails, an
 
 	const title = get<HTMLInputElement>(TITLE);
 	type(title, 'Mine');
-	await eventually(() => editor.editor.save.status === 'failed');
+	await eventually(() => editor.save.status === 'failed');
 	expect(target.textContent).toContain('no longer in the folder');
 	expect(title.value).toBe('Mine');
 	expect(await text(path)).toBeUndefined();
@@ -239,7 +248,7 @@ test('raw repair stays raw after it validates until Edit fields, and controls of
 	await eventually(() => editor.isIdle);
 	expect(await text('todos/bad.md')).toBe(ROW('Fixed'));
 	// Valid now, and still the raw view until the person chooses.
-	expect(editor.editor.row.status).toBe('valid');
+	expect(editor.row.status).toBe('valid');
 	expect(get(SOURCE)).toBe(source);
 	expect(find(TITLE)).toBeNull();
 
@@ -250,7 +259,7 @@ test('raw repair stays raw after it validates until Edit fields, and controls of
 	expect(title.value).toBe('Fixed');
 	expect(find(SOURCE)).toBeNull();
 	type(source, 'junk from the leaving source');
-	expect(editor.editor.row.text).toBe(ROW('Fixed'));
+	expect(editor.row.text).toBe(ROW('Fixed'));
 	await settle();
 	expect(await text('todos/bad.md')).toBe(ROW('Fixed'));
 
@@ -264,7 +273,7 @@ test('raw repair stays raw after it validates until Edit fields, and controls of
 	type(source, 'junk from the first source');
 	press(editFields);
 	flushSync();
-	expect(editor.editor.row.text).toBe(ROW('Fixed'));
+	expect(editor.row.text).toBe(ROW('Fixed'));
 	expect(editor.rawMode).toBe(true);
 
 	// The fields return as new blocks. The first title, notes, checkbox, and
@@ -276,7 +285,7 @@ test('raw repair stays raw after it validates until Edit fields, and controls of
 	type(notes, 'from the first notes\n');
 	press(done);
 	flushSync();
-	expect(editor.editor.row.text).toBe(ROW('Fixed'));
+	expect(editor.row.text).toBe(ROW('Fixed'));
 	expect(editor.rawMode).toBe(false);
 
 	type(get<HTMLInputElement>(TITLE), 'Live');
@@ -299,7 +308,7 @@ test('a failed save keeps the input; disk C replaces nothing, and Discard mine a
 
 	const title = get<HTMLInputElement>(TITLE);
 	type(title, 'Mine');
-	await eventually(() => editor.editor.save.status === 'failed');
+	await eventually(() => editor.save.status === 'failed');
 	expect(target.textContent).toContain('Not saved');
 	expect(title.value).toBe('Mine');
 
@@ -311,12 +320,12 @@ test('a failed save keeps the input; disk C replaces nothing, and Discard mine a
 	// A second failed attempt keeps newer typing available for deliberate reload.
 	failNextWrite(opfs, path);
 	type(title, 'Mine again');
-	await editor.editor.waitForSaves();
+	await editor.settle();
 	expect(await text(path)).toBe(ROW('Theirs'));
 	expect(title.value).toBe('Mine again');
 
 	click(target, 'Discard mine and reload');
-	await eventually(() => editor.editor.save.status === 'idle');
+	await eventually(() => editor.save.status === 'idle');
 	expect(selected()).toBe(editor);
 	expect(get<HTMLInputElement>(TITLE).value).toBe('Theirs');
 	expect(target.textContent).not.toContain('Not saved');
@@ -361,7 +370,7 @@ test('a refused title stays in the field with why, and a corrected title saves a
 	expect(target.textContent).toContain('stays in the field');
 	// Notes still save while the title is refused.
 	type(get(NOTES), 'two cartons\n');
-	await eventually(() => editor.editor.save.status === 'idle');
+	await eventually(() => editor.save.status === 'idle');
 	expect(await reading(path)).toMatchObject({
 		fields: { title: 'Milk' },
 		body: 'two cartons\n',
@@ -372,6 +381,38 @@ test('a refused title stays in the field with why, and a corrected title saves a
 	await eventually(() => editor.isIdle);
 	expect(target.textContent).not.toContain('cannot be saved');
 	expect((await reading(path)).fields.title).toBe('Oat');
+});
+
+test("notes and source show LF, and typing in them keeps the file's CRLF and undeclared keys", async () => {
+	const { todos, get, selected, text, reading } = await setup();
+	const crlf =
+		'---\r\ntitle: Milk\r\ndone: false\r\nowner: sam\r\n---\r\nOne\r\nTwo\r\n';
+	expectOk(await todos.folder.files.create('todos/crlf.md', crlf));
+	await todos.refresh();
+	await todos.open('todos/crlf.md');
+	flushSync();
+	const editor = selected();
+	const notes = get(NOTES);
+	expect(notes.value).toBe('One\nTwo\n');
+
+	type(notes, 'One\nTwo\nThree\n');
+	await eventually(() => editor.isIdle);
+	// The body keeps the file's CRLF; the frontmatter is written canonically.
+	expect(await reading('todos/crlf.md')).toMatchObject({
+		fields: { title: 'Milk', done: false },
+		body: 'One\r\nTwo\r\nThree\r\n',
+	});
+	expect(await text('todos/crlf.md')).toContain('"owner": "sam"');
+
+	expect(editor.editSource()).toBeUndefined();
+	flushSync();
+	const source = get(SOURCE);
+	const saved = (await text('todos/crlf.md'))!;
+	expect(source.value).toBe(saved.replace(/\r\n/g, '\n'));
+	const typed = source.value.replace('Three', 'Four');
+	type(source, typed);
+	await eventually(() => editor.isIdle);
+	expect(await text('todos/crlf.md')).toBe(typed.replace(/\n/g, '\r\n'));
 });
 
 /** Bytes that are not UTF-8 text: a file that is there but cannot be read as a todo. */
@@ -385,8 +426,8 @@ test('a file made unreadable elsewhere keeps the form: Reload replaces nothing, 
 	const editor = selected();
 	failNextWrite(opfs, path);
 	type(get<HTMLInputElement>(TITLE), 'Mine');
-	await eventually(() => editor.editor.save.status === 'failed');
-	const sent = editor.editor.row.text;
+	await eventually(() => editor.save.status === 'failed');
+	const sent = editor.row.text;
 	expect(sent).toContain('"Mine"');
 
 	expectOk(await todos.folder.files.overwrite(path, CORRUPT));
@@ -394,7 +435,7 @@ test('a file made unreadable elsewhere keeps the form: Reload replaces nothing, 
 	await settle();
 	expect(get<HTMLInputElement>(TITLE).value).toBe('Mine');
 	expect(find(SOURCE)).toBeNull();
-	expect(editor.editor.save.status).toBe('failed');
+	expect(editor.save.status).toBe('failed');
 	expect(expectOk(await todos.folder.files.read(path)).bytes).toEqual(CORRUPT);
 
 	click(target, 'Try again');
@@ -427,7 +468,7 @@ test('a whole view that unmounts while its todo stays retained admits nothing fr
 	const path = todos.selectedPath!;
 	flushSync();
 	const editor = selected();
-	const before = editor.editor.row.text;
+	const before = editor.row.text;
 	const title = get<HTMLInputElement>(TITLE);
 	const notes = get(NOTES);
 	const done = get<HTMLButtonElement>('button[aria-label="Done"]');
@@ -441,16 +482,16 @@ test('a whole view that unmounts while its todo stays retained admits nothing fr
 	expect(target.querySelector('[data-view="hidden"]')).not.toBeNull();
 	// The owner still retains the todo: valid, unfenced, and selected.
 	expect(selected()).toBe(editor);
-	expect(editor.editor.row.status).toBe('valid');
+	expect(editor.row.status).toBe('valid');
 	expect(editor.isFenced).toBe(false);
 
 	// Events still delivered to the view's detached nodes, one at a time.
 	type(title, 'from a detached title');
-	expect(editor.editor.row.text).toBe(before);
+	expect(editor.row.text).toBe(before);
 	type(notes, 'from detached notes\n');
-	expect(editor.editor.row.text).toBe(before);
+	expect(editor.row.text).toBe(before);
 	press(done);
-	expect(editor.editor.row.text).toBe(before);
+	expect(editor.row.text).toBe(before);
 	type(name, 'renamed');
 	form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
 	press(remove);
@@ -471,7 +512,7 @@ test('a whole view that unmounts while its todo stays retained admits nothing fr
 	click(target, 'Hide detail');
 	flushSync();
 	type(source, '---\ntitle: Detached\ndone: false\n---\n');
-	expect(editor.editor.row.text).toBe(before);
+	expect(editor.row.text).toBe(before);
 
 	// Negative control: shown again, the same retained todo takes input.
 	click(target, 'Show detail');
@@ -479,7 +520,7 @@ test('a whole view that unmounts while its todo stays retained admits nothing fr
 	expect(editor.editFields()).toBeUndefined();
 	flushSync();
 	type(get<HTMLInputElement>(TITLE), 'Live');
-	expect(editor.title()).toBe('Live');
+	expect(editor.row).toMatchObject({ fields: { title: 'Live' } });
 	await eventually(() => editor.isIdle);
 	expect((await reading(path)).fields.title).toBe('Live');
 });
@@ -492,7 +533,7 @@ test("a hidden view's detached Try again and Discard mine and reload do nothing 
 	const editor = selected();
 	failNextWrite(opfs, path);
 	type(get<HTMLInputElement>(TITLE), 'Mine');
-	await eventually(() => editor.editor.save.status === 'failed');
+	await eventually(() => editor.save.status === 'failed');
 	const retry = button(target, 'Try again');
 	const discard = button(target, 'Discard mine and reload');
 
@@ -503,15 +544,15 @@ test("a hidden view's detached Try again and Discard mine and reload do nothing 
 	await settle();
 	// No new attempt, and the failed input is still the todo's.
 	expect(selected()).toBe(editor);
-	expect(editor.editor.save.status).toBe('failed');
-	expect(editor.title()).toBe('Mine');
+	expect(editor.save.status).toBe('failed');
+	expect(editor.row).toMatchObject({ fields: { title: 'Mine' } });
 	expect((await reading(path)).fields.title).toBe('Milk');
 
 	// Negative control: the shown view's own Try again is a new attempt.
 	click(target, 'Show detail');
 	flushSync();
 	click(target, 'Try again');
-	await eventually(() => editor.editor.save.status === 'idle');
+	await eventually(() => editor.save.status === 'idle');
 	expect(selected()).toBe(editor);
 	expect((await reading(path)).fields.title).toBe('Mine');
 });
@@ -524,7 +565,7 @@ test('list completion follows the owner after a source-mode refusal, and complet
 	expect(editor.editSource()).toBeUndefined();
 	editor.setText('---\ntitle: Milk\ndone: false\nowner: keep-me\n---\nCurrent notes.');
 	await eventually(() => editor.isIdle);
-	const before = editor.editor.row.text;
+	const before = editor.row.text;
 
 	const { default: TodoList } = await import('./TodoList.svelte');
 	const listTarget = document.createElement('div');
@@ -542,13 +583,13 @@ test('list completion follows the owner after a source-mode refusal, and complet
 	await settle();
 	expect(completion.getAttribute('aria-checked')).toBe('false');
 	expect(editor.rawMode).toBe(true);
-	expect(editor.editor.row.text).toBe(before);
+	expect(editor.row.text).toBe(before);
 	expect((await reading(path)).fields.done).toBe(false);
 
 	expect(editor.editFields()).toBeUndefined();
 	flushSync();
 	press(completion);
-	await eventually(() => editor.done() && editor.isIdle);
+	await eventually(() => isDone(editor) && editor.isIdle);
 	expect(completion.getAttribute('aria-checked')).toBe('true');
 	expect(await reading(path)).toMatchObject({
 		fields: { title: 'Milk', done: true },
@@ -556,7 +597,7 @@ test('list completion follows the owner after a source-mode refusal, and complet
 	});
 	expect(await text(path)).toContain('keep-me');
 	press(completion);
-	await eventually(() => !editor.done() && editor.isIdle);
+	await eventually(() => !isDone(editor) && editor.isIdle);
 	expect(completion.getAttribute('aria-checked')).toBe('false');
 	expect(await reading(path)).toMatchObject({
 		fields: { title: 'Milk', done: false },

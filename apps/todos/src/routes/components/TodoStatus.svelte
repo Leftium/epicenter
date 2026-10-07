@@ -20,7 +20,7 @@
 	}
 
 	/** The owner's last error remains visible while a newer write runs. */
-	const failure = $derived('error' in todo.editor.save ? todo.editor.save.error : undefined);
+	const failure = $derived('error' in todo.save ? todo.save.error : undefined);
 
 	async function reload() {
 		if (!status.mounted) return;
@@ -33,22 +33,22 @@
 <div class="flex min-h-9 shrink-0 flex-wrap items-center gap-2 border-b px-4 py-1.5 text-xs">
 	{#if todo.isFenced}
 		<span class="text-muted-foreground">Working on this file…</span>
-	{:else if todo.editor.save.status === 'saving'}
+	{:else if todo.save.status === 'saving'}
 		<span class="text-muted-foreground">Saving…</span>
 		{#if failure}
 			<span class="w-full text-destructive" role="alert">{describeSaveError(failure)} Your latest edit is being saved.</span>
 		{/if}
-	{:else if todo.editor.save.status === 'failed'}
+	{:else if todo.save.status === 'failed'}
 		<!-- An unconfirmed save may have landed: its message says so, and keeps the folder's own detail. -->
 		<span class="w-full text-destructive" role="alert">
-			{describeSaveError(todo.editor.save.error)} Your edits stay here. Your next edit saves again, or you can save them again without changing them.
+			{describeSaveError(todo.save.error)} Your edits stay here. Your next edit saves again, or you can save them again without changing them.
 			{todo.refusals.join(' ')}
 		</span>
-		{#if todo.editor.save.error.name === 'NotFound'}
+		{#if todo.save.error.name === 'NotFound'}
 			<Button size="xs" variant="outline" onclick={() => { if (status.mounted) todos.discard(todo.path); }}>Close</Button>
 		{:else}
 			<Button size="xs" onclick={retry}>
-				{todo.editor.save.error.name === 'Unconfirmed' ? 'Save again' : 'Try again'}
+				{todo.save.error.name === 'Unconfirmed' ? 'Save again' : 'Try again'}
 			</Button>
 			<Button size="xs" variant="outline" onclick={reload}>Discard mine and reload</Button>
 		{/if}

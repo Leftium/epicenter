@@ -179,13 +179,43 @@ function todoEditor(todos: Todos) {
 
 /** The text a todo editor holds: what it shows and writes. */
 function accepted(editor: TodoEditor) {
-	return editor.editor.row.text;
+	return editor.row.text;
 }
 
 /** Wait for a todo's admitted writes. Answers why the latest did not land. */
 async function written(editor: TodoEditor) {
-	const { error } = await editor.editor.waitForSaves();
-	return error === null ? undefined : error.message;
+	await editor.settle();
+	return editor.save.status === 'failed'
+		? editor.save.error.message
+		: undefined;
+}
+
+/** The fields view's current row; it shows only for a valid row. */
+function fieldsOf(editor: TodoEditor) {
+	const { row } = editor;
+	if (row.status !== 'valid') throw new Error('The row shows no fields');
+	return row;
+}
+
+/** What the title control sends: the complete row on screen with `title`. */
+function typeTitle(editor: TodoEditor, title: string) {
+	const row = fieldsOf(editor);
+	return editor.set(
+		{ ...row, fields: { ...row.fields, title } },
+		{ control: 'title' },
+	);
+}
+
+/** What the notes control sends: the complete row on screen with `notes`. */
+function typeNotes(editor: TodoEditor, notes: string) {
+	const row = fieldsOf(editor);
+	return editor.set({ ...row, body: notes }, { control: 'notes' });
+}
+
+/** What the done checkbox sends: the complete row on screen with `done`. */
+function check(editor: TodoEditor, done: boolean) {
+	const row = fieldsOf(editor);
+	return editor.set({ ...row, fields: { ...row.fields, done } });
 }
 
 /** Wait for something the test did not request directly. The assertion follows the wait. */
@@ -345,7 +375,7 @@ test('renaming a todo row moves only its Markdown file, and a new editor opens a
 	await todos.create('Bread');
 	const otherPath = todos.selectedPath!;
 	const other = todoEditor(todos);
-	other.setNotes('other typing\n');
+	typeNotes(other, 'other typing\n');
 	await todos.open(`${stem}.txt`);
 	const sidecar = textEditor(todos);
 	sidecar.input(`${SIDECAR}typed\n`);
@@ -375,7 +405,7 @@ test('renaming a todo row moves only its Markdown file, and a new editor opens a
 	expect(todos.unsaved).toBe(false);
 
 	// Typing in the renamed todo saves at the new path only.
-	renamed.setNotes('after\n');
+	typeNotes(renamed, 'after\n');
 	expect(await written(renamed)).toBeUndefined();
 	expect(await text(todos, 'todos/renamed.md')).toBe(accepted(renamed));
 	expect((await reading(todos, 'todos/renamed.md')).body).toBe('after\n');
@@ -392,20 +422,20 @@ test('switching between todos keeps each input with its own path, rapidly and ac
 	// Type into A, switch to B before A's write lands, and type there.
 	await todos.open(pathA);
 	const a = todoEditor(todos);
-	a.setTitle('A typed');
+	typeTitle(a, 'A typed');
 	await todos.open(pathB);
 	const b = todoEditor(todos);
 	expect(b).not.toBe(a);
-	b.setTitle('B typed');
+	typeTitle(b, 'B typed');
 	// Back and forth: each editor keeps its own input.
 	await todos.open(pathA);
 	expect(todoEditor(todos)).toBe(a);
-	expect(a.title()).toBe('A typed');
-	a.setNotes('A notes\n');
+	expect(fieldsOf(a).fields.title).toBe('A typed');
+	typeNotes(a, 'A notes\n');
 	await todos.open(pathB);
 	expect(todoEditor(todos)).toBe(b);
-	expect(b.title()).toBe('B typed');
-	expect(b.notes()).toBe('');
+	expect(fieldsOf(b).fields.title).toBe('B typed');
+	expect(fieldsOf(b).body).toBe('');
 
 	await eventually(() => a.isIdle && b.isIdle);
 	expect(await reading(todos, pathA)).toMatchObject({
@@ -418,20 +448,20 @@ test('switching between todos keeps each input with its own path, rapidly and ac
 	});
 
 	// A rename reacquires A at its new path while B, selected, keeps its input.
-	b.setNotes('B pending\n');
+	typeNotes(b, 'B pending\n');
 	expect(await todos.rename(pathA, 'renamed-a.md')).toBeUndefined();
 	expect(todoEditor(todos)).toBe(b);
 	await todos.open('todos/renamed-a.md');
 	const movedA = todoEditor(todos);
 	expect(movedA).not.toBe(a);
 	expect(movedA.path).toBe('todos/renamed-a.md');
-	movedA.setTitle('A after');
+	typeTitle(movedA, 'A after');
 	await todos.open(pathB);
 	expect(todoEditor(todos)).toBe(b);
-	expect(b.notes()).toBe('B pending\n');
+	expect(fieldsOf(b).body).toBe('B pending\n');
 	await todos.open('todos/renamed-a.md');
 	expect(todoEditor(todos)).toBe(movedA);
-	expect(movedA.title()).toBe('A after');
+	expect(fieldsOf(movedA).fields.title).toBe('A after');
 	await eventually(() => movedA.isIdle && b.isIdle);
 	expect((await reading(todos, 'todos/renamed-a.md')).fields.title).toBe(
 		'A after',
@@ -461,21 +491,21 @@ test('refresh forgets a removed idle todo, and keeps a removed todo whose write 
 	const editor = todoEditor(todos);
 	await removeNow(todos, path);
 	// The todo still shows what it loaded; its write replaces only an existing row.
-	editor.setNotes('mine\n');
+	typeNotes(editor, 'mine\n');
 	expect(await written(editor)).toBeDefined();
-	expect(editor.editor.save).toMatchObject({
+	expect(editor.save).toMatchObject({
 		status: 'failed',
 		error: { name: 'NotFound' },
 	});
 	await todos.refresh();
 	expect(todos.selection?.kind).toBe('todo');
-	expect(editor.notes()).toBe('mine\n');
+	expect(fieldsOf(editor).body).toBe('mine\n');
 	expect(todos.unsaved).toBe(true);
 	expect(await text(todos, path)).toBeUndefined();
 
 	// A failed Reload keeps input; only the explicit Close lets it go.
 	expect(await todos.reload(path)).toContain('could not be read');
-	expect(editor.notes()).toBe('mine\n');
+	expect(fieldsOf(editor).body).toBe('mine\n');
 	expect(todos.unsaved).toBe(true);
 	todos.discard(path);
 	expect(todos.selectedPath).toBe(path);
@@ -523,7 +553,7 @@ test("a todo's own saves reach the listings through the folder's hint, with no r
 	const editor = todoEditor(todos);
 	const listed = () => todos.entries.find((entry) => entry.path === path);
 
-	editor.setTitle('Oat milk');
+	typeTitle(editor, 'Oat milk');
 	expect(await written(editor)).toBeUndefined();
 	await eventually(() => listed()?.fields.title === 'Oat milk');
 	expect(listed()?.fields.title).toBe('Oat milk');
@@ -561,13 +591,13 @@ test("a todo's own saves reach the listings through the folder's hint, with no r
 		await eventually(() => listed()?.text === landed);
 		expect(listed()).toMatchObject({ text: landed });
 		expect(await text(todos, path)).toBe(landed);
-		expect(editor.editor.save.status).toBe('failed');
-		expect(editor.text()).toBe(queued);
+		expect(editor.save.status).toBe('failed');
+		expect(editor.row.text).toBe(queued);
 		// Nothing sends the failed input again: not the hint, not its reread.
 		await Bun.sleep(20);
 		expect(opens).toBe(2);
-		expect(editor.editor.save.status).toBe('failed');
-		expect(editor.text()).toBe(queued);
+		expect(editor.save.status).toBe('failed');
+		expect(editor.row.text).toBe(queued);
 		expect(await text(todos, path)).toBe(landed);
 	} finally {
 		opening.resolve();
@@ -580,15 +610,15 @@ test('a failed save keeps the input and later typing saves again; Reload replace
 	const { todos, path, failNext } = await openFailingNextWrite();
 	const editor = todoEditor(todos);
 	failNext();
-	editor.setTitle('Mine');
+	typeTitle(editor, 'Mine');
 	expect(await written(editor)).toBeDefined();
-	expect(editor.editor.save.status).toBe('failed');
+	expect(editor.save.status).toBe('failed');
 	expect(todos.saveProblems).toBe(1);
 
 	// Newer typing is the todo's input and saves the complete row again.
-	editor.setNotes('later\n');
-	expect(editor.title()).toBe('Mine');
-	expect(editor.notes()).toBe('later\n');
+	typeNotes(editor, 'later\n');
+	expect(fieldsOf(editor).fields.title).toBe('Mine');
+	expect(fieldsOf(editor).body).toBe('later\n');
 
 	expect(await written(editor)).toBeUndefined();
 	expect(await reading(todos, path)).toMatchObject({
@@ -599,12 +629,12 @@ test('a failed save keeps the input and later typing saves again; Reload replace
 	// Another failure, then Reload: the file replaces the input, and nothing is written.
 	const before = await text(todos, path);
 	failNext();
-	editor.setTitle('Lost');
+	typeTitle(editor, 'Lost');
 	expect(await written(editor)).toBeDefined();
 	expect(await todos.reload(path)).toBeUndefined();
 	expect(todoEditor(todos)).toBe(editor);
-	expect(editor.title()).toBe('Mine');
-	expect(editor.editor.save.status).toBe('idle');
+	expect(fieldsOf(editor).fields.title).toBe('Mine');
+	expect(editor.save.status).toBe('idle');
 	expect(todos.unsaved).toBe(false);
 	expect(await text(todos, path)).toBe(before);
 });
@@ -614,14 +644,14 @@ test('a reload whose read fails keeps the input on screen and says why', async (
 	await todos.create('Milk');
 	const path = todos.selectedPath!;
 	const editor = todoEditor(todos);
-	editor.setNotes('mine\n');
+	typeNotes(editor, 'mine\n');
 	expect(await written(editor)).toBeUndefined();
 	const binary = new Uint8Array([0xff, 0xfe, 0]);
 	expectOk(await todos.folder.files.overwrite(path, binary));
 
 	expect(await todos.reload(path)).toContain('could not be read');
 	expect(todoEditor(todos)).toBe(editor);
-	expect(editor.notes()).toBe('mine\n');
+	expect(fieldsOf(editor).body).toBe('mine\n');
 	expect(await bytes(todos, path)).toEqual(binary);
 });
 
@@ -650,7 +680,7 @@ test('a todo row whose editor did not open shows that failure, never a plain tex
 
 	await todos.open('todos/milk.md');
 	await reselect(todos, 'todos/milk.md');
-	expect(todoEditor(todos).title()).toBe('Note');
+	expect(fieldsOf(todoEditor(todos)).fields.title).toBe('Note');
 });
 
 test('a refused todo value stays in its field: leaving, rename, delete, and close count it as unsaved, and only Reload drops it', async () => {
@@ -660,25 +690,26 @@ test('a refused todo value stays in its field: leaving, rename, delete, and clos
 	const saved = await text(todos, path);
 	const editor = todoEditor(todos);
 
-	expect(editor.setNotes('mine \uD800')).toContain('cannot be saved');
-	expect(editor.notes()).toBe('mine \uD800');
+	expect(typeNotes(editor, 'mine \uD800')).toContain('cannot be saved');
+	expect(editor.refused.notes?.value).toBe('mine \uD800');
 	expect(todos.unsaved).toBe(true);
 	expect(todos.saveProblems).toBe(1);
 	expect(await todos.rename(path, 'oat.md')).toBe(UNSETTLED);
 	expect((await todos.deletionFor(path)).error).toBe(UNSETTLED);
 	expect(todoEditor(todos)).toBe(editor);
-	expect(editor.notes()).toBe('mine \uD800');
+	expect(editor.refused.notes?.value).toBe('mine \uD800');
 	expect(await text(todos, path)).toBe(saved);
 
 	// Reload is the deliberate discard.
 	expect(await todos.reload(path)).toBeUndefined();
-	expect(editor.notes()).toBe('');
+	expect(editor.refused).toEqual({});
+	expect(fieldsOf(editor).body).toBe('');
 	expect(todos.unsaved).toBe(false);
 
 	// Close names a path whose refused value it could not save.
-	expect(editor.setTitle('\uD800')).toContain('cannot be saved');
+	expect(typeTitle(editor, '\uD800')).toContain('cannot be saved');
 	expect(await close(todos)).toEqual({ unsettled: [path] });
-	expect(editor.title()).toBe('\uD800');
+	expect(editor.refused.title?.value).toBe('\uD800');
 });
 
 test('a removed raw draft can be explicitly discarded after its save conflicts', async () => {
@@ -770,12 +801,12 @@ test('a toggle on an open todo writes its complete row with the latest notes and
 	await todos.refresh();
 	await todos.open(path);
 	const editor = todoEditor(todos);
-	editor.setNotes('mine\n');
+	typeNotes(editor, 'mine\n');
 
 	expect(await todos.toggle(todos.entries[0]!)).toBeUndefined();
-	expect(editor.title()).toBe('Milk');
-	expect(editor.done()).toBe(true);
-	expect(editor.notes()).toBe('mine\n');
+	expect(fieldsOf(editor).fields.title).toBe('Milk');
+	expect(fieldsOf(editor).fields.done).toBe(true);
+	expect(fieldsOf(editor).body).toBe('mine\n');
 	expect(editor.isIdle).toBe(true);
 	expect(await text(todos, path)).toBe(accepted(editor));
 	expect(await reading(todos, path)).toMatchObject({
@@ -991,9 +1022,9 @@ test('a toggle is refused while an open todo shows text, reloaded from another w
 	const theirs = '---\ntitle: 12\ndone: false\n---\n';
 	expectOk(await todos.folder.files.overwrite(path, theirs));
 	await todos.check();
-	expect(editor.editor.row.status).toBe('valid');
+	expect(editor.row.status).toBe('valid');
 	expect(await todos.reload(path)).toBeUndefined();
-	expect(editor.editor.row).toMatchObject({ status: 'invalid', text: theirs });
+	expect(editor.row).toMatchObject({ status: 'invalid', text: theirs });
 	expect(typeof todos.entries[0]!.fields.done).toBe('boolean');
 
 	// The open todo has no fields to change; its source is where to fix it.
@@ -1039,14 +1070,15 @@ test("a list toggle while an open todo's save runs proceeds after its lost reply
 	const path = todos.selectedPath!;
 	const editor = todoEditor(todos);
 	loseNext();
-	editor.setNotes('mine\n');
+	typeNotes(editor, 'mine\n');
 	expect(editor.isSaving).toBe(true);
 	expect(await todos.toggle(todos.entries[0]!)).toBeUndefined();
-	expect(editor.done()).toBe(true);
-	expect(editor.notes()).toBe('mine\n');
-	expect(editor.editor.save.status).toBe('idle');
+	expect(fieldsOf(editor).fields.done).toBe(true);
+	expect(fieldsOf(editor).body).toBe('mine\n');
+	expect(editor.save.status).toBe('idle');
 	expect(await reading(todos, path)).toMatchObject({
-		fields: { title: 'Milk', done: true }, body: 'mine\n',
+		fields: { title: 'Milk', done: true },
+		body: 'mine\n',
 	});
 });
 
@@ -1054,14 +1086,13 @@ test('a list toggle while an open todo saves is queued, not refused, and publish
 	const { todos } = await openLosingNextSave();
 	const path = todos.selectedPath!;
 	const editor = todoEditor(todos);
-	editor.setNotes('mine\n');
+	typeNotes(editor, 'mine\n');
 	expect(editor.isSaving).toBe(true);
 
 	expect(await todos.toggle(todos.entries[0]!)).toBeUndefined();
 	expect(editor.isIdle).toBe(true);
 	expect(await reading(todos, path)).toMatchObject({
-		fields: { title: 'Milk', done: true },
-		body: 'mine\n',
+		fields: { title: 'Milk', done: true }, body: 'mine\n',
 	});
 });
 
@@ -1091,7 +1122,7 @@ for (const [stem, repaired] of [
 		expect(editor.path).toBe(path);
 		expectOk(await todos.folder.files.overwrite(path, `${ROW}theirs\n`));
 		// The next edit writes the complete row at the same stem, over the other writer.
-		editor.setNotes('mine\n');
+		typeNotes(editor, 'mine\n');
 		expect(await written(editor)).toBeUndefined();
 		const mine = accepted(editor);
 		expect(await text(todos, path)).toBe(mine);
@@ -1115,7 +1146,7 @@ for (const [stem, repaired] of [
 		expect(await text(todos, renamedPath)).toBe(mine);
 		const renamed = todoEditor(todos);
 		expect(renamed.path).toBe(renamedPath);
-		expect(renamed.editor.row.status).toBe('valid');
+		expect(renamed.row.status).toBe('valid');
 
 		// After the rename, typing saves where the row is now, over another writer.
 		expectOk(
@@ -1124,7 +1155,7 @@ for (const [stem, repaired] of [
 				`${mine}theirs after the rename\n`,
 			),
 		);
-		renamed.setNotes('mine after the rename\n');
+		typeNotes(renamed, 'mine after the rename\n');
 		expect(await written(renamed)).toBeUndefined();
 		expect(todoEditor(todos)).toBe(renamed);
 		expect((await reading(todos, renamedPath)).body).toBe(
@@ -1201,7 +1232,7 @@ test('a raw file renamed into a todo row settles, then reopens as a todo at the 
 
 	expect(await todos.rename('todos/note.txt', 'note.md')).toBeUndefined();
 	expect(todos.selectedPath).toBe('todos/note.md');
-	expect(todoEditor(todos).editor.row).toMatchObject({
+	expect(todoEditor(todos).row).toMatchObject({
 		status: 'valid',
 		fields: { title: 'Note', done: false },
 		body: 'mine\n',
@@ -1240,7 +1271,7 @@ test('typing during a rename into a todo row keeps the raw editor until it is cl
 	expect(await bytes(todos, 'todos/note.png')).toEqual(new Uint8Array([7]));
 	expect(await bytes(todos, 'todos/kept.png')).toBeUndefined();
 	expect(todos.selectedPath).toBe('todos/kept.md');
-	expect(todoEditor(todos).notes()).toBe('typed during\n');
+	expect(fieldsOf(todoEditor(todos)).body).toBe('typed during\n');
 	expect(todos.unsaved).toBe(false);
 });
 
@@ -1401,8 +1432,8 @@ test('a todo rename fences its editor: input and a toggle are refused until a ne
 	table.rename = rename;
 	expect(await todos.toggle(todos.entries[0]!)).toBe(BUSY);
 	expect(editor.isFenced).toBe(true);
-	editor.setNotes('typed during\n');
-	expect(editor.notes()).toBe('');
+	expect(typeNotes(editor, 'typed during\n')).toBe(BUSY);
+	expect(fieldsOf(editor).body).toBe('');
 	expect(editor.retry()).toBe(BUSY);
 	expect(await todos.reload(path)).toBe(BUSY);
 	expect(await text(todos, 'todos/oat.md')).toBe(original);
@@ -1418,13 +1449,13 @@ test('a todo rename fences its editor: input and a toggle are refused until a ne
 	// The same-stem image did not move with the row.
 	expect(await bytes(todos, image)).toEqual(new Uint8Array([7]));
 	expect(await bytes(todos, 'todos/oat.png')).toBeUndefined();
-	moved.setNotes('typed after\n');
+	typeNotes(moved, 'typed after\n');
 	expect(await written(moved)).toBeUndefined();
 	expect((await reading(todos, 'todos/oat.md')).body).toBe('typed after\n');
 	expect(await text(todos, path)).toBeUndefined();
 	await todos.refresh();
 	expect(await todos.toggle(todos.entries[0]!)).toBeUndefined();
-	expect(moved.done()).toBe(true);
+	expect(fieldsOf(moved).fields.done).toBe(true);
 	expect(await text(todos, path)).toBeUndefined();
 });
 
@@ -1433,7 +1464,7 @@ test('a rename whose destination another program made invalid opens it for raw r
 	await todos.create('Milk');
 	const path = todos.selectedPath!;
 	const editor = todoEditor(todos);
-	editor.setNotes('typed before\n');
+	typeNotes(editor, 'typed before\n');
 	const table = todos.folder.tables.todos;
 	const rename = table.rename.bind(table);
 	let release: (() => void) | undefined;
@@ -1460,7 +1491,7 @@ test('a rename whose destination another program made invalid opens it for raw r
 	expect(todos.selectedPath).toBe('todos/oat.md');
 	const moved = todoEditor(todos);
 	expect(moved.path).toBe('todos/oat.md');
-	expect(moved.editor.row).toMatchObject({ status: 'invalid', text: invalid });
+	expect(moved.row).toMatchObject({ status: 'invalid', text: invalid });
 	expect(moved.diagnostics()?.summary).toContain('need fixing');
 
 	// The repair goes through the same editor's source, at the new path.
@@ -1615,7 +1646,7 @@ test('a todo rename that lands its new path but keeps its old one leaves both ro
 		expect(options?.expectedSha256).toBe(captured.sha256);
 		const moved = expectOk(await todos.folder.files.create(to, captured.bytes));
 		// Input during the move is refused, not carried.
-		editor.setNotes('typed during\n');
+		expect(typeNotes(editor, 'typed during\n')).toBe(BUSY);
 		return MoveError.SourceNotRemoved({
 			from,
 			to,
@@ -1638,10 +1669,10 @@ test('a todo rename that lands its new path but keeps its old one leaves both ro
 	expect(todos.selectedPath).toBe(path);
 	expect(todoEditor(todos)).toBe(editor);
 	expect(editor.path).toBe(path);
-	expect(editor.notes()).toBe('');
+	expect(fieldsOf(editor).body).toBe('');
 
 	// Typing after the refusal saves at the old path, which still holds the row.
-	editor.setNotes('typed after\n');
+	typeNotes(editor, 'typed after\n');
 	expect(await editor.settle()).toBe(true);
 	expect((await reading(todos, path)).body).toBe('typed after\n');
 	expect(await text(todos, 'todos/oat.md')).toBe(original);
@@ -1652,7 +1683,7 @@ test('a todo rename whose reply was lost says so, and a todo holding nothing unw
 	await todos.create('Milk');
 	const path = todos.selectedPath!;
 	const editor = todoEditor(todos);
-	editor.setNotes('typed before\n');
+	typeNotes(editor, 'typed before\n');
 	const table = todos.folder.tables.todos;
 	const rename = table.rename.bind(table);
 	// The move lands, but its reply never arrives.
@@ -1697,12 +1728,12 @@ test('a todo in raw mode writes its exact text over another writer, and settles 
 	// The source view shows the file's exact text, through the same editor.
 	expect(editor.editSource()).toBeUndefined();
 	expect(editor.rawMode).toBe(true);
-	expect(editor.text()).toBe(ROW);
+	expect(editor.row.text).toBe(ROW);
 	expect(todoEditor(todos)).toBe(editor);
 
 	// Another writer's change is not read in; the next edit replaces it exactly.
 	await todos.folder.files.overwrite('todos/milk.md', `${ROW}theirs\n`);
-	expect(editor.text()).toBe(ROW);
+	expect(editor.row.text).toBe(ROW);
 	editor.setText(`${ROW}mine\n`);
 	expect(await written(editor)).toBeUndefined();
 	expect(await text(todos, 'todos/milk.md')).toBe(`${ROW}mine\n`);
@@ -1742,16 +1773,16 @@ test('a todo editor settles before table rename and delete, and refuses both whi
 	const editor = todoEditor(todos);
 
 	failNext();
-	editor.setNotes('first\n');
+	typeNotes(editor, 'first\n');
 	expect(await todos.rename(path, 'oat.md')).toBe(UNSETTLED);
 	expect((await todos.deletionFor(path)).error).toBe(UNSETTLED);
-	expect(editor.notes()).toBe('first\n');
-	expect(editor.editor.save.status).toBe('failed');
+	expect(fieldsOf(editor).body).toBe('first\n');
+	expect(editor.save.status).toBe('failed');
 	expect((await reading(todos, path)).body).toBe('');
 
 	// After Try again, the latest input lands before the rename moves the row.
-	editor.setNotes('notes\n');
-	editor.setDone(true);
+	typeNotes(editor, 'notes\n');
+	check(editor, true);
 	expect(editor.retry()).toBeUndefined();
 	expect(await todos.rename(path, 'oat.md')).toBeUndefined();
 	expect(await reading(todos, 'todos/oat.md')).toMatchObject({
@@ -1762,7 +1793,7 @@ test('a todo editor settles before table rename and delete, and refuses both whi
 	expect(moved.path).toBe('todos/oat.md');
 
 	// Pending input saves before the deletion is captured.
-	moved.setNotes('last\n');
+	typeNotes(moved, 'last\n');
 	const deletion = expectOk(await todos.deletionFor('todos/oat.md'));
 	expect(deletion).toMatchObject({
 		kind: 'todo',
@@ -1789,9 +1820,11 @@ test('a row that does not read as a todo opens its todo editor for raw repair wi
 	// A field issue opens the same editor, for raw repair only.
 	await todos.open('todos/bad.md');
 	const bad = todoEditor(todos);
-	expect(bad.editor.row).toMatchObject({ status: 'invalid', text: broken });
-	expect(bad.text()).toBe(broken);
-	expect(bad.title()).toBe('');
+	expect(bad.row).toMatchObject({ status: 'invalid', text: broken });
+	expect(
+		bad.set({ fields: { title: 'Typed', done: false }, body: '' }),
+	).toContain('source editor');
+	expect(bad.row.text).toBe(broken);
 	expect(bad.diagnostics()?.summary).toContain('need fixing');
 	const listed = todos.entries.find((entry) => entry.path === 'todos/bad.md')!;
 	expect(await todos.toggle(listed)).toContain('no readable done value');
@@ -1812,8 +1845,8 @@ test('a row that does not read as a todo opens its todo editor for raw repair wi
 	expect(await text(todos, 'todos/bad.md')).toBe(
 		'---\ntitle: Fixed\ndone: false\n---\n',
 	);
-	expect(bad.title()).toBe('Fixed');
-	expect(bad.done()).toBe(false);
+	expect(fieldsOf(bad).fields.title).toBe('Fixed');
+	expect(fieldsOf(bad).fields.done).toBe(false);
 	expect(todos.unsaved).toBe(false);
 });
 
@@ -2049,7 +2082,7 @@ test("another tab's change is listed while an open todo's failed save keeps its 
 		const saved = await text(todos, path);
 		const editor = todoEditor(todos);
 		faults.write = (file) => (file.endsWith(`/${path}`) ? 'fail' : undefined);
-		editor.setTitle('Mine');
+		typeTitle(editor, 'Mine');
 		const problem = await written(editor);
 		expect(problem).toBeDefined();
 		faults.write = undefined;
@@ -2067,8 +2100,8 @@ test("another tab's change is listed while an open todo's failed save keeps its 
 		);
 		expect(todos.selectedPath).toBe(path);
 		expect(todoEditor(todos)).toBe(editor);
-		expect(editor.title()).toBe('Mine');
-		expect(editor.editor.save.status).toBe('failed');
+		expect(fieldsOf(editor).fields.title).toBe('Mine');
+		expect(editor.save.status).toBe('failed');
 		expect(await written(editor)).toBe(problem);
 		expect(await text(todos, path)).toBe(saved);
 	} finally {
@@ -2107,12 +2140,12 @@ test("another tab's change is listed but not read into an open todo, whose next 
 		const theirs = await changeInAnotherTab(todos, other);
 		expect(todos.entries[0]!.fields).toEqual({ title: 'Oat milk', done: true });
 		// The todo shows what it loaded and holds nothing unwritten.
-		expect(editor.title()).toBe('Milk');
-		expect(editor.done()).toBe(false);
+		expect(fieldsOf(editor).fields.title).toBe('Milk');
+		expect(fieldsOf(editor).fields.done).toBe(false);
 		expect(editor.isIdle).toBe(true);
 		expect(await text(todos, path)).toBe(theirs);
 
-		editor.setNotes('mine\n');
+		typeNotes(editor, 'mine\n');
 		expect(await written(editor)).toBeUndefined();
 		expect(await reading(todos, path)).toMatchObject({
 			fields: { title: 'Milk', done: false },
@@ -2130,9 +2163,9 @@ test("Reload loads another tab's change into the todo's controls and writes noth
 
 		expect(await todos.reload(path)).toBeUndefined();
 		// The values the title, done, and notes controls are bound to.
-		expect(editor.title()).toBe('Oat milk');
-		expect(editor.done()).toBe(true);
-		expect(editor.notes()).toBe('theirs\n');
+		expect(fieldsOf(editor).fields.title).toBe('Oat milk');
+		expect(fieldsOf(editor).fields.done).toBe(true);
+		expect(fieldsOf(editor).body).toBe('theirs\n');
 		expect(editor.isIdle).toBe(true);
 		expect(await text(todos, path)).toBe(theirs);
 	} finally {
@@ -2149,8 +2182,8 @@ test('an open todo whose row another tab removed closes with the listing when it
 		expect(todos.unsaved).toBe(false);
 
 		// The released editor takes nothing more.
-		editor.setNotes('late\n');
-		expect(editor.notes()).toBe('');
+		expect(typeNotes(editor, 'late\n')).toContain('no longer open here');
+		expect(fieldsOf(editor).body).toBe('');
 		expect(await text(todos, path)).toBeUndefined();
 	} finally {
 		await other.close();
@@ -2166,8 +2199,8 @@ test('Reload of a row another tab made malformed shows it for raw repair in the 
 		expect(await todos.reload(path)).toBeUndefined();
 		expect(todos.selectedPath).toBe(path);
 		expect(todoEditor(todos)).toBe(editor);
-		expect(editor.editor.row.status).toBe('invalid');
-		expect(editor.text()).toBe(malformed);
+		expect(editor.row.status).toBe('invalid');
+		expect(editor.row.text).toBe(malformed);
 		expect(editor.diagnostics()?.summary).toContain('no anchor');
 		expect(await text(todos, path)).toBe(malformed);
 	} finally {
@@ -2238,9 +2271,10 @@ test('an own delete whose reply was lost after it landed refuses typing during i
 		const remove = table.delete;
 		// The delete lands where this app hears nothing of it, and typing
 		// arrives before its reply, which is lost.
+		let typed: string | undefined;
 		table.delete = async (stem, options) => {
 			expectOk(await other.tables.todos.delete(stem, options));
-			editor.setNotes('typed during\n');
+			typed = typeNotes(editor, 'typed during\n');
 			return lostReply(path);
 		};
 		let problem: string | undefined;
@@ -2252,7 +2286,8 @@ test('an own delete whose reply was lost after it landed refuses typing during i
 		expect(problem).toContain('may or may not');
 		expect(problem).toContain('the reply was lost');
 		// The fence refused the typing during the delete.
-		expect(editor.notes()).toBe('');
+		expect(typed).toBe(BUSY);
+		expect(fieldsOf(editor).body).toBe('');
 		expect(editor.isIdle).toBe(true);
 		// The listing after the delete found the row gone and closed the todo.
 		expect(todos.selection).toBeUndefined();
@@ -2286,7 +2321,7 @@ test('an own delete whose reply was lost before it landed keeps the todo open, a
 	expect(todos.selectedPath).toBe(path);
 	expect(todoEditor(todos)).toBe(editor);
 	expect(await text(todos, path)).toBe(saved);
-	editor.setNotes('new typing\n');
+	typeNotes(editor, 'new typing\n');
 	expect(await written(editor)).toBeUndefined();
 	expect((await reading(todos, path)).body).toBe('new typing\n');
 });
@@ -2300,9 +2335,10 @@ test('typing during an own delete that removed the row is refused, and the delet
 		const deletion = expectOk(await todos.deletionFor(path));
 		const table = todos.folder.tables.todos;
 		const remove = table.delete;
+		let typed: string | undefined;
 		table.delete = async (stem, options) => {
 			const removed = await other.tables.todos.delete(stem, options);
-			editor.setNotes('typed during\n');
+			typed = typeNotes(editor, 'typed during\n');
 			return removed;
 		};
 		try {
@@ -2310,7 +2346,8 @@ test('typing during an own delete that removed the row is refused, and the delet
 		} finally {
 			table.delete = remove;
 		}
-		expect(editor.notes()).toBe('');
+		expect(typed).toBe(BUSY);
+		expect(fieldsOf(editor).body).toBe('');
 		expect(todos.selection).toBeUndefined();
 		expect(todos.unsaved).toBe(false);
 
@@ -2400,7 +2437,7 @@ test("a delete confirmed while its todo's own save is running waits for that sav
 
 	const reply = Promise.withResolvers<void>();
 	hold = reply;
-	editor.setNotes('mine\n');
+	typeNotes(editor, 'mine\n');
 	await started.promise;
 	let answered = false;
 	const removing = todos.remove(deletion).then((problem) => {
@@ -2719,9 +2756,9 @@ test('close names the paths whose input it could not settle, and neither saves n
 		if (!path.endsWith(`/${failedPath}`)) return undefined;
 		return 'fail';
 	};
-	failed.setNotes('first\n');
+	typeNotes(failed, 'first\n');
 	expect(await written(failed)).toBeDefined();
-	failed.setNotes('held\n');
+	typeNotes(failed, 'held\n');
 	expect(await written(failed)).toBeDefined();
 	const failedText = stored(failedPath);
 
@@ -2729,7 +2766,7 @@ test('close names the paths whose input it could not settle, and neither saves n
 	expect(outcome.unsettled).toEqual([failedPath]);
 	// The failed input was not sent again; it is still what the person typed.
 	expect(stored(failedPath)).toBe(failedText);
-	expect(failed.notes()).toBe('held\n');
+	expect(fieldsOf(failed).body).toBe('held\n');
 });
 
 test('calls made after close began are refused without folder or terminal work', async () => {
@@ -3116,13 +3153,13 @@ test('a missing-file reload keeps refused input until deliberate Close', async (
 	await todos.refresh();
 	await todos.open(path);
 	const editor = todoEditor(todos);
-	editor.setNotes('kept\uD800');
+	expect(typeNotes(editor, 'kept\uD800')).toContain('cannot be saved');
 	await removeNow(todos, path);
 	expect(await todos.reload(path)).toContain('could not be read');
 	expect(todoEditor(todos)).toBe(editor);
-	expect(editor.notes()).toBe('kept\uD800');
+	expect(editor.refused.notes?.value).toBe('kept\uD800');
 	expect(todos.unsaved).toBe(true);
-	editor.setTitle('Attempt');
+	expect(typeTitle(editor, 'Attempt')).toBeUndefined();
 	await written(editor);
 	todos.discard(path);
 	expect(todos.selection).toBeUndefined();

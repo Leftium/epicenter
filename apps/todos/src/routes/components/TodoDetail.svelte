@@ -31,18 +31,24 @@
 		onBack?: () => void;
 	} = $props();
 
-	// Every function binding below is a pair of closures that reads `todo` on
-	// each call. Svelte evaluates a function binding's expressions once, when
-	// its block is created; `bind:value={todo.title, todo.setTitle}` would keep
-	// the first todo's methods after this view is reused for another todo.
+	// Every function binding below reads `todo` on each call. Svelte evaluates
+	// a function binding's expressions once, when its block is created, and
+	// this view is reused as the selection moves; reading `todo` only then
+	// would keep showing and writing the first todo.
 	//
 	// A binding's input listener stays on a node after its block leaves the
 	// document, and the todo stays retained by the owner, so a delivered event
-	// could still reach its setter. Shared Input and Textarea retire destroyed
-	// value bindings; Lifetime protects the checkbox and commands. Old controls
-	// stay inert even after the same kind of block mounts again.
+	// could still reach its setter. Each setter composes the complete row from
+	// the todo's current row, and the todo refuses it unless that row still
+	// shows its fields. Shared Input and Textarea retire destroyed value
+	// bindings; Lifetime protects the checkbox and commands. Old controls stay
+	// inert even after the same kind of block mounts again.
 	const stem = $derived(rowStemOf(todos.folder.tables.todos.name, todo.path) ?? '');
 	const diagnostics = $derived(todo.diagnostics());
+
+	/** Textareas report LF, so views show LF; the todo restores the file's convention. */
+	const lf = (text: string) => text.replace(/\r\n?/g, '\n');
+
 </script>
 
 <section class="flex h-full min-h-0 flex-col overflow-y-auto" aria-label="Todo">
@@ -52,26 +58,38 @@
 				<ArrowLeftIcon />
 			</Button>
 		{/if}
-		{#if todo.editor.row.status === 'valid' && !todo.rawMode}
+		{#if todo.row.status === 'valid' && !todo.rawMode}
 			<Lifetime>
 				{#snippet children(live)}
 					<Checkbox
 						aria-label="Done"
 						disabled={todo.isFenced}
-						bind:checked={() => todo.done(), (done) => live() && todo.setDone(done)}
+						bind:checked={
+							() => todo.row.status === 'valid' && todo.row.fields.done,
+							(done) => {
+								if (!live() || todo.row.status !== 'valid') return;
+								todo.set({ ...todo.row, fields: { ...todo.row.fields, done } });
+							}
+						}
 					/>
 					<Input
 						class="flex-1 text-base font-medium"
 						placeholder="Title"
 						aria-label="Title"
 						disabled={todo.isFenced}
-						bind:value={() => todo.title(), (title) => todo.setTitle(title)}
+						bind:value={
+							() => todo.row.status === 'valid' ? todo.refused.title?.value ?? todo.row.fields.title : '',
+							(title) => {
+								if (todo.row.status !== 'valid') return;
+								todo.set({ ...todo.row, fields: { ...todo.row.fields, title } }, { control: 'title' });
+							}
+						}
 					/>
 				{/snippet}
 			</Lifetime>
 		{:else}
 			<h2 class="min-w-0 flex-1 truncate text-base font-medium">{stem === '' ? todo.path : stem}</h2>
-			{#if todo.editor.row.status === 'valid'}
+			{#if todo.row.status === 'valid'}
 				<Lifetime>
 					{#snippet children(live)}
 						<Button size="sm" variant="outline" onclick={() => {
@@ -105,7 +123,7 @@
 
 	<Tabs.Root
 		bind:value={
-			() => todo.editor.row.status === 'invalid' || todo.rawMode ? 'source' : 'notes',
+			() => todo.row.status === 'invalid' || todo.rawMode ? 'source' : 'notes',
 			(next) => {
 				const problem = next === 'source' ? todo.editSource() : todo.editFields();
 				if (problem) toast.error('Could not change the editor view', { description: problem });
@@ -114,17 +132,23 @@
 		class="flex min-h-48 flex-1 flex-col px-3 py-3 sm:px-4"
 	>
 		<Tabs.List>
-			<Tabs.Trigger value="notes" disabled={todo.isFenced || todo.editor.row.status !== 'valid'}>Notes</Tabs.Trigger>
+			<Tabs.Trigger value="notes" disabled={todo.isFenced || todo.row.status !== 'valid'}>Notes</Tabs.Trigger>
 			<Tabs.Trigger value="source" disabled={todo.isFenced}>Source</Tabs.Trigger>
 		</Tabs.List>
 		<Tabs.Content value="notes" class="flex min-h-0 flex-1 flex-col">
-			{#if todo.editor.row.status === 'valid'}
+			{#if todo.row.status === 'valid'}
 				<Textarea
 					class="min-h-0 flex-1 field-sizing-fixed resize-none"
 					placeholder="Notes in Markdown"
 					aria-label="Notes"
 					disabled={todo.isFenced}
-					bind:value={() => todo.notes(), (notes) => todo.setNotes(notes)}
+					bind:value={
+						() => todo.row.status === 'valid' ? todo.refused.notes?.value ?? lf(todo.row.body) : '',
+						(notes) => {
+							if (todo.row.status !== 'valid') return;
+							todo.set({ ...todo.row, body: notes }, { control: 'notes' });
+						}
+					}
 				/>
 			{/if}
 		</Tabs.Content>
@@ -134,7 +158,7 @@
 				aria-label="Markdown source"
 				spellcheck={false}
 				disabled={todo.isFenced}
-				bind:value={() => todo.text(), (text) => todo.setText(text)}
+				bind:value={() => lf(todo.row.text), (text) => todo.setText(text)}
 			/>
 		</Tabs.Content>
 	</Tabs.Root>

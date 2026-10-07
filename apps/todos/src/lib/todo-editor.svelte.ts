@@ -17,14 +17,18 @@
  *   a raw edit keeps the source view after the text becomes valid, until the
  *   person chooses Edit fields. It is view state, kept here so it outlives
  *   the views and follows a rename.
+ * - Admission. `set` takes a complete row only while the row reads as valid
+ *   and shows its fields, and no fence or release refuses input. The views
+ *   compose it from the current `row`; this module merges nothing.
  * - Refused fields. A title or notes value the row cannot be written with
  *   (it has no canonical form) is accepted by nothing, so this editor keeps
- *   that one field's typed value and why, and the field shows it for
+ *   the value its control supplied and why, and the field shows it for
  *   correction. It is not a second row: the rest of the row stays the
- *   native editor's, other fields keep saving, and the next accepted value
- *   of that field clears it. Only a deliberate reload drops it.
- *   Until then it counts as unsaved input, so leaving, rename, delete,
- *   close, and a departure treat it as not settled.
+ *   native editor's. A row that keeps that field as the native editor holds
+ *   it still saves; one that changes it is refused unless it comes from that
+ *   field's own control, whose next accepted value clears it. Only a
+ *   deliberate reload drops it. Until then it counts as unsaved input, so
+ *   leaving, rename, delete, close, and a departure treat it as not settled.
  * - Fences. Rename, delete, a recovery of an incoming update, close, and a
  *   departure refuse input while they run; rename, delete, and close first
  *   wait for admitted writes and stop when one failed or a field is refused.
@@ -34,6 +38,7 @@
  *   never changes.
  */
 import type {
+	CanonicalDocument,
 	RowEditor,
 	RowReloadError,
 	RowSaveError,
@@ -41,9 +46,6 @@ import type {
 import { withFileNewlines } from '@epicenter/folder/file-browser';
 import { fromRowEditor } from '@epicenter/folder/svelte';
 import type { TodoFields } from './definition.js';
-
-/** Textareas report LF, so views show LF and setters restore the file's convention. */
-const lf = (text: string) => text.replace(/\r\n?/g, '\n');
 
 /** Why an operation was refused because this editor is working on its file. */
 export const BUSY =
@@ -75,6 +77,9 @@ export function describeSaveError(error: RowSaveError): string {
 	}
 }
 
+/** Why fields input was refused while the row shows its source. */
+const IN_SOURCE = 'This todo is open in its source editor. Change it there.';
+
 /** A field whose typed value is kept because the row could not take it. */
 type RefusedField = 'title' | 'notes';
 
@@ -104,36 +109,68 @@ export function createTodoEditor(
 	let refusals = $state.raw<Partial<Record<RefusedField, Refusal>>>({});
 
 	/** Why this editor takes no input or command now, if it does not. */
-	function refused(): string | undefined {
+	function blocked(): string | undefined {
 		if (released) return RELEASED;
 		if (departing) return DEPARTING;
 		if (fences > 0) return BUSY;
 		return undefined;
 	}
 
+	function hasRefusals() {
+		return Object.keys(refusals).length > 0;
+	}
+
 	/**
-	 * Record the row's answer to one field's typed value: a refusal keeps the
-	 * value and why for that field; an accepted value clears that field's
-	 * refusal. Answers why nothing was accepted.
+	 * Give the row a complete replacement: every field to keep, unknown keys
+	 * included, and the body. A key left out is removed. Taken only while the
+	 * row reads as valid and shows its fields. Answers why it was not taken.
+	 *
+	 * A refused field blocks a row that changes it from what the native
+	 * editor holds, unless the row comes from that field's own control. The
+	 * `title` or `notes` control keeps its value when the row cannot take it,
+	 * and an accepted one clears it. The notes control reports LF, so its
+	 * body is written in the file's newline convention. An unchanged row is
+	 * saved again.
 	 */
-	function recordRefusal(
-		field: RefusedField,
-		value: string,
-		{ error }: ReturnType<typeof editor.set>,
+	function set(
+		next: CanonicalDocument,
+		{ control }: { readonly control?: RefusedField } = {},
 	): string | undefined {
-		const next = { ...refusals };
-		delete next[field];
+		const why = blocked();
+		if (why !== undefined) return why;
+		const { row } = editor;
+		if (row.status !== 'valid' || rawMode) return IN_SOURCE;
+		const document =
+			control === 'notes'
+				? { ...next, body: withFileNewlines(next.body, row.text) }
+				: next;
+		const changed: Record<RefusedField, boolean> = {
+			title: document.fields.title !== row.fields.title,
+			notes: document.body !== row.body,
+		};
+		const held = (['title', 'notes'] as const).find(
+			(field) =>
+				field !== control && refusals[field] !== undefined && changed[field],
+		);
+		if (held !== undefined)
+			return `What you typed in the ${held} is not saved. Fix it there first.`;
+		const { error } = editor.set(document);
+		if (control === undefined)
+			return error === null
+				? undefined
+				: `This value cannot be saved: ${error.refusal.reason}.`;
+		const others = { ...refusals };
+		delete others[control];
+		const value = control === 'title' ? next.fields.title : next.body;
 		const message =
 			error === null
 				? undefined
-				: `The ${field} cannot be saved: ${error.refusal.reason}.`;
-		if (message !== undefined) next[field] = { value, message };
-		refusals = next;
+				: `The ${control} cannot be saved: ${error.refusal.reason}.`;
+		refusals =
+			message === undefined || typeof value !== 'string'
+				? others
+				: { ...others, [control]: { value, message } };
 		return message;
-	}
-
-	function hasRefusals() {
-		return Object.keys(refusals).length > 0;
 	}
 
 	/** Whether admitted writes all landed and no field is refused. Never retries. */
@@ -150,8 +187,18 @@ export function createTodoEditor(
 
 	return {
 		path,
-		/** Tracked `row` and `save` reads and the commands of the native editor. */
-		editor,
+		/** The latest input, valid or invalid, read tracked. `set` takes a row composed from it. */
+		get row() {
+			return editor.row;
+		},
+		/** The native editor's publication, read tracked: idle, saving, or failed. */
+		get save() {
+			return editor.save;
+		},
+		/** Values the row could not take, by the control that supplied them, and why. */
+		get refused(): Readonly<Partial<Record<RefusedField, Refusal>>> {
+			return refusals;
+		},
 		get rawMode() {
 			return rawMode;
 		},
@@ -160,7 +207,7 @@ export function createTodoEditor(
 		 * departure is working on this file, or the owner released this editor.
 		 */
 		get isFenced() {
-			return refused() !== undefined;
+			return blocked() !== undefined;
 		},
 		get isSaving() {
 			return editor.save.status === 'saving';
@@ -178,62 +225,16 @@ export function createTodoEditor(
 			return Object.values(refusals).map((refusal) => refusal.message);
 		},
 
-		// --- Function bindings. Each guards its own view's gate. -----------
-		// A leaving fields view can still deliver input; the fields setters
-		// take it only while the row shows its fields and takes input.
+		// --- Input. A leaving view can still deliver it, so each kind is ---
+		// taken only while the row shows the view it belongs to.
 
-		title(): string {
-			if (editor.row.status !== 'valid') return '';
-			if (refusals.title !== undefined) return refusals.title.value;
-			return typeof editor.row.fields.title === 'string'
-				? editor.row.fields.title
-				: '';
-		},
-		setTitle(title: string) {
-			if (editor.row.status !== 'valid' || rawMode || refused() !== undefined)
-				return undefined;
-			const result = editor.set({
-				...editor.row,
-				fields: { ...editor.row.fields, title },
-			});
-			return recordRefusal('title', title, result);
-		},
-		done(): boolean {
-			return editor.row.status === 'valid' && editor.row.fields.done === true;
-		},
-		setDone(done: boolean) {
-			if (editor.row.status !== 'valid' || rawMode || refused() !== undefined)
-				return undefined;
-			const { error } = editor.set({
-				...editor.row,
-				fields: { ...editor.row.fields, done },
-			});
-			return error === null
-				? undefined
-				: `This value cannot be saved: ${error.refusal.reason}.`;
-		},
-		notes(): string {
-			if (editor.row.status !== 'valid') return '';
-			return refusals.notes?.value ?? lf(editor.row.body);
-		},
-		setNotes(notes: string) {
-			if (editor.row.status !== 'valid' || rawMode || refused() !== undefined)
-				return undefined;
-			const result = editor.set({
-				...editor.row,
-				body: withFileNewlines(notes, editor.row.text),
-			});
-			return recordRefusal('notes', notes, result);
-		},
-		/** The whole file as the source view shows it. */
-		text(): string {
-			return lf(editor.row.text);
-		},
+		set,
+		/** The source view's text, in LF; the file's newline convention is restored. */
 		setText(next: string) {
 			// The raw view exists for an invalid row, or a valid one in raw mode.
 			if (
 				(editor.row.status === 'valid' && !rawMode) ||
-				refused() !== undefined
+				blocked() !== undefined
 			)
 				return;
 			// Raw repair stays in the source after the text becomes valid.
@@ -271,8 +272,8 @@ export function createTodoEditor(
 
 		/** Show the source of a valid row. Writes nothing. */
 		editSource(): string | undefined {
-			const blocked = refused();
-			if (blocked !== undefined) return blocked;
+			const why = blocked();
+			if (why !== undefined) return why;
 			// The source shows the row, which does not hold a refused value.
 			if (hasRefusals())
 				return 'Fix the value that cannot be saved, or reload, before editing the source.';
@@ -281,8 +282,8 @@ export function createTodoEditor(
 		},
 		/** Show the fields of a valid row. Text that is not a valid todo stays in the source. */
 		editFields(): string | undefined {
-			const blocked = refused();
-			if (blocked !== undefined) return blocked;
+			const why = blocked();
+			if (why !== undefined) return why;
 			if (editor.row.status === 'invalid')
 				return 'This text does not read as a todo yet. Fix it in the source first.';
 			rawMode = false;
@@ -290,8 +291,8 @@ export function createTodoEditor(
 		},
 		/** The person's "Try again" after a failed or unconfirmed write: write the latest input. */
 		retry(): string | undefined {
-			const blocked = refused();
-			if (blocked !== undefined) return blocked;
+			const why = blocked();
+			if (why !== undefined) return why;
 			editor.retry();
 			return undefined;
 		},
@@ -301,16 +302,12 @@ export function createTodoEditor(
 		 * the todo is edited as source.
 		 */
 		async toggle(done: boolean): Promise<string | undefined> {
-			const blocked = refused();
-			if (blocked !== undefined) return blocked;
-			if (editor.row.status !== 'valid' || rawMode)
-				return 'This todo is open in its source editor. Change it there.';
-			const { error: unrepresentable } = editor.set({
-				...editor.row,
-				fields: { ...editor.row.fields, done },
-			});
-			if (unrepresentable !== null)
-				return `This value cannot be saved: ${unrepresentable.refusal.reason}.`;
+			const why = blocked();
+			if (why !== undefined) return why;
+			const { row } = editor;
+			if (row.status !== 'valid') return IN_SOURCE;
+			const problem = set({ ...row, fields: { ...row.fields, done } });
+			if (problem !== undefined) return problem;
 			const { error } = await editor.waitForSaves();
 			return error === null ? undefined : describeSaveError(error);
 		},

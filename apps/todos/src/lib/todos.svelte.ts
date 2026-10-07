@@ -823,8 +823,8 @@ export function createTodos(folder: TodosFolder) {
 			else if (
 				item?.kind === 'todo' &&
 				!item.editor.isFenced &&
-				item.editor.editor.save.status === 'failed' &&
-				item.editor.editor.save.error.name === 'NotFound'
+				item.editor.save.status === 'failed' &&
+				item.editor.save.error.name === 'NotFound'
 			) {
 				forget(path);
 				selectedPath = path;

@@ -170,6 +170,8 @@ async function incoming(kind: 'browser' | 'directory') {
 		untouched = () => dumpDirectory(local);
 	}
 	opened.push(folder);
+	// Seed the initial remote tree before testing later incoming attributes.
+	expectOk(await folder.files.remove(expectOk(await folder.files.read('definition.json'))));
 	expectOk(await folder.git.fetch());
 	expect(expectOk(await folder.git.pullFastForward()).status).toBe(
 		'fastForwarded',

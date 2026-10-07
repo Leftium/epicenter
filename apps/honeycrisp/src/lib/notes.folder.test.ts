@@ -1318,6 +1318,7 @@ describe('kept sessions', () => {
 		expect(await readFile(join(root, 'b.txt'), 'utf8')).toBe('Retained B\n');
 		expect((await folder.files.list()).data?.files.map((f) => f.path)).toEqual([
 			'b.txt',
+			'definition.json',
 			'kv.json',
 		]);
 	});

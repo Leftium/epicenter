@@ -20,6 +20,8 @@
 import { afterAll, beforeAll, expect, test } from 'bun:test';
 import { rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { exportSchema } from '@epicenter/definition';
+import { expectOk } from 'wellcrafted/testing';
 import { defineFolder, defineTable, field } from './contract.js';
 import { openNativeFolder } from './directory.test-support.js';
 import { GIT_ENV, git, scratch } from './git-http.test-support.js';
@@ -48,6 +50,7 @@ async function repository() {
 	await git(root, 'init', '--quiet', '--initial-branch=main');
 	await writeFile(join(root, 'a.md'), 'A\n');
 	await writeFile(join(root, 'kept.md'), 'kept\n');
+	await writeFile(join(root, 'definition.json'), expectOk(exportSchema(definition)));
 	await git(root, 'add', '--all');
 	await git(root, 'commit', '--quiet', '-m', 'Start');
 	return root;
@@ -96,7 +99,7 @@ test('staged-only additions and deletions do not survive a checkpoint', async ()
 	// The ignored file is not source, and kept.md is unchanged: no new commit.
 	expect(outcome.status).toBe('unchanged');
 	expect(await git(root, 'status', '--porcelain')).toBe('');
-	expect(await git(root, 'ls-files')).toBe('.gitignore\na.md\nkept.md');
+	expect(await git(root, 'ls-files')).toBe('.gitignore\na.md\ndefinition.json\nkept.md');
 	await folder.close();
 });
 

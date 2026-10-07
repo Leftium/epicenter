@@ -7,9 +7,8 @@
  * showing the notes.
  *
  * Key behaviors:
- * - An existing folder is opened without changing a byte, a modification
- *   time, or anything in its repository, born or unborn
- * - A missing layout is created, and the default `kv.json` is its first commit
+ * - Opening publishes discovery JSON and preserves existing notes and settings
+ * - A missing layout is created; publication and default settings use automatic history
  * - A `kv.json` that appears first is kept, and nothing is retried
  * - A read that fails for any reason but absence writes nothing
  */
@@ -27,6 +26,8 @@ import {
 } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { expectOk } from 'wellcrafted/testing';
+import { exportSchema } from '@epicenter/definition';
 import { openFolder } from '@epicenter/folder/bun';
 import { honeycrispDefinition } from '../data.js';
 import { setUpFolder } from './first-open.js';
@@ -108,7 +109,7 @@ async function existing() {
 // ============================================================================
 
 describe('an existing folder', () => {
-	test('with history is opened without changing its files or its repository', async () => {
+	test('with history gains its definition while saved note and setting bytes and times stay intact', async () => {
 		const { root, git } = await existing();
 		git('init', '--quiet', '--initial-branch=main');
 		git('add', '--all');
@@ -124,32 +125,33 @@ describe('an existing folder', () => {
 			'--message',
 			'Their own first commit',
 		);
-		expect(committed.stderr).toBe('');
 		expect(committed.status).toBe(0);
-		// Opening may refresh Git's private index; what must not move is the
-		// work, the branch, and the objects.
-		const state = async () => ({
-			files: (await fingerprint(root)).filter(
-				(line) => !line.includes('/.git/') && !line.endsWith('/.git/'),
-			),
-			head: git('rev-parse', 'HEAD').stdout,
-			refs: git('for-each-ref').stdout,
-			objects: git('count-objects', '-v').stdout,
-			log: git('log', '--format=%H %s').stdout,
-		});
-		const before = await state();
+		const prior = git('rev-parse', 'HEAD').stdout.trim();
+		const savedFiles = async () =>
+			(await fingerprint(root)).filter(
+				(line) =>
+					!line.includes('/.git') && !line.includes('/definition.json '),
+			);
+		const before = await savedFiles();
 		const folder = await open(root);
 		await setUpFolder(folder.files, TABLES);
-		// Long enough for a commit to have been made, had one been requested.
-		await new Promise((resolve) => setTimeout(resolve, 300));
-		expect(await state()).toEqual(before);
-		expect(before.log).toContain('Their own first commit');
-		expect(folder.git.snapshot.lastCommit).toBeUndefined();
+		await until(
+			() => !folder.git.snapshot.activity.commit.active,
+			'publication history',
+		);
+		expect(await savedFiles()).toEqual(before);
+		expect(git('rev-parse', 'HEAD^').stdout.trim()).toBe(prior);
+		expect(git('log', '-1', '--format=%s').stdout.trim()).toBe(
+			'Add definition.json',
+		);
+		expect(await readFile(join(root, 'definition.json'), 'utf8')).toBe(
+			expectOk(exportSchema(honeycrispDefinition)),
+		);
 		expect(await readFile(join(root, 'notes', 'old.md'), 'utf8')).toBe(NOTE);
 		expect(await readFile(join(root, 'kv.json'), 'utf8')).toBe(KV);
 	});
 
-	test('with an unborn repository stays unborn', async () => {
+	test('with an unborn repository records publication and keeps existing content intact', async () => {
 		const { root, git } = await existing();
 		git('init', '--quiet', '--initial-branch=main');
 		const files = (await fingerprint(root)).filter(
@@ -157,17 +159,21 @@ describe('an existing folder', () => {
 		);
 		const folder = await open(root);
 		await setUpFolder(folder.files, TABLES);
-		await new Promise((resolve) => setTimeout(resolve, 300));
-		expect(git('rev-parse', '--verify', '--quiet', 'HEAD').status).not.toBe(0);
-		expect(git('for-each-ref').stdout).toBe('');
-		expect(git('count-objects', '-v').stdout).toContain('count: 0');
-		expect(folder.git.snapshot.lastCommit).toBeUndefined();
+		await until(
+			() => !folder.git.snapshot.activity.commit.active,
+			'publication history',
+		);
+		expect(git('rev-list', '--count', 'HEAD').stdout.trim()).toBe('1');
+		expect(git('status', '--porcelain').stdout).toBe('');
 		expect(
-			(await fingerprint(root)).filter((line) => !line.includes('/.git')),
+			(await fingerprint(root)).filter(
+				(line) =>
+					!line.includes('/.git') && !line.includes('/definition.json '),
+			),
 		).toEqual(files);
 	});
 
-	test('missing one table directory gains that directory and nothing else', async () => {
+	test('missing one table directory gains it and the definition while saved content stays intact', async () => {
 		const { root, git } = await directory();
 		await mkdir(join(root, 'notes'));
 		await writeFile(join(root, 'notes', 'old.md'), NOTE);
@@ -187,8 +193,10 @@ describe('an existing folder', () => {
 				await stat(join(root, 'kv.json')),
 			].map((stats) => stats.mtimeMs),
 		).toEqual(kept);
-		// An empty directory is not a save: nothing was committed.
-		expect(git('rev-parse', '--verify', '--quiet', 'HEAD').status).not.toBe(0);
+		// Publication checkpoints the whole existing folder, including its saved data.
+		expect(git('ls-tree', '-r', '--name-only', 'HEAD').stdout.trim()).toBe(
+			'definition.json\nkv.json\nnotes/old.md',
+		);
 	});
 });
 
@@ -197,32 +205,38 @@ describe('an existing folder', () => {
 // ============================================================================
 
 describe('a new folder', () => {
-	test('gets its table directories, and its default settings are the first commit', async () => {
+	test('gets its table directories, definition and default settings in settled history', async () => {
 		const { root, git } = await directory();
 		const folder = await open(root);
 		await setUpFolder(folder.files, TABLES);
 		for (const table of TABLES)
 			expect((await stat(join(root, table))).isDirectory()).toBe(true);
 		expect(await readFile(join(root, 'kv.json'), 'utf8')).toBe('{}\n');
-		// The commit follows the save by the folder's own policy.
 		await until(
-			() => git('rev-list', '--count', 'HEAD').stdout.trim() === '1',
-			'the first commit',
+			() => !folder.git.snapshot.activity.commit.active,
+			'setup history',
 		);
-		expect(git('log', '--format=%s').stdout.trim()).toBe('Add kv.json');
-		// Opening it again is opening an existing folder.
+		expect(git('show', 'HEAD:kv.json').stdout).toBe('{}\n');
+		expect(git('show', 'HEAD:definition.json').stdout).toBe(
+			expectOk(exportSchema(honeycrispDefinition)),
+		);
 		const head = git('rev-parse', 'HEAD').stdout;
-		await setUpFolder(folder.files, TABLES);
-		await new Promise((resolve) => setTimeout(resolve, 300));
+		const reopened = await open(root);
+		await setUpFolder(reopened.files, TABLES);
+		await until(
+			() => !reopened.git.snapshot.activity.commit.active,
+			'reopening history',
+		);
 		expect(git('rev-parse', 'HEAD').stdout).toBe(head);
 	});
 
 	test('is set up even when the first commit cannot be recorded', async () => {
 		const { root, git } = await directory();
-		const folder = await open(root);
-		// Another Git process holds the branch: the commit fails, the save stands.
+		git('init', '--quiet', '--initial-branch=main');
+		// Hold the branch before opening so both discovery and settings saves stand.
 		await mkdir(join(root, '.git', 'refs', 'heads'), { recursive: true });
 		await writeFile(join(root, '.git', 'refs', 'heads', 'main.lock'), '');
+		const folder = await open(root);
 		await setUpFolder(folder.files, TABLES);
 		expect(await readFile(join(root, 'kv.json'), 'utf8')).toBe('{}\n');
 		await until(

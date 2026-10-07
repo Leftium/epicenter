@@ -142,6 +142,7 @@ async function attached() {
 			snapshot: wireSnapshot(),
 		}),
 		detach: () => null,
+		apply: () => null,
 		open_request: () => nextRequest++,
 		withdraw_request: () => null,
 	};
@@ -172,6 +173,7 @@ test('the folder opened is the scope the opener names', async () => {
 			snapshot: wireSnapshot({ commitOnEdit: false }),
 		}),
 		detach: () => null,
+		apply: () => null,
 	};
 	const folder = expectOk(
 		await openFolder({

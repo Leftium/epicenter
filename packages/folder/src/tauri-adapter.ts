@@ -113,6 +113,7 @@ import {
 	type UnfinishedMerge as WireUnfinishedMerge,
 } from './native/bindings.gen.js';
 import { callObserver } from './observer.js';
+import { publishDefinition } from './publish-definition.js';
 
 type Wire<T, E> = { data: T; error: null } | { data: null; error: E };
 
@@ -1205,24 +1206,24 @@ export const openFolder: OpenFolder = async ({ definition, id }) => {
 
 	const client = createClient();
 
-	return Ok(
-		assembleFolder<typeof definition>({
-			prepared,
-			storage: createBoundary(session, hints),
-			// Closing the folder fences `client` through this history: Git calls
-			// are refused, and running local ones are waited for, before
-			// `release` detaches the session they use.
-			history: createHistory(session, snapshots, client),
-			location: { kind: 'directory', root },
-			hints,
-			// Detaches this window only. The owner keeps the folder, finishes the
-			// work it already admitted for this page, and serves every other
-			// window.
-			release: async () => {
-				stop();
-				snapshots.clear();
-				await commands.detach(session).catch(() => {});
-			},
-		}),
-	);
+	const folder = assembleFolder<typeof definition>({
+		prepared,
+		storage: createBoundary(session, hints),
+		// Closing the folder fences `client` through this history: Git calls
+		// are refused, and running local ones are waited for, before
+		// `release` detaches the session they use.
+		history: createHistory(session, snapshots, client),
+		location: { kind: 'directory', root },
+		hints,
+		// Detaches this window only. The owner keeps the folder, finishes the
+		// work it already admitted for this page, and serves every other
+		// window.
+		release: async () => {
+			stop();
+			snapshots.clear();
+			await commands.detach(session).catch(() => {});
+		},
+	});
+	await publishDefinition(prepared, folder.files);
+	return Ok(folder);
 };

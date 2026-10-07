@@ -1324,13 +1324,13 @@ test('the subject and count describe the committed tree, not the files on disk',
 				'HEAD',
 			)
 		).split('\n');
-	expect(await changed()).toEqual(['.gitignore', 'a.md', 'b.md']);
+	expect(await changed()).toEqual(['.gitignore', 'a.md', 'b.md', 'definition.json']);
 	expect(first).toMatchObject({
 		status: 'committed',
-		message: 'Update 3 files',
-		changedPaths: 3,
+		message: 'Update 4 files',
+		changedPaths: 4,
 	});
-	expect(await git(root, 'log', '-1', '--format=%s')).toBe('Update 3 files');
+	expect(await git(root, 'log', '-1', '--format=%s')).toBe('Update 4 files');
 
 	// Four files change on disk; one is ignored and one ends as it began.
 	await writeFile(join(root, 'a.md'), 'a2');

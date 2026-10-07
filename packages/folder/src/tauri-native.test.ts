@@ -47,9 +47,10 @@
 import { afterEach, describe, expect, mock, spyOn, test } from 'bun:test';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { existsSync } from 'node:fs';
-import { realpath, rm, writeFile } from 'node:fs/promises';
+import { realpath, rm, writeFile, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { FileSink } from 'bun';
+import { exportSchema } from '@epicenter/definition';
 import { expectErr, expectOk } from 'wellcrafted/testing';
 import { hashBytes } from './capture.js';
 import { defineFolder, defineTable, field } from './contract.js';
@@ -406,6 +407,32 @@ const row = (stem: string) => ({
 const IMAGE = new Uint8Array([1, 2, 3]);
 
 describe.skipIf(!enabled)('tauri folder against the native owner', () => {
+	test('opening publishes root discovery JSON and identical reopening creates no additional native commit', async () => {
+		const { root, settled } = await setup();
+		expect(await readFile(join(root, 'definition.json'), 'utf8')).toBe(expectOk(exportSchema(definition)));
+		await settled();
+		const before = await git(root, 'rev-parse', 'HEAD');
+		expect(await git(root, 'rev-list', '--count', 'HEAD')).toBe('1');
+		const reopened = expectOk(await a(() => openFolder({ id: 'notes', definition })));
+		await settled();
+		expect(await git(root, 'rev-parse', 'HEAD')).toBe(before);
+		expect(await git(root, 'status', '--porcelain')).toBe('');
+		await a(() => reopened.close());
+	});
+
+	test('manual native opening replaces the previous description without committing or changing saved row bytes', async () => {
+		const { root, folder } = await setup({ manual: true });
+		expectOk(await a(() => folder.tables.todos.create(row('kept'))));
+		const before = await readFile(join(root, 'todos/kept.md'), 'utf8');
+		expectOk(await a(() => folder.files.overwrite('definition.json', 'manual description')));
+		const changed = defineFolder({ ...definition, title: 'Changed declaration' });
+		const reopened = expectOk(await a(() => openFolder({ id: 'notes', definition: changed })));
+		expect(await readFile(join(root, 'definition.json'), 'utf8')).toBe(expectOk(exportSchema(changed)));
+		expect(await readFile(join(root, 'todos/kept.md'), 'utf8')).toBe(before);
+		expect(await a(() => reopened.git.log(10))).toEqual({ data: [], error: null });
+		await a(() => reopened.close());
+	});
+
 	test('KV creation is exclusive and assignments preserve source through the native owner', async () => {
 		const { folder, other } = await setup({ manual: true });
 		expect(
@@ -454,6 +481,8 @@ describe.skipIf(!enabled)('tauri folder against the native owner', () => {
 		expect(unknown).toMatchObject({ name: 'UnknownScope', scope: 'elsewhere' });
 		expect(folder.location).toEqual({ kind: 'directory', root });
 		expect(folder.git.snapshot.branch).toBe('main');
+		// Opening awaits discovery publication, while native history settles separately.
+		while (folder.git.snapshot.activity.commit.active) await Bun.sleep(10);
 		expect(folder.git.snapshot.activity.commit).toEqual({ active: false });
 
 		// A page built for the previous protocol is refused by the real owner.
@@ -484,10 +513,10 @@ describe.skipIf(!enabled)('tauri folder against the native owner', () => {
 		await settled();
 
 		expect(await git(root, 'log', '--format=%s')).toBe(
-			'Add todos/take.md\nAdd todos/take.png',
+			'Add todos/take.md\nAdd todos/take.png\nAdd definition.json',
 		);
 		expect(await git(root, 'ls-tree', '-r', '--name-only', 'HEAD')).toBe(
-			'todos/take.md\ntodos/take.png',
+			'definition.json\ntodos/take.md\ntodos/take.png',
 		);
 		expect(statuses.at(-1)).toBe('committed');
 		expect(folder.git.snapshot.commitOnEdit).toBe(true);
@@ -634,7 +663,7 @@ describe.skipIf(!enabled)('tauri folder against the native owner', () => {
 		// and a whole terminal command of B's own runs to its end.
 		expectOk(await b(() => other.files.create('from-b.md', 'did not wait')));
 		await settled();
-		expect(await git(root, 'log', '--format=%s')).toBe('Add from-b.md');
+		expect(await git(root, 'log', '--format=%s')).toBe('Add from-b.md\nAdd definition.json');
 		const theirs = await b(() =>
 			other.terminal().exec('echo "b ran" > b.md && cat b.md'),
 		);
@@ -763,7 +792,7 @@ describe.skipIf(!enabled)('tauri folder against the native owner', () => {
 			// each save on its own, and explicit Git work runs.
 			expectOk(await b(() => other.files.create('from-b.md', 'did not wait')));
 			await settled();
-			expect(await git(root, 'log', '--format=%s')).toBe('Add from-b.md');
+			expect(await git(root, 'log', '--format=%s')).toBe('Add from-b.md\nAdd definition.json');
 			expectOk(await a(() => folder.files.create('from-a.md', 'nor did this')));
 			await settled();
 			expect((await git(root, 'log', '--format=%s')).split('\n')[0]).toBe(
@@ -1028,11 +1057,11 @@ describe.skipIf(!enabled)('tauri folder against the native owner', () => {
 		// The owner finished that save's commit without the page, and window B
 		// carries on.
 		expectOk(await b(() => other.git.paths()));
-		expect(await git(root, 'log', '--format=%s')).toBe('Add one.md');
+		expect(await git(root, 'log', '--format=%s')).toBe('Add one.md\nAdd definition.json');
 		expectOk(await b(() => other.files.create('after.md', 'b carries on')));
 		expectOk(await b(() => other.git.paths()));
 		expect(await git(root, 'ls-tree', '-r', '--name-only', 'HEAD')).toBe(
-			'after.md\none.md',
+			'after.md\ndefinition.json\none.md',
 		);
 	});
 
@@ -1058,14 +1087,14 @@ describe.skipIf(!enabled)('tauri folder against the native owner', () => {
 		// Window B waits on the owner's Git lock: the admitted commit finished
 		// without the page that saved. Closing committed nothing itself.
 		expectOk(await b(() => other.git.paths()));
-		expect(await git(root, 'log', '--format=%s')).toBe('Add last.md');
+		expect(await git(root, 'log', '--format=%s')).toBe('Add last.md\nAdd definition.json');
 
 		expectOk(
 			await b(() => other.files.create('after.md', 'window b carries on')),
 		);
 		expectOk(await b(() => other.git.paths()));
 		expect(await git(root, 'ls-tree', '-r', '--name-only', 'HEAD')).toBe(
-			'after.md\nlast.md',
+			'after.md\ndefinition.json\nlast.md',
 		);
 		expect(heard.flat()).toEqual(
 			expect.arrayContaining(['last.md', 'after.md']),

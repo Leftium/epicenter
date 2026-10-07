@@ -52,6 +52,7 @@ import {
 	writePrivateFile,
 } from './opfs-store.js';
 import { withPublication } from './storage.js';
+import { publishDefinition } from './publish-definition.js';
 
 /** Who records history that never leaves this browser. */
 const LOCAL_AUTHOR: Author = { name: 'Local', email: 'local@localhost' };
@@ -381,20 +382,20 @@ async function openOpfsFolder<TDefinition extends FolderDefinition>(
 				hints.receive(data as string[]);
 			};
 		}
-		return Ok(
-			assembleFolder<TDefinition>({
-				prepared,
-				storage: withPublication({
-					storage: boundary,
-					history,
-					landed: (paths) => hints.emit(paths),
-				}),
+		const folder = assembleFolder<TDefinition>({
+			prepared,
+			storage: withPublication({
+				storage: boundary,
 				history,
-				location: { kind: 'opfs', directory },
-				hints,
-				release: async () => release(),
+				landed: (paths) => hints.emit(paths),
 			}),
-		);
+			history,
+			location: { kind: 'opfs', directory },
+			hints,
+			release: async () => release(),
+		});
+		await publishDefinition(prepared, folder.files);
+		return Ok(folder);
 	} catch (cause) {
 		release();
 		return OpenFolderError.Unavailable({ cause });

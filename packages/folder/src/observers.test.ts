@@ -94,6 +94,7 @@ describe.each(['browser', 'directory'])('%s folder observers', (kind) => {
 						definition,
 						git: { author },
 					});
+		await settled(folder);
 		opened.push(folder);
 		return folder;
 	}
@@ -192,7 +193,7 @@ describe.each(['browser', 'directory'])('%s folder observers', (kind) => {
 		// closing waited for it. A browser attempt was still being granted the
 		// Web Lock, so it was refused and nothing was committed.
 		expect(folder.git.snapshot.lastCommit?.status).toBe(
-			kind === 'directory' ? 'committed' : undefined,
+			'committed',
 		);
 		expect(calls).toEqual([1]);
 	});
@@ -376,6 +377,9 @@ test('a cross-tab file hint marks history stale without requesting an automatic 
 	const reader = await open(true);
 	const writer = await open(false);
 	opened.push(reader, writer);
+	await settled(reader);
+	await Bun.sleep(20);
+	const previousAttempt = reader.git.snapshot.lastCommit;
 	expectOk(await reader.git.status());
 	expect(reader.git.snapshot.files).toMatchObject({
 		state: 'observed',
@@ -392,12 +396,12 @@ test('a cross-tab file hint marks history stale without requesting an automatic 
 		state: 'observed',
 		stale: true,
 	});
-	expect(reader.git.snapshot.lastCommit).toBeUndefined();
+	expect(reader.git.snapshot.lastCommit).toBe(previousAttempt);
 	expect(reader.git.snapshot.activity.commit.active).toBe(false);
 	expect(expectOk(await reader.git.status()).changes).toEqual([
 		{ path: 'external.txt', kind: 'add' },
 	]);
-	expect(reader.git.snapshot.lastCommit).toBeUndefined();
+	expect(reader.git.snapshot.lastCommit).toBe(previousAttempt);
 });
 
 // Automatic commits need the shared lock; this runtime has none of its own.

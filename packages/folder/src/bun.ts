@@ -35,6 +35,7 @@ import {
 	verifyNativeLayout,
 } from './native-store.js';
 import { withPublication } from './storage.js';
+import { publishDefinition } from './publish-definition.js';
 
 export * from './contract.js';
 export {
@@ -90,20 +91,20 @@ export async function openFolder<const TDefinition extends FolderDefinition>({
 			commitOnEdit: git.commitOnEdit ?? true,
 			landed: (paths) => hints.emit(paths),
 		});
-		return Ok(
-			assembleFolder<TDefinition>({
-				prepared,
-				storage: withPublication({
-					storage: boundary,
-					history,
-					landed: (paths) => hints.emit(paths),
-				}),
+		const folder = assembleFolder<TDefinition>({
+			prepared,
+			storage: withPublication({
+				storage: boundary,
 				history,
-				location: { kind: 'directory', root: resolved },
-				hints,
-				release: async () => {},
+				landed: (paths) => hints.emit(paths),
 			}),
-		);
+			history,
+			location: { kind: 'directory', root: resolved },
+			hints,
+			release: async () => {},
+		});
+		await publishDefinition(prepared, folder.files);
+		return Ok(folder);
 	} catch (cause) {
 		return OpenFolderError.Unavailable({ cause });
 	}

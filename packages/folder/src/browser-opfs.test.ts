@@ -117,12 +117,13 @@ describe('one path is one stored file', () => {
 		const listing = expectOk(await folder.files.list());
 		expect(listing.files.map((file) => file.path)).toEqual([
 			'bytes.bin',
+			'definition.json',
 			'empty.txt',
 			'notes/a.md',
 		]);
 		expect(listing.directories).toEqual(['drafts', 'drafts/later', 'notes']);
 		expect(expectOk(await folder.files.children(''))).toEqual({
-			files: ['bytes.bin', 'empty.txt'],
+			files: ['bytes.bin', 'definition.json', 'empty.txt'],
 			directories: ['drafts', 'notes'],
 		});
 		expect(expectErr(await folder.files.create('.git/HEAD', 'x')).name).toBe(
@@ -192,6 +193,7 @@ describe('one path is one stored file', () => {
 		// Git sees the change too: stat caches are never trusted.
 		expect(expectOk(await folder.git.paths())).toEqual([
 			{ path: 'a.txt', index: '?', worktree: '?' },
+			{ path: 'definition.json', index: '?', worktree: '?' },
 		]);
 	});
 
@@ -483,6 +485,9 @@ describe('outcomes a caller can rely on', () => {
 		] as const) {
 			const folder = await open({ commitOnEdit: true, hints: true });
 			const other = await open({ hints: true });
+			while (folder.git.snapshot.activity.commit.active) await Bun.sleep(5);
+			await Bun.sleep(20);
+			const previousAttempt = folder.git.snapshot.lastCommit;
 			const heardHere: string[] = [];
 			const heardThere: string[] = [];
 			folder.onFilesChanged((paths) => heardHere.push(...paths));
@@ -498,7 +503,7 @@ describe('outcomes a caller can rely on', () => {
 				await Bun.sleep(5);
 			expect(heardThere).toContain('a.md');
 			await Bun.sleep(20);
-			expect(folder.git.snapshot.lastCommit).toBeUndefined();
+			expect(folder.git.snapshot.lastCommit).toBe(previousAttempt);
 			expect(
 				folder.git.snapshot.files.state === 'observed' &&
 					!folder.git.snapshot.files.stale,

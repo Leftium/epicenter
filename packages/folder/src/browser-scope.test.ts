@@ -160,7 +160,7 @@ test('channels and authority/principal pairs retain separate bytes, locks, and h
 	expect(crossed).toBe(false);
 });
 
-test('a scoped folder starts empty beside a Local folder of the same ID, and Local is left as it was', async () => {
+test('a scoped folder starts with its definition beside a Local folder of the same ID, and Local is left as it was', async () => {
 	const storage = environment();
 	const local = await open(storage);
 	expectOk(await local.files.create('saved.txt', 'local'));
@@ -178,7 +178,7 @@ test('a scoped folder starts empty beside a Local folder of the same ID, and Loc
 	});
 	for (const scoped of [development, account]) {
 		expect(expectOk(await scoped.files.list())).toEqual({
-			files: [],
+			files: [{ path: 'definition.json', size: 31 }],
 			directories: [],
 		});
 		expect(expectOk(await scoped.git.log(10))).toEqual([]);

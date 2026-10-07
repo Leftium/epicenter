@@ -121,6 +121,7 @@ describe('native partial moves', () => {
 				definition,
 				git: { author },
 			});
+			while (folder.git.snapshot.activity.commit.active) await Bun.sleep(10);
 			const locked = expectOk(await folder.files.create('locked/a.txt', 'A'));
 			await folder.files.mkdir('open');
 			for (
@@ -178,6 +179,7 @@ describe('native pull with a locked index', () => {
 		});
 		await writer.files.create('readme.md', 'A\n');
 		await writer.git.commitAndPush();
+		expectOk(await reader.files.remove(expectOk(await reader.files.read('definition.json'))));
 		await reader.git.fetch();
 		expect((await reader.git.pullFastForward()).data?.status).toBe(
 			'fastForwarded',

@@ -433,7 +433,7 @@ test('inherited GIT_DIR, GIT_WORK_TREE, and GIT_INDEX_FILE do not redirect the f
 	}
 	for (const name of REDIRECTS) delete process.env[name];
 
-	expect(await git(folder, 'log', '--format=%s')).toBe('Add todos/one.md');
+	expect(await git(folder, 'log', '--format=%s')).toBe('Update 2 files');
 	expect(await git(sentinel, 'for-each-ref')).toBe(sentinelRefs);
 	expect(await readdir(sentinel)).toEqual(sentinelFiles);
 	expect(

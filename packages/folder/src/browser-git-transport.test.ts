@@ -47,6 +47,7 @@ test('a folder routes only its Git requests through the injected transport and k
 		});
 	const sender = expectOk(await open());
 	const receiver = expectOk(await open());
+	expectOk(await receiver.files.remove(expectOk(await receiver.files.read('definition.json'))));
 	try {
 		expectOk(await sender.kv.create({ language: 'Chinese' }));
 		expect((await sender.git.commitAndPush()).push.status).toBe('pushed');

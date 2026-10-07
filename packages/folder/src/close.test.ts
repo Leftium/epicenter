@@ -58,6 +58,7 @@ test('browser helpers still preparing when close starts are refused without writ
 			}),
 		);
 	const folder = await open();
+	while (folder.git.snapshot.activity.commit.active) await Bun.sleep(5);
 	const saving = folder.files.create('note.md', 'preparing');
 	const row = folder.tables.todos.create({
 		stem: 'last',
@@ -70,9 +71,9 @@ test('browser helpers still preparing when close starts are refused without writ
 		'Closed',
 	);
 	expect(folder.git.snapshot.closed).toBe(true);
-	expect(folder.git.snapshot.lastCommit).toBeUndefined();
+	expect(folder.git.snapshot.lastCommit).toMatchObject({ status: 'committed', message: 'Add definition.json' });
 	const reopened = await open();
-	expect(expectOk(await reopened.files.list()).files).toEqual([]);
+	expect(expectOk(await reopened.files.list()).files.map((file) => file.path)).toEqual(['definition.json']);
 	await reopened.close();
 });
 

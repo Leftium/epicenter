@@ -60,6 +60,7 @@ async function open(options: { commitOnEdit?: boolean; id?: string } = {}) {
 		}),
 	);
 	opened.push(folder);
+	await settled(folder);
 	return folder;
 }
 
@@ -529,6 +530,7 @@ describe('browser folder persistence and history', () => {
 		expect(logError).toBeNull();
 		expect(commits!.map((commit) => commit.message)).toEqual([
 			'Add todos/kept.md\n',
+			'Add definition.json\n',
 		]);
 		const { data: status, error: statusError } = await second.git.status();
 		expect(statusError).toBeNull();
@@ -556,7 +558,7 @@ describe('browser folder persistence and history', () => {
 			status: 'committed',
 			message: 'Delete moved.txt',
 		});
-		expect((await folder.git.log(10)).data).toHaveLength(3);
+		expect((await folder.git.log(10)).data).toHaveLength(4);
 	});
 
 	test('directories and refused content saves request no history', async () => {
@@ -570,7 +572,7 @@ describe('browser folder persistence and history', () => {
 			),
 		);
 		expect(conflict.name).toBe('Conflict');
-		expect(folder.git.snapshot.lastCommit).toBeUndefined();
+		expect(folder.git.snapshot.lastCommit).toMatchObject({ status: 'committed', message: 'Add definition.json' });
 		expect(folder.git.snapshot.activity.commit).toEqual({ active: false });
 	});
 
@@ -803,10 +805,10 @@ describe('browser terminal', () => {
 		expect(folder.git.snapshot.lastCommit).toBeUndefined();
 
 		let status = await terminal.exec('git status');
-		expect(status.stdout).toBe('## main\n?? notes.txt\n?? todos/one.md\n');
+		expect(status.stdout).toBe('## main\n?? definition.json\n?? notes.txt\n?? todos/one.md\n');
 		expect((await terminal.exec('git add notes.txt')).exitCode).toBe(0);
 		status = await terminal.exec('git status');
-		expect(status.stdout).toBe('## main\nA  notes.txt\n?? todos/one.md\n');
+		expect(status.stdout).toBe('## main\n?? definition.json\nA  notes.txt\n?? todos/one.md\n');
 		const committed = await terminal.exec('git commit -m "Add a shell note"');
 		expect(committed.exitCode).toBe(0);
 		expect(committed.stdout).toMatch(
@@ -819,11 +821,11 @@ describe('browser terminal', () => {
 		});
 		status = await terminal.exec('git status');
 		expect(status.stderr).toBe('');
-		expect(status.stdout).toBe('## main\n?? todos/one.md\n');
+		expect(status.stdout).toBe('## main\n?? definition.json\n?? todos/one.md\n');
 
 		await terminal.exec('echo "more" >> notes.txt');
 		status = await terminal.exec('git status --short');
-		expect(status.stdout).toBe('## main\n M notes.txt\n?? todos/one.md\n');
+		expect(status.stdout).toBe('## main\n?? definition.json\n M notes.txt\n?? todos/one.md\n');
 		const diff = await terminal.exec('git diff');
 		expect(diff.stdout).toContain('+more');
 		expect(diff.stdout).toContain('diff --git a/notes.txt b/notes.txt');

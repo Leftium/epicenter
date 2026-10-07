@@ -115,6 +115,7 @@ describe('native folder', () => {
 			definition,
 			git: { author },
 		});
+		await settled(folder);
 		const { data: created, error: createError } =
 			await folder.tables.todos.create({
 				stem: 'walk',
@@ -126,7 +127,7 @@ describe('native folder', () => {
 			created!.text,
 		);
 		await settled(folder);
-		expect(await git(root, 'log', '--format=%s')).toBe('Add todos/walk.md');
+		expect(await git(root, 'log', '--format=%s')).toBe('Add todos/walk.md\nAdd definition.json');
 		expect(await git(root, 'status', '--porcelain')).toBe('');
 
 		// An external edit is preserved when a command updates current content.
@@ -165,8 +166,9 @@ describe('native folder', () => {
 			git: { author },
 		});
 		try {
+			await settled(folder);
 			await writeFile(join(root, 'external.md'), 'external');
-			expect(folder.git.snapshot.lastCommit).toBeUndefined();
+			expect(folder.git.snapshot.lastCommit).toMatchObject({ status: 'committed', message: 'Add definition.json' });
 			expect(folder.git.snapshot.activity.commit).toEqual({ active: false });
 			expectOk(await folder.files.create('saved.md', 'saved'));
 			await settled(folder);
@@ -450,6 +452,7 @@ describe('native folder', () => {
 		expect((await folder.git.paths()).data).toEqual([
 			{ path: 'a.txt', index: 'A', worktree: ' ' },
 			{ path: 'b.txt', index: '?', worktree: '?' },
+			{ path: 'definition.json', index: '?', worktree: '?' },
 		]);
 		const { error: commitError } =
 			await folder.git.commitStaged('Stage one file');
@@ -516,6 +519,7 @@ describe('browser and native exchange through a real bare repository', () => {
 			expect(expectOk(await browser.git.fetch()).oid).toBe(second);
 
 			const nativeRoot = await scratch('native-other-branch-');
+			await git(root, 'clone', '--quiet', bare, nativeRoot);
 			let native = await openNativeFolder({
 				root: nativeRoot,
 				definition,
@@ -531,7 +535,7 @@ describe('browser and native exchange through a real bare repository', () => {
 				);
 				expect(expectOk(await native.git.fetch()).oid).toBe(second);
 				expect(expectOk(await native.git.pullFastForward()).status).toBe(
-					'fastForwarded',
+					'upToDate',
 				);
 				expect(
 					await git(nativeRoot, 'rev-parse', 'refs/remotes/origin/backup'),
@@ -599,6 +603,7 @@ describe('browser and native exchange through a real bare repository', () => {
 				},
 			}),
 		);
+		await settled(browser);
 		await browser.tables.todos.create({
 			stem: 'first',
 			fields: { title: 'First', done: false },
@@ -607,11 +612,11 @@ describe('browser and native exchange through a real bare repository', () => {
 		expect(browser.git.snapshot.lastPush).toBeUndefined();
 		expect((await browser.git.push()).status).toBe('pushed');
 		expect(await git(bare, 'log', '--format=%s', 'main')).toBe(
-			'Add todos/first.md',
+			'Add todos/first.md\nAdd definition.json',
 		);
 
 		const nativeRoot = join(root, 'native');
-		await git(root, 'init', '--quiet', '--initial-branch=main', nativeRoot);
+		await git(root, 'clone', '--quiet', bare, nativeRoot);
 		const native = await openNativeFolder({
 			root: nativeRoot,
 			definition,
@@ -626,7 +631,7 @@ describe('browser and native exchange through a real bare repository', () => {
 		const { data: pulled, error: pullError } =
 			await native.git.pullFastForward();
 		expect(pullError).toBeNull();
-		expect(pulled?.status).toBe('fastForwarded');
+		expect(pulled?.status).toBe('upToDate');
 		expect(await git(nativeRoot, 'status', '--porcelain')).toBe('');
 		const nativeEntry = expectOk(await native.tables.todos.get('first'))!;
 		expect(nativeEntry.fields.title).toBe('First');
@@ -726,7 +731,7 @@ describe('browser and native exchange through a real bare repository', () => {
 		expect((await browser.git.push()).status).toBe('failed');
 		expect(browser.git.snapshot.lastPush?.status).toBe('failed');
 		const sync = browser.git.snapshot.sync;
-		expect(sync.state === 'observed' && sync.value.ahead).toBe(1);
+		expect(sync.state === 'observed' && sync.value.ahead).toBe(2);
 		expect(
 			new TextDecoder().decode(
 				expectOk(await browser.files.read('offline.txt')).bytes,

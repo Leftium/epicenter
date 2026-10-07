@@ -253,6 +253,8 @@ test('handles sharing browser storage hear each other, when the storage carries 
 		);
 	const first = await open();
 	const second = await open();
+	// Drain the second opening's cross-context publication hint.
+	await Bun.sleep(20);
 	const heardByFirst: string[] = [];
 	const heardBySecond: string[] = [];
 	first.onFilesChanged((paths) => heardByFirst.push(...paths));

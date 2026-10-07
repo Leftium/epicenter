@@ -61,6 +61,31 @@ Different tools can use different definitions to interpret the same files.
 Compatible field meanings still matter when those tools write to the same
 dataset.
 
+Each successful browser, Bun, or Tauri acquisition attempts to overwrite root
+`definition.json` before returning. The file describes the opening application's
+prepared `title` when present, `kv`, and `tables`, including portable validation
+and editor hints. It contains no dataset identity or runtime resources. The JSON
+uses two-space indentation, declared order, and a trailing newline. Opening
+uses the application declaration; it never reads this file as configuration.
+
+Publication replaces manual descriptions and descriptions from another app
+version. It migrates no saved rows or settings. Unsupported export or a failed
+write is logged through `wellcrafted/logger`, with the destination and actual
+failure, while the folder remains usable. A failed attempt can leave discovery
+missing, stale, or uncertain. For example, adding a runtime refinement can leave
+an earlier version's description in place because that refinement cannot be
+exported faithfully. See [portable export](../definition/README.md#what-survives-json).
+
+Publication always writes through `files.overwrite`, including on unchanged
+reopening. It uses `commitOnEdit`: opening awaits the file attempt while
+history settles separately, and identical trees create no additional commit.
+Publication never explicitly commits or pushes. Opening an empty folder before
+pulling an existing remote changes bootstrap behavior: with history disabled,
+the uncommitted `definition.json` blocks incoming updates; with history enabled,
+its local initial commit creates unrelated history. Initialize a clone before
+opening when that runtime provides a clone operation. The current Todos browser
+startup opens first and requires a separate remote-bootstrap repair.
+
 ```ts
 const personal = await openFolder({ id: 'so.epicenter.todos', definition });
 const work = await openFolder({ id: 'so.epicenter.todos.work', definition });

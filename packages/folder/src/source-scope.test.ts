@@ -147,7 +147,7 @@ describe('native folder scope', () => {
 
 		expect((await folder.git.commit()).status).toBe('committed');
 		expect((await git(root, 'ls-files')).split('\n').sort()).toEqual(
-			[...SOURCE, 'tracked.log'].sort(),
+			[...SOURCE, 'definition.json', 'tracked.log'].sort(),
 		);
 		expect(await git(root, 'status', '--porcelain')).toBe('');
 		await folder.close();
@@ -175,6 +175,7 @@ describe('native folder scope', () => {
 
 		await writer.files.create('.gitignore', '*.log\n');
 		expect((await writer.git.commitAndPush()).push.status).toBe('pushed');
+		expectOk(await reader.files.remove(expectOk(await reader.files.read('definition.json'))));
 		await reader.git.fetch();
 		expect((await reader.git.pullFastForward()).data?.status).toBe(
 			'fastForwarded',

@@ -220,7 +220,7 @@ describe.each(Object.keys(openers))('%s folder file verbs', (kind) => {
 		expect(expectErr(await folder.files.move(second, 'x.md')).name).toBe(
 			'NotFound',
 		);
-		expect(expectOk(await folder.files.list()).files).toEqual([]);
+		expect(expectOk(await folder.files.list()).files.map((file) => file.path)).toEqual(['definition.json']);
 	});
 
 	test('a move keeps the captured hash at the new path and refuses an occupied destination', async () => {

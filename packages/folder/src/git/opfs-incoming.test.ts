@@ -32,6 +32,7 @@
 import { afterEach, expect, test } from 'bun:test';
 import * as isogit from 'isomorphic-git';
 import { expectErr, expectOk } from 'wellcrafted/testing';
+import { exportSchema } from '@epicenter/definition';
 import { defineFolder, type Folder, openFolder } from '../browser.js';
 import { hashBytes } from '../capture.js';
 import {
@@ -65,6 +66,7 @@ const address = JSON.stringify(['release', 'local', null, 'merge']);
 const FILES_LOCK = `epicenter-folder-opfs-files:${address}`;
 const GIT_LOCK = `epicenter-folder-opfs-git:${address}`;
 const definition = defineFolder({ kv: {}, tables: {} });
+const discovery = expectOk(exportSchema(definition));
 
 type Tree = Record<string, string>;
 
@@ -158,12 +160,13 @@ async function folderAt(opfs = memoryOpfs()) {
 /** A folder with a diverged fetched head: merged, a=2 b=2 c=new. */
 async function setup() {
 	const made = await folderAt();
+	await made.write('definition.json', discovery);
 	// base a=1 b=1; theirs a=2 b=1 c=new; ours a=1 b=2.
 	await made.write('a.md', '1');
 	await made.write('b.md', '1');
 	const base = await made.commit();
 	const theirs = await made.fetched(
-		{ 'a.md': '2', 'b.md': '1', 'c.md': 'new' },
+		{ 'definition.json': discovery, 'a.md': '2', 'b.md': '1', 'c.md': 'new' },
 		base,
 	);
 	await made.write('b.md', '2');
@@ -202,7 +205,7 @@ function clearFaults(opfs: MemoryOpfs) {
 	opfs.faults.remove = undefined;
 }
 
-const MERGED = { 'a.md': '2', 'b.md': '2', 'c.md': 'new' };
+const MERGED = { 'definition.json': discovery, 'a.md': '2', 'b.md': '2', 'c.md': 'new' };
 
 function folderFiles(opfs: MemoryOpfs) {
 	return Object.fromEntries(
@@ -313,7 +316,7 @@ test('while pending, saves land; staging, commits, and new incoming updates wait
 	const commit = await folder.git.commit();
 	expect(commit.status).toBe('blocked');
 	expect(stored(opfs, RECORD)).toBeDefined();
-	expect(folderFiles(opfs)).toEqual({ 'a.md': '2', 'b.md': '2' });
+	expect(folderFiles(opfs)).toEqual({ 'definition.json': discovery, 'a.md': '2', 'b.md': '2' });
 	expect(expectOk(await folder.git.log(1))[0]?.oid).toBe(ours);
 	expectOk(await folder.files.create('notes.md', 'mine'));
 	expectOk(await folder.files.mkdir('drafts'));
@@ -451,7 +454,7 @@ test('a branch already at the published commit clears the record without writing
 		pending,
 	});
 	expect(stored(opfs, RECORD)).toBeUndefined();
-	expect(folderFiles(opfs)).toEqual({ 'a.md': '2', 'b.md': '2' });
+	expect(folderFiles(opfs)).toEqual({ 'definition.json': discovery, 'a.md': '2', 'b.md': '2' });
 	expect(expectOk(await folder.git.status()).changes).toEqual([
 		{ path: 'c.md', kind: 'delete' },
 	]);
@@ -559,7 +562,7 @@ test('a record whose creation never published is unadmitted: no authored file ch
 	clearFaults(opfs);
 	expect(halted).toMatchObject({ name: 'Unconfirmed', uncertain: [RECORD] });
 	expect(stored(opfs, RECORD)).toEqual(new Uint8Array());
-	expect(folderFiles(opfs)).toEqual({ 'a.md': '1', 'b.md': '2' });
+	expect(folderFiles(opfs)).toEqual({ 'definition.json': discovery, 'a.md': '1', 'b.md': '2' });
 	expect(history.snapshot.pendingIncoming).toEqual({ state: 'unadmitted' });
 	await history.close();
 	opened.length = 0;

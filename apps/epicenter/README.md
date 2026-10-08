@@ -327,10 +327,91 @@ outside `bundle/`. Restart Epicenter after installation so startup discovers the
 new application and composes it with the compiled applications.
 
 An installed app opens `@epicenter/folder` with its manifest ID. Native launch
-registers that scope at `<folderDir>/local/<app-id>` for the app's exact window
-label. The shell supplies the path; the page never chooses a native directory.
-The folder uses the repository's author and `origin` when configured, with
-local history otherwise. Git credentials stay with the native Git transport.
+registers that scope for the app's exact window label, at one dataset named by
+the app ID under the owner the native process captured from Bun's first ready
+frame (ADR-0461):
+
+```text
+signed out   <folderDir>/local/<app-id>                    created on launch
+signed in    <folderDir>/accounts/<account-key>/<app-id>   downloaded first
+```
+
+The shell supplies the path; the page never chooses a native directory. The
+folder uses the repository's author and `origin` when configured, with local
+history otherwise. A Bun recovery that boots with another account is refused;
+only a full restart opens another owner's folders. Signing out never redirects
+a missing account dataset to Local.
+
+A signed-in installed app opens its account dataset only once that folder is a
+Git repository on this device: a real `.git` with `HEAD`, `objects`, and `refs`,
+which a download or a clone leaves, including an unborn `main`. Home's Apps pane
+reads this from the folder each time and shows "Available locally"; nothing
+records that a download happened. Where nothing is there it offers Download,
+and launching alone refuses with a request to download. A directory at that
+path that is not a repository, empty, holding files, or holding an empty
+`.git`, is neither opened nor downloaded over: Home shows how to repair it by
+hand (move it aside, download, copy files back in), and nothing in it changes.
+The Folder owner checks the same rule again under the folder's lock, so a
+`.git` that disappears after Home looked never becomes new history. The
+download:
+
+1. confirms the active generation lists the app, and asks Bun for the account's
+   GitHub pairing of the folder named by the app ID;
+2. reserves `<folderDir>/accounts/<account-key>/<app-id>` with the folder's
+   sibling lock, refusing anything already there;
+3. fetches `main` through a relay into a dot-prefixed sibling, writes its files
+   as their exact bytes, and refuses links, executables, attribute
+   conversions, and case collisions. A repository with no ref at all gives an
+   unborn `main`; one with any other branch or tag but no `main` is refused
+   with its refs named and its staging kept. This is narrower than the browser
+   folder's download, which can start `main` beside other refs;
+4. records the canonical `origin` and `.git/epicenter/hosted.json`: the account,
+   folder ID, GitHub repository ID, pairing revision, URL, and branch;
+5. retires the relay in the Bun generation that started it, which must confirm
+   the transfer finished: a relay already gone (the Account was disposed or Bun
+   restarted), a refusal it saw, or a host that cannot answer keeps the
+   staging directory and publishes nothing;
+6. unless cancelled by then, publishes with a rename that refuses anything at
+   the destination, even an empty directory, and Home launches the app.
+
+A failure after history arrived keeps the staging directory and names it; a
+cancellation or an earlier failure leaves nothing. A running download belongs
+to the Bun generation that started it and is cancelled when that generation is
+deactivated or replaced, as on quitting. A cancel that lands with the rename
+leaves the complete folder in place and is reported, not opened: Home then
+shows it as available locally. Download never returns success after a cancel. Windows refuses before
+reserving anything until such a publication is proven there.
+
+`hosted.json` is the one record of the repository a person selected. It holds
+no credential, is never replaced, and is read under the folder's lock when a
+transfer starts. Each transfer is then admitted only if the folder's `origin`
+is that canonical URL and branch, and the pairing the account's server holds
+now, read through the boot Account, equals the record in every field:
+account, folder, repository ID, revision, URL, and branch. A replacement
+repository at the same URL, a replaced pairing, or a record edited by hand
+starts no relay. Discovery never rewrites the record. A missing, malformed,
+linked, or foreign record refuses hosted transfers and nothing else: editing
+never needs the network, the session, or the pairing. A changed `origin` is
+not repeated in the refusal, since a configured URL can carry a credential.
+
+Git never holds an Epicenter or GitHub credential. For each fetch or push the
+folder's owner asks the current Bun generation, on its own loopback listener
+with the launch token, for a relay (`src/account-git-relay.ts`): a capability
+path that forwards one service of one pairing revision through the boot
+Account. Git receives only the relay URL, under fixed controls: HTTP only, no
+hooks, fsmonitor, maintenance, proxy, or trace, and its destination pinned
+against URL rewrites. The relay URL is a capability while it lives: Git's
+output is redacted before any error, snapshot, or log reads it, naming the
+canonical repository instead. Redirects, session refusals, and connector refusals reach Git as a
+plain 502, so no credential helper or prompt runs. A cancel retires the relay
+before Git is stopped; completion and failure retire it too, and disposing the
+Account retires every relay at once. Only the original generation's own
+confirmation counts as a finished transfer: when retiring finds the relay
+already gone, sees a recorded refusal, or cannot reach that generation, a push
+Git completed is reported as unconfirmed (it may have landed; nothing is undone
+or retried) and a fetch is not reported as fetched. The relay's upstream fetch sets
+`keepalive: false`, which the Account passes to the underlying fetch even for
+a streamed body.
 
 Bun discovers installed IDs once and names them in its versioned ready frame.
 Rust admits launches against that list and its matching launch token before

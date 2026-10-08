@@ -1892,6 +1892,7 @@ async function readReadyFrame(
 						protocolVersion: SIDECAR_PROTOCOL_VERSION,
 						port: ready.port,
 						installedAppIds: ready.installedAppIds,
+						bootAccount: ready.bootAccount,
 					});
 					return ready;
 				}

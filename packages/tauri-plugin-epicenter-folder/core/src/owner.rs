@@ -71,8 +71,8 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use unicode_normalization::UnicodeNormalization;
 
 use crate::files::{
-    resolve_root, verify_layout, ApplyError, Children, FileChange, FileError, FileListing,
-    FileRead, FileStep, Files,
+    has_repository, resolve_root, verify_layout, ApplyError, Children, FileChange, FileError,
+    FileListing, FileRead, FileStep, Files,
 };
 use crate::git::{Author, Capture, Cas, CommitSummary, Git, IndexCommit, PathStatus, Remote};
 use crate::history::{
@@ -86,14 +86,20 @@ use crate::merge::{self, Labels, Prepared};
 use crate::messages::{commit_subject, message_problem, ChangeKind};
 use crate::paths::{ancestors, is_portable_path, path_problem};
 use crate::runner::{CloseMode, Endings, Leaving, PassRunner};
+use crate::transport::{with_report, GitService, Relay, Transport};
 
 mod recovery;
 
 #[derive(Debug, Clone)]
 pub struct FolderConfig {
     /// The folder's directory, chosen by the shell. A Git repository is
-    /// initialized there if absent.
+    /// initialized there if absent, unless `require_existing_repository`.
     pub root: PathBuf,
+    /// Whether opening refuses a root that is not already a repository
+    /// (`files::has_repository`) instead of initializing one. Checked inside
+    /// the open, with the folder's lock held, so a `.git` that went missing
+    /// after the shell looked never becomes a new, unrelated history.
+    pub require_existing_repository: bool,
     /// The local branch history is recorded on.
     pub branch: String,
     /// Author and committer for automatic and staged commits.
@@ -115,6 +121,10 @@ pub struct FolderConfig {
     ///
     /// Reading a remote enables explicit transfers, never automatic pushing.
     pub use_repository_origin: bool,
+    /// Where pushes and fetches get a relay (`transport.rs`). `None` hands
+    /// Git the remote's own URL. Either way the remote stays the folder's
+    /// canonical destination.
+    pub transport: Option<Arc<dyn Transport>>,
     /// Whether filesystem events are watched, so a change made outside the
     /// owner is noticed at once, even one that leaves size and time as they
     /// were. Where watching is unavailable the owner says so and relies on
@@ -130,12 +140,14 @@ impl FolderConfig {
     pub fn new(root: impl Into<PathBuf>, author: Author) -> Self {
         Self {
             root: root.into(),
+            require_existing_repository: false,
             branch: "main".to_string(),
             author,
             remote: None,
             commit_on_edit: true,
             use_repository_author: false,
             use_repository_origin: false,
+            transport: None,
             watch_events: true,
             watch_interval: Some(Duration::from_secs(2)),
         }
@@ -157,7 +169,7 @@ fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
 
 /// Case- and Unicode-folded spelling used only to detect destinations that
 /// cannot coexist on case-insensitive filesystems. Never used for lookup.
-fn collision_key(path: &str) -> String {
+pub(crate) fn collision_key(path: &str) -> String {
     path.nfc().collect::<String>().to_lowercase()
 }
 
@@ -439,6 +451,12 @@ impl FolderOwner {
         // Before any Git command, including the configuration reads below: a
         // linked `.git` would send them to someone else's repository.
         verify_layout(&root)?;
+        if config.require_existing_repository && !has_repository(&root)? {
+            return Err(format!(
+                "The folder at {} is not a Git repository, so it was not opened and nothing was created in it. Epicenter opens it once it is a downloaded or cloned repository; to use files already there, move them aside, download, then copy them back in.",
+                root.display()
+            ));
+        }
         let mut git = Git::open(&root, &config.branch, config.remote.clone())?;
         // `git init` may just have created the private layout; check what it left.
         verify_layout(&root)?;
@@ -1924,6 +1942,17 @@ impl Inner {
     // Remote
     // ------------------------------------------------------------------
 
+    /// One transfer's relay when the folder has a transport, started against
+    /// the remote captured at opening; `None` sends Git to that remote itself.
+    fn relay(&self, service: GitService) -> Result<Option<Relay>, String> {
+        match (&self.config.transport, &self.git.remote) {
+            (Some(transport), Some(remote)) => {
+                transport.start(&self.root, remote, service).map(Some)
+            }
+            _ => Ok(None),
+        }
+    }
+
     fn run_push(&self, cancel: &AtomicBool) -> PushOutcome {
         if self.git.remote.is_none() {
             return PushOutcome::NoRemote;
@@ -1941,10 +1970,36 @@ impl Inner {
         };
         #[cfg(test)]
         self.hook(|hooks| &hooks.during_push);
-        let outcome = match self.git.push(&oid, cancel) {
-            Ok(()) => PushOutcome::Pushed { oid },
-            Err(_) if cancel.load(Ordering::SeqCst) => PushOutcome::Cancelled { oid: Some(oid) },
+        let outcome = match self.relay(GitService::ReceivePack) {
+            // Nothing was sent.
             Err(error) => PushOutcome::Failed { oid, error },
+            Ok(relay) => {
+                let pushed = self.git.push(&oid, cancel, relay.as_ref());
+                // A cancel already retired it, before Git was stopped.
+                let report = relay.as_ref().and_then(Relay::retire);
+                match pushed {
+                    // Git's own success is not enough when its transport
+                    // could not confirm the transfer, or a cancel raced it:
+                    // the push may or may not have landed. Nothing is undone
+                    // or retried; a later fetch tells.
+                    Ok(()) if report.is_some() || cancel.load(Ordering::SeqCst) => {
+                        PushOutcome::Unconfirmed {
+                            error: with_report(
+                                format!("Git finished pushing {oid}, but the transfer could not be confirmed, so it may or may not have landed. Fetch to find out"),
+                                report,
+                            ),
+                        }
+                    }
+                    Ok(()) => PushOutcome::Pushed { oid },
+                    Err(_) if cancel.load(Ordering::SeqCst) => {
+                        PushOutcome::Cancelled { oid: Some(oid) }
+                    }
+                    Err(error) => PushOutcome::Failed {
+                        oid,
+                        error: with_report(error, report),
+                    },
+                }
+            }
         };
         // A push that started before a newer fetch or push must not replace its observation.
         if lock(&self.state).remote_sequence == sequence {
@@ -1969,11 +2024,29 @@ impl Inner {
         };
         #[cfg(test)]
         self.hook(|hooks| &hooks.during_fetch);
-        let result = self
-            .git
-            .fetch(cancel)
-            .map(|oid| FetchOutcome { oid })
-            .map_err(|cause| GitError::failed("fetch", cause));
+        let result = match self.relay(GitService::UploadPack) {
+            Err(cause) => Err(GitError::failed("fetch", cause)),
+            Ok(relay) => {
+                let fetched = self.git.fetch(cancel, relay.as_ref());
+                let report = relay.as_ref().and_then(Relay::retire);
+                match fetched {
+                    // What Git fetched stays in the tracking ref, but it is
+                    // not reported as a fetch when its transport could not
+                    // confirm the transfer or a cancel raced it.
+                    Ok(_) if report.is_some() || cancel.load(Ordering::SeqCst) => {
+                        Err(GitError::failed(
+                            "fetch",
+                            with_report(
+                                "Git finished fetching, but the transfer could not be confirmed, so it is not reported as fetched".to_string(),
+                                report,
+                            ),
+                        ))
+                    }
+                    Ok(oid) => Ok(FetchOutcome { oid }),
+                    Err(cause) => Err(GitError::failed("fetch", with_report(cause, report))),
+                }
+            }
+        };
         if lock(&self.state).remote_sequence == sequence {
             self.refresh_sync();
         }
@@ -2082,60 +2155,71 @@ impl Inner {
         commit: &str,
         files: &BTreeMap<String, (String, String)>,
     ) -> Result<Option<PullError>, String> {
-        let refuse = |paths: Vec<String>, reason: &str| {
-            Ok(Some(PullError::Unrepresentable {
-                paths,
-                reason: reason.to_string(),
-            }))
+        Ok(plain_problem(&self.git, commit, files)?
+            .map(|(paths, reason)| PullError::Unrepresentable { paths, reason }))
+    }
+}
+
+/// Why the tree of `commit`, `files`, cannot be written to a folder as plain
+/// bytes, if it cannot: the paths and the reason. Incoming updates and first
+/// downloads refuse on the same rules.
+pub(crate) fn plain_problem(
+    git: &Git,
+    commit: &str,
+    files: &BTreeMap<String, (String, String)>,
+) -> Result<Option<(Vec<String>, String)>, String> {
+    let refuse =
+        |paths: Vec<String>, reason: &str| -> Result<Option<(Vec<String>, String)>, String> {
+            Ok(Some((paths, reason.to_string())))
         };
-        let unsupported: Vec<String> = files
-            .iter()
-            .filter(|(_, (mode, _))| mode != "100644")
-            .map(|(path, _)| path.clone())
-            .collect();
-        if !unsupported.is_empty() {
-            return refuse(
-                unsupported,
-                "symbolic links, submodules, and executable files are not plain folder files",
-            );
-        }
-        let invalid: Vec<String> = files
-            .keys()
-            .filter(|path| path_problem(path).is_some())
-            .cloned()
-            .collect();
-        if !invalid.is_empty() {
-            return refuse(invalid, "some paths are not valid folder paths");
-        }
-        // An update writes each blob's bytes as they are stored. A commit that
-        // declares a filter or a conversion for a path means something else
-        // by those bytes: under `filter=lfs` the blob is a pointer, not the
-        // audio. Every path is asked about, against the commit's own
-        // attributes, so a commit that only adds an attribute over a file it
-        // does not touch is refused as well.
-        if let Some((path, attribute)) = self
-            .git
-            .normalizing_attribute(Some(commit), files.keys().map(String::as_str))?
-        {
-            return refuse(
+    let unsupported: Vec<String> = files
+        .iter()
+        .filter(|(_, (mode, _))| mode != "100644")
+        .map(|(path, _)| path.clone())
+        .collect();
+    if !unsupported.is_empty() {
+        return refuse(
+            unsupported,
+            "symbolic links, submodules, and executable files are not plain folder files",
+        );
+    }
+    let invalid: Vec<String> = files
+        .keys()
+        .filter(|path| path_problem(path).is_some())
+        .cloned()
+        .collect();
+    if !invalid.is_empty() {
+        return refuse(invalid, "some paths are not valid folder paths");
+    }
+    // An update writes each blob's bytes as they are stored. A commit that
+    // declares a filter or a conversion for a path means something else
+    // by those bytes: under `filter=lfs` the blob is a pointer, not the
+    // audio. Every path is asked about, against the commit's own
+    // attributes, so a commit that only adds an attribute over a file it
+    // does not touch is refused as well.
+    if let Some((path, attribute)) =
+        git.normalizing_attribute(Some(commit), files.keys().map(String::as_str))?
+    {
+        return refuse(
                 vec![path],
                 &format!(
                     "the incoming commit declares the Git attribute {attribute}, and this folder does not apply attribute filters or conversion"
                 ),
             );
-        }
-        let mut folded: BTreeMap<String, &String> = BTreeMap::new();
-        for path in files.keys() {
-            if let Some(existing) = folded.insert(collision_key(path), path) {
-                return refuse(
-                    vec![existing.clone(), path.clone()],
-                    "paths collide on case-insensitive filesystems",
-                );
-            }
-        }
-        Ok(None)
     }
+    let mut folded: BTreeMap<String, &String> = BTreeMap::new();
+    for path in files.keys() {
+        if let Some(existing) = folded.insert(collision_key(path), path) {
+            return refuse(
+                vec![existing.clone(), path.clone()],
+                "paths collide on case-insensitive filesystems",
+            );
+        }
+    }
+    Ok(None)
+}
 
+impl Inner {
     /// One incoming update: a fast-forward for a pull (`merge` is `None`), or
     /// for a merge a fast-forward or a two-parent merge under its policy,
     /// published or, with `Leave`, left unfinished. The outer error is an

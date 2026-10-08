@@ -146,3 +146,36 @@ before resuming GitHub authorization and browser/native transfer acceptance.
 Read-only deployment comparison found the current and previous API versions
 use the same Hyperdrive binding. Two other configurations exist, but neither
 has been established as healthy or as the correct target; neither was used.
+
+## Native integration and review closure
+
+The native candidate adds explicit Download before opening an account dataset,
+a credential-free immutable repository binding, and a captured-account
+loopback Git relay. Local datasets keep their existing behavior. Download
+preserves occupied destinations and incomplete files for inspection. Discovery
+does not replace an existing binding or origin.
+
+Independent reviews retained the native folder owner, Bun Account relay, and
+durable binding. The full pairing check remains necessary: a hand-edited
+binding can combine one repository's ID with another repository's revision.
+The final closure changes the absence label to "Download data to this device
+to open the app" and adds actual Account HTTP tests for cancellation of
+requests with streamed upload bodies before the response arrives.
+
+The isolated candidate passed core 165, native app 241, plugin 20, and host/auth
+331 tests before that closure. Existing hardware/doc ignores and the generated
+binding export test remain excluded. Home and sidecar builds passed. The
+closure passed 19 focused tests with 71 assertions and auth type checking.
+Parent verification repeated the real Git relay suite: 4 tests, 35 assertions.
+Parent also repeated both new streamed POST cancellation tests: 2 tests,
+6 assertions. No production transport code changed in the final closure.
+
+The loopback capability remains briefly visible in Git's process arguments.
+A push can land before an interrupted exchange reports failure; there is no
+automatic retry. A capability-header experiment and a landed-response-
+interruption probe were not run. Pairing-read cancellation can wait for its
+bounded timeout. These limits are recorded rather than claimed as verified.
+
+The candidate has not been installed as a new native release. Actual Home IPC,
+hosted GitHub authorization, live private transfers, browser/native continuity,
+and second-account isolation still require acceptance after database repair.

@@ -69,6 +69,8 @@ once registered.
 | `commit_on_edit` | `true` | Whether a complete save asks for a local commit. Transfers are explicit. While the folder is busy the request waits, merged with later ones; see "Automatic commits". |
 | `use_repository_author` | `false` | Read `user.name` and `user.email` when the folder opens. |
 | `use_repository_origin` | `false` | Read `remote.origin.url` when the folder opens and use it as the remote. |
+| `transport` | none | Where each push and fetch gets a relay URL; see "Relayed transfers". Without one, Git is given the remote's URL. |
+| `require_existing_repository` | `false` | Refuse to open a root that is not already a repository (`has_repository`: a real `.git` with `HEAD`, `objects`, and `refs`) instead of initializing one. Checked inside the open, with the lock held. |
 | `watch_events` | `true` | Watch filesystem events for changes made outside the owner. |
 | `watch_interval` | 2 s | Also compare file sizes and times this often. |
 
@@ -437,6 +439,64 @@ never arrive too early to matter.
   the page at that moment.
 - Shutdown stops the running push and fetch and settles the waiting ones as
   cancelled or closed without running them.
+
+### Relayed transfers
+
+A shell can give a folder a `transport` (`transport.rs`). Each push or fetch
+then asks it for a `Relay` for one service against the remote captured at
+opening: an ephemeral URL Git talks to instead of the remote, and the way to
+retire it. The remote stays the folder's canonical destination in `origin` and
+in the snapshot; the relay URL is stored nowhere. A transport that refuses
+fails that transfer before Git starts and changes nothing else.
+
+A relayed transfer runs with fixed controls: `core.hooksPath` names no
+directory, `core.fsmonitor` is off, automatic maintenance and garbage
+collection are off, proxies are cleared in configuration and environment, the
+relay URL rewrites to itself so no `insteadOf` or `pushInsteadOf` can send Git
+elsewhere, and only HTTP is allowed, in tests as in production. A cancel
+retires the relay before Git is stopped; failure and completion retire it too,
+and a failure reports what the transport saw. Retirement that reports anything
+means the transport could not confirm the transfer, so a push Git completed is
+`Unconfirmed` (it may have landed; nothing is undone or retried) and a fetch
+is an error, its tracking ref left as Git wrote it. A rewrite rule that matches the
+whole relay URL would tie with the pin and win, because repository
+configuration is read before command-line configuration; a relay URL carries a
+token minted for that transfer, so no rule written beforehand can name it.
+
+A relay URL is a capability while the relay lives. It is in Git's argument
+list and nowhere else: inherited `GIT_TRACE*` and `GIT_CURL_VERBOSE` are
+removed and trace2 is switched off, so no trace file records it; Git's output
+is redacted before anything reads it (the URL becomes the canonical remote,
+and its path or token becomes `[relay]`), so an error that echoes the relay
+keeps its diagnostic and loses the capability; and `Relay`'s `Debug` prints
+neither.
+
+Transfer tests reach a loopback `git http-backend` (`testing::GitHttp`)
+through this exact transport. Where an environment refuses listeners they
+print `SKIPPED` and return; set `EPICENTER_REQUIRE_LOOPBACK=1` to make that a
+failure. Control construction, the HTTP-only refusal, cancel ordering, and
+redaction of a real Git diagnostic need no listener.
+
+### First downloads
+
+`download::download` fetches a remote's `main` into a dot-prefixed sibling of
+an absent destination, under the destination's sibling lock, and publishes it
+with a rename that refuses anything already there. It writes each blob's exact
+bytes instead of checking out, so no filter, conversion, or hook runs; a tree
+an incoming update would refuse (links, executables, attribute conversions,
+invalid paths, case collisions) is refused here too. A repository that
+advertises no ref at all gives an unborn `main`; one with any other branch or
+tag but no `main` is refused with its refs named, and the staging folder, with
+`origin` set, is kept. This promise is narrower than the browser folder's
+download, which can start `main` beside other refs. It records `origin` before
+any transfer, lets the caller bind the staged folder, and retires the relay
+before publishing: a retirement that reports anything keeps staging and
+publishes nothing. Cancellation is checked again at the rename and just after
+it; a cancel that lands with the rename leaves the folder in place and returns
+`Interrupted`, never success. A failure after history arrived keeps the
+staging directory and names it. Publication uses `renamex_np(RENAME_EXCL)` on Apple platforms and
+`renameat2(RENAME_NOREPLACE)` on Linux; other platforms refuse before reserving
+anything.
 
 ## Noticing outside changes
 

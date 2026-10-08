@@ -247,8 +247,11 @@ function createBearerAuth(
 		const accountFetch: AuthFetch = async (input, init) => {
 			const target = requireServer(input);
 			if (init?.body instanceof ReadableStream) {
+				// Bun's Request has no `keepalive`, so a caller's choice survives
+				// only as an option to the underlying fetch.
+				const keepalive = init.keepalive;
 				input = new Request(input instanceof Request ? input : target, init);
-				init = undefined;
+				init = keepalive === undefined ? undefined : { keepalive };
 			}
 			const caller =
 				init?.signal !== undefined

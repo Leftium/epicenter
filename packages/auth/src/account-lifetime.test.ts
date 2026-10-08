@@ -278,6 +278,58 @@ test('a browser Account replays a RequestInit stream only after in-flight creden
 	expect(bodies).toEqual(['same streamed bytes', 'same streamed bytes']);
 });
 
+test('a streamed body keeps keepalive: false on every send, including the replay', async () => {
+	// Bun's Request has no `keepalive`, so wrapping the stream in a Request
+	// alone would drop the caller's choice before the underlying fetch.
+	expect('keepalive' in new Request('https://account.test/', { keepalive: false })).toBe(
+		typeof Bun === 'undefined',
+	);
+	const sends: { keepalive: unknown; body: string }[] = [];
+	let replaced = false;
+	using context = setup({
+		fetch: async (input, init) => {
+			const path = new URL(input instanceof Request ? input.url : String(input))
+				.pathname;
+			if (path === '/api/session')
+				return Response.json({ principalId: 'alice' });
+			sends.push({
+				keepalive: init?.keepalive,
+				body: await new Response(
+					input instanceof Request ? input.body : init?.body,
+				).text(),
+			});
+			if (replaced) return new Response('ok');
+			replaced = true;
+			await context.signIn('alice', 'alice-2');
+			return new Response('stale', { status: 401 });
+		},
+	});
+	const body = new Blob(['pack bytes']).stream();
+	const response = await context.account.fetch('/api/git/upload', {
+		method: 'POST',
+		body,
+		duplex: 'half',
+		keepalive: false,
+	} as RequestInit);
+	expect(response.status).toBe(200);
+	expect(sends).toEqual([
+		{ keepalive: false, body: 'pack bytes' },
+		{ keepalive: false, body: 'pack bytes' },
+	]);
+
+	// A caller that says nothing still sends nothing extra.
+	sends.length = 0;
+	await context.account.fetch('/api/plain', {
+		method: 'POST',
+		body: new Blob(['x']).stream(),
+		duplex: 'half',
+	} as RequestInit);
+	expect(sends).toEqual([{ keepalive: undefined, body: 'x' }]);
+	// A non-stream body was already passed through as given.
+	await context.account.fetch('/api/plain', { keepalive: false });
+	expect(sends.at(-1)?.keepalive).toBe(false);
+});
+
 test('retirement aborts a real HTTP response stream after headers have returned', async () => {
 	const revoked = Promise.withResolvers<void>();
 	const server = Bun.serve({
@@ -332,6 +384,65 @@ test('retirement aborts a real HTTP response stream after headers have returned'
 		await server.stop(true);
 	}
 });
+
+for (const cancellation of ['retirement', 'client abort'] as const) {
+	test(`${cancellation} aborts a real streamed POST before its response arrives`, async () => {
+		const received = Promise.withResolvers<void>();
+		const release = Promise.withResolvers<void>();
+		const cancel = new AbortController();
+		const server = Bun.serve({
+			hostname: '127.0.0.1',
+			port: 0,
+			async fetch(request) {
+				const path = new URL(request.url).pathname;
+				if (path === '/api/session') return Response.json({ principalId: 'alice' });
+				if (path === '/auth/sign-out') return new Response(null, { status: 204 });
+				expect(request.method).toBe('POST');
+				expect(await request.text()).toBe('first pack bytes');
+				received.resolve();
+				await release.promise;
+				return new Response('finished');
+			},
+		});
+		try {
+			using auth = createSessionAuth({
+				authorityId: 'epicenter-api',
+				baseURL: server.url.origin,
+				fetch,
+				persistedAuthStorage: {
+					initial: { token: 'alice-session', principalId: asPrincipalId('alice') },
+					set() {},
+				},
+				launcher: {
+					async startSignIn() {
+						return { status: 'launched' };
+					},
+				},
+			});
+			const captured = auth.getState();
+			if (captured.status === 'signed-out') throw new Error('Expected cached identity');
+			const sending = captured.account.fetch('/git-receive-pack', {
+				method: 'POST',
+				body: new Blob(['first pack bytes']).stream(),
+				keepalive: false,
+				duplex: 'half',
+				signal: cancel.signal,
+			} as RequestInit);
+			// Observe rejection before cancellation; Bun's async matcher waits eagerly.
+			const aborted = sending.then(
+				() => ({ name: 'UnexpectedSuccess' }),
+				(error: unknown) => error,
+			);
+			await received.promise;
+			if (cancellation === 'retirement') expectOk(await auth.signOut());
+			else cancel.abort();
+			expect(await aborted).toMatchObject({ name: 'AbortError' });
+		} finally {
+			release.resolve();
+			await server.stop(true);
+		}
+	});
+}
 
 test('socket verification gates bearer emission and shares the result with HTTP', async () => {
 	const verification = Promise.withResolvers<Response>();

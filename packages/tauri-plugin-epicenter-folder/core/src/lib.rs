@@ -5,6 +5,7 @@
 //! maps the scopes a shell configured to owners and decides which window may
 //! use which scope. Nothing here depends on Tauri.
 
+pub mod download;
 pub mod files;
 pub mod git;
 pub mod history;
@@ -17,7 +18,10 @@ pub mod owner;
 pub mod paths;
 pub mod registry;
 mod runner;
+pub mod transport;
 
+#[cfg(test)]
+mod admission_tests;
 #[cfg(test)]
 mod history_tests;
 #[cfg(test)]
@@ -30,3 +34,5 @@ mod publication_tests;
 mod registry_tests;
 #[cfg(test)]
 mod testing;
+#[cfg(test)]
+mod transport_tests;

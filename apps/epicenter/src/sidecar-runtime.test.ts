@@ -14,6 +14,7 @@ import { describe, expect, test } from 'bun:test';
 import { EventEmitter } from 'node:events';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { asPrincipalId } from '@epicenter/principal';
 import {
 	createNativePort,
 	createReadyFrame,
@@ -268,17 +269,41 @@ describe('boot protocol', () => {
 	});
 
 	test('ready frames contain exactly the versioned readiness contract', () => {
-		expect(createReadyFrame(PRODUCTION_PORT, [])).toEqual({
+		expect(createReadyFrame(PRODUCTION_PORT, [], null)).toEqual({
 			type: 'ready',
-			protocolVersion: 9,
+			protocolVersion: 10,
 			port: PRODUCTION_PORT,
 			installedAppIds: [],
+			bootAccount: null,
 		});
+		// Signed out is an explicit null on the wire, never an absent field.
+		expect(
+			JSON.parse(JSON.stringify(createReadyFrame(PRODUCTION_PORT, [], null))),
+		).toHaveProperty('bootAccount', null);
+	});
+
+	test('ready frames name the boot Account by its identity alone', () => {
+		const account = {
+			authorityId: 'epicenter-api',
+			principalId: asPrincipalId('user-123'),
+			baseURL: 'https://api.epicenter.so',
+			token: 'never on the pipe',
+			fetch: () => {
+				throw new Error('never called');
+			},
+		};
+		const line = JSON.stringify(createReadyFrame(PRODUCTION_PORT, [], account));
+		expect(JSON.parse(line).bootAccount).toEqual({
+			authorityId: 'epicenter-api',
+			principalId: 'user-123',
+		});
+		expect(line).not.toContain('never on the pipe');
+		expect(line).not.toContain('baseURL');
 	});
 
 	test('ready frames name the installed applications in discovery order', () => {
 		const ids = ['com.example.notes', 'so.epicenter.zhongwen'];
-		const frame = createReadyFrame(PRODUCTION_PORT, ids);
+		const frame = createReadyFrame(PRODUCTION_PORT, ids, null);
 		expect(frame.installedAppIds).toEqual(ids);
 		// A copy: the frame does not alias the caller's list.
 		expect(frame.installedAppIds).not.toBe(ids);

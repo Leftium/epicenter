@@ -10,6 +10,9 @@
 
 pub const COMMANDS: &[&str] = &[
     "launch_application",
+    "application_data",
+    "download_application",
+    "cancel_application_download",
     "departure_status",
     "departure_answer",
     "write_text",

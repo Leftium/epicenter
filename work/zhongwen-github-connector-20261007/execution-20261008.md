@@ -119,3 +119,30 @@ signed out, awaiting access to identify the correct surviving database target.
 The temporary Worker-tail file contained OAuth parameters. Its owned tail
 processes were stopped, and the file was removed after diagnosis. Recorded
 diagnostic output contains only sanitized errors and configuration comparisons.
+
+## Supabase replacement investigation
+
+The user requested Supabase as a replacement on October 8. Its dashboard is
+open in Zen and requires sign-in. No project, database, credentials, or
+production binding has been changed. Current credit availability must be
+verified in the dashboard; earlier offer emails do not prove a current balance.
+
+The proposed path is Supabase Postgres behind the existing Cloudflare
+Hyperdrive binding. Keep pg, Drizzle, Better Auth, and the hosted GitHub
+connector. Cloudflare's Supabase guide requires the Direct connection rather
+than Supabase's pooler, since Hyperdrive pools connections itself:
+https://developers.cloudflare.com/hyperdrive/examples/connect-to-postgres/postgres-database-providers/supabase/
+
+Before switching, identify the target organization/project and determine
+whether existing identity rows can be recovered. Preserve user IDs when
+migrating: those IDs address hosted data and folder pairings. A fresh auth
+database would create new identities, so it is not equivalent to restoring
+the existing service. Inspect the target schema before applying
+`apps/api/drizzle/0000_direct_sessions.sql`. Configure a database role with
+only the required permissions, update both the runtime Hyperdrive target and
+Infisical production `/ops` admin connection, then prove real social sign-in
+before resuming GitHub authorization and browser/native transfer acceptance.
+
+Read-only deployment comparison found the current and previous API versions
+use the same Hyperdrive binding. Two other configurations exist, but neither
+has been established as healthy or as the correct target; neither was used.

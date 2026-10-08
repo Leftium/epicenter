@@ -492,10 +492,6 @@ export function createDraft(
 		get reading() {
 			return interpretationOf(source()).reading;
 		},
-		/** The Capture view's controls apply: a valid row. */
-		get structured() {
-			return editor?.row.status === 'valid';
-		},
 		get view() {
 			return view;
 		},

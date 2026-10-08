@@ -469,7 +469,6 @@ test('a file whose text does not parse is listed, opens through its editor as So
 	await draft.settle();
 	expect(await text('broken')).toBe(valid);
 	expect(draft.status).toBe('valid');
-	expect(draft.structured).toBe(true);
 	expect(replaced).toEqual([]);
 	await captures.refresh();
 	const repaired = captures.rows.find((item) => item.stem === 'broken');

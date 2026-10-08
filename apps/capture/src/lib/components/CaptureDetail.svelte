@@ -79,7 +79,7 @@
 
 	// Every binding reads the draft this view has now, at the call, and each
 	// writer returns unless its own view is the one shown and can be edited.
-	const fieldsLive = () => mounted && draft.view === 'capture' && draft.structured;
+	const fieldsLive = () => mounted && draft.view === 'capture' && draft.status === 'valid';
 	const sourceLive = () => mounted && draft.view === 'source' && draft.loaded;
 
 	function setView(next: string) {
@@ -192,7 +192,7 @@
 				{/if}
 			</h1>
 			<Tabs.List aria-label="View">
-				<Tabs.Trigger value="capture" disabled={held || !draft.structured || draft.document.refusal !== undefined}>Capture</Tabs.Trigger>
+				<Tabs.Trigger value="capture" disabled={held || draft.status !== 'valid' || draft.document.refusal !== undefined}>Capture</Tabs.Trigger>
 				<Tabs.Trigger value="source" disabled={held}>Source</Tabs.Trigger>
 			</Tabs.List>
 			<DropdownMenu.Root>

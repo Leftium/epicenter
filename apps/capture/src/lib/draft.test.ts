@@ -232,7 +232,6 @@ test('a file that does not parse opens through the same editor as Source, and So
 	expect(t.draft.status).toBe('invalid');
 	expect(t.draft.rowProblem).toBeDefined();
 	expect(t.draft.source).toBe(INVALID);
-	expect(t.draft.structured).toBe(false);
 	t.draft.inputNewThought('a thought');
 	expect(t.draft.addThought()).toBe(false);
 	expect(t.draft.newThought).toBe('a thought');
@@ -254,7 +253,7 @@ test('a file that does not parse opens through the same editor as Source, and So
 	t.draft.inputSource(A);
 	await t.draft.settle();
 	expect(await t.disk()).toBe(A);
-	expect(t.draft.structured).toBe(true);
+	expect(t.draft.status).toBe('valid');
 	expect(t.editors).toHaveLength(1);
 	await t.done();
 });
@@ -271,7 +270,7 @@ test('a Source edit saves exactly, frontmatter included; a broken one stays repa
 	t.draft.inputSource(broken);
 	await t.draft.settle();
 	expect(await t.disk()).toBe(broken);
-	expect(t.draft.structured).toBe(false);
+	expect(t.draft.status).toBe('invalid');
 	t.draft.inputText('refused');
 	expect(t.draft.textIsPending).toBe(true);
 	t.draft.dropPendingText();
@@ -284,7 +283,7 @@ test('a Source edit saves exactly, frontmatter included; a broken one stays repa
 	await t.draft.settle();
 	// Written exactly as typed: the comment and the quoting stay.
 	expect(await t.disk()).toBe(withKey);
-	expect(t.draft.structured).toBe(true);
+	expect(t.draft.status).toBe('valid');
 
 	t.draft.inputText('B');
 	await t.draft.settle();

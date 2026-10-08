@@ -608,7 +608,7 @@ test('a corrupt file is reported by Reload and replaced by the next save', async
 	draft.inputText('Mine');
 	await draft.settle();
 	expect(text(PATH)).toBe(withText('Mine'));
-	expect(draft.structured).toBe(true);
+	expect(draft.status).toBe('valid');
 	expect(draft.notice).toBeUndefined();
 	await captures.close();
 	await host.close();

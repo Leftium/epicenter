@@ -13,10 +13,12 @@ The client keeps the folder contract's `remote: { url, branch }` and
 requests to this connector, addressed to the pairing revision, with the
 Epicenter session bearer.
 
-Status: mounted in the local Worker source, with its Durable Object binding
-and migration in `wrangler.jsonc`. The Worker build and focused tests pass,
-but this connector has not been deployed or exercised against GitHub. No
-browser or native application calls it yet. The
+Status: deployed at `api.epicenter.so` on October 8 from source commit
+`17724f7fd6`, Worker version `fa1829a1-b36a-4c13-a741-45c0016ba0f4`. The Worker
+build and focused tests pass. Live checks confirm unauthenticated pairing
+requests receive 401, invalid callbacks receive 400, and sign-in serves 200.
+GitHub authorization and transfers remain unverified. No browser or native
+application calls it yet. The
 journey fixture under `work/zhongwen-github-connector-20261007/` targets the
 earlier fixed-repository prototype; it no longer compiles against this code
 and does not describe the current flow.
@@ -25,9 +27,10 @@ The repository integration is registered as
 [Epicenter Folder Sync](https://github.com/apps/epicenter-folder-sync), owned by
 EpicenterHQ and installable by any account. Its App ID is `5223530` and client
 ID is `Iv23liVOZq7MxkQXPluj`. It requests Contents write and mandatory Metadata
-read. User access tokens expire after eight hours. Registration does not prove
-authorization or transfer: installation, deployment secrets, and live GitHub
-acceptance remain outstanding.
+read. User access tokens expire after eight hours. Connector deployment secrets
+are configured. Registration and deployment do not prove authorization or
+transfer: selected-repository installation and live GitHub acceptance remain
+outstanding.
 
 ## Identity
 
@@ -401,8 +404,11 @@ infisical run --silent --env=prod --path=/ci -- bun x wrangler secret put GIT_GI
 infisical run --silent --env=prod --path=/ci -- bun x wrangler secret put GIT_GITHUB_APP_SLUG --config apps/api/wrangler.jsonc
 ```
 
-The slug is public metadata and optional. These commands administer production;
-none has been run for this connector.
+The slug is public metadata and optional. These commands administer production.
+The four bindings were uploaded from Infisical production `/api` through process
+input on October 8. Renaming the encryption binding preserved its exact value.
+The deprecated `GIT_GRANT_KEY` entry was removed from Infisical and is absent
+from the deployed Worker's secret list. Existing social sign-in bindings remain.
 
 When a value is missing or `GIT_GRANT_ENCRYPTION_KEY` does not decode to 32 bytes, every
 route answers 503 `not_configured`. Rotating `GIT_GRANT_ENCRYPTION_KEY` makes every
@@ -411,7 +417,8 @@ grant fail to unseal; each is deleted at next use and its pairings stay.
 ### Callbacks
 
 A deployed API origin allows only `https://zhongwen.bradenwong.com/sync`. A
-loopback `API_PUBLIC_ORIGIN` also allows `http://localhost:5207/sync`.
+loopback `API_PUBLIC_ORIGIN` also allows `http://localhost:5207/sync` and
+`http://127.0.0.1:5207/sync`.
 
 ## Tests
 

@@ -1,5 +1,5 @@
 /**
- * Browser download: an account folder made from its paired remote's history
+ * Browser download: a Local or account folder made from remote history
  * before anything opens it, over the in-memory OPFS stand-in and a real
  * `git http-backend` behind a captured transport. Not GitHub, and not a
  * browser's OPFS.
@@ -170,7 +170,7 @@ async function open(
 	storage: TestStorage,
 	httpFetch: HttpFetch,
 	options: {
-		scope?: typeof scope;
+		scope?: DownloadFolderOptions['scope'];
 		remote?: typeof remote;
 		createIfMissing?: boolean;
 	} = {},
@@ -767,7 +767,7 @@ test('aborting cancels the transfer and reports the download incomplete', async 
 	expect(folderFiles(storage, directory)).toEqual({});
 });
 
-test('a download needs an account, and accounts, principals, and Local stay apart', async () => {
+test('a download needs an explicit scope, and accounts, principals, and Local stay apart', async () => {
 	const { root, bare, httpFetch } = await fixture();
 	await seeded(root, bare);
 	const storage = createTestStorage();
@@ -775,11 +775,21 @@ test('a download needs an account, and accounts, principals, and Local stay apar
 	const anonymous = expectErr(
 		await download(storage, {
 			httpFetch,
-			scope: { channel: 'release' } as unknown as typeof scope,
+			scope: undefined as unknown as DownloadFolderOptions['scope'],
 		}),
 	);
 	expect(anonymous.name).toBe('InvalidBrowserScope');
 	expect(storage.opfs.files().size).toBe(0);
+
+	const local = expectOk(
+		await download(storage, {
+			httpFetch,
+			scope: { channel: 'release' },
+		}),
+	);
+	const localDirectory = (local.location as { directory: string }).directory;
+	expect(localDirectory).toBe(`Epicenter/local/${id}`);
+	expect(folderFiles(storage, localDirectory)).toEqual(REMOTE_FILES);
 
 	const landed = expectOk(await download(storage, { httpFetch }));
 	const bob = {
@@ -788,14 +798,84 @@ test('a download needs an account, and accounts, principals, and Local stay apar
 	} as const;
 	const other = expectOk(await open(storage, httpFetch, { scope: bob }));
 	expect(other.location).not.toEqual(landed.location);
+	expect(other.location).not.toEqual(local.location);
+	expect(landed.location).not.toEqual(local.location);
 	expect(expectOk(await other.git.log(1))).toEqual([]);
 	expect(
 		[...storage.opfs.files()]
-			.filter(([path]) => path.includes('/local/') || path.endsWith('/kv.json'))
+			.filter(([path]) => path.endsWith('/kv.json'))
 			.map(([path]) => path),
 	).toEqual([
+		`${localDirectory}/kv.json`,
 		`${(landed.location as { directory: string }).directory}/kv.json`,
 	]);
+});
+
+test('Local download lands remote history before definition publication and refuses a ready folder unchanged', async () => {
+	const { root, bare, httpFetch, requests } = await fixture();
+	const { first, head } = await seeded(root, bare);
+	const storage = createTestStorage();
+	const localScope = { channel: 'release' } as const;
+	const landed = expectOk(
+		await download(storage, { httpFetch, scope: localScope }),
+	);
+	const directory = (landed.location as { directory: string }).directory;
+	expect(landed.head).toBe(head);
+	expect(folderFiles(storage, directory)).toEqual(REMOTE_FILES);
+	expect(JSON.parse(marker(storage, directory) ?? 'null')).toEqual({
+		address: JSON.stringify(['release', 'local', null, id]),
+	});
+	const folder = expectOk(
+		await open(storage, httpFetch, {
+			scope: localScope,
+			createIfMissing: false,
+		}),
+	);
+	expect(
+		expectOk(await folder.git.log(10)).map((commit) => commit.oid),
+	).toEqual([head, first]);
+	expect(await folder.git.commit()).toMatchObject({
+		status: 'committed',
+		parent: head,
+	});
+	const before = everything(storage, directory);
+	requests.length = 0;
+	const refused = expectErr(
+		await download(storage, { httpFetch, scope: localScope }),
+	);
+	expect(refused).toMatchObject({
+		name: 'Exists',
+		reason: 'is this folder',
+		origin: canonical,
+	});
+	expect(requests).toEqual([]);
+	expect(everything(storage, directory)).toEqual(before);
+});
+
+test('an incomplete Local download retains its history, refuses opening, and retries the same recipe', async () => {
+	const { root, bare, httpFetch, transport } = await fixture();
+	const { head } = await seeded(root, bare);
+	const storage = createTestStorage();
+	const localScope = { channel: 'development' } as const;
+	transport.fail = () => new Response('Unavailable', { status: 503 });
+	const stopped = expectErr(
+		await download(storage, { httpFetch, scope: localScope }),
+	);
+	expect(stopped.name).toBe('Incomplete');
+	const directory = (stopped as { directory: string }).directory;
+	expect(directory).toBe(`Epicenter Dev/local/${id}`);
+	const before = everything(storage, directory);
+	expect(folderFiles(storage, directory)).toEqual({});
+	expect(
+		expectErr(await open(storage, httpFetch, { scope: localScope })).name,
+	).toBe('Unavailable');
+	expect(everything(storage, directory)).toEqual(before);
+	transport.fail = undefined;
+	const landed = expectOk(
+		await download(storage, { httpFetch, scope: localScope }),
+	);
+	expect(landed.head).toBe(head);
+	expect(folderFiles(storage, directory)).toEqual(REMOTE_FILES);
 });
 
 test('the captured transport carries the credential; the folder stores only the canonical origin', async () => {

@@ -13,7 +13,7 @@
  * ready marker names that address (`claimDirectory`). IndexedDB is never
  * required, read, or written.
  *
- * `downloadFolder` makes an account folder from a remote's history before
+ * `downloadFolder` makes a folder from a remote's history before
  * anything opens it. Its marker records the pending download first and
  * becomes the ready marker last, so a download that stops leaves a directory
  * the opener refuses and only the same download continues.
@@ -569,15 +569,16 @@ async function openOpfsFolder<TDefinition extends FolderDefinition>(
 }
 
 export type DownloadFolderOptions = {
-	/** The dataset name relative to the account, as `openFolder` takes it. */
+	/** The folder ID within its scope, as `openFolder` takes it. */
 	readonly id: string;
 	/**
-	 * The captured account and channel the folder will be opened with. Read
-	 * before the first await; a later login change does not retarget it.
+	 * The channel and optional captured account the folder will be opened
+	 * with. No account means Local. Read before the first await; a later
+	 * login change does not retarget it. The scope itself is required.
 	 */
 	readonly scope: {
 		readonly channel: 'release' | 'development';
-		readonly account: AccountIdentity;
+		readonly account?: AccountIdentity;
 	};
 	/** The paired repository and branch; saved as the folder's `origin`. */
 	readonly remote: GitRemote;
@@ -606,8 +607,8 @@ export type FolderDownload = {
 export type DownloadError = DownloadFolderError | AddressError;
 
 /**
- * Make the account folder `id` from `remote`'s history, before anything
- * opens it. Nothing is opened and no `definition.json` is published; open the
+ * Make the folder `id` in the explicit scope from `remote`'s history before
+ * anything opens it. No `definition.json` is published; open the
  * folder afterward. The marker records the pending download (address, URL,
  * branch) before any Git state is written and becomes the ready marker last.
  * A destination that is already a folder, holds anything else, or records
@@ -628,9 +629,9 @@ export async function downloadFolder({
 	if (isTauri()) return OpenFolderError.InsideTauri();
 	if (typeof id !== 'string' || id.trim() === '')
 		return OpenFolderError.InvalidId({ id: String(id) });
-	if (scope?.account === undefined)
+	if (scope === undefined || scope === null)
 		return OpenFolderError.InvalidBrowserScope({
-			reason: 'a download needs an account',
+			reason: 'a download needs an explicit scope',
 		});
 	const transfer = { remote: { ...remote }, httpFetch, signal };
 	const { data: captured, error: captureError } = await captureAddress(

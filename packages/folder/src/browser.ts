@@ -7,8 +7,8 @@
  * bare specifier to it, carries no desktop adapter. Inside the desktop app
  * this opener refuses: that page's folder is a directory the shell owns.
  *
- * `downloadFolder` is this entry's alone: it makes a browser account folder
- * from its paired remote's history before the folder is first opened.
+ * `downloadFolder` is this entry's alone: it makes a browser folder in an
+ * explicit Local or account scope from remote history before the first open.
  *
  * Importing this module opens nothing.
  */

@@ -84,7 +84,7 @@ pulling an existing remote changes bootstrap behavior: with history disabled,
 the uncommitted `definition.json` blocks incoming updates; with history enabled,
 its local initial commit creates unrelated history. Get the remote's history
 before the first opening: a browser account folder uses
-[`downloadFolder`](#downloading-an-account-folder), and a runtime with a clone
+[`downloadFolder`](#downloading-a-browser-folder), and a runtime with a clone
 operation clones first. The current Todos browser startup opens first and
 requires a separate remote-bootstrap repair.
 
@@ -240,7 +240,7 @@ adopted. A marker write that fails, or whose stream close is unconfirmed, is
 where the marker is absent or empty; a marker the close did publish opens,
 and one naming another address stays refused.
 
-### Downloading an account folder
+### Downloading a browser folder
 
 A fresh browser signed into an account whose folder already has a paired
 remote gets that history before the folder is first opened:
@@ -257,7 +257,7 @@ const { data: landed, error } = await downloadFolder({
   signal,
 });
 if (error !== null) return show(error.message);
-const opened = await openFolder({ id, definition, browser: { scope, author, remote, httpFetch } });
+const opened = await openFolder({ id, definition, browser: { scope, author, remote, httpFetch, createIfMissing: false } });
 ```
 
 Account startup that must not make a folder before the person chooses opens
@@ -267,13 +267,19 @@ with `createIfMissing: false`:
 openFolder(createIfMissing: false) -> Ok           use the folder
                                    -> Absent       offer Download, or start empty
                                    -> Unavailable  show the cause; an unfinished download continues when downloaded again
-Download    -> downloadFolder -> Ok or Exists -> openFolder
+Download    -> downloadFolder -> Ok           -> openFolder(createIfMissing: false)
+                              -> Exists       inspect the refusal before opening
 Start empty -> openFolder (default), which creates the folder
 ```
 
 Only an explicit call downloads. Sign-in, discovery, and opening never do.
-A download needs an account scope; without one it is `InvalidBrowserScope`
-and nothing is created. It opens no folder, publishes no `definition.json`,
+A download needs an explicit scope; without one it is `InvalidBrowserScope`
+and nothing is created. `{ channel: 'release' }` targets Local. Adding the
+captured `account` targets its separate directory. A launcher can download a
+fresh Local folder before opening it, using the same protocol as an account
+download. An ordinary Local opening still makes no network request.
+
+Downloading opens no folder, publishes no `definition.json`,
 and writes no settings. It first records the pending download in the marker
 file, `{ download: { address, remote: { url, branch } } }`, and confirms that
 write before any Git state exists. It then fetches the remote branch into the
@@ -303,9 +309,15 @@ the branch.
 Only the record decides ownership. A configured `origin` is reported in
 `Exists` and never makes Git state or files without a record continuable.
 
-After `Exists`, opening the same address succeeds exactly when the
-directory is already this folder, so a caller that finds the folder present
-can open it without a separate check.
+After `Exists`, only `reason: 'is this folder'` confirms a ready folder at
+this address. Other refusals must not be treated as a successful download.
+A caller that opens with a remote must also check the reported `origin`:
+opening with a different URL would replace that configuration. A launcher
+may attach a remote to an unconnected Local folder, but must refuse a
+different existing origin. Use `createIfMissing: false` after downloading
+or accepting a ready folder, so a vanished directory does not become a
+new, unrelated history. Ready folders, including ready folders with no
+files, are outside download ownership; synchronize them explicitly.
 
 The download holds the address's open Web Lock throughout. An opener of the
 same address waits, then opens what landed; a second download gets

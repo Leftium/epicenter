@@ -8,6 +8,7 @@
 	import { Textarea } from '@epicenter/ui/textarea';
 	import ArrowLeftIcon from '@lucide/svelte/icons/arrow-left';
 	import { rowStemOf } from '@epicenter/folder';
+	import { withFileNewlines } from '@epicenter/folder/file-browser';
 	import type { TodoEditor } from '$lib/todo-editor.svelte.js';
 	import type { Todos } from '$lib/todos.svelte.js';
 	import { confirmDelete } from './file-actions.js';
@@ -40,13 +41,14 @@
 	// document, and the todo stays retained by the owner, so a delivered event
 	// could still reach its setter. Each setter composes the complete row from
 	// the todo's current row, and the todo refuses it unless that row still
-	// shows its fields. Shared Input and Textarea retire destroyed value
-	// bindings; Lifetime protects the checkbox and commands. Old controls stay
-	// inert even after the same kind of block mounts again.
+	// shows its fields. A row the todo cannot take changes nothing, so the
+	// control shows the row's value again. Shared Input and Textarea retire
+	// destroyed value bindings; Lifetime protects the checkbox and commands.
+	// Old controls stay inert even after the same kind of block mounts again.
 	const stem = $derived(rowStemOf(todos.folder.tables.todos.name, todo.path) ?? '');
 	const diagnostics = $derived(todo.diagnostics());
 
-	/** Textareas report LF, so views show LF; the todo restores the file's convention. */
+	/** Textareas report LF, so views show LF; their setters restore the file's convention. */
 	const lf = (text: string) => text.replace(/\r\n?/g, '\n');
 
 </script>
@@ -78,10 +80,10 @@
 						aria-label="Title"
 						disabled={todo.isFenced}
 						bind:value={
-							() => todo.row.status === 'valid' ? todo.refused.title?.value ?? todo.row.fields.title : '',
+							() => todo.row.status === 'valid' ? todo.row.fields.title : '',
 							(title) => {
 								if (todo.row.status !== 'valid') return;
-								todo.set({ ...todo.row, fields: { ...todo.row.fields, title } }, { control: 'title' });
+								todo.set({ ...todo.row, fields: { ...todo.row.fields, title } });
 							}
 						}
 					/>
@@ -143,10 +145,10 @@
 					aria-label="Notes"
 					disabled={todo.isFenced}
 					bind:value={
-						() => todo.row.status === 'valid' ? todo.refused.notes?.value ?? lf(todo.row.body) : '',
+						() => todo.row.status === 'valid' ? lf(todo.row.body) : '',
 						(notes) => {
 							if (todo.row.status !== 'valid') return;
-							todo.set({ ...todo.row, body: notes }, { control: 'notes' });
+							todo.set({ ...todo.row, body: withFileNewlines(notes, todo.row.text) });
 						}
 					}
 				/>

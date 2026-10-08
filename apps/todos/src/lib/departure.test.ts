@@ -134,16 +134,13 @@ function fieldsOf(editor: TodoEditor) {
 /** What the title control sends: the complete row on screen with `title`. */
 function typeTitle(editor: TodoEditor, title: string) {
 	const row = fieldsOf(editor);
-	return editor.set(
-		{ ...row, fields: { ...row.fields, title } },
-		{ control: 'title' },
-	);
+	return editor.set({ ...row, fields: { ...row.fields, title } });
 }
 
 /** What the notes control sends: the complete row on screen with `notes`. */
 function typeNotes(editor: TodoEditor, notes: string) {
 	const row = fieldsOf(editor);
-	return editor.set({ ...row, body: notes }, { control: 'notes' });
+	return editor.set({ ...row, body: notes });
 }
 
 /** The identity of the prompt shown now, as its controls carry it. */

@@ -129,8 +129,8 @@ still running.
   command, or terminal command. A page holding nothing unsaved answers at
   once. Otherwise it shows its window, saves what typing would have saved,
   and waits for those saves to finish. If something still cannot be saved (a
-  failed or unconfirmed save, a todo value that cannot be saved, a plain
-  editor's conflict, or the title of a new todo you have not added), the
+  failed or unconfirmed save, a plain editor's conflict, or the title of a
+  new todo you have not added), the
   window lists it, names
   whether Epicenter is quitting or restarting, and offers "Keep working" or
   "Quit anyway" ("Restart anyway"). Nothing is added, retried, or discarded
@@ -428,13 +428,16 @@ todo; `todos/a.MD` is an ordinary file.
 
 `TodoDetail` is one view reused as the selection moves between todos, and
 each todo's input lives in its retained editor, not in the view. The editor
-exposes its current `row`, `save` state, and `refused` values, and takes a
-whole row through `todo.set(next, { control })`. Each field's function binding
-reads the current todo on every call: the getter shows the row's field, or the
-value that field's control typed and the row refused; the setter composes the
-complete row from `todo.row` with the new value and passes the control it came
-from, such as `todo.set({ ...row, fields: { ...row.fields, title } }, { control: 'title' })`.
-Svelte evaluates a function binding's expressions once, when the block is
+exposes its current `row` and `save` state, and takes a whole row through
+`todo.set(next)`. Each field's function binding reads the current todo on
+every call: the getter shows the row's field; the setter composes the
+complete row from `todo.row` with the new value, such as
+`todo.set({ ...row, fields: { ...row.fields, title } })`. The notes setter
+restores the file's line endings itself, since the textarea reports LF. A row
+the editor cannot take (a lone surrogate has no form in a file) changes
+nothing: the control shows the row's value again, and the editor keeps only
+why, as `todo.refusal`, beside the save state until input is taken or a
+reload succeeds. It is not unsaved input. Svelte evaluates a function binding's expressions once, when the block is
 created, so a binding that captured one todo would keep showing and writing
 it after the selection moves. A view can also leave while its todo stays
 retained, as on narrow screens, and a node that left the document keeps its

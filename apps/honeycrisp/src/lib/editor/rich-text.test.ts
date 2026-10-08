@@ -157,7 +157,7 @@ async function open(
 	const source = (text: string) => {
 		const { row } = current;
 		if (row.status !== 'valid') throw new Error('The note does not read');
-		return current.set(withBody(row, text), { control: 'body' });
+		return current.set(withBody(row, text));
 	};
 	/** What is on screen and what the note holds are the same content. */
 	const expectNoteHoldsScreen = () =>
@@ -327,7 +327,7 @@ describe('an edit that cannot be written', () => {
 		expect(displayed).toBe(false);
 		expect(view.shown()).toBe(before);
 		expect(editor.row.text).toBe(text);
-		expect(editor.refusal).toContain('cannot be written as Markdown');
+		expect(editor.refusal?.reason).toContain('cannot be written as Markdown');
 	});
 
 	test('a line break in a heading is refused; the heading text is untouched', async () => {
@@ -348,8 +348,7 @@ describe('an edit that cannot be written', () => {
 		expect(dispatch(view.shown().tr.insertText('\uD800', 1))).toBe(false);
 		expect(view.shown()).toBe(before);
 		expect(undoDepth(view.shown())).toBe(0);
-		expect(editor.refusal).toContain('lone surrogate');
-		expect(editor.refused.body).toBeUndefined();
+		expect(editor.refusal?.reason).toContain('lone surrogate');
 		expect(editor.save.status).toBe('idle');
 		// The next edit it can take is shown and kept in its history.
 		expect(dispatch(view.shown().tr.insertText('ok ', 1))).toBe(true);
@@ -374,30 +373,21 @@ describe('an edit that cannot be written', () => {
 		expect(body()).toBe('one\n');
 	});
 
-	test('rich text does not write over a Source body the editor refused', async () => {
-		const { source, dispatch, editor, ...view } = await open('Body.\n');
+	test('a Source body the editor refused leaves the body as it was, and rich text edits it as usual', async () => {
+		const { source, dispatch, editor, body, ...view } = await open('Body.\n');
+		const state = view.shown();
 		expect(source('Half \uD800\n')).toContain('lone surrogate');
-		expect(editor.refused.body?.value).toBe('Half \uD800\n');
-		expect(dispatch(view.shown().tr.insertText('x', 1))).toBe(false);
-		expect(editor.refusal).toContain('Markdown source');
-		expect(editor.refused.body?.value).toBe('Half \uD800\n');
+		expect(body()).toBe('Body.\n');
+		expect(view.shown()).toBe(state);
+		expect(dispatch(view.shown().tr.insertText('x', 1))).toBe(true);
+		expect(body()).toBe('xBody.\n');
+		expect(editor.refusal).toBeUndefined();
 	});
 
 	test('Enter that leaves the body as it is is not displayed while the note takes no input', async () => {
 		const opened = await open('one\n');
-		const { press, end, fence, source, editor, writes, ...view } = opened;
+		const { press, end, fence, editor, writes, ...view } = opened;
 		end();
-		const unshown = (why: string) => {
-			const state = view.shown();
-			press('Enter');
-			expect(view.shown()).toBe(state);
-			expect(view.shown().doc.childCount).toBe(1);
-			expect(editor.refusal ?? '').toContain(why);
-		};
-		// Source holds text the editor refused.
-		expect(source('Half \uD800\n')).toContain('lone surrogate');
-		unshown('Markdown source');
-		expect(source('one\n')).toBeUndefined();
 		await editor.waitForSaves();
 		const saved = writes();
 		// A delete whose outcome is not known.
@@ -410,6 +400,7 @@ describe('an edit that cannot be written', () => {
 		const state = view.shown();
 		press('Enter');
 		expect(view.shown()).toBe(state);
+		expect(view.shown().doc.childCount).toBe(1);
 		editor.conclude(step, { kind: 'done' });
 		// The app is closing.
 		fence();

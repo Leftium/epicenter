@@ -205,8 +205,7 @@ export function stateAfter(
 		return undefined;
 	}
 	// An edit Markdown has no spelling for (a new empty paragraph) gives the
-	// same note back; the editor acknowledges it without saving.
-	return editor.set(withBody(row, body), { control: 'rich' }) === undefined
-		? next
-		: undefined;
+	// same body back, so `withBody` gives the row itself; the editor admits it
+	// without saving.
+	return editor.set(withBody(row, body)) === undefined ? next : undefined;
 }

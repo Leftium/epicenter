@@ -784,8 +784,8 @@ export function createTodos(folder: TodosFolder) {
 		/**
 		 * Let what is running finish, then have each editor save what its usual
 		 * rules would save and wait for admitted saves. Answers the paths whose
-		 * input is still not saved: a failed or unconfirmed save, a refused todo
-		 * field, or a plain editor's conflict. Nothing is discarded; the new todo's typed title is
+		 * input is still not saved: a failed or unconfirmed save, or a plain
+		 * editor's conflict. Nothing is discarded; the new todo's typed title is
 		 * never added on its own.
 		 */
 		async drainDeparture(): Promise<readonly string[]> {
@@ -833,8 +833,9 @@ export function createTodos(folder: TodosFolder) {
 		/**
 		 * The person's Reload of an open todo: once admitted writes settle,
 		 * read the file and show it, replacing the todo's input, any failed
-		 * save, and any refused field. A read that fails keeps the input, and so does input that
-		 * arrives during the read. A missing file keeps the editor and its input. Answers what the person
+		 * save, and why its last change was not taken. Input waits while the
+		 * file is read, and a read that fails keeps the input. A missing file
+		 * keeps the editor and its input. Answers what the person
 		 * is told, if anything. Refused while the file is being renamed,
 		 * deleted, or toggled.
 		 */
@@ -1265,8 +1266,8 @@ export function createTodos(folder: TodosFolder) {
 		 * pending input under its usual rules and is held from then on: an open
 		 * todo refuses input before it waits for its writes, and a plain editor
 		 * holds its saves once they settle. If any still holds input it
-		 * cannot save (a failed or unconfirmed save, a refused todo field, or a
-		 * plain editor's conflict), nothing runs, their paths are answered, and
+		 * cannot save (a failed or unconfirmed save, or a plain editor's
+		 * conflict), nothing runs, their paths are answered, and
 		 * every editor keeps its input. Otherwise they stay held while the
 		 * folder recovers. Each todo reads its row again before its fence lifts and shows
 		 * what the update left; a plain editor's typing saves afterward against
@@ -1316,8 +1317,8 @@ export function createTodos(folder: TodosFolder) {
 		 * page's terminal teardown, not a choice about input: it runs when the
 		 * mounted page is destroyed, which the view allows only while nothing
 		 * is unsaved (or after the browser's leave confirmation, when the page
-		 * ends anyway). Input that cannot save (a failed or unconfirmed save, a
-		 * refused todo field, or a plain editor's conflict or lost delete reply) is neither saved nor
+		 * ends anyway). Input that cannot save (a failed or unconfirmed save, or
+		 * a plain editor's conflict or lost delete reply) is neither saved nor
 		 * replaced; it ends with the page, and the completion names its paths.
 		 *
 		 * Every call answers the same completion. From the first call no action

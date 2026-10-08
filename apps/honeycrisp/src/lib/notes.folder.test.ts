@@ -56,7 +56,7 @@ import {
 } from './data.js';
 import type { FileSession } from './file-session.svelte.js';
 import { openNotesFolder } from './folder.test-support.js';
-import type { NoteControl, NoteEditor } from './note-editor.svelte.js';
+import type { NoteEditor } from './note-editor.svelte.js';
 import { withBody } from './note-source.js';
 import { setUpFolder } from './platform/first-open.js';
 import type { NotesFolder, NotesHost } from './platform/types.js';
@@ -258,7 +258,7 @@ function typeBody(session: NoteEditor, body: string): boolean {
 	const { row } = session;
 	return (
 		row.status === 'valid' &&
-		session.set(withBody(row, body), { control: 'body' }) === undefined
+		session.set(withBody(row, body)) === undefined
 	);
 }
 
@@ -266,11 +266,10 @@ function typeBody(session: NoteEditor, body: string): boolean {
 function setFields(
 	session: NoteEditor,
 	fields: Partial<NoteEntry['fields']>,
-	options?: { control?: NoteControl },
 ): string | undefined {
 	const { row } = session;
 	if (row.status !== 'valid') return 'This note is not showing its fields.';
-	return session.set({ ...row, fields: { ...row.fields, ...fields } }, options);
+	return session.set({ ...row, fields: { ...row.fields, ...fields } });
 }
 
 /** The structured note as its views show it. */
@@ -1278,14 +1277,16 @@ describe('kept sessions', () => {
 		expect(await readFile(join(root, note.path), 'utf8')).toBe(textOf(session));
 	});
 
-	test('typed text waiting in a control lets list actions and versions change other fields, never its own', async () => {
+	test('a refused title or body holds up no list action or version, which change those fields too', async () => {
 		const { state, root, seedNote } = await product();
 		const note = await seedNote();
 		const session = await openedNote(state, note.path);
-		expect(
-			setFields(session, { title: 'Half \uD800' }, { control: 'title' }),
-		).toContain('lone surrogate');
+		const before = textOf(session);
+		expect(setFields(session, { title: 'Half \uD800' })).toContain(
+			'lone surrogate',
+		);
 		expect(typeBody(session, 'Half \uD800\n')).toBe(false);
+		expect(textOf(session)).toBe(before);
 		expect(await state.patchNote(note.path, { pinned: true })).toBeUndefined();
 		expect(await readFile(join(root, note.path), 'utf8')).toContain(
 			'"pinned": true',
@@ -1302,24 +1303,20 @@ describe('kept sessions', () => {
 				'---',
 				body,
 			].join('\n');
-		expect(state.useVersion(session, version('Other', 'Hello\n'))).toContain(
-			'the title',
-		);
-		expect(state.useVersion(session, version('First', 'Other\n'))).toContain(
-			'the Markdown source',
-		);
-		// A version with the waiting fields as the editor holds them is taken,
-		// and the typed text stays where it was typed.
 		expect(
-			state.useVersion(session, version('First', 'Hello\n')),
+			state.useVersion(session, version('Other', 'Other\n')),
 		).toBeUndefined();
-		expect(shown(session).fields).toMatchObject({
-			pinned: false,
-			updatedAt: '2026-09-01T00:00:00.000Z',
+		expect(session.refusal).toBeUndefined();
+		expect(shown(session)).toMatchObject({
+			fields: {
+				title: 'Other',
+				pinned: false,
+				updatedAt: '2026-09-01T00:00:00.000Z',
+			},
+			body: 'Other\n',
 		});
-		expect(session.refused.title?.value).toBe('Half \uD800');
-		expect(session.refused.body?.value).toBe('Half \uD800\n');
 		expect(await saved(session)).toBeUndefined();
+		expect(await readFile(join(root, note.path), 'utf8')).toBe(textOf(session));
 	});
 
 	test('metadata changes share the open session: a typed field and a list action each save at once', async () => {
@@ -1551,39 +1548,20 @@ describe('kept sessions', () => {
 		expect(textOf(session)).toBe(typed);
 	});
 
-	test('a deleted note with a refused title waiting in its field is not saved as a file until the title is fixed', async () => {
-		const { state, root, seedNote, notePaths } = await product();
+	test('a deleted note saves as a file after a refused title, with the accepted text and none of the refused title', async () => {
+		const { state, root, seedNote } = await product();
 		const note = await seedNote();
 		const session = await openedNote(state, note.path);
-		await typedAfterDeletion(session, root);
+		const typed = await typedAfterDeletion(session, root);
 		// What the title control does with half of an emoji.
-		expect(
-			setFields(session, { title: 'Half \uD800' }, { control: 'title' }),
-		).toContain('lone surrogate');
-		const accepted = textOf(session);
-		expect(await state.recoverDraft(note.path)).toContain('not saved yet');
-		// Nothing was created, and the same session keeps the refused title.
-		expect(await notePaths()).toEqual([]);
-		expect(state.pending).toEqual([]);
-		expect(state.noteAt(note.path)).toBe(session);
-		expect(session.released).toBe(false);
-		expect(session.refused.title?.value).toBe('Half \uD800');
-		expect(textOf(session)).toBe(accepted);
-		// Once the title is fixed in its control, the note is saved as a file.
-		expect(
-			setFields(session, { title: 'Half' }, { control: 'title' }),
-		).toBeUndefined();
-		expect(session.refused.title).toBeUndefined();
-		// The corrected title starts a replace; it still cannot create the missing file.
-		expect(await saved(session)).toContain('not there');
-		expect(await state.recoverDraft(note.path)).toBeUndefined();
-		expect(await readFile(join(root, note.path), 'utf8')).toContain(
-			'"title": "Half"',
+		expect(setFields(session, { title: 'Half \uD800' })).toContain(
+			'lone surrogate',
 		);
+		expect(textOf(session)).toBe(typed);
+		expect(await state.recoverDraft(note.path)).toBeUndefined();
+		expect(await readFile(join(root, note.path), 'utf8')).toBe(typed);
 		expect(session.released).toBe(true);
-		expect(state.noteAt(note.path)?.row).toMatchObject({
-			fields: { title: 'Half' },
-		});
+		expect(state.noteAt(note.path)?.row.text).toBe(typed);
 	});
 
 	test('a note whose text has an unpaired surrogate is never created as a file, and its exact text stays', async () => {

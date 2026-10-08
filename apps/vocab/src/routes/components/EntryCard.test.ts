@@ -11,11 +11,13 @@
  * - A shown card opens its word, and a card given another word opens that
  *   one; the note field is disabled until the word opens
  * - "Reload file" shows a change saved elsewhere while the word was open
- * - A note no file can hold stays in the field with why, holds Reload file,
- *   and goes only when discarded or deleted with the word
+ * - A note no file can hold changes nothing: after the event the field shows
+ *   the note before it, a notice says why, and the same refusal again is a
+ *   new notice. Reload file and the stages stay available, and a failed save
+ *   keeps its text and message beside it
  * - Delete asks first and says unsaved changes are discarded; Cancel changes
  *   nothing, and confirming deletes the word named when Delete was pressed,
- *   discarding a failed save or a refused note, through the list it was
+ *   discarding a failed save, through the list it was
  *   named in, even after its card is gone; a version another program saved
  *   and a refresh listed meanwhile is not deleted
  * - A card given another word, then the first again, edits whichever word it
@@ -225,26 +227,75 @@ test('Reload file shows a change another program saved while the word was open',
 	expect(await context.file('lucid')).toBe(theirs);
 });
 
-test('a note no file can hold stays in the field with why, holds Reload file, and goes only when discarded', async () => {
+/**
+ * Type `value`, which must not be well formed, into `field`. Checked before
+ * the event, so a normalized replacement character cannot pass for a refusal.
+ */
+function typeMalformed(field: HTMLTextAreaElement | undefined, value: string) {
+	if (field === undefined) throw new Error('No field');
+	field.value = value;
+	expect(field.value.isWellFormed()).toBe(false);
+	field.dispatchEvent(new window.Event('input', { bubbles: true }));
+}
+
+/** Let the binding check its value after the event, then render. */
+async function afterEvent() {
+	for (let i = 0; i < 5; i++) await Bun.sleep(0);
+	flushSync();
+}
+
+test('a note no file can hold snaps back to the note after the event, says why each time, and leaves Reload file and the stages available', async () => {
 	await using context = await setup(['lucid']);
 	const { entries, field, target } = context;
 	const word = await context.opened('lucid');
-	const before = await context.file('lucid');
 	const note = field('Your note for lucid');
+	type(note, 'kept');
+	await until(() => word.save?.status === 'idle', 'the note to save');
+	const before = await context.file('lucid');
+	const notice = () => target.querySelector('[data-testid="note-refusal"]');
 
-	type(note, 'half a pair: \uD800');
-	flushSync();
-	expect(note?.value).toBe('half a pair: \uD800');
-	expect(target.textContent).toContain('cannot be saved as typed');
-	expect(button(target, 'Reload file')?.disabled).toBe(true);
-	expect(entries.unsettled).toBe(1);
-
-	click(target, 'Discard this note');
-	flushSync();
-	expect(note?.value).toBe('');
-	expect(target.textContent).not.toContain('cannot be saved as typed');
-	expect(word.unsettled).toBe(false);
+	typeMalformed(note, 'half a pair: \uD800');
+	await afterEvent();
+	expect(note?.value).toBe('kept');
+	const first = notice();
+	expect(first?.getAttribute('role')).toBe('alert');
+	expect(first?.textContent).toContain('not taken');
+	typeMalformed(note, 'half a pair: \uD800');
+	await afterEvent();
+	// The same reason again replaces the alert, so it is announced again.
+	expect(notice()).not.toBe(first);
+	expect(notice()?.textContent).toBe(first?.textContent);
+	expect(note?.value).toBe('kept');
+	expect(button(target, 'Reload file')?.disabled).toBe(false);
+	expect(button(target, 'Understand')?.disabled).toBe(false);
+	expect(entries.unsettled).toBe(0);
 	expect(await context.file('lucid')).toBe(before);
+
+	// A stage press is taken and lets go of the notice.
+	click(target, 'Understand');
+	await until(() => entries.entries[0]?.stage === 'understood', 'the stage');
+	expect(notice()).toBeNull();
+	expect(entries.entries[0]?.note).toBe('kept');
+});
+
+test('a note no file can hold after a failed save keeps the failed text and its message', async () => {
+	await using context = await setup(['lucid']);
+	const { field, target } = context;
+	const word = await context.opened('lucid');
+	const note = field('Your note for lucid');
+	context.failWrite('lucid');
+	type(note, 'never saved');
+	await until(() => word.save?.status === 'failed', 'the save to fail');
+
+	typeMalformed(note, 'never saved \uD800');
+	await afterEvent();
+	expect(note?.value).toBe('never saved');
+	expect(target.textContent).toContain('Your last change was not saved');
+	expect(target.querySelector('[data-testid="note-refusal"]')).not.toBeNull();
+
+	click(target, 'Try again');
+	await until(() => word.save?.status === 'idle', 'the retry to land');
+	expect(await context.file('lucid')).toContain('"note": "never saved"');
 });
 
 test('Delete asks first, says unsaved changes are discarded, and Cancel changes nothing', async () => {
@@ -253,8 +304,9 @@ test('Delete asks first, says unsaved changes are discarded, and Cancel changes 
 	const word = await context.opened('lucid');
 	const before = await context.file('lucid');
 	const note = field('Your note for lucid');
-	type(note, 'half a pair: \uD800');
-	flushSync();
+	context.failWrite('lucid');
+	type(note, 'never saved');
+	await until(() => word.save?.status === 'failed', 'the save to fail');
 
 	click(context.target, 'Delete');
 	expect(confirmationDialog.isOpen).toBe(true);
@@ -268,8 +320,8 @@ test('Delete asks first, says unsaved changes are discarded, and Cancel changes 
 	await Bun.sleep(10);
 	expect(entries.entries).toHaveLength(1);
 	expect(await context.file('lucid')).toBe(before);
-	expect(note?.value).toBe('half a pair: \uD800');
-	expect(word.refusedNote).toBeDefined();
+	expect(note?.value).toBe('never saved');
+	expect(word.save?.status).toBe('failed');
 });
 
 test('confirming Delete after a failed save discards the unsaved note and deletes the word', async () => {
@@ -283,20 +335,6 @@ test('confirming Delete after a failed save discards the unsaved note and delete
 
 	await context.deleteShown('confirm');
 	expect(confirmationDialog.isOpen).toBe(false);
-	expect(entries.entries).toEqual([]);
-	expect(entries.unsettled).toBe(0);
-	expect(await fileText(folder, path)).toBeUndefined();
-});
-
-test('confirming Delete with a note no file can hold discards that note and deletes the word', async () => {
-	await using context = await setup(['lucid']);
-	const { entries, field, folder } = context;
-	await context.opened('lucid');
-	const path = context.path('lucid');
-	type(field('Your note for lucid'), 'half a pair: \uD800');
-	flushSync();
-
-	await context.deleteShown('confirm');
 	expect(entries.entries).toEqual([]);
 	expect(entries.unsettled).toBe(0);
 	expect(await fileText(folder, path)).toBeUndefined();

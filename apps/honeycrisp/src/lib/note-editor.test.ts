@@ -17,11 +17,11 @@
  *   saves again
  * - Another program's change leaves the open text alone until the person
  *   reloads; a reload that fails keeps the text and its save state
- * - Typed text the editor refuses stays in its own control with the reason;
- *   it blocks only a document that changes its field, and only its own
- *   control clears it
- * - The rich-text view's unchanged note is acknowledged without a save, and
- *   only through every gate; any other unchanged note is saved again
+ * - A document the editor refuses changes nothing and keeps only why, a new
+ *   notice each time; it is not unsaved, blocks no other field, Source, or
+ *   reload, and clears on accepted input or reload
+ * - The current row itself is admitted without a save, and only through
+ *   every gate; an equal document that is not the row is saved again
  * - Fences and release refuse input; flushing waits for admitted writes
  */
 import './svelte-modules.test-support.js';
@@ -133,11 +133,11 @@ function withFields(
 
 /** What the title control gives the editor. */
 const typeTitle = (session: NoteEditor, title: string) =>
-	session.set(withFields(session, { title }), { control: 'title' });
+	session.set(withFields(session, { title }));
 
 /** What Source gives the editor. */
 const typeSource = (session: NoteEditor, body: string) =>
-	session.set(withBody(noteOf(session), body, NOW), { control: 'body' });
+	session.set(withBody(noteOf(session), body, NOW));
 
 describe('typing and saving', () => {
 	test('opening writes nothing; set gives the editor the complete note at once, unknown keys kept', async () => {
@@ -379,104 +379,82 @@ describe('the file changes', () => {
 });
 
 describe('input the row editor cannot take', () => {
-	test('a title with an unpaired surrogate stays in its control with the reason, and is never submitted', async () => {
-		const { session, text } = await open();
-		const before = session.row.text;
-		expect(typeTitle(session, 'a\uD800')).toContain('lone surrogate');
-		expect(session.refused.title).toMatchObject({ value: 'a\uD800' });
-		expect(session.refused.title?.reason).toContain('lone surrogate');
-		expect(session.row.text).toBe(before);
-		expect(session.status).toBe('dirty');
-		expect(session.unsettled).toBe(true);
-		// Nothing but the title control changes the title while it waits there.
-		expect(session.set(withFields(session, { title: 'b' }))).toContain(
-			'the title',
-		);
-		expect(session.showFile(true)).toContain('the title');
-		// Other fields go on saving.
-		expect(session.set(withFields(session, { pinned: true }))).toBeUndefined();
-		await session.waitForSaves();
-		expect(session.refused.title).toBeDefined();
-		expect(typeTitle(session, 'a')).toBeUndefined();
-		expect(session.refused.title).toBeUndefined();
-		await session.waitForSaves();
-		expect(text(PATH)).toBe(
-			canonical(noteText(), { title: 'a', pinned: true }),
-		);
-	});
-
-	test('a Source body the editor refuses stays in Source with the reason', async () => {
-		const { session } = await open();
-		expect(typeSource(session, 'Half \uD800\n')).toContain('lone surrogate');
-		expect(session.refused.body?.value).toBe('Half \uD800\n');
-		expect(typeSource(session, 'Whole\n')).toBeUndefined();
-		expect(session.refused.body).toBeUndefined();
-	});
-
-	test('held typed text blocks only a document that changes its field, and the other fields go on saving', async () => {
-		const { session, text } = await open();
-		expect(typeTitle(session, 'a\uD800')).toContain('lone surrogate');
-		expect(typeSource(session, 'Half \uD800\n')).toContain('lone surrogate');
-		// A command that leaves the title and body as the editor holds them is taken.
-		expect(
-			session.set(withFields(session, { pinned: true, folderId: 'f' })),
-		).toBeUndefined();
-		// Each control changes its own field; the other's typed text stays.
-		expect(typeSource(session, 'Typed\n')).toBeUndefined();
-		expect(session.refused.body).toBeUndefined();
-		expect(session.refused.title?.value).toBe('a\uD800');
-		// A document from anywhere else that changes the waiting title is not.
-		expect(session.set(withFields(session, { title: 'Other' }))).toContain(
-			'the title',
-		);
-		await session.waitForSaves();
-		expect(text(PATH)).toBe(
-			canonical(
-				noteText(),
-				{ pinned: true, folderId: 'f', updatedAt: NOW },
-				'Typed\n',
-			),
-		);
-	});
-
-	test('the accepted title typed again clears the title alone, and saves the same note', async () => {
+	test('a title or Source body with an unpaired surrogate changes nothing and keeps only why, a new notice each time', async () => {
 		const { session, notes } = await open();
+		const before = session.row;
 		expect(typeTitle(session, 'a\uD800')).toContain('lone surrogate');
+		expect(session.row).toBe(before);
+		const first = session.refusal;
+		expect(first?.reason).toContain('lone surrogate');
+		// The same reason again is a new notice.
+		expect(typeTitle(session, 'a\uD800')).toContain('lone surrogate');
+		expect(session.refusal).not.toBe(first);
+		expect(session.refusal?.reason).toBe(first?.reason);
 		expect(typeSource(session, 'Half \uD800\n')).toContain('lone surrogate');
-		const before = session.row.text;
-		expect(typeTitle(session, 'A')).toBeUndefined();
-		expect(session.refused.title).toBeUndefined();
-		expect(session.refused.body?.value).toBe('Half \uD800\n');
-		expect(session.row.text).toBe(before);
-		expect(session.save.status).toBe('saving');
+		expect(session.row).toBe(before);
+		// It is not unsaved text, and nothing waits on it.
+		expect(session.status).toBe('saved');
+		expect(session.unsettled).toBe(false);
+		expect(session.showFile(true)).toBeUndefined();
+		expect(session.showFile(false)).toBeUndefined();
+		expect(notes()).toBe(0);
+	});
+
+	test('a refusal blocks no other field, clears on accepted input, and a reload lets it go', async () => {
+		const { session, text } = await open();
+		expect(typeTitle(session, 'a\uD800')).toContain('lone surrogate');
+		// Any field, the title included, is taken from the editor's row.
+		expect(session.set(withFields(session, { pinned: true }))).toBeUndefined();
+		expect(session.refusal).toBeUndefined();
+		expect(typeSource(session, 'Half \uD800\n')).toContain('lone surrogate');
+		expect(typeTitle(session, 'b')).toBeUndefined();
+		expect(session.refusal).toBeUndefined();
 		await session.waitForSaves();
-		expect(notes()).toBe(1);
+		expect(text(PATH)).toBe(canonical(noteText(), { title: 'b', pinned: true }));
+
+		expect(typeTitle(session, 'c\uD800')).toContain('lone surrogate');
+		expect(await session.reload()).toBeUndefined();
+		expect(session.refusal).toBeUndefined();
+		expect(fieldsOf(session).title).toBe('b');
+	});
+
+	test('a failed save keeps its text and error beside a later refusal', async () => {
+		const { session, failWrites } = await open();
+		failWrites();
+		typeTitle(session, 'Mine');
+		await session.waitForSaves();
+		expect(session.save.status).toBe('failed');
+		expect(typeTitle(session, 'Mine\uD800')).toContain('lone surrogate');
+		expect(fieldsOf(session).title).toBe('Mine');
+		expect(session.save.status).toBe('failed');
+		expect(session.status).toBe('failed');
+		expect(session.refusal).toBeDefined();
+		expect(session.unsettled).toBe(true);
 	});
 });
 
-describe('the rich-text view', () => {
-	test('its unchanged note is acknowledged with no save; any other unchanged note saves again', async () => {
+describe('the current row itself', () => {
+	test('is admitted with no save; an equal document that is not the row saves again', async () => {
 		const { session, notes } = await open();
 		const row = noteOf(session);
-		expect(session.set(row, { control: 'rich' })).toBeUndefined();
+		expect(typeTitle(session, 'a\uD800')).toContain('lone surrogate');
+		expect(session.refusal).toBeDefined();
+		expect(session.set(row)).toBeUndefined();
+		expect(session.refusal).toBeUndefined();
 		expect(session.save.status).toBe('idle');
 		expect(notes()).toBe(0);
 		// An equal document that is not the row itself is saved.
-		expect(session.set({ ...row }, { control: 'rich' })).toBeUndefined();
+		expect(session.set({ ...row })).toBeUndefined();
 		await session.waitForSaves();
 		expect(notes()).toBe(1);
-		expect(session.set(noteOf(session))).toBeUndefined();
+		expect(session.set(withFields(session, {}))).toBeUndefined();
 		await session.waitForSaves();
 		expect(notes()).toBe(2);
 	});
 
-	test('its unchanged note passes every gate first: Source holding typed text, a stopped rename, a fence', async () => {
+	test('passes every gate first: a stopped rename, a fence', async () => {
 		const { session, notes, fence } = await open();
-		const unchanged = () => session.set(noteOf(session), { control: 'rich' });
-		expect(typeSource(session, 'Half \uD800\n')).toContain('lone surrogate');
-		expect(unchanged()).toContain('Markdown source');
-		expect(typeSource(session, 'Body.\n')).toBeUndefined();
-		await session.waitForSaves();
+		const unchanged = () => session.set(noteOf(session));
 		const step = {
 			kind: 'remove',
 			from: { path: PATH, sha256: 'unknown' },
@@ -492,17 +470,6 @@ describe('the rich-text view', () => {
 		fence();
 		expect(unchanged()).toContain('closing');
 		expect(notes()).toBe(saves);
-	});
-
-	test('a body the editor refuses from it is not kept as Source text', async () => {
-		const { session } = await open();
-		expect(
-			session.set(withBody(noteOf(session), 'Half \uD800\n', NOW), {
-				control: 'rich',
-			}),
-		).toContain('lone surrogate');
-		expect(session.refused).toEqual({});
-		expect(session.status).toBe('saved');
 	});
 });
 

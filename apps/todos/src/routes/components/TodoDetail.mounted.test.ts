@@ -24,8 +24,10 @@
  *   the same editor
  * - Another writer's change is not shown until Reload, and the todo's next
  *   edit writes over it
- * - A refused title stays in its field with why while notes keep saving,
- *   and a corrected title saves and clears it
+ * - A title or notes value the todo cannot take changes nothing: after the
+ *   event the control shows the row again, a notice says why, and the same
+ *   refusal again is a new notice. A failed save keeps its input and message
+ *   beside a later refusal, and Try again still saves it
  * - A file made unreadable elsewhere keeps the form: Reload replaces nothing,
  *   and Try again after a failed save writes the exact last input over it
  * - A whole view that unmounts while the owner keeps its todo admits nothing
@@ -355,32 +357,80 @@ test("another writer's change is not shown until Reload, and the todo's next edi
 	expect((await reading(path)).fields.title).toBe('Theirs again');
 });
 
-test('a refused title stays in the field with why, and a corrected title saves and clears it', async () => {
-	const { todos, target, get, selected, reading } = await setup();
+/**
+ * Type `value`, which must not be well formed, into `element`. Checked before
+ * the event, so a normalized replacement character cannot pass for a refusal.
+ */
+function typeMalformed(element: HTMLInputElement | HTMLTextAreaElement, value: string) {
+	element.value = value;
+	expect(element.value.isWellFormed()).toBe(false);
+	element.dispatchEvent(new window.Event('input', { bubbles: true }));
+}
+
+test('a title or notes the todo cannot take snaps back to the row after the event, and the same refusal again is a new notice', async () => {
+	const { todos, target, get, find, selected, reading } = await setup();
+	await todos.create('Milk');
+	const path = todos.selectedPath!;
+	flushSync();
+	const editor = selected();
+	const before = editor.row.text;
+	const title = get<HTMLInputElement>(TITLE);
+	const notes = get(NOTES);
+	const notice = () => find<HTMLElement>('[data-testid="todo-refusal"]');
+
+	typeMalformed(title, 'Oat \uD800');
+	await settle();
+	expect(editor.row.text).toBe(before);
+	expect(title.value).toBe('Milk');
+	const first = notice();
+	expect(first?.getAttribute('role')).toBe('alert');
+	expect(first?.textContent).toContain('not taken');
+
+	typeMalformed(notes, 'two \uD800');
+	await settle();
+	expect(notes.value).toBe('');
+	const second = notice();
+	typeMalformed(notes, 'two \uD800');
+	await settle();
+	expect(notes.value).toBe('');
+	// The same reason again replaces the alert, so it is announced again.
+	expect(notice()).not.toBe(second);
+	expect(notice()?.textContent).toBe(second?.textContent);
+	expect(editor.row.text).toBe(before);
+	expect(todos.unsaved).toBe(false);
+	expect(await reading(path)).toMatchObject({ fields: { title: 'Milk' }, body: '' });
+
+	// Accepted typing clears the notice and saves.
+	type(title, 'Oat');
+	await eventually(() => editor.isIdle);
+	expect(notice()).toBeNull();
+	expect((await reading(path)).fields.title).toBe('Oat');
+});
+
+test('a refusal after a failed save keeps the failed input and its message, and Try again saves it', async () => {
+	const { todos, opfs, target, get, find, selected, reading } = await setup();
 	await todos.create('Milk');
 	const path = todos.selectedPath!;
 	flushSync();
 	const editor = selected();
 	const title = get<HTMLInputElement>(TITLE);
+	failNextWrite(opfs, path);
+	type(title, 'Mine');
+	await eventually(() => editor.save.status === 'failed');
 
-	type(title, 'Oat \uD800');
-	flushSync();
-	expect(title.value).toBe('Oat \uD800');
-	expect(target.textContent).toContain('title cannot be saved');
-	expect(target.textContent).toContain('stays in the field');
-	// Notes still save while the title is refused.
-	type(get(NOTES), 'two cartons\n');
-	await eventually(() => editor.save.status === 'idle');
-	expect(await reading(path)).toMatchObject({
-		fields: { title: 'Milk' },
-		body: 'two cartons\n',
-	});
-	expect(title.value).toBe('Oat \uD800');
+	typeMalformed(title, 'Mine \uD800');
+	await settle();
+	// The control shows the accepted, unsaved input, not the file.
+	expect(title.value).toBe('Mine');
+	expect(editor.save.status).toBe('failed');
+	expect(target.textContent).toContain('Not saved');
+	expect(find('[data-testid="todo-refusal"]')?.textContent).toContain('not taken');
+	expect(todos.unsaved).toBe(true);
 
-	type(title, 'Oat');
+	click(target, 'Try again');
 	await eventually(() => editor.isIdle);
-	expect(target.textContent).not.toContain('cannot be saved');
-	expect((await reading(path)).fields.title).toBe('Oat');
+	expect((await reading(path)).fields.title).toBe('Mine');
+	expect(target.textContent).not.toContain('Not saved');
 });
 
 test("notes and source show LF, and typing in them keeps the file's CRLF and undeclared keys", async () => {

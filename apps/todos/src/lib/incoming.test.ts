@@ -207,7 +207,7 @@ function fieldsOf(editor: TodoEditor) {
 /** What the notes control sends: the complete row on screen with `notes`. */
 function typeNotes(editor: TodoEditor, notes: string) {
 	const row = fieldsOf(editor);
-	return editor.set({ ...row, body: notes }, { control: 'notes' });
+	return editor.set({ ...row, body: notes });
 }
 
 /**

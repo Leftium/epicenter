@@ -14,17 +14,17 @@
  * - A save that failed or whose answer was lost keeps the input shown and
  *   saves again on later input; reloading replaces the input with
  *   the file, and a reload that cannot read keeps both input and failure
- * - A note no file can hold is kept as typed with its reason and sends
- *   nothing; the word is not reloaded or left without asking until that
- *   note is corrected, discarded, or deleted with the word
+ * - A note no file can hold changes nothing and keeps only why, a new notice
+ *   each time; it is not unsaved, a stage press proceeds beside it, and a
+ *   failed save stays beside it until accepted input or a reload
  * - No save creates a gone file; the word stays listed until it is let go
  * - A file that is not a valid word is repaired as exact text through the
  *   same editor
  * - Closing and deleting stop every view of the word first, then wait for
  *   the saves already admitted. A delete is fixed to what the learner was
  *   shown when they pressed it, and a refused delete sends no delete at all
- * - A delete discards a failed save or a refused note without saving again;
- *   a delete that does not happen keeps them exactly
+ * - A delete discards a failed save without saving again; a delete that
+ *   does not happen keeps it exactly
  * - A delete whose answer was lost keeps the word until its file is read
  *   again or the word is let go
  *
@@ -397,37 +397,50 @@ test('a reload that cannot read the file keeps the input and the failure', async
 	expect(word.missing).toBe(false);
 });
 
-test('a note no file can hold is kept as typed with its reason, sends nothing, and holds reloading until it is corrected or discarded', async () => {
+test('a note no file can hold changes nothing and keeps only why, a new notice each time; a stage press proceeds, and a failed save stays beside it', async () => {
 	await using context = await setup();
 	const { entries, id } = context;
 	const word = entries.word(id);
 	await word.open();
+	word.inputNote('kept');
+	await idle(word);
 	const before = await context.file();
 
 	expect(word.inputNote('half a pair: \uD800')).toBeNull();
-	expect(word.note()).toBe('half a pair: \uD800');
-	expect(word.refusedNote?.reason).toBeTruthy();
+	expect(word.note()).toBe('kept');
+	const first = word.refusal;
+	expect(first?.reason).toBeTruthy();
 	expect(word.save?.status).toBe('idle');
-	// Leaving the page asks first, and the word is not reloaded over it.
-	expect(word.unsettled).toBe(true);
-	expect(entries.unsettled).toBe(1);
-	expect(await word.reload()).toContain('Correct it or discard it');
-	expect(word.note()).toBe('half a pair: \uD800');
+	// Nothing was typed into the word, so leaving does not ask.
+	expect(word.unsettled).toBe(false);
+	expect(entries.unsettled).toBe(0);
+	// The same refusal again is a new notice with the same reason.
+	word.inputNote('half a pair: \uD800');
+	expect(word.refusal).not.toBe(first);
+	expect(word.refusal?.reason).toBe(first?.reason);
 	expect(await context.file()).toBe(before);
 
-	// A corrected note is taken and saved.
-	expect(word.inputNote('half a pair: fixed')).toBeNull();
-	expect(word.refusedNote).toBeUndefined();
-	await idle(word);
+	// A stage press is taken beside it and lets go of the notice.
+	expect(await word.setStage('recognized')).toBeNull();
+	expect(word.refusal).toBeUndefined();
 	expect(await context.reopened()).toEqual([
-		{ text: 'lucid', note: 'half a pair: fixed', stage: 'new' },
+		{ text: 'lucid', note: 'kept', stage: 'recognized' },
 	]);
 
-	// Discarding another refused note shows the saved one again.
+	// A failed save keeps its note and failure beside a later refusal.
+	context.failWrite('fails');
+	word.inputNote('failed note');
+	await idle(word);
 	word.inputNote('\uDC00');
-	expect(word.refusedNote).toBeDefined();
-	word.discardRefusedNote();
-	expect(word.note()).toBe('half a pair: fixed');
+	expect(word.note()).toBe('failed note');
+	expect(word.save?.status).toBe('failed');
+	expect(word.refusal).toBeDefined();
+	expect(word.unsettled).toBe(true);
+
+	// Reloading reads the file over both.
+	expect(await word.reload()).toBeNull();
+	expect(word.refusal).toBeUndefined();
+	expect(word.note()).toBe('kept');
 	expect(word.unsettled).toBe(false);
 });
 
@@ -663,22 +676,22 @@ test('a delete after a failed save discards the unsaved note and removes the wor
 	expect(entries.unsettled).toBe(0);
 });
 
-test('a delete with a note no file can hold discards that note and removes the word', async () => {
+test('a delete after a note no file can hold removes the word and lets go of the notice', async () => {
 	await using context = await setup();
 	const { entries, holds, id, folder } = context;
 	const word = entries.word(id);
 	await word.open();
 	word.inputNote('half a pair: \uD800');
-	expect(word.refusedNote).toBeDefined();
+	expect(word.refusal).toBeDefined();
 
 	expectOk(await entries.remove(listed(entries, id)));
 	expect(holds.deletes).toBe(1);
 	expect(await tableFiles(folder, 'entries')).toEqual([]);
-	expect(word.refusedNote).toBeUndefined();
+	expect(word.refusal).toBeUndefined();
 	expect(entries.unsettled).toBe(0);
 });
 
-test('a delete refused because the word changed elsewhere keeps a failed note and a refused note exactly as they were', async () => {
+test('a delete refused because the word changed elsewhere keeps a failed note exactly as it was', async () => {
 	await using context = await setup();
 	const { browser, entries, holds, id, path } = context;
 	const word = entries.word(id);
@@ -695,30 +708,17 @@ test('a delete refused because the word changed elsewhere keeps a failed note an
 	expect(word.save?.status).toBe('failed');
 	expect(word.fenced).toBe(false);
 
-	// With saving idle, a refused delete reads the word again, but not over a refused note.
+	// With saving idle, a refused delete reads the word again, which also
+	// lets go of why an earlier note was not taken.
 	expect(await word.reload()).toBeNull();
 	expect(word.note()).toBe('theirs');
 	word.inputNote('half a pair: \uD800');
+	expect(word.refusal).toBeDefined();
 	browser.put(path, theirs?.replace('theirs', 'theirs again') ?? '');
 	expect(expectErr(await entries.remove(listed(entries, id))).name).toBe('Changed');
-	expect(word.note()).toBe('half a pair: \uD800');
-	expect(word.refusedNote).toBeDefined();
+	await until(() => word.note() === 'theirs again', 'the word read again');
+	expect(word.refusal).toBeUndefined();
 	expect(await context.file()).toContain('theirs again');
-});
-
-test('a delete that loses its answer keeps a refused note in the word', async () => {
-	await using context = await setup();
-	const { id } = context;
-	const entries = await unconfirmedDeletes(context, false);
-	const word = entries.word(id);
-	await word.open();
-	word.inputNote('half a pair: \uD800');
-
-	expect(expectErr(await entries.remove(listed(entries, id))).name).toBe('Unconfirmed');
-	expect(word.deletion).toBeDefined();
-	expect(word.note()).toBe('half a pair: \uD800');
-	expect(word.refusedNote).toBeDefined();
-	await entries.close();
 });
 
 test('a delete never removes a version of the word this page did not show, and the word then shows that version', async () => {

@@ -21,10 +21,11 @@
  *   rename, delete, or reload of this note runs, while a rename or delete of it
  *   stopped short or the person stopped tracking one, and for good once
  *   released. Refused input changes nothing in the editor.
- * - Typed text the editor refused. A title or Markdown source the file cannot
- *   hold exactly (an unpaired surrogate) stays in that control with the
- *   reason, because the control would otherwise snap back to the editor's
- *   value. It is never submitted, and it is not a draft of the note.
+ * - Why the last input or choice was refused. Nothing typed is kept: a title
+ *   or Markdown source the file cannot hold exactly (an unpaired surrogate)
+ *   changes nothing, and its control shows the editor's value again. Only
+ *   why is kept, beside the save's own state, until input is taken or a
+ *   reload succeeds. It is not unsaved text and holds nothing up.
  * - The rename or delete being tracked, and one the person stopped tracking.
  *
  * Views keep their own mount guard: a control something still holds can
@@ -51,17 +52,6 @@ const UNENCODABLE =
 type ReloadError = NonNullable<
 	Awaited<ReturnType<RowEditor<NoteFields>['reload']>>['error']
 >;
-
-/** A text control whose typed value the editor can refuse. */
-export type TypedField = 'title' | 'body';
-/**
- * The control a complete document was composed in. A title or Source control
- * keeps a value the editor refuses; the rich-text view shows only what the
- * editor acknowledged.
- */
-export type NoteControl = TypedField | 'rich';
-/** What the person typed in one control and the editor refused, and why. */
-export type RefusedInput = { readonly value: string; readonly reason: string };
 
 /** A rename or delete the person stopped tracking; nothing saves by itself until they choose. */
 export type NoteHold = {
@@ -119,11 +109,6 @@ export function reloadProblem(error: ReloadError): string {
 	}
 }
 
-const FIELD_NAMES: Record<TypedField, string> = {
-	title: 'the title',
-	body: 'the Markdown source',
-};
-
 export function createNoteEditor(
 	native: RowEditor<NoteFields>,
 	{
@@ -144,9 +129,12 @@ export function createNoteEditor(
 	let raw = $state(rawMode);
 	let pathChange = $state.raw<PathChange | undefined>();
 	let hold = $state.raw<NoteHold | undefined>();
-	/** Why the last input or choice was refused; the next accepted one clears it. */
-	let refusal = $state<string | undefined>();
-	let refused = $state.raw<Partial<Record<TypedField, RefusedInput>>>({});
+	/**
+	 * Why the last input or choice was refused; the next accepted one clears
+	 * it. A new object for each refusal, so the same reason twice is announced
+	 * twice.
+	 */
+	let refusal = $state.raw<{ readonly reason: string } | undefined>();
 	/** Why the person's last reload loaded nothing, until a reload loads or input is taken. */
 	let reloadError = $state.raw<ReloadError | undefined>();
 	/** Path changes and departures running: they take no input. */
@@ -187,55 +175,31 @@ export function createNoteEditor(
 
 	/**
 	 * Give the structured note a complete document: every field to keep,
-	 * unknown keys included, and the body. A key left out is removed. Taken
-	 * only while the note reads as valid and shows its fields. Answers why it
-	 * was not taken.
+	 * unknown keys included, and the body, exactly as it is to be written. A
+	 * key left out is removed. Taken only while the note reads as valid and
+	 * shows its fields. A document the editor refuses changes nothing; only
+	 * why is kept. Answers why it was not taken.
 	 *
-	 * Typed text a control holds blocks a document that changes its field
-	 * from what the editor holds; the control it was typed in is the one that
-	 * changes it. A `title` or `body` control keeps its own value when the
-	 * editor refuses it, and an accepted one clears it. The rich-text view
-	 * (`rich`) never writes over Source that holds typed text, and keeps
-	 * nothing the editor refuses. For it alone, the current row unchanged is
-	 * taken without a save: a paragraph Markdown has no spelling for is shown
-	 * and changes nothing. Any other unchanged document is saved again, which
-	 * writes the file in its canonical form.
+	 * The current row itself is taken without a save, after every gate: the
+	 * rich-text view hands it back for an edit Markdown has no spelling for
+	 * (a new empty paragraph), which is shown and changes nothing. Any other
+	 * document, even an equal one, is saved again, which writes the file in
+	 * its canonical form.
 	 */
-	function set(
-		next: CanonicalDocument,
-		{ control }: { control?: NoteControl } = {},
-	): string | undefined {
+	function set(next: CanonicalDocument): string | undefined {
 		const why = blocked();
 		if (why !== undefined) return why;
 		const { row } = native.get();
 		if (row.status !== 'valid' || raw)
 			return 'This note is not showing its fields.';
-		const changes: Record<TypedField, boolean> = {
-			title: next.fields.title !== row.fields.title,
-			body: next.body !== row.body,
-		};
-		const held = (Object.keys(refused) as TypedField[]).find(
-			(field) =>
-				(field === 'body' && control === 'rich') ||
-				(field !== control && changes[field]),
-		);
-		if (held !== undefined) {
-			refusal = `What you typed in ${FIELD_NAMES[held]} is not saved. Change it there first.`;
-			return refusal;
+		if (next === row) {
+			accepted();
+			return undefined;
 		}
-		if (control === 'rich' && next === row) return undefined;
 		const { error } = native.set(next);
-		if (control === 'title' || control === 'body') {
-			const { [control]: _settled, ...others } = refused;
-			const value = control === 'title' ? next.fields.title : next.body;
-			refused =
-				error === null || typeof value !== 'string'
-					? others
-					: { ...others, [control]: { value, reason: error.message } };
-		}
 		if (error !== null) {
-			refusal = error.message;
-			return refusal;
+			refusal = { reason: error.message };
+			return error.message;
 		}
 		accepted();
 		return undefined;
@@ -253,8 +217,7 @@ export function createNoteEditor(
 	const unsettled = () =>
 		editor.save.status !== 'idle' ||
 		pathChange !== undefined ||
-		hold !== undefined ||
-		Object.keys(refused).length > 0;
+		hold !== undefined;
 
 	return {
 		path,
@@ -267,10 +230,6 @@ export function createNoteEditor(
 		/** The editor's publication: idle, saving, or failed. */
 		get save() {
 			return editor.save;
-		},
-		/** Typed values the editor refused, by the control they were typed in. */
-		get refused() {
-			return refused;
 		},
 		/** Why the person's last reload loaded nothing. */
 		get reloadError() {
@@ -292,7 +251,10 @@ export function createNoteEditor(
 		get hold() {
 			return hold;
 		},
-		/** Why the last input or choice was not taken. */
+		/**
+		 * Why the last input or choice was not taken, or `undefined`. Nothing
+		 * typed is kept: the controls show what the editor holds.
+		 */
 		get refusal() {
 			return refusal;
 		},
@@ -322,7 +284,7 @@ export function createNoteEditor(
 			if (save.status === 'failed')
 				return save.error.name === 'Unconfirmed' ? 'unconfirmed' : 'failed';
 			if (hold !== undefined) return 'failed';
-			return Object.keys(refused).length > 0 ? 'dirty' : 'saved';
+			return 'saved';
 		},
 		/** Whether leaving now could lose text, leave an outcome unknown, or skip a choice. */
 		get unsettled() {
@@ -346,22 +308,18 @@ export function createNoteEditor(
 		},
 		/** Record that a view refused a change; the editor is unchanged. */
 		refuse(reason: string) {
-			refusal = reason;
+			refusal = { reason };
 		},
 		/**
 		 * Show the whole file (`true`) or the note's fields (`false`). Nothing
 		 * is saved or discarded. The fields show only for text that reads as a
-		 * note, and the file only once no typed value is waiting in a field.
+		 * note.
 		 */
 		showFile(on: boolean): string | undefined {
 			const why = fenced();
 			if (why !== undefined) return why;
 			const { row } = native.get();
-			if (on) {
-				const waiting = (Object.keys(refused) as TypedField[])[0];
-				if (waiting !== undefined)
-					return `What you typed in ${FIELD_NAMES[waiting]} is not saved: ${refused[waiting]?.reason}`;
-			} else if (row.status !== 'valid')
+			if (!on && row.status !== 'valid')
 				return `This file cannot be opened as a note yet: ${problemsOf(row.error)[0]}`;
 			raw = on;
 			return undefined;
@@ -400,7 +358,6 @@ export function createNoteEditor(
 					reloadError = error;
 					return reloadProblem(error);
 				}
-				refused = {};
 				hold = undefined;
 				accepted();
 				return undefined;
@@ -485,7 +442,7 @@ export function createNoteEditor(
 		release() {
 			if (released) return;
 			released = true;
-			refused = {};
+			refusal = undefined;
 		},
 	};
 }

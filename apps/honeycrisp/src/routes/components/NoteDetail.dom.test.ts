@@ -28,7 +28,10 @@
  *   afterwards saves again
  * - A save that finds no file offers Save as a note at once, with no reload,
  *   and a later save that lands clears the error and the offer
- * - A title the editor refuses stays in its control with the reason
+ * - A title or Source body the editor refuses changes nothing: after the
+ *   event the control shows the note again, a notice says why, and the same
+ *   refusal again is a new notice. A failed save keeps its text and error
+ *   beside it, and an empty paragraph from rich text is shown with no save
  * - The file view shows LF and writes the file's own line endings back, and
  *   its control takes nothing once the fields show again
  * - Both status bars name an unconfirmed save in the folder's own words
@@ -410,30 +413,53 @@ test('a new editor with the same content keeps the rich-text view and its undo, 
 	expect(a.row).toMatchObject({ body: 'Body. Typed\n' });
 });
 
-test('rich-text Enter that leaves the body as it is shows nothing while Source holds text the editor refused', async () => {
+/**
+ * Type `value`, which must not be well formed, into `element`. Checked before
+ * the event, so a normalized replacement character cannot pass for a refusal.
+ */
+function typeMalformed(element: HTMLInputElement | HTMLTextAreaElement, value: string) {
+	element.value = value;
+	expect(element.value.isWellFormed()).toBe(false);
+	element.dispatchEvent(new window.Event('input', { bubbles: true }));
+}
+
+test('Source the editor refuses snaps back to the body after the event, says why each time, and rich text goes on without a save', async () => {
 	const { a, target } = await view();
 	const rich = only<HTMLElement>(target, '[aria-label="Note text"]');
 	click(target, 'Source');
 	flushSync();
-	type(
-		only<HTMLTextAreaElement>(target, 'textarea[aria-label="Markdown source"]'),
-		'Half \uD800\n',
+	const source = only<HTMLTextAreaElement>(
+		target,
+		'textarea[aria-label="Markdown source"]',
 	);
+	const shown = source.value;
+	const before = a.row;
+	typeMalformed(source, 'Half \uD800\n');
 	await tick();
-	expect(a.refused.body?.value).toBe('Half \uD800\n');
+	expect(source.value).toBe(shown);
+	expect(a.row).toBe(before);
+	const notice = () => target.querySelector('[data-testid="note-refusal"]');
+	const first = notice();
+	expect(first?.getAttribute('role')).toBe('alert');
+	expect(first?.textContent).toContain('lone surrogate');
+	typeMalformed(source, 'Half \uD800\n');
+	await tick();
+	// The same reason again replaces the alert, so it is announced again.
+	expect(notice()).not.toBe(first);
+	expect(notice()?.textContent).toBe(first?.textContent);
+	expect(source.value).toBe(shown);
+	// The note is not unsaved, and the rich-text view takes an edit Markdown
+	// cannot spell (a new empty paragraph) with no save.
+	expect(only(target, '[data-testid="draft-status"]').getAttribute('data-status')).toBe('saved');
 	click(target, 'Rich text');
 	flushSync();
-	const before = a.row;
 	rich.dispatchEvent(
 		new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }),
 	);
 	flushSync();
-	expect(rich.querySelectorAll('p')).toHaveLength(1);
+	expect(rich.querySelectorAll('p')).toHaveLength(2);
 	expect(a.row).toBe(before);
 	expect(a.save.status).toBe('idle');
-	expect(target.textContent).toContain(
-		'What you typed in the Markdown source is not saved',
-	);
 });
 
 test('a rich-text toolbar button from a view that is gone changes nothing', async () => {
@@ -552,22 +578,38 @@ test('a save that finds no file offers Save as a note at once and keeps the text
 	expect(buttonNamed(target, 'Save as a note')).toBeUndefined();
 });
 
-test('a title the editor refuses stays in its control with the reason', async () => {
-	const { a, target } = await view();
+test('a title the editor refuses snaps back after the event with the reason, and a failed save keeps its text and error beside it', async () => {
+	const { a, target, failWrites } = await view();
 	const title = only<HTMLInputElement>(target, 'input[aria-label="Title"]');
 	const before = a.row.text;
-	type(title, 'Half \uD800');
+	typeMalformed(title, 'Half \uD800');
 	await tick();
-	// The binding checks its getter after input: the typed value is what it reads.
-	expect(title.value).toBe('Half \uD800');
+	// The binding checks its getter after input and shows the note's title.
+	expect(title.value).toBe('Alpha');
 	expect(a.row.text).toBe(before);
-	expect(target.textContent).toContain(
-		'what you typed in the title cannot be written',
-	);
+	const notice = () => target.querySelector('[data-testid="note-refusal"]');
+	expect(notice()?.textContent).toContain('lone surrogate');
 	type(title, 'Whole');
 	await tick();
 	expect(titleOf(a)).toBe('Whole');
-	expect(target.textContent).not.toContain('cannot be written');
+	expect(notice()).toBeNull();
+
+	failWrites();
+	type(title, 'Mine');
+	await a.waitForSaves();
+	await tick();
+	expect(a.save.status).toBe('failed');
+	typeMalformed(title, 'Mine \uD800');
+	await tick();
+	expect(title.value).toBe('Mine');
+	expect(a.save.status).toBe('failed');
+	expect(target.textContent).toContain('Not saved');
+	expect(notice()).not.toBeNull();
+	failWrites(false);
+	click(target, 'Try again');
+	expect((await a.waitForSaves()).error).toBeNull();
+	await tick();
+	expect(target.textContent).not.toContain('Not saved');
 });
 
 test('the file view shows LF, writes the file’s own line endings, and its control takes nothing once the fields show again', async () => {

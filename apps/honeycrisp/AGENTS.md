@@ -87,10 +87,12 @@ against the code. The constraints below apply to every edit here.
   an old request, and `waitForSaves` waits for every consecutive admitted write and
   reports the final outcome.
 - Typed text the editor refuses (a title or Markdown source with an
-  unpaired surrogate) stays in its own control with the reason shown, and
-  counts as unsaved. It is never submitted and never grows into a whole
-  draft. Nothing releases the session while such text waits: a release
-  would erase it.
+  unpaired surrogate) changes nothing: its control shows the editor's value
+  again, and the note editor keeps only why, shown beside the save state
+  until input is taken or a reload succeeds. Do not keep the refused text,
+  which control it came from, or count it as unsaved; the person types it
+  again. A failed or unconfirmed save of accepted text is different: that
+  text stays in the editor.
 - Arbitrary text files remain raw file workflows over their exact text. Do
   not invent a table schema for them or introduce a second current-content
   store. Note repair is not one of them.
@@ -121,8 +123,7 @@ against the code. The constraints below apply to every edit here.
   saving the editor's exact text as a file is a separate exclusive create,
   at the note's own path when it is free, else as a new note; a file found
   at either path stays as it is. Refuse text a file cannot hold exactly (an
-  unpaired surrogate) rather than let encoding replace it, and refuse while
-  refused typed text waits in a field. Never try another
+  unpaired surrogate) rather than let encoding replace it. Never try another
   path after a create whose reply was lost. Keep the exact text on screen
   until an editor opens over the new file, or the person dismisses it.
 - Every ProseMirror transaction that changes the document goes through
@@ -138,9 +139,10 @@ against the code. The constraints below apply to every edit here.
 - Adding a node or mark to `editor/schema.ts` requires its Markdown in both
   directions and tests for both. Source the schema cannot hold is refused by
   `inspectNoteBody`, not dropped.
-- A view shows content only after the note's editor admits it, apart from refused
-  typed text kept in its own control. If the editor refuses a change,
-  the rich view refuses that transaction too.
+- A view shows content only after the note's editor admits it. If the editor
+  refuses a change, the rich view refuses that transaction too. The editor
+  admits its current row itself without saving, which is how an edit
+  Markdown cannot spell (a new empty paragraph) is shown.
 - The rich-text view's lifetime depends on one boolean (`editable`) and its
   element. Do not make its mount effect read anything that changes on a
   keystroke; that recreates the view and erases undo history.

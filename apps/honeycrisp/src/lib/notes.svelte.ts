@@ -1132,8 +1132,7 @@ export function createNotes(host: NotesHost) {
 
 	/**
 	 * Save the exact text a note's editor holds as a new file, after its last
-	 * save or reload found no file, and only while no typed value the editor
-	 * refused is waiting in a field: at its own path while that is free, else
+	 * save or reload found no file: at its own path while that is free, else
 	 * as a new note. The row editor never creates a file, so each is an
 	 * exclusive create that refuses when anything is there, and a file found
 	 * there stays as it is. A first create that finds its own path taken goes
@@ -1155,10 +1154,6 @@ export function createNotes(host: NotesHost) {
 		const { session } = file;
 		if (!session.missing)
 			return 'This note’s file was there when it was last saved or read. Save over it instead.';
-		// The handoff releases this session, and with it typing the editor
-		// refused; the new file would hold only the text before it.
-		if (Object.keys(session.refused).length > 0)
-			return 'Something you typed in this note is not saved yet: a file cannot hold one of its characters. Fix it where you typed it, then save the note as a file.';
 		const { row, save } = session.get();
 		if (session.busy || save.status === 'saving')
 			return 'A save, rename, or delete of this note is still running. Try again when it finishes.';

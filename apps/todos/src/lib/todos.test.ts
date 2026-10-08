@@ -45,8 +45,8 @@
  *   replaced by the todo's next edit, and Reload shows it instead
  * - A failed todo save keeps its input; later edits save again;
  *   Reload replaces the input with the file, and closes a todo that is gone
- * - A todo title or notes value that cannot be saved stays in its field and
- *   counts as unsaved for leaving, rename, delete, and close, until Reload
+ * - A todo row that cannot be saved changes nothing and keeps only why; it
+ *   is not unsaved for leaving, rename, delete, or close
  * - A folder with contents is never deleted from the browser
  * - Closing fences the app at once: later calls issue no folder or terminal
  *   work, a held open, listing, create, or rename retains nothing new, and
@@ -68,6 +68,7 @@ import {
 	MoveError,
 	openFolder,
 } from '@epicenter/folder/browser';
+import { withFileNewlines } from '@epicenter/folder/file-browser';
 import { type Err, Ok } from 'wellcrafted/result';
 import { expectErr, expectOk } from 'wellcrafted/testing';
 import {
@@ -200,16 +201,13 @@ function fieldsOf(editor: TodoEditor) {
 /** What the title control sends: the complete row on screen with `title`. */
 function typeTitle(editor: TodoEditor, title: string) {
 	const row = fieldsOf(editor);
-	return editor.set(
-		{ ...row, fields: { ...row.fields, title } },
-		{ control: 'title' },
-	);
+	return editor.set({ ...row, fields: { ...row.fields, title } });
 }
 
-/** What the notes control sends: the complete row on screen with `notes`. */
+/** What the notes control sends: the complete row on screen with `notes` in the file's newlines. */
 function typeNotes(editor: TodoEditor, notes: string) {
 	const row = fieldsOf(editor);
-	return editor.set({ ...row, body: notes }, { control: 'notes' });
+	return editor.set({ ...row, body: withFileNewlines(notes, row.text) });
 }
 
 /** What the done checkbox sends: the complete row on screen with `done`. */
@@ -683,33 +681,29 @@ test('a todo row whose editor did not open shows that failure, never a plain tex
 	expect(fieldsOf(todoEditor(todos)).fields.title).toBe('Note');
 });
 
-test('a refused todo value stays in its field: leaving, rename, delete, and close count it as unsaved, and only Reload drops it', async () => {
+test('a todo row that cannot be saved changes nothing and holds nothing up: leaving, rename, and close proceed', async () => {
 	const todos = await open();
 	await todos.create('Milk');
 	const path = todos.selectedPath!;
 	const saved = await text(todos, path);
 	const editor = todoEditor(todos);
 
-	expect(typeNotes(editor, 'mine \uD800')).toContain('cannot be saved');
-	expect(editor.refused.notes?.value).toBe('mine \uD800');
-	expect(todos.unsaved).toBe(true);
-	expect(todos.saveProblems).toBe(1);
-	expect(await todos.rename(path, 'oat.md')).toBe(UNSETTLED);
-	expect((await todos.deletionFor(path)).error).toBe(UNSETTLED);
-	expect(todoEditor(todos)).toBe(editor);
-	expect(editor.refused.notes?.value).toBe('mine \uD800');
-	expect(await text(todos, path)).toBe(saved);
-
-	// Reload is the deliberate discard.
-	expect(await todos.reload(path)).toBeUndefined();
-	expect(editor.refused).toEqual({});
+	expect(typeNotes(editor, 'mine \uD800')).toContain('not taken');
+	expect(editor.refusal?.reason).toContain('lone surrogate');
 	expect(fieldsOf(editor).body).toBe('');
 	expect(todos.unsaved).toBe(false);
+	expect(todos.saveProblems).toBe(0);
+	expect(await text(todos, path)).toBe(saved);
 
-	// Close names a path whose refused value it could not save.
-	expect(typeTitle(editor, '\uD800')).toContain('cannot be saved');
-	expect(await close(todos)).toEqual({ unsettled: [path] });
-	expect(editor.refused.title?.value).toBe('\uD800');
+	// Rename settles as usual; the editor at the new path starts with no notice.
+	expect(await todos.rename(path, 'oat.md')).toBeUndefined();
+	const moved = todoEditor(todos);
+	expect(moved).not.toBe(editor);
+	expect(moved.refusal).toBeUndefined();
+	expect(await text(todos, 'todos/oat.md')).toBe(saved);
+
+	expect(typeTitle(moved, '\uD800')).toContain('not taken');
+	expect(await close(todos)).toEqual({ unsettled: [] });
 });
 
 test('a removed raw draft can be explicitly discarded after its save conflicts', async () => {
@@ -3146,21 +3140,24 @@ test('close waits for folder removal before releasing the folder', async () => {
 	expect(calls).toContain('close');
 });
 
-test('a missing-file reload keeps refused input until deliberate Close', async () => {
+test('a missing-file reload keeps accepted input and the notice until deliberate Close', async () => {
 	const todos = await open(withoutHints);
 	const path = 'todos/milk.md';
 	expectOk(await todos.folder.files.create(path, ROW));
 	await todos.refresh();
 	await todos.open(path);
 	const editor = todoEditor(todos);
-	expect(typeNotes(editor, 'kept\uD800')).toContain('cannot be saved');
+	expect(typeNotes(editor, 'kept\n')).toBeUndefined();
+	await written(editor);
+	expect(typeNotes(editor, 'kept\uD800')).toContain('not taken');
 	await removeNow(todos, path);
 	expect(await todos.reload(path)).toContain('could not be read');
 	expect(todoEditor(todos)).toBe(editor);
-	expect(editor.refused.notes?.value).toBe('kept\uD800');
-	expect(todos.unsaved).toBe(true);
+	expect(fieldsOf(editor).body).toBe('kept\n');
+	expect(editor.refusal).toBeDefined();
 	expect(typeTitle(editor, 'Attempt')).toBeUndefined();
 	await written(editor);
+	expect(todos.unsaved).toBe(true);
 	todos.discard(path);
 	expect(todos.selection).toBeUndefined();
 });

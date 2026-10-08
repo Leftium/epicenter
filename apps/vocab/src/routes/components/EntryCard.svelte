@@ -74,7 +74,7 @@
 		const chosen = entry;
 		confirmationDialog.open({
 			title: `Delete “${chosen.text}”?`,
-			description: 'Its note and stage are deleted with it. Any change not saved yet, including a note that could not be saved, is discarded.',
+			description: 'Its note and stage are deleted with it. Any change not saved yet is discarded.',
 			confirm: { text: 'Delete', variant: 'destructive' },
 			async onConfirm() {
 				const { error: removeError } = await words.remove(chosen);
@@ -123,12 +123,11 @@
 				(text) => word.inputNote(text)
 			}
 		/>
-		{#if word.refusedNote !== undefined}
-			<!-- The note as typed stays in the field above; nothing was sent. -->
-			<div role="alert" class="mt-2 space-y-2 text-xs text-destructive">
-				<p>Your note cannot be saved as typed, so nothing was sent. It stays in the field until you correct it, discard it, or delete the word. ({word.refusedNote.reason})</p>
-				<Button size="sm" variant="ghost" onclick={() => { if (mounted) word.discardRefusedNote(); }}>Discard this note</Button>
-			</div>
+		{#if word.refusal !== undefined}
+			<!-- Nothing typed is kept: the field above shows the note before it. The save's own state stays separate, below. -->
+			{#key word.refusal}
+				<p role="alert" class="mt-2 text-xs text-warning" data-testid="note-refusal">Your last change to the note was not taken, so the note before it is shown. ({word.refusal.reason})</p>
+			{/key}
 		{/if}
 		{#if word.openError !== undefined && !word.missing}
 			<div role="alert" class="mt-2 space-y-2 text-xs text-destructive">
@@ -171,6 +170,6 @@
 		</div>
 	{:else if word.row !== undefined}
 		<!-- The editor read the file once; another tab's change shows only when the learner asks. -->
-		<Button class="mt-2" size="sm" variant="ghost" disabled={word.fenced || word.refusedNote !== undefined} onclick={() => act(() => word.reload())}>Reload file</Button>
+		<Button class="mt-2" size="sm" variant="ghost" disabled={word.fenced} onclick={() => act(() => word.reload())}>Reload file</Button>
 	{/if}
 </article>

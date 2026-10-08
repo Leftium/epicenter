@@ -19,19 +19,16 @@
  *   the views and follows a rename.
  * - Admission. `set` takes a complete row only while the row reads as valid
  *   and shows its fields, and no fence or release refuses input. The views
- *   compose it from the current `row`; this module merges nothing.
- * - Refused fields. A title or notes value the row cannot be written with
- *   (it has no canonical form) is accepted by nothing, so this editor keeps
- *   the value its control supplied and why, and the field shows it for
- *   correction. It is not a second row: the rest of the row stays the
- *   native editor's. A row that keeps that field as the native editor holds
- *   it still saves; one that changes it is refused unless it comes from that
- *   field's own control, whose next accepted value clears it. Only a
- *   deliberate reload drops it. Until then it counts as unsaved input, so
- *   leaving, rename, delete, close, and a departure treat it as not settled.
- * - Fences. Rename, delete, a recovery of an incoming update, close, and a
- *   departure refuse input while they run; rename, delete, and close first
- *   wait for admitted writes and stop when one failed or a field is refused.
+ *   compose it from the current `row`, exactly as it should be written; this
+ *   module merges nothing.
+ * - Why the last row was not taken. A row with no canonical form (a lone
+ *   surrogate) changes nothing: the row stays as it was and its controls
+ *   show it. Only why is kept, beside the save's own state, until input is
+ *   taken, a reload takes the file, or the editor is released. It is not
+ *   unsaved input and holds nothing up.
+ * - Fences. Rename, delete, a recovery of an incoming update, close, a
+ *   departure, and the person's reload refuse input while they run; rename,
+ *   delete, and close first wait for admitted writes and stop when one failed.
  * - Release. The owner (`todos.svelte.ts`) retains one editor per path and
  *   releases it when it forgets the path or a rename moves the row. A
  *   released editor refuses input and commands for good. An editor's path
@@ -80,12 +77,6 @@ export function describeSaveError(error: RowSaveError): string {
 /** Why fields input was refused while the row shows its source. */
 const IN_SOURCE = 'This todo is open in its source editor. Change it there.';
 
-/** A field whose typed value is kept because the row could not take it. */
-type RefusedField = 'title' | 'notes';
-
-/** One refused field's typed value, as the field shows it, and why it was refused. */
-type Refusal = { readonly value: string; readonly message: string };
-
 /** What a person is told about a reload that kept their input, including a missing file. */
 export function describeReloadError(error: RowReloadError): string {
 	return error.name === 'InputChanged'
@@ -105,8 +96,11 @@ export function createTodoEditor(
 	let released = $state(false);
 	/** Epicenter asks to quit or restart. Reversible, unlike a release. */
 	let departing = $state(false);
-	/** Typed title or notes values the row could not take; see the module comment. */
-	let refusals = $state.raw<Partial<Record<RefusedField, Refusal>>>({});
+	/**
+	 * Why the last row was not taken; see the module comment. A new object for
+	 * each refusal, so the same reason twice is announced twice.
+	 */
+	let refusal = $state.raw<{ readonly reason: string } | undefined>();
 
 	/** Why this editor takes no input or command now, if it does not. */
 	function blocked(): string | undefined {
@@ -116,73 +110,35 @@ export function createTodoEditor(
 		return undefined;
 	}
 
-	function hasRefusals() {
-		return Object.keys(refusals).length > 0;
-	}
-
 	/**
 	 * Give the row a complete replacement: every field to keep, unknown keys
-	 * included, and the body. A key left out is removed. Taken only while the
-	 * row reads as valid and shows its fields. Answers why it was not taken.
-	 *
-	 * A refused field blocks a row that changes it from what the native
-	 * editor holds, unless the row comes from that field's own control. The
-	 * `title` or `notes` control keeps its value when the row cannot take it,
-	 * and an accepted one clears it. The notes control reports LF, so its
-	 * body is written in the file's newline convention. An unchanged row is
-	 * saved again.
+	 * included, and the body, exactly as it is to be written. A key left out
+	 * is removed. Taken only while the row reads as valid and shows its
+	 * fields. A row the codec refuses changes nothing; only why is kept.
+	 * Answers why it was not taken. An unchanged row is saved again.
 	 */
-	function set(
-		next: CanonicalDocument,
-		{ control }: { readonly control?: RefusedField } = {},
-	): string | undefined {
+	function set(next: CanonicalDocument): string | undefined {
 		const why = blocked();
 		if (why !== undefined) return why;
-		const { row } = editor;
-		if (row.status !== 'valid' || rawMode) return IN_SOURCE;
-		const document =
-			control === 'notes'
-				? { ...next, body: withFileNewlines(next.body, row.text) }
-				: next;
-		const changed: Record<RefusedField, boolean> = {
-			title: document.fields.title !== row.fields.title,
-			notes: document.body !== row.body,
-		};
-		const held = (['title', 'notes'] as const).find(
-			(field) =>
-				field !== control && refusals[field] !== undefined && changed[field],
-		);
-		if (held !== undefined)
-			return `What you typed in the ${held} is not saved. Fix it there first.`;
-		const { error } = editor.set(document);
-		if (control === undefined)
-			return error === null
-				? undefined
-				: `This value cannot be saved: ${error.refusal.reason}.`;
-		const others = { ...refusals };
-		delete others[control];
-		const value = control === 'title' ? next.fields.title : next.body;
-		const message =
-			error === null
-				? undefined
-				: `The ${control} cannot be saved: ${error.refusal.reason}.`;
-		refusals =
-			message === undefined || typeof value !== 'string'
-				? others
-				: { ...others, [control]: { value, message } };
-		return message;
+		if (editor.row.status !== 'valid' || rawMode) return IN_SOURCE;
+		const { error } = editor.set(next);
+		refusal = error === null ? undefined : { reason: error.refusal.reason };
+		return refusal === undefined
+			? undefined
+			: `Your last change was not taken: ${refusal.reason}.`;
 	}
 
-	/** Whether admitted writes all landed and no field is refused. Never retries. */
+	/** Whether admitted writes all landed. Never retries. */
 	async function flushed(): Promise<boolean> {
 		const { error } = await editor.waitForSaves();
-		return error === null && !hasRefusals();
+		return error === null;
 	}
 
 	/** Stop retaining the native editor, at once and for good. Admitted writes still settle. */
 	function release() {
 		if (released) return;
 		released = true;
+		refusal = undefined;
 	}
 
 	return {
@@ -195,9 +151,13 @@ export function createTodoEditor(
 		get save() {
 			return editor.save;
 		},
-		/** Values the row could not take, by the control that supplied them, and why. */
-		get refused(): Readonly<Partial<Record<RefusedField, Refusal>>> {
-			return refusals;
+		/**
+		 * Why the last row was not taken, in the codec's words, or `undefined`.
+		 * Nothing typed is kept: the row and its controls show the input taken
+		 * before it.
+		 */
+		get refusal() {
+			return refusal;
 		},
 		get rawMode() {
 			return rawMode;
@@ -214,15 +174,11 @@ export function createTodoEditor(
 		},
 		/** Every accepted input is written. */
 		get isIdle() {
-			return editor.save.status === 'idle' && !hasRefusals();
+			return editor.save.status === 'idle';
 		},
-		/** A write failed or went unconfirmed, or a field is refused; it waits for the person. */
+		/** A write failed or went unconfirmed; it waits for the person. */
 		get hasProblem() {
-			return editor.save.status === 'failed' || hasRefusals();
-		},
-		/** Why each refused field's typed value was not taken, for display beside the fields. */
-		get refusals(): readonly string[] {
-			return Object.values(refusals).map((refusal) => refusal.message);
+			return editor.save.status === 'failed';
 		},
 
 		// --- Input. A leaving view can still deliver it, so each kind is ---
@@ -239,6 +195,7 @@ export function createTodoEditor(
 				return;
 			// Raw repair stays in the source after the text becomes valid.
 			rawMode = true;
+			refusal = undefined;
 			editor.setText(withFileNewlines(next, editor.row.text));
 		},
 		/** Why the text on screen does not read as a todo, when it does not. */
@@ -274,9 +231,6 @@ export function createTodoEditor(
 		editSource(): string | undefined {
 			const why = blocked();
 			if (why !== undefined) return why;
-			// The source shows the row, which does not hold a refused value.
-			if (hasRefusals())
-				return 'Fix the value that cannot be saved, or reload, before editing the source.';
 			rawMode = true;
 			return undefined;
 		},
@@ -313,17 +267,16 @@ export function createTodoEditor(
 		},
 		/**
 		 * The person's Reload: once admitted writes settle, read the file and
-		 * show it, replacing the todo's input, any failed save, and any refused
-		 * field. A read that fails, or input that arrives meanwhile, replaces
-		 * nothing.
+		 * show it, replacing the todo's input, any failed save, and why the last
+		 * row was not taken. A read that fails replaces nothing.
 		 */
 		async reload() {
-			// A refused scalar never reaches the native owner, so fence its
-			// control while deliberate reload discards the previous input.
+			// The person asked for the file: input waits until it is shown, so
+			// neither typing nor a refusal's notice outlives the read unseen.
 			fences += 1;
 			try {
 				const result = await editor.reload();
-				if (result.error === null) refusals = {};
+				if (result.error === null) refusal = undefined;
 				return result;
 			} finally {
 				fences -= 1;

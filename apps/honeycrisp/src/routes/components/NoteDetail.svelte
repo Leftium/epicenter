@@ -28,7 +28,8 @@
 	 * value bindings when destroyed. `Lifetime` guards native select events
 	 * and commands from conditional blocks, including after that kind of block
 	 * mounts again. A setter composes the whole note from the editor's row
-	 * as it is at that event.
+	 * as it is at that event. A note the editor refuses changes nothing, so
+	 * the control shows the editor's value again.
 	 */
 
 	/** The note's one input, as its row editor holds it. */
@@ -84,13 +85,10 @@
 					<Input
 						class="flex-1 text-base font-medium"
 						bind:value={
-							() => editor.refused.title?.value ?? (editor.row.status === 'valid' ? (editor.row.fields.title ?? '') : ''),
+							() => (editor.row.status === 'valid' ? (editor.row.fields.title ?? '') : ''),
 							(title) => {
 								if (editor.row.status !== 'valid') return;
-								const problem = editor.set(
-									{ ...editor.row, fields: { ...editor.row.fields, title } },
-									{ control: 'title' },
-								);
+								const problem = editor.set({ ...editor.row, fields: { ...editor.row.fields, title } });
 								if (problem) editor.refuse(problem);
 							}
 						}
@@ -173,15 +171,14 @@
 				/>
 			</Tabs.Content>
 			<Tabs.Content value="source" class="flex min-h-0 flex-1 flex-col">
-				<!-- A body the editor refuses stays here with the reason. -->
 				<div class="flex min-h-0 flex-1 flex-col p-3">
 					<Textarea
 						class="min-h-40 flex-1 resize-none font-mono text-xs"
 						bind:value={
-							() => lf(editor.refused.body?.value ?? (editor.row.status === 'valid' ? editor.row.body : '')),
+							() => lf(editor.row.status === 'valid' ? editor.row.body : ''),
 							(value) => {
 								if (editor.row.status !== 'valid') return;
-								editor.set(withBody(editor.row, withFileNewlines(value, editor.row.body)), { control: 'body' });
+								editor.set(withBody(editor.row, withFileNewlines(value, editor.row.body)));
 							}
 						}
 						aria-label="Markdown source"

@@ -7,10 +7,10 @@
  * already holds, and `setText` for exact file text. The editor keeps one write
  * running and the latest input waiting, and later input replaces the file
  * whatever another tab saved there meanwhile. What the learner sees is the
- * editor's row. The one exception is a note the editor refused because no
- * row can hold it, such as one with half of a surrogate pair: that note text
- * alone stays in the field with the reason until the learner corrects or
- * discards it, and the word is not reloaded or left without asking meanwhile.
+ * editor's row. A note no row can hold, such as one with half of a surrogate
+ * pair, changes nothing: the field shows the note before it, and only why is
+ * kept, beside the save's own state, until a note, stage, or text is taken,
+ * a reload reads the file, or the word is deleted. It is not unsaved input.
  *
  * - A failed save, or one whose answer was lost, keeps the learner's input
  *   shown with the error. Waiting and later input saves again; "Try again"
@@ -21,8 +21,8 @@
  *   the same editor. No save ever creates a file that is gone.
  * - Deletion and closing stop every view of the word from taking input
  *   first, and let admitted saves settle. A delete destroys the word with
- *   whatever it holds unsaved: a failed save or a refused note does not stop
- *   it, and nothing is saved again first. A delete that does not happen
+ *   whatever it holds unsaved: a failed save does not stop it, and nothing
+ *   is saved again first. A delete that does not happen
  *   keeps all of it. One whose answer was lost keeps the word until the
  *   learner reads the file again or lets it go.
  */
@@ -89,10 +89,6 @@ function describeReloadError(error: ReloadError): string {
 	}
 }
 
-/** Why a reload waits while a refused note is kept in the field. */
-const REFUSED_NOTE_HELD =
-	'Your note could not be saved as typed. Correct it or discard it first.';
-
 function describeOpenError(error: TableEditError): string {
 	return error.name === 'NotFound'
 		? 'This word’s file is gone, so it cannot be edited.'
@@ -123,10 +119,11 @@ export function createWord({
 	let goneOnRead = $state(false);
 	/** A delete was sent and no answer came back; held until the file is read or let go. */
 	let deletion = $state<string | undefined>();
-	/** Note text the editor refused, and why, until a later note is accepted or this is discarded. */
-	let refusedNote = $state.raw<
-		{ readonly text: string; readonly reason: string } | undefined
-	>();
+	/**
+	 * Why the last note was not taken; see the module comment. A new object
+	 * for each refusal, so the same reason twice is announced twice.
+	 */
+	let refusal = $state.raw<{ readonly reason: string } | undefined>();
 	/** An operation is under way: no view takes input or starts new work. */
 	let fence = $state<'deleting' | 'closing' | 'reloading' | undefined>();
 	/** The delete under way, which closing waits for. */
@@ -247,15 +244,17 @@ export function createWord({
 		get deletion() {
 			return deletion;
 		},
-		/** Note text the editor refused, and why, while it is kept in the field. */
-		get refusedNote() {
-			return refusedNote;
+		/**
+		 * Why the last note was not taken, or `undefined`. What was typed is
+		 * not kept: the field shows the note taken before it.
+		 */
+		get refusal() {
+			return refusal;
 		},
-		/** Whether a save is running or failed, a note was refused, or a delete is in flight or unanswered. */
+		/** Whether a save is running or failed, or a delete is in flight or unanswered. */
 		get unsettled() {
 			const save = editor?.get().save.status;
 			return (
-				refusedNote !== undefined ||
 				deletion !== undefined ||
 				operation !== undefined ||
 				save === 'saving' ||
@@ -273,9 +272,8 @@ export function createWord({
 
 		// --- The note and the stage --------------------------------------
 
-		/** The note the field shows: a refused note, else the editor's, else the listed one. */
+		/** The note the field shows: the editor's, else the listed one. */
 		note(): string {
-			if (refusedNote !== undefined) return refusedNote.text;
 			const editing = reactive();
 			if (editing?.row.status === 'valid') return lf(editing.row.fields.note);
 			return editor === undefined ? lf(listed()?.note ?? '') : '';
@@ -289,8 +287,8 @@ export function createWord({
 		/**
 		 * Type the note: the whole word goes to the editor at once, with every
 		 * other field and the body as the row holds them. Taken only while the
-		 * row is valid. A note no row can hold is kept here as typed, with why,
-		 * and nothing is sent. Answers why nothing was taken, or null.
+		 * row is valid. A note no row can hold changes nothing; only why is
+		 * kept. Answers why nothing was taken, or null.
 		 */
 		inputNote(text: string): string | null {
 			if (stopped() !== null || editor === undefined) return stopped();
@@ -303,17 +301,10 @@ export function createWord({
 					note: withFileNewlines(text, row.fields.note),
 				},
 			});
-			if (setError !== null) {
-				refusedNote = { text, reason: setError.refusal.reason };
-				return null;
-			}
-			refusedNote = undefined;
-			follow(editor);
+			refusal =
+				setError === null ? undefined : { reason: setError.refusal.reason };
+			if (setError === null) follow(editor);
 			return null;
-		},
-		/** Drop a refused note; the field shows the word's own note again. */
-		discardRefusedNote() {
-			refusedNote = undefined;
 		},
 		/**
 		 * Press a stage: the whole word goes to the editor with it, and this
@@ -334,6 +325,7 @@ export function createWord({
 			});
 			if (setError !== null)
 				return `This word cannot be saved: ${setError.refusal.reason}`;
+			refusal = undefined;
 			follow(current);
 			const { error: saveError } = await current.waitForSaves();
 			return saveError === null ? null : describeSaveError(saveError);
@@ -351,6 +343,7 @@ export function createWord({
 			if (stopped() !== null || editor === undefined) return;
 			const { row } = editor.get();
 			editor.setText(withFileNewlines(text, row.text));
+			refusal = undefined;
 			follow(editor);
 		},
 
@@ -364,13 +357,12 @@ export function createWord({
 		},
 		/**
 		 * Read the file and replace the input with it, the learner's way to
-		 * discard a failed change or see what another tab saved. The input stays
-		 * when the read fails or the learner types meanwhile. Answers why
-		 * nothing was replaced, or null.
+		 * discard a failed change or see what another tab saved. A read lets go
+		 * of why the last note was not taken. The input stays when the read
+		 * fails. Answers why nothing was replaced, or null.
 		 */
 		async reload(): Promise<string | null> {
 			if (stopped() !== null) return stopped();
-			if (refusedNote !== undefined) return REFUSED_NOTE_HELD;
 			const current = editor;
 			if (current === undefined) {
 				await open();
@@ -386,6 +378,7 @@ export function createWord({
 				}
 				deletion = undefined;
 				goneOnRead = false;
+				refusal = undefined;
 				await onSettled();
 				return null;
 			} finally {
@@ -396,14 +389,14 @@ export function createWord({
 		// --- Deletion and closing --------------------------------------------
 
 		/**
-		 * Delete the word, discarding what it holds unsaved: a failed save and
-		 * a refused note do not stop it, and nothing is saved again first. The
+		 * Delete the word, discarding what it holds unsaved: a failed save does
+		 * not stop it, and nothing is saved again first. The
 		 * exact text this word's editor shows is fixed when this is called,
 		 * before anything waits. Input stops at once; the saves already
 		 * admitted settle; then `remove` decides, from that text and what the
 		 * caller fixed with it, whether the file as it is then may go. Refused,
-		 * the word goes on with its input, failure, and refused note as they
-		 * were; done, it is closed and they go. With no answer, thrown or
+		 * the word goes on with its input and failure as they were; done, it
+		 * is closed and they go. With no answer, thrown or
 		 * `Unconfirmed`, it is kept until the file is read or the learner lets
 		 * it go. `'busy'` while another operation holds the word.
 		 */
@@ -432,7 +425,7 @@ export function createWord({
 				if (removed.error === null) {
 					ended = 'This word was deleted.';
 					editor = undefined;
-					refusedNote = undefined;
+					refusal = undefined;
 				} else if (removed.error.name === 'Unconfirmed' && ended === undefined)
 					deletion = removed.error.message;
 				return removed;

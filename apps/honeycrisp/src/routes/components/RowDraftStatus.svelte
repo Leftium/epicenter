@@ -3,7 +3,7 @@
 	import { toast } from '@epicenter/ui/sonner';
 	import { onDestroy } from 'svelte';
 	import { basename } from '@epicenter/folder/file-browser';
-	import { noteSaveProblem, reloadProblem, type NoteEditor, type TypedField } from '$lib/note-editor.svelte.js';
+	import { noteSaveProblem, reloadProblem, type NoteEditor } from '$lib/note-editor.svelte.js';
 
 	let {
 		editor,
@@ -37,8 +37,6 @@
 	/** Read through to the owner's error, including during a newer save. */
 	const failure = $derived('error' in editor.save ? editor.save.error : undefined);
 
-	const FIELD_NAMES: Record<TypedField, string> = { title: 'the title', body: 'Source' };
-
 	/** While the app answers a close, or a rename, delete, or reload runs, no choice here is taken. */
 	const held = $derived(!editor.canChoose);
 	/** A rename or delete whose outcome is not known, or that left both files. */
@@ -47,9 +45,8 @@
 			? editor.pathChange
 			: undefined,
 	);
-	const refused = $derived(Object.entries(editor.refused) as [TypedField, { value: string; reason: string }][]);
-	/** Text a reload could replace before it is in the file: a save that runs or stopped, or typing the editor refused. */
-	const outstanding = $derived(editor.save.status !== 'idle' || refused.length > 0);
+	/** Text a reload could replace before it is in the file: a save that runs or stopped. */
+	const outstanding = $derived(editor.save.status !== 'idle');
 	/** The file was not there at the last save or reload, and nothing else is being tracked. */
 	const recoverable = $derived(editor.missing && editor.pathChange === undefined);
 	/** Set while the person is asked whether a reload may replace text that is not saved. */
@@ -154,14 +151,11 @@
 			Save as a note
 		</Button>
 	{/if}
-	{#each refused as [field, typed] (field)}
-		<span class="text-destructive" role="status">
-			Not saved: what you typed in {FIELD_NAMES[field]} cannot be written ({typed.reason}). It stays there until you
-			change it.
-		</span>
-	{/each}
-	{#if editor.refusal && !refused.some(([, typed]) => typed.reason === editor.refusal)}
-		<span class="text-warning" role="status">Change refused: {editor.refusal}</span>
+	<!-- Nothing of a refused change is kept, so this sits beside the save's own state rather than in place of it. -->
+	{#if editor.refusal}
+		{#key editor.refusal}
+			<span class="text-warning" role="alert" data-testid="note-refusal">Change refused: {editor.refusal.reason}</span>
+		{/key}
 	{/if}
 	{#if editor.pathChange === undefined}
 		<Button

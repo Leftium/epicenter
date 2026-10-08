@@ -120,7 +120,7 @@ The temporary Worker-tail file contained OAuth parameters. Its owned tail
 processes were stopped, and the file was removed after diagnosis. Recorded
 diagnostic output contains only sanitized errors and configuration comparisons.
 
-## Supabase replacement investigation
+## Supabase replacement investigation (before the switch)
 
 The user requested Supabase as a replacement on October 8. Its dashboard is
 open in Zen and requires sign-in. No project, database, credentials, or
@@ -179,3 +179,26 @@ bounded timeout. These limits are recorded rather than claimed as verified.
 The candidate has not been installed as a new native release. Actual Home IPC,
 hosted GitHub authorization, live private transfers, browser/native continuity,
 and second-account isolation still require acceptance after database repair.
+
+## Frankfurt production switch
+
+The user explicitly chose a fresh database without recovering old identities
+or their hosted-data links. Production now uses Supabase project `epicenter-api`
+(`gfdyrfsuiphzsbbzjofg`, Frankfurt). The six-table migration was applied once.
+The runtime role has CRUD access only to those tables. The Supabase Data API
+is disabled. Admin commands use the IPv4 session pooler with certificate and
+hostname validation; Hyperdrive uses the direct database endpoint with caching
+disabled.
+
+API version `ce4e9172-5ce6-4282-a916-2bfa64eb2d9f` deploys the previously
+verified release with the Frankfurt binding. GitHub social sign-in returned
+success and Zhongwen's Sync page showed "Signed in to Epicenter." The production
+migration command and API type check passed. These checks establish database
+and social-login recovery, not private Git transfer or browser/native acceptance.
+
+Ohio project `epicenter-api-2` was deleted. Both benchmark Workers, both
+benchmark Hyperdrives, the Frankfurt benchmark table, and temporary benchmark
+scripts and credentials were removed. The measurements remain in the local
+benchmark report. PlanetScale's final database deletion remains pending
+action-time confirmation. GitHub repositories and hosted data namespaces were
+not deleted.

@@ -155,6 +155,18 @@ bun run db:push:local
 
 ### How database URLs work
 
+Production uses Supabase Postgres in Frankfurt (`eu-central-1`). Better Auth
+continues to own Epicenter sign-in; Supabase supplies the database. The runtime
+Hyperdrive connection uses the `epicenter_api` role with read and write access
+to Epicenter's six tables. Query caching is disabled so session and permission
+checks read current data.
+
+The production `/ops` `DATABASE_URL` uses Supabase's session pooler for IPv4
+admin access. `drizzle.config.ts` loads the public `supabase-ca.crt` certificate
+and verifies the server certificate and hostname. Hyperdrive uses the direct
+database endpoint with its encrypted, certificate-validated transport. The
+Supabase Data API is disabled; database credentials stay on the server.
+
 There are three layers, each with a different URL source:
 
 | Layer | Source | Used by |

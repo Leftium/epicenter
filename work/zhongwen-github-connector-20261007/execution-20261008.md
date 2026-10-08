@@ -36,19 +36,51 @@ Sync and authorization routes, explicit pairing/download, and captured account
 dataset selection. Local selection must survive sign-in. Account opening must
 remain existing-only until explicit Download publishes the history.
 
-The live checkout has a newer uncommitted ExpressionsEditor change. Integration
-must preserve it. Settings-to-Sync must also preserve unsaved retained repair
+The live checkout now includes practice commit
+`1af559f1046b47fccb43fc2189969f24973e58dd`. Integration must preserve its
+ExpressionsEditor changes. Settings-to-Sync must also preserve unsaved retained repair
 edits when the new resource-free route unmounts the editor.
 
 ## External acceptance gate
 
-The selected-repository installation form was prepared for
-`braden-w/zhongwen-data` and `braden-w/honeycrisp-data`. The latter is a read-only
-acceptance target for proving that a Zhongwen-scoped token cannot access another
-repository granted to the parent App. The final Install action remains pending
-the requested action-time confirmation. No Honeycrisp data will be modified.
+The user confirmed installation, and Zen completed it on October 8 at 10:33 AM
+GMT+8. GitHub displayed the success banner and installation settings at
+`https://github.com/settings/installations/169082319`. The saved settings show
+Only select repositories, exactly `braden-w/zhongwen-data` and
+`braden-w/honeycrisp-data`, Contents read/write, and Metadata read.
+The latter is a read-only acceptance target for proving that a Zhongwen-scoped
+token cannot access another repository granted to the parent App.
+No Honeycrisp data was modified.
+
+Native Zen mouse controls initially did not activate the selector. Resetting the
+control session and reloading did not resolve it. A fresh task tab with active
+Zen subsequently responded to clicks and completed installation. A separate
+headed Playwright Chromium also demonstrated working input focus but required
+a fresh GitHub login; it was not used for the grant. No credentials or browser
+session cookies were copied.
 
 After the caller is reviewed and deployed, the next deciding check is real
 account authorization, pairing, scoped fetch/push, and refusal of the other
 repository. Browser-to-installed-Epicenter continuity and second-account
 isolation remain outstanding.
+
+## Local download correction
+
+Folder commit `3127cb33a5` allows an explicit Local scope in the existing
+browser download operation. The scope remains required; account identity is
+optional. Download still owns only a fresh destination or the exact pending
+download. It retains partial files on failure, and ready folders remain outside
+its ownership. Independent reviewers accepted this narrower promise and
+rejected destructive rollback.
+
+The focused download suite passed 23 tests with 237 assertions. Folder type
+checking reported zero errors and warnings. New Local checks establish remote
+history before definition publication, unchanged ready-folder refusal, and
+retained partial history with exact-recipe retry in the development channel.
+The caller follow-up must download before opening, refuse a different existing
+origin, accept only the exact ready-folder refusal, and open existing-only.
+The obsolete post-open bootstrap is being removed in the browser clone.
+
+Zen independently observed the public `/sync` page after installation. It
+still displays the Local-only launcher instructions and states that the website
+does not sync. This confirms that deploying the API did not deploy the caller.

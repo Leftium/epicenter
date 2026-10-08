@@ -7,6 +7,7 @@
 	"exports": {
 		".": "./src/index.ts",
 		"./ai": "./src/ai.ts",
+		"./ai/codex": "./src/codex-connection.ts",
 		"./ai-connections": "./src/ai-connections.ts",
 		"./clipboard": "./src/clipboard.ts",
 		"./recorder": "./src/recorder.ts",

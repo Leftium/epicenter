@@ -3,6 +3,15 @@ import { isTauri } from '@tauri-apps/api/core';
 import { endpointFetch } from './endpoint-transport.js';
 import { createInference, validateInferenceDestination } from './inference.js';
 import { createRuntimeTranscriber } from './runtime-transcriber.js';
+
+export { type CodexConnection, createCodexAi } from './codex-ai.js';
+export { createEndpointAi } from './endpoint-ai.js';
+export {
+	type Ai,
+	ReplyError,
+	type ReplyEvent,
+	type ReplyRequest,
+} from './reply.js';
 export type EndpointInferenceOptions = {
 	baseURL: string;
 	getAuthHeaders?: (options: {

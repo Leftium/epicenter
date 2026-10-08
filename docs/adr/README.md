@@ -757,3 +757,4 @@ When you add an ADR, add its row here.
 | [0506](0506-capture-composes-values-through-a-source-preserving-body-codec.md) | Capture composes values through a source-preserving body codec | Proposed |
 | [0507](0507-editor-views-compose-current-input-and-own-only-interaction-state.md) | Editor views compose current input and own only interaction state | Proposed |
 | [0509](0509-folder-remotes-and-http-fetch-have-separate-contracts.md) | Folder remotes and HTTP fetch have separate contracts | Proposed |
+| [0512](0512-ai-reply-is-independent-of-openai-protocol-compatibility.md) | AI reply is independent of OpenAI protocol compatibility | Proposed (Zhongwen adoption and authenticated browser bridge unbuilt) |

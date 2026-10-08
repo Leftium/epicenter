@@ -98,6 +98,8 @@ generic editor reads a field's schema, hint included, straight from
 | `/secrets` | `openSecrets` | `{ id }` |
 | `/recorder` | `createRecorder` | `{ localBlobs }` |
 | `/ai` | `openEpicenterInference`, `openRuntimeTranscriber`, `openEndpointInference` | Account, installed runtime, or endpoint URL |
+| `/ai` | `createEndpointAi`, `createCodexAi` | Borrowed inference or text-only Codex connection |
+| `/ai/codex` | `openCodexConnection` | Host-only, dedicated Codex stdio process |
 | `/ai-connections` | `openLocalConnectionCatalog`, `openAccountConnectionCatalog` | No account, or `{ account }` |
 
 Each owner exposes an abort signal and an idempotent asynchronous `close()`.
@@ -239,6 +241,71 @@ An unknown or removed model fails; no active-model fallback is selected.
 Explicit requests do not change the host's active-model setting. Cancellation
 suppresses delivery and close drains admitted native work without unloading
 the shared engine.
+
+### Shared text replies
+
+Reply adapters borrow resources and return the same `{ reply }` capability.
+The endpoint adapter uses Chat Completions; the Codex adapter uses App Server
+RPC. Neither adapter owns another signal or close method.
+
+```ts
+import { createEndpointAi, openEndpointInference } from '@epicenter/app/ai';
+
+const inference = await openEndpointInference({
+  baseURL: 'http://127.0.0.1:11434/v1',
+});
+const ai = createEndpointAi(inference, { model: 'qwen3.5:9b' });
+
+for await (const event of ai.reply({ instructions, messages, signal })) {
+  if (event.type === 'preview') showPreview(event.text);
+  else if (signal.aborted) showStopped();
+  else if (event.result.error !== null) showError(event.result.error);
+  else await validateAndSaveAssistant(event.result.data);
+}
+// Session cleanup, after any number of replies:
+await inference.close();
+```
+
+`messages` is the complete user/assistant transcript and may be empty for an
+opening. The adapter captures its content when `reply` is called. Previews
+replace the displayed draft; they are optional and never certify completion.
+A fully consumed attempt ends with one `result` event. Only successful result
+data is the canonical answer. Provider errors, truncation, cancellation, and
+owner retirement produce error Results. Early iterator closure cancels promptly
+without closing the borrowed resource. Missing outcomes and unexpected thrown
+errors cannot authorize saving. The application owns validation and storage.
+
+Codex process acquisition is a separate host-only import:
+
+```ts
+import { createCodexAi } from '@epicenter/app/ai';
+import { openCodexConnection } from '@epicenter/app/ai/codex';
+
+const connection = await openCodexConnection({ executable: '/path/to/codex' });
+const ai = createCodexAi(connection, { model: selectedModel });
+// Use ai.reply as above, then close the connection at session departure.
+await connection.close();
+```
+
+This experimental opener requires Codex **0.160.1** and existing sign-in when
+the configured provider requires authentication. It uses a dedicated process,
+an isolated temporary working directory, disabled tools/connectors/skills,
+and one ephemeral thread per reply. Cancellation before turn acknowledgment
+is interrupted when the turn becomes known. Failed interruption or thread
+cleanup retires the process. Unknown final-answer phases fail instead of saving
+commentary. Other Codex versions need renewed protocol and tool/context checks.
+
+The Node/Bun host opener is not part of the browser bundle. A static browser
+application needs an authenticated host bridge; this package does not provide
+one. The [real-process probe](evidence/ai-reply/codex-probe.ts) uses a local
+HTTPS Responses fixture with the built-in OpenAI provider to verify the
+integration without consuming account inference. The fixture disables inference
+WebSockets and request compression; it does not verify live model behavior or
+other Codex versions:
+
+```sh
+bun packages/app/evidence/ai-reply/codex-probe.ts /path/to/codex
+```
 
 Endpoint authentication has one option: `getAuthHeaders({ signal })`. Omit it
 for an unauthenticated endpoint; return constant headers for a static key.

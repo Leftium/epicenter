@@ -109,12 +109,13 @@ against the code. The constraints below apply to every edit here.
   saved.
 - A view reused across sessions reads its `session` prop when each getter,
   setter, and handler runs; do not bind to method references taken when it
-  mounted. Svelte keeps binding listeners on detached elements, so every
-  setter and command checks the lifetime of its own control's block
-  (`Lifetime.svelte`), not the whole view's: a control from a block that
-  is gone takes nothing, even after the same kind of block mounts again. A
-  destroyed rich-text view takes no transaction, and a released session
-  refuses everything for good. Do not key or remount a view per input to get
+  mounted. Svelte keeps binding listeners on detached elements. Shared `Input` and
+  `Textarea` retire their value bindings when destroyed; do not duplicate
+  that guard in their app setters. Native controls and commands check their
+  own block lifetime (`Lifetime.svelte`), not the whole view's. A control
+  from a block that is gone takes nothing, even after the same kind of block
+  mounts again. A destroyed rich-text view takes no transaction, and a
+  released session refuses everything for good. Do not key or remount a view per input to get
   around any of this; that loses focus and undo.
 - A save never creates a note file. After a save or reload found no file,
   saving the editor's exact text as a file is a separate exclusive create,

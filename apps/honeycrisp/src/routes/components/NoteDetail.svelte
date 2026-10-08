@@ -24,10 +24,11 @@
 	/*
 	 * Every getter, setter, and handler below reads `editor` when it runs: a
 	 * rename or a recovery hands this view a new editor, and the view, with
-	 * its undo history, stays mounted. Each conditional block has its own
-	 * `Lifetime`: a control from a block that is gone delivers nothing, even
-	 * after the same kind of block mounts again. A setter composes the whole
-	 * note from the editor's row as it is at that event.
+	 * its undo history, stays mounted. Shared Input and Textarea retire their
+	 * value bindings when destroyed. `Lifetime` guards native select events
+	 * and commands from conditional blocks, including after that kind of block
+	 * mounts again. A setter composes the whole note from the editor's row
+	 * as it is at that event.
 	 */
 
 	/** The note's one input, as its row editor holds it. */
@@ -85,7 +86,7 @@
 						bind:value={
 							() => editor.refused.title?.value ?? (editor.row.status === 'valid' ? (editor.row.fields.title ?? '') : ''),
 							(title) => {
-								if (!live() || editor.row.status !== 'valid') return;
+								if (editor.row.status !== 'valid') return;
 								const problem = editor.set(
 									{ ...editor.row, fields: { ...editor.row.fields, title } },
 									{ control: 'title' },
@@ -157,42 +158,38 @@
 	/>
 
 	{#if note}
-		<Lifetime>
-			{#snippet children(live)}
-				<Tabs.Root bind:value={tab} class="flex min-h-0 flex-1 flex-col">
-					<Tabs.List class="mx-3">
-						<Tabs.Trigger value="rich">Rich text</Tabs.Trigger>
-						<Tabs.Trigger value="source">Source</Tabs.Trigger>
-					</Tabs.List>
-					<!-- The rich-text view stays mounted while Source shows, so its undo history
-					     survives a look at the source that changes nothing. -->
-					<Tabs.Content value="rich" forceMount class="min-h-0 flex-1">
-						<RichEditor
-							{editor}
-							focusRequest={notes.focusRequest}
-							onOpenSource={() => (tab = 'source')}
-						/>
-					</Tabs.Content>
-					<Tabs.Content value="source" class="flex min-h-0 flex-1 flex-col">
-						<!-- A body the editor refuses stays here with the reason. -->
-						<div class="flex min-h-0 flex-1 flex-col p-3">
-							<Textarea
-								class="min-h-40 flex-1 resize-none font-mono text-xs"
-								bind:value={
-									() => lf(editor.refused.body?.value ?? (editor.row.status === 'valid' ? editor.row.body : '')),
-									(value) => {
-										if (!live() || editor.row.status !== 'valid') return;
-										editor.set(withBody(editor.row, withFileNewlines(value, editor.row.body)), { control: 'body' });
-									}
-								}
-								aria-label="Markdown source"
-								spellcheck={false}
-							/>
-						</div>
-					</Tabs.Content>
-				</Tabs.Root>
-			{/snippet}
-		</Lifetime>
+		<Tabs.Root bind:value={tab} class="flex min-h-0 flex-1 flex-col">
+			<Tabs.List class="mx-3">
+				<Tabs.Trigger value="rich">Rich text</Tabs.Trigger>
+				<Tabs.Trigger value="source">Source</Tabs.Trigger>
+			</Tabs.List>
+			<!-- The rich-text view stays mounted while Source shows, so its undo history
+			     survives a look at the source that changes nothing. -->
+			<Tabs.Content value="rich" forceMount class="min-h-0 flex-1">
+				<RichEditor
+					{editor}
+					focusRequest={notes.focusRequest}
+					onOpenSource={() => (tab = 'source')}
+				/>
+			</Tabs.Content>
+			<Tabs.Content value="source" class="flex min-h-0 flex-1 flex-col">
+				<!-- A body the editor refuses stays here with the reason. -->
+				<div class="flex min-h-0 flex-1 flex-col p-3">
+					<Textarea
+						class="min-h-40 flex-1 resize-none font-mono text-xs"
+						bind:value={
+							() => lf(editor.refused.body?.value ?? (editor.row.status === 'valid' ? editor.row.body : '')),
+							(value) => {
+								if (editor.row.status !== 'valid') return;
+								editor.set(withBody(editor.row, withFileNewlines(value, editor.row.body)), { control: 'body' });
+							}
+						}
+						aria-label="Markdown source"
+						spellcheck={false}
+					/>
+				</div>
+			</Tabs.Content>
+		</Tabs.Root>
 	{:else}
 		<!-- The whole file: for text that does not read as a note, and for keys the fields do not show. -->
 		<Lifetime>
@@ -233,7 +230,6 @@
 						bind:value={
 							() => lf(editor.row.text),
 							(value) => {
-								if (!live()) return;
 								const problem = editor.setText(withFileNewlines(value, editor.row.text));
 								if (problem) editor.refuse(problem);
 							}

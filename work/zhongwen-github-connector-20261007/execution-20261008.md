@@ -199,6 +199,7 @@ and social-login recovery, not private Git transfer or browser/native acceptance
 Ohio project `epicenter-api-2` was deleted. Both benchmark Workers, both
 benchmark Hyperdrives, the Frankfurt benchmark table, and temporary benchmark
 scripts and credentials were removed. The measurements remain in the local
-benchmark report. PlanetScale's final database deletion remains pending
-action-time confirmation. GitHub repositories and hosted data namespaces were
-not deleted.
+benchmark report. After user confirmation, PlanetScale database `epicenter`
+was permanently deleted; its dashboard confirmed success and showed no
+databases. Outstanding invoices remain separate from deletion. GitHub
+repositories and hosted data namespaces were not deleted.

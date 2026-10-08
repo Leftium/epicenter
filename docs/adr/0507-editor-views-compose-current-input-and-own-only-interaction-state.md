@@ -4,14 +4,14 @@
 - **Date:** 2026-10-06
 - **Updated:** 2026-10-08
 - **Relates:** [ADR-0504](0504-row-editors-own-complete-input-and-one-publication-queue.md), accepted row input and publication, and [ADR-0506](0506-capture-composes-values-through-a-source-preserving-body-codec.md), Capture body composition.
-- **Unbuilt:** Apply the workspace separation, keyed detail views, repair navigation, and publication handoff to Honeycrisp, Capture, and other consumers that still switch one editor between source and interpreted editing.
+- **Unbuilt:** Apply the workspace separation, keyed detail views, repair navigation, and publication handoff to Honeycrisp and remaining consumers that still switch one editor between source and interpreted editing.
 
 ## Context
 
 At the start of this decision, Todos selected a folder-relative path and retained either a todo editor or
 an arbitrary-file editor, rendering both through one detail area. Its todo
 editor kept `rawMode`, exposed `editSource` and `editFields`, and checked the
-selected view when accepting writes. Honeycrisp and Capture likewise offer
+selected view when accepting writes. Honeycrisp and Capture likewise offered
 source and interpreted editing inside one detail workflow.
 
 This combines two questions: which file the person chose, and how the current
@@ -126,8 +126,12 @@ Unsubmitted Add, Send, or explicit Save forms remain genuine temporary input.
 
 Open in Files and Open as todo are navigation actions that end one view
 lifetime and begin another. They do not reconfigure an editor's address or
-interpretation. Stop new writes from the outgoing control group synchronously,
-then wait for admitted writes. On failure, keep its owner and input accessible
+interpretation. Retire the outgoing controls and settle the retained owner before
+acquiring another publisher. A late command accepted by a raw-file owner must
+either be included in that settlement or leave the owner retained and stop the
+handoff. This may require asking to open the destination again; it does not
+require a second session-admission flag. On failure, keep its owner and input
+accessible
 with retry, copy, or explicit discard; do not open a fresh editor on stale disk
 bytes and pretend the failed input was transferred. After successful settlement
 or deliberate discard, retire outgoing app commands and acquire the destination
@@ -149,7 +153,8 @@ into each editor as another fence counter or mode flag. Rename and delete need
 a synchronous boundary before draining writes; a later DOM unmount alone is
 not that boundary. Native `reload` already preserves newer typing through
 `InputChanged`; an app need not disable typing throughout a reload to obtain
-that guarantee. Operation completion must still be accounted for on close.
+that guarantee. This handoff does not add a final-save guarantee to ordinary
+close; each app keeps its departure policy.
 
 Shared `Input` and `Textarea` retire destroyed bindings. Other controls and
 async callbacks retain their own cleanup rules. Keying prevents a view from
@@ -199,8 +204,15 @@ Todos now separates acquisition by selection surface, keys details by editor
 identity, and exposes malformed files through a repair section. Its mode flag,
 Source tab, view-mode commands, and reload typing fence are removed. A list
 checkbox uses the current publisher, including the raw editor when Files holds
-the row. See the [Todos README](../../apps/todos/README.md). Honeycrisp and
-Capture remain to migrate.
+the row. See the [Todos README](../../apps/todos/README.md).
+
+Capture now separates Timeline and Files and keys their detail views by its
+retained canonical row owner. Both surfaces use that one publisher, so changing
+workspaces does not require reacquiring a row or draining a second publisher.
+Invalid frontmatter and ambiguous capture bodies expose a repair entry. Files
+stays text after repair. Duplicate thoughts are edited by position, and
+unsubmitted thought forms remain owned above the disposable detail. See the
+[Capture README](../../apps/capture/README.md).
 
 Acceptance exercises opening invalid source through Files, excluding it from
 editable structured records with a visible repair route, repairing it without

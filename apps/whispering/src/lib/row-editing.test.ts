@@ -10,14 +10,15 @@
  *
  * Key behaviors:
  * - every input is the complete row at once: unknown fields stay, an omitted
- *   field is deleted, a body typed in a textarea keeps the file's line
- *   endings, any other body is saved exactly, and the views show LF
+ *   field is deleted, the body is saved exactly as given (a textarea's LF
+ *   composed into the file's line endings first), and the views show LF
  * - nothing is taken while not admitted, while a reload reads the file, or
  *   after the row is put down; a write already admitted still settles
  * - the fields view exists only for a valid row; source typing is exact and
  *   keeps the source shown until the person chooses the fields
- * - a typed value no file can hold is kept for the control it was typed in;
- *   only that control changes its row value, and other rows save around it
+ * - a row the codec refuses changes nothing and keeps only why, beside the
+ *   save's own state; taken input, a successful reload, or putting the row
+ *   down lets it go, and nothing else does
  * - another writer's change is not loaded until the person reloads, and
  *   otherwise the next save writes over it
  */
@@ -119,7 +120,7 @@ test('a body typed in a textarea keeps the file’s own line endings, and the vi
 	expect(await file()).toContain('Three.\r\nFour.\r\n');
 });
 
-test('a row from no control saves its body exactly, and one the codec refuses keeps nothing', async () => {
+test('a row saves its body exactly as given, mixed line endings included', async () => {
 	const { editing, file } = await open();
 	if (editing.row.status !== 'valid') throw new Error('expected a valid row');
 
@@ -128,16 +129,85 @@ test('a row from no control saves its body exactly, and one the codec refuses ke
 	).toBeNull();
 	expectOk(await editing.waitForSaves());
 	expect(await file()).toContain('---\nLine.\r\nAnother.\n');
+});
 
-	if (editing.row.status !== 'valid') throw new Error('expected a valid row');
-	const refused = editing.set({
-		...editing.row,
-		fields: { ...editing.row.fields, title: 'Half \uD800' },
-	});
-	expect(refused?.error?.name).toBe('Unrepresentable');
-	expect(editing.holds).toBe(false);
+test('a row the codec refuses changes nothing and keeps only why; a pending save landing keeps it, and taken input lets it go', async () => {
+	const { editing, file } = await open();
+
+	// Taken, and saving, when the next typing is refused.
+	typeField(editing, 'title', 'Tidy up');
+	expect(typeField(editing, 'title', 'Half \uD800')?.error?.name).toBe(
+		'Unrepresentable',
+	);
+	expect(editing.row).toMatchObject({ fields: { title: 'Tidy up' } });
+	expect(editing.row.text).not.toContain('\uD800');
+	expect(fieldShown(editing, 'title')).toBe('Tidy up');
+	expect(editing.refusal?.reason).toContain('lone surrogate');
+	// The save's own state is separate.
+	expect(editing.status.kind).toBe('saving');
+
+	expectOk(await editing.waitForSaves());
+	expect(await file()).toContain('"title": "Tidy up"');
 	expect(editing.status.kind).toBe('saved');
-	expect(fieldShown(editing, 'title')).toBe('Clean up');
+	expect(editing.refusal?.reason).toContain('lone surrogate');
+	// It is not unsaved work, and nothing is held for the source to hide.
+	expect(editing.holds).toBe(false);
+	expect(editing.showSource(true)).toBeUndefined();
+	expect(editing.showSource(false)).toBeUndefined();
+	expect(editing.refusal?.reason).toContain('lone surrogate');
+
+	typeBody(editing, 'Whole.\n');
+	expect(editing.refusal).toBeUndefined();
+	expectOk(await editing.waitForSaves());
+	expect(await file()).toContain('---\nWhole.\n');
+});
+
+test('a refusal outlasts input that is not taken and a reload that fails; a reload, source text, or putting the row down lets it go', async () => {
+	const admitted = { value: true };
+	const { root, editing } = await open(SEED, { admitted });
+	const refuse = () => typeBody(editing, 'Half \uD801.\n');
+
+	refuse();
+	admitted.value = false;
+	expect(typeField(editing, 'title', 'Not admitted')).toBeUndefined();
+	admitted.value = true;
+	expect(editing.refusal).toBeDefined();
+
+	await rm(join(root, PATH));
+	expect((await editing.reload()).error?.name).toBe('NotFound');
+	expect(editing.refusal).toBeDefined();
+	await Bun.write(join(root, PATH), SEED);
+	expectOk(await editing.reload());
+	expect(editing.refusal).toBeUndefined();
+
+	refuse();
+	expect(editing.showSource(true)).toBeUndefined();
+	editing.setText(sourceShown(editing));
+	expect(editing.refusal).toBeUndefined();
+
+	expect(editing.showSource(false)).toBeUndefined();
+	refuse();
+	editing.release();
+	expect(editing.refusal).toBeUndefined();
+});
+
+test('a failed save of taken input and a later refusal are both kept; only the taken input is in the row', async () => {
+	const { root, editing } = await open();
+	await rm(join(root, PATH));
+	typeBody(editing, 'First.\n');
+	expect((await editing.waitForSaves()).error?.name).toBe('NotFound');
+
+	expect(typeField(editing, 'title', 'Half \uD800')?.error?.name).toBe(
+		'Unrepresentable',
+	);
+	expect(editing.status.kind).toBe('removed');
+	expect(editing.refusal).toBeDefined();
+	expect(editing.row).toMatchObject({
+		body: 'First.\n',
+		fields: { title: 'Clean up' },
+	});
+	// What holds the close is the failed save alone.
+	expect(editing.holds).toBe(true);
 });
 
 test('nothing is taken while not admitted: input, a view switch, or saving again', async () => {
@@ -163,13 +233,10 @@ test('a malformed file opens in the same editor as its source; typing there is e
 	expect(editing.row.status).toBe('invalid');
 	// No fields view, so a row typed in a field is not taken.
 	expect(
-		editing.set(
-			{
-				fields: { title: 'x', model: null, endpoint: null },
-				body: 'Body.\n',
-			},
-			{ control: { field: 'title' } },
-		),
+		editing.set({
+			fields: { title: 'x', model: null, endpoint: null },
+			body: 'Body.\n',
+		}),
 	).toBeUndefined();
 	expect(editing.row.text).toBe(malformed);
 	expect(editing.showSource(false)).toContain(
@@ -255,125 +322,6 @@ test('a row put down takes nothing, and a write it had admitted still settles', 
 	expect(native.get().save.status).toBe('idle');
 	expect(await file()).toContain('Admitted.\n');
 	expect(await file()).not.toContain('Late.');
-});
-
-test('typed values no file can hold are kept per control: a second refusal keeps the first, and repairing or discarding one leaves the other', async () => {
-	const { editing, file } = await open();
-	const title = 'Half \uD800 a title';
-	const body = 'Half \uD801 a body.\n';
-
-	expect(typeField(editing, 'title', title)?.error?.name).toBe(
-		'Unrepresentable',
-	);
-	typeBody(editing, body);
-
-	// Neither is taken into the row; each control still shows what was typed.
-	expect(editing.row.text).toBe(SEED);
-	expect(fieldShown(editing, 'title')).toBe(title);
-	expect(bodyShown(editing)).toBe(body);
-	expect(editing.status).toMatchObject({
-		kind: 'refused',
-		controls: ['title', 'body'],
-	});
-	expect(editing.holds).toBe(true);
-	// The source would hide them, so it is not shown.
-	expect(editing.showSource(true)).toContain('Fix or discard');
-	expect(editing.view).toBe('fields');
-
-	// Repairing the title takes it and lets go of it alone.
-	typeField(editing, 'title', 'Whole title');
-	expectOk(await editing.waitForSaves());
-	expect(await file()).toContain('"title": "Whole title"');
-	expect(fieldShown(editing, 'title')).toBe('Whole title');
-	expect(bodyShown(editing)).toBe(body);
-	expect(editing.status).toMatchObject({ kind: 'refused', controls: ['body'] });
-	expect(editing.holds).toBe(true);
-
-	// Refused again, then discarded: only that control lets go.
-	typeField(editing, 'title', title);
-	editing.dropRefused('title');
-	expect(fieldShown(editing, 'title')).toBe('Whole title');
-	expect(bodyShown(editing)).toBe(body);
-	expect(editing.holds).toBe(true);
-
-	// Another field's row does not take the held body.
-	typeField(editing, 'model', 'other');
-	expectOk(await editing.waitForSaves());
-	expect(bodyShown(editing)).toBe(body);
-	expect(await file()).toContain('Tidy.\n');
-
-	// A reload, as the person asks, takes the file and lets go of the rest.
-	expectOk(await editing.reload());
-	expect(editing.holds).toBe(false);
-	expect(bodyShown(editing)).toBe('Tidy.\n');
-	expect(editing.showSource(true)).toBeUndefined();
-});
-
-test('a held title or body changes only from its own control, and other rows save around both', async () => {
-	const { editing, file } = await open();
-	const title = 'Half \uD800 a title';
-	const body = 'Half \uD801 a body.\n';
-	typeField(editing, 'title', title);
-	typeBody(editing, body);
-	const row = editing.row;
-	if (row.status !== 'valid') throw new Error('expected a valid row');
-
-	// A row from another control that would change a held value changes nothing.
-	expect(
-		editing.set(
-			{ ...row, fields: { ...row.fields, title: 'Not typed here' } },
-			{ control: { field: 'model' } },
-		)?.error,
-	).toMatchObject({ name: 'HeldInput', control: 'title' });
-	expect(
-		editing.set(
-			{ ...row, body: 'Not typed here.\n' },
-			{ control: { field: 'model' } },
-		)?.error,
-	).toMatchObject({ name: 'HeldInput', control: 'body' });
-	// Nor does a command, from no control, that omits a held field.
-	const { title: _, ...withoutTitle } = row.fields;
-	expect(editing.set({ ...row, fields: withoutTitle })?.error).toMatchObject({
-		name: 'HeldInput',
-		control: 'title',
-	});
-	expect(editing.row.text).toBe(SEED);
-	expect(editing.save.status).toBe('idle');
-	expect(fieldShown(editing, 'title')).toBe(title);
-	expect(bodyShown(editing)).toBe(body);
-
-	// A model and unknown metadata changed together save; both held values stay.
-	expect(
-		editing.set(
-			{
-				...row,
-				fields: { ...row.fields, model: 'other', owner: { name: 'you' } },
-			},
-			{ control: { field: 'model' } },
-		)?.error,
-	).toBeNull();
-	expectOk(await editing.waitForSaves());
-	expect(await file()).toBe(
-		'---\n"title": "Clean up"\n"model": "other"\n"endpoint": null\n"owner": {"name": "you"}\n---\nTidy.\n',
-	);
-	expect(fieldShown(editing, 'title')).toBe(title);
-	expect(bodyShown(editing)).toBe(body);
-	expect(editing.status).toMatchObject({
-		kind: 'refused',
-		controls: ['title', 'body'],
-	});
-
-	// The body's own correction is taken and lets go of the body alone.
-	typeBody(editing, 'Whole body.\n');
-	expectOk(await editing.waitForSaves());
-	expect(await file()).toContain('---\nWhole body.\n');
-	expect(bodyShown(editing)).toBe('Whole body.\n');
-	expect(fieldShown(editing, 'title')).toBe(title);
-	expect(editing.status).toMatchObject({
-		kind: 'refused',
-		controls: ['title'],
-	});
-	expect(editing.holds).toBe(true);
 });
 
 test('a missing file keeps input on screen and later typing saves after the file returns', async () => {

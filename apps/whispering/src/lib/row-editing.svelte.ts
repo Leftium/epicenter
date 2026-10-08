@@ -17,22 +17,19 @@
  * - When input is taken: not while the library holds the path (a move, a
  *   deletion, or a close being decided), not while a reload the person asked
  *   for reads the file, and never once the row is put down.
- * - A typed value the row cannot take. Each input is a complete row, named by
- *   the control it was typed in: a field or the body. The codec refuses only a
- *   string with a lone surrogate, which a paste can carry. The string typed is
- *   kept for its control, shown there to repair, and holds the close, until
- *   that control takes a value, the person discards it, or a reload takes the
- *   file. Others are kept meanwhile: a row that would change what a held
- *   control's row value is is refused unless it comes from that control, and
- *   the source is not shown over them. It is never a second copy of the row.
- * - One line of status, most pressing first.
+ * - Why the last row typed in the fields was not taken. The codec refuses
+ *   only a string with a lone surrogate, which a paste can carry. Nothing
+ *   typed is kept: the row stays as it was and its controls show it. Only
+ *   why is kept, beside the save's own status, until a row or text is
+ *   taken, a reload takes the file, or the row is put down. It is not
+ *   unsaved work and holds nothing up.
+ * - One line of save status, most pressing first.
  *
  * The library's lists catch up with a save from the folder's change hint,
  * not from here.
  */
 import type {
 	CanonicalDocument,
-	CanonicalValue,
 	RowEditor,
 	RowError,
 	RowReloadError,
@@ -41,29 +38,19 @@ import type {
 } from '@epicenter/folder';
 import { withFileNewlines } from '@epicenter/folder/file-browser';
 import { fromRowEditor } from '@epicenter/folder/svelte';
-import { defineErrors, type InferErrors } from 'wellcrafted/error';
 import type { Result } from 'wellcrafted/result';
 import type { Admits } from './editor.svelte.js';
 
 /** Which view takes input: the row's fields, its whole text, or none once put down. */
 export type RowView = 'fields' | 'source' | 'released';
 
-/** One line about an open row, most pressing first. */
+/** One line about an open row's save, most pressing first. */
 export type RowStatus =
 	| { readonly kind: 'saved' }
 	| { readonly kind: 'saving' }
 	/** The latest write failed, its reply never arrived, or the file is gone. The input stays. */
 	| {
 			readonly kind: 'failed' | 'unconfirmed' | 'removed';
-			readonly message: string;
-	  }
-	/**
-	 * Values typed in some controls have no form a file can hold. Each is kept
-	 * in its control, not saved. `controls` names them: field names, or `body`.
-	 */
-	| {
-			readonly kind: 'refused';
-			readonly controls: readonly string[];
 			readonly message: string;
 	  }
 	/** The text is saved and does not read as a valid row. */
@@ -73,66 +60,7 @@ const CLOSING =
 	'Nothing was changed: this file is being moved or deleted, or Whispering is deciding whether to close.';
 const RELEASED = 'This file is no longer open here, so nothing was changed.';
 
-/** A typed value the row did not take, kept for the one control it was typed in. */
-type Refused = {
-	/** Exactly as typed, in LF for the body. */
-	readonly value: string;
-	readonly reason: string;
-};
-
-/** The typed values the row did not take, one at most per control. */
-type Held = {
-	readonly fields: ReadonlyMap<string, Refused>;
-	readonly body: Refused | undefined;
-};
-
-const NONE: Held = Object.freeze({ fields: new Map(), body: undefined });
-
-const SOURCE_HELD =
-	'Fix or discard what you typed that cannot be saved first, so it is not hidden behind the source.';
-
-/** The control a row was typed in: one field, or the body. */
-type Control = { readonly field: string } | 'body';
-
-const RowEditingError = defineErrors({
-	/**
-	 * `set` would change the row value of a control that holds a typed value
-	 * the row could not take, and the row did not come from that control.
-	 * Nothing changed.
-	 */
-	HeldInput: ({ path, control }: { path: string; control: string }) => ({
-		message: `The row for '${path}' was not changed: ${control} holds typed text that cannot be saved yet`,
-		path,
-		control,
-	}),
-});
-type HeldInputError = InferErrors<typeof RowEditingError>;
-
-const isList = (value: CanonicalValue): value is readonly CanonicalValue[] =>
-	Array.isArray(value);
-
-/** Whether two field values are the same value; `undefined` is an absent field. */
-function same(
-	a: CanonicalValue | undefined,
-	b: CanonicalValue | undefined,
-): boolean {
-	if (a === b) return true;
-	if (typeof a !== 'object' || typeof b !== 'object' || !a || !b) return false;
-	if (isList(a) || isList(b))
-		return (
-			isList(a) &&
-			isList(b) &&
-			a.length === b.length &&
-			a.every((item, index) => same(item, b[index]))
-		);
-	const keys = Object.keys(a);
-	return (
-		keys.length === Object.keys(b).length &&
-		keys.every((key) => Object.hasOwn(b, key) && same(a[key], b[key]))
-	);
-}
-
-/** Why the codec refused a typed value, in the words the person is shown. */
+/** Why the codec refused a typed row, in the words the person is shown. */
 const refusalReason = (reason: string) =>
 	reason.includes('lone surrogate')
 		? 'it has a character a file cannot hold exactly (a lone surrogate)'
@@ -184,23 +112,8 @@ export function createRowEditing<TFields>(
 	let released = $state(false);
 	/** Reloads the person asked for that are still reading the file. */
 	let reloads = $state(0);
-	/** Typed values the row did not take, per control; see the module comment. */
-	let held = $state.raw<Held>(NONE);
-
-	const holding = () => held.fields.size > 0 || held.body !== undefined;
-
-	/** Keep, or with `undefined` let go of, the value held for one control. */
-	function hold(control: Control, value: Refused | undefined) {
-		if (control === 'body') {
-			if (held.body !== value) held = { ...held, body: value };
-			return;
-		}
-		if (value === undefined && !held.fields.has(control.field)) return;
-		const fields = new Map(held.fields);
-		if (value === undefined) fields.delete(control.field);
-		else fields.set(control.field, value);
-		held = { ...held, fields };
-	}
+	/** Why the last row typed was not taken; see the module comment. */
+	let refusal = $state.raw<{ readonly reason: string } | undefined>(undefined);
 
 	const takes = () => !released && reloads === 0 && admits();
 
@@ -245,109 +158,50 @@ export function createRowEditing<TFields>(
 			if (editor.save.status === 'saving') return { kind: 'saving' };
 			if (editor.save.status === 'failed')
 				return saveProblem(editor.save.error);
-			if (holding()) {
-				const controls = [...held.fields.keys()];
-				if (held.body !== undefined) controls.push('body');
-				const first = held.fields.values().next().value ?? held.body;
-				return {
-					kind: 'refused',
-					controls,
-					message: first?.reason ?? '',
-				};
-			}
 			if (editor.row.status === 'invalid')
 				return { kind: 'invalid', message: describeRowError(editor.row.error) };
 			return { kind: 'saved' };
 		},
 		/**
-		 * Whether leaving would lose something: a write still running, one
-		 * that stopped, or a typed value the row could not take.
+		 * Why the last row typed was not taken, in the words the person is
+		 * shown, or `undefined`. What was typed is not kept; the row and its
+		 * controls show the input taken before it.
 		 */
+		get refusal() {
+			return refusal;
+		},
+		/** Whether leaving would lose something: a write still running, or one that stopped. */
 		get holds() {
-			return !released && (editor.save.status !== 'idle' || holding());
+			return !released && editor.save.status !== 'idle';
 		},
 		/**
-		 * The typed values the row did not take, per control. A control shows
-		 * its own over the valid row's value.
+		 * Set a complete row: every field to keep, and the body, exactly as
+		 * given. Omitted fields are deleted. Taken only while the fields are the
+		 * view of a valid row; otherwise nothing changes and this returns
+		 * `undefined`. A row the codec refuses changes nothing; only why is
+		 * kept, until input is taken.
 		 */
-		get held(): Held {
-			return held;
-		},
-		/**
-		 * Set a complete row: every field to keep, and the body. Omitted fields
-		 * are deleted. Taken only while the fields are the view of a valid row;
-		 * otherwise nothing changes and this returns `undefined`.
-		 *
-		 * `control` names where it was typed. A body typed in a textarea is in
-		 * LF and is saved in the body's own line endings; any other body is
-		 * saved exactly. A row that changes what a held control's row value is
-		 * is refused unless it comes from that control. When the row cannot be
-		 * written, the string typed in `control` is kept for it; when it is
-		 * taken, that control's held value is let go. A row from no control
-		 * keeps and lets go of nothing.
-		 */
-		set(
-			next: CanonicalDocument,
-			{ control }: { control?: Control } = {},
-		): Result<undefined, RowSetError | HeldInputError> | undefined {
-			const row = editor.row;
-			if (!takes() || source || row.status !== 'valid') return undefined;
-			for (const key of held.fields.keys())
-				if (
-					(control === 'body' || control?.field !== key) &&
-					!same(next.fields[key], row.fields[key])
-				)
-					return RowEditingError.HeldInput({ path, control: key });
-			if (
-				held.body !== undefined &&
-				control !== 'body' &&
-				next.body !== row.body
-			)
-				return RowEditingError.HeldInput({ path, control: 'body' });
-			const result = editor.set({
-				fields: next.fields,
-				body:
-					control === 'body'
-						? withFileNewlines(next.body, row.body)
-						: next.body,
-			});
-			if (control === undefined) return result;
-			if (result.error === null) {
-				hold(control, undefined);
-				return result;
-			}
-			const typed = control === 'body' ? next.body : next.fields[control.field];
-			if (typeof typed === 'string')
-				hold(control, {
-					value: typed,
-					reason: refusalReason(result.error.refusal.reason),
-				});
+		set(next: CanonicalDocument): Result<undefined, RowSetError> | undefined {
+			if (!takes() || source || editor.row.status !== 'valid') return undefined;
+			const result = editor.set(next);
+			refusal =
+				result.error === null
+					? undefined
+					: { reason: refusalReason(result.error.refusal.reason) };
 			return result;
-		},
-		/**
-		 * Let go of the typed value one control holds, as the person asked: a
-		 * field's name, or `body`. Every other control keeps its own.
-		 */
-		dropRefused(control: string) {
-			if (control === 'body') hold('body', undefined);
-			else hold({ field: control }, undefined);
 		},
 		/** Set the whole text, typed in the source textarea, in the file's own line endings. */
 		setText(typed: string) {
 			if (!takes() || view() !== 'source') return;
 			native.setText(withFileNewlines(typed, native.get().row.text));
+			refusal = undefined;
 			// Typing here keeps the source shown after the text becomes a valid row.
 			source = true;
 		},
-		/**
-		 * Show the source, or the fields. Fields are shown only for a valid row,
-		 * and the source is not shown while a field holds a typed value it could
-		 * not take, which the source would hide.
-		 */
+		/** Show the source, or the fields. Fields are shown only for a valid row. */
 		showSource(next: boolean): string | undefined {
 			if (released) return RELEASED;
 			if (!admits()) return CLOSING;
-			if (next && holding()) return SOURCE_HELD;
 			const { row } = native.get();
 			if (!next && row.status === 'invalid')
 				return `This file still cannot be edited as fields: ${describeRowError(row.error)}.`;
@@ -364,14 +218,14 @@ export function createRowEditing<TFields>(
 		/**
 		 * Take the file as it is now, as the person asked: running writes
 		 * settle, then the file is read and replaces the input, and a stopped
-		 * save and a refused typed value are let go. Input is not taken
-		 * meanwhile. A read that fails changes nothing.
+		 * save and a refusal are let go. Input is not taken meanwhile. A read
+		 * that fails changes nothing.
 		 */
 		async reload(): Promise<Result<undefined, RowReloadError>> {
 			reloads += 1;
 			try {
 				const reloaded = await native.reload();
-				if (reloaded.error === null) held = NONE;
+				if (reloaded.error === null) refusal = undefined;
 				return reloaded;
 			} finally {
 				reloads -= 1;
@@ -386,7 +240,7 @@ export function createRowEditing<TFields>(
 		release() {
 			if (released) return;
 			released = true;
-			held = NONE;
+			refusal = undefined;
 		},
 	};
 }

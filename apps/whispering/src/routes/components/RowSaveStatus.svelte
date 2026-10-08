@@ -16,6 +16,9 @@
 	 * reads it when it runs. Each action button has its own lifetime: one
 	 * shown for an earlier state does nothing once it is gone, even when that
 	 * state returns.
+	 *
+	 * A change the row could not take is a separate notice beside the save's
+	 * own state: it was never input, so nothing of it is kept or saved.
 	 */
 	let { library, editing }: { library: Library; editing: RowEditing<TFields> } = $props();
 
@@ -34,6 +37,13 @@
 </script>
 
 <div class="flex min-h-9 flex-wrap items-center gap-2 border-b px-4 py-1.5 text-xs" data-testid="save-status" data-save-state={editing.status.kind}>
+	{#if editing.refusal}
+		{#key editing.refusal}
+			<span class="text-warning" role="alert" data-testid="row-refusal">
+				Your last change was not taken: {editing.refusal.reason}. What was there before it is shown instead.
+			</span>
+		{/key}
+	{/if}
 	{#if editing.status.kind === 'saving'}
 		<span class="text-muted-foreground">Saving…</span>
 		{#if failure}
@@ -62,16 +72,6 @@
 			const problem = await library.discardDraft(editing.path);
 			if (problem) toast.error('Nothing was discarded', { description: problem });
 		}}>Discard mine</LiveButton>
-	{:else if editing.status.kind === 'refused'}
-		<span class="text-warning" role="alert">
-			What you typed in {editing.status.controls.join(', ')} cannot be saved: {editing.status.message}. It is kept there and
-			not saved; change it there, or discard it.
-		</span>
-		{#each editing.status.controls as control (control)}
-			<LiveButton size="xs" variant="outline" onclick={() => editing.dropRefused(control)}>
-				Discard what was typed in {control}
-			</LiveButton>
-		{/each}
 	{:else}
 		{#if editing.status.kind === 'invalid'}
 			<span class="text-warning" role="status">Saved, and it needs repair in Source: {editing.status.message}.</span>

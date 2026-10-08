@@ -23,9 +23,12 @@
  *   refused rename makes the same control editable again
  * - a transformation's title and source are one editor, and its Source
  *   preference outlives the view
- * - a value no file can hold stays in the control it was typed in, beside
- *   its recording too, while other controls save around it; bodies show in
- *   LF and save in the file's line endings
+ * - a value no file can hold is not taken: the control it was typed in shows
+ *   the row again once the binding settles, an alert says why beside the
+ *   save's own state, and the next taken input lets it go; it never holds a
+ *   close, and Source still opens
+ * - bodies show in LF and save in the file's line endings; a title and a
+ *   model save from their own controls, an emptied model as none
  *
  * jsdom has no layout, focus, selection, or IME; see svelte-dom.test-support.
  */
@@ -43,7 +46,7 @@ import { click, type } from '../svelte-dom.test-support.js';
 const { openTestWorkspace } = await import(
 	'../../lib/workspace.test-support.js'
 );
-const { flushSync, mount, tick, unmount } = await import('svelte');
+const { flushSync, mount, unmount } = await import('svelte');
 const { createLibrary } = await import('../../lib/library.svelte.js');
 const { pageState } = await import('../page-state.test-support.svelte.js');
 const Host = (await import('./test-fixtures/SelectionHost.svelte')).default;
@@ -136,6 +139,10 @@ const bodyField = (target: ParentNode, name: string) =>
 
 const saveState = (target: ParentNode) =>
 	target.querySelector('[data-save-state]')?.getAttribute('data-save-state');
+
+/** The alert that says why typing was not taken, if one is shown. */
+const refusalAlert = (target: ParentNode) =>
+	target.querySelector('[data-testid="row-refusal"]')?.textContent?.trim();
 
 test('typing in the one file view lands in the editor of the path it shows now, across A, B, and A again', async () => {
 	const { library, target, root } = await open({
@@ -361,34 +368,44 @@ test('a transformation’s title and source are one editor, and its source prefe
 	expect(editor.row).toMatchObject({ fields: { title: 'Typed now' } });
 });
 
-test('a pasted value no file can hold stays in the control it was typed in, says why, and is let go only by repair or a discard', async () => {
+test('a pasted value no file can hold is not taken: the textarea shows the row again, an alert says why, and taken typing lets it go', async () => {
 	const { library, page, target, root } = await open({
 		[A]: transcript('Alpha.\n'),
 	});
 	await show(library, A);
 	const editor = editorAt(library, A);
-	const lone = 'Half a pair: \uD800.\n';
+	const field = bodyField(target, 'a.md');
 
-	type(bodyField(target, 'a.md'), lone);
-	flushSync();
+	type(field, 'Half a pair: \uD800.\n');
+	// Let Svelte's post-event binding restore the accepted row value.
+	await new Promise((resolve) => setTimeout(resolve, 0));
 
-	expect(saveState(target)).toBe('refused');
-	expect(bodyField(target, 'a.md')?.value).toBe(lone);
+	expect(field?.value).toBe('Alpha.\n');
 	expect(editor.row).toMatchObject({ body: 'Alpha.\n' });
-	// A new view of the same file shows it too.
+	expect(saveState(target)).toBe('saved');
+	expect(refusalAlert(target)).toContain('lone surrogate');
+	expect(refusalAlert(target)).toContain('shown instead');
+	const firstAlert = target.querySelector('[data-testid="row-refusal"]');
+	type(field, 'Half a pair: \uD800.\n');
+	await new Promise((resolve) => setTimeout(resolve, 0));
+	expect(target.querySelector('[data-testid="row-refusal"]')).not.toBe(firstAlert);
+	expect(field?.value).toBe('Alpha.\n');
+	expect(library.holdsUnsavedWork).toBe(false);
+	// A new view of the same file shows the notice too.
 	page.shown = false;
 	flushSync();
 	page.shown = true;
 	flushSync();
-	expect(bodyField(target, 'a.md')?.value).toBe(lone);
-
-	// The source would hide it, so the view stays on the fields.
-	expect(library.editSource(A)).toContain('Fix or discard');
-	click(target, 'Discard what was typed in body');
-	flushSync();
 	expect(bodyField(target, 'a.md')?.value).toBe('Alpha.\n');
-	expect(saveState(target)).toBe('saved');
-	expect(await readFile(join(root, A), 'utf8')).toBe(transcript('Alpha.\n'));
+	expect(refusalAlert(target)).toContain('lone surrogate');
+
+	type(bodyField(target, 'a.md'), 'Alpha, fixed.\n');
+	flushSync();
+	expect(refusalAlert(target)).toBeUndefined();
+	expectOk(await editor.waitForSaves());
+	expect(await readFile(join(root, A), 'utf8')).toEndWith(
+		'---\nAlpha, fixed.\n',
+	);
 });
 
 test('controls from an earlier mode stay inert after that mode returns: fields, source, fields', async () => {
@@ -444,7 +461,7 @@ test('a transcript being renamed is read-only, typing delivered meanwhile is not
 	flushSync();
 	expect(field?.readOnly).toBe(true);
 	type(field, 'Typed while it moved.\n');
-	await tick();
+	await new Promise((resolve) => setTimeout(resolve, 0));
 	expect(field?.value).toBe('Alpha.\n');
 	expect(editor.row).toMatchObject({ body: 'Alpha.\n' });
 
@@ -480,7 +497,7 @@ test('an ordinary text file being renamed is read-only, typing delivered meanwhi
 	flushSync();
 	expect(field?.readOnly).toBe(true);
 	type(field, 'Typed while it moved.\n');
-	await tick();
+	await new Promise((resolve) => setTimeout(resolve, 0));
 	expect(field?.value).toBe('Saved.\n');
 	expect(editor.buffer).toBe('Saved.\n');
 
@@ -534,7 +551,24 @@ test('a recording’s title and notes stay live, with the typing on screen, afte
 	);
 	expect(target.querySelector('textarea[aria-label="Notes"]')).toBe(notes);
 	expect(notes?.value).toBe('Typed notes.\n');
+
+	// A title no file can hold is not taken: both the failed save and why
+	// the title was not taken are shown, and only the failed save holds.
+	type(title, 'Half \uD800');
+	await new Promise((resolve) => setTimeout(resolve, 0));
+	expect(title?.value).toBe('Take');
+	expect(editor.row).toMatchObject({
+		body: 'Typed notes.\n',
+		fields: { title: 'Take' },
+	});
+	expect(saveState(target)).toBe('failed');
+	expect(target.textContent).toContain('Not saved:');
+	expect(refusalAlert(target)).toContain('lone surrogate');
+	expect(library.saveProblems).toBe(1);
+
 	type(title, 'Retitled');
+	flushSync();
+	expect(refusalAlert(target)).toBeUndefined();
 	expect(editor.row).toMatchObject({
 		body: 'Typed notes.\n',
 		fields: { title: 'Retitled' },
@@ -631,7 +665,7 @@ test('an invalid recipe opens Source while Try it remains available to inspect r
 	).toBe('broken');
 });
 
-test('a transcript beside its recording shows its body in LF, keeps a value no file can hold on screen, and saves in the file’s line endings', async () => {
+test('a transcript beside its recording shows its body in LF, shows why a value no file can hold was not taken, and saves in the file’s line endings', async () => {
 	const TRANSCRIPT = 'transcriptions/take-1.md';
 	const crlf =
 		'---\nrecordingId: take\ncreatedAt: 2026-10-01T00:00:00.000Z\nmodel: m\nendpoint: http://127.0.0.1:18080/v1\n---\nOne.\r\nTwo.\r\n';
@@ -648,34 +682,40 @@ test('a transcript beside its recording shows its body in LF, keeps a value no f
 	const editor = editorAt(library, TRANSCRIPT);
 	expect(text()?.value).toBe('One.\nTwo.\n');
 
-	const lone = 'One.\nHalf a pair: \uD800.\n';
-	type(text(), lone);
-	flushSync();
-	expect(text()?.value).toBe(lone);
+	const card = () =>
+		target.querySelector('[data-testid="transcription-result"]') ?? target;
+	// Saved, the card shows no save line.
+	expect(saveState(card())).toBeUndefined();
+
+	type(text(), 'One.\nHalf a pair: \uD800.\n');
+	await new Promise((resolve) => setTimeout(resolve, 0));
+	expect(text()?.value).toBe('One.\nTwo.\n');
 	expect(editor.row).toMatchObject({ body: 'One.\r\nTwo.\r\n' });
-	expect(
-		saveState(
-			target.querySelector('[data-testid="transcription-result"]') ?? target,
-		),
-	).toBe('refused');
+	// The save line shows for the notice, with the save's own state.
+	expect(saveState(card())).toBe('saved');
+	expect(refusalAlert(card())).toContain('lone surrogate');
 	// A new card for the same transcript shows it too.
 	page.shown = false;
 	flushSync();
 	page.shown = true;
 	flushSync();
-	expect(text()?.value).toBe(lone);
+	expect(text()?.value).toBe('One.\nTwo.\n');
+	expect(refusalAlert(card())).toContain('lone surrogate');
 
 	type(text(), 'One.\nTwo.\nThree.\n');
 	flushSync();
 	expect(text()?.value).toBe('One.\nTwo.\nThree.\n');
+	expect(refusalAlert(card())).toBeUndefined();
 	expectOk(await editor.waitForSaves());
+	flushSync();
+	expect(saveState(card())).toBeUndefined();
 	expect(editor.holds).toBe(false);
 	const saved = await readFile(join(root, TRANSCRIPT), 'utf8');
 	expect(saved).toContain('"recordingId": "take"');
 	expect(saved).toEndWith('---\nOne.\r\nTwo.\r\nThree.\r\n');
 });
 
-test('a transformation’s title and instructions each keep a value no file can hold, its model saves around them, and each is discarded alone', async () => {
+test('a transformation’s title and instructions show the row again for a value no file can hold, and its title, model, and instructions save from their own controls', async () => {
 	const seed =
 		'---\ntitle: Clean up\nmodel: null\nendpoint: null\n---\nTidy.\r\n';
 	const { library, target, root } = await open(
@@ -700,10 +740,15 @@ test('a transformation’s title and instructions each keep a value no file can 
 	expect(prompt()?.value).toBe('Tidy.\n');
 
 	type(title(), 'Half \uD800');
+	await new Promise((resolve) => setTimeout(resolve, 0));
+	expect(title()?.value).toBe('Clean up');
 	type(prompt(), 'Half \uD801.\n');
-	flushSync();
-	expect(saveState(target)).toBe('refused');
+	await new Promise((resolve) => setTimeout(resolve, 0));
+	expect(prompt()?.value).toBe('Tidy.\n');
+	expect(saveState(target)).toBe('saved');
+	expect(refusalAlert(target)).toContain('lone surrogate');
 	expect(editor.row.text).toBe(seed);
+	expect(library.holdsUnsavedWork).toBe(false);
 
 	target
 		.querySelector('[data-testid="transformation-notes"]')
@@ -711,22 +756,25 @@ test('a transformation’s title and instructions each keep a value no file can 
 	flushSync();
 	expect(model()?.value).toBe('');
 	type(model(), 'chat-model');
-	expectOk(await editor.waitForSaves());
 	flushSync();
+	expect(refusalAlert(target)).toBeUndefined();
+	expectOk(await editor.waitForSaves());
 	expect(await readFile(join(root, RECIPE), 'utf8')).toBe(
 		'---\n"title": "Clean up"\n"model": "chat-model"\n"endpoint": null\n---\nTidy.\r\n',
 	);
-	expect(title()?.value).toBe('Half \uD800');
-	expect(prompt()?.value).toBe('Half \uD801.\n');
 
 	// An emptied model is no model: the text connection's is used.
 	type(model(), ' ');
-	expectOk(await editor.waitForSaves());
+	await new Promise((resolve) => setTimeout(resolve, 0));
 	expect(editor.row).toMatchObject({ fields: { model: null } });
+	expect(model()?.value).toBe('');
 
-	click(target, 'Discard what was typed in title');
-	flushSync();
-	expect(title()?.value).toBe('Clean up');
-	expect(prompt()?.value).toBe('Half \uD801.\n');
-	expect(editor.status).toMatchObject({ kind: 'refused', controls: ['body'] });
+	// The title and the instructions, typed in LF, save in the file's line endings.
+	type(title(), 'Tidied');
+	type(prompt(), 'Tidy.\nThen check.\n');
+	expectOk(await editor.waitForSaves());
+	expect(await readFile(join(root, RECIPE), 'utf8')).toBe(
+		'---\n"title": "Tidied"\n"model": null\n"endpoint": null\n---\nTidy.\r\nThen check.\r\n',
+	);
+	expect(prompt()?.value).toBe('Tidy.\nThen check.\n');
 });

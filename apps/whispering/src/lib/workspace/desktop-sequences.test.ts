@@ -18,8 +18,9 @@
  *   stopped save; a reload whose read fails changes nothing
  * - a removed file is never created again; an editor holding nothing whose
  *   file is gone is put down
- * - a value with no form a file can hold is refused and not taken; source
- *   text a file cannot hold exactly is kept and never written lossily
+ * - a value with no form a file can hold is refused and not taken, and its
+ *   notice holds nothing up; source text a file cannot hold exactly is kept
+ *   and never written lossily
  * - a deletion is refused while a save of the row is out, a row being
  *   deleted takes no input, and a deletion whose reply was lost recreates
  *   nothing
@@ -38,7 +39,6 @@ import type { Library } from '../library.svelte.js';
 import {
 	bodyShown,
 	editingOf,
-	fieldShown,
 	sourceShown,
 	typeBody,
 	typeField,
@@ -369,44 +369,28 @@ test('a saved editor whose file another writer removed is not a failed save, and
 	expect(kinds()).toEqual(['replace']);
 });
 
-test('a typed value no file can hold is kept in its own field, holds the close, and is repaired there or discarded; nothing is written', async () => {
+test('a typed value no file can hold is not taken: the row and its controls stay, why is shown, nothing is written, and the close is not held', async () => {
 	const { library, editor } = await open({ [PATH]: SEED });
 	const before = editor.row;
-	const lone = 'Half a pair: \uD800.\n';
 
-	typeBody(editor, lone);
+	typeBody(editor, 'Half a pair: \uD800.\n');
 
-	// Not taken into the row, and still what the body's control shows.
 	expect(editor.row).toBe(before);
-	expect(bodyShown(editor)).toBe(lone);
-	expect(fieldShown(editor, 'title')).toBe('Clean up');
-	expect(editor.status).toMatchObject({ kind: 'refused', controls: ['body'] });
-	expect(editor.holds).toBe(true);
-	expect(library.saveProblems).toBe(1);
-	expect(library.unsavedWork).toEqual([
-		`${PATH} has a typed value that cannot be saved.`,
-	]);
-	expect(await library.prepareToLeave()).toBe(false);
-	// Another field still takes input, and the kept body stays.
-	typeField(editor, 'title', 'Clean it');
-	expectOk(await editor.waitForSaves());
-	expect(bodyShown(editor)).toBe(lone);
-	expect(owner.text(PATH)).toContain('"title": "Clean it"');
-	expect(owner.text(PATH)).toContain('Tidy.\n');
-
-	// Repaired in the same field, it is taken and let go.
-	typeBody(editor, 'Whole.\n');
-	expectOk(await editor.waitForSaves());
+	expect(bodyShown(editor)).toBe('Tidy.\n');
+	expect(editor.refusal?.reason).toContain('lone surrogate');
 	expect(editor.status.kind).toBe('saved');
 	expect(editor.holds).toBe(false);
-	expect(owner.text(PATH)).toContain('Whole.\n');
+	expect(library.saveProblems).toBe(0);
+	expect(library.unsavedWork).toEqual([]);
+	expect(await library.prepareToLeave()).toBe(true);
+	expect(owner.text(PATH)).toBe(SEED);
 
-	// Or the person discards it, and the field shows the row again.
-	typeField(editor, 'title', 'Half a pair: \uD800');
-	expect(fieldShown(editor, 'title')).toBe('Half a pair: \uD800');
-	editor.dropRefused('title');
-	expect(fieldShown(editor, 'title')).toBe('Clean it');
-	expect(editor.holds).toBe(false);
+	// Input that is taken saves and lets the notice go.
+	typeField(editor, 'title', 'Clean it');
+	expect(editor.refusal).toBeUndefined();
+	expectOk(await editor.waitForSaves());
+	expect(owner.text(PATH)).toContain('"title": "Clean it"');
+	expect(owner.text(PATH)).toContain('Tidy.\n');
 	expect(owner.text(PATH)).not.toContain('�');
 });
 

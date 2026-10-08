@@ -427,23 +427,18 @@ test('a transcript edited outside is sent as the folder has it now, and is not r
 	expect(await readFile(join(root, transcript.path), 'utf8')).toBe(outside);
 });
 
-test('a transcript whose editor shows a body no file can hold is not sent, so the saved body never stands in for it', async () => {
+test('a transcript body no file can hold is not taken, so the transcript runs as its editor shows it and the notice does not stop it', async () => {
 	const { library, root, transformed } = await open();
 	const { transcript } = await transcribed(library, root);
 	const profile = await cleanupProfile(library);
 	await library.openTranscript(transcript.path);
 	const editor = editingOf(library.transcriptAt(transcript.path));
-	typeBody(editor, 'Half a pair: \uD800\n');
-	expect(bodyShown(editor)).toBe('Half a pair: \uD800\n');
-
-	expect(await library.transform(transcript.path, profile.path)).toContain(
-		'has edits that are not saved',
+	expect(typeBody(editor, 'Half a pair: \uD800\n')?.error?.name).toBe(
+		'Unrepresentable',
 	);
-	expect(transformed).toHaveLength(0);
-	expect(library.outputsFor(transcript.stem)).toEqual([]);
+	expect(bodyShown(editor)).toBe(transcript.body!);
+	expect(editor.refusal?.reason).toContain('lone surrogate');
 
-	// Discarded, the transcript is sent as its file holds it.
-	editor.dropRefused('body');
 	expect(await library.transform(transcript.path, profile.path)).toBeUndefined();
 	expect(transformed).toHaveLength(1);
 	expect(transformed[0]!.input).toBe(transcript.body!);

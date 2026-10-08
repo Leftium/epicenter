@@ -134,8 +134,9 @@ When the transformation has substantial format rules, keep its read and
 write-back operations together in the format's codec or module. Give the write
 operation the current source when it must preserve unrelated spans, newline
 style, or other source information. A projection and a source-preserving update
-are not necessarily total inverses: retain refused input in the draft and show
-the problem when a structured edit cannot represent what was typed. Do not turn
+are not necessarily total inverses. Show the problem when a structured edit
+cannot represent what was typed. Decide whether the app retains that refused
+input for repair or restores the accepted row with a visible notice. Do not turn
 those rules into binding infrastructure or remove draft, identity, eligibility,
 or destroyed-control guards just because the syntax becomes shorter. Use `encode`/`decode` for a complete structured value when the encoder also
 takes current source as preservation context. Name a genuinely partial operation
@@ -153,8 +154,11 @@ There are three ordinary bindings: raw `row.text` to `setText`, valid fields to
 `set({ ...editor.row, fields: { ...editor.row.fields, key: input } })`, and a
 body text to `set({ ...editor.row, body: input })`. Add a codec when controls
 present a different representation, such as text and thoughts; encode that
-complete value into the same body replacement. Read the current row at the event. Keep refused input and unfinished forms in the application
-session above disposable views, and preserve the file's newline convention.
+complete value into the same body replacement. Read the current row at the event. Preserve the file's newline convention at the body setter. Refused structured
+input is an app policy: Whispering restores the accepted row and keeps only a
+rejection notice. Apps promising to retain refused input keep it with the
+application owner above disposable views. Accepted input whose save fails stays
+in the row editor. Keep unfinished forms with their application owner.
 
 Default to one validity branch, with no tab or raw-mode state:
 
@@ -207,7 +211,7 @@ callers, then follow their view components. Search those consumers for `$state`,
 First ask whether there is a real view choice; a validity branch may remove
 selection altogether. Classify each retained value as selection, refused input,
 an editing session, an operation, or copied editor data. Collapse copied editor
-data, duplicate selection, and forwarding components. Verify invalid repair, refusal retention, tab changes,
+data, duplicate selection, and forwarding components. Verify invalid repair, the chosen refusal policy, tab changes,
 current-owner replacement, and delivered input after destruction. Existing
 session tests earn their boundaries when they protect those behaviors.
 

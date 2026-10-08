@@ -5,6 +5,7 @@
  * type check never reaches the page's library.
  */
 import type { CanonicalValue } from '@epicenter/folder';
+import { withFileNewlines } from '@epicenter/folder/file-browser';
 import type { RowSlot } from './library.svelte.js';
 import type { RowEditing } from './row-editing.svelte.js';
 
@@ -32,36 +33,32 @@ export function typeField<TFields>(
 ) {
 	const row = editing.row;
 	if (row.status !== 'valid') return undefined;
-	return editing.set(
-		{ ...row, fields: { ...row.fields, [key]: value } },
-		{ control: { field: key } },
-	);
+	return editing.set({ ...row, fields: { ...row.fields, [key]: value } });
 }
 
-/** Type into the body's textarea, in LF: the valid row as it is now, with this body. */
+/**
+ * Type into the body's textarea, in LF: the valid row as it is now, with this
+ * body in the row's own line endings.
+ */
 export function typeBody<TFields>(editing: RowEditing<TFields>, typed: string) {
 	const row = editing.row;
 	if (row.status !== 'valid') return undefined;
-	return editing.set({ ...row, body: typed }, { control: 'body' });
+	return editing.set({ ...row, body: withFileNewlines(typed, row.body) });
 }
 
-/** What a field's text control shows: what was typed there and not taken, else the valid row's string. */
+/** What a field's text control shows: the valid row's string. */
 export function fieldShown<TFields>(
 	editing: RowEditing<TFields>,
 	key: string,
 ): string {
-	const held = editing.held.fields.get(key);
-	if (held !== undefined) return held.value;
 	const value =
 		editing.row.status === 'valid' ? editing.row.fields[key] : undefined;
 	return typeof value === 'string' ? value : '';
 }
 
-/** What the body's textarea shows, in LF: what was typed there and not taken, else the valid row's. */
-export function bodyShown<TFields>(editing: RowEditing<TFields>): string {
-	if (editing.held.body !== undefined) return editing.held.body.value;
-	return editing.row.status === 'valid' ? lf(editing.row.body) : '';
-}
+/** What the body's textarea shows: the valid row's body, in LF. */
+export const bodyShown = <TFields>(editing: RowEditing<TFields>) =>
+	editing.row.status === 'valid' ? lf(editing.row.body) : '';
 
 /** What the source textarea shows: the whole text, in LF. */
 export const sourceShown = <TFields>(editing: RowEditing<TFields>) =>

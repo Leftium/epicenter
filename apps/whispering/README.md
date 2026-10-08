@@ -441,7 +441,8 @@ shutdown) all ask the window first:
 - When something is held (a recording in progress, a recording that is not in
   the folder, a transcript or transformation result whose file was not written,
   a result on pasted text not saved yet, a running transcription or
-  transformation, or edits that cannot be saved),
+  transformation, or edits whose save is running, failed, or was not
+  confirmed),
   the app stays open and shows what would be lost. **Keep working** closes the
   prompt and changes nothing. **Discard and quit** closes the app and drops
   what was held.
@@ -510,6 +511,12 @@ otherwise within a couple of seconds.
   saves again. **Save again** resubmits your current text; **Discard mine and
   load the file** replaces it with the file. A reply that
   never arrived is shown as not known, never as saved.
+- Text pasted into a title, a model, notes, a transcript, or instructions
+  that a file cannot hold exactly (a lone surrogate) is not taken. The field
+  goes back to what it showed before, and a notice beside the save status
+  says why. Nothing of it is kept or saved, so it does not stop closing,
+  renaming, or running. Your next change that is taken, or **Reload from
+  file**, clears the notice. Source keeps any text you type, readable or not.
 
 A recording or transformation file whose text does not read as a row stays in
 its list marked "Needs repair" with its file untouched, and still opens. A row

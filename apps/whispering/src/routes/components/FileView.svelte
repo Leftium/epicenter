@@ -118,10 +118,10 @@
 				<Textarea
 					class="min-h-40 flex-1 resize-none font-sans"
 					bind:value={
-						() => editing?.held.body?.value ?? (editing?.row.status === 'valid' ? lf(editing.row.body) : ''),
+						() => (editing?.row.status === 'valid' ? lf(editing.row.body) : ''),
 						(value) => {
 							const row = editing?.row;
-							if (row?.status === 'valid') editing?.set({ ...row, body: value }, { control: 'body' });
+							if (row?.status === 'valid') editing?.set({ ...row, body: withFileNewlines(value, row.body) });
 						}
 					}
 					readonly={!editing.editable}

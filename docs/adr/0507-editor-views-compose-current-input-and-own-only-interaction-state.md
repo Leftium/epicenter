@@ -42,10 +42,22 @@ Do not put a body draft or a patch-merging API between those owners.
 
 When the app adds admission rules, expose read-through `row` and `save` and keep
 the native mutators inside that owner. A public native editor would let callers
-bypass those rules. A control origin identifies where refused input belongs;
-it does not select a patch to merge. An unrelated replacement preserves held
-input and cannot change that control's accepted value without resolving it.
-Views read the held value over the row value until it is repaired or discarded.
+bypass those rules.
+
+Whispering discards structured input refused before admission. Its controls read
+the accepted row directly, and Svelte's input binding restores that value after
+the event. A separate rejection notice explains the change; it retains no input
+and does not block closing, moving, or running a transformation. Body textarea
+setters preserve file newlines when composing the replacement, so `set` needs
+no control origin. Accepted input whose save fails remains in the native row.
+Raw Source input, including malformed text, remains available for repair.
+
+An app that promises to retain refused input owns that additional value. A
+control origin identifies where it belongs; it does not select a patch to merge.
+An unrelated replacement preserves held input and cannot change that control's
+accepted value without resolving it. Views read the held value over the row value
+until it is repaired or discarded. This policy is optional, not required
+scaffolding for complete replacements.
 
 Source means the complete file, including frontmatter; body means its text after
 frontmatter. Both can use the same textarea or text editor component. The binding
@@ -108,8 +120,8 @@ Disabling its trigger does not reset an already selected panel; its selection
 owner owns that reset. A workflow panel such as Whispering's Try it remains
 available to inspect unfinished results even when structured editing is
 unavailable. Use `forceMount` for a named retained lifetime, such as chat input or
-rich-editor undo history. Keep refused input and unfinished forms above
-otherwise disposable panels.
+rich-editor undo history. Keep unfinished forms and any refused input the app
+promises to retain above otherwise disposable panels.
 
 Shared `Textarea` and `Input` own their component lifetimes. Once destroyed, their
 value bindings neither read the application owner nor submit input. This removes

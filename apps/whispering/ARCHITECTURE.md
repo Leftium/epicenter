@@ -568,9 +568,11 @@ endings. Its row is that input at once, and the views show it. The fields view
 exists only while the whole row is valid; a value that does not conform is
 still saved, and the row is then edited in its source. The field controls
 send strings, and the codec refuses only one with a lone surrogate, which a
-paste can carry. That one typed value is not taken: it stays in the control it
-was typed in, holds the close, and is let go when that field takes a value,
-the person discards it, or a reload takes the file. The editor never reads its file again on its
+paste can carry. That typed value is not taken and not kept: the row stays
+as it was, its control shows the row again, and an alert beside the save's
+own status says why. The alert is not unsaved work and holds no close, move,
+or run; the next input taken, a reload that reads the file, or putting the
+editor down lets it go. The editor never reads its file again on its
 own: a refresh lists another program's change, the open editor keeps what it
 shows, and the next save writes over the change. Reload, as the person asks,
 waits for running writes, reads the file, and replaces the input; the editor
@@ -585,8 +587,7 @@ refuses as stale holds both versions for review.
 Renaming or deleting a file first stops its draft's input, a row's editor or
 a text draft alike, and waits until no write runs. A draft that still holds
 anything then refuses the operation and keeps its exact input: a save that
-failed, was not confirmed, or is in review, or a typed value the file cannot
-hold. So a rename moves saved files and never carries unsaved edits to another
+failed, was not confirmed, or is in review. So a rename moves saved files and never carries unsaved edits to another
 path. The file is read after that, and the rename or the confirmed deletion is
 conditional on what was read; a rename never replaces a file at the new name,
 and a draft there holding edits refuses it. Neither name's draft takes input

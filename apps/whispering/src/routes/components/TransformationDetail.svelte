@@ -16,6 +16,7 @@
 	import ChevronRightIcon from '@lucide/svelte/icons/chevron-right';
 	import PlayIcon from '@lucide/svelte/icons/play';
 	import { inspectRow, rowStemOf } from '@epicenter/folder';
+	import { withFileNewlines } from '@epicenter/folder/file-browser';
 	import { tick, untrack } from 'svelte';
 	import {
 		TRANSFORMATIONS,
@@ -270,11 +271,10 @@
 			<Input
 				class="flex-1 text-base font-medium"
 				bind:value={
-					() => editing?.held.fields.get('title')?.value ?? (editing?.row.status === 'valid' ? editing.row.fields.title : ''),
+					() => (editing?.row.status === 'valid' ? editing.row.fields.title : ''),
 					(value) => {
 						const row = editing?.row;
-						if (row?.status === 'valid')
-							editing?.set({ ...row, fields: { ...row.fields, title: value } }, { control: { field: 'title' } });
+						if (row?.status === 'valid') editing?.set({ ...row, fields: { ...row.fields, title: value } });
 					}
 				}
 				readonly={!editing?.editable}
@@ -399,10 +399,10 @@
 							id="transformation-prompt"
 							class="min-h-36 resize-y font-sans"
 							bind:value={
-								() => editing?.held.body?.value ?? (editing?.row.status === 'valid' ? lf(editing.row.body) : ''),
+								() => (editing?.row.status === 'valid' ? lf(editing.row.body) : ''),
 								(value) => {
 									const row = editing?.row;
-									if (row?.status === 'valid') editing?.set({ ...row, body: value }, { control: 'body' });
+									if (row?.status === 'valid') editing?.set({ ...row, body: withFileNewlines(value, row.body) });
 								}
 							}
 							readonly={!editing?.editable}
@@ -433,15 +433,12 @@
 								<Input
 									id="transformation-model"
 									bind:value={
-										() => editing?.held.fields.get('model')?.value ?? (editing?.row.status === 'valid' ? (editing.row.fields.model ?? '') : ''),
+										() => (editing?.row.status === 'valid' ? (editing.row.fields.model ?? '') : ''),
 										(value) => {
 											const row = editing?.row;
 											// An empty model uses the text connection's model.
 											if (row?.status === 'valid')
-												editing?.set(
-													{ ...row, fields: { ...row.fields, model: value.trim() === '' ? null : value } },
-													{ control: { field: 'model' } },
-												);
+												editing?.set({ ...row, fields: { ...row.fields, model: value.trim() === '' ? null : value } });
 										}
 									}
 									readonly={!editing?.editable}

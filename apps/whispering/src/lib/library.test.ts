@@ -74,7 +74,6 @@ import { describeDeletion } from './deletion-copy.js';
 import type { Library } from './library.svelte.js';
 import type { RowEditing } from './row-editing.svelte.js';
 import {
-	bodyShown,
 	editingOf,
 	fieldShown,
 	sourceShown,
@@ -787,13 +786,16 @@ test('typing in a row removed outside is kept on screen, and saving never create
 	expect((await editor.waitForSaves()).error?.name).toBe('NotFound');
 	expect(await Bun.file(path).exists()).toBe(false);
 
-	// A failed Reload keeps input, including a scalar the row refused.
-	typeField(editor, 'title', 'kept\uD800');
+	// A failed Reload keeps the input, and why a later value was not taken.
+	expect(typeField(editor, 'title', 'refused\uD800')?.error?.name).toBe(
+		'Unrepresentable',
+	);
 	expect(await library.reloadRow(editor.path)).toContain(
 		'no longer in the folder',
 	);
 	expect(recordingEditor(library)).toBe(editor);
-	expect(fieldShown(editor, 'title')).toBe('kept\uD800');
+	expect(fieldShown(editor, 'title')).toBe('Mine');
+	expect(editor.refusal?.reason).toContain('lone surrogate');
 	expect(library.holdsUnsavedWork).toBe(true);
 
 	// Discarding puts the editor down; there is no file to show.
@@ -3120,31 +3122,19 @@ for (const outcome of ['failed', 'unconfirmed'] as const)
 		expect(editor.buffer).toBe('typed again\n');
 	});
 
-test('a transcript body no file can hold refuses the rename and stays in its editor; discarded, the transcript renames', async () => {
+test('a transcript body no file can hold is not taken, so it neither holds the close nor stops a rename', async () => {
 	const { library, root } = await open();
 	const { transcript, draft } = await openTranscript(library);
 	const before = await readFile(join(root, transcript.path), 'utf8');
-	const unsavable = 'Half a pair: \uD800\n';
-	expect(bodyTaken(draft, unsavable)).toBe(false);
-	expect(draft.status.kind).toBe('refused');
+	expect(bodyTaken(draft, 'Half a pair: \uD800\n')).toBe(false);
+	expect(draft.refusal?.reason).toContain('lone surrogate');
+	expect(draft.status.kind).toBe('saved');
+	expect(library.saveProblems).toBe(0);
+	expect(library.holdsUnsavedWork).toBe(false);
 
-	expect(await library.rename(transcript.path, 'renamed.md')).toContain(
-		'Save or discard them before renaming it',
-	);
-
-	expect(draft.released).toBe(false);
-	expect(bodyShown(draft)).toBe(unsavable);
-	expect(draft.status.kind).toBe('refused');
-	expect(library.transcriptAt(transcript.path)).toBeDefined();
-	expect(library.holdsUnsavedWork).toBe(true);
-	expect(await readFile(join(root, transcript.path), 'utf8')).toBe(before);
-	expect(
-		await Bun.file(join(root, 'transcriptions', 'renamed.md')).exists(),
-	).toBe(false);
-
-	draft.dropRefused('body');
 	expect(await library.rename(transcript.path, 'renamed.md')).toBeUndefined();
 	expect(draft.released).toBe(true);
+	expect(draft.refusal).toBeUndefined();
 	expect(
 		await readFile(join(root, 'transcriptions', 'renamed.md'), 'utf8'),
 	).toBe(before);

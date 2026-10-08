@@ -5,6 +5,7 @@
 	import { Spinner } from '@epicenter/ui/spinner';
 	import WandSparklesIcon from '@lucide/svelte/icons/wand-sparkles';
 	import { inspectRow } from '@epicenter/folder';
+	import { withFileNewlines } from '@epicenter/folder/file-browser';
 	import { untrack } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
@@ -47,7 +48,6 @@
 		if (editing.row.status === 'valid') return editing.row.body;
 		return inspectRow(whisperingDefinition.tables.transcriptions, editing.row.text).body;
 	});
-	const unsettled = $derived(editing !== undefined && editing.status.kind !== 'saved');
 	// The live textarea has its own lifetime (Textarea): one that is gone
 	// delivers nothing, even after the fields view returns.
 
@@ -76,10 +76,10 @@
 		<Textarea
 			class="min-h-32 resize-y font-sans"
 			bind:value={
-				() => editing?.held.body?.value ?? (editing?.row.status === 'valid' ? lf(editing.row.body) : ''),
+				() => (editing?.row.status === 'valid' ? lf(editing.row.body) : ''),
 				(value) => {
 					const row = editing?.row;
-					if (row?.status === 'valid') editing?.set({ ...row, body: value }, { control: 'body' });
+					if (row?.status === 'valid') editing?.set({ ...row, body: withFileNewlines(value, row.body) });
 				}
 			}
 			readonly={!editing?.editable}
@@ -100,7 +100,7 @@
 			<LiveButton size="xs" variant="outline" class="ml-1" onclick={() => void library.retryOpen(result.path)}>Try again</LiveButton>
 		</p>
 	{/if}
-	{#if editing && unsettled}
+	{#if editing && (editing.status.kind !== 'saved' || editing.refusal !== undefined)}
 		<RowSaveStatus {library} {editing} />
 	{/if}
 	<footer class="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">

@@ -680,9 +680,8 @@ export function createLibrary(workspace: Workspace) {
 	 * Success means the file holds everything the draft holds: a draft that
 	 * still holds anything once its saves settle refuses, so the file is never
 	 * acted on while a view shows other text. That is a row whose save stopped
-	 * or was not confirmed, a typed value it could not take, or input that
-	 * started another save meanwhile, and a text draft whose input cannot be
-	 * saved without the person.
+	 * or was not confirmed, or input that started another save meanwhile, and
+	 * a text draft whose input cannot be saved without the person.
 	 */
 	async function settleDraft(
 		path: string,
@@ -704,7 +703,7 @@ export function createLibrary(workspace: Workspace) {
 		return Ok(editor.baseline.sha256);
 	}
 
-	/** Whether the draft kept for a file holds typing, a save in question, or a value it could not take. */
+	/** Whether the draft kept for a file holds typing or a save in question. */
 	function draftHolds(path: string): boolean {
 		const slot = slotAt(path);
 		if (slot?.kind === 'open') return slot.editing.holds;
@@ -1249,13 +1248,13 @@ export function createLibrary(workspace: Workspace) {
 	 * Move a file to a new name in its folder. Its draft, a row's editor or a
 	 * text draft, takes no input from the start until the move has an outcome,
 	 * and saves already admitted settle first. A draft that then still holds
-	 * anything (a save that failed, was not confirmed, or is in review, or a
-	 * typed value the file cannot hold) refuses the rename and keeps it as it
-	 * is. Otherwise every input is in the file, so the move takes the edits
-	 * with it and nothing is left to follow. The move is conditional on the
-	 * version settled and never replaces a file at the new name. A draft kept
-	 * at the new name that holds edits refuses it too; one that holds nothing
-	 * takes no input until the outcome either.
+	 * anything (a save that failed, was not confirmed, or is in review)
+	 * refuses the rename and keeps it as it is. Otherwise every input is in
+	 * the file, so the move takes the edits with it and nothing is left to
+	 * follow. The move is conditional on the version settled and never
+	 * replaces a file at the new name. A draft kept at the new name that holds
+	 * edits refuses it too; one that holds nothing takes no input until the
+	 * outcome either.
 	 */
 	async function renameFile(
 		from: string,
@@ -1391,9 +1390,7 @@ export function createLibrary(workspace: Workspace) {
 							? `${editing.path} has edits whose file is no longer in the folder.`
 							: kind === 'saving'
 								? `${editing.path} is still being saved.`
-								: kind === 'refused'
-									? `${editing.path} has a typed value that cannot be saved.`
-									: `${editing.path} has edits whose last save failed.`,
+								: `${editing.path} has edits whose last save failed.`,
 				);
 			}
 		for (const editor of textEditors())
@@ -2293,8 +2290,7 @@ export function createLibrary(workspace: Workspace) {
 		},
 		/**
 		 * Drafts whose save needs the person: it failed, was not confirmed, its
-		 * file is gone, the file changed under unsaved typing, or the value
-		 * typed last has no form a file can hold.
+		 * file is gone, or the file changed under unsaved typing.
 		 */
 		get saveProblems() {
 			const rows = rowEditings().filter((editing) => {
@@ -2302,7 +2298,6 @@ export function createLibrary(workspace: Workspace) {
 					case 'failed':
 					case 'unconfirmed':
 					case 'removed':
-					case 'refused':
 						return true;
 					default:
 						return false;

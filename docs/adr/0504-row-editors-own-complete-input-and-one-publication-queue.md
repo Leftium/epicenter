@@ -5,9 +5,9 @@
 - **Amends:** [ADR-0483](0483-honeycrisp-shares-one-canonical-editor-per-open-row.md), replacing partial changes, schema-gated acquisition and saving, raw-session transfers, recreation, and automatic file adoption. One owner per open row and application close consent remain.
 - **Amends:** [ADR-0471](0471-a-data-folder-handle-exposes-tables-kv-and-files.md), replacing the retained table editor's surface. Ordinary table and file commands remain.
 
-Capture's body composition is described in [ADR-0506](0506-capture-composes-values-through-a-source-preserving-body-codec.md). Both views use the same complete row editor and publication queue.
+Capture's body composition is described in [ADR-0506](0506-capture-composes-values-through-a-source-preserving-body-codec.md). Its structured controls use the complete row editor and publication queue.
 
-The default validity branch, optional view selection, and control ownership are described in [ADR-0507](0507-editor-views-compose-current-input-and-own-only-interaction-state.md).
+Workspace-specific interpretation, keyed view lifetime, and control ownership are described in [ADR-0507](0507-editor-views-compose-current-input-and-own-only-interaction-state.md).
 
 ## Context
 
@@ -29,7 +29,9 @@ wins. A person deliberately reloads to adopt their changes.
 `folder.tables.<name>.edit(stem, { signal? })` reads once and acquires an editor
 fixed to the row address. Missing, unreadable, non-UTF-8, invalid-address, and
 aborted acquisition yield no editor. Readable malformed or schema-invalid text
-opens for raw repair. The signal governs acquisition only.
+opens and retains its source. The application chooses whether its workspace can
+render structured controls or offers navigation to Files for repair. Acquisition
+does not choose an editing surface. The signal governs acquisition only.
 
 ```ts
 const { data: owner, error } = await notes.edit(stem, { signal });
@@ -49,8 +51,10 @@ all fields, including unknown metadata, into each complete replacement.
 Omitted keys are intentionally deleted. Setters never merge from disk or a
 previous row. `set` reads only `fields` and `body`, owns their canonical text
 synchronously, and returns a representation Result. A refusal changes nothing.
-Schema-invalid representable input is accepted and saved, then exposed as raw
-repair input. `setText` retains text exactly, including malformed frontmatter.
+Schema-invalid representable input is accepted and saved, with its exact text
+available for explicit repair. It does not automatically switch the mounted
+editor to a source view. `setText` retains text exactly, including malformed
+frontmatter.
 Text UTF-8 cannot encode exactly is retained and reported rather than written
 lossily. Structured formatting may remove frontmatter comments and quoting.
 
@@ -114,8 +118,9 @@ Success deliberately discards held input and clears its save failure. Read
 failure returns an error and preserves the entire snapshot. A setter or save
 admission during reload prevents adoption with `InputChanged`. When reloads
 overlap, the latest call decides and earlier calls settle with its result.
-Applications fence input during deliberate reload and confirm discard when
-held input would otherwise be lost. Discarding an `Unconfirmed` failure does
+Applications confirm discard when held input would otherwise be lost. They may
+allow typing during reload and handle `InputChanged` rather than adding another
+input fence. Discarding an `Unconfirmed` failure does
 not confirm or cancel that earlier write. Idle describes the newly adopted local state.
 
 ### Svelte tracks the same owner
@@ -127,7 +132,8 @@ adapter copies no input, diagnostics, or publication state. Repeated adaptation
 reuses the wrapper.
 
 Function bindings read the current row and immediately call the owner. Callers
-check view lifetime and mode because an outgoing control can still emit input.
+check control lifetime and current row shape because an outgoing control can
+still emit input. Selected workspace or tab is not write permission.
 Textarea newline projection and restoration preserve exact source text.
 Unmounting removes subscriptions; it does not cancel admitted writes.
 

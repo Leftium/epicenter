@@ -6,8 +6,9 @@
 
 ## Context
 
-Source and Capture are two views of one open file. Capture's previous operations
-produced a whole file that the draft framed again to extract a body. That crossed
+Capture currently switches between Source and interpreted controls for one open
+file. Capture's previous operations produced a whole file that the draft framed
+again to extract a body. That crossed
 Folder's frontmatter boundary twice.
 
 Capture needs to edit text and ordered thoughts while preserving surrounding
@@ -35,16 +36,19 @@ const { data: body, error } = captureBody.encode({
   thoughts: currentCapture.thoughts.map((text, i) => i === index ? input : text),
 }, editor.row.body);
 if (error !== null) {
-  // Keep input in the draft and show the refusal.
+  // Show the refusal; immediate controls return to accepted content.
+  // An explicit Save form retains its unsubmitted input.
   return;
 }
 editor.set({ ...editor.row, body });
 ```
 
 Spreading the current editor row preserves its other fields. Folder owns
-frontmatter, validation, accepted input, and publication. Source uses
-`editor.setText` and remains available for repair. The interaction owner handles
-both codec and row-submission refusals without clearing typed input.
+frontmatter, validation, accepted input, and publication. The Files workspace
+edits complete source for repair, through an explicit handoff from Capture.
+Immediate controls discard input refused before admission and show its reason.
+An explicit thought Save form retains unsubmitted input; accepted input whose
+publication fails remains in the editor.
 
 A delayed editing session holds its starting list and selected index. It may
 commit only while that list is still current. The draft produces a new list for
@@ -58,7 +62,11 @@ thoughts. For a body without a Thoughts section, appending one preserves the
 existing text bytes and consumes its trailing separator lines. Decode reports
 that text without those separators, matching the existing append behavior.
 
-[ADR-0507](0507-editor-views-compose-current-input-and-own-only-interaction-state.md) records the default validity branch, optional view selection, control lifetimes, and complete replacements. Capture offers an explicit choice between its interpreted body and whole-file Source, so it retains one selection above its disposable panels.
+[ADR-0507](0507-editor-views-compose-current-input-and-own-only-interaction-state.md)
+separates Files source editing from Capture structured editing. Capture does not
+switch a mounted editor to Source when its body codec becomes unavailable. It
+shows the reason and offers explicit repair navigation while retaining accepted
+input and unfinished forms. The current in-detail Source tab remains to migrate.
 
 ## Consequences
 
@@ -79,5 +87,6 @@ representable; the app asks for text when adding or saving a thought.
   callers learn operation-shaped inputs instead of composing ordinary values.
 - Persistent thought IDs. Thoughts belong to a Markdown list, and a current
   position plus an editing-session check identifies the intended entry.
-- Giving each view its own draft or save queue. Both views share one editor;
-  only refused input and unfinished forms need application state.
+- Giving Files and Capture independent active save queues for the same file.
+  A workspace handoff settles publication before another editor opens; accepted
+  input and unfinished forms remain explicitly owned.

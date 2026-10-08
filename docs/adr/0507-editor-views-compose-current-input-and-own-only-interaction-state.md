@@ -2,240 +2,217 @@
 
 - **Status:** Proposed
 - **Date:** 2026-10-06
-- **Relates:** [ADR-0504](0504-row-editors-own-complete-input-and-one-publication-queue.md), row input and publication, and [ADR-0506](0506-capture-composes-values-through-a-source-preserving-body-codec.md), Capture body composition.
+- **Updated:** 2026-10-08
+- **Relates:** [ADR-0504](0504-row-editors-own-complete-input-and-one-publication-queue.md), accepted row input and publication, and [ADR-0506](0506-capture-composes-values-through-a-source-preserving-body-codec.md), Capture body composition.
+- **Unbuilt:** Separate Files and structured workspaces in apps that currently switch one editor between Source and Fields, including Todos, Honeycrisp, and Capture; keyed detail views; explicit repair navigation and publication handoff between workspaces.
 
 ## Context
 
-A source view and a structured view edit the same open file. Copying the editor's
-row, validity, save status, or body into component state introduces another owner
-and synchronization work. Separate tab selection and source-mode flags can also
-express the same choice twice. Thin editor components and paired getter/setter
-props add navigation without owning an editing rule.
+Todos currently selects a folder-relative path, retains either a todo editor or
+an arbitrary-file editor, and renders both through one detail area. Its todo
+editor also keeps `rawMode`, exposes `editSource` and `editFields`, and checks the
+selected view when accepting writes. Honeycrisp and Capture likewise offer
+source and interpreted editing inside one detail workflow.
 
-Two temporal boundaries remain real: the row can change before Svelte removes a
-control, and a detached DOM element can still deliver its native binding event.
-Removing redundant state must preserve accepted input across both boundaries
-and prevent retired controls from changing a different row.
+This combines two questions: which file the person chose, and how the current
+editor interprets that file. Invalid input can change the interpretation while
+the person types. Preserving view choice across repair and rename adds more
+state and admission rules. Reusing a detail component for another editor makes
+its bindings follow a changing owner.
+
+The simpler product contract separates navigation by editing purpose. A file
+tree opens text. A todo list or table opens structured records. Apps may offer
+either workspace or both. Accepted text must survive a failed save regardless
+of which workspace or component is visible.
 
 ## Decision
 
-One editor owns accepted input and its publication queue. Views read through the
-editor's reactive facade and compose complete replacements from its current row.
-Applications own unfinished forms, confirmations, and operation fences. For
-immediate edits, a rejected replacement restores the accepted value and leaves
-a reason-only notice. The notice does not count as unsaved input or block an
-operation. Keeping rejected text is an additional product promise, not default
-editor scaffolding.
+**The selection surface determines the editing surface for one editor-view lifetime.**
 
-There are three common binding patterns:
+A Files workspace lists files and opens their complete text, including
+frontmatter, in a text editor. Parsing as a table row is not required. Missing,
+unreadable, or non-text files show an acquisition error or file details rather
+than a text editor with invented empty content.
 
-| Pattern | Read | Submit |
+A structured workspace lists editable records, such as todos, notes, or
+captures, and opens the corresponding structured controls. A grid is not
+required: the product list and its detail editor are one structured workspace.
+Invalid files are excluded from its editable records, with a visible repair
+entry point naming the affected files and the reason. They remain accessible
+through Files. A structured-only app supplies a reachable file repair route,
+such as the host's Files workspace or an external editor at the exact path.
+
+```text
+Files: file tree -> complete-text editor
+Todos: todo list/table -> todo fields and body
+Capture: capture list -> text and thoughts
+Honeycrisp: note list -> note fields and rich body
+```
+
+There is no per-record Source/Fields or Source/Capture toggle. Tabs may select
+workspaces or product workflows; they do not change a mounted editor's
+interpretation. A rich body widget is a structured representation of the body,
+not a full-file Source editor.
+
+**One mounted detail view addresses one acquired editor instance.**
+
+Key the detail by stable editor identity, including when a new editor opens at
+the same path. Do not key by the changing row, body, title, or a newly created
+wrapper. The detail does not hot-swap its editor prop. Cursor, undo history,
+view preference, and unfinished component-local interactions may reset when
+that view ends. Unsubmitted forms that the app promises to keep have an
+explicit owner above the disposable view.
+
+`{#await}` renders an existing acquisition promise's pending, success, and error
+results. It does not guarantee a new component instance for another resolved
+editor; use `{#key}` for that boundary. Start acquisition from navigation or
+application setup, not from a render expression. Do not duplicate the promise
+with `isOpen`, `isOpening`, and `isReady` flags.
+
+The table API acquires row editors; it does not select the current screen.
+`folder.tables.<name>.edit(stem)` addresses a table row. App navigation retains
+its address while opening or showing an error. A current item can hold that
+address and result directly; a separate `selectedPath` plus a derived lookup is
+not required. Each workspace owns its selection; the file tree does not retarget a mounted
+structured detail. Retaining accepted input is separate from selecting it.
+
+**Controls read current accepted input and submit complete replacements.**
+
+| Surface | Read | Submit |
 | --- | --- | --- |
-| Source | `editor.row.text` | `editor.setText(text)` |
+| Files | `editor.row.text`, or the file editor's exact text | `editor.setText(text)`, or the file editor's text setter |
 | Structured fields | Valid `editor.row.fields` | `editor.set({ ...editor.row, fields: { ...editor.row.fields, field: input } })` |
 | Structured body | Valid `editor.row.body` | `editor.set({ ...editor.row, body: input })` |
 
-Direct body editing needs no codec. Add decode and encode only when controls
-present a different representation of the body, such as Capture's text and
-thoughts. The encoded body enters the same complete replacement.
+These row bindings name the current Folder API. A raw-file editor may expose a
+different text API; it need not acquire a table row merely to edit a file.
+Textarea projections restore the file's newline convention when submitting.
 
-An app-owned editor may guard `set` with operation fences and preserve refused
-control input. It still accepts complete replacements. Views compose changes;
-the editor decides admission and passes accepted input to the native publisher.
-Do not put a body draft or a patch-merging API between those owners.
+`set` consumes `fields` and `body`. Spread current fields to preserve unknown
+metadata and carry the current body into field replacements. Omitted field
+keys are deleted. Read current input at the event, not a render-time snapshot.
+A setter does not reject a complete replacement because a different workspace
+is selected or because the previous row was invalid. Narrowing a row before
+reading its fields is a data-shape requirement, not a tab permission check.
 
-When the app adds admission rules, expose read-through `row` and `save` and keep
-the native mutators inside that owner. A public native editor would let callers
-bypass those rules.
+Use decode/encode only when controls represent the body differently, such as
+Capture's text and thoughts. The encoded body enters the same complete
+replacement. Direct body editing needs no codec or mirrored body draft.
 
-Todos, Vocab, Honeycrisp, and Whispering discard structured input refused before admission. Their controls read
-the accepted row directly, and Svelte's input binding restores that value after
-the event. A separate rejection notice explains the change; it retains no input
-and does not block closing, moving, or running a transformation. Body textarea
-setters preserve file newlines when composing the replacement, so `set` needs
-no control origin. Accepted input whose save fails remains in the native row.
-Raw Source input, including malformed text, remains available for repair.
+**Invalidity never silently changes a mounted editor's interpretation or destroys accepted input.**
 
-Capture text follows the same rejection policy. Its body codec may reject
-ordinary intermediate Markdown, such as an unfinished fence that would absorb
-the Thoughts list. The attempted edit then disappears from the structured
-control. Source remains accessible to re-enter and finish it. This policy does
-not remove the codec's checks or preserve the rejected input elsewhere.
+Acquisition of invalid row text can succeed in Folder, but a structured
+workspace does not mount structured controls for it. Show the reason and an
+explicit repair action. The Files editor stays a text editor when repair makes
+its content valid; it does not turn into todo fields automatically.
 
-The ownership cases are finite:
+If an open structured row becomes invalid, retain its editor, exact accepted
+text, and save state. Show the problem and repair action in the detail. Controls
+that can no longer read their fields become unavailable without rendering fake
+empty values or writing a previously captured row. Removing the row from the
+valid listing does not close this detail or drop its owner. A body codec or rich
+widget can also become unavailable for valid row text; use the same explicit
+repair route rather than mounting Source in its place.
 
-| Information | Owner |
-| --- | --- |
-| Accepted content, including changes whose save failed | Editor |
-| Rejection reason, with no alternate content value | Application notice |
-| Invalid full-file text used for repair | Same editor through Source |
-| Unsubmitted Add, Send, or explicit Save form | Form or application workflow |
-| Rich document, selection, undo, and pending formatting | Widget |
-| Operation fences, confirmations, and unanswered file operations | Application workflow |
+A replacement refused before admission restores accepted content and shows a
+reason-only notice. It does not create an unsaved-content buffer or block file
+operations. Accepted input whose publication fails remains in its editor.
+Unsubmitted Add, Send, or explicit Save forms remain genuine temporary input.
 
-Immediate submission relies on synchronous accepted-content ownership. A store
-that exposes only successful disk writes cannot replace an editor: an earlier
-save echo can overwrite newer typing, and failure can leave no owner for it.
-Matter binds its widget to a table-owned accepted body and publishes each change
-immediately. The table retains accepted input through failed saves and dialog
-teardown, separately from its disk projection. Discard returns to the last
-observed file version. This retention lasts while the table remains open. Skills
-binds its widget directly to a live body node. Both widgets retain their document,
-selection, and undo state without another mirrored widget document.
+**A workspace handoff resolves admitted writes before another editor publishes to that file.**
 
-An app that promises to retain refused input owns that additional value. A
-control origin identifies where it belongs; it does not select a patch to merge.
-An unrelated replacement preserves held input and cannot change that control's
-accepted value without resolving it. Views read the held value over the row value
-until it is repaired or discarded. This policy is optional, not required
-scaffolding for complete replacements.
+Open in Files and Open as todo are navigation actions that end one view
+lifetime and begin another. They do not reconfigure an editor's address or
+interpretation. Stop new writes from the outgoing control group synchronously,
+then wait for admitted writes. On failure, keep its owner and input accessible
+with retry, copy, or explicit discard; do not open a fresh editor on stale disk
+bytes and pretend the failed input was transferred. After successful settlement
+or deliberate discard, retire outgoing app commands and acquire the destination
+editor. The native Folder row editor has no disposal method; ending a component
+subscription does not cancel its admitted writes.
 
-Source means the complete file, including frontmatter; body means its text after
-frontmatter. Both can use the same textarea or text editor component. The binding
-determines what it edits; a separate `SourceEditor` wrapper is unnecessary.
+Within one app, these workspaces do not create independent active publishers
+for the same file. An app can retain an editor with failed input while showing
+another file. Reopening that file reuses or explicitly resolves its retained
+input before a fresh acquisition. This is app ownership, not table selection.
+Discarding an unconfirmed save does not cancel or confirm its transport delivery.
+Keep that uncertainty visible and follow the existing recovery policy; this
+handoff adds no at-most-once delivery guarantee. Independent apps and external
+file writers retain their existing conflict policy.
 
-`set` consumes only `fields` and `body`; spreading a valid row intentionally
-preserves the other part. Spread nested fields to preserve unknown metadata.
-Omitted field keys are deleted. Read current input at the event, rather than
-submitting a snapshot captured when the view mounted. An explicit Save form may
-instead own and submit a deliberate complete draft.
+Derive operation admission from the application owner's existing acquisition,
+path reservation, recovery, departure, and close facts. Do not copy those facts
+into each editor as another fence counter or mode flag. Rename and delete need
+a synchronous boundary before draining writes; a later DOM unmount alone is
+not that boundary. Native `reload` already preserves newer typing through
+`InputChanged`; an app need not disable typing throughout a reload to obtain
+that guarantee. Operation completion must still be accounted for on close.
 
-Row validity and saving are independent. The row has `valid` and `invalid`
-variants; both contain current source. Saving has `idle`, `saving`, and `failed`
-variants. Acquisition and release belong to application lifetime, not a third row
-state. Invalid input may be saved for repair; save failure preserves accepted
-input. Body-codec refusal is separate from row validity.
+Shared `Input` and `Textarea` retire destroyed bindings. Other controls and
+async callbacks retain their own cleanup rules. Keying prevents a view from
+changing owners; it does not revoke callbacks held outside that view.
 
-The default has one validity branch and no view-selection state:
+**Rich widgets retain interaction state without another application document copy.**
 
-```svelte
-{#if editor.row.status === 'valid'}
-  <!-- Fields bind to row.fields; the body editor binds to row.body.
-       Setters compose complete replacements from the current editor.row. -->
-{:else}
-  <Textarea bind:value={
-    () => editor.row.text,
-    (text) => editor.setText(text)
-  } />
-{/if}
-```
+ProseMirror and CodeMirror own their live document, selection, and history.
+Reconcile against current accepted body content. Different content may create
+fresh widget state and reset selection/history. Unsupported content shows the
+repair action. Selection-only changes write nothing. A permitted empty
+paragraph may have no new Markdown spelling; it needs admission even though
+it publishes no changed bytes. Widgets requiring that acknowledgment call the
+editor directly because Svelte function bindings discard setter return values.
 
-Render structured controls for valid rows and a text editor for invalid rows.
-Bind directly to the current editor value; setters submit complete replacements.
-When source repair yields a valid row, the structured controls render again.
-Derive validity and save presentation from the editor. Do not copy these facts
-into `valid`, `saving`, or `shownView` state or synchronize them with effects.
-The actual source binding also preserves the file's newline convention.
-
-Keep the reason visible beside invalid source. Body-codec refusal can make a
-structured body view unavailable even when the row is valid; that app supplies a
-source repair path for the interpretation it cannot edit. A refusal to acquire
-readable source is shown as unavailable rather than pretending an editor exists.
-
-Add view selection only when the application needs a person to choose among
-views of valid input. Capture offers its interpreted body and the whole file;
-Honeycrisp offers rich text and Markdown. Those choices earn Tabs. Tabs are an
-extension of the default, not required editor scaffolding.
-
-For that extension, one container owns each view group's selection. Bind to the
-existing owner's selection when it must outlive the component, or use one local
-`$state`. Do not represent the same choice with separate `tab`, `rawMode`, and
-`shownView` values. Invalid input opens Source and disables structured selection.
-With explicit selection, repair keeps Source selected until the person chooses a
-structured view. This policy belongs to selection, not to row validity.
-
-Shared `Tabs.Content` unmounts inactive children. Callers do not repeat
-`tab === 'source'` or `tab === 'capture'` conditions inside each panel. A
-structured panel still checks current validity before rendering its controls.
-Disabling its trigger does not reset an already selected panel; its selection
-owner owns that reset. A workflow panel such as Whispering's Try it remains
-available to inspect unfinished results even when structured editing is
-unavailable. Use `forceMount` for a named retained lifetime, such as chat input or
-rich-editor undo history. Keep unfinished forms and any refused input the app
-promises to retain above otherwise disposable panels.
-
-Shared `Textarea` and `Input` own their component lifetimes. Once destroyed, their
-value bindings neither read the application owner nor submit input. This removes
-app-local `BoundText`, `LiveTextarea`, and `LiveInput` wrappers. Other event
-handlers and controls retain their own lifetime rules. A leaving control can
-remain alive before removal, so a structured setter still checks current row
-validity and application eligibility at the event.
-
-Keep simple bindings beside controls and inline components that only forward an
-editor or a value. Keep a boundary that owns substantial UI, a codec, a resource
-lifetime, or an editing session. A typed valid-row prop can make a getter total;
-its setter still composes from the current owner rather than that render snapshot.
-
-A rich widget owns its live interaction state. For ProseMirror, `EditorView.state`
-holds the document being edited, selection, pending marks, and plugin history.
-Do not retain another `EditorState` in an application session. Parsing the body
-into fresh state on every read loses ordinary typing state even when the body
-has not changed.
-
-Inspect the current body before comparing it with the widget document. Supported,
-semantically equivalent Markdown keeps the live state, including empty paragraphs
-that Markdown does not spell. Different content creates fresh state with the same
-plugins; selection and history may reset. Unsupported content exposes Source for
-repair. A decode cache may depend on body content, but does not track which view
-wrote it.
-
-Before a content-changing transaction, reconcile against the current accepted
-body and discard a transaction based on replaced content. Check the encoded body
-and submit it successfully before displaying the changed state. Successful
-encoding must reopen as supported, equivalent content. Selection and pending-mark
-changes write nothing. This admits one widget-state owner without a last-written
-body marker or separate synchronization API.
-
-Some permitted document changes encode to unchanged body text: an empty trailing
-paragraph is one example. They still require admission before display. Otherwise
-an unchanged-text shortcut bypasses a close fence or held Source input. The rich
-control receives an explicit acknowledgment without publishing unchanged input.
-Ordinary commands can still request publication of the same document, such as
-restoring a hand-spelled file into its standard form.
-
-Use function bindings for ordinary controls. A rich widget that must display
-only admitted transactions calls the editor directly: Svelte function bindings
-discard a setter's return value. Reading the body back cannot distinguish a
-permitted empty paragraph from one refused by an operation fence.
-
-Honeycrisp names the submitting control in `set` when that intent matters.
-Title and Source retain their own refused text; rich text respects held Source
-input without turning a serialization failure into Source's typed value.
-Commands preserve held values when changing unrelated fields. A body replacement
-composer updates an existing edit timestamp only when the body changes.
-Historical restoration composes separately and preserves its historical timestamp.
+Matter's table-owned accepted body and Skills' live body node illustrate
+accepted-content ownership separate from widget state. Neither should gain a
+second mirrored body merely to match Folder's row API.
 
 ## Consequences
 
-Apps share a finite set of editing patterns and a visible owner for each rule.
-The default needs no selection state. An explicit view choice has one owner.
-Tab changes discard disposable controls without losing accepted input or
-application-held drafts. Structured setters carry
-unknown fields and current body content into their complete replacement.
+Files and structured workspaces each have one editing purpose. Mixed
+arbitrary-file/todo detail dispatch, Source-mode admission, `rawMode`,
+`editSource`/`editFields`, preference transfer across rename, and per-record
+Source tabs can be removed as apps migrate. Substantial detail UI can remain a
+component; thin bindings need no `BoundText` or `SourceEditor` forwarding layer.
 
-Unmounting changes panel-local lifetime. A consumer that relies on retained
-panel state must keep it above Tabs or explicitly use `forceMount`. Shared text
-controls do not replace operation fences, edit-instance checks, or current-row
-checks. These protect different information from destruction guards.
+Repair requires navigating to Files or another named file editor. It is no
+longer available as an automatic fallback or an in-place Source tab. View-local
+cursor, undo, and preference continuity across that navigation is not promised.
+Accepted failed input and protected unfinished forms remain owned explicitly.
+
+Apps offering both workspaces need an explicit handoff and one active publisher
+per file. Keyed rendering does not replace pending-write accounting or callback
+retirement. The migration removes interpretation switching; it does not remove
+all file-operation coordination or make concurrent external edits impossible.
+
+## Migration and verification
+
+Migrate one app at a time. First provide the Files repair entry point and keep
+its failed-input recovery accessible. Then separate workspace acquisition and
+key the structured detail by editor identity. Finally remove the mixed detail
+union, Source tab, view-mode setters, and copied admission state whose callers
+have disappeared. App READMEs describe the implementation that actually ships.
+
+Acceptance exercises opening invalid source through Files, excluding it from
+editable structured records with a visible repair route, repairing it without
+an automatic view switch, and explicitly reopening it as a record. It also
+exercises a row becoming invalid during structured editing, failure followed by
+workspace navigation, and delayed old callbacks during a handoff. Accepted
+text, unknown fields, file newlines, and unrelated files must survive. Browser
+and native publication evidence remain distinct.
 
 ## Considered alternatives
 
-- A lazy getter that creates fresh ProseMirror state from Markdown on every
-  read. The same content still loses selection, pending marks, and history.
-- A rich session that retains another state and the body it last wrote.
-  The view already owns interaction state; current-body inspection and semantic
-  comparison decide whether to keep it without recording write provenance.
-- Mandatory tabs and source preference for every editor. A validity branch
-  already chooses the only editable representation; add selection for an actual
-  view choice.
-- A copied reactive row with synchronization effects. The native editor already
-  owns current input and announces changes; copying creates competing owners.
-- Hidden panels everywhere. Controls remain alive and every caller must implement
-  inactive-view gating, even when the panel has no state worth retaining.
-- A source component that forwards one textarea binding. Inline the binding;
-  keep a component only when it owns another contract.
-- Removing all guards because a structured component rendered under a valid-row
-  condition. Rendering eligibility cannot prove that a later event has valid
-  input or that a destroyed control may write again.
-- A blanket limit of one `$state` in an entire editor. Refused text, unfinished
-  thought forms, confirmation reviews, and operation fences need real ownership.
+- One detail pane dispatching arbitrary files and structured rows. It requires
+  mixed selection types and couples file browsing to product editing.
+- Automatic Source fallback for invalid rows, then automatic fields after
+  repair. The editor changes purpose while the person types.
+- Optional Source/Fields tabs. They retain the dual-mode contract, preference
+  state, and inactive-control rules the workspace separation removes.
+- Independent source and structured publishers for the same file. An older
+  accepted body can replace the other workspace's newer input.
+- Keeping only the currently mounted editor. A failed save loses its accepted
+  input when the person visits another file.
+- Giving tables a selected row or a permanent editor cache. Navigation can
+  include non-row files, and failed-input retention is application policy.
+- A lazy getter that reparses a fresh rich-editor state on every read. It loses
+  selection, history, and intermediate document state even for unchanged body.

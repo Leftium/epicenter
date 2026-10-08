@@ -10,16 +10,26 @@
  *   same-stem image, recording, or any other file stays where it was
  * - A raw delete removes only the version the person confirmed
  * - Rename and delete refuse while a draft cannot save, and the draft is kept
- * - A renamed open text file keeps its editor at the new path
- * - A raw file renamed into a todo row reopens as a todo, still selected
+ * - A renamed open text file keeps its editor at the new path, including a
+ *   file renamed into a todo row: it stays a plain editor in Files
+ * - The surface a path is opened from decides its editor: Files opens any
+ *   file's complete text, a todo's included, and the list opens a todo
+ *   editor. Opening a path from the other surface hands it off: the editor
+ *   there stops taking input at once, settles, and is let go before the new
+ *   one opens. One whose input could not be saved stays, with that input,
+ *   and nothing opens in its place. A let-go editor takes nothing more
  * - Whichever editor is open on a row settles before its table rename or delete
  * - An open todo's controls and a toggle from the list submit complete rows
  *   to its one native editor at once. A toggle while that editor's save runs
- *   queues behind it and proceeds after a lost reply. A toggle with no editor open assigns
+ *   queues behind it and proceeds after a lost reply. A toggle while Files
+ *   holds the file assigns `done` in its plain editor's current text, which
+ *   saves it; input that editor could not save is left alone. A toggle with no editor open assigns
  *   `done` in the row as it is now and keeps every other byte, and a write
  *   that lands between its read and its save refuses it
- * - A row that does not read as a todo opens its todo editor for raw repair,
- *   says why, and shows its fields once repaired
+ * - A row that does not read as a todo is named for repair, with why,
+ *   instead of listed. Files opens its exact text; repaired there, it is
+ *   listed again and opens as a todo only when asked. An open todo whose row
+ *   becomes invalid keeps its editor and text and says why
  * - A row whose filename breaks the naming rules, or is empty, is addressed
  *   by its literal stem: it toggles, saves over another writer, and renames
  *   to any literal name
@@ -151,31 +161,27 @@ const withoutHints = (folder: TodosFolder): TodosFolder => ({
 	onFilesChanged: () => () => {},
 });
 
+/** The plain editor the detail shows: a file Files opened as text. */
 function textEditor(todos: Todos) {
-	const selection = todos.selection;
-	if (selection?.kind !== 'file' || selection.file.kind !== 'text')
+	const current = todos.current;
+	if (current?.workspace !== 'files' || current.item?.kind !== 'text')
 		throw new Error(
-			`Expected an open text file, got ${JSON.stringify(selection)}`,
+			`Expected an open text file, got ${JSON.stringify(current)}`,
 		);
-	return selection.file.editor;
+	return current.item.editor;
 }
 
-/**
- * Bun resolves `svelte/reactivity` to Svelte's server entry, where `SvelteMap`
- * is a plain `Map`. Here `selection` recomputes only when the selected path
- * or the row list changes, so a test that already read it selects away and
- * back before reading what the same path retains now.
- */
-async function reselect(todos: Todos, path: string) {
-	await todos.open('elsewhere');
-	await todos.open(path);
-}
-
+/** The todo editor the detail shows: a row the list opened. */
 function todoEditor(todos: Todos) {
-	const selection = todos.selection;
-	if (selection?.kind !== 'todo')
-		throw new Error(`Expected an open todo, got ${selection?.kind}`);
-	return selection.editor;
+	const current = todos.current;
+	if (current?.workspace !== 'todos' || current.item?.kind !== 'todo')
+		throw new Error(`Expected an open todo, got ${current?.item?.kind}`);
+	return current.item.editor;
+}
+
+/** The path the detail shows. */
+function shownPath(todos: Todos) {
+	return todos.current?.path;
 }
 
 /** The text a todo editor holds: what it shows and writes. */
@@ -343,7 +349,7 @@ async function expectNoSiblings(todos: Todos, stem: string) {
 test('deleting a todo row removes only its Markdown file and leaves same-stem files in place', async () => {
 	const todos = await open();
 	expect(await todos.create('Milk')).toBeUndefined();
-	const path = todos.selectedPath!;
+	const path = shownPath(todos)!;
 	const stem = await addSiblings(todos, path);
 	await todos.refresh();
 
@@ -352,32 +358,32 @@ test('deleting a todo row removes only its Markdown file and leaves same-stem fi
 	expect(await todos.remove(deletion)).toBeUndefined();
 	expect(await text(todos, path)).toBeUndefined();
 	await expectSiblings(todos, stem);
-	expect(todos.selectedPath).toBeUndefined();
+	expect(shownPath(todos)).toBeUndefined();
 	expect(todos.entries).toEqual([]);
 	// The files that stayed are still listed and open as what they are.
-	await todos.open(`${stem}.png`);
-	expect(todos.selection).toMatchObject({
-		kind: 'file',
-		file: { kind: 'binary', size: PNG.byteLength },
+	await todos.open(`${stem}.png`, 'files');
+	expect(todos.current?.item).toMatchObject({
+		kind: 'binary',
+		size: PNG.byteLength,
 	});
 });
 
 test('renaming a todo row moves only its Markdown file, and a new editor opens at the new path while same-stem files stay', async () => {
 	const todos = await open();
 	await todos.create('Milk');
-	const path = todos.selectedPath!;
+	const path = shownPath(todos)!;
 	const editor = todoEditor(todos);
 	const source = (await text(todos, path))!;
 	const stem = await addSiblings(todos, path);
 	// Another row's editor and a sibling's raw editor are open and dirty.
 	await todos.create('Bread');
-	const otherPath = todos.selectedPath!;
+	const otherPath = shownPath(todos)!;
 	const other = todoEditor(todos);
 	typeNotes(other, 'other typing\n');
-	await todos.open(`${stem}.txt`);
+	await todos.open(`${stem}.txt`, 'files');
 	const sidecar = textEditor(todos);
 	sidecar.input(`${SIDECAR}typed\n`);
-	await todos.open(path);
+	await todos.open(path, 'todos');
 
 	expect(await todos.rename(path, 'renamed.md')).toBeUndefined();
 	expect(await text(todos, 'todos/renamed.md')).toBe(source);
@@ -388,7 +394,7 @@ test('renaming a todo row moves only its Markdown file, and a new editor opens a
 
 	// The renamed row has a new editor at the new path; the old one is fixed
 	// to the path the row left and is no longer retained.
-	expect(todos.selectedPath).toBe('todos/renamed.md');
+	expect(shownPath(todos)).toBe('todos/renamed.md');
 	const renamed = todoEditor(todos);
 	expect(renamed).not.toBe(editor);
 	expect(renamed.path).toBe('todos/renamed.md');
@@ -413,24 +419,24 @@ test('renaming a todo row moves only its Markdown file, and a new editor opens a
 test('switching between todos keeps each input with its own path, rapidly and across a rename', async () => {
 	const todos = await open();
 	await todos.create('A');
-	const pathA = todos.selectedPath!;
+	const pathA = shownPath(todos)!;
 	await todos.create('B');
-	const pathB = todos.selectedPath!;
+	const pathB = shownPath(todos)!;
 
 	// Type into A, switch to B before A's write lands, and type there.
-	await todos.open(pathA);
+	await todos.open(pathA, 'todos');
 	const a = todoEditor(todos);
 	typeTitle(a, 'A typed');
-	await todos.open(pathB);
+	await todos.open(pathB, 'todos');
 	const b = todoEditor(todos);
 	expect(b).not.toBe(a);
 	typeTitle(b, 'B typed');
 	// Back and forth: each editor keeps its own input.
-	await todos.open(pathA);
+	await todos.open(pathA, 'todos');
 	expect(todoEditor(todos)).toBe(a);
 	expect(fieldsOf(a).fields.title).toBe('A typed');
 	typeNotes(a, 'A notes\n');
-	await todos.open(pathB);
+	await todos.open(pathB, 'todos');
 	expect(todoEditor(todos)).toBe(b);
 	expect(fieldsOf(b).fields.title).toBe('B typed');
 	expect(fieldsOf(b).body).toBe('');
@@ -449,15 +455,15 @@ test('switching between todos keeps each input with its own path, rapidly and ac
 	typeNotes(b, 'B pending\n');
 	expect(await todos.rename(pathA, 'renamed-a.md')).toBeUndefined();
 	expect(todoEditor(todos)).toBe(b);
-	await todos.open('todos/renamed-a.md');
+	await todos.open('todos/renamed-a.md', 'todos');
 	const movedA = todoEditor(todos);
 	expect(movedA).not.toBe(a);
 	expect(movedA.path).toBe('todos/renamed-a.md');
 	typeTitle(movedA, 'A after');
-	await todos.open(pathB);
+	await todos.open(pathB, 'todos');
 	expect(todoEditor(todos)).toBe(b);
 	expect(fieldsOf(b).body).toBe('B pending\n');
-	await todos.open('todos/renamed-a.md');
+	await todos.open('todos/renamed-a.md', 'todos');
 	expect(todoEditor(todos)).toBe(movedA);
 	expect(fieldsOf(movedA).fields.title).toBe('A after');
 	await eventually(() => movedA.isIdle && b.isIdle);
@@ -478,14 +484,14 @@ test('switching between todos keeps each input with its own path, rapidly and ac
 test('refresh forgets a removed idle todo, and keeps a removed todo whose write failed until deliberate Close', async () => {
 	const todos = await open(withoutHints);
 	await todos.create('Idle');
-	const idlePath = todos.selectedPath!;
+	const idlePath = shownPath(todos)!;
 	await removeNow(todos, idlePath);
 	await todos.refresh();
-	expect(todos.selection).toBeUndefined();
+	expect(todos.current?.item).toBeUndefined();
 	expect(todos.unsaved).toBe(false);
 
 	await todos.create('Dirty');
-	const path = todos.selectedPath!;
+	const path = shownPath(todos)!;
 	const editor = todoEditor(todos);
 	await removeNow(todos, path);
 	// The todo still shows what it loaded; its write replaces only an existing row.
@@ -496,7 +502,7 @@ test('refresh forgets a removed idle todo, and keeps a removed todo whose write 
 		error: { name: 'NotFound' },
 	});
 	await todos.refresh();
-	expect(todos.selection?.kind).toBe('todo');
+	expect(todos.current?.item?.kind).toBe('todo');
 	expect(fieldsOf(editor).body).toBe('mine\n');
 	expect(todos.unsaved).toBe(true);
 	expect(await text(todos, path)).toBeUndefined();
@@ -506,7 +512,7 @@ test('refresh forgets a removed idle todo, and keeps a removed todo whose write 
 	expect(fieldsOf(editor).body).toBe('mine\n');
 	expect(todos.unsaved).toBe(true);
 	todos.discard(path);
-	expect(todos.selectedPath).toBe(path);
+	expect(shownPath(todos)).toBe(path);
 	expect(todos.unsaved).toBe(false);
 	expect(todos.saveProblems).toBe(0);
 	expect(editor.isFenced).toBe(true);
@@ -534,7 +540,7 @@ async function openFailingNextWrite() {
 	opened.push(todos);
 	await todos.check();
 	await todos.create('Milk');
-	const path = todos.selectedPath!;
+	const path = shownPath(todos)!;
 	const { faults } = opfsOf(storage);
 	const failNext = () => {
 		faults.write = (file) => {
@@ -546,7 +552,7 @@ async function openFailingNextWrite() {
 	return { todos, path, failNext, faults };
 }
 
-test("a todo's own saves reach the listings through the folder's hint, with no refresh asked: a malformed source is listed exactly, and when one save lands and the queued one fails, the list shows the landed one and the failed input stays without a retry", async () => {
+test("a todo's own saves reach the listings through the folder's hint, with no refresh asked, and when one save lands and the queued one fails, the list shows the landed one and the failed input stays without a retry", async () => {
 	const { todos, path, faults } = await openFailingNextWrite();
 	const editor = todoEditor(todos);
 	const listed = () => todos.entries.find((entry) => entry.path === path);
@@ -556,20 +562,8 @@ test("a todo's own saves reach the listings through the folder's hint, with no r
 	await eventually(() => listed()?.fields.title === 'Oat milk');
 	expect(listed()?.fields.title).toBe('Oat milk');
 
-	// Source that does not read as a todo is saved and listed exactly.
-	expect(editor.editSource()).toBeUndefined();
-	const malformed =
-		'---\ntitle: [unclosed\ndone: false\n---\nkept   as typed\n';
-	editor.setText(malformed);
-	expect(await written(editor)).toBeUndefined();
-	await eventually(() => listed()?.text === malformed);
-	expect(listed()).toMatchObject({ text: malformed });
-	expect(await text(todos, path)).toBe(malformed);
-
 	// The first save holds as its file opens; the next input queues behind it
 	// and fails when its turn comes.
-	const landed = '---\ntitle: Landed\ndone: false\n---\n';
-	const queued = '---\ntitle: Queued\ndone: false\n---\n';
 	const opening = Promise.withResolvers<void>();
 	let opens = 0;
 	faults.open = async (file) => {
@@ -580,9 +574,11 @@ test("a todo's own saves reach the listings through the folder's hint, with no r
 	faults.close = (file) =>
 		file.endsWith(`/${path}`) && opens === 2 ? 'fail' : undefined;
 	try {
-		editor.setText(landed);
+		typeTitle(editor, 'Landed');
+		const landed = accepted(editor);
 		await eventually(() => opens === 1);
-		editor.setText(queued);
+		typeTitle(editor, 'Queued');
+		const queued = accepted(editor);
 		opening.resolve();
 		expect(await written(editor)).toBeDefined();
 
@@ -640,7 +636,7 @@ test('a failed save keeps the input and later typing saves again; Reload replace
 test('a reload whose read fails keeps the input on screen and says why', async () => {
 	const todos = await open();
 	await todos.create('Milk');
-	const path = todos.selectedPath!;
+	const path = shownPath(todos)!;
 	const editor = todoEditor(todos);
 	typeNotes(editor, 'mine\n');
 	expect(await written(editor)).toBeUndefined();
@@ -653,7 +649,7 @@ test('a reload whose read fails keeps the input on screen and says why', async (
 	expect(await bytes(todos, path)).toEqual(binary);
 });
 
-test('a todo row whose editor did not open shows that failure, never a plain text editor even when the file reads, and opening it again opens its todo editor', async () => {
+test('a todo whose editor did not open shows that failure, never a plain text editor even when the file reads, and opening it again opens its todo editor', async () => {
 	const todos = await open();
 	expectOk(await todos.folder.files.create('todos/milk.md', ROW));
 	await todos.refresh();
@@ -667,24 +663,23 @@ test('a todo row whose editor did not open shows that failure, never a plain tex
 			cause: 'busy',
 		});
 	};
-	await todos.open('todos/milk.md');
-	expect(todos.selection).toMatchObject({
-		kind: 'file',
-		file: { kind: 'failed', message: expect.stringContaining('busy') },
+	await todos.open('todos/milk.md', 'todos');
+	expect(todos.current).toMatchObject({
+		workspace: 'todos',
+		item: { kind: 'failed', message: expect.stringContaining('busy') },
 	});
-	// The file reads fine now; the row still has no second, plain publisher.
+	// The file reads fine now; the todo list still opens no plain editor.
 	expect(await text(todos, 'todos/milk.md')).toBe(ROW);
 	expect(todos.unsaved).toBe(false);
 
-	await todos.open('todos/milk.md');
-	await reselect(todos, 'todos/milk.md');
+	await todos.open('todos/milk.md', 'todos');
 	expect(fieldsOf(todoEditor(todos)).fields.title).toBe('Note');
 });
 
 test('a todo row that cannot be saved changes nothing and holds nothing up: leaving, rename, and close proceed', async () => {
 	const todos = await open();
 	await todos.create('Milk');
-	const path = todos.selectedPath!;
+	const path = shownPath(todos)!;
 	const saved = await text(todos, path);
 	const editor = todoEditor(todos);
 
@@ -709,7 +704,7 @@ test('a todo row that cannot be saved changes nothing and holds nothing up: leav
 test('a removed raw draft can be explicitly discarded after its save conflicts', async () => {
 	const todos = await open();
 	await todos.folder.files.create('notes.txt', 'saved');
-	await todos.open('notes.txt');
+	await todos.open('notes.txt', 'files');
 	const editor = textEditor(todos);
 	editor.input('mine');
 	await removeNow(todos, 'notes.txt');
@@ -717,7 +712,7 @@ test('a removed raw draft can be explicitly discarded after its save conflicts',
 	expect(editor.buffer).toBe('mine');
 	expect(todos.unsaved).toBe(true);
 	todos.discard('notes.txt');
-	expect(todos.selection).toBeUndefined();
+	expect(todos.current?.item).toBeUndefined();
 	expect(todos.unsaved).toBe(false);
 });
 
@@ -740,11 +735,11 @@ test('an older refresh cannot forget a todo opened by a newer refresh', async ()
 	const older = todos.refresh();
 	try {
 		await todos.create('New');
-		const path = todos.selectedPath;
+		const path = shownPath(todos);
 		release();
 		await older;
-		expect(todos.selectedPath).toBe(path);
-		expect(todos.selection?.kind).toBe('todo');
+		expect(shownPath(todos)).toBe(path);
+		expect(todos.current?.item?.kind).toBe('todo');
 		expect(todos.entries).toHaveLength(1);
 	} finally {
 		release();
@@ -775,15 +770,15 @@ test('a listing requested before a file was opened cannot forget it', async () =
 	while (release === undefined) await Bun.sleep(1);
 	hold = false;
 	await todos.folder.files.create('notes.txt', 'saved');
-	await todos.open('notes.txt');
+	await todos.open('notes.txt', 'files');
 	const editor = textEditor(todos);
 	release();
 	await older;
 	expect(textEditor(todos)).toBe(editor);
-	expect(todos.selectedPath).toBe('notes.txt');
+	expect(shownPath(todos)).toBe('notes.txt');
 });
 
-test('a toggle on an open todo writes its complete row with the latest notes and unknown metadata, and is refused while it is edited as source', async () => {
+test('a toggle on an open todo writes its complete row with the latest notes and unknown metadata', async () => {
 	const todos = await open();
 	const path = 'todos/milk.md';
 	expectOk(
@@ -793,7 +788,7 @@ test('a toggle on an open todo writes its complete row with the latest notes and
 		),
 	);
 	await todos.refresh();
-	await todos.open(path);
+	await todos.open(path, 'todos');
 	const editor = todoEditor(todos);
 	typeNotes(editor, 'mine\n');
 
@@ -808,16 +803,67 @@ test('a toggle on an open todo writes its complete row with the latest notes and
 		body: 'mine\n',
 	});
 	expect(await text(todos, path)).toContain('"owner": "sam"');
+});
 
-	// The source view's exact text is the person's to change.
-	expect(editor.editSource()).toBeUndefined();
-	const source = await text(todos, path);
-	expect(await todos.toggle(todos.entries[0]!)).toContain('source editor');
-	expect(await text(todos, path)).toBe(source);
-	expect(editor.editFields()).toBeUndefined();
+test("a toggle while Files holds a todo assigns done in its plain editor's current text, unsaved typing included, and that same editor saves it, keeping every other byte and the view", async () => {
+	const { during, adapt } = interceptingFileOperations();
+	const todos = await open(adapt);
+	const path = 'todos/milk.md';
+	const source =
+		"---\r\n# kept by sam\r\ntitle: 'Milk'\r\ndone: false # flip me\r\nowner: sam\r\n---\r\nNotes\r\n";
+	expectOk(await todos.folder.files.create(path, source));
 	await todos.refresh();
-	expect(await todos.toggle(todos.entries[0]!)).toBeUndefined();
-	expect((await reading(todos, path)).fields.done).toBe(false);
+	const listed = todos.entries[0]!;
+	await todos.open(path, 'files');
+	const file = textEditor(todos);
+	// No second publisher: the table writes nothing for this toggle.
+	const table = todos.folder.tables.todos;
+	table.update = async () => {
+		throw new Error('A second publisher wrote the row');
+	};
+
+	const typed = `${source}more notes\r\n`;
+	file.input(typed);
+	during.writes.length = 0;
+	expect(await todos.toggle(listed)).toBeUndefined();
+	const expected = typed.replace('done: false', 'done: true');
+	expect(file.buffer).toBe(expected);
+	expect(file.isIdle).toBe(true);
+	expect(await text(todos, path)).toBe(expected);
+	expect(during.writes).toEqual([path]);
+	// Files still shows the same plain editor.
+	expect(todos.current).toMatchObject({ workspace: 'files', path });
+	expect(textEditor(todos)).toBe(file);
+});
+
+test('a toggle while Files holds text that does not read as a todo, or input it could not save, leaves that text as it is and sends nothing', async () => {
+	const todos = await open(withoutHints);
+	const path = 'todos/milk.md';
+	expectOk(await todos.folder.files.create(path, ROW));
+	await todos.refresh();
+	const listed = todos.entries[0]!;
+	await todos.open(path, 'files');
+	const file = textEditor(todos);
+	const table = todos.folder.tables.todos;
+	table.update = async () => {
+		throw new Error('A second publisher wrote the row');
+	};
+
+	const malformed = '---\ntitle: [unclosed\ndone: false\n---\n';
+	file.input(malformed);
+	expect(await todos.toggle(listed)).toContain('no longer reads as a todo');
+	expect(file.buffer).toBe(malformed);
+
+	// A save that failed holds its input; the toggle neither changes nor sends it.
+	const binary = new Uint8Array([0x89, 0, 1]);
+	expectOk(await todos.folder.files.overwrite(path, binary));
+	file.input(`${ROW}mine\n`);
+	await file.save();
+	expect(file.saveState.kind).toBe('failed');
+	expect(await todos.toggle(listed)).toBe(UNSETTLED);
+	expect(file.buffer).toBe(`${ROW}mine\n`);
+	expect(file.saveState.kind).toBe('failed');
+	expect(await bytes(todos, path)).toEqual(binary);
 });
 
 test('a toggle with no editor open changes the row as it is now, not as it was listed, and keeps every other byte', async () => {
@@ -836,12 +882,12 @@ test('a toggle with no editor open changes the row as it is now, not as it was l
 		theirs.replace('done: false', 'done: true'),
 	);
 	// The toggle opened no editor of its own, and nothing stays open.
-	expect(todos.selection).toBeUndefined();
+	expect(todos.current?.item).toBeUndefined();
 	expect(todos.unsaved).toBe(false);
 	expect(todos.entries[0]!.fields.done).toBe(true);
 });
 
-test('a toggle with no editor open needs only a readable done: a row with another field issue, or text with no canonical form, toggles in place', async () => {
+test('a row with a field issue is named for repair instead of listed, and listed text with no canonical form toggles in place', async () => {
 	const todos = await open(withoutHints);
 	const titled = '---\ntitle: 12\ndone: false\n---\nNotes\n';
 	const big = '---\ntitle: Big\ndone: false\nsize: 9007199254740993\n---\n';
@@ -851,13 +897,10 @@ test('a toggle with no editor open needs only a readable done: a row with anothe
 	const entry = (path: string) =>
 		todos.entries.find((listed) => listed.path === path)!;
 
-	expect(entry('todos/titled.md').issues.map((issue) => issue.field)).toEqual([
-		'title',
+	expect(todos.entries.map((listed) => listed.path)).toEqual(['todos/big.md']);
+	expect(todos.repairs).toEqual([
+		{ path: 'todos/titled.md', reason: expect.stringMatching(/\S/) },
 	]);
-	expect(await todos.toggle(entry('todos/titled.md'))).toBeUndefined();
-	expect(await text(todos, 'todos/titled.md')).toBe(
-		titled.replace('done: false', 'done: true'),
-	);
 	expect(await todos.toggle(entry('todos/big.md'))).toBeUndefined();
 	expect(await text(todos, 'todos/big.md')).toBe(
 		big.replace('done: false', 'done: true'),
@@ -1007,22 +1050,31 @@ test('a toggle with no editor open whose reply was lost says so, even when a rer
 	expect(todos.unsaved).toBe(false);
 });
 
-test('a toggle is refused while an open todo shows text, reloaded from another writer, that is not a valid todo, and writes nothing', async () => {
+test('an open todo whose row another writer made invalid stays open with its editor after the list leaves it out and names it for repair; reloaded, it shows that text, and a toggle writes nothing', async () => {
 	const todos = await open(withoutHints);
 	await todos.create('Milk');
-	const path = todos.selectedPath!;
+	const path = shownPath(todos)!;
 	const editor = todoEditor(todos);
+	const listed = todos.entries[0]!;
 	// Another writer's title no longer conforms; `done` still reads.
 	const theirs = '---\ntitle: 12\ndone: false\n---\n';
 	expectOk(await todos.folder.files.overwrite(path, theirs));
 	await todos.check();
+	expect(todos.entries).toEqual([]);
+	expect(todos.repairs).toEqual([
+		{ path, reason: expect.stringMatching(/\S/) },
+	]);
+	// The list left it out; the detail and its editor stay.
+	expect(todoEditor(todos)).toBe(editor);
 	expect(editor.row.status).toBe('valid');
-	expect(await todos.reload(path)).toBeUndefined();
-	expect(editor.row).toMatchObject({ status: 'invalid', text: theirs });
-	expect(typeof todos.entries[0]!.fields.done).toBe('boolean');
 
-	// The open todo has no fields to change; its source is where to fix it.
-	expect(await todos.toggle(todos.entries[0]!)).toContain('source editor');
+	expect(await todos.reload(path)).toBeUndefined();
+	expect(todoEditor(todos)).toBe(editor);
+	expect(editor.row).toMatchObject({ status: 'invalid', text: theirs });
+	expect(editor.diagnostics()?.details.length).toBeGreaterThan(0);
+
+	// The open todo has no fields to change; Files is where to repair it.
+	expect(await todos.toggle(listed)).toContain('Open it in Files');
 	expect(await text(todos, path)).toBe(theirs);
 });
 
@@ -1061,7 +1113,7 @@ async function openLosingNextSave() {
 
 test("a list toggle while an open todo's save runs proceeds after its lost reply", async () => {
 	const { todos, loseNext } = await openLosingNextSave();
-	const path = todos.selectedPath!;
+	const path = shownPath(todos)!;
 	const editor = todoEditor(todos);
 	loseNext();
 	typeNotes(editor, 'mine\n');
@@ -1078,7 +1130,7 @@ test("a list toggle while an open todo's save runs proceeds after its lost reply
 
 test('a list toggle while an open todo saves is queued, not refused, and publishes the complete row after that save', async () => {
 	const { todos } = await openLosingNextSave();
-	const path = todos.selectedPath!;
+	const path = shownPath(todos)!;
 	const editor = todoEditor(todos);
 	typeNotes(editor, 'mine\n');
 	expect(editor.isSaving).toBe(true);
@@ -1111,7 +1163,7 @@ for (const [stem, repaired] of [
 			done: true,
 		});
 
-		await todos.open(path);
+		await todos.open(path, 'todos');
 		const editor = todoEditor(todos);
 		expect(editor.path).toBe(path);
 		expectOk(await todos.folder.files.overwrite(path, `${ROW}theirs\n`));
@@ -1177,7 +1229,7 @@ test('rename and delete refuse while a draft cannot save, and keep the draft', a
 	const todos = await open();
 	await todos.folder.files.create('notes.txt', 'saved');
 	await todos.refresh();
-	await todos.open('notes.txt');
+	await todos.open('notes.txt', 'files');
 	const editor = textEditor(todos);
 
 	await todos.folder.files.overwrite('notes.txt', 'theirs');
@@ -1203,11 +1255,11 @@ test('a renamed open text file keeps its editor at the new path', async () => {
 	const todos = await open();
 	await todos.folder.files.create('notes.txt', 'hello');
 	await todos.refresh();
-	await todos.open('notes.txt');
+	await todos.open('notes.txt', 'files');
 	const editor = textEditor(todos);
 
 	expect(await todos.rename('notes.txt', 'hello.txt')).toBeUndefined();
-	expect(todos.selectedPath).toBe('hello.txt');
+	expect(shownPath(todos)).toBe('hello.txt');
 	expect(textEditor(todos)).toBe(editor);
 	expect(editor.path).toBe('hello.txt');
 	expect(await text(todos, 'notes.txt')).toBeUndefined();
@@ -1217,44 +1269,53 @@ test('a renamed open text file keeps its editor at the new path', async () => {
 	expect(await text(todos, 'hello.txt')).toBe('hello again');
 });
 
-test('a raw file renamed into a todo row settles, then reopens as a todo at the selected destination', async () => {
+test('a file renamed into a todo row stays a plain editor in Files at its new name, and opens as a todo only when asked', async () => {
 	const todos = await open();
 	await todos.folder.files.create('todos/note.txt', ROW);
 	await todos.refresh();
-	await todos.open('todos/note.txt');
-	textEditor(todos).input(`${ROW}mine\n`);
+	await todos.open('todos/note.txt', 'files');
+	const editor = textEditor(todos);
+	editor.input(`${ROW}mine\n`);
 
 	expect(await todos.rename('todos/note.txt', 'note.md')).toBeUndefined();
-	expect(todos.selectedPath).toBe('todos/note.md');
+	expect(shownPath(todos)).toBe('todos/note.md');
+	expect(textEditor(todos)).toBe(editor);
+	expect(editor.path).toBe('todos/note.md');
+	expect(todos.unsaved).toBe(false);
+	expect(todos.entries.map((entry) => entry.path)).toEqual(['todos/note.md']);
+
+	// Opened from the list, the plain editor is let go and the todo opens.
+	await todos.open('todos/note.md', 'todos');
 	expect(todoEditor(todos).row).toMatchObject({
 		status: 'valid',
 		fields: { title: 'Note', done: false },
 		body: 'mine\n',
 	});
-	expect(todos.unsaved).toBe(false);
 	// The raw save wrote the text as typed; opening the todo rewrote nothing.
 	expect(await text(todos, 'todos/note.md')).toBe(`${ROW}mine\n`);
 	expect(await text(todos, 'todos/note.txt')).toBeUndefined();
+	editor.input('late');
+	expect(editor.buffer).toBe(`${ROW}mine\n`);
 });
 
-test('typing during a rename into a todo row keeps the raw editor until it is clean, then the row opens as a todo', async () => {
+test('typing during a rename into a todo row keeps the raw editor, and a later table rename saves it first and keeps it a plain editor', async () => {
 	const { during, adapt } = interceptingFileOperations();
 	const todos = await open(adapt);
 	await todos.folder.files.create('todos/note.txt', ROW);
 	await todos.refresh();
-	await todos.open('todos/note.txt');
+	await todos.open('todos/note.txt', 'files');
 	const editor = textEditor(todos);
 
 	during.act = () => editor.input(`${ROW}typed during\n`);
 	expect(await todos.rename('todos/note.txt', 'note.md')).toBeUndefined();
 	during.act = undefined;
-	expect(todos.selectedPath).toBe('todos/note.md');
+	expect(shownPath(todos)).toBe('todos/note.md');
 	expect(textEditor(todos)).toBe(editor);
 	expect(editor.buffer).toBe(`${ROW}typed during\n`);
 	expect(todos.unsaved).toBe(true);
 
 	// The table now lists the row, so its rename goes through the table and
-	// first saves what the raw editor holds. Clean, it gives way to a todo.
+	// first saves what the raw editor holds. Files keeps the plain editor.
 	// The same-stem image is not the row's and stays.
 	expect(todos.isTodo('todos/note.md')).toBe(true);
 	await todos.folder.files.create('todos/note.png', new Uint8Array([7]));
@@ -1264,8 +1325,9 @@ test('typing during a rename into a todo row keeps the raw editor until it is cl
 	expect(await text(todos, 'todos/kept.md')).toBe(`${ROW}typed during\n`);
 	expect(await bytes(todos, 'todos/note.png')).toEqual(new Uint8Array([7]));
 	expect(await bytes(todos, 'todos/kept.png')).toBeUndefined();
-	expect(todos.selectedPath).toBe('todos/kept.md');
-	expect(fieldsOf(todoEditor(todos)).body).toBe('typed during\n');
+	expect(shownPath(todos)).toBe('todos/kept.md');
+	expect(textEditor(todos)).toBe(editor);
+	expect(editor.path).toBe('todos/kept.md');
 	expect(todos.unsaved).toBe(false);
 });
 
@@ -1278,7 +1340,7 @@ test('typing and saving after the bytes moved, before the rename answers, wait a
 	const todos = await open(adapt);
 	await todos.folder.files.create('todos/draft.txt', 'saved');
 	await todos.refresh();
-	await todos.open('todos/draft.txt');
+	await todos.open('todos/draft.txt', 'files');
 	const editor = textEditor(todos);
 
 	during.writes.length = 0;
@@ -1299,7 +1361,7 @@ test('typing and saving after the bytes moved, before the rename answers, wait a
 	expect(await renaming).toBeUndefined();
 	expect(editor.path).toBe('todos/renamed.txt');
 	expect(editor.buffer).toBe('new typing');
-	expect(todos.selectedPath).toBe('todos/renamed.txt');
+	expect(shownPath(todos)).toBe('todos/renamed.txt');
 	expect(textEditor(todos)).toBe(editor);
 
 	await editor.save();
@@ -1314,7 +1376,7 @@ test('closing during a rename waits for it, then saves the held typing at the de
 	const todos = await open(adapt);
 	await todos.folder.files.create('notes.txt', 'saved');
 	await todos.refresh();
-	await todos.open('notes.txt');
+	await todos.open('notes.txt', 'files');
 	const editor = textEditor(todos);
 
 	during.writes.length = 0;
@@ -1344,7 +1406,7 @@ test('a refresh that finds the source gone during a rename leaves its editor to 
 	const todos = await open(adapt);
 	await todos.folder.files.create('notes.txt', 'saved');
 	await todos.refresh();
-	await todos.open('notes.txt');
+	await todos.open('notes.txt', 'files');
 	const editor = textEditor(todos);
 
 	during.writes.length = 0;
@@ -1355,11 +1417,11 @@ test('a refresh that finds the source gone during a rename leaves its editor to 
 	const listed = todos.listing?.files.map((file) => file.path);
 	expect(listed).toContain('renamed.txt');
 	expect(listed).not.toContain('notes.txt');
-	expect(todos.selectedPath).toBe('notes.txt');
+	expect(shownPath(todos)).toBe('notes.txt');
 
 	release();
 	expect(await renaming).toBeUndefined();
-	expect(todos.selectedPath).toBe('renamed.txt');
+	expect(shownPath(todos)).toBe('renamed.txt');
 	expect(textEditor(todos)).toBe(editor);
 	editor.input('after');
 	await editor.save();
@@ -1372,7 +1434,7 @@ test('operations on either path of a rename in progress are refused, and other p
 	for (const path of ['a.txt', 'b.txt', 'other.txt'])
 		await todos.folder.files.create(path, path);
 	await todos.refresh();
-	await todos.open('a.txt');
+	await todos.open('a.txt', 'files');
 	const editor = textEditor(todos);
 
 	during.writes.length = 0;
@@ -1388,14 +1450,13 @@ test('operations on either path of a rename in progress are refused, and other p
 	todos.discard('a.txt');
 	expect(await todos.rename('other.txt', 'free.txt')).toBeUndefined();
 	// Opening the destination selects it but claims nothing while it is reserved.
-	await todos.open('c.txt');
-	expect(todos.selection).toBeUndefined();
+	await todos.open('c.txt', 'files');
+	expect(todos.current?.item).toBeUndefined();
 	expect(await text(todos, 'b.txt')).toBe('b.txt');
 
 	release();
 	expect(await renaming).toBeUndefined();
-	expect(todos.selectedPath).toBe('c.txt');
-	await reselect(todos, 'c.txt');
+	expect(shownPath(todos)).toBe('c.txt');
 	expect(textEditor(todos)).toBe(editor);
 	expect(editor.path).toBe('c.txt');
 	expect(await todos.rename('c.txt', 'd.txt')).toBeUndefined();
@@ -1405,7 +1466,7 @@ test('operations on either path of a rename in progress are refused, and other p
 test('a todo rename fences its editor: input and a toggle are refused until a new editor is at the new path', async () => {
 	const todos = await open();
 	await todos.create('Milk');
-	const path = todos.selectedPath!;
+	const path = shownPath(todos)!;
 	const editor = todoEditor(todos);
 	const original = (await text(todos, path))!;
 	const image = path.replace(/\.md$/, '.png');
@@ -1435,7 +1496,7 @@ test('a todo rename fences its editor: input and a toggle are refused until a ne
 
 	release();
 	expect(await renaming).toBeUndefined();
-	expect(todos.selectedPath).toBe('todos/oat.md');
+	expect(shownPath(todos)).toBe('todos/oat.md');
 	const moved = todoEditor(todos);
 	expect(moved).not.toBe(editor);
 	expect(moved.path).toBe('todos/oat.md');
@@ -1453,10 +1514,10 @@ test('a todo rename fences its editor: input and a toggle are refused until a ne
 	expect(await text(todos, path)).toBeUndefined();
 });
 
-test('a rename whose destination another program made invalid opens it for raw repair at the new path, and writes nothing at the old path', async () => {
+test('a rename whose destination another program made invalid opens its todo editor there with why, repaired in Files at the new path it reopens as a todo, and nothing is written at the old path', async () => {
 	const todos = await open();
 	await todos.create('Milk');
-	const path = todos.selectedPath!;
+	const path = shownPath(todos)!;
 	const editor = todoEditor(todos);
 	typeNotes(editor, 'typed before\n');
 	const table = todos.folder.tables.todos;
@@ -1482,19 +1543,24 @@ test('a rename whose destination another program made invalid opens it for raw r
 	release();
 	expect(await renaming).toBeUndefined();
 
-	expect(todos.selectedPath).toBe('todos/oat.md');
+	expect(shownPath(todos)).toBe('todos/oat.md');
 	const moved = todoEditor(todos);
 	expect(moved.path).toBe('todos/oat.md');
 	expect(moved.row).toMatchObject({ status: 'invalid', text: invalid });
 	expect(moved.diagnostics()?.summary).toContain('need fixing');
 
-	// The repair goes through the same editor's source, at the new path.
-	moved.setText('---\ntitle: Oat\ndone: true\n---\ntyped before\n');
-	expect(await written(moved)).toBeUndefined();
+	// The repair is the file's text, in Files, at the new path.
+	await todos.open('todos/oat.md', 'files');
+	const file = textEditor(todos);
+	expect(file.buffer).toBe(invalid);
+	file.input('---\ntitle: Oat\ndone: true\n---\ntyped before\n');
+	await file.save();
 	expect(await reading(todos, 'todos/oat.md')).toMatchObject({
 		fields: { title: 'Oat', done: true },
 		body: 'typed before\n',
 	});
+	await todos.open('todos/oat.md', 'todos');
+	expect(fieldsOf(todoEditor(todos)).fields).toMatchObject({ done: true });
 	expect(await text(todos, path)).toBeUndefined();
 });
 
@@ -1503,9 +1569,9 @@ test('a rename never lands on an open editor, clean or holding a removed draft',
 	for (const path of ['a.txt', 'b.txt'])
 		await todos.folder.files.create(path, path);
 	await todos.refresh();
-	await todos.open('b.txt');
+	await todos.open('b.txt', 'files');
 	const destination = textEditor(todos);
-	await todos.open('a.txt');
+	await todos.open('a.txt', 'files');
 	const source = textEditor(todos);
 
 	expect(await todos.rename('a.txt', 'b.txt')).toContain('open in an editor');
@@ -1516,7 +1582,7 @@ test('a rename never lands on an open editor, clean or holding a removed draft',
 	expect(await text(todos, 'a.txt')).toBe('a.txt');
 	expect(source.path).toBe('a.txt');
 	expect(destination.buffer).toBe('mine');
-	await todos.open('b.txt');
+	await todos.open('b.txt', 'files');
 	expect(textEditor(todos)).toBe(destination);
 });
 
@@ -1538,14 +1604,14 @@ test('an open of the destination that resolves after the bytes moved gives up it
 	});
 	await todos.folder.files.create('a.txt', 'saved');
 	await todos.refresh();
-	await todos.open('a.txt');
+	await todos.open('a.txt', 'files');
 	const editor = textEditor(todos);
 
 	let ungate = () => {};
 	gate = new Promise<void>((resolve) => {
 		ungate = resolve;
 	});
-	const opening = todos.open('c.txt');
+	const opening = todos.open('c.txt', 'files');
 	during.writes.length = 0;
 	const held = arm();
 	const renaming = todos.rename('a.txt', 'c.txt');
@@ -1554,12 +1620,11 @@ test('an open of the destination that resolves after the bytes moved gives up it
 	ungate();
 	await opening;
 	// The open read the moved bytes, but the path belongs to the rename.
-	expect(todos.selection).toBeUndefined();
+	expect(todos.current?.item).toBeUndefined();
 	expect(todos.saving || todos.unsaved).toBe(false);
 
 	release();
 	expect(await renaming).toBeUndefined();
-	await reselect(todos, 'c.txt');
 	expect(textEditor(todos)).toBe(editor);
 	expect(editor.path).toBe('c.txt');
 });
@@ -1577,7 +1642,7 @@ test('a rename that lands its destination but keeps its source names both paths,
 	const todos = await open(adapt);
 	await todos.folder.files.create('notes.txt', 'saved');
 	await todos.refresh();
-	await todos.open('notes.txt');
+	await todos.open('notes.txt', 'files');
 	const editor = textEditor(todos);
 
 	// The move's first step lands: the destination holds the captured bytes.
@@ -1611,7 +1676,7 @@ test('a rename that lands its destination but keeps its source names both paths,
 	expect(editor.path).toBe('notes.txt');
 	expect(editor.buffer).toBe('typed during');
 	expect(editor.saveState).toEqual({ kind: 'saved' });
-	expect(todos.selectedPath).toBe('notes.txt');
+	expect(shownPath(todos)).toBe('notes.txt');
 	expect(textEditor(todos)).toBe(editor);
 
 	// The held input saves against the unchanged baseline; nothing is moved
@@ -1627,7 +1692,7 @@ test('a rename that lands its destination but keeps its source names both paths,
 test('a todo rename that lands its new path but keeps its old one leaves both rows, and the editor stays at the old path', async () => {
 	const todos = await open();
 	await todos.create('Milk');
-	const path = todos.selectedPath!;
+	const path = shownPath(todos)!;
 	const editor = todoEditor(todos);
 	const original = (await text(todos, path))!;
 	const table = todos.folder.tables.todos;
@@ -1660,7 +1725,7 @@ test('a todo rename that lands its new path but keeps its old one leaves both ro
 	expect(todos.entries.map((entry) => entry.path).sort()).toEqual(
 		[path, 'todos/oat.md'].sort(),
 	);
-	expect(todos.selectedPath).toBe(path);
+	expect(shownPath(todos)).toBe(path);
 	expect(todoEditor(todos)).toBe(editor);
 	expect(editor.path).toBe(path);
 	expect(fieldsOf(editor).body).toBe('');
@@ -1675,7 +1740,7 @@ test('a todo rename that lands its new path but keeps its old one leaves both ro
 test('a todo rename whose reply was lost says so, and a todo holding nothing unwritten closes when the listing finds its old path empty', async () => {
 	const todos = await open();
 	await todos.create('Milk');
-	const path = todos.selectedPath!;
+	const path = shownPath(todos)!;
 	const editor = todoEditor(todos);
 	typeNotes(editor, 'typed before\n');
 	const table = todos.folder.tables.todos;
@@ -1703,50 +1768,44 @@ test('a todo rename whose reply was lost says so, and a todo holding nothing unw
 	expect((await reading(todos, 'todos/oat.md')).body).toBe('typed before\n');
 	expect(editor.path).toBe(path);
 	expect(editor.isIdle).toBe(true);
-	expect(todos.selection).toBeUndefined();
+	expect(todos.current?.item).toBeUndefined();
 	expect(todos.unsaved).toBe(false);
 	// Nothing is written at either name.
 	expect(await text(todos, path)).toBeUndefined();
 	expect(await text(todos, 'todos/oat.md')).toBe(moved);
 });
 
-test('a todo in raw mode writes its exact text over another writer, and settles before table rename and delete', async () => {
+test("Files opens a todo's complete text in a plain editor, which saves it exactly and settles before table rename and delete", async () => {
 	const todos = await open();
 	await todos.folder.files.create('todos/milk.md', ROW);
 	await todos.refresh();
-	await todos.open('todos/milk.md');
-	const editor = todoEditor(todos);
+	await todos.open('todos/milk.md', 'files');
+	const editor = textEditor(todos);
 	expect(editor.path).toBe('todos/milk.md');
 	await todos.folder.files.create('todos/milk.png', new Uint8Array([7]));
 
-	// The source view shows the file's exact text, through the same editor.
-	expect(editor.editSource()).toBeUndefined();
-	expect(editor.rawMode).toBe(true);
-	expect(editor.row.text).toBe(ROW);
-	expect(todoEditor(todos)).toBe(editor);
-
-	// Another writer's change is not read in; the next edit replaces it exactly.
-	await todos.folder.files.overwrite('todos/milk.md', `${ROW}theirs\n`);
-	expect(editor.row.text).toBe(ROW);
-	editor.setText(`${ROW}mine\n`);
-	expect(await written(editor)).toBeUndefined();
+	// The whole file, frontmatter included, and no todo editor beside it.
+	expect(editor.buffer).toBe(ROW);
+	expect(todos.current).toMatchObject({ workspace: 'files' });
+	editor.input(`${ROW}mine\n`);
+	await editor.save();
 	expect(await text(todos, 'todos/milk.md')).toBe(`${ROW}mine\n`);
 
-	// A settled raw edit moves with the row and keeps its exact text.
-	editor.setText(`${ROW}mine again\n`);
+	// Typing moves with the row, saved first and kept exactly.
+	editor.input(`${ROW}mine again\n`);
 	expect(await todos.rename('todos/milk.md', 'oat.md')).toBeUndefined();
 	expect(await text(todos, 'todos/oat.md')).toBe(`${ROW}mine again\n`);
 	expect(await text(todos, 'todos/milk.md')).toBeUndefined();
 	// The table rename moved the row alone; the image kept its name.
 	expect(await bytes(todos, 'todos/milk.png')).toEqual(new Uint8Array([7]));
 	expect(await bytes(todos, 'todos/oat.png')).toBeUndefined();
-	expect(todos.selectedPath).toBe('todos/oat.md');
-	const moved = todoEditor(todos);
-	// Raw mode is a view preference, and it carries to the new editor.
-	expect(moved.rawMode).toBe(true);
+	expect(shownPath(todos)).toBe('todos/oat.md');
+	// The same plain editor, at the new path.
+	expect(textEditor(todos)).toBe(editor);
+	expect(editor.path).toBe('todos/oat.md');
 	await todos.folder.files.create('todos/oat.webm', new Uint8Array([9]));
 
-	moved.setText(`${ROW}last\n`);
+	editor.input(`${ROW}last\n`);
 	const deletion = await todos.deletionFor('todos/oat.md');
 	expect(deletion.data).toMatchObject({
 		kind: 'todo',
@@ -1757,7 +1816,7 @@ test('a todo in raw mode writes its exact text over another writer, and settles 
 	// The table delete removed the row alone.
 	expect(await bytes(todos, 'todos/oat.webm')).toEqual(new Uint8Array([9]));
 	expect(await bytes(todos, 'todos/milk.png')).toEqual(new Uint8Array([7]));
-	expect(todos.selection).toBeUndefined();
+	expect(todos.current?.item).toBeUndefined();
 	expect(todos.unsaved).toBe(false);
 });
 
@@ -1796,11 +1855,11 @@ test('a todo editor settles before table rename and delete, and refuses both whi
 	expect(await todos.remove(deletion)).toBeUndefined();
 	expect(await text(todos, 'todos/oat.md')).toBeUndefined();
 	await expectSiblings(todos, stem);
-	expect(todos.selection).toBeUndefined();
+	expect(todos.current?.item).toBeUndefined();
 	expect(todos.unsaved).toBe(false);
 });
 
-test('a row that does not read as a todo opens its todo editor for raw repair with the reason, and shows its fields once repaired', async () => {
+test('a row that does not read as a todo is named for repair instead of listed; Files opens its exact text, a saved repair lists it again without changing what Files shows, and it opens as a todo only when asked', async () => {
 	const todos = await open();
 	const broken = '---\ntitle: Bad\ndone: soon\n---\n';
 	const aliased = '---\ntitle: *missing\ndone: false\n---\n';
@@ -1809,38 +1868,48 @@ test('a row that does not read as a todo opens its todo editor for raw repair wi
 	expectOk(await todos.folder.files.create('todos/bad.md', broken));
 	expectOk(await todos.folder.files.create('todos/alias.md', aliased));
 	expectOk(await todos.folder.files.create('todos/big.md', unsupported));
-	await todos.refresh();
+	await todos.check();
 
-	// A field issue opens the same editor, for raw repair only.
-	await todos.open('todos/bad.md');
-	const bad = todoEditor(todos);
-	expect(bad.row).toMatchObject({ status: 'invalid', text: broken });
-	expect(
-		bad.set({ fields: { title: 'Typed', done: false }, body: '' }),
-	).toContain('source editor');
-	expect(bad.row.text).toBe(broken);
-	expect(bad.diagnostics()?.summary).toContain('need fixing');
-	const listed = todos.entries.find((entry) => entry.path === 'todos/bad.md')!;
-	expect(await todos.toggle(listed)).toContain('no readable done value');
-	expect(bad.editFields()).toContain('does not read as a todo');
+	// The list offers only rows that read as todos, and names the rest with why.
+	expect(todos.entries.map((entry) => entry.path)).toEqual(['todos/big.md']);
+	expect(todos.repairs).toEqual([
+		{ path: 'todos/alias.md', reason: expect.stringMatching(/\S/) },
+		{ path: 'todos/bad.md', reason: expect.stringMatching(/\S/) },
+	]);
+	expect(todos.isTodo('todos/bad.md')).toBe(true);
 
-	// Text with no canonical form says why, whether or not it parses.
-	await todos.open('todos/alias.md');
-	expect(todoEditor(todos).diagnostics()?.summary).toContain('no anchor');
-	await todos.open('todos/big.md');
+	// Text with no canonical form can still be listed; opened as a todo, its
+	// editor says why rather than showing fields. So does an explicit open of
+	// a row that does not parse.
+	await todos.open('todos/big.md', 'todos');
 	expect(todoEditor(todos).diagnostics()?.summary).toContain('safe range');
+	await todos.open('todos/alias.md', 'todos');
+	expect(todoEditor(todos).diagnostics()?.summary).toContain('no anchor');
 
-	// A repair saves exactly as typed, then the row shows its fields.
-	await todos.open('todos/bad.md');
-	expect(todoEditor(todos)).toBe(bad);
-	bad.setText('---\ntitle: Fixed\ndone: false\n---\n');
-	expect(await written(bad)).toBeUndefined();
-	expect(bad.editFields()).toBeUndefined();
-	expect(await text(todos, 'todos/bad.md')).toBe(
-		'---\ntitle: Fixed\ndone: false\n---\n',
-	);
-	expect(fieldsOf(bad).fields.title).toBe('Fixed');
-	expect(fieldsOf(bad).fields.done).toBe(false);
+	// Files opens the complete text, and repair saves exactly as typed.
+	await todos.open('todos/bad.md', 'files');
+	const file = textEditor(todos);
+	expect(file.buffer).toBe(broken);
+	const fixed = '---\ntitle: Fixed\ndone: false\n---\n';
+	file.input(fixed);
+	await file.save();
+	expect(await text(todos, 'todos/bad.md')).toBe(fixed);
+	await todos.check();
+	expect(todos.entries.map((entry) => entry.path)).toEqual([
+		'todos/bad.md',
+		'todos/big.md',
+	]);
+	expect(todos.repairs.map((repair) => repair.path)).toEqual([
+		'todos/alias.md',
+	]);
+	// Valid now, and still the text editor the person opened.
+	expect(textEditor(todos)).toBe(file);
+
+	// Opening it from the list lets the plain editor go and shows its fields.
+	await todos.open('todos/bad.md', 'todos');
+	const bad = todoEditor(todos);
+	expect(fieldsOf(bad).fields).toEqual({ title: 'Fixed', done: false });
+	expect(await text(todos, 'todos/bad.md')).toBe(fixed);
 	expect(todos.unsaved).toBe(false);
 });
 
@@ -1849,7 +1918,7 @@ test('typing during a delete stays as a draft of the removed file until it is di
 	const todos = await open(adapt);
 	await todos.folder.files.create('notes.txt', 'saved');
 	await todos.refresh();
-	await todos.open('notes.txt');
+	await todos.open('notes.txt', 'files');
 	const editor = textEditor(todos);
 	const deletion = await todos.deletionFor('notes.txt');
 
@@ -1867,7 +1936,7 @@ test('typing during a delete stays as a draft of the removed file until it is di
 		current: undefined,
 	});
 	todos.discard('notes.txt');
-	expect(todos.selection).toBeUndefined();
+	expect(todos.current?.item).toBeUndefined();
 	expect(todos.unsaved).toBe(false);
 });
 
@@ -1875,7 +1944,7 @@ test('a draft whose saved file became unreadable is kept until it is explicitly 
 	const todos = await open();
 	await todos.folder.files.create('notes.txt', 'saved');
 	await todos.refresh();
-	await todos.open('notes.txt');
+	await todos.open('notes.txt', 'files');
 	const editor = textEditor(todos);
 	const binary = new Uint8Array([0x89, 0, 1]);
 
@@ -1891,31 +1960,28 @@ test('a draft whose saved file became unreadable is kept until it is explicitly 
 	await todos.refresh();
 	expect(editor.saveState.kind).toBe('failed');
 	expect(editor.buffer).toBe('mine');
-	expect(todos.selectedPath).toBe('notes.txt');
+	expect(shownPath(todos)).toBe('notes.txt');
 	expect(todos.saveProblems).toBe(1);
 
 	todos.discard('notes.txt');
-	expect(todos.selection).toBeUndefined();
+	expect(todos.current?.item).toBeUndefined();
 	expect(todos.unsaved).toBe(false);
 	expect(await bytes(todos, 'notes.txt')).toEqual(binary);
-	await todos.open('notes.txt');
-	expect(todos.selection).toMatchObject({
-		kind: 'file',
-		file: { kind: 'binary', size: 3 },
-	});
+	await todos.open('notes.txt', 'files');
+	expect(todos.current?.item).toMatchObject({ kind: 'binary', size: 3 });
 });
 
 test('a clean or merely dirty editor is not discarded', async () => {
 	const todos = await open();
 	await todos.folder.files.create('notes.txt', 'saved');
 	await todos.refresh();
-	await todos.open('notes.txt');
+	await todos.open('notes.txt', 'files');
 	const editor = textEditor(todos);
 
 	todos.discard('notes.txt');
 	editor.input('mine');
 	todos.discard('notes.txt');
-	expect(todos.selectedPath).toBe('notes.txt');
+	expect(shownPath(todos)).toBe('notes.txt');
 	expect(editor.buffer).toBe('mine');
 
 	// A changed file is reviewed through its conflict choices, not discarded here.
@@ -1923,7 +1989,7 @@ test('a clean or merely dirty editor is not discarded', async () => {
 	await editor.save();
 	expect(editor.saveState.kind).toBe('conflict');
 	todos.discard('notes.txt');
-	expect(todos.selectedPath).toBe('notes.txt');
+	expect(shownPath(todos)).toBe('notes.txt');
 	expect(editor.buffer).toBe('mine');
 });
 
@@ -1945,19 +2011,19 @@ test('an open that resolves after its path was deleted and reopened cannot repla
 	await todos.refresh();
 
 	hold = true;
-	const stale = todos.open('notes.txt');
+	const stale = todos.open('notes.txt', 'files');
 	while (gates.length < 1) await Bun.sleep(1);
 	hold = false;
 	const deletion = await todos.deletionFor('notes.txt');
 	expect(await todos.remove(deletion.data!)).toBeUndefined();
-	expect(todos.selection).toBeUndefined();
+	expect(todos.current?.item).toBeUndefined();
 	await todos.folder.files.create('notes.txt', 'new');
 	hold = true;
-	const current = todos.open('notes.txt');
+	const current = todos.open('notes.txt', 'files');
 	while (gates.length < 2) await Bun.sleep(1);
 	hold = false;
 
-	// The stale result opens no editor. `selection` is not read here; see `reselect`.
+	// The stale result opens no editor.
 	gates[0]!();
 	await stale;
 	expect(todos.saving || todos.unsaved || todos.saveProblems > 0).toBe(false);
@@ -1970,20 +2036,98 @@ test('an open that resolves after its path was deleted and reopened cannot repla
 	expect(await text(todos, 'notes.txt')).toBe('mine');
 });
 
-test('non-text files open as details, and todo rows open their todo editor', async () => {
+test('the surface a path is opened from decides its editor: Files opens non-text as details and a todo as text, the list opens a todo editor', async () => {
 	const todos = await open();
 	await todos.folder.files.create('photo.png', new Uint8Array([0x89, 0, 1]));
 	expect(await todos.create('Bread')).toBeUndefined();
-	const row = todos.selectedPath!;
+	const row = shownPath(todos)!;
+	const created = todoEditor(todos);
 	await todos.refresh();
 
-	await todos.open('photo.png');
-	expect(todos.selection).toMatchObject({
-		kind: 'file',
-		file: { kind: 'binary', size: 3 },
+	await todos.open('photo.png', 'files');
+	expect(todos.current?.item).toMatchObject({ kind: 'binary', size: 3 });
+	await todos.open(row, 'files');
+	expect(textEditor(todos).buffer).toBe((await text(todos, row))!);
+	// One publisher per file: the todo editor was let go for Files.
+	expect(created.isFenced).toBe(true);
+	await todos.open(row, 'todos');
+	expect(todoEditor(todos)).not.toBe(created);
+	expect(fieldsOf(todoEditor(todos)).fields.title).toBe('Bread');
+});
+
+test('opening a todo in Files stops its input at once and waits for its writes; a failed write keeps the todo and its input with nothing opened in its place, and once saved Files opens the text and the old editor takes nothing', async () => {
+	const { todos, path, failNext } = await openFailingNextWrite();
+	const editor = todoEditor(todos);
+	failNext();
+	typeTitle(editor, 'Mine');
+	const opening = todos.open(path, 'files');
+	// The detail moved and the todo takes no more input, before its write settles.
+	expect(todos.current).toMatchObject({ workspace: 'files', path });
+	expect(typeNotes(editor, 'late\n')).toBe(BUSY);
+	await opening;
+
+	expect(editor.save.status).toBe('failed');
+	expect(todos.current).toMatchObject({
+		workspace: 'files',
+		path,
+		item: { kind: 'todo', editor },
 	});
-	await todos.open(row);
-	expect(todos.selection?.kind).toBe('todo');
+	expect(fieldsOf(editor).fields.title).toBe('Mine');
+	expect(fieldsOf(editor).body).toBe('');
+	expect(editor.isFenced).toBe(false);
+	expect(todos.unsaved).toBe(true);
+	expect((await reading(todos, path)).fields.title).toBe('Milk');
+
+	// The person saves it again; opening it in Files then proceeds.
+	expect(editor.retry()).toBeUndefined();
+	expect(await written(editor)).toBeUndefined();
+	await todos.open(path, 'files');
+	const file = textEditor(todos);
+	expect(file.buffer).toBe(accepted(editor));
+	const saved = await text(todos, path);
+
+	// The released todo, and anything still holding it, takes nothing.
+	expect(typeTitle(editor, 'Old')).toContain('no longer open here');
+	expect(editor.retry()).toContain('no longer open here');
+	await todos.open(path, 'todos');
+	const reopened = todoEditor(todos);
+	expect(reopened).not.toBe(editor);
+	expect(typeTitle(editor, 'Older')).toContain('no longer open here');
+	expect(await text(todos, path)).toBe(saved);
+	expect(fieldsOf(reopened).fields.title).toBe('Mine');
+});
+
+test('opening as a todo a file Files holds saves its typing first; a conflict keeps the plain editor and its input with nothing opened in its place, and once resolved the todo opens on the saved text', async () => {
+	const todos = await open(withoutHints);
+	expectOk(await todos.folder.files.create('todos/milk.md', ROW));
+	await todos.refresh();
+	await todos.open('todos/milk.md', 'files');
+	const file = textEditor(todos);
+	expectOk(
+		await todos.folder.files.overwrite('todos/milk.md', `${ROW}theirs\n`),
+	);
+	file.input(`${ROW}mine\n`);
+
+	await todos.open('todos/milk.md', 'todos');
+	expect(file.saveState.kind).toBe('conflict');
+	expect(todos.current).toMatchObject({
+		workspace: 'todos',
+		item: { kind: 'text', editor: file },
+	});
+	expect(file.buffer).toBe(`${ROW}mine\n`);
+	expect(await text(todos, 'todos/milk.md')).toBe(`${ROW}theirs\n`);
+	expect(todos.unsaved).toBe(true);
+
+	// The person saves their own text over it; the todo then opens on that.
+	await file.keepMine();
+	await todos.open('todos/milk.md', 'todos');
+	expect(fieldsOf(todoEditor(todos)).body).toBe('mine\n');
+	// The let-go plain editor takes nothing more.
+	file.input('late');
+	await file.retry();
+	expect(file.buffer).toBe(`${ROW}mine\n`);
+	expect(await text(todos, 'todos/milk.md')).toBe(`${ROW}mine\n`);
+	expect(todos.unsaved).toBe(false);
 });
 
 test('a folder is deleted from the browser only when it is empty', async () => {
@@ -2036,7 +2180,7 @@ test('a hint from another tab rereads the folder: new rows are listed and a clea
 	const { todos, other } = await openWithAnotherTab();
 	try {
 		expectOk(await todos.folder.files.create('notes.txt', 'saved'));
-		await todos.open('notes.txt');
+		await todos.open('notes.txt', 'files');
 		const editor = textEditor(todos);
 
 		expectOk(
@@ -2072,7 +2216,7 @@ test("another tab's change is listed while an open todo's failed save keeps its 
 	const { todos, other, faults } = await openWithAnotherTab();
 	try {
 		await todos.create('Milk');
-		const path = todos.selectedPath!;
+		const path = shownPath(todos)!;
 		const saved = await text(todos, path);
 		const editor = todoEditor(todos);
 		faults.write = (file) => (file.endsWith(`/${path}`) ? 'fail' : undefined);
@@ -2092,7 +2236,7 @@ test("another tab's change is listed while an open todo's failed save keeps its 
 		expect(todos.entries.map((entry) => entry.path)).toContain(
 			'todos/bread.md',
 		);
-		expect(todos.selectedPath).toBe(path);
+		expect(shownPath(todos)).toBe(path);
 		expect(todoEditor(todos)).toBe(editor);
 		expect(fieldsOf(editor).fields.title).toBe('Mine');
 		expect(editor.save.status).toBe('failed');
@@ -2107,7 +2251,7 @@ test("another tab's change is listed while an open todo's failed save keeps its 
 async function todoWithAnotherTab() {
 	const { todos, other } = await openWithAnotherTab();
 	await todos.create('Milk');
-	const path = todos.selectedPath!;
+	const path = shownPath(todos)!;
 	const editor = todoEditor(todos);
 	return { todos, other, path, editor };
 }
@@ -2171,8 +2315,8 @@ test('an open todo whose row another tab removed closes with the listing when it
 	const { todos, other, path, editor } = await todoWithAnotherTab();
 	try {
 		expectOk(await other.files.remove(expectOk(await other.files.read(path))));
-		await eventually(() => todos.selectedPath === undefined);
-		expect(todos.selection).toBeUndefined();
+		await eventually(() => shownPath(todos) === undefined);
+		expect(todos.current?.item).toBeUndefined();
 		expect(todos.unsaved).toBe(false);
 
 		// The released editor takes nothing more.
@@ -2184,14 +2328,14 @@ test('an open todo whose row another tab removed closes with the listing when it
 	}
 });
 
-test('Reload of a row another tab made malformed shows it for raw repair in the same editor', async () => {
+test('Reload of a row another tab made malformed keeps the same todo editor, which shows that text and why', async () => {
 	const { todos, other, path, editor } = await todoWithAnotherTab();
 	try {
 		const malformed = '---\ntitle: *missing\ndone: false\n---\ntheirs\n';
 		expectOk(await other.files.overwrite(path, malformed));
 
 		expect(await todos.reload(path)).toBeUndefined();
-		expect(todos.selectedPath).toBe(path);
+		expect(shownPath(todos)).toBe(path);
 		expect(todoEditor(todos)).toBe(editor);
 		expect(editor.row.status).toBe('invalid');
 		expect(editor.row.text).toBe(malformed);
@@ -2258,7 +2402,7 @@ test('an own delete whose reply was lost after it landed refuses typing during i
 	const { todos, other } = await openWithSilentHandle();
 	try {
 		await todos.create('Milk');
-		const path = todos.selectedPath!;
+		const path = shownPath(todos)!;
 		const editor = todoEditor(todos);
 		const deletion = expectOk(await todos.deletionFor(path));
 		const table = todos.folder.tables.todos;
@@ -2284,7 +2428,7 @@ test('an own delete whose reply was lost after it landed refuses typing during i
 		expect(fieldsOf(editor).body).toBe('');
 		expect(editor.isIdle).toBe(true);
 		// The listing after the delete found the row gone and closed the todo.
-		expect(todos.selection).toBeUndefined();
+		expect(todos.current?.item).toBeUndefined();
 		expect(todos.unsaved).toBe(false);
 
 		await close(todos);
@@ -2297,7 +2441,7 @@ test('an own delete whose reply was lost after it landed refuses typing during i
 test('an own delete whose reply was lost before it landed keeps the todo open, and its typing writes as usual', async () => {
 	const todos = await open();
 	await todos.create('Milk');
-	const path = todos.selectedPath!;
+	const path = shownPath(todos)!;
 	const editor = todoEditor(todos);
 	const saved = await text(todos, path);
 	const deletion = expectOk(await todos.deletionFor(path));
@@ -2312,7 +2456,7 @@ test('an own delete whose reply was lost before it landed keeps the todo open, a
 	}
 
 	// The row is still there, so the todo stays open and its typing writes.
-	expect(todos.selectedPath).toBe(path);
+	expect(shownPath(todos)).toBe(path);
 	expect(todoEditor(todos)).toBe(editor);
 	expect(await text(todos, path)).toBe(saved);
 	typeNotes(editor, 'new typing\n');
@@ -2324,7 +2468,7 @@ test('typing during an own delete that removed the row is refused, and the delet
 	const { todos, other } = await openWithSilentHandle();
 	try {
 		await todos.create('Milk');
-		const path = todos.selectedPath!;
+		const path = shownPath(todos)!;
 		const editor = todoEditor(todos);
 		const deletion = expectOk(await todos.deletionFor(path));
 		const table = todos.folder.tables.todos;
@@ -2342,7 +2486,7 @@ test('typing during an own delete that removed the row is refused, and the delet
 		}
 		expect(typed).toBe(BUSY);
 		expect(fieldsOf(editor).body).toBe('');
-		expect(todos.selection).toBeUndefined();
+		expect(todos.current?.item).toBeUndefined();
 		expect(todos.unsaved).toBe(false);
 
 		await todos.refresh();
@@ -2372,7 +2516,7 @@ test('a raw file whose own delete reply was lost holds its draft, and no refresh
 	});
 	await todos.folder.files.create('notes.txt', 'saved');
 	await todos.refresh();
-	await todos.open('notes.txt');
+	await todos.open('notes.txt', 'files');
 	const editor = textEditor(todos);
 	const deletion = expectOk(await todos.deletionFor('notes.txt'));
 
@@ -2425,7 +2569,7 @@ test("a delete confirmed while its todo's own save is running waits for that sav
 	opened.push(todos);
 	await todos.check();
 	await todos.create('Milk');
-	const path = todos.selectedPath!;
+	const path = shownPath(todos)!;
 	const editor = todoEditor(todos);
 	const deletion = expectOk(await todos.deletionFor(path));
 
@@ -2521,13 +2665,12 @@ test('a raw open whose read answers after close retains no editor', async () => 
 	expectOk(await todos.folder.files.create('notes.txt', 'saved'));
 
 	const held = arm();
-	const opening = todos.open('notes.txt');
+	const opening = todos.open('notes.txt', 'files');
 	const release = await held();
 	await close(todos);
 	release();
 	await opening;
-	// `selection` is first read here; see `reselect`.
-	expect(todos.selection).toBeUndefined();
+	expect(todos.current?.item).toBeUndefined();
 });
 
 test('a row open whose editor answers after close retains it nowhere and saves nothing through it', async () => {
@@ -2546,12 +2689,12 @@ test('a row open whose editor answers after close retains it nowhere and saves n
 		return late;
 	};
 
-	const opening = todos.open('todos/late.md');
+	const opening = todos.open('todos/late.md', 'todos');
 	await entered.promise;
 	await close(todos);
 	release.resolve();
 	await opening;
-	expect(todos.selection).toBeUndefined();
+	expect(todos.current?.item).toBeUndefined();
 	expect(todos.entries).toEqual([]);
 	// Nothing holds it, and it wrote nothing.
 	expect(expectOk(late!).get()).toMatchObject({
@@ -2565,7 +2708,7 @@ test('a listing that answers after close changes neither the rows nor a clean ed
 	const { adapt, arm } = recordingFolder();
 	const todos = await open(adapt);
 	expectOk(await todos.folder.files.create('notes.txt', 'saved'));
-	await todos.open('notes.txt');
+	await todos.open('notes.txt', 'files');
 	const editor = textEditor(todos);
 	const listing = todos.listing;
 	expectOk(await todos.folder.files.create('todos/late.md', ROW));
@@ -2610,16 +2753,16 @@ test('close waits for a create reply and retains no editor', async () => {
 	release();
 	await closing;
 	expect(await creating).toBeUndefined();
-	expect(todos.selection).toBeUndefined();
-	expect(todos.selectedPath).toBeUndefined();
+	expect(todos.current?.item).toBeUndefined();
+	expect(shownPath(todos)).toBeUndefined();
 });
 
-test('close waits for a held rename, which moves the file and opens nothing at the destination', async () => {
+test('close waits for a held rename, which moves the file and its plain editor and opens nothing new at the destination', async () => {
 	const { adapt, arm } = interceptingFileOperations();
 	const todos = await open(adapt);
 	expectOk(await todos.folder.files.create('todos/note.txt', ROW));
 	await todos.refresh();
-	await todos.open('todos/note.txt');
+	await todos.open('todos/note.txt', 'files');
 
 	const held = arm();
 	const renaming = todos.rename('todos/note.txt', 'note.md');
@@ -2635,9 +2778,12 @@ test('close waits for a held rename, which moves the file and opens nothing at t
 	release();
 	expect(await renaming).toBeUndefined();
 	await closing;
-	// The clean raw editor gave way, and the row's todo editor never opens.
-	expect(todos.selection).toBeUndefined();
-	expect(todos.selectedPath).toBeUndefined();
+	// The plain editor moved with the file; no todo editor opens there.
+	expect(todos.current).toMatchObject({
+		workspace: 'files',
+		path: 'todos/note.md',
+		item: { kind: 'text' },
+	});
 });
 
 test('a raw draft whose save reply was lost sends nothing more through rename, delete, or close', async () => {
@@ -2660,7 +2806,7 @@ test('a raw draft whose save reply was lost sends nothing more through rename, d
 		},
 	}));
 	expectOk(await todos.folder.files.create('notes.txt', 'saved'));
-	await todos.open('notes.txt');
+	await todos.open('notes.txt', 'files');
 	const editor = textEditor(todos);
 
 	editor.input('mine');
@@ -2701,7 +2847,7 @@ test('every close call shares one completion, and the folder closes once', async
 	});
 	expectOk(await todos.folder.files.create('a.txt', 'saved'));
 	expectOk(await todos.folder.files.create('notes.txt', 'saved'));
-	await todos.open('notes.txt');
+	await todos.open('notes.txt', 'files');
 	textEditor(todos).input('typed');
 
 	const held = arm();
@@ -2735,7 +2881,7 @@ test('close names the paths whose input it could not settle, and neither saves n
 	const todos = createTodos(folder);
 	await todos.check();
 	await todos.create('Failed');
-	const failedPath = todos.selectedPath!;
+	const failedPath = shownPath(todos)!;
 	const failed = todoEditor(todos);
 	await todos.create('Clean');
 	const opfs = opfsOf(storage);
@@ -2780,7 +2926,7 @@ test('calls made after close began are refused without folder or terminal work',
 	const closing = close(todos);
 	recording.calls.length = 0;
 
-	await todos.open('notes.txt');
+	await todos.open('notes.txt', 'files');
 	await todos.refresh();
 	await todos.check();
 	expect(await todos.reload(entry.path)).toBe(CLOSING);
@@ -2801,7 +2947,7 @@ test('calls made after close began are refused without folder or terminal work',
 	await todos.terminal.run();
 	expect(todos.terminal.runs.at(-1)?.result?.exitCode).toBe(1);
 	expect(recording.calls).toEqual([]);
-	expect(todos.selectedPath).toBe(entry.path);
+	expect(shownPath(todos)).toBe(entry.path);
 
 	release();
 	expect(await renaming).toBeUndefined();
@@ -2857,7 +3003,7 @@ test('a refresh stops reading open editors once a read closes the app', async ()
 	const editors = [];
 	for (const path of ['a.txt', 'b.txt']) {
 		expectOk(await todos.folder.files.create(path, 'saved'));
-		await todos.open(path);
+		await todos.open(path, 'files');
 		editors.push(textEditor(todos));
 		expectOk(await todos.folder.files.overwrite(path, 'theirs'));
 	}
@@ -2873,9 +3019,9 @@ test('a refresh reads no further editor once an observation closes the app', asy
 	const todos = await open(recording.adapt);
 	for (const path of ['a.txt', 'b.txt'])
 		expectOk(await todos.folder.files.create(path, 'saved'));
-	await todos.open('a.txt');
+	await todos.open('a.txt', 'files');
 	const first = textEditor(todos);
-	await todos.open('b.txt');
+	await todos.open('b.txt', 'files');
 	// The first editor's observation closes the app before the loop moves on.
 	const observe = first.observe;
 	first.observe = (next) => {
@@ -3145,7 +3291,7 @@ test('a missing-file reload keeps accepted input and the notice until deliberate
 	const path = 'todos/milk.md';
 	expectOk(await todos.folder.files.create(path, ROW));
 	await todos.refresh();
-	await todos.open(path);
+	await todos.open(path, 'todos');
 	const editor = todoEditor(todos);
 	expect(typeNotes(editor, 'kept\n')).toBeUndefined();
 	await written(editor);
@@ -3159,5 +3305,30 @@ test('a missing-file reload keeps accepted input and the notice until deliberate
 	await written(editor);
 	expect(todos.unsaved).toBe(true);
 	todos.discard(path);
-	expect(todos.selection).toBeUndefined();
+	expect(todos.current?.item).toBeUndefined();
+});
+
+test('a return to Files during a handoff wins after the existing path reservation settles', async () => {
+	const todos = await open();
+	const path = 'todos/milk.md';
+	expectOk(
+		await todos.folder.files.create(
+			path,
+			'---\ntitle: Milk\ndone: false\n---\nNotes.',
+		),
+	);
+	await todos.open(path, 'files');
+	const file = textEditor(todos);
+	const pending = Promise.withResolvers<void>();
+	const settle = file.settle;
+	file.settle = async () => {
+		await pending.promise;
+		return settle();
+	};
+	const towardTodo = todos.open(path, 'todos');
+	const backToFiles = todos.open(path, 'files');
+	pending.resolve();
+	await Promise.all([towardTodo, backToFiles]);
+	expect(todos.current?.workspace).toBe('files');
+	expect(textEditor(todos).buffer).toContain('Notes.');
 });

@@ -7,27 +7,35 @@
 	import CopyIcon from '@lucide/svelte/icons/copy';
 	import FileIcon from '@lucide/svelte/icons/file';
 	import TriangleAlertIcon from '@lucide/svelte/icons/triangle-alert';
+	import { rowStemOf } from '@epicenter/folder';
 	import { basename, dirname, withFileNewlines } from '@epicenter/folder/file-browser';
-	import type { OpenFile, Todos } from '$lib/todos.svelte.js';
+	import type { Retained, Todos } from '$lib/todos.svelte.js';
 	import { confirmDelete, copyPath } from './file-actions.js';
 	import FileNameBar from './FileNameBar.svelte';
+	import Handoff from './Handoff.svelte';
+	import Lifetime from './Lifetime.svelte';
 	import SaveStatus from './SaveStatus.svelte';
 
 	let {
 		todos,
 		path,
-		file,
+		item,
 		onBack,
 	}: {
 		todos: Todos;
 		path: string;
-		file: OpenFile;
+		/**
+		 * What the path retains now. The parent keys this view by a text
+		 * editor, so the textarea edits one editor for the view's lifetime.
+		 */
+		item: Retained | undefined;
 		/** Shown on narrow screens, where the list and the editor take turns. */
 		onBack?: () => void;
 	} = $props();
 
 	const name = $derived(basename(path));
 	const directory = $derived(dirname(path));
+	const isRow = $derived(rowStemOf(todos.folder.tables.todos.name, path) !== undefined);
 
 	/** A file shown as details: its extension names the type, then its size. */
 	function details(size: number) {
@@ -51,39 +59,59 @@
 			<h2 class="truncate text-sm font-medium">{name}</h2>
 			<p class="truncate font-mono text-xs text-muted-foreground">{path}</p>
 		</div>
+		{#if isRow && item?.kind !== 'todo'}
+			<!-- Navigation, not a mode: this editor settles and is let go before the todo opens. -->
+			<Lifetime>
+				{#snippet children(live)}
+					<Button size="sm" variant="outline" onclick={() => live() && void todos.open(path, 'todos')}>
+						Open as todo
+					</Button>
+				{/snippet}
+			</Lifetime>
+		{/if}
 		<Button variant="ghost" size="icon-sm" tooltip="Copy path" aria-label="Copy path" onclick={() => void copyPath(path)}>
 			<CopyIcon />
 		</Button>
 	</div>
 
-	{#if file.kind === 'loading'}
+	{#if item === undefined}
+		<Empty.Root class="flex-1">
+			<Empty.Title>{name} is no longer open</Empty.Title>
+			<Empty.Description>It was removed from the folder, or its edits were discarded.</Empty.Description>
+			<Button variant="outline" size="sm" onclick={() => void todos.open(path, 'files')}>Open again</Button>
+		</Empty.Root>
+	{:else if item.kind === 'loading'}
 		<Loading class="flex-1" label="Opening {name}…" />
-	{:else if file.kind === 'failed'}
+	{:else if item.kind === 'failed'}
 		<Empty.Root class="flex-1">
 			<Empty.Media><TriangleAlertIcon class="size-8 text-muted-foreground" /></Empty.Media>
 			<Empty.Title>Could not open this file</Empty.Title>
-			<Empty.Description>{file.message}</Empty.Description>
-			<Button variant="outline" size="sm" onclick={() => void todos.open(path)}>Try again</Button>
+			<Empty.Description>{item.message}</Empty.Description>
+			<Button variant="outline" size="sm" onclick={() => void todos.open(path, 'files')}>Try again</Button>
 		</Empty.Root>
-	{:else if file.kind === 'text'}
-		{@const editor = file.editor}
+	{:else if item.kind === 'todo'}
+		<Handoff {todos} {path} {item} to="files" />
+	{:else if item.kind === 'text'}
+		{@const editor = item.editor}
 		<SaveStatus {editor} onDiscard={() => void todos.discard(editor.path)} />
 		<div class="flex min-h-48 flex-1 flex-col px-3 py-3 sm:px-4">
 			<Textarea
 				class="min-h-0 flex-1 field-sizing-fixed resize-none font-mono text-xs"
-				value={editor.buffer}
 				aria-label="Contents of {name}"
 				spellcheck={false}
 				disabled={editor.isFenced}
-				oninput={(event) => editor.input(withFileNewlines(event.currentTarget.value, editor.buffer))}
+				bind:value={
+					() => editor.buffer.replace(/\r\n?/g, '\n'),
+					(text) => editor.input(withFileNewlines(text, editor.buffer))
+				}
 			/>
 		</div>
 	{:else}
 		<Empty.Root class="flex-1">
 			<Empty.Media><FileIcon class="size-8 text-muted-foreground" /></Empty.Media>
-			<Empty.Title>{details(file.size)}</Empty.Title>
+			<Empty.Title>{details(item.size)}</Empty.Title>
 			<Empty.Description>
-				{file.kind === 'binary'
+				{item.kind === 'binary'
 					? 'This file is not text, so it is listed here but not opened for editing.'
 					: 'This text file is larger than 1 MB, so it is not opened in the editor.'}
 				Rename, delete, and the terminal still work on it.

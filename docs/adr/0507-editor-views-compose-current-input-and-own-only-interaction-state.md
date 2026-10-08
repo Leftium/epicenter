@@ -4,13 +4,13 @@
 - **Date:** 2026-10-06
 - **Updated:** 2026-10-08
 - **Relates:** [ADR-0504](0504-row-editors-own-complete-input-and-one-publication-queue.md), accepted row input and publication, and [ADR-0506](0506-capture-composes-values-through-a-source-preserving-body-codec.md), Capture body composition.
-- **Unbuilt:** Separate Files and structured workspaces in apps that currently switch one editor between Source and Fields, including Todos, Honeycrisp, and Capture; keyed detail views; explicit repair navigation and publication handoff between workspaces.
+- **Unbuilt:** Apply the workspace separation, keyed detail views, repair navigation, and publication handoff to Honeycrisp, Capture, and other consumers that still switch one editor between source and interpreted editing.
 
 ## Context
 
-Todos currently selects a folder-relative path, retains either a todo editor or
-an arbitrary-file editor, and renders both through one detail area. Its todo
-editor also keeps `rawMode`, exposes `editSource` and `editFields`, and checks the
+At the start of this decision, Todos selected a folder-relative path and retained either a todo editor or
+an arbitrary-file editor, rendering both through one detail area. Its todo
+editor kept `rawMode`, exposed `editSource` and `editFields`, and checked the
 selected view when accepting writes. Honeycrisp and Capture likewise offer
 source and interpreted editing inside one detail workflow.
 
@@ -28,6 +28,9 @@ of which workspace or component is visible.
 ## Decision
 
 **The selection surface determines the editing surface for one editor-view lifetime.**
+
+Apps may place both workspaces in the same detail area. Acquisition follows
+the selection entry point and mounts a fresh view for a different editor.
 
 A Files workspace lists files and opens their complete text, including
 frontmatter, in a text editor. Parsing as a table row is not required. Missing,
@@ -188,9 +191,16 @@ all file-operation coordination or make concurrent external edits impossible.
 
 Migrate one app at a time. First provide the Files repair entry point and keep
 its failed-input recovery accessible. Then separate workspace acquisition and
-key the structured detail by editor identity. Finally remove the mixed detail
-union, Source tab, view-mode setters, and copied admission state whose callers
+key the structured detail by editor identity. Finally remove the per-record Source tab, view-mode setters, and copied
+admission state whose callers
 have disappeared. App READMEs describe the implementation that actually ships.
+
+Todos now separates acquisition by selection surface, keys details by editor
+identity, and exposes malformed files through a repair section. Its mode flag,
+Source tab, view-mode commands, and reload typing fence are removed. A list
+checkbox uses the current publisher, including the raw editor when Files holds
+the row. See the [Todos README](../../apps/todos/README.md). Honeycrisp and
+Capture remain to migrate.
 
 Acceptance exercises opening invalid source through Files, excluding it from
 editable structured records with a visible repair route, repairing it without
@@ -202,8 +212,9 @@ and native publication evidence remain distinct.
 
 ## Considered alternatives
 
-- One detail pane dispatching arbitrary files and structured rows. It requires
-  mixed selection types and couples file browsing to product editing.
+- Choosing the editor interpretation from the path or validity inside a shared
+  detail pane. It couples file browsing to the product schema instead of
+  following the selection entry point.
 - Automatic Source fallback for invalid rows, then automatic fields after
   repair. The editor changes purpose while the person types.
 - Optional Source/Fields tabs. They retain the dual-mode contract, preference

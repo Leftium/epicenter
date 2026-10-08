@@ -6,7 +6,7 @@
 	import { Input } from '@epicenter/ui/input';
 	import { toast } from '@epicenter/ui/sonner';
 	import { onDestroy } from 'svelte';
-	import { needsRepair, type TodoEntry, type Todos } from '$lib/todos.svelte.js';
+	import type { TodoEntry, Todos } from '$lib/todos.svelte.js';
 
 	let { todos, onOpen }: { todos: Todos; onOpen?: () => void } = $props();
 	let adding = $state(false);
@@ -61,7 +61,7 @@
 
 	<ul class="min-h-0 flex-1 overflow-y-auto" aria-label="Todos">
 		{#each todos.entries as entry (entry.path)}
-			{@const selected = todos.selectedPath === entry.path}
+			{@const selected = todos.current?.workspace === 'todos' && todos.current.path === entry.path}
 			{@const done = entry.fields.done === true}
 			<li
 				class="flex items-center gap-2 border-b px-3 py-2 text-sm {selected
@@ -86,14 +86,11 @@
 					aria-current={selected ? 'true' : undefined}
 					data-todo={entry.path}
 					onclick={() => {
-						void todos.open(entry.path);
+						void todos.open(entry.path, 'todos');
 						onOpen?.();
 					}}
 				>
 					<span class="line-clamp-2 break-anywhere {done ? 'text-muted-foreground line-through' : ''}">{titleOf(entry)}</span>
-					{#if needsRepair(entry)}
-						<Badge variant="destructive" class="shrink-0">Needs repair</Badge>
-					{/if}
 				</Button>
 			</li>
 		{:else}
@@ -106,14 +103,33 @@
 		{/each}
 	</ul>
 
-	{#if todos.unreadable.length > 0}
-		<div class="border-t bg-warning/10 px-3 py-2 text-xs">
-			<p class="font-medium">Files that could not be read as text</p>
-			<ul class="mt-1 space-y-0.5">
-				{#each todos.unreadable as item (item.path)}
-					<li><code class="font-mono">{item.path}</code>: {item.message}</li>
+	{#if todos.repairs.length > 0}
+		<!-- Not todos the list can edit: each opens in Files, as its text, for repair. -->
+		<section class="max-h-[40%] shrink-0 overflow-y-auto border-t bg-destructive/5 px-3 py-2 text-xs" aria-label="Needs repair">
+			<p class="flex items-center gap-2 font-medium">
+				<Badge variant="destructive">Needs repair</Badge>
+				{todos.repairs.length === 1 ? 'This file does' : 'These files do'} not read as a todo
+			</p>
+			<ul class="mt-1 space-y-1.5">
+				{#each todos.repairs as repair (repair.path)}
+					<li class="flex items-start gap-2">
+						<div class="min-w-0 flex-1">
+							<code class="font-mono break-anywhere">{repair.path}</code>
+							<p class="text-muted-foreground">{repair.reason}</p>
+						</div>
+						<Button
+							size="xs"
+							variant="outline"
+							onclick={() => {
+								void todos.open(repair.path, 'files');
+								onOpen?.();
+							}}
+						>
+							Open in Files
+						</Button>
+					</li>
 				{/each}
 			</ul>
-		</div>
+		</section>
 	{/if}
 </section>

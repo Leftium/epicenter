@@ -183,10 +183,10 @@ async function text(todos: Todos, path: string) {
 }
 
 function todoEditor(todos: Todos) {
-	const selection = todos.selection;
-	if (selection?.kind !== 'todo')
-		throw new Error(`Expected an open todo, got ${selection?.kind}`);
-	return selection.editor;
+	const item = todos.current?.item;
+	if (item?.kind !== 'todo')
+		throw new Error(`Expected an open todo, got ${item?.kind}`);
+	return item.editor;
 }
 
 /** Wait for a todo's admitted writes. Answers why the latest did not land. */
@@ -234,7 +234,7 @@ async function interruptedPull(adapt?: (folder: TodosFolder) => TodosFolder) {
 test('a pull of remote changes keeps undeclared frontmatter byte for byte, an open todo shows it once reloaded, and a save keeps the undeclared keys', async () => {
 	const { todos, session } = await openDemo();
 	await shareMilk(todos, session);
-	await todos.open(MILK);
+	await todos.open(MILK, 'todos');
 	const editor = todoEditor(todos);
 	expect(fieldsOf(editor).fields.title).toBe('Buy milk');
 	await pushRemoteChanges(session);
@@ -355,13 +355,13 @@ test('an interrupted pull is reported and never resumed: history waits, editing 
 	expect([...opfs.files()].length).toBe(files);
 }, 60_000);
 
-test('recovery names a path in neither state and writes nothing, keeps the record until the person chooses a version, then finishes and the open todo shows the result', async () => {
+test('recovery names a path in neither state and writes nothing, keeps the record until the person chooses a version in Files, then finishes; Files shows the result and the todo opens on it', async () => {
 	const { todos, before } = await interruptedPull();
 	const pending = todos.git.pendingIncoming;
 	expect(pending?.state).toBe('recorded');
 
 	// Milk is still at its before state; the person edits it to a third one.
-	await todos.open(MILK);
+	await todos.open(MILK, 'todos');
 	const editor = todoEditor(todos);
 	typeNotes(editor, 'My own note.\n');
 	expect(await written(editor)).toBeUndefined();
@@ -380,17 +380,22 @@ test('recovery names a path in neither state and writes nothing, keeps the recor
 	expect(await text(todos, MILK)).toBe(third);
 	expect(fieldsOf(editor).body).toBe('My own note.\n');
 
-	// The person chooses the version from before the update, in the source of
-	// the same todo editor.
-	expect(editor.editSource()).toBeUndefined();
-	editor.setText(before);
-	expect(await written(editor)).toBeUndefined();
+	// The person chooses the version from before the update, as text in
+	// Files. The todo editor settles and is let go first.
+	await todos.open(MILK, 'files');
+	const opened = todos.current?.item;
+	if (opened?.kind !== 'text')
+		throw new Error('Expected Files to open the text');
+	expect(editor.isFenced).toBe(true);
+	const file = opened.editor;
+	expect(file.buffer).toBe(third);
+	file.input(before);
+	await file.save();
+	expect(file.isIdle).toBe(true);
 	expect(await text(todos, MILK)).toBe(before);
-	expect(editor.editFields()).toBeUndefined();
-	expect(todoEditor(todos)).toBe(editor);
-	expect(fieldsOf(editor).fields.title).toBe('Buy milk');
 
-	// Now the update finishes, and the open todo reads what it wrote.
+	// Now the update finishes. Files stays a text editor and shows what the
+	// update wrote.
 	const recovered = await todos.recoverIncoming();
 	expect(recovered).toMatchObject({
 		kind: 'ran',
@@ -398,10 +403,17 @@ test('recovery names a path in neither state and writes nothing, keeps the recor
 	});
 	expect(todos.git.pendingIncoming).toBeUndefined();
 	expect(await text(todos, MILK)).toBe(MILK_REMOTE);
-	expect(fieldsOf(editor).fields.title).toBe('Buy oat milk');
-	expect(editor.isIdle).toBe(true);
-	expect(editor.isFenced).toBe(false);
+	// The recovery's reread adopts it: the editor was clean.
+	expect(file.buffer).toBe(MILK_REMOTE);
+	expect(todos.current?.item).toMatchObject({ kind: 'text', editor: file });
 	expect(incomingLine(todos.git)).toBeUndefined();
+
+	// Opened again as a todo, explicitly, it reads the recovered row.
+	await todos.open(MILK, 'todos');
+	const reopened = todoEditor(todos);
+	expect(reopened).not.toBe(editor);
+	expect(fieldsOf(reopened).fields.title).toBe('Buy oat milk');
+	expect(reopened.isIdle).toBe(true);
 	// History continues.
 	expect((await todos.commitAndPush()).commit.status).not.toBe('blocked');
 }, 60_000);
@@ -435,7 +447,7 @@ test('a todo still opening when recovery starts is held with the rest: it refuse
 		return result;
 	};
 
-	const opening = todos.open(MILK);
+	const opening = todos.open(MILK, 'todos');
 	const recovering = todos.recoverIncoming();
 	await Bun.sleep(20);
 	expect(todos.recovering).toBe(true);
@@ -495,7 +507,7 @@ test('recovery waits for open edits: a failed save stops it, and typing while it
 		},
 	}));
 	const pending = todos.git.pendingIncoming;
-	await todos.open(MILK);
+	await todos.open(MILK, 'todos');
 	const editor = todoEditor(todos);
 
 	// A save that failed stops recovery before it runs.
@@ -572,9 +584,9 @@ test('recovery fences each todo before it waits for the next: input that failed 
 			},
 		});
 	};
-	await todos.open(MILK);
+	await todos.open(MILK, 'todos');
 	const milk = todoEditor(todos);
-	await todos.open(EGGS);
+	await todos.open(EGGS, 'todos');
 	const eggs = todoEditor(todos);
 	table.edit = edit;
 

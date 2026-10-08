@@ -1,20 +1,15 @@
 <script lang="ts">
-	import { Button } from '@epicenter/ui/button';
-	import * as Empty from '@epicenter/ui/empty';
 	import * as Resizable from '@epicenter/ui/resizable';
 	import * as Sheet from '@epicenter/ui/sheet';
-	import ArrowLeftIcon from '@lucide/svelte/icons/arrow-left';
 	import { tick } from 'svelte';
 	import { MediaQuery } from 'svelte/reactivity';
 	import { beforeNavigate } from '$app/navigation';
-	import { basename } from '@epicenter/folder/file-browser';
 	import type { Todos } from '$lib/todos.svelte.js';
 	import AppHeader from './AppHeader.svelte';
+	import Detail from './Detail.svelte';
 	import IncomingBanner from './IncomingBanner.svelte';
 	import FileBrowser from './FileBrowser.svelte';
-	import FileView from './FileView.svelte';
 	import FolderTerminal from './FolderTerminal.svelte';
-	import TodoDetail from './TodoDetail.svelte';
 	import TodoList from './TodoList.svelte';
 	import DepartureNotice from './DepartureNotice.svelte';
 	import type { Departure } from '$lib/departure.svelte.js';
@@ -63,7 +58,7 @@
 	}
 
 	async function back() {
-		const path = todos.selectedPath;
+		const path = todos.current?.path;
 		showingDetail = false;
 		await tick();
 		if (path !== undefined)
@@ -84,28 +79,6 @@
 		}
 	}}
 />
-
-{#snippet detail(onBack: (() => void) | undefined)}
-	{@const selection = todos.selection}
-	{#if selection?.kind === 'todo'}
-		<TodoDetail {todos} todo={selection.editor} {onBack} />
-	{:else if selection?.kind === 'file'}
-		<FileView {todos} path={selection.path} file={selection.file} {onBack} />
-	{:else}
-		<Empty.Root class="h-full">
-			{#if todos.selectedPath !== undefined}
-				<Empty.Title>{basename(todos.selectedPath)} is no longer in the folder</Empty.Title>
-				<Empty.Description>It was renamed or deleted outside this editor.</Empty.Description>
-			{:else}
-				<Empty.Title>Select a todo to edit it</Empty.Title>
-				<Empty.Description>Any other file opens from the file browser.</Empty.Description>
-			{/if}
-			{#if onBack}
-				<Button variant="outline" size="sm" onclick={onBack}><ArrowLeftIcon /> Back to todos</Button>
-			{/if}
-		</Empty.Root>
-	{/if}
-{/snippet}
 
 <div class="flex h-dvh flex-col overflow-hidden">
 	<AppHeader
@@ -135,7 +108,7 @@
 					</Resizable.Pane>
 					<Resizable.Handle />
 					<Resizable.Pane id="detail" order={3} defaultSize={filesPane ? 48 : 62} minSize={30}>
-						{@render detail(undefined)}
+						<Detail {todos} />
 					</Resizable.Pane>
 				</Resizable.PaneGroup>
 			</Resizable.Pane>
@@ -151,7 +124,7 @@
 			{#if terminalOpen}
 				<FolderTerminal session={todos.terminal} {directory} onClose={() => void toggleTerminal()} />
 			{:else if showingDetail}
-				{@render detail(back)}
+				<Detail {todos} onBack={back} />
 			{:else}
 				<TodoList {todos} onOpen={showDetail} />
 			{/if}

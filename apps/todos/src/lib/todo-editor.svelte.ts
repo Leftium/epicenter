@@ -2,37 +2,39 @@
  * The todo editor: one todo row's retained native row editor (`table.edit`)
  * and the few rules the app keeps around it.
  *
- * The native editor owns the row. Every field, notes, source, and checkbox
- * change is a complete replacement handed to `set` or `setText` at once; it
- * is the row the views show from then on and is written last-writer-wins
- * over the existing file, one write at a time with the latest input next.
- * A failed or unconfirmed write keeps the input and error visible. New input
- * saves again; `retry` saves the current input without changing it, and
- * `reload` replaces it with the file. The file is read when the editor opens and again
- * only on `reload`; nothing adopts another writer's change on its own.
+ * The native editor owns the row. Every field, notes, and checkbox change is
+ * a complete replacement handed to `set` at once; it is the row the views
+ * show from then on and is written last-writer-wins over the existing file,
+ * one write at a time with the latest input next. A failed or unconfirmed
+ * write keeps the input and error visible. New input saves again; `retry`
+ * saves the current input without changing it, and `reload` replaces it with
+ * the file. The file is read when the editor opens and again only on
+ * `reload`; nothing adopts another writer's change on its own.
+ *
+ * This is the todo list's editor only. The file's exact text is edited in
+ * Files, by a plain editor the owner acquires once this one has settled and
+ * been released. A row that does not read as a todo keeps this editor and
+ * its input; its view says why and points to Files.
  *
  * This module adds only:
  *
- * - The source preference. Fields and source are two views of the same row;
- *   a raw edit keeps the source view after the text becomes valid, until the
- *   person chooses Edit fields. It is view state, kept here so it outlives
- *   the views and follows a rename.
- * - Admission. `set` takes a complete row only while the row reads as valid
- *   and shows its fields, and no fence or release refuses input. The views
- *   compose it from the current `row`, exactly as it should be written; this
- *   module merges nothing.
+ * - Admission. `set` takes a complete row unless a fence, a departure, or a
+ *   release refuses input. The controls compose it from the current `row`,
+ *   exactly as it should be written; this module merges nothing.
  * - Why the last row was not taken. A row with no canonical form (a lone
  *   surrogate) changes nothing: the row stays as it was and its controls
  *   show it. Only why is kept, beside the save's own state, until input is
  *   taken, a reload takes the file, or the editor is released. It is not
  *   unsaved input and holds nothing up.
- * - Fences. Rename, delete, a recovery of an incoming update, close, a
- *   departure, and the person's reload refuse input while they run; rename,
- *   delete, and close first wait for admitted writes and stop when one failed.
+ * - Fences. Rename, delete, a recovery of an incoming update, a handoff to
+ *   Files, close, and a departure refuse input while they run; rename,
+ *   delete, a handoff, and close first wait for admitted writes and stop
+ *   when one failed. The person's reload does not: the native editor keeps
+ *   newer input over the file it reads.
  * - Release. The owner (`todos.svelte.ts`) retains one editor per path and
- *   releases it when it forgets the path or a rename moves the row. A
- *   released editor refuses input and commands for good. An editor's path
- *   never changes.
+ *   releases it when it forgets the path, a rename moves the row, or Files
+ *   takes the file. A released editor refuses input and commands for good.
+ *   An editor's path never changes.
  */
 import type {
 	CanonicalDocument,
@@ -40,7 +42,6 @@ import type {
 	RowReloadError,
 	RowSaveError,
 } from '@epicenter/folder';
-import { withFileNewlines } from '@epicenter/folder/file-browser';
 import { fromRowEditor } from '@epicenter/folder/svelte';
 import type { TodoFields } from './definition.js';
 
@@ -74,9 +75,6 @@ export function describeSaveError(error: RowSaveError): string {
 	}
 }
 
-/** Why fields input was refused while the row shows its source. */
-const IN_SOURCE = 'This todo is open in its source editor. Change it there.';
-
 /** What a person is told about a reload that kept their input, including a missing file. */
 export function describeReloadError(error: RowReloadError): string {
 	return error.name === 'InputChanged'
@@ -84,14 +82,13 @@ export function describeReloadError(error: RowReloadError): string {
 		: `This todo could not be read, so your edits stay: ${error.message}`;
 }
 
-export function createTodoEditor(
-	path: string,
-	native: RowEditor<TodoFields>,
-	options: { readonly rawMode?: boolean } = {},
-) {
+/** Why the checkbox changed nothing: the row on screen has no `done` to change. */
+const NOT_A_TODO =
+	'This todo no longer reads as a todo, so nothing was changed. Open it in Files to repair it.';
+
+export function createTodoEditor(path: string, native: RowEditor<TodoFields>) {
 	const editor = fromRowEditor(native);
-	let rawMode = $state(options.rawMode ?? false);
-	/** Rename, delete, recovery, or close is working on this file; input is refused. */
+	/** Rename, delete, recovery, a handoff, or close is working on this file; input is refused. */
 	let fences = $state(0);
 	let released = $state(false);
 	/** Epicenter asks to quit or restart. Reversible, unlike a release. */
@@ -113,14 +110,14 @@ export function createTodoEditor(
 	/**
 	 * Give the row a complete replacement: every field to keep, unknown keys
 	 * included, and the body, exactly as it is to be written. A key left out
-	 * is removed. Taken only while the row reads as valid and shows its
-	 * fields. A row the codec refuses changes nothing; only why is kept.
-	 * Answers why it was not taken. An unchanged row is saved again.
+	 * is removed. A control composes it from a valid `row`, read at the event;
+	 * whether the row was valid before does not matter here. A row the codec
+	 * refuses changes nothing; only why is kept. Answers why it was not
+	 * taken. An unchanged row is saved again.
 	 */
 	function set(next: CanonicalDocument): string | undefined {
 		const why = blocked();
 		if (why !== undefined) return why;
-		if (editor.row.status !== 'valid' || rawMode) return IN_SOURCE;
 		const { error } = editor.set(next);
 		refusal = error === null ? undefined : { reason: error.refusal.reason };
 		return refusal === undefined
@@ -159,12 +156,10 @@ export function createTodoEditor(
 		get refusal() {
 			return refusal;
 		},
-		get rawMode() {
-			return rawMode;
-		},
 		/**
-		 * Input and commands are refused: a rename, delete, recovery, close, or
-		 * departure is working on this file, or the owner released this editor.
+		 * Input and commands are refused: a rename, delete, recovery, handoff,
+		 * close, or departure is working on this file, or the owner released
+		 * this editor.
 		 */
 		get isFenced() {
 			return blocked() !== undefined;
@@ -181,23 +176,7 @@ export function createTodoEditor(
 			return editor.save.status === 'failed';
 		},
 
-		// --- Input. A leaving view can still deliver it, so each kind is ---
-		// taken only while the row shows the view it belongs to.
-
 		set,
-		/** The source view's text, in LF; the file's newline convention is restored. */
-		setText(next: string) {
-			// The raw view exists for an invalid row, or a valid one in raw mode.
-			if (
-				(editor.row.status === 'valid' && !rawMode) ||
-				blocked() !== undefined
-			)
-				return;
-			// Raw repair stays in the source after the text becomes valid.
-			rawMode = true;
-			refusal = undefined;
-			editor.setText(withFileNewlines(next, editor.row.text));
-		},
 		/** Why the text on screen does not read as a todo, when it does not. */
 		diagnostics():
 			| { readonly summary: string; readonly details: readonly string[] }
@@ -227,22 +206,6 @@ export function createTodoEditor(
 
 		// --- Commands ------------------------------------------------------
 
-		/** Show the source of a valid row. Writes nothing. */
-		editSource(): string | undefined {
-			const why = blocked();
-			if (why !== undefined) return why;
-			rawMode = true;
-			return undefined;
-		},
-		/** Show the fields of a valid row. Text that is not a valid todo stays in the source. */
-		editFields(): string | undefined {
-			const why = blocked();
-			if (why !== undefined) return why;
-			if (editor.row.status === 'invalid')
-				return 'This text does not read as a todo yet. Fix it in the source first.';
-			rawMode = false;
-			return undefined;
-		},
 		/** The person's "Try again" after a failed or unconfirmed write: write the latest input. */
 		retry(): string | undefined {
 			const why = blocked();
@@ -252,14 +215,13 @@ export function createTodoEditor(
 		},
 		/**
 		 * The list's checkbox for this open todo: `done` in the complete row on
-		 * screen, written now. Answers why nothing was written. Refused while
-		 * the todo is edited as source.
+		 * screen, written now. Answers why nothing was written.
 		 */
 		async toggle(done: boolean): Promise<string | undefined> {
 			const why = blocked();
 			if (why !== undefined) return why;
 			const { row } = editor;
-			if (row.status !== 'valid') return IN_SOURCE;
+			if (row.status !== 'valid') return NOT_A_TODO;
 			const problem = set({ ...row, fields: { ...row.fields, done } });
 			if (problem !== undefined) return problem;
 			const { error } = await editor.waitForSaves();
@@ -268,19 +230,14 @@ export function createTodoEditor(
 		/**
 		 * The person's Reload: once admitted writes settle, read the file and
 		 * show it, replacing the todo's input, any failed save, and why the last
-		 * row was not taken. A read that fails replaces nothing.
+		 * row was not taken. A read that fails replaces nothing. Typing goes on
+		 * meanwhile: input accepted after the call stands, and the native
+		 * editor answers `InputChanged` instead of adopting the file.
 		 */
 		async reload() {
-			// The person asked for the file: input waits until it is shown, so
-			// neither typing nor a refusal's notice outlives the read unseen.
-			fences += 1;
-			try {
-				const result = await editor.reload();
-				if (result.error === null) refusal = undefined;
-				return result;
-			} finally {
-				fences -= 1;
-			}
+			const result = await editor.reload();
+			if (result.error === null) refusal = undefined;
+			return result;
 		},
 		/** Wait for admitted writes, without fencing input. True when all landed. */
 		settle: flushed,

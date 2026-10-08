@@ -2,14 +2,25 @@
  * The Todos product state over one opened folder.
  *
  * Two observations refresh together after saves, terminal commands, pulls,
- * merges, and window focus: the todo rows in `todos/*.md`, and the folder listing the
- * file browser shows. The selection is a path. A todo row opens its todo
- * editor, one native row editor for its fields and its source, whether or
- * not its text reads as a todo; any other file opens as raw text, or as
- * details when it is not editable text. A path retains at most one opened
- * item, so a selection change never discards input and an operation on a
- * path settles the one editor there. Git status comes from the folder's
- * shared snapshot; this module adds no status cache of its own.
+ * merges, and window focus: the todo rows in `todos/*.md`, and the folder
+ * listing the file browser shows. The list offers the rows that read as
+ * todos and names the rest, with why, for repair in Files.
+ *
+ * Where a path is opened from decides how it is edited. Files opens a file's
+ * exact text in a plain editor, a todo's Markdown included, or shows details
+ * when it is not editable text. The todo list opens a row's todo editor, one
+ * native row editor for its fields and notes. Neither turns into the other.
+ *
+ * A path retains at most one editor, so each file has one publisher in this
+ * app. Opening a path from the other workspace is a handoff: the editor
+ * there stops taking input at once, its admitted writes settle, and only
+ * then is it released and the new one acquired. An editor holding input it
+ * could not save stays, with that input and its own retry and discard
+ * choices, and nothing opens in its place. Retained editors outlive the
+ * detail that shows them, so moving between paths never discards input,
+ * and an operation on a path settles the one editor there. Git status
+ * comes from the folder's shared snapshot; this module adds no status cache
+ * of its own.
  *
  * The folder may be in this browser's storage, shared with other tabs, or a
  * directory the desktop host owns and other programs edit. Either folder
@@ -39,6 +50,7 @@ import {
 	FileError,
 	GitError,
 	MergeError,
+	patchRowText,
 	rowPath,
 	rowStemOf,
 } from '@epicenter/folder';
@@ -75,26 +87,29 @@ export type Todos = ReturnType<typeof createTodos>;
 /** A todo row as the table last listed it. */
 export type TodoEntry = TableSnapshot<TodoFields>;
 
-/** Whether a listed todo's text fails to parse or leaves a declared field with an issue. */
-export function needsRepair(entry: TodoEntry): boolean {
-	return entry.parseError !== undefined || entry.issues.length > 0;
-}
+/** A row file the list cannot edit, and why, for the person to repair in Files. */
+type Repair = { readonly path: string; readonly reason: string };
 
-/** A raw file the person opened. Todo rows open as todo editors instead. */
-export type OpenFile =
-	| { readonly kind: 'loading' }
-	| { readonly kind: 'failed'; readonly message: string }
+/** The surface a path was opened from, which decides how it is edited. */
+export type Workspace = 'files' | 'todos';
+
+/**
+ * What a path retains: its one editor, the open still reading it, why it
+ * did not open, or, for a file that is not editable text, its size.
+ */
+export type Retained =
+	| { readonly kind: 'todo'; readonly editor: TodoEditor }
 	| { readonly kind: 'text'; readonly editor: TextFileEditor }
+	| { readonly kind: 'loading'; readonly workspace: Workspace }
+	| { readonly kind: 'failed'; readonly message: string }
 	| { readonly kind: 'binary' | 'tooLarge'; readonly size: number };
 
-/** What a path retains while it is open: one todo editor or raw file. */
-type Retained =
-	| { readonly kind: 'todo'; readonly editor: TodoEditor }
-	| OpenFile;
-
-export type Selection =
-	| { readonly kind: 'todo'; readonly editor: TodoEditor }
-	| { readonly kind: 'file'; readonly path: string; readonly file: OpenFile };
+/** The path the detail shows, the workspace it was opened from, and what the path retains now. */
+type Current = {
+	readonly workspace: Workspace;
+	readonly path: string;
+	readonly item: Retained | undefined;
+};
 
 /** What a confirmed deletion removes, captured when the person was asked. */
 export type Deletion =
@@ -205,23 +220,89 @@ function describeUpdateError(error: TableUpdateError): string {
 		case 'NotFound':
 			return 'This todo is no longer in the folder.';
 		case 'Unparsed':
-			return 'This todo no longer reads as a todo, so nothing was changed. Open it and fix its source.';
+			return 'This todo no longer reads as a todo, so nothing was changed. Open it in Files to repair it.';
 		case 'UnsupportedSource':
-			return `This todo's done value cannot be changed here: ${error.reason}. Change it in its source.`;
+			return `This todo's done value cannot be changed here: ${error.reason}. Change it in Files.`;
 		default:
 			return describeWriteError(error);
 	}
 }
 
+/**
+ * The list's checkbox for a todo Files holds: `done` assigned in the plain
+ * editor's text as it is now, typing not yet saved included, and saved by
+ * that same editor, so the file keeps one publisher and its conditional
+ * save. Every other byte stays. The caller holds the path. Input the editor
+ * could not save is left as it is, and nothing is assigned or sent. Answers
+ * why the change was not saved.
+ */
+async function toggleText(
+	editor: TextFileEditor,
+	done: boolean,
+): Promise<string | undefined> {
+	if (editor.hasProblem) return UNSETTLED;
+	const { data: patched, error: refusal } = patchRowText(editor.buffer, {
+		fields: { done },
+	});
+	if (refusal !== null) {
+		switch (refusal.kind) {
+			case 'unparsed':
+				return 'This todo no longer reads as a todo, so nothing was changed. Repair it in Files.';
+			case 'unsafe':
+				return `This todo's done value cannot be changed here: ${refusal.reason}. Change it in Files.`;
+			case 'value':
+				return `${refusal.field} cannot be saved: ${refusal.reason}.`;
+		}
+	}
+	editor.input(patched);
+	await editor.settle();
+	const { saveState } = editor;
+	switch (saveState.kind) {
+		case 'saved':
+		case 'saving':
+			return undefined;
+		case 'conflict':
+			return 'The file changed elsewhere, so the change was not saved. It stays in Files with your text.';
+		case 'unknown':
+			return 'The save was sent, but its reply was lost, so the change may or may not be in the file. It stays in Files with your text.';
+		case 'failed':
+			return `Not saved: ${saveState.message}. The change stays in Files with your text.`;
+	}
+}
+
+/** Why a listed row is not a todo the list can edit. */
+function repairOf(entry: TodoEntry): Repair | undefined {
+	if (entry.parseError !== undefined)
+		return {
+			path: entry.path,
+			reason: `Its text does not read as a todo: ${entry.parseError.message}`,
+		};
+	if (entry.issues.length === 0) return undefined;
+	return {
+		path: entry.path,
+		reason: entry.issues.map((issue) => issue.message).join(' '),
+	};
+}
+
 export function createTodos(folder: TodosFolder) {
 	const table = folder.tables.todos;
+	/** Rows that read as todos: what the list offers to edit. */
 	let entries = $state.raw<TodoEntry[]>([]);
-	let unreadable = $state.raw<{ path: string; message: string }[]>([]);
+	/** Row files the list does not offer, each with why. */
+	let repairs = $state.raw<Repair[]>([]);
+	/** Every row file read as text, todo or not: what table operations address. */
+	let rowPaths = $state.raw<ReadonlySet<string>>(new Set());
 	let listError = $state<string | undefined>();
 	let listing = $state.raw<FileListing | undefined>();
 	let listingError = $state<string | undefined>();
 	const trackGit = createSubscriber((update) => folder.git.subscribe(update));
-	let selectedPath = $state<string | undefined>();
+	/**
+	 * The path the detail shows and the workspace that opened it. It names
+	 * an address, not an editor: what the path retains is looked up on read.
+	 */
+	let shown = $state.raw<
+		{ readonly workspace: Workspace; readonly path: string } | undefined
+	>();
 	let refreshSequence = 0;
 	/** Folders open in the file browser; kept while the browser is hidden. */
 	const expanded = new SvelteSet<string>(['todos']);
@@ -314,13 +395,6 @@ export function createTodos(folder: TodosFolder) {
 	 * gives it back. Nothing creates a todo from it on its own.
 	 */
 	let newTitle = $state('');
-	const rowPaths = $derived(new Set(entries.map((entry) => entry.path)));
-	const selection = $derived.by((): Selection | undefined => {
-		const path = selectedPath;
-		const item = path === undefined ? undefined : retained.get(path);
-		if (path === undefined || item === undefined) return undefined;
-		return item.kind === 'todo' ? item : { kind: 'file', path, file: item };
-	});
 	const shell = folder.terminal();
 	const terminal = createTerminalSession(
 		{
@@ -416,7 +490,7 @@ export function createTodos(folder: TodosFolder) {
 		if (item?.kind === 'todo') item.editor.release();
 		else if (item?.kind === 'text') item.editor.dispose();
 		retained.delete(path);
-		if (selectedPath === path) selectedPath = undefined;
+		if (shown?.path === path) shown = undefined;
 	}
 
 	/** Forget a path whose file is gone, unless its editor still holds input. */
@@ -429,12 +503,40 @@ export function createTodos(folder: TodosFolder) {
 	function retainTodo(
 		path: string,
 		native: Parameters<typeof createTodoEditor>[1],
-		rawMode = false,
 	) {
-		const editor = createTodoEditor(path, native, { rawMode });
+		const editor = createTodoEditor(path, native);
 		// Opened while Epicenter asks to leave: refusing like the rest.
 		if (departing) editor.prepareDeparture();
 		retained.set(path, { kind: 'todo', editor });
+	}
+
+	/**
+	 * Let the other workspace's editor go so a new one can publish to `path`.
+	 * The caller holds the path. The outgoing editor takes no more input from
+	 * the moment this is called: a todo fences it here, and a plain editor's
+	 * view left when the person navigated away. Its admitted writes then
+	 * settle. Only then is it released, and the answer is true.
+	 *
+	 * An editor whose input could not be saved (a failed or unconfirmed
+	 * write, or a conflict) stays retained with that input and its own retry,
+	 * copy, and discard choices, and the answer is false: opening a fresh
+	 * read in its place would show the file without what failed to reach it.
+	 */
+	async function handOff(path: string, item: Held): Promise<boolean> {
+		const releasable = () =>
+			closing === undefined && retained.get(path) === item;
+		if (item.kind === 'text') {
+			if (!(await item.editor.settle()) || !releasable()) return false;
+			item.editor.dispose();
+			retained.delete(path);
+			return true;
+		}
+		return item.editor.fence(async (settled) => {
+			if (!settled || !releasable()) return false;
+			item.editor.release();
+			retained.delete(path);
+			return true;
+		});
 	}
 
 	function sortEntries(list: readonly TodoEntry[]) {
@@ -464,23 +566,37 @@ export function createTodos(folder: TodosFolder) {
 			{ data: files, error: filesError },
 		] = await Promise.all([table.list(), folder.files.list()]);
 		if (stale()) return;
-		// Every row file that was read is a todo to select, whether or not its
-		// text parses. A file that could not be read has no text to show.
+		// A row that reads as a todo is listed to edit. One whose text does not
+		// parse, has a field issue, or could not be read is named for repair.
 		const read: TodoEntry[] = [];
-		const failed: { path: string; message: string }[] = [];
+		const valid: TodoEntry[] = [];
+		const repair: Repair[] = [];
 		for (const {
 			path,
 			result: { data, error },
-		} of rows ?? [])
-			if (error === null) read.push(data);
-			else failed.push({ path, message: error.message });
+		} of rows ?? []) {
+			if (error !== null) {
+				repair.push({
+					path,
+					reason: `It could not be read as text: ${error.message}`,
+				});
+				continue;
+			}
+			read.push(data);
+			const problem = repairOf(data);
+			if (problem === undefined) valid.push(data);
+			else repair.push(problem);
+		}
 		if (rowsError) {
 			// Keep the previous observation visible; never show an empty list for a failed read.
 			listError = rowsError.message;
 		} else {
 			listError = undefined;
-			entries = sortEntries(read);
-			unreadable = failed;
+			entries = sortEntries(valid);
+			repairs = repair.sort((a, b) =>
+				a.path < b.path ? -1 : a.path > b.path ? 1 : 0,
+			);
+			rowPaths = new Set(read.map((entry) => entry.path));
 		}
 		if (filesError) listingError = filesError.message;
 		else {
@@ -521,19 +637,27 @@ export function createTodos(folder: TodosFolder) {
 	}
 
 	/**
-	 * Select a path. A todo row opens its todo editor, whether or not its
-	 * text reads as a todo; any other file opens as raw text or details.
+	 * Show `path` as `workspace` edits it: Files as the file's text, or as
+	 * details when it is not editable text; the todo list as a todo. The
+	 * detail moves at once; an editor the path retains for the other
+	 * workspace is handed off first.
 	 */
-	async function open(path: string) {
+	async function open(path: string, workspace: Workspace) {
 		if (closing !== undefined) return;
-		selectedPath = path;
-		for (const ancestor of ancestorsOf(path)) expanded.add(ancestor);
+		shown = { workspace, path };
+		if (workspace === 'files')
+			for (const ancestor of ancestorsOf(path)) expanded.add(ancestor);
 		// A recovery may be writing this file; an editor opens on what it left.
 		while (recovering !== undefined) await recovering;
-		if (closing !== undefined || selectedPath !== path) return;
+		if (
+			closing !== undefined ||
+			shown?.path !== path ||
+			shown.workspace !== workspace
+		)
+			return;
 		// Registered with no await since the check above, so a recovery that
 		// starts while this reads waits for its editor and then holds it too.
-		const admission = admit(path);
+		const admission = admit(path, workspace);
 		admitting.add(admission);
 		try {
 			await admission;
@@ -543,23 +667,34 @@ export function createTodos(folder: TodosFolder) {
 	}
 
 	/**
-	 * Claim `path` and install what it opens as. Runs only inside `open`,
-	 * registered in `admitting`, so no editor is ever installed while a
-	 * recovery owns the folder's files without that recovery holding it.
+	 * Claim `path` and install what `workspace` opens it as. Runs only inside
+	 * `open`, registered in `admitting`, so no editor is ever installed while
+	 * a recovery owns the folder's files without that recovery holding it.
+	 * The path's editor for this workspace is reused; one for the other is
+	 * handed off first, holding the path, and stays if it cannot settle.
 	 */
-	async function admit(path: string) {
+	async function admit(path: string, workspace: Workspace) {
+		if (reserved.has(path)) return;
 		const known = retained.get(path);
-		if (
-			editorOf(known) !== undefined ||
-			known?.kind === 'loading' ||
-			reserved.has(path)
-		)
-			return;
+		if (known?.kind === (workspace === 'todos' ? 'todo' : 'text')) return;
+		if (known?.kind === 'loading' && known.workspace === workspace) return;
+		if (known?.kind === 'todo' || known?.kind === 'text') {
+			const release = reserve(path);
+			if (release === undefined) return;
+			try {
+				if (!(await handOff(path, known))) return;
+			} finally {
+				release();
+			}
+			// Navigation during the drain could not acquire this reserved path.
+			// Open the latest choice now, after the outgoing owner has settled.
+			if (shown?.path === path) workspace = shown.workspace;
+		}
 		// This exact item is the claim on the path. A rename, delete, close, or
 		// newer open forgets or replaces it, and a result that arrives after is
 		// dropped. A result that arrives while an operation holds the path gives
 		// the claim up: the operation decides what is retained there.
-		const loading: Retained = { kind: 'loading' };
+		const loading: Retained = { kind: 'loading', workspace };
 		retained.set(path, loading);
 		const claimed = () => {
 			if (retained.get(path) !== loading) return false;
@@ -567,27 +702,24 @@ export function createTodos(folder: TodosFolder) {
 			retained.delete(path);
 			return false;
 		};
-		const stem = rowStemOf(table.name, path);
-		if (stem !== undefined) {
-			// Malformed or schema-invalid text opens too, for repair. An editor
-			// that is not retained holds nothing: acquisition stopped watching.
+		if (workspace === 'todos') {
+			// The list offers rows that read as todos, but the text may have
+			// changed since: an editor whose row is not valid opens anyway, and
+			// its view says why and points to Files. An editor that is not
+			// retained holds nothing: acquisition stopped watching.
+			const stem = rowStemOf(table.name, path);
+			if (stem === undefined) {
+				retained.set(path, {
+					kind: 'failed',
+					message: 'This file is not a todo.',
+				});
+				return;
+			}
 			const { data: opened, error } = await table.edit(stem);
 			if (!claimed()) return;
 			if (error === null) {
 				retainTodo(path, opened);
 				return;
-			}
-			// A todo row has one publisher, its row editor. A row that did not
-			// open is shown as that failure, or as what its bytes are, and
-			// opening it again retries; it never becomes a plain text editor,
-			// even when a second read of the same file succeeds.
-			if (error.name === 'InvalidUtf8') {
-				const { data: read } = await readTextFile(folder.files, path);
-				if (!claimed()) return;
-				if (read !== null && read.kind !== 'text') {
-					retained.set(path, read);
-					return;
-				}
 			}
 			retained.set(path, {
 				kind: 'failed',
@@ -695,7 +827,7 @@ export function createTodos(folder: TodosFolder) {
 			}
 			// A destination that does not open as a todo is opened by path below.
 			if (reopenedError === null && closing === undefined)
-				retainTodo(to, reopened, editor.rawMode);
+				retainTodo(to, reopened);
 			return Ok(undefined);
 		});
 	}
@@ -704,11 +836,13 @@ export function createTodos(folder: TodosFolder) {
 		/** The opened folder; `folder.location` says where the todos are. */
 		folder,
 		terminal,
+		/** Rows that read as todos, as last listed: what the list offers to edit. */
 		get entries() {
 			return entries;
 		},
-		get unreadable() {
-			return unreadable;
+		/** Row files the list does not offer, with why; each opens in Files for repair. */
+		get repairs() {
+			return repairs;
 		},
 		get listError() {
 			return listError;
@@ -725,12 +859,11 @@ export function createTodos(folder: TodosFolder) {
 			trackGit();
 			return folder.git.snapshot;
 		},
-		get selectedPath() {
-			return selectedPath;
+		/** What the detail shows: a path, the workspace that opened it, and what it retains now. */
+		get current(): Current | undefined {
+			return shown && { ...shown, item: retained.get(shown.path) };
 		},
-		get selection() {
-			return selection;
-		},
+		/** Whether `path` is a todo row file, whether or not its text reads as a todo. */
 		isTodo(path: string) {
 			return rowPaths.has(path);
 		},
@@ -814,7 +947,8 @@ export function createTodos(folder: TodosFolder) {
 		open,
 		/**
 		 * Explicitly discard a plain editor's input that cannot save. Nothing
-		 * is written. A missing todo's Close explicitly discards its retained input.
+		 * is written. A missing todo's Close explicitly discards its retained
+		 * input, and the detail stays to say the todo is gone.
 		 */
 		discard(path: string) {
 			if (closing !== undefined || departing || reserved.has(path)) return;
@@ -826,18 +960,20 @@ export function createTodos(folder: TodosFolder) {
 				item.editor.save.status === 'failed' &&
 				item.editor.save.error.name === 'NotFound'
 			) {
+				const was = shown;
 				forget(path);
-				selectedPath = path;
+				if (was?.path === path) shown = was;
 			}
 		},
 		/**
 		 * The person's Reload of an open todo: once admitted writes settle,
 		 * read the file and show it, replacing the todo's input, any failed
-		 * save, and why its last change was not taken. Input waits while the
-		 * file is read, and a read that fails keeps the input. A missing file
-		 * keeps the editor and its input. Answers what the person
-		 * is told, if anything. Refused while the file is being renamed,
-		 * deleted, or toggled.
+		 * save, and why its last change was not taken. Typing goes on while the
+		 * file is read; input taken after the call stands, and the answer says
+		 * so. A read that fails keeps the input. A missing file keeps the
+		 * editor and its input. Answers what the person is told, if anything.
+		 * It holds the path: refused while the file is being renamed, deleted,
+		 * or toggled, and those are refused while it reads.
 		 */
 		async reload(path: string): Promise<string | undefined> {
 			if (closing !== undefined) return CLOSING;
@@ -875,27 +1011,30 @@ export function createTodos(folder: TodosFolder) {
 			await refresh();
 			// The row was written; a closing app opens no editor for it.
 			if (closing !== undefined) return undefined;
-			await open(created.path);
+			await open(created.path, 'todos');
 			return undefined;
 		},
 		/**
-		 * Toggle completion, to the opposite of what the list showed. An open
-		 * todo takes it as `done` in the complete row on screen, written behind
-		 * any write already admitted, so its latest title, notes, and unknown
-		 * metadata stay; it is refused while that todo is edited as source or
-		 * its writing waits for the person. Otherwise `done` is assigned in the
-		 * row's text as it is now, and every other byte stays: other fields,
-		 * unknown metadata, comments, quoting, and the notes. A `done` the list
-		 * could not read is refused; so is text that no longer parses, or that
-		 * cannot take the change without altering what it did not name. The
-		 * source editor fixes those.
+		 * Toggle completion, to the opposite of what the list showed. A todo
+		 * editor on the row takes it as `done` in the complete row on screen,
+		 * written behind any write already admitted, so its latest title,
+		 * notes, and unknown metadata stay. A plain editor on the file, from
+		 * Files, is its one publisher: `done` is assigned in the text it holds
+		 * now, typing not yet saved included, and that editor saves it under
+		 * its own conditional save. Input it holds that could not be saved is
+		 * left alone. Otherwise `done` is assigned in the row's text as it is
+		 * now. Either way every other byte stays: other fields, unknown
+		 * metadata, comments, quoting, line endings, and the notes. A `done`
+		 * the list could not read is refused; so is text that no longer
+		 * parses, or that cannot take the change without altering what it did
+		 * not name. Files repairs those.
 		 */
 		async toggle(entry: TodoEntry): Promise<string | undefined> {
 			if (closing !== undefined) return CLOSING;
 			if (departing) return DEPARTING;
 			const current = entry.fields.done;
 			if (typeof current !== 'boolean')
-				return 'This todo has no readable done value to change. Open it and fix its source.';
+				return 'This todo has no readable done value to change. Open it in Files to repair it.';
 			const release = reserve(entry.path);
 			if (release === undefined) return BUSY;
 			const done = !current;
@@ -903,8 +1042,7 @@ export function createTodos(folder: TodosFolder) {
 			try {
 				const item = retained.get(entry.path);
 				if (item?.kind === 'todo') return await item.editor.toggle(done);
-				if (item?.kind === 'text')
-					return 'This todo is open in its source editor. Change it there.';
+				if (item?.kind === 'text') return await toggleText(item.editor, done);
 				// The new value depends on nothing else in the row, so it is
 				// assigned to whatever the row holds now; the publication is still
 				// conditional on the bytes this call read.
@@ -952,8 +1090,8 @@ export function createTodos(folder: TodosFolder) {
 			if (release === undefined) return BUSY;
 			const item = retained.get(path);
 			let moved: Result<unknown, string> | undefined;
-			/** The selection was on the file, at either path, when the rename landed. */
-			let follow = false;
+			/** The workspace whose detail showed the file, at either path, when the rename landed. */
+			let follow: Workspace | undefined;
 			try {
 				if (stem !== undefined && nextStem !== undefined) {
 					// Guarded by the capture's hash at the old path. What the new
@@ -990,23 +1128,18 @@ export function createTodos(folder: TodosFolder) {
 					});
 				else moved = await moveFile(path, to);
 				if (moved?.error === null) {
-					follow = selectedPath === path || selectedPath === to;
+					if (shown?.path === path || shown?.path === to)
+						follow = shown.workspace;
 					if (item?.kind === 'todo') {
 						// The todo's editors were swapped inside its fence.
-						if (selectedPath === path) selectedPath = to;
-					} else if (
-						item?.kind === 'text' &&
-						retained.get(path) === item &&
-						// A clean raw editor landing on a row gives way to the row's todo
-						// editor. Typing that arrived during the move keeps the raw editor
-						// and its save policy.
-						!(nextStem !== undefined && item.editor.isIdle)
-					) {
-						// The reserved destination holds no editor: this replaces any
-						// details or loading claim there.
+						if (shown?.path === path) shown = { ...shown, path: to };
+					} else if (item?.kind === 'text' && retained.get(path) === item) {
+						// A plain editor stays a plain editor at its new path, whatever
+						// the name. The reserved destination holds no editor: this
+						// replaces any details or loading claim there.
 						retained.delete(path);
 						retained.set(to, item);
-						if (selectedPath === path) selectedPath = to;
+						if (shown?.path === path) shown = { ...shown, path: to };
 					} else if (item !== undefined && retained.get(path) === item)
 						forget(path);
 				}
@@ -1016,8 +1149,8 @@ export function createTodos(folder: TodosFolder) {
 			if (moved === undefined) return UNSETTLED;
 			await rereadFolder();
 			if (moved.error !== null) return moved.error;
-			if (follow && (selectedPath === undefined || selectedPath === to))
-				await open(to);
+			if (follow !== undefined && (shown === undefined || shown.path === to))
+				await open(to, follow);
 			return undefined;
 		},
 		/** A new empty text file; it never replaces an existing one. */
@@ -1039,7 +1172,7 @@ export function createTodos(folder: TodosFolder) {
 				.finally(release);
 			if (createdError) return describeWriteError(createdError);
 			await rereadFolder();
-			await open(path);
+			await open(path, 'files');
 			return undefined;
 		},
 		async createFolder(

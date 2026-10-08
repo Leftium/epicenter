@@ -118,10 +118,10 @@ async function openTodos(
 }
 
 function todoEditor(todos: Todos) {
-	const selection = todos.selection;
-	if (selection?.kind !== 'todo')
-		throw new Error(`Expected an open todo, got ${selection?.kind}`);
-	return selection.editor;
+	const item = todos.current?.item;
+	if (item?.kind !== 'todo')
+		throw new Error(`Expected an open todo, got ${item?.kind}`);
+	return item.editor;
 }
 
 /** The fields view's current row; it shows only for a valid row. */
@@ -456,7 +456,7 @@ test('statuses apply in version order: an older idle read after a newer round li
 test('a todo write still running is waited for before the page answers ready', async () => {
 	const { host, departure, todos, text } = await started();
 	await todos.create('Milk');
-	const path = todos.selectedPath!;
+	const path = todos.current!.path;
 	const editor = todoEditor(todos);
 	typeTitle(editor, 'Oat milk');
 	expect(editor.isSaving).toBe(true);
@@ -477,7 +477,7 @@ test('a todo write still running is waited for before the page answers ready', a
 test('a round cancelled elsewhere gives back a failed save and the newer input typed after it, as they were', async () => {
 	const { host, departure, todos, failNextWrite, text } = await started();
 	await todos.create('Milk');
-	const path = todos.selectedPath!;
+	const path = todos.current!.path;
 	const saved = await text(path);
 	const editor = todoEditor(todos);
 	failNextWrite(path);
@@ -516,7 +516,7 @@ test('a round cancelled elsewhere gives back a failed save and the newer input t
 test('leaving anyway is a ready vote only: the failed save and its input stay fenced until idle gives them back', async () => {
 	const { host, departure, todos, failNextWrite, text } = await started();
 	await todos.create('Milk');
-	const path = todos.selectedPath!;
+	const path = todos.current!.path;
 	const saved = await text(path);
 	const editor = todoEditor(todos);
 	failNextWrite(path);
@@ -552,7 +552,7 @@ test('leaving anyway is a ready vote only: the failed save and its input stay fe
 test('the same round asked again while the drain hangs re-sends asking, with no second prompt', async () => {
 	const { host, departure, todos, holdNextSave, text } = await started();
 	await todos.create('Milk');
-	const path = todos.selectedPath!;
+	const path = todos.current!.path;
 	const editor = todoEditor(todos);
 	const { held, release } = holdNextSave();
 	typeTitle(editor, 'Slow');
@@ -715,14 +715,14 @@ test('after destroy, nudges read nothing and nothing is answered', async () => {
 test('while fenced, every action, Git command, terminal command, and editor input is refused; resuming gives them back', async () => {
 	const { todos, text } = await openTodos();
 	await todos.create('Milk');
-	const path = todos.selectedPath!;
+	const path = todos.current!.path;
 	const editor = todoEditor(todos);
 	expectOk(await todos.folder.files.create('notes.txt', 'saved'));
-	await todos.open('notes.txt');
-	const selection = todos.selection;
-	if (selection?.kind !== 'file' || selection.file.kind !== 'text')
+	await todos.open('notes.txt', 'files');
+	const opened = todos.current?.item;
+	if (opened?.kind !== 'text')
 		throw new Error('Expected the notes text editor');
-	const notes = selection.file.editor;
+	const notes = opened.editor;
 	const saved = await text(path);
 	const entry = todos.entries[0]!;
 
@@ -734,7 +734,6 @@ test('while fenced, every action, Git command, terminal command, and editor inpu
 	expect(fieldsOf(editor).body).toBe('');
 	expect(editor.retry()).toBe(DEPARTING);
 	expect(await editor.toggle(true)).toBe(DEPARTING);
-	expect(editor.editSource()).toBe(DEPARTING);
 	expect(editor.isFenced).toBe(true);
 	notes.input('typed');
 	expect(notes.buffer).toBe('saved');
@@ -753,7 +752,7 @@ test('while fenced, every action, Git command, terminal command, and editor inpu
 	expect(await todos.createFolder('', 'docs')).toBe(DEPARTING);
 	expect(await todos.reload(path)).toBe(DEPARTING);
 	todos.discard('notes.txt');
-	await todos.open(path);
+	await todos.open(path, 'todos');
 	expect(todoEditor(todos)).toBe(editor);
 	// Git and the terminal refuse.
 	expect(await todos.commitAndPush()).toEqual({
@@ -867,7 +866,7 @@ for (const ending of [
 	test(`${ending.phase === 'granted' ? 'granted' : 'a discarded vote'} during a held drain ends the handling: the drain finishes, and nothing more is answered or prompted`, async () => {
 		const { host, departure, todos, holdNextSave, text } = await started();
 		await todos.create('Milk');
-		const path = todos.selectedPath!;
+		const path = todos.current!.path;
 		typeTitle(todoEditor(todos), 'Slow');
 		todos.newTitle = 'Buy milk';
 		const { held, release } = holdNextSave();

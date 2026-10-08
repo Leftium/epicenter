@@ -49,7 +49,7 @@
 			else todos.expanded.add(row.path);
 			return;
 		}
-		void todos.open(row.path);
+		void todos.open(row.path, 'files');
 		onOpen?.();
 	}
 
@@ -270,7 +270,7 @@
 			<Sidebar.Menu bind:ref={tree} class="gap-0.5" onkeydown={navigate}>
 				{@render createField('', 0)}
 				{#each rows as row (row.path)}
-					{@const selected = todos.selectedPath === row.path}
+					{@const selected = todos.current?.workspace === 'files' && todos.current.path === row.path}
 					{@const open = row.kind === 'directory' && todos.expanded.has(row.path)}
 					<Sidebar.MenuItem>
 						{#if editing?.kind === 'rename' && editing.path === row.path}

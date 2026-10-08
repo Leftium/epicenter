@@ -21,9 +21,16 @@
  * copy at the new path, keeps the draft at the old one. Git outcomes never
  * affect this state.
  *
- * Ordinary files save through raw conditional replacements. A todo row's
- * fields and source share one native row editor instead, whose writes
- * replace the existing file last-writer-wins: see `todo-editor.svelte.ts`.
+ * Files opens every text file here, a todo's Markdown included, and saves
+ * it through raw conditional replacements. The todo list edits a row through
+ * one native row editor instead, whose writes replace the existing file
+ * last-writer-wins: see `todo-editor.svelte.ts`. The owner retains at most
+ * one of the two per path.
+ *
+ * `dispose` retires an editor for good: the owner forgot it, or the todo
+ * list took its file. Typing, save choices, and saves that reach it after
+ * that send nothing, so a view or callback left over from it cannot publish
+ * beside the file's next editor.
  */
 import type { FolderFiles, TextCapture } from '@epicenter/folder';
 import { FileError, submittedText } from '@epicenter/folder';
@@ -86,6 +93,8 @@ export function createTextFileEditor(
 	 * saves. Reversible.
 	 */
 	let departing = $state(false);
+	/** The owner let this editor go; nothing reaches the file through it again. */
+	let disposed = false;
 
 	const dirty = () => buffer !== baseline.text;
 
@@ -102,12 +111,12 @@ export function createTextFileEditor(
 
 	function schedule() {
 		clearTimeout(timer);
-		if (isHeld() || moving || departing) return;
+		if (isHeld() || moving || departing || disposed) return;
 		timer = setTimeout(() => void save(), TYPING_BATCH_MS);
 	}
 
 	function input(text: string) {
-		if (departing) return;
+		if (departing || disposed) return;
 		buffer = text;
 		schedule();
 	}
@@ -189,7 +198,7 @@ export function createTextFileEditor(
 	/** Run admitted saves to completion. A move drains through here before it runs. */
 	async function drain(): Promise<void> {
 		clearTimeout(timer);
-		if (isHeld()) return;
+		if (isHeld() || disposed) return;
 		if (saving) {
 			await saving;
 			return dirty() ? drain() : undefined;
@@ -250,7 +259,7 @@ export function createTextFileEditor(
 		get path() {
 			return baseline.path;
 		},
-		/** Replace the whole buffer, as a source editor does. */
+		/** Replace the whole buffer, as Files' text area does. */
 		input,
 		save,
 		/**
@@ -270,7 +279,7 @@ export function createTextFileEditor(
 		},
 		/** Conflict choice: discard my input and load the saved file. */
 		loadSaved() {
-			if (departing) return;
+			if (departing || disposed) return;
 			if (saveState.kind !== 'conflict' || saveState.current === undefined)
 				return;
 			baseline = saveState.current;
@@ -282,7 +291,7 @@ export function createTextFileEditor(
 		},
 		/** Conflict choice: keep my input and save it over the version I reviewed. */
 		async keepMine() {
-			if (departing) return;
+			if (departing || disposed) return;
 			if (saveState.kind !== 'conflict' || saveState.current === undefined)
 				return;
 			baseline = saveState.current;
@@ -296,7 +305,7 @@ export function createTextFileEditor(
 		 * removal an unknown delete did make, come back as a conflict to review.
 		 */
 		async retry() {
-			if (departing) return;
+			if (departing || disposed) return;
 			if (saveState.kind === 'failed' || saveState.kind === 'unknown')
 				saveState = { kind: 'saved' };
 			await save();
@@ -436,7 +445,9 @@ export function createTextFileEditor(
 				if (dirty() && saveState.kind === 'saved') schedule();
 			}
 		},
+		/** Retire this editor for good; see the module comment. A save already running still settles. */
 		dispose() {
+			disposed = true;
 			clearTimeout(timer);
 		},
 	};

@@ -76,6 +76,23 @@ test('identical declarations give stable bytes while field and array order are p
 	expect(JSON.parse(text).kv.a.enum).toEqual(['z', 'a']);
 });
 
+test('nested annotation arrays preserve order while sparse arrays refuse export', () => {
+	const prepare = (examples: unknown[]) =>
+		expectOk(
+			prepareSchema({
+				kv: { value: Type.String({ examples }) },
+				tables: {},
+			}),
+		);
+	const examples = [['second', 'first'], [], [0, -0]];
+	expect(
+		JSON.parse(expectOk(exportSchema(prepare(examples)))).kv.value.examples,
+	).toEqual([['second', 'first'], [], [0, 0]]);
+	const sparse = ['first', 'second'];
+	delete sparse[0];
+	expect(expectErr(exportSchema(prepare(sparse))).name).toBe('Unsupported');
+});
+
 test('refinements, codecs, guards, and non-JSON pattern objects prevent export', () => {
 	let invoked = 0;
 	const schemas = [

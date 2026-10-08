@@ -6,7 +6,7 @@ import { Hashing } from 'typebox/system';
 import { defineErrors, type InferErrors } from 'wellcrafted/error';
 import { type Result, trySync } from 'wellcrafted/result';
 import type { DataSchema } from './declaration.js';
-import type { JsonValue } from './json.js';
+import type { JsonObject, JsonValue } from './json.js';
 import { hasSchemaCallbacks, isPreparedSchema } from './prepare.js';
 
 // Compare against TypeBox's stock handlers, not a registry snapshot that an
@@ -288,10 +288,19 @@ function jsonCopy(
 		throw new Error(`${path} holds symbol properties`);
 	ancestors.add(value);
 	try {
-		const copy: { [key: string]: JsonValue } = Object.create(null);
 		const keys = Object.getOwnPropertyNames(value).filter(
 			(key) => !array || key !== 'length',
 		);
+		if (
+			array &&
+			(keys.length !== value.length ||
+				keys.some(
+					(key) =>
+						!/^(0|[1-9][0-9]*)$/.test(key) || Number(key) >= value.length,
+				))
+		)
+			throw new Error(`${path} is sparse or holds non-index properties`);
+		const copy: JsonObject | JsonValue[] = array ? [] : Object.create(null);
 		for (const key of keys) {
 			const descriptor = Object.getOwnPropertyDescriptor(value, key)!;
 			if (!('value' in descriptor))
@@ -303,30 +312,17 @@ function jsonCopy(
 						`${path}.format depends on an unsupported format handler: ${descriptor.value}`,
 					);
 			}
-			copy[key] = jsonCopy(
+			const child = jsonCopy(
 				descriptor.value,
 				`${path}.${key}`,
 				ancestors,
 				copies,
 			);
+			if (Array.isArray(copy)) copy.push(child);
+			else copy[key] = child;
 		}
-		if (!array) {
-			copies.set(value, copy);
-			return copy;
-		}
-		if (
-			keys.length !== value.length ||
-			keys.some(
-				(key) => !/^(0|[1-9][0-9]*)$/.test(key) || Number(key) >= value.length,
-			)
-		)
-			throw new Error(`${path} is sparse or holds non-index properties`);
-		const copied = Array.from(
-			{ length: value.length },
-			(_, index) => copy[String(index)]!,
-		);
-		copies.set(value, copied);
-		return copied;
+		copies.set(value, copy);
+		return copy;
 	} finally {
 		ancestors.delete(value);
 	}

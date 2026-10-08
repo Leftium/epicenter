@@ -2,7 +2,7 @@
 
 - **Status:** Proposed
 - **Date:** 2026-10-07
-- **Remaining:** real-OPFS computer-use run and reload, Honeycrisp browser/native note creation, editing, and reopening through the UI, and a separate decision about Todos browser remote bootstrap. Runtime export, all three opener paths, diagnostics, and history regressions are implemented and checked; see [acceptance evidence](../../packages/folder/evidence/definition-publication/README.md).
+- **Remaining:** a decision and repair for Todos browser remote bootstrap. Real-OPFS run/reload and Honeycrisp browser/native note creation, editing, and reopening passed on 2026-10-08; see [computer-use evidence](../../packages/folder/evidence/definition-publication/computer-use-20261008/README.md). Runtime export, all three opener paths, diagnostics, and history regressions are implemented and checked. This ADR remains Proposed.
 
 ## Context
 

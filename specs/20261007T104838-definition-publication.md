@@ -29,7 +29,7 @@ successful save -> existing background history policy -> local checkpoint
 Opening waits for publication, not the checkpoint. It neither reads the file
 to configure the application nor pushes anything. The agreed decision is
 [ADR 0508](../docs/adr/0508-folder-opening-overwrites-root-definition-json.md),
-currently Proposed; runtime implementation is verified below, with UI acceptance pending.
+currently Proposed; runtime and UI acceptance are verified below, with Todos bootstrap unresolved.
 
 Completion means all openers attempt publication, regressions demonstrate the
 failure and history behavior, and actual browser and native application journeys
@@ -44,15 +44,15 @@ bridge, and Honeycrisp verification results and review decisions are recorded in
 The OPFS evidence page now covers publication, replacement, changed declarations,
 separate automatic history, and persistence before reopening after a reload.
 
-Remaining work is actual computer-use acceptance: run the OPFS page and reload,
-then create, edit, and reopen a Honeycrisp note in an isolated browser origin and
-in the exact built native instance using disposable data. The current tool
-session exposes neither a browser nor the launched native window. These journeys
-remain unverified. Adversarial review also reproduced a remote-bootstrap
+Real OPFS run/reload and Honeycrisp browser/native note creation, editing, and
+reopening passed through computer use on 2026-10-08 with disposable data. Saved
+definitions and settled Git history were inspected alongside the UI; see
+[the current evidence](../packages/folder/evidence/definition-publication/computer-use-20261008/README.md).
+Adversarial review also reproduced a remote-bootstrap
 regression in the current Todos browser startup: publication precedes its first
 pull. A separate bootstrap decision remains open; incoming Git protection has
-not been relaxed. Retire this spec after acceptance and that consequential
-integration finding are resolved; ADR 0508 remains Proposed.
+not been relaxed. Retire this spec after that consequential
+integration finding is resolved; ADR 0508 remains Proposed.
 
 ## First implementation wave
 

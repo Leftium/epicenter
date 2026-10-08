@@ -116,6 +116,6 @@ user reference that missing branch. No database schema, credential, or
 Hyperdrive setting was changed during diagnosis. PlanetScale is open in Zen,
 signed out, awaiting access to identify the correct surviving database target.
 
-Private temporary Worker-tail files contain OAuth parameters and must not be
-copied into evidence or logs. All owned tail processes were stopped. Recorded
+The temporary Worker-tail file contained OAuth parameters. Its owned tail
+processes were stopped, and the file was removed after diagnosis. Recorded
 diagnostic output contains only sanitized errors and configuration comparisons.

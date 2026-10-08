@@ -415,7 +415,7 @@ test('an existing folder, its history, and its uncommitted files are refused unc
 	const { root, bare, httpFetch } = await fixture();
 	await seeded(root, bare);
 	const storage = createTestStorage();
-	const other = 'https://github.com/example/elsewhere.git';
+	const other = 'https://legacy-credential@github.com/example/elsewhere.git';
 	const local = expectOk(
 		await open(storage, httpFetch, { remote: { url: other, branch: 'main' } }),
 	);
@@ -433,6 +433,8 @@ test('an existing folder, its history, and its uncommitted files are refused unc
 		reason: 'is this folder',
 		origin: other,
 	});
+	expect(refused.message).not.toContain('legacy-credential');
+	expect(refused.message).not.toContain(other);
 	expect(everything(storage, directory)).toEqual(before);
 });
 

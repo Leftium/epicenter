@@ -390,7 +390,8 @@ export const DownloadFolderError = defineErrors({
 	 * or its marker records another download (address, URL, or branch).
 	 * Nothing was written: no marker, file, or Git configuration changed.
 	 * `origin` is its configured `remote.origin.url`, when it has one; it is
-	 * reported, never used to decide ownership.
+	 * reported, never used to decide ownership. It is omitted from the message:
+	 * existing configuration may contain credentials.
 	 */
 	Exists: ({
 		directory,
@@ -401,7 +402,7 @@ export const DownloadFolderError = defineErrors({
 		reason: string;
 		origin: string | undefined;
 	}) => ({
-		message: `Nothing was downloaded: '${directory}' ${reason}${origin === undefined ? '' : `, with origin ${origin}`}. It was left unchanged`,
+		message: `Nothing was downloaded: '${directory}' ${reason}. It was left unchanged`,
 		directory,
 		reason,
 		origin,

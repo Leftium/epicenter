@@ -43,22 +43,29 @@ export function createCodexAi(
 		const release = connection.admit();
 		let threadId: string | undefined;
 		let turnId: string | undefined;
+		let interruption: Promise<unknown> | undefined;
 		let completed: Record<string, unknown> | undefined;
 		let preview: string | undefined;
 		let problem: unknown;
 		let hasProblem = false;
 		let wake = Promise.withResolvers<void>();
 		const messages = new Map<string, { text: string; phase: unknown }>();
+		function interruptTurn() {
+			if (interruption) return interruption;
+			if (!threadId || !turnId || completed || connection.signal.aborted)
+				return;
+			interruption = connection.request('turn/interrupt', { threadId, turnId });
+			// Cancellation starts immediately; finally awaits the same request for cleanup.
+			void interruption.catch(() => undefined);
+			return interruption;
+		}
 		const unsubscribe = connection.subscribe((event) => {
 			try {
 				const params = record(event.params);
 				if (params.threadId !== threadId) return;
 				if (event.method === 'turn/started') {
 					turnId = id(record(params.turn).id);
-					if (signal.aborted)
-						void connection
-							.request('turn/interrupt', { threadId, turnId })
-							.catch(() => undefined);
+					if (signal.aborted) interruptTurn();
 				} else if (
 					event.method === 'item/started' ||
 					event.method === 'item/completed'
@@ -98,10 +105,7 @@ export function createCodexAi(
 		});
 		const stop = () => {
 			wake.resolve();
-			if (threadId && turnId && !completed)
-				void connection
-					.request('turn/interrupt', { threadId, turnId })
-					.catch(() => undefined);
+			interruptTurn();
 		};
 		signal.addEventListener('abort', stop, { once: true });
 		try {
@@ -176,8 +180,7 @@ export function createCodexAi(
 			signal.removeEventListener('abort', stop);
 			try {
 				if (threadId && !connection.signal.aborted) {
-					if (turnId && !completed)
-						await connection.request('turn/interrupt', { threadId, turnId });
+					await interruptTurn();
 					await connection.request('thread/unsubscribe', { threadId });
 				}
 			} finally {

@@ -165,8 +165,16 @@ test('cancellation before turn acknowledgment interrupts the eventual turn and c
 	const { connection, calls, emit, active, subscriptions } = setup();
 	const start = Promise.withResolvers<void>();
 	const acknowledgment = Promise.withResolvers<unknown>();
+	const interruptionStarted = Promise.withResolvers<void>();
+	const interrupted = Promise.withResolvers<void>();
 	const previous = connection.request;
 	connection.request = async (method, params) => {
+		if (method === 'turn/interrupt') {
+			const response = await previous(method, params);
+			interruptionStarted.resolve();
+			await interrupted.promise;
+			return response;
+		}
 		if (method !== 'turn/start') return previous(method, params);
 		start.resolve();
 		return acknowledgment.promise;
@@ -185,14 +193,26 @@ test('cancellation before turn acknowledgment interrupts the eventual turn and c
 	});
 	emit('turn/started', { threadId: 'thread-1', turn: { id: 'delayed' } });
 	acknowledgment.resolve({ turn: { id: 'delayed' } });
+	await interruptionStarted.promise;
+	// A completion notification cannot release the attempt while interruption is pending.
+	emit('turn/completed', {
+		threadId: 'thread-1',
+		turn: { id: 'delayed', status: 'interrupted' },
+	});
+	for (let i = 0; i < 20; i++) await Promise.resolve();
+	expect(active()).toBe(1);
+	expect(subscriptions()).toBe(1);
+	expect(calls.some((call) => call.method === 'thread/unsubscribe')).toBe(
+		false,
+	);
+	interrupted.resolve();
 	for (let i = 0; i < 20 && active(); i++) await Promise.resolve();
-	expect(
-		calls.some(
-			(call) =>
-				call.method === 'turn/interrupt' &&
-				(call.params as { turnId: string }).turnId === 'delayed',
-		),
-	).toBe(true);
+	expect(calls.filter((call) => call.method === 'turn/interrupt')).toEqual([
+		{
+			method: 'turn/interrupt',
+			params: { threadId: 'thread-1', turnId: 'delayed' },
+		},
+	]);
 	expect(active()).toBe(0);
 	expect(subscriptions()).toBe(0);
 	expect(connection.signal.aborted).toBe(false);

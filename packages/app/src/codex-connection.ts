@@ -97,19 +97,21 @@ export async function openCodexConnection(
 	const attempts = new Set<Promise<void>>();
 	// Stderr is drained without publishing prompts, credentials, or protocol payloads.
 	child.stderr.resume();
-	function fail(cause: unknown) {
+	function retire(cause: unknown) {
+		if (lifetime.signal.aborted) return;
 		lifetime.abort(cause);
 		for (const waiter of pending.values()) {
 			clearTimeout(waiter.timer);
 			waiter.reject(cause);
 		}
 		pending.clear();
+		child.kill();
 	}
-	child.on('error', fail);
-	child.stdin.on('error', fail);
+	child.on('error', retire);
+	child.stdin.on('error', retire);
 	const exited = new Promise<void>((resolve) =>
 		child.once('close', () => {
-			fail(new Error('The Codex process closed.'));
+			retire(new Error('The Codex process closed.'));
 			resolve();
 		}),
 	);
@@ -133,8 +135,9 @@ export async function openCodexConnection(
 							},
 						}) + '\n',
 					);
-					fail(new Error('Codex requested a capability outside text replies.'));
-					child.kill();
+					retire(
+						new Error('Codex requested a capability outside text replies.'),
+					);
 				} else
 					for (const listener of listeners)
 						listener({ method: frame.method, params: frame.params });
@@ -156,14 +159,12 @@ export async function openCodexConnection(
 					waiter.method === 'thread/unsubscribe'
 				) {
 					// A failed cleanup must not leave a live turn behind a reusable handle.
-					fail(cause);
-					child.kill();
+					retire(cause);
 				}
 			} else if ('result' in frame) waiter.resolve(frame.result);
 			else waiter.reject(new Error('Codex RPC response has no outcome.'));
 		} catch (cause) {
-			fail(cause);
-			child.kill();
+			retire(cause);
 		}
 	});
 	function request(method: string, params: unknown): Promise<unknown> {
@@ -188,16 +189,14 @@ export async function openCodexConnection(
 			const id = ++counter;
 			const timer = setTimeout(() => {
 				// Losing a turn-start acknowledgment leaves no safe thread ownership.
-				fail(new Error('Codex RPC request timed out.'));
-				child.kill();
+				retire(new Error('Codex RPC request timed out.'));
 			}, 30_000);
 			pending.set(id, { method, resolve, reject, timer });
 			child.stdin.write(
 				JSON.stringify({ id, method, params }) + '\n',
 				(error) => {
 					if (error) {
-						fail(error);
-						child.kill();
+						retire(error);
 					}
 				},
 			);
@@ -226,8 +225,7 @@ export async function openCodexConnection(
 			if (closing) return closing;
 			const completion = Promise.withResolvers<void>();
 			closing = completion.promise;
-			fail(new Error('The Codex connection is closed.'));
-			child.kill();
+			retire(new Error('The Codex connection is closed.'));
 			void (async () => {
 				const timeout = setTimeout(() => child.kill('SIGKILL'), 5000);
 				try {

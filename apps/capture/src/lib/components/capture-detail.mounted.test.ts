@@ -120,6 +120,31 @@ async function setup(sources: Record<string, string>) {
 	};
 }
 
+test('rejected capture text restores the mounted field and Source can complete the Markdown', async () => {
+	const t = await setup({ a: fileOf('A') });
+	const draft = await t.open('a');
+	const { view } = t.mount(draft);
+	const text = field('capture-text');
+	type(text, 'A\n```\nopen');
+	await new Promise((resolve) => setTimeout(resolve, 0));
+	flushSync();
+	expect(text?.value).toBe('A');
+	expect(draft.unsettled).toBe(false);
+	expect(document.body.textContent).toContain('Use Source to write unfinished Markdown');
+	draft.setView('source');
+	flushSync();
+	const source = field('capture-source');
+	const unfinished = draft.source.replace('\nA\n', '\nA\n```\nopen\n');
+	type(source, unfinished);
+	await draft.settle();
+	expect(await t.disk('a')).toBe(unfinished);
+	type(source, unfinished.replace('\nopen\n', '\nopen\n```\n'));
+	await draft.settle();
+	expect(draft.document.text).toBe('A\n```\nopen\n```');
+	await unmount(view);
+	await t.done();
+});
+
 test('a view kept mounted while its draft changes A, B, A writes each edit to the draft it has then', async () => {
 	const t = await setup({ a: fileOf('A'), b: fileOf('B') });
 	const a = await t.open('a');

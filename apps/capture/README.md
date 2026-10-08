@@ -63,8 +63,12 @@ formatting and preserves surrounding Markdown. A delayed edit or confirmation
 checks that its starting list is still current. Both views share the same save
 queue.
 
-The draft keeps text that a structured edit cannot represent. The editor keeps
-accepted text even when publication fails. A row with invalid fields or
+The capture text control submits changes immediately. A refused change restores
+the editor's accepted text and shows the reason; it creates no pending draft or
+departure blocker. To build unfinished Markdown such as an open code fence,
+re-enter it in Source and finish it there. Source does not contain discarded
+input. Add thought and Save thought remain explicit forms with unsubmitted text.
+The editor keeps accepted text even when publication fails. A row with invalid fields or
 frontmatter, or a body with ambiguous Thoughts markup, opens Source with the
 reason visible. Repair leaves Source selected. Shared Tabs unmount inactive
 panels; shared Textarea stops retired controls from reading or delivering input.
@@ -120,9 +124,9 @@ when saving is stopped or was not confirmed.
   once it is a valid capture.
 - **Save as a copy** saves the capture as it is in Source, as a new file that
   must not exist yet, and leaves the original as it is. It is refused while
-  you have typed text that is not in the source yet (a new thought, a thought
-  you are editing, capture text that could not be applied), because letting
-  go of the capture would drop that text. Add it or clear it first.
+  you have a new thought or a thought you are editing that is not in the source
+  yet, because letting go of the capture would drop that text. Save it or clear
+  it first.
 - A copy and putting a file back write your text exactly or not at all. Text
   with a character a file cannot hold exactly (a lone surrogate) is refused
   before anything is written, and stays here to change or to copy out.

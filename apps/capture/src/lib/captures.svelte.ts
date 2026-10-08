@@ -540,7 +540,7 @@ export function createCaptures(host: Pick<CaptureHost, 'folder' | 'location'>) {
 		 *
 		 * The copy is the source only: the editor's latest input. Text typed
 		 * but not yet in the source
-		 * (a new thought, a thought being edited, capture text that was refused)
+		 * (a new thought or a thought being edited)
 		 * would be dropped with the draft, so the copy is refused while any
 		 * exists, and nothing is written. The draft is held while the copy is
 		 * written, so the copy is all of it.
@@ -555,7 +555,7 @@ export function createCaptures(host: Pick<CaptureHost, 'folder' | 'location'>) {
 				return {
 					ok: false,
 					message:
-						'A copy holds the capture as it is in Source. This capture also has text you typed that is not in it yet: a new thought, a thought you are editing, or capture text that could not be applied. Add it, or copy it somewhere and clear it, then save the copy.',
+						'A copy holds the capture as it is in Source. This capture also has a new thought or a thought you are editing that is not in it yet. Save it, or copy it somewhere and clear it, then save the copy.',
 				};
 			const started = (async (): Promise<
 				{ ok: true; stem: string } | { ok: false; message: string }

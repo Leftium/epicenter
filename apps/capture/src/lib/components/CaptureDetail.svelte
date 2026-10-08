@@ -261,12 +261,7 @@
 						class="max-h-96 resize-y leading-relaxed"
 						placeholder="Write here…"
 					/>
-					{#if draft.textIsPending}
-						<div role="status" class="flex flex-wrap items-center gap-3">
-							This text is kept here but not in the file yet.
-							<Button variant="outline" size="sm" disabled={held} onclick={() => draft.dropPendingText()}>Go back to the saved text</Button>
-						</div>
-					{/if}
+					<p class="text-sm text-muted-foreground">Changes that cannot be applied return to the current text. Use Source to write unfinished Markdown.</p>
 				</Field.Field>
 
 				<section class="flex flex-col gap-3" aria-label="Capture thoughts">
@@ -390,7 +385,7 @@
 								{:else if draft.document.hasSection}
 									Thoughts you add are saved in this capture, under its Thoughts heading.
 								{:else}
-									This file has no Thoughts section yet. Adding a thought appends one.
+									No Thoughts section is readable here. Check Source before adding a new section.
 								{/if}
 							</p>
 							<Button type="submit" size="sm" disabled={held}>Add thought</Button>

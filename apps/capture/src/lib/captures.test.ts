@@ -587,7 +587,7 @@ test('cancelling a deletion review gives the capture back as it was', async () =
 	await t.folder.close();
 });
 
-test('a delete that throws gives the draft back, takes no typing for the file, and keeping the file is a choice', async () => {
+test('a delete that throws gives the draft back, rejects typing, and keeping the file is a choice', async () => {
 	const t = await setup();
 	const stem = await t.create('Original');
 	const draft = await t.open(stem);
@@ -597,19 +597,20 @@ test('a delete that throws gives the draft back, takes no typing for the file, a
 	expect(await t.captures.remove(draft)).toBe(false);
 	expect(t.captures.draft(stem)).toBe(draft);
 	expect(draft.notice?.kind).toBe('deletion');
-	// Whether the file is gone is not known, so typing is kept and not saved.
+	// Whether the file is gone is not known, so neither structured nor Source input is taken.
 	draft.inputText('Typed after the delete');
-	expect(draft.text).toBe('Typed after the delete');
-	expect(draft.textIsPending).toBe(true);
+	expect(draft.text).toBe('Original');
 	expect(draft.refusal).toContain('delete was not confirmed');
+	const source = draft.source;
+	draft.inputSource('Typed after the delete');
+	expect(draft.source).toBe(source);
 	expect(await t.captures.departure.settle()).toBe(1);
 	expect(await t.text(stem)).not.toContain('Typed after the delete');
 
-	// Keeping the file as it is now answers the delete; the kept text then applies.
+	// Keeping the file as it is now answers the delete; a fresh edit can then apply.
 	expect(await draft.reload()).toBe(true);
 	expect(draft.notice).toBeUndefined();
-	draft.inputText(draft.text);
-	expect(draft.textIsPending).toBe(false);
+	draft.inputText('Typed after the delete');
 	await draft.settle();
 	expect(await t.text(stem)).toContain('\nTyped after the delete\n');
 	await t.captures.close();
@@ -774,7 +775,11 @@ test('whitespace typed into the new-capture form is refused and still protected'
 	expect(created.ok).toBe(false);
 	expect(captures.newCapture).toBe('  \n');
 	expect(await captures.departure.settle()).toBe(1);
-	expect(expectOk(await folder.files.list()).files).toEqual([]);
+	expect(
+		expectOk(await folder.files.list()).files.filter(
+			(file) => file.path !== 'definition.json',
+		),
+	).toEqual([]);
 	captures.inputNewCapture('');
 	expect(captures.unsettled).toBe(0);
 	await captures.close();

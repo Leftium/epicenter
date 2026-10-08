@@ -272,8 +272,8 @@ test('a Source edit saves exactly, frontmatter included; a broken one stays repa
 	expect(await t.disk()).toBe(broken);
 	expect(t.draft.status).toBe('invalid');
 	t.draft.inputText('refused');
-	expect(t.draft.textIsPending).toBe(true);
-	t.draft.dropPendingText();
+	expect(t.draft.source).toBe(broken);
+	expect(t.draft.refusal).toContain('cannot be edited');
 
 	const withKey = A.replace('\nA\n', '\nA, in Source\n').replace(
 		'\n---\n',
@@ -297,7 +297,7 @@ test('a Source edit saves exactly, frontmatter included; a broken one stays repa
 	await t.done();
 });
 
-test('unsent thought text and refused capture text are unsettled until resolved', async () => {
+test('unsent thought text is unsettled, but rejected capture text leaves accepted content and no unsent input', async () => {
 	const t = await setup();
 	expect(t.draft.unsettled).toBe(false);
 	t.draft.inputNewThought('not added yet');
@@ -311,16 +311,39 @@ test('unsent thought text and refused capture text are unsettled until resolved'
 	);
 	expect(t.draft.unsettled).toBe(false);
 
-	// An unclosed fence would absorb the section: the text is kept, not applied.
+	// An unclosed fence would absorb the section: the attempted edit is rolled back.
 	t.draft.inputText('A\n```\nopen');
-	expect(t.draft.textIsPending).toBe(true);
-	expect(t.draft.text).toBe('A\n```\nopen');
+	expect(t.draft.text).toBe('A');
 	expect(t.draft.refusal).toContain('would not read back');
 	expect(t.draft.saving).toBe(false);
-	expect(t.draft.unsettled).toBe(true);
+	expect(t.draft.unsettled).toBe(false);
+	expect(t.draft.hasUnsentInput).toBe(false);
 	t.draft.inputText('A\n```\nopen\n```');
-	expect(t.draft.textIsPending).toBe(false);
+	expect(t.draft.refusal).toBeUndefined();
 	expect(t.draft.document.text).toBe('A\n```\nopen\n```');
+	await t.done();
+});
+
+test('Source saves unfinished Markdown exactly and repairs it without losing the existing thoughts', async () => {
+	const t = await setup();
+	t.draft.inputText('A\n```\nopen');
+	expect(t.draft.text).toBe('A');
+	t.draft.setView('source');
+	const unfinished = A.replace('\nA\n', '\nA\n```\nopen\n');
+	t.draft.inputSource(unfinished);
+	await t.draft.settle();
+	expect(await t.disk()).toBe(unfinished);
+	expect(t.draft.document.thoughts).toEqual([]);
+	// Closing the fence in Capture would claim to have no thoughts, so the codec refuses it.
+	t.draft.inputText(t.draft.text.replace('\nopen\n', '\nopen\n```\n'));
+	expect(t.draft.refusal).toBeDefined();
+	expect(t.draft.source).toBe(unfinished);
+	const repaired = unfinished.replace('\nopen\n', '\nopen\n```\n');
+	t.draft.inputSource(repaired);
+	await t.draft.settle();
+	expect(await t.disk()).toBe(repaired);
+	expect(t.draft.document.thoughts).toEqual(['first', 'second']);
+	expect(t.draft.refusal).toBeUndefined();
 	await t.done();
 });
 
@@ -409,6 +432,27 @@ test('a draft let go while its editor opens takes no editor and saves nothing', 
 	expect(late.addThought()).toBe(false);
 	expect(await t.disk()).toBe(A);
 	await t.done();
+});
+
+test('opening an unchanged thought is settled; typing and reverting derive its unsent state', async () => {
+	const t = await setup();
+	try {
+		t.draft.startEditing(0);
+		const edit = t.draft.editing?.id;
+		if (edit === undefined) throw new Error('fixture');
+		expect(t.draft.hasUnsentInput).toBe(false);
+		expect(t.draft.unsettled).toBe(false);
+		t.draft.inputEditing('first\n', edit);
+		expect(t.draft.hasUnsentInput).toBe(true);
+		expect(t.draft.unsettled).toBe(true);
+		t.draft.inputEditing('first', edit);
+		expect(t.draft.hasUnsentInput).toBe(false);
+		expect(t.draft.unsettled).toBe(false);
+		t.draft.inputSource(A.replace('- first', '- changed'));
+		expect(t.draft.hasUnsentInput).toBe(true);
+	} finally {
+		await t.done();
+	}
 });
 
 test('positions select one duplicate thought for editing and deletion', async () => {

@@ -187,8 +187,6 @@ export function createDraft(
 	let newThought = $state('');
 	/** The thought being edited, bound to the parse it was shown from. */
 	let editing = $state.raw<ThoughtEdit | undefined>();
-	/** Capture text typed but refused, kept until it applies or is dropped. */
-	let pendingText = $state<string | undefined>();
 	/** Why the last change was not taken; the next change clears it. */
 	let refusal = $state<string | undefined>();
 	/** A reload found no file, and nothing was submitted since. */
@@ -268,7 +266,9 @@ export function createDraft(
 	}
 
 	const hasUnsentInput = () =>
-		newThought !== '' || editing !== undefined || pendingText !== undefined;
+		newThought !== '' ||
+		(editing !== undefined &&
+			editing.text !== document().thoughts[editing.index]);
 
 	function notice(): Notice | undefined {
 		if (deletion !== undefined) return { kind: 'deletion', message: deletion };
@@ -532,27 +532,14 @@ export function createDraft(
 			tookInput();
 		},
 
-		/**
-		 * The capture text as the text box shows it: what was typed while it
-		 * could not be applied, otherwise the document's text.
-		 */
+		/** The capture text accepted by the editor, including unsaved changes. */
 		get text() {
-			return pendingText ?? document().text ?? '';
+			return document().text ?? '';
 		},
-		get textIsPending() {
-			return pendingText !== undefined;
-		},
-		/** Type in the capture text box. Text that cannot be applied yet is kept. */
+		/** Submit at once. A refusal leaves the accepted text in the field. */
 		inputText(value: string) {
 			if (fenced()) return;
-			if (setCapture({ text: value, thoughts: document().thoughts }))
-				pendingText = undefined;
-			else pendingText = value;
-		},
-		dropPendingText() {
-			if (fenced()) return;
-			pendingText = undefined;
-			refusal = undefined;
+			setCapture({ text: value, thoughts: document().thoughts });
 		},
 
 		get newThought() {

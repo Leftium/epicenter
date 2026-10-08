@@ -4,8 +4,10 @@ The October 7 user steer supersedes the fixed-repository, browser-local connecti
 
 Current status, October 8: the account-scoped API is deployed, and the GitHub
 App is installed on `braden-w/zhongwen-data` and `braden-w/honeycrisp-data`.
-The browser caller is undergoing correction and review in an isolated clone.
-The public Zhongwen Sync page still says that this website does not sync.
+The browser caller is committed as Zhongwen `1db1476` and deployed at
+`https://zhongwen.bradenwong.com/sync`. Live acceptance currently stops at
+Epicenter sign-in: both database connections reference a deleted PlanetScale
+branch. The desktop caller is finishing isolated lifecycle verification.
 Live GitHub authorization and scoped transfers, installed-app continuity,
 and second-account isolation remain unverified. See
 [the execution record](execution-20261008.md).
@@ -41,6 +43,9 @@ Two independent account-ownership reviews were commissioned after the steer. The
 
 Reuse route/header allowlists, bounded transfer streams, redirect refusal, no POST replay, OAuth PKCE, encryption, and refresh ordering. Replace the global repository constant, anonymous connector bearer, connection-as-folder ownership, Local-folder attachment, and client-only account isolation. A pairing survives expired credentials. Discovery never rewrites an existing origin.
 
-Next acceptance remains browser → private GitHub repository → source-built installed Zhongwen on the same Epicenter account → browser. Native account folder registration and transport, live hosted authorization/transfers, and second-account isolation remain open. The public website is unchanged.
+Next acceptance remains browser → private GitHub repository → source-built installed Zhongwen on the same Epicenter account → browser. Native account folder registration and transport, live hosted authorization/transfers, and second-account isolation remain open.
 
-Practice ownership was updated in `/tmp/zhongwen-practice-20261007/sync-ownership.txt`. No practice, learner, drafts, tutor, or route implementation has been edited in the live checkout by this pass.
+Practice ownership was coordinated before browser integration. The integrated
+caller preserves practice commit `1af559f1046b47fccb43fc2189969f24973e58dd`
+and its ExpressionsEditor source. Sync routes and shared startup were changed
+within the agreed integration scope.

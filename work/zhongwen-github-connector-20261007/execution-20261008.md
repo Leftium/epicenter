@@ -26,9 +26,9 @@ No credential value is recorded here.
 These checks prove endpoint admission and deployment, not GitHub authorization
 or Git transfer. No live scoped-token transfer has been accepted.
 
-## Current implementation wave
+## Browser implementation and deployment
 
-The browser caller is being built in the isolated clone
+The browser caller was built in the isolated clone
 `/tmp/zhongwen-hosted-browser-20261008`, starting at Zhongwen
 `e38ec4600b30d48aab26f9196b43240ebd4ca6bd`. The clone preserves the committed
 practice work and uses the accepted hosted client leaves. It owns resource-free
@@ -36,10 +36,27 @@ Sync and authorization routes, explicit pairing/download, and captured account
 dataset selection. Local selection must survive sign-in. Account opening must
 remain existing-only until explicit Download publishes the history.
 
-The live checkout now includes practice commit
-`1af559f1046b47fccb43fc2189969f24973e58dd`. Integration must preserve its
-ExpressionsEditor changes. Settings-to-Sync must also preserve unsaved retained repair
-edits when the new resource-free route unmounts the editor.
+The accepted patch was combined with practice commit
+`1af559f1046b47fccb43fc2189969f24973e58dd` in
+`/tmp/zhongwen-live-integration-20261008`, preserving ExpressionsEditor.
+Mounted acceptance verified that unsaved Expressions repair input survives
+Settings and Sync navigation.
+
+The combined source passed 298 Bun tests with 1,221 assertions, 116 mounted
+component tests, and type checking with zero errors or warnings. Both browser
+and installed-SPA release builds passed. All eight copied private package
+trees matched their prepared source bytes. A fresh frozen dependency install
+stalled and was stopped; copied dependency validation is not a fresh-install
+claim.
+
+Chromium passed all 13 hosted-fixture journey steps, both fresh-document
+recipe cases, and the retained repair-input check. These use fixture identities
+and Git transport, not real GitHub authorization.
+
+Zhongwen commit `1db1476` contains the integration and verification record.
+Deployment to `zhongwen.bradenwong.com` succeeded with Worker version
+`6a887f22-ed64-4ad7-a284-ca5a5c952034`. Zen visibly reached the new Sync
+setup and its Epicenter sign-in flow. No push was performed.
 
 ## External acceptance gate
 
@@ -59,7 +76,7 @@ headed Playwright Chromium also demonstrated working input focus but required
 a fresh GitHub login; it was not used for the grant. No credentials or browser
 session cookies were copied.
 
-After the caller is reviewed and deployed, the next deciding check is real
+The next deciding check is real
 account authorization, pairing, scoped fetch/push, and refusal of the other
 repository. Browser-to-installed-Epicenter continuity and second-account
 isolation remain outstanding.
@@ -77,10 +94,28 @@ The focused download suite passed 23 tests with 237 assertions. Folder type
 checking reported zero errors and warnings. New Local checks establish remote
 history before definition publication, unchanged ready-folder refusal, and
 retained partial history with exact-recipe retry in the development channel.
-The caller follow-up must download before opening, refuse a different existing
-origin, accept only the exact ready-folder refusal, and open existing-only.
-The obsolete post-open bootstrap is being removed in the browser clone.
+The integrated caller downloads before opening and opens existing-only.
+Its durable recipe records successful Download separately from existing-folder
+refusal. Unverified recipes leave existing data editable without enabling
+Sync. Repository ID and branch cannot change after successful Download.
+The obsolete post-open bootstrap was removed.
 
-Zen independently observed the public `/sync` page after installation. It
-still displays the Local-only launcher instructions and states that the website
-does not sync. This confirms that deploying the API did not deploy the caller.
+## Live sign-in failure
+
+Zen and three fresh Chromium contexts reproduced the same failure:
+`POST /auth/sign-in/social` returns HTTP 500 and the page says
+“Could not start sign-in.” The request fails before redirecting to GitHub.
+The hosted Worker log identifies the failed OAuth verification INSERT;
+GET `/auth/get-session` without a cookie does not execute SQL and therefore
+does not prove database health.
+
+A read-only connection using Infisical production `/ops` returned PostgreSQL
+code `28000`: branch `d344al8j3fru` does not exist. Sanitized configuration
+comparison confirmed that both the admin URL and deployed Hyperdrive origin
+user reference that missing branch. No database schema, credential, or
+Hyperdrive setting was changed during diagnosis. PlanetScale is open in Zen,
+signed out, awaiting access to identify the correct surviving database target.
+
+Private temporary Worker-tail files contain OAuth parameters and must not be
+copied into evidence or logs. All owned tail processes were stopped. Recorded
+diagnostic output contains only sanitized errors and configuration comparisons.

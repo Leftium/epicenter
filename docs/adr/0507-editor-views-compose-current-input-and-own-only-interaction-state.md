@@ -14,14 +14,18 @@ props add navigation without owning an editing rule.
 
 Two temporal boundaries remain real: the row can change before Svelte removes a
 control, and a detached DOM element can still deliver its native binding event.
-Removing redundant state must preserve input across both boundaries.
+Removing redundant state must preserve accepted input across both boundaries
+and prevent retired controls from changing a different row.
 
 ## Decision
 
 One editor owns accepted input and its publication queue. Views read through the
 editor's reactive facade and compose complete replacements from its current row.
-The application retains input the editor has not accepted and owns unfinished
-editing sessions, confirmations, and operation fences.
+Applications own unfinished forms, confirmations, and operation fences. For
+immediate edits, a rejected replacement restores the accepted value and leaves
+a reason-only notice. The notice does not count as unsaved input or block an
+operation. Keeping rejected text is an additional product promise, not default
+editor scaffolding.
 
 There are three common binding patterns:
 
@@ -44,13 +48,37 @@ When the app adds admission rules, expose read-through `row` and `save` and keep
 the native mutators inside that owner. A public native editor would let callers
 bypass those rules.
 
-Whispering discards structured input refused before admission. Its controls read
+Todos, Vocab, Honeycrisp, and Whispering discard structured input refused before admission. Their controls read
 the accepted row directly, and Svelte's input binding restores that value after
 the event. A separate rejection notice explains the change; it retains no input
 and does not block closing, moving, or running a transformation. Body textarea
 setters preserve file newlines when composing the replacement, so `set` needs
 no control origin. Accepted input whose save fails remains in the native row.
 Raw Source input, including malformed text, remains available for repair.
+
+Capture text follows the same rejection policy. Its body codec may reject
+ordinary intermediate Markdown, such as an unfinished fence that would absorb
+the Thoughts list. The attempted edit then disappears from the structured
+control. Source remains accessible to re-enter and finish it. This policy does
+not remove the codec's checks or preserve the rejected input elsewhere.
+
+The ownership cases are finite:
+
+| Information | Owner |
+| --- | --- |
+| Accepted content, including changes whose save failed | Editor |
+| Rejection reason, with no alternate content value | Application notice |
+| Invalid full-file text used for repair | Same editor through Source |
+| Unsubmitted Add, Send, or explicit Save form | Form or application workflow |
+| Rich document, selection, undo, and pending formatting | Widget |
+| Operation fences, confirmations, and unanswered file operations | Application workflow |
+
+Immediate submission relies on synchronous accepted-content ownership. A store
+that exposes only successful disk writes cannot replace an editor: an earlier
+save echo can overwrite newer typing, and failure can leave no owner for it.
+Matter currently submits its widget document on blur or teardown. Skills binds
+its widget directly to a live body node. Neither needs another mirrored widget
+document merely to look like the row-editor apps.
 
 An app that promises to retain refused input owns that additional value. A
 control origin identifies where it belongs; it does not select a patch to merge.

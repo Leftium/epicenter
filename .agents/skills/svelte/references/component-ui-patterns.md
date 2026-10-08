@@ -114,9 +114,7 @@ them when they only control the same value. Keep commands as callback props.
 <Textarea
 	bind:value={
 		() => draft.text,
-		(input) => {
-			if (fieldsLive()) draft.inputText(input);
-		}
+		draft.inputText
 	}
 />
 ```
@@ -146,74 +144,54 @@ each other and which source information survives.
 ## File editor views
 
 Use [ADR-0507](../../../../docs/adr/0507-editor-views-compose-current-input-and-own-only-interaction-state.md)
-as the ownership doctrine. One native row editor owns accepted input and saving.
-Read it through `fromRowEditor`; do not copy its row, validity, body, or save
-status into runes and synchronize them with effects.
+for workspace ownership and [the input patterns](input-ownership.md) for the
+choice between immediate editing and explicit submission.
 
-There are three ordinary bindings: raw `row.text` to `setText`, valid fields to
-`set({ ...editor.row, fields: { ...editor.row.fields, key: input } })`, and a
-body text to `set({ ...editor.row, body: input })`. Add a codec when controls
-present a different representation, such as text and thoughts; encode that
-complete value into the same body replacement. Read the current row at the event. Preserve the file's newline convention at the body setter. Refused structured
-input is an app policy: Whispering restores the accepted row and keeps only a
-rejection notice. Apps promising to retain refused input keep it with the
-application owner above disposable views. Accepted input whose save fails stays
-in the row editor. Keep unfinished forms with their application owner.
+Files opens complete file text. A product list opens structured controls.
+Invalid files have a visible reason and an explicit repair route to Files;
+repairing text does not switch a mounted editor's interpretation. Do not add
+per-record Source/Fields tabs, raw mode, or automatic Source fallback.
 
-Default to one validity branch, with no tab or raw-mode state:
+One accepted-content owner publishes each file. Read its current row through
+`fromRowEditor`; do not mirror its body, fields, validity or save state into
+component runes. A field replacement preserves current fields and body through
+`editor.set({ ...editor.row, fields: { ...editor.row.fields, key: input } })`.
+A body replacement uses `editor.set({ ...editor.row, body: input })`. Files uses
+`setText` or the raw-file owner's text setter. Preserve file newlines. Add a
+codec when controls represent the body differently, such as text and thoughts.
 
-```svelte
-{#if editor.row.status === 'valid'}
-  <!-- Bind fields to row.fields and the body editor to row.body.
-       Setters read editor.row now and submit complete replacements. -->
-{:else}
-  <Textarea bind:value={
-    () => editor.row.text,
-    (text) => editor.setText(text)
-  } />
-{/if}
-```
+Key the detail by acquired editor identity, including a new editor at the same
+path. Read that owner once at mount; another owner gets another view. Do not key
+by changing content. A validity condition protects structured field reads;
+invalidity shows a reason and repair action rather than invented empty fields.
+The setter reads the current owner, not a render-time copy.
 
-Render structured controls for valid rows and a text editor for invalid rows.
-Bind directly to current editor values. Source repair that validates returns to
-structured rendering. Keep diagnostics visible and preserve file newlines in
-actual textarea bindings. A body codec with a narrower interpretation supplies
-its own source repair path when it cannot edit a valid row's body.
+Keep accepted input whose publication failed with the editor. An unfinished Add,
+Send or Save form owns a separate explicit-submission draft. Refused input follows
+the app's visible refusal policy. A rich widget keeps its document, selection and
+history without an extra mirrored application body.
 
-Add Tabs only when a person needs to choose among views of valid input. One
-selection owns that view group: bind to an existing retained owner, or use one
-local `$state`. Do not add raw, preferred-view, shown-view, or validity flags for
-the same selection. In this explicit-selection pattern, invalid input opens
-Source, and repair keeps Source selected until the person chooses otherwise. A
-narrow reset effect is an interaction action, not row synchronization.
+Workspaces sharing one canonical publisher need no publisher handoff. When
+navigation changes publishers, settle or explicitly resolve the retained owner
+before acquiring another. Failed saves and late accepted input keep that owner
+accessible; a handoff can stop instead of losing text. Keying retires a view,
+not admitted writes or callbacks held elsewhere.
 
-Shared `Tabs.Content` unmounts inactive children, so do not repeat `tab === value`
-inside each panel. Keep structured validity conditions: disabling a trigger
-neither resets selection nor proves a later event has valid fields. Use
-`forceMount` for a named lifetime, such as chat input or rich-editor undo history.
-Workflow panels can remain available to inspect unfinished results even while
-structured editing is unavailable. Event gates may remain during outros or
-before Svelte removes a view.
+Tabs may select actual workspaces or workflows. Shared `Tabs.Content` owns panel
+mounting, so do not repeat `tab === value` inside each panel. A disabled trigger
+does not establish valid fields for a later event. Use forceMount only for a
+named retained lifetime.
 
-Shared `Textarea` and `Input` retire their value-binding reads and writes on
-component destruction. Use their `bind:value={get, set}` API instead of local
-lifetime wrappers or paired get/set props. This does not protect unrelated event
-handlers or eliminate current-row, edit-instance, and operation checks. Inline a
-source or field component that only forwards a binding; keep a component when it
-owns substantial UI, a resource, a transformation, or an editing session. Typed
-valid-row props can make render getters total, while writers still use the current
-owner instead of the render snapshot.
+Shared `Textarea` and `Input` retire destroyed value bindings. Use their binding
+API instead of app-local forwarding wrappers or paired get/set props. Native
+controls and delayed commands retain their own lifetime and current-data checks.
+Inline components that only forward bindings; keep substantial UI, resources,
+format rules and real editing lifetimes.
 
-For a hunt, inventory `fromRowEditor`, `ReactiveRowEditor`, and row-table `.edit`
-callers, then follow their view components. Search those consumers for `$state`,
-`$effect`, raw/view/tab flags, local input wrappers, paired `get`/`set` or
-`read`/`write` props, repeated selected-tab conditions, and `editor.set` calls.
-First ask whether there is a real view choice; a validity branch may remove
-selection altogether. Classify each retained value as selection, refused input,
-an editing session, an operation, or copied editor data. Collapse copied editor
-data, duplicate selection, and forwarding components. Verify invalid repair, the chosen refusal policy, tab changes,
-current-owner replacement, and delivered input after destruction. Existing
-session tests earn their boundaries when they protect those behaviors.
+For a hunt, trace table `.edit`, `fromRowEditor` and `ReactiveRowEditor` callers.
+Classify state by its actual owner before removing it. Use the
+[search recipes](input-ownership.md#search-recipes), then verify repair navigation,
+current-owner replacement, failed-save retention and retired-control delivery.
 
 ## Inline Simple Props Types
 

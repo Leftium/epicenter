@@ -79,7 +79,7 @@ address and result directly; a separate `selectedPath` plus a derived lookup is
 not required. Each workspace owns its selection; the file tree does not retarget a mounted
 structured detail. Retaining accepted input is separate from selecting it.
 
-**Controls read current accepted input and submit complete replacements.**
+**Immediate editing reads current accepted input and submits complete replacements.**
 
 | Surface | Read | Submit |
 | --- | --- | --- |
@@ -121,6 +121,31 @@ A replacement refused before admission restores accepted content and shows a
 reason-only notice. It does not create an unsaved-content buffer or block file
 operations. Accepted input whose publication fails remains in its editor.
 Unsubmitted Add, Send, or explicit Save forms remain genuine temporary input.
+
+**Explicit submission owns one unfinished draft until its submission event.**
+
+Add, Send and Save forms own input that has not entered the editor or API yet.
+Prefer one draft object for fields submitted together, shaped like that API's
+input. Replace one field by composing the current draft, then capture and pass
+that value at Submit. Do not maintain parallel copies for each control, the
+whole form and an identical payload. A single-field form may own a scalar.
+
+In Svelte, replace-only drafts use `$state.raw`; intentionally mutable forms may
+use ordinary `$state` and take `$state.snapshot` when the API requires plain
+data. Raw state and snapshots are not frozen. A plain raw draft needs no copy
+unless the receiving API's ownership contract requires detachment. Validation
+and conversions remain when the API needs a different shape.
+
+Submission failure keeps the draft. Success clears or closes it only without
+erasing input typed after submission. Initializing an explicit-edit form from a
+record is legitimate; continuously synchronizing unfinished input from that
+record is a separate merge policy, not a default effect. Shared unfinished forms
+have an explicit owner above disposable views.
+
+These are the two default content-input patterns. Selection, operation outcomes,
+publication queues and rich-widget history remain real state with their own
+owners. The [Svelte input guidance](../../.agents/skills/svelte/references/input-ownership.md)
+provides bindings and search recipes.
 
 **A workspace handoff resolves admitted writes before another editor publishes to that file.**
 

@@ -68,16 +68,25 @@ when one bindable value removes that custom API. Trace transformations and
 lifecycle guards before collapsing them; commands and draft ownership may earn
 their boundaries.
 
-For file editor consumers, first ask whether one validity branch can render
-structured controls for valid rows and source for invalid rows, with no selection
-state. Keep Tabs for an actual choice among views of valid input. Also hunt copied
-row/valid/save state, duplicate tab and
-raw-mode selections, selected-tab conditions inside shared `Tabs.Content`, and
-thin Source or Capture components. Follow
+For input consumers, distinguish
+[immediate editing from explicit submission](../svelte/references/input-ownership.md).
+Immediate controls read the current editor and submit replacements. Explicit
+forms own unfinished input, preferably one replace-only raw draft object for
+fields submitted together. Scalars and intentionally mutable proxied forms are
+valid when they fit the interaction; rune count is not the target. Hunt mirrored
+editor values, effect-driven synchronization, parallel draft/payload copies,
+unnecessary snapshot or clone layers, raw-state property mutation, and late
+results that erase newer typing. Classify search matches before changing them.
+
+For file editor consumers, selection determines purpose: Files edits full text,
+product lists edit structured records, and invalid files have a repair route.
+Hunt per-record Source tabs, raw-mode admission, duplicated selection and
+selected-tab conditions inside shared `Tabs.Content`. Follow
 [the Svelte editor ownership patterns](../svelte/references/component-ui-patterns.md#file-editor-views).
-Use shared `Input` and `Textarea` lifetime behavior instead of app-local wrappers.
-A retained draft, edit identity, confirmation, fence, or rich-editor undo history
-is application information to preserve, not a rune-count target.
+Use shared `Input` and `Textarea` retirement rather than forwarding wrappers.
+Keep genuine unfinished forms, accepted-content owners, path-operation facts,
+edit identities and rich-widget history. Remove an owner only after naming who
+will preserve its information.
 
 Trace callers and mentally inline the candidate. Preserve evaluation timing,
 receiver binding, caching, and snapshot semantics when inlining. Keep a boundary when it names

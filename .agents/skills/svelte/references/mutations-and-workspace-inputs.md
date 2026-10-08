@@ -192,6 +192,11 @@ For when a single-use handler should be inlined at its call site versus kept as 
 
 # Commit-on-Blur for Workspace String Fields
 
+This section describes existing Y.Map-backed scalar fields. It does not govern
+Folder row editors: their immediate setters own accepted input and publication.
+An onblur commit is an explicit submission event with the DOM holding unfinished
+input. See [immediate editing and explicit submission](input-ownership.md).
+
 For plain string fields backed by a workspace table or Y.Map row (title, subtitle, name, description, license, label), **commit on `onblur`, not `oninput`**. Per-keystroke writes turn one typing session into N Yjs transactions, N IDB writes, N sync messages, and N BroadcastChannel posts. Commit-on-blur collapses that to one.
 
 The pattern has two halves: the **per-input handler** and the **app-wide safety net**. Both are required: the safety net is what makes commit-on-blur survive Cmd+W mid-edit.

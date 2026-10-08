@@ -97,11 +97,11 @@ async function saved(page: Page) {
 	}
 }
 
-/** The file's exact source, as the Source tab shows it. */
+/** Read the complete file through Files, then return to its capture. */
 async function source(page: Page) {
-	await page.getByRole('tab', { name: 'Source' }).click();
-	const text = await page.getByLabel('Markdown source').inputValue();
-	await page.getByRole('tab', { name: 'Capture', exact: true }).click();
+	await page.getByRole('button', { name: 'Open in Files', exact: true }).first().click();
+	const text = await page.getByLabel('File text').inputValue();
+	await page.getByRole('button', { name: 'Open as capture', exact: true }).click();
 	return text;
 }
 
@@ -143,12 +143,12 @@ try {
 	assert.equal(await first.getByLabel('Capture text').inputValue(), text);
 	// Ctrl+Enter adds it, and the new capture opens ready for a thought.
 	await first.getByLabel('Capture text').press('Control+Enter');
-	await first.getByRole('tab', { name: 'Source' }).waitFor();
+	await first.getByRole('button', { name: 'Open in Files', exact: true }).waitFor();
 	await first.waitForFunction(
 		() => document.activeElement?.id === 'new-thought',
 	);
 	const captureUrl = first.url();
-	// Source shows the file exactly as it was created; a save writes its
+	// Files shows the file exactly as it was created; a save writes its
 	// frontmatter in the canonical form below.
 	const created = await source(first);
 	const at =
@@ -189,14 +189,14 @@ try {
 		`${head}\n\n${text}\n\n## Thoughts\n\n- A question for next time\n- Moving to Singapore\n  A longer thought\n`,
 	);
 
-	// 4. Editing the source is editing the capture: it saves exactly as typed,
+	// 4. Files edits complete text and stays a file editor after saving,
 	// frontmatter included.
-	await first.getByRole('tab', { name: 'Source' }).click();
+	await first.getByRole('button', { name: 'Open in Files', exact: true }).click();
 	const edited = `${head.replace(/\n---$/, '\n"unknownKey": "kept"\n---')}\n\n${text}\n\n## Thoughts\n\n- A question for next time\n  - nested point\n- Moving to Singapore\n  A longer thought\n- Typed in source\n\nTrailing note.\n`;
-	await first.getByLabel('Markdown source').fill(edited);
+	await first.getByLabel('File text').fill(edited);
 	await saved(first);
-	// The views are real tabs: the arrow keys move between them.
-	await first.getByRole('tab', { name: 'Source' }).press('ArrowLeft');
+	// Structured editing requires explicit navigation back to the capture.
+	await first.getByRole('button', { name: 'Open as capture', exact: true }).click();
 	await first.getByLabel('Capture text').waitFor();
 	assert.deepEqual(await thoughts(first), [
 		'A question for next time\n- nested point',
@@ -265,26 +265,17 @@ try {
 	);
 	await first.getByLabel('Add a thought').fill('');
 
-	// 9. Text with its own Thoughts list stays source-only, and says why.
-	await second.getByRole('button', { name: 'Timeline' }).click();
+	// 9. Ambiguous Thoughts markup names its repair path and opens in Files.
+	await second.getByRole('button', { name: 'Timeline', exact: true }).click();
 	await second.getByRole('button', { name: 'New capture' }).click();
-	await second
-		.getByLabel('Capture text')
-		.fill('Pasted article\n\n## Thoughts\n\n- belongs to the article');
+	await second.getByLabel('Capture text').fill('Pasted article\n\n## Thoughts\n\n- belongs to the article');
 	await second.getByRole('button', { name: 'Add capture' }).click();
-	await second.getByRole('alert', { name: 'Source only' }).waitFor();
+	await second.getByRole('alert', { name: 'Needs repair' }).waitFor();
 	await second.reload();
-	await second.getByRole('alert', { name: 'Source only' }).waitFor();
-	assert(
-		await second
-			.getByRole('tab', { name: 'Capture', exact: true })
-			.isDisabled(),
-	);
-	assert(
-		(await second.getByLabel('Markdown source').inputValue()).includes(
-			'- belongs to the article\n\n## Thoughts\n',
-		),
-	);
+	await second.getByRole('alert', { name: 'Needs repair' }).waitFor();
+	assert.equal(await second.getByLabel('Capture text').count(), 0);
+	await second.getByRole('button', { name: 'Open in Files', exact: true }).first().click();
+	assert((await second.getByLabel('File text').inputValue()).includes('- belongs to the article\n\n## Thoughts\n'));
 
 	// 10. Deleting reviews the saved file, then removes it.
 	await second.getByRole('button', { name: 'More capture actions' }).click();
@@ -300,7 +291,8 @@ try {
 	await review
 		.getByRole('button', { name: 'Permanently delete', exact: true })
 		.click();
-	await second.getByRole('heading', { name: 'Timeline' }).waitFor();
+	await second.getByRole('heading', { name: 'Files', exact: true }).waitFor();
+	await second.getByRole('button', { name: 'Timeline', exact: true }).click();
 	assert.equal(
 		await second.getByLabel('Timeline captures').getByRole('button').count(),
 		1,
@@ -325,10 +317,9 @@ try {
 	await result.getByText('0 files created').waitFor();
 	await result.getByText('6 imported before and left as they are').waitFor();
 	await second.getByRole('button', { name: 'Timeline' }).click();
-	assert.equal(
-		await second.getByLabel('Timeline captures').getByRole('button').count(),
-		7,
-	);
+	await second.getByRole('button', { name: 'Files', exact: true }).click();
+	assert.equal(await second.getByLabel('Capture files').getByRole('button').count(), 7);
+	await second.getByRole('button', { name: 'Timeline', exact: true }).click();
 	await second
 		.getByLabel('Timeline captures')
 		.getByRole('button')
@@ -352,7 +343,7 @@ try {
 
 	assert.deepEqual(errors, []);
 	console.log(
-		'Capture browser check passed: no sign-in, exact saved Markdown, multiline thoughts added, edited, reordered, and deleted, source editing, reload persistence, explicit Reload from file and latest-save-wins across two pages, a leave warning for unsent text, a source-only capture, reviewed deletion, and an idempotent import from a bundle file.',
+		'Capture browser check passed: no sign-in, exact saved Markdown, multiline thoughts added, edited, reordered, and deleted, Files editing, reload persistence, explicit Reload from file and latest-save-wins across two pages, a leave warning for unsent text, an ambiguous capture repaired through Files, reviewed deletion, and an idempotent import from a bundle file.',
 	);
 } catch (cause) {
 	console.error(cause);

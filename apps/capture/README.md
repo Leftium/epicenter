@@ -31,12 +31,14 @@ yourself only to export old captures from a hosted account, described below.
   sits after the last thought, which is where a new one goes; Ctrl or ⌘ +
   Enter adds it. Each thought's Actions menu holds Edit, Move up, Move down, Copy
   text, and Delete.
-- **Source** is the tab beside Capture. It names the file, shows it exactly,
-  and edits it directly. Anything Markdown allows can go there, and the
-  Capture view follows it. Which tab is shown is only a view choice; it
-  changes nothing saved.
-- **More** holds Copy source, Download file, Reload from file, and **Delete
-  capture**. Deleting first waits for saves already sent, then shows the
+- **Files** is the workspace beside the timeline. It lists every capture
+  file by path, whether or not it reads as a capture, and opens a file's
+  complete text, frontmatter included, to edit directly. Anything Markdown
+  allows can go there. A file stays open as text after it is repaired; Open
+  as capture is the way to the timeline's view of it, and a capture's Open
+  in Files is the way back.
+- **More** holds Copy file text, Download file, Reload from file, and **Delete
+  capture**, in a capture and in Files alike. Deleting first waits for saves already sent, then shows the
   saved file as it is now and deletes exactly that file, without reading it
   again. If it
   changed since you reviewed it, nothing is deleted and the file as it is
@@ -48,31 +50,49 @@ yourself only to export old captures from a hosted account, described below.
 Moving a thought to another capture has no control. Cut it from one capture
 and paste it into the other; each is its own file and its own save.
 
-When a file's layout is ambiguous (two "Thoughts" headings, text between the
-heading and the list, two lists), the Capture view says why and offers
-Source. Nothing is rewritten to make it fit.
+The timeline lists only files that read as captures. A file that does not
+(frontmatter that does not parse, a field that is not valid, or an ambiguous
+layout: two "Thoughts" headings, text between the heading and the list, two
+lists) is named below the timeline with its path and why, and opens in
+Files. Nothing is rewritten to make it fit.
 
-## The editor and its views
+## The editor and its workspaces
 
-Source and Capture share the editor acquired for the open file. Source binds
-its complete text. Capture decodes only its Markdown body as `{ text, thoughts }`
-and composes a complete desired value. The body codec reconstructs and checks
-that value, then the draft calls `editor.set({ ...editor.row, body })`.
-Thoughts are strings selected by position. A changed list uses consistent bullet
-formatting and preserves surrounding Markdown. A delayed edit or confirmation
-checks that its starting list is still current. Both views share the same save
-queue.
+Where a capture is opened from decides how it is edited. The timeline opens
+its text and thoughts; Files opens its complete text. Neither turns into the
+other while it is shown, whether the text becomes valid or invalid. The
+header's Timeline and Files buttons choose the workspace; there is no
+per-capture Source tab.
+
+Both workspaces open the same draft for a file, and the draft acquires the
+folder's row editor once. That editor is the file's one publisher in this
+window, so moving between workspaces hands nothing over and waits for
+nothing: a save in progress, a failed save's text and its choices, a new
+thought not added yet, and a thought being edited all stay with the draft.
+Opening the file again from either workspace shows that draft, never a
+fresh read of the file. Each view is keyed by its draft and reads it once
+when it mounts, so a draft let go and opened again at the same path gets a
+new view, and a view being taken down never acts for the next one.
+
+Files binds the editor's complete text and submits it with `setText`,
+restoring the file's line endings. The timeline's view decodes only the
+Markdown body as `{ text, thoughts }` and composes a complete desired value.
+The body codec reconstructs and checks that value, then the draft calls
+`editor.set({ ...editor.row, body })`. Thoughts are strings selected by
+position. A changed list uses consistent bullet formatting and preserves
+surrounding Markdown. A delayed edit or confirmation checks that its starting
+list is still current.
 
 The capture text control submits changes immediately. A refused change restores
 the editor's accepted text and shows the reason; it creates no pending draft or
 departure blocker. To build unfinished Markdown such as an open code fence,
-re-enter it in Source and finish it there. Source does not contain discarded
-input. Add thought and Save thought remain explicit forms with unsubmitted text.
-The editor keeps accepted text even when publication fails. A row with invalid fields or
-frontmatter, or a body with ambiguous Thoughts markup, opens Source with the
-reason visible. Repair leaves Source selected. Shared Tabs unmount inactive
-panels; shared Textarea stops retired controls from reading or delivering input.
-The draft keeps its single view selection above those panels.
+open the file in Files and finish it there. Add thought and Save thought remain
+explicit forms with unsubmitted text. The editor keeps accepted text even when
+publication fails. When a capture open in the timeline stops reading as a
+capture, its view stays with the save state and the reason, hides its text and
+thought controls rather than show values the file does not have, and offers
+Open in Files. Shared Textarea stops retired controls from reading or
+delivering input.
 
 ## Saving
 
@@ -80,11 +100,11 @@ Every change saves at once. The header shows the state, and shows it in red
 when saving is stopped or was not confirmed.
 
 - An open capture is edited through the folder's row editor, acquired once
-  per open file and kept for the Capture view and Source alike. Each change
-  is a complete replacement of the existing file. A change in the Capture
+  per open file and kept for the timeline and Files alike. Each change
+  is a complete replacement of the existing file. A change in the timeline's
   view writes the frontmatter in the standard form (keys quoted, values in
   JSON spelling, keys Capture does not declare kept) and the text and
-  thoughts exactly. A Source edit writes exactly what is typed, frontmatter
+  thoughts exactly. A Files edit writes exactly what is typed, frontmatter
   and malformed text included. One save is sent at a time; the latest text
   goes next.
 - **The latest save wins.** An open capture loads its file once. A change
@@ -119,12 +139,13 @@ when saving is stopped or was not confirmed.
   while it reads, your typing stays and nothing is loaded. If the file is
   gone, the window says so and offers Put the file back, Save as a copy,
   Download, Check again, and Let it go.
-- **A file that is not a valid capture** opens in Source with the reason. It
-  saves as you type it, so you can repair it there; the Capture view returns
-  once it is a valid capture.
-- **Save as a copy** saves the capture as it is in Source, as a new file that
+- **A file that is not a valid capture** opens in Files with the reason. It
+  saves as you type it, so you can repair it there; the timeline lists it
+  again once it is a valid capture, and it stays open in Files until you open
+  it as a capture.
+- **Save as a copy** saves the capture's complete text, as a new file that
   must not exist yet, and leaves the original as it is. It is refused while
-  you have a new thought or a thought you are editing that is not in the source
+  you have a new thought or a thought you are editing that is not in the text
   yet, because letting go of the capture would drop that text. Save it or clear
   it first.
 - A copy and putting a file back write your text exactly or not at all. Text
@@ -217,7 +238,7 @@ means for Capture:
   `.so.epicenter.capture.epicenter-lock`. A second one is refused with a
   message naming the directory.
 - Other programs are not asked to take the lock. An open capture's save,
-  including a repair in Source, replaces the whole file without reading it
+  including a repair in Files, replaces the whole file without reading it
   first, so another program's edit since the capture was opened or reloaded
   is overwritten. A save requires the file to be there when
   its bytes land, so a file another program removed is not put back. A copy
@@ -353,10 +374,10 @@ window that stays silent, are the host's; see `apps/epicenter`.
 | Path | Role |
 | --- | --- |
 | `src/lib/platform/` | The `#platform/folder` seam: `types.ts` is its contract, `folder.browser.ts` opens the OPFS folder, `folder.epicenter-host.ts` attaches to the shell's directory and its departure wire, and `departure.svelte.ts` is the page's side of that wire. `auth.*.ts` is used only by the old-data export. |
-| `src/lib/draft.svelte.ts` | One open capture: the row editor acquired once and kept for its file, read through its Svelte facade and never copied, and the form text it does not have yet: unadded thoughts, a thought being edited, and capture text that could not be applied. Every change is submitted at once. Choices for failed saves, reload, removal, deletion, and copies. |
-| `src/lib/captures.svelte.ts` | The listing, the open drafts, the fence for leaving and closing, and completion of create, import, copy, delete, and draft saves. |
+| `src/lib/draft.svelte.ts` | One open capture: the row editor acquired once and kept for its file, read through its Svelte facade and never copied, and the form text it does not have yet: unadded thoughts and a thought being edited. Every accepted change is submitted at once; refused capture text leaves only its reason. Choices for failed saves, reload, removal, deletion, and copies. |
+| `src/lib/captures.svelte.ts` | The listing, split into what the timeline edits and what it names for repair, the Files list, the open drafts (one per file, for both workspaces), the fence for leaving and closing, and completion of create, import, copy, delete, and draft saves. |
 | `src/lib/recovery/` | Opens the old account store for an export. Loaded only from the recovery screen. |
-| `src/lib/components/` | The timeline, a capture, its save and delete notices, and the recovery screen, composed from `@epicenter/ui`. Every binding reads the draft its view has at the call, and returns once its view is not the one shown or has been destroyed. |
+| `src/lib/components/` | The workspaces (`Workspace.svelte` keys each detail by its draft), the timeline and its repair list, Files and its text editor, a capture, its actions, save and delete notices, and the recovery screen, composed from `@epicenter/ui`. A detail reads its draft once when it mounts; every binding reads that draft's current input at the call, and returns once its view has been destroyed. `CaptureApp.svelte` maps the address to a workspace. |
 
 The package exports nothing. No host imports a part of this app.
 
@@ -383,8 +404,8 @@ them.
 | `src/lib/platform/folder.epicenter-host.test.ts` | The desktop leaf over the real folder adapter and row editor, with the shell's `invoke` and events scripted: refusals fail the open, departure is heard on this window only, closing detaches once and waits for admitted saves, and the collection keeps a capture's text through a lost or failed reply, a failed reload, and a removed file; the next save replaces a corrupt or outside-changed file, and a change hint never reads into an open capture. Try again sends exactly the latest accepted text, and an import interrupted by a lost reply is finished by a retry. It does not run the Rust owner. |
 | `src/lib/platform/departure.test.ts` | The departure wire against a scripted host: registration before the first read, rounds that arrive while the folder opens, repeated and newer rounds, lost and reset answers sent again until idle, out-of-order statuses, discarded votes, and a real collection whose drafts come back unchanged after another page cancels. |
 | `src/lib/platform-selection.test.ts` | Which leaf each build bundles: the desktop bundle has the desktop adapter, the departure client, and of the host package only its wire module, and no browser adapter, browser storage, Git implementation, or Node module; the browser bundle has the browser adapter and no desktop adapter, generated bindings, or departure gate. |
-| `src/lib/captures.test.ts`, `src/lib/draft.test.ts` | The collection and the draft over a real directory and the folder's real row editor: complete-row saves submitted at once, latest save wins over an outside change, explicit reload, later input saving after a failed save, removal without resurrection, restores waited for through their reload, a file that came back written over by an explicit retry, exact text or no copy, repair in Source with no other writer, reviewed deletion without a second read and none while leaving, copies, leaving, and closing. |
-| `src/lib/components/capture-detail.mounted.test.ts`, `timeline.mounted.test.ts` | The real capture view and timeline mounted in jsdom over real drafts and the real collection: a view kept mounted while its draft changes writes to the draft it has then; a text box whose view or block went away delivers nothing, even after the view makes a new one; a thought's editor writes only to that thought; a capture whose editor could not open says why and shows no text box; the deletion review outlives its view and deletes nothing while leaving; Source saves CRLF files exactly; and a fenced capture takes nothing. It shows what a delivered event does; jsdom has no layout, focus, selection, or IME. |
+| `src/lib/captures.test.ts`, `src/lib/draft.test.ts` | The collection and the draft over a real directory and the folder's real row editor: complete-row saves submitted at once, latest save wins over an outside change, explicit reload, later input saving after a failed save, removal without resurrection, restores waited for through their reload, a file that came back written over by an explicit retry, exact text or no copy, repair as text with no other writer, the timeline's editable and repair lists and the Files list, a capture that breaks while open keeping its draft and unsent thought, a failed save reused rather than read again, reviewed deletion without a second read and none while leaving, copies, leaving, and closing. |
+| `src/lib/components/capture-detail.mounted.test.ts`, `timeline.mounted.test.ts`, `workspace.mounted.test.ts` | The real views mounted in jsdom over real drafts and the real collection: a view keeps the draft it mounted with; a text box whose view or block went away delivers nothing, even after the view makes a new one; a thought's editor writes only to that thought; a capture whose editor could not open says why and shows no text box in either workspace; a capture that breaks while shown keeps its save state, offers Files, and shows no file text or empty fields; Files stays text through breaking and repairing; the deletion review outlives its view and deletes nothing while leaving; Files saves CRLF files exactly; a fenced capture takes nothing; moving between workspaces mounts the other view over the one draft with a failed save's text and choices in both; a draft let go and opened again mounts a new view; switching workspaces while the editor opens acquires it once; and the timeline names files to repair and opens them in Files. It shows what a delivered event does; jsdom has no layout, focus, selection, or IME. |
 
 The Rust owner, its watcher, its lock, and its history are tested in
 `packages/tauri-plugin-epicenter-folder` and in

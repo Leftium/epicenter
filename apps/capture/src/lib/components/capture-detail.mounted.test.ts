@@ -1,22 +1,26 @@
 /**
  * Mounted Capture Detail Tests
  *
- * The real `CaptureDetail` component, compiled for the client and mounted in
- * jsdom, over real drafts and the folder's real row editors on a directory in
- * a temporary directory. Events are dispatched on the component's own
- * elements, as a keystroke would deliver them.
+ * The real `CaptureDetail` and `FileDetail` components, compiled for the
+ * client and mounted in jsdom, over real drafts and the folder's real row
+ * editors on a directory in a temporary directory. Events are dispatched on
+ * the component's own elements, as a keystroke would deliver them.
  *
  * Key behaviors:
- * - Each binding writes to the draft the view has at the call: a view kept
- *   mounted while its draft changes A, B, A writes each to its own file
+ * - A view addresses the draft it was mounted with for its whole lifetime:
+ *   a prop that names another draft, or none, does not retarget it
  * - A control that outlives its view delivers nothing after the view is
  *   destroyed
  * - A capture whose editor could not open says why and shows no text box
- * - Source shows LF lines and saves exactly, keeping the file's CRLF lines
+ * - Files shows LF lines and saves exactly, keeping the file's CRLF lines
  * - A fenced capture takes nothing from its controls
  * - Each text box has its own lifetime: one whose block went away writes
- *   nothing, even after the view makes a new one (Source-only then fields
+ *   nothing, even after the view makes a new one (repair, then fields
  *   again), and a thought's editor writes only to that thought's edit
+ * - A capture view whose text stops reading as a capture keeps its draft
+ *   and save state, offers Files, and shows neither the file text nor
+ *   empty fields
+ * - Files stays a text editor through breaking and repairing a file
  * - The deletion review outlives the view, and while leaving it deletes
  *   nothing
  *
@@ -44,6 +48,7 @@ import {
 const { createCaptures } = await import('../captures.svelte.ts');
 const { switchable } = await import('../switchable.test-support.svelte.ts');
 const { default: CaptureDetail } = await import('./CaptureDetail.svelte');
+const { default: FileDetail } = await import('./FileDetail.svelte');
 
 const roots: string[] = [];
 afterAll(async () => {
@@ -92,9 +97,11 @@ async function setup(sources: Record<string, string>) {
 			readFile(join(root, 'captures', `${stem}.md`), 'utf8'),
 		write: (stem: string, source: string | Uint8Array) =>
 			writeFile(join(root, 'captures', `${stem}.md`), source),
-		/** Mount the view over `draft`; `show.value` changes the draft it is given. */
+		/** Mount the capture view over `draft`; `show.value` changes the draft it is given. */
 		mount(draft: Draft) {
 			const show = switchable(draft);
+			/** Each stem the view asked to show in Files. */
+			const files: string[] = [];
 			const view = mount(CaptureDetail, {
 				target,
 				props: {
@@ -102,16 +109,36 @@ async function setup(sources: Record<string, string>) {
 						return show.value;
 					},
 					captures,
-					get stem() {
-						return show.value.stem;
-					},
 					onBack() {},
 					onDeleted() {},
 					onOpen() {},
+					onFiles(stem) {
+						files.push(stem);
+					},
 				},
 			});
 			flushSync();
-			return { show, view };
+			return { show, view, files };
+		},
+		/** Mount the Files view over `draft`. */
+		mountFile(draft: Draft) {
+			/** Each stem the view asked to show as a capture. */
+			const captured: string[] = [];
+			const view = mount(FileDetail, {
+				target,
+				props: {
+					draft,
+					captures,
+					onBack() {},
+					onDeleted() {},
+					onOpen() {},
+					onCapture(stem) {
+						captured.push(stem);
+					},
+				},
+			});
+			flushSync();
+			return { view, captured };
 		},
 		async done() {
 			await captures.close();
@@ -120,20 +147,28 @@ async function setup(sources: Record<string, string>) {
 	};
 }
 
-test('rejected capture text restores the mounted field and Source can complete the Markdown', async () => {
+test('rejected capture text restores the mounted field, and Files can complete the Markdown', async () => {
 	const t = await setup({ a: fileOf('A') });
 	const draft = await t.open('a');
-	const { view } = t.mount(draft);
+	const { view, files } = t.mount(draft);
 	const text = field('capture-text');
 	type(text, 'A\n```\nopen');
 	await new Promise((resolve) => setTimeout(resolve, 0));
 	flushSync();
 	expect(text?.value).toBe('A');
 	expect(draft.unsettled).toBe(false);
-	expect(document.body.textContent).toContain('Use Source to write unfinished Markdown');
-	draft.setView('source');
+	expect(document.body.textContent).toContain(
+		'Open the file in Files to write unfinished Markdown',
+	);
+	// The capture view has no file text box; Files is a navigation.
+	expect(field('file-text')).toBeNull();
+	click(button('Open in Files'));
+	expect(files).toEqual(['a']);
+	await unmount(view);
 	flushSync();
-	const source = field('capture-source');
+
+	const file = t.mountFile(draft);
+	const source = field('file-text');
 	const unfinished = draft.source.replace('\nA\n', '\nA\n```\nopen\n');
 	type(source, unfinished);
 	await draft.settle();
@@ -141,34 +176,37 @@ test('rejected capture text restores the mounted field and Source can complete t
 	type(source, unfinished.replace('\nopen\n', '\nopen\n```\n'));
 	await draft.settle();
 	expect(draft.document.text).toBe('A\n```\nopen\n```');
-	await unmount(view);
+	// The destroyed capture view's text box reaches nothing.
+	type(text, 'from the old view');
+	expect(draft.document.text).toBe('A\n```\nopen\n```');
+	await unmount(file.view);
 	await t.done();
 });
 
-test('a view kept mounted while its draft changes A, B, A writes each edit to the draft it has then', async () => {
+test('a view keeps the draft it was mounted with: a prop naming another draft, or none, does not retarget it', async () => {
 	const t = await setup({ a: fileOf('A'), b: fileOf('B') });
 	const a = await t.open('a');
 	const b = await t.open('b');
-	const { show, view } = t.mount(a);
+	const { show, view, files } = t.mount(a);
 	const box = field('capture-text');
 	expect(box?.value).toBe('A');
 
 	type(box, 'A, typed');
+	// As a keyed parent's prop reads while it takes this view down.
 	show.value = b;
 	flushSync();
-	// The same element, now showing B.
-	expect(field('capture-text')).toBe(box);
-	expect(box?.value).toBe('B');
-	type(box, 'B, typed');
-	show.value = a;
-	flushSync();
-	expect(field('capture-text')).toBe(box);
 	expect(box?.value).toBe('A, typed');
 	type(box, 'A, typed again');
+	click(button('Open in Files'));
+	expect(files).toEqual(['a']);
+	show.value = undefined as unknown as Draft;
+	flushSync();
+	expect(box?.value).toBe('A, typed again');
 
 	await t.captures.departure.settle();
 	expect(await t.disk('a')).toBe(canonical('A, typed again'));
-	expect(await t.disk('b')).toBe(canonical('B, typed'));
+	expect(await t.disk('b')).toBe(fileOf('B'));
+	expect(b.text).toBe('B');
 	unmount(view);
 	await t.done();
 });
@@ -205,20 +243,24 @@ test('a capture whose editor could not open says why and shows no text box', asy
 		t.target.querySelector('[aria-label="File unavailable"]')?.textContent,
 	).toContain('cannot be read');
 	expect(t.target.querySelector('textarea')).toBeNull();
-	draft.setView('source');
-	flushSync();
-	expect(t.target.querySelector('textarea')).toBeNull();
 	unmount(view);
+	flushSync();
+	// Files has no text to show either: no box with invented empty content.
+	const file = t.mountFile(draft);
+	expect(
+		t.target.querySelector('[aria-label="File unavailable"]')?.textContent,
+	).toContain('cannot be read');
+	expect(t.target.querySelector('textarea')).toBeNull();
+	unmount(file.view);
 	await t.done();
 });
 
-test("Source shows LF lines, and a body edit there keeps the file's CRLF lines", async () => {
+test("Files shows LF lines, and a body edit there keeps the file's CRLF lines", async () => {
 	const crlf = fileOf('First line\r\nSecond line', '\r\n');
 	const t = await setup({ one: crlf });
 	const draft = await t.open('one');
-	draft.setView('source');
-	const { view } = t.mount(draft);
-	const source = field('capture-source');
+	const { view } = t.mountFile(draft);
+	const source = field('file-text');
 	expect(source?.value).toBe(crlf.replaceAll('\r\n', '\n'));
 
 	type(
@@ -226,7 +268,7 @@ test("Source shows LF lines, and a body edit there keeps the file's CRLF lines",
 		source?.value.replace('Second line', 'Second line, edited') ?? '',
 	);
 	await draft.settle();
-	// Source saves exactly: every line keeps its CRLF.
+	// Files saves exactly: every line keeps its CRLF.
 	expect(JSON.stringify(await t.disk('one'))).toBe(
 		JSON.stringify(crlf.replace('Second line', 'Second line, edited')),
 	);
@@ -256,20 +298,20 @@ test('a fenced capture takes nothing from its controls', async () => {
 	await t.done();
 });
 
-test('text boxes whose block went away write nothing after Source broke the file and repaired it', async () => {
+test('text boxes whose block went away write nothing after Files broke the file and repaired it', async () => {
 	const t = await setup({ one: fileOf('Before') });
 	const draft = await t.open('one');
 	const { view } = t.mount(draft);
 	const oldText = field('capture-text');
 	const oldThought = field('new-thought');
-	draft.setView('source');
-	flushSync();
-	const source = field('capture-source');
-	type(source, fileOf('Before').replace(`capturedAt: ${AT}`, 'capturedAt: ['));
+	// Files edits the same draft while this view stays mounted.
+	draft.inputSource(
+		fileOf('Before').replace(`capturedAt: ${AT}`, 'capturedAt: ['),
+	);
 	flushSync();
 	expect(draft.status).toBe('invalid');
-	type(source, fileOf('Back'));
-	draft.setView('capture');
+	expect(field('capture-text')).toBeNull();
+	draft.inputSource(fileOf('Back'));
 	flushSync();
 	const box = field('capture-text');
 	expect(box).not.toBeNull();
@@ -405,30 +447,76 @@ test('the deletion review outlives the view, and while leaving it deletes nothin
 	await t.done();
 });
 
-test('invalid input opens Source, repair stays there, and tab changes retire the old controls', async () => {
+test('a capture view whose text stops reading as a capture keeps its draft and save state and offers Files, never the file text or empty fields', async () => {
+	const withThoughts = fileOf('Kept').replace(
+		'## Thoughts\n',
+		'## Thoughts\n\n- first\n',
+	);
+	const t = await setup({ one: withThoughts });
+	const draft = await t.open('one');
+	const { view, files } = t.mount(draft);
+	const capture = field('capture-text');
+	type(field('new-thought'), 'not added yet');
+	// Files breaks the file through the same draft while this view is open.
+	const broken = withThoughts.replace(`capturedAt: ${AT}`, 'capturedAt: [');
+	draft.inputSource(broken);
+	await draft.settle();
+	flushSync();
+
+	const repair = t.target.querySelector('[aria-label="Needs repair"]');
+	expect(draft.problem).toBeDefined();
+	expect(repair?.textContent).toContain(draft.problem ?? '');
+	expect(repair?.textContent).toContain('captures/one.md');
+	expect(repair?.textContent).toContain('not added yet is kept');
+	// No structured controls, no file text, and no thoughts read from nothing.
+	expect(t.target.querySelector('textarea')).toBeNull();
+	expect(t.target.querySelector('[aria-label="Thoughts"]')).toBeNull();
+	// The draft keeps the accepted text and the unsent thought; nothing else is written.
+	expect(draft.source).toBe(broken);
+	expect(draft.newThought).toBe('not added yet');
+	expect(await t.disk('one')).toBe(broken);
+	type(capture, 'late capture');
+	expect(draft.source).toBe(broken);
+	click(button('Open in Files'));
+	expect(files).toEqual(['one']);
+
+	// A failed save while broken stays visible here, with its choices.
+	draft.inputSource(broken.replace('\nKept\n', '\nlone \uD800\n'));
+	await draft.settle();
+	flushSync();
+	expect(t.target.querySelector('[aria-label="Save failed"]')).not.toBeNull();
+	expect(t.target.querySelector('textarea')).toBeNull();
+	expect(await t.disk('one')).toBe(broken);
+	unmount(view);
+	await t.done();
+});
+
+test('Files stays a text editor when its text breaks and when it is repaired, and Open as capture is the way back', async () => {
 	const t = await setup({ one: fileOf('Kept') });
 	const draft = await t.open('one');
-	const { view } = t.mount(draft);
-	const capture = field('capture-text');
-	draft.inputSource('broken');
+	const { view, captured } = t.mountFile(draft);
+	const source = field('file-text');
+	type(source, 'broken');
+	await draft.settle();
 	flushSync();
-	expect(draft.view).toBe('source');
-	expect(button('Capture').disabled).toBe(true);
-	expect(field('capture-text')).toBeNull();
-	const source = field('capture-source');
-	expect(source?.value).toBe('broken');
-	type(capture, 'late capture');
-	expect(draft.source).toBe('broken');
+	expect(await t.disk('one')).toBe('broken');
+	expect(field('file-text')).toBe(source);
+	expect(draft.problem).toBeDefined();
+	expect(
+		t.target.querySelector('[aria-label="Needs repair"]')?.textContent,
+	).toContain(draft.problem ?? '');
+
 	type(source, fileOf('Repaired'));
+	await draft.settle();
 	flushSync();
-	expect(draft.view).toBe('source');
-	expect(button('Capture').disabled).toBe(false);
-	click(button('Capture'));
-	flushSync();
-	expect(field('capture-source')).toBeNull();
-	expect(field('capture-text')?.value).toBe('Repaired');
-	type(source, 'late source');
-	expect(draft.text).toBe('Repaired');
+	expect(await t.disk('one')).toBe(fileOf('Repaired'));
+	expect(draft.problem).toBeUndefined();
+	// Still Files: the same text box, and no capture controls in its place.
+	expect(field('file-text')).toBe(source);
+	expect(field('capture-text')).toBeNull();
+	expect(t.target.querySelector('[aria-label="Needs repair"]')).toBeNull();
+	click(button('Open as capture'));
+	expect(captured).toEqual(['one']);
 	unmount(view);
 	await t.done();
 });

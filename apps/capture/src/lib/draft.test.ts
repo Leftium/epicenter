@@ -13,8 +13,9 @@
  *   its next save replaces a change made elsewhere
  * - A file removed elsewhere is never written back; putting it back is an
  *   explicit exclusive create through the same editor
- * - Source saves exactly as typed, frontmatter and malformed text included,
- *   through the one editor; the Capture view returns once the text is valid
+ * - File text saves exactly as typed, frontmatter and malformed text
+ *   included, through the one editor; structured edits are taken again once
+ *   the text reads as a capture
  * - A failed save keeps text visible; later input saves and Reload replaces it
  * - An operation that holds the capture takes no input through any path
  * - Restoring preserves the source's BOM, CRLF lines, and Unicode text
@@ -227,7 +228,7 @@ test('a reload that finds no file says so and keeps the text; putting it back wr
 	await t.done();
 });
 
-test('a file that does not parse opens through the same editor as Source, and Source saves exactly as typed', async () => {
+test('a file that does not parse opens through the same editor, and its file text saves exactly as typed', async () => {
 	const t = await setup(INVALID);
 	expect(t.draft.status).toBe('invalid');
 	expect(t.draft.rowProblem).toBeDefined();
@@ -258,9 +259,8 @@ test('a file that does not parse opens through the same editor as Source, and So
 	await t.done();
 });
 
-test('a Source edit saves exactly, frontmatter included; a broken one stays repairable, and later structured saves keep keys Capture does not declare', async () => {
+test('a file text edit saves exactly, frontmatter included; a broken one stays repairable, and later structured saves keep keys Capture does not declare', async () => {
 	const t = await setup();
-	t.draft.setView('source');
 	t.draft.inputSource(t.draft.source.replace('\nA\n', '\nA, in Source\n'));
 	await t.draft.settle();
 	expect(await t.disk()).toBe(A.replace('\nA\n', '\nA, in Source\n'));
@@ -290,8 +290,6 @@ test('a Source edit saves exactly, frontmatter included; a broken one stays repa
 	expect(await t.disk()).toBe(
 		canon('B').replace('\n---\n\n', '\n"unknownKey": "kept"\n---\n\n'),
 	);
-	// Choosing a view changes nothing saved.
-	t.draft.setView('capture');
 	expect(t.draft.unsettled).toBe(false);
 	expect(t.editors).toHaveLength(1);
 	await t.done();
@@ -324,11 +322,10 @@ test('unsent thought text is unsettled, but rejected capture text leaves accepte
 	await t.done();
 });
 
-test('Source saves unfinished Markdown exactly and repairs it without losing the existing thoughts', async () => {
+test('file text saves unfinished Markdown exactly and repairs it without losing the existing thoughts', async () => {
 	const t = await setup();
 	t.draft.inputText('A\n```\nopen');
 	expect(t.draft.text).toBe('A');
-	t.draft.setView('source');
 	const unfinished = A.replace('\nA\n', '\nA\n```\nopen\n');
 	t.draft.inputSource(unfinished);
 	await t.draft.settle();
@@ -349,7 +346,6 @@ test('Source saves unfinished Markdown exactly and repairs it without losing the
 
 test('a failed save keeps input visible and later corrected text saves again', async () => {
 	const t = await setup();
-	t.draft.setView('source');
 	const lone = t.draft.source.replace('\nA\n', '\nlone \uD800\n');
 	t.draft.inputSource(lone);
 	await t.draft.settle();
@@ -397,12 +393,10 @@ test('a capture held by an operation takes no input and submits nothing through 
 	t.draft.inputSource(`${source}typed during the delete\n`);
 	expect(t.draft.addThought()).toBe(false);
 	t.draft.retry();
-	t.draft.setView('source');
 	expect(await t.draft.reload()).toBe(false);
 	expect(t.draft.text).toBe('A');
 	expect(t.draft.newThought).toBe('kept');
 	expect(t.draft.source).toBe(source);
-	expect(t.draft.view).toBe('capture');
 	expect(t.draft.refusal).toContain('being deleted');
 	expect(t.editors).toHaveLength(1);
 	await t.draft.settle();

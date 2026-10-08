@@ -2,20 +2,15 @@
 	import * as Alert from '@epicenter/ui/alert';
 	import { Button } from '@epicenter/ui/button';
 	import * as Dialog from '@epicenter/ui/dialog';
-	import * as Empty from '@epicenter/ui/empty';
-	import { Loading } from '@epicenter/ui/loading';
 	import { toast } from '@epicenter/ui/sonner';
-	import { untrack } from 'svelte';
 	import { beforeNavigate, goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
 	import type { Captures } from '$lib/captures.svelte.js';
 	import type { Notice } from '$lib/draft.svelte.js';
 	import type { Departure } from '$lib/platform/departure.svelte.js';
-	import CaptureDetail from './CaptureDetail.svelte';
-	import Recovery from './Recovery.svelte';
 	import TechnicalDetails from './TechnicalDetails.svelte';
-	import Timeline from './Timeline.svelte';
+	import Workspace, { type Place } from './Workspace.svelte';
 
 	let {
 		captures,
@@ -26,29 +21,43 @@
 		departure: Departure | undefined;
 	} = $props();
 
-	// One route, three views. The page and its drafts stay mounted across all
-	// of them, so moving between captures never drops unsaved input.
-	const stem = $derived(page.url.searchParams.get('capture'));
-	const recovering = $derived(page.url.searchParams.has('recover'));
-	const draft = $derived(stem === null ? undefined : captures.draft(stem));
-
-	$effect(() => {
-		if (stem !== null && captures.has(stem) && captures.draft(stem) === undefined)
-			untrack(() => captures.open(stem));
+	// One route: the timeline, Files, the recovery screen, or one capture as
+	// either workspace edits it. The page and its drafts stay mounted across
+	// all of them, so moving between captures and workspaces never drops
+	// unsaved input.
+	const place = $derived.by((): Place => {
+		const params = page.url.searchParams;
+		// An empty stem (`captures/.md`) is still a capture to open.
+		const capture = params.get('capture');
+		if (capture !== null) return { kind: 'capture', stem: capture };
+		const file = params.get('file');
+		if (file !== null) return { kind: 'file', stem: file };
+		if (params.has('files')) return { kind: 'files' };
+		if (params.has('recover')) return { kind: 'recover' };
+		return { kind: 'timeline' };
 	});
+	const draft = $derived(
+		place.kind === 'capture' || place.kind === 'file' ? captures.draft(place.stem) : undefined,
+	);
+	/** The workspace the place belongs to, for its navigation. */
+	const workspace = $derived(place.kind === 'files' || place.kind === 'file' ? 'files' : 'timeline');
 
 	/** The capture just added from the timeline, so its page starts at Add a thought. */
 	let created = $state<string>();
 
-	function show(target: { capture?: string; recover?: true; created?: true } = {}) {
-		created = target.created ? target.capture : undefined;
-		// An empty stem (`captures/.md`) is still a capture to open.
-		const query = target.capture !== undefined
-			? `?capture=${encodeURIComponent(target.capture)}`
-			: target.recover
-				? '?recover'
-				: '';
-		return goto(`${resolve('/')}${query}`);
+	function go(target: Place, options: { created?: boolean } = {}) {
+		created = options.created && target.kind === 'capture' ? target.stem : undefined;
+		const query =
+			target.kind === 'capture'
+				? `?capture=${encodeURIComponent(target.stem)}`
+				: target.kind === 'file'
+					? `?file=${encodeURIComponent(target.stem)}`
+					: target.kind === 'files'
+						? '?files'
+						: target.kind === 'recover'
+							? '?recover'
+							: '';
+		void goto(`${resolve('/')}${query}`);
 	}
 
 	// Leaving would lose something: unsaved or unsent input, or any open
@@ -140,11 +149,21 @@
 
 <header class="border-b">
 	<div class="mx-auto flex h-12 max-w-3xl items-center justify-between gap-4 px-4 sm:px-6">
-		{#if recovering || stem !== null}
-			<Button variant="ghost" size="sm" class="-ml-2.5" onclick={() => show()}><span aria-hidden="true">←</span> Timeline</Button>
-		{:else}
-			<span class="text-sm font-semibold">Capture</span>
-		{/if}
+		<!-- Workspaces: each opens its own list. A capture opened from one is edited the way that one edits it. -->
+		<nav aria-label="Workspaces" class="-ml-2.5 flex items-center gap-1">
+			<Button
+				variant={workspace === 'timeline' ? 'secondary' : 'ghost'}
+				size="sm"
+				aria-current={place.kind === 'timeline' ? 'page' : undefined}
+				onclick={() => go({ kind: 'timeline' })}>Timeline</Button
+			>
+			<Button
+				variant={workspace === 'files' ? 'secondary' : 'ghost'}
+				size="sm"
+				aria-current={place.kind === 'files' ? 'page' : undefined}
+				onclick={() => go({ kind: 'files' })}>Files</Button
+			>
+		</nav>
 		<span
 			role="status"
 			class={{
@@ -205,51 +224,7 @@
 	{/if}
 
 	<div>
-		{#if recovering}
-			<Recovery {captures} onOpen={(capture) => show({ capture })} />
-		{:else if stem !== null}
-			{#if draft?.opened}
-				<!-- One view per capture; the draft above it keeps its editor across every view and state. -->
-				{#key draft}
-					<CaptureDetail {draft} {captures} {stem} focusNewThought={created === stem} onBack={() => show()} onDeleted={(deletedStem) => {
-						if (stem === deletedStem) void show();
-					}} onOpen={(capture) => show({ capture })} />
-				{/key}
-			{:else if draft || captures.has(stem)}
-				<!-- Its saved file is listed; the editor over it is opening. -->
-				<Loading label="Opening…" />
-			{:else}
-				{@const reason = captures.unreadableReason(stem)}
-				<Empty.Root role="alert">
-					<Empty.Header>
-						{#if reason !== undefined}
-							<Empty.Title>This capture's file cannot be read</Empty.Title>
-							<Empty.Description>It is still in the folder, and this window did not write to it. Repair it with another program, then check again.</Empty.Description>
-						{:else if captures.loaded}
-							<Empty.Title>No capture named {stem}.md</Empty.Title>
-							<Empty.Description>The folder has no file with this name. It may have been removed or renamed outside this window.</Empty.Description>
-						{:else}
-							<Empty.Title>This capture cannot be opened yet</Empty.Title>
-							<Empty.Description>The captures folder has not been read.</Empty.Description>
-						{/if}
-					</Empty.Header>
-					<Empty.Content>
-						<div class="flex flex-wrap justify-center gap-2">
-							<Button variant="outline" size="sm" onclick={() => captures.refresh()}>Check again</Button>
-							<Button variant="outline" size="sm" onclick={() => show()}>Back to timeline</Button>
-						</div>
-						{#if reason !== undefined}<TechnicalDetails detail={reason} />{/if}
-					</Empty.Content>
-				</Empty.Root>
-			{/if}
-		{:else}
-			<Timeline
-				{captures}
-				onOpen={(capture) => show({ capture })}
-				onCreated={(capture) => show({ capture, created: true })}
-				onRecover={() => show({ recover: true })}
-			/>
-		{/if}
+		<Workspace {captures} {place} {created} {go} />
 	</div>
 </main>
 

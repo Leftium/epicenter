@@ -7,17 +7,20 @@
 	import * as Item from '@epicenter/ui/item';
 	import * as Modal from '@epicenter/ui/modal';
 	import { onDestroy } from 'svelte';
-	import type { Captures } from '$lib/captures.svelte.js';
+	import type { CaptureRow, Captures } from '$lib/captures.svelte.js';
 	import { Textarea } from '@epicenter/ui/textarea';
 
 	let {
 		captures,
 		onOpen,
+		onRepair,
 		onCreated,
 		onRecover,
 	}: {
 		captures: Captures;
 		onOpen: (stem: string) => void;
+		/** Show a file that does not read as a capture in Files, to repair it. */
+		onRepair: (stem: string) => void;
 		onCreated: (stem: string) => void;
 		onRecover: () => void;
 	} = $props();
@@ -61,6 +64,14 @@
 	}
 </script>
 
+{#snippet state(row: CaptureRow)}
+	{#if row.attention === 'removed'}<Badge variant="destructive">File removed</Badge>
+	{:else if row.attention === 'failed'}<Badge variant="destructive">Save failed</Badge>
+	{:else if row.attention === 'unconfirmed'}<Badge variant="destructive">Save not confirmed</Badge>
+	{:else if row.attention === 'deletion'}<Badge variant="destructive">Delete not confirmed</Badge>
+	{:else if row.unsettled}<Badge variant="outline">Not saved</Badge>{/if}
+{/snippet}
+
 {#snippet newCaptureButton()}
 	<Button aria-haspopup="dialog" onclick={() => (dialogOpen = true)}>
 		New capture{captures.newCapture === '' ? '' : ' (draft)'}
@@ -70,7 +81,7 @@
 <div class="mb-4 flex min-h-9 items-center justify-between gap-4">
 	<h1 class="text-lg font-semibold tracking-tight">Timeline</h1>
 	<!-- The empty timeline holds this button itself. -->
-	{#if captures.rows.length || !captures.loaded}{@render newCaptureButton()}{/if}
+	{#if captures.editable.length || !captures.loaded}{@render newCaptureButton()}{/if}
 </div>
 
 <Modal.Root bind:open={dialogOpen}>
@@ -121,9 +132,9 @@
 	</Modal.Content>
 </Modal.Root>
 
-{#if captures.rows.length}
+{#if captures.editable.length}
 	<Item.Group aria-label="Timeline captures" class="gap-1">
-		{#each captures.rows as row (row.path)}
+		{#each captures.editable as row (row.path)}
 			<Item.Button size="sm" class="w-full text-left hover:bg-muted" onclick={() => onOpen(row.stem)}>
 				<Item.Content>
 					<Item.Title class={['line-clamp-2 whitespace-pre-line break-words', !row.preview && 'text-muted-foreground']}>{row.preview || 'Empty capture'}</Item.Title>
@@ -136,12 +147,7 @@
 						{#if row.thoughtCount > 0} · {row.thoughtCount} {row.thoughtCount === 1 ? 'thought' : 'thoughts'}{/if}
 					</Item.Description>
 				</Item.Content>
-				{#if row.attention === 'removed'}<Badge variant="destructive">File removed</Badge>
-				{:else if row.attention === 'failed'}<Badge variant="destructive">Save failed</Badge>
-				{:else if row.attention === 'unconfirmed'}<Badge variant="destructive">Save not confirmed</Badge>
-				{:else if row.attention === 'deletion'}<Badge variant="destructive">Delete not confirmed</Badge>
-				{:else if row.unsettled}<Badge variant="outline">Not saved</Badge>{/if}
-				{#if row.problem}<Badge variant="destructive">Needs repair</Badge>{/if}
+				{@render state(row)}
 			</Item.Button>
 		{/each}
 	</Item.Group>
@@ -153,6 +159,23 @@
 		</Empty.Header>
 		<Empty.Content>{@render newCaptureButton()}</Empty.Content>
 	</Empty.Root>
+{/if}
+
+{#if captures.repairs.length}
+	<!-- Not offered to edit here: each opens in Files, where its text can be repaired. -->
+	<Alert.Root variant="destructive" aria-label="Files to repair" class="mt-6">
+		<Alert.Title>{captures.repairs.length} {captures.repairs.length === 1 ? 'file does' : 'files do'} not read as a capture</Alert.Title>
+		<Alert.Description>They are not listed above, and nothing in them was changed. Open one in Files to repair it.</Alert.Description>
+		<ul class="mt-2 flex flex-col gap-2 text-foreground">
+			{#each captures.repairs as row (row.path)}
+				<li class="flex flex-wrap items-start gap-2">
+					<p class="min-w-0 flex-1 break-words"><code class="break-all">{row.path}</code>: {row.problem}</p>
+					{@render state(row)}
+					<Button size="sm" variant="outline" aria-label="Open {row.path} in Files" onclick={() => onRepair(row.stem)}>Open in Files</Button>
+				</li>
+			{/each}
+		</ul>
+	</Alert.Root>
 {/if}
 
 {#if captures.unreadable.length}

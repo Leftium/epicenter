@@ -189,7 +189,7 @@
 			<p class="mt-2 break-words"><code>{document.path}</code>: {document.status === 'failed' ? document.message : 'another file is here'}</p>
 		{/each}
 		{#if report.documents.some((document) => document.structured)}
-			<p class="mt-3">Some imported captures can only be edited as Source, because their original text has Markdown that hides the Thoughts section. All of their text is in the file.</p>
+			<p class="mt-3">Some imported captures can only be edited in Files, because their original text has Markdown that hides the Thoughts section. All of their text is in the file.</p>
 		{/if}
 		<p class="mt-3 break-words text-muted-foreground">Report: <code>{report.reportPath}</code>. Export kept at <code>{report.bundlePath}</code>. Record: <code>{report.receiptPath}</code>.</p>
 		{#if report.documents.some((document) => document.status === 'created')}

@@ -53,6 +53,7 @@ async function setup() {
 		props: {
 			captures,
 			onOpen() {},
+			onRepair() {},
 			onCreated() {},
 			onRecover() {},
 		},

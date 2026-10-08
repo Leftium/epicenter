@@ -4,17 +4,21 @@
  *
  * The row editor (`table.edit`) owns the capture's input: the complete text
  * it last accepted and the one queue that publishes it. This module acquires
- * it once and keeps it, above every view, until the capture is let go. Its
- * Svelte facade (`fromRowEditor`) is read through on every access; nothing
- * here copies its row or its save state.
+ * it once and keeps it, above every view, until the capture is let go. It is
+ * the file's one publisher in this page: the capture view and the Files view
+ * of the same file both submit to it, so neither hands the file to another
+ * writer. Its Svelte facade (`fromRowEditor`) is read through on every
+ * access; nothing here copies its row or its save state.
  *
  * Every change is submitted at once as a complete replacement. A structured
- * change (the Capture view) is `set`: the fields the row has, keys Capture
- * does not declare included, and the edited body. A Source edit is
+ * change (the capture view) is `set`: the fields the row has, keys Capture
+ * does not declare included, and the edited body. A Files edit is
  * `setText`, exactly as typed, frontmatter and malformed text included. The
  * editor writes the latest input over the existing file; a file changed
  * elsewhere is overwritten by the next save, and is shown only when the
- * person reloads.
+ * person reloads. Which view submits changes nothing about what is taken:
+ * a structured change needs a row that reads as a capture, and a text
+ * change needs none.
  *
  * A failed or unconfirmed save keeps the input and error visible. New input
  * saves again; retry saves the current input without changing it. Reloading reads
@@ -125,8 +129,6 @@ export type DeletionReview = {
 	readonly problem: string | undefined;
 };
 
-export type DraftView = 'capture' | 'source';
-
 /** Why exact recovery text is not written: encoding would change it. */
 export const UNENCODABLE =
 	'This text has a character a file cannot hold exactly, so nothing was written. It is kept here; change that character, or copy the text out.';
@@ -201,7 +203,6 @@ export function createDraft(
 	let removing = $state(false);
 	/** Each review is its own; a review that comes back late is dropped. */
 	let reviewing: object | undefined;
-	let view = $state<DraftView>('capture');
 	/** Let go for good: nothing is taken or submitted again. */
 	let retired = $state(false);
 
@@ -462,7 +463,7 @@ export function createDraft(
 			return admitted();
 		},
 
-		/** Whether the editor is acquired: Capture and Source can show its row. */
+		/** Whether the editor is acquired: the capture and Files views can show its row. */
 		get loaded() {
 			return editor !== undefined;
 		},
@@ -476,11 +477,23 @@ export function createDraft(
 				? describeRowError(editor.row.error)
 				: undefined;
 		},
+		/**
+		 * Why the accepted text cannot be edited as text and thoughts now: the
+		 * row does not read as a capture, or its body's Thoughts markup is
+		 * ambiguous. `undefined` while there is no editor. The text stays as
+		 * accepted; Files edits it.
+		 */
+		get problem(): string | undefined {
+			if (editor === undefined) return undefined;
+			if (editor.row.status === 'invalid')
+				return describeRowError(editor.row.error);
+			return document().refusal?.message;
+		},
 		/** Why there is no editor, when acquisition gave none. */
 		get refused() {
 			return refused;
 		},
-		/** The text Source shows, and what a copy or a download holds. */
+		/** The file's complete accepted text: what Files shows, and what a copy or a download holds. */
 		get source() {
 			return source();
 		},
@@ -491,14 +504,6 @@ export function createDraft(
 		/** That text read as a row: a parse failure, or its fields and their issues. */
 		get reading() {
 			return interpretationOf(source()).reading;
-		},
-		get view() {
-			return view;
-		},
-		/** Choose Capture or Source. The choice outlives the view and changes nothing saved. */
-		setView(next: DraftView) {
-			if (fenced()) return;
-			view = next;
 		},
 		/** The latest save error, including while a newer write runs, or a file action needing a choice. */
 		get notice() {
@@ -518,7 +523,10 @@ export function createDraft(
 			return hasUnsentInput();
 		},
 
-		/** Type in Source: submitted at once, exactly as typed, valid or not. */
+		/**
+		 * Type the file's complete text in Files: submitted at once, exactly as
+		 * typed, valid or not, with the file's own line endings restored.
+		 */
 		inputSource(value: string) {
 			if (undecided() || !editor) return;
 			const current = source();
@@ -825,7 +833,7 @@ export function createDraft(
 
 		/**
 		 * Hold the capture for a copy of its text: wait for its saves, then run
-		 * `task` with the text as it is in Source. Resolves `undefined` when the
+		 * `task` with the file's complete accepted text. Resolves `undefined` when the
 		 * capture is busy.
 		 */
 		copying<T>(task: (source: string) => Promise<T>): Promise<T | undefined> {

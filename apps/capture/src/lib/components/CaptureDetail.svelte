@@ -1,44 +1,61 @@
+<!--
+	One capture as the timeline edits it: its text and its thoughts. It never
+	shows the file's complete text; Files does, through the same draft.
+
+	When the accepted text stops reading as a capture while this view is
+	open, the view stays, with the draft's save state, and says why. Its text
+	and thought controls go away rather than show values the file does not
+	have, and Open in Files is the way to repair it.
+-->
 <script lang="ts">
-	import { toTextarea } from '@epicenter/capture';
 	import * as Alert from '@epicenter/ui/alert';
 	import { Button } from '@epicenter/ui/button';
 	import { confirmationDialog } from '@epicenter/ui/confirmation-dialog';
-	import * as Dialog from '@epicenter/ui/dialog';
 	import * as DropdownMenu from '@epicenter/ui/dropdown-menu';
 	import * as Field from '@epicenter/ui/field';
 	import { Loading } from '@epicenter/ui/loading';
 	import { toast } from '@epicenter/ui/sonner';
-	import * as Tabs from '@epicenter/ui/tabs';
-	import { onDestroy, onMount, tick } from 'svelte';
+	import { onDestroy, onMount, tick, untrack } from 'svelte';
 	import type { Captures } from '$lib/captures.svelte.js';
-	import { copyText, downloadText } from '$lib/download.js';
-	import type { Draft, DraftView } from '$lib/draft.svelte.js';
+	import { copyText } from '$lib/download.js';
+	import type { Draft } from '$lib/draft.svelte.js';
 	import { Textarea } from '@epicenter/ui/textarea';
+	import CaptureActions from './CaptureActions.svelte';
 	import DraftRecovery from './DraftRecovery.svelte';
 	import TechnicalDetails from './TechnicalDetails.svelte';
 	import ThoughtEditForm from './ThoughtEditForm.svelte';
 
 	let {
-		draft,
+		draft: given,
 		captures,
-		stem,
 		focusNewThought = false,
 		onBack,
 		onDeleted,
 		onOpen,
+		onFiles,
 	}: {
+		/** The draft this view is for, for its whole lifetime; another draft mounts another view. */
 		draft: Draft;
 		captures: Captures;
-		stem: string;
 		/** The capture was just added: the next thing to type is a thought. */
 		focusNewThought?: boolean;
 		onBack: () => void;
 		/** Completion belongs to the app container even after deletion removes this view. */
 		onDeleted: (stem: string) => void;
 		onOpen: (stem: string) => void;
+		/** Show this capture's file in Files: the way to edit its complete text. */
+		onFiles: (stem: string) => void;
 	} = $props();
 
 	const when = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+
+	/**
+	 * The draft this view was mounted for. Read once: while a parent's keyed
+	 * block takes this view down, its prop already names the next draft, or
+	 * none, and this view must not act for it.
+	 */
+	const draft = untrack(() => given);
+	const stem = draft.stem;
 
 	/**
 	 * Cleared on destroy, for this view's commands. Each text box also has its
@@ -50,24 +67,12 @@
 		mounted = false;
 	});
 
-	/** Why the Capture view has no fields, when the file has none. */
-	const sourceOnly = $derived.by((): string | undefined => {
-		if (draft.status === 'invalid')
-			return `This file cannot be edited as a capture until it is repaired: ${draft.rowProblem}`;
-		return draft.document.refusal?.message;
-	});
-	$effect(() => {
-		if (draft.loaded && sourceOnly !== undefined) draft.setView('source');
-	});
-
 	const capturedAt = $derived.by(() => {
 		const value = draft.reading.fields.capturedAt;
 		if (value === undefined) return undefined;
 		const time = new Date(value);
 		return Number.isNaN(time.getTime()) ? undefined : time;
 	});
-	/** Fields that need fixing in text that parses. Text that does not is Source only, below. */
-	const issues = $derived(draft.loaded ? draft.reading.issues.map((issue) => issue.message) : []);
 	// A thought edit whose thought is no longer in the document as shown.
 	const strandedEdit = $derived(
 		draft.editing !== undefined && draft.document.thoughts !== draft.editing.thoughts
@@ -77,17 +82,10 @@
 	/** Nothing a person does is taken: leaving, deleting, or another operation holds it. */
 	const held = $derived(!draft.admitted);
 
-	// Every binding reads the draft this view has now, at the call, and each
-	// writer returns unless its own view is the one shown and can be edited.
-	const fieldsLive = () => mounted && draft.view === 'capture' && draft.status === 'valid';
-	const sourceLive = () => mounted && draft.view === 'source' && draft.loaded;
+	// Bindings read this owner's current input. Menu and delayed commands also
+	// check that this view is alive and its text still reads as a capture.
+	const fieldsLive = () => mounted && draft.loaded && draft.problem === undefined;
 
-	function setView(next: string) {
-		if (!mounted || held) return;
-		draft.setView(next as DraftView);
-	}
-
-	let sourceField = $state<HTMLTextAreaElement | null>(null);
 	let newThoughtField = $state<HTMLTextAreaElement | null>(null);
 	let thoughtList = $state<HTMLOListElement>();
 
@@ -124,12 +122,6 @@
 		afterMenu = undefined;
 	}
 
-	async function showSource() {
-		setView('source');
-		await tick();
-		sourceField?.focus();
-	}
-
 	function move(from: number, to: number, shown: readonly string[]) {
 		if (!fieldsLive()) return;
 		if (draft.swapThoughts(from, to, shown)) afterMenu = () => void focusThought(to);
@@ -151,23 +143,6 @@
 			},
 		});
 	}
-
-	// Deleting settles this capture, reads the saved file as it is now, and
-	// deletes exactly what the person saw, without reading it again. The
-	// review is the draft's, so it outlives this view; a delete once sent
-	// runs to its answer wherever the views are.
-	/** A delete can be sent now: not leaving, not closing, not let go, not already sending. */
-	const mayDelete = $derived(!captures.fenced && !draft.retired && !draft.removing);
-	function cancelDeletion() {
-		if (!mounted) return;
-		draft.cancelDeletion();
-	}
-	async function confirmDeletion() {
-		if (!mounted || !mayDelete) return;
-		const deletedStem = stem;
-		const completed = onDeleted;
-		if (await captures.remove(draft)) completed(deletedStem);
-	}
 </script>
 
 {#if !draft.loaded}
@@ -182,7 +157,7 @@
 		<Loading label="Opening…" />
 	{/if}
 {:else}
-	<Tabs.Root bind:value={() => draft.view, setView} class="gap-4">
+	<div class="flex flex-col gap-4">
 		<div class="flex flex-wrap items-center gap-x-3 gap-y-2">
 			<h1 class="mr-auto basis-full text-lg font-semibold tracking-tight sm:basis-auto">
 				{#if capturedAt}
@@ -191,42 +166,11 @@
 					Capture with no date
 				{/if}
 			</h1>
-			<Tabs.List aria-label="View">
-				<Tabs.Trigger value="capture" disabled={held || draft.status !== 'valid' || draft.document.refusal !== undefined}>Capture</Tabs.Trigger>
-				<Tabs.Trigger value="source" disabled={held}>Source</Tabs.Trigger>
-			</Tabs.List>
-			<DropdownMenu.Root>
-				<DropdownMenu.Trigger>
-					{#snippet child({ props })}
-						<Button {...props} variant="ghost" size="sm" aria-label="More capture actions">More</Button>
-					{/snippet}
-				</DropdownMenu.Trigger>
-				<DropdownMenu.Content align="end" class="w-48">
-					<DropdownMenu.Item onclick={() => copy(draft.source, 'Source')}>Copy source</DropdownMenu.Item>
-					<DropdownMenu.Item onclick={() => downloadText(`${stem}.md`, draft.source)}>Download file</DropdownMenu.Item>
-					<!-- Shows the file as it is now, in place of what this window shows. A choice waiting for the person has its own. -->
-					<DropdownMenu.Item disabled={held || draft.notice !== undefined} onclick={() => {
-						if (!mounted || held) return;
-						void draft.reload();
-					}}>Reload from file</DropdownMenu.Item>
-					<DropdownMenu.Separator />
-					<DropdownMenu.Item variant="destructive" disabled={held} onclick={() => {
-						if (!mounted || held) return;
-						void captures.reviewDeletion(draft);
-					}}>Delete capture…</DropdownMenu.Item>
-				</DropdownMenu.Content>
-			</DropdownMenu.Root>
+			<Button variant="outline" size="sm" onclick={() => {
+				if (mounted) onFiles(stem);
+			}}>Open in Files</Button>
+			<CaptureActions {draft} {captures} {onDeleted} />
 		</div>
-
-		{#if issues.length}
-			<Alert.Root variant="destructive">
-				<Alert.Title>This file needs repair</Alert.Title>
-				<Alert.Description>
-					<ul class="list-disc pl-5">{#each issues as issue (issue)}<li>{issue}</li>{/each}</ul>
-					Fix it in Source.
-				</Alert.Description>
-			</Alert.Root>
-		{/if}
 
 		{#if draft.deletionProblem && !draft.deletionReview}
 			<Alert.Root variant="destructive">
@@ -244,8 +188,28 @@
 			</Alert.Root>
 		{/if}
 
-		<Tabs.Content value="capture" class="flex flex-col gap-8">
-			{#if sourceOnly === undefined}
+		{#if draft.problem !== undefined}
+			<!-- The draft keeps its text and save state; only Files edits text that does not read as a capture. -->
+			<Alert.Root variant="destructive" aria-label="Needs repair">
+				<Alert.Title>This capture cannot be edited here until its file is repaired</Alert.Title>
+				<Alert.Description>
+					<p>{draft.problem}</p>
+					{#if draft.reading.parseError}
+						<ul class="list-disc pl-5">
+							{#each draft.reading.parseError.diagnostics as diagnostic, index (index)}
+								{#if diagnostic.message !== draft.reading.parseError.message}<li>{diagnostic.message}</li>{/if}
+							{/each}
+						</ul>
+					{/if}
+					<p>Nothing was changed. Your text and its save state stay with this capture. <code class="break-all">{draft.path}</code> can be edited in Files.</p>
+					{#if draft.hasUnsentInput}<p>A thought you have not added yet is kept here, and comes back once the file reads as a capture.</p>{/if}
+				</Alert.Description>
+				<div class="mt-2 text-foreground"><Button size="sm" onclick={() => {
+					if (mounted) onFiles(stem);
+				}}>Open in Files</Button></div>
+			</Alert.Root>
+		{:else}
+			<div class="flex flex-col gap-8">
 				<Field.Field>
 					<Field.Label for="capture-text">Capture text</Field.Label>
 					<Textarea
@@ -253,15 +217,13 @@
 						readonly={held}
 						bind:value={
 							() => draft.text,
-							(value) => {
-								if (fieldsLive()) draft.inputText(value);
-							}
+							draft.inputText
 						}
 						rows={rowsFor(draft.text)}
 						class="max-h-96 resize-y leading-relaxed"
 						placeholder="Write here…"
 					/>
-					<p class="text-sm text-muted-foreground">Changes that cannot be applied return to the current text. Use Source to write unfinished Markdown.</p>
+					<p class="text-sm text-muted-foreground">Changes that cannot be applied return to the current text. Open the file in Files to write unfinished Markdown.</p>
 				</Field.Field>
 
 				<section class="flex flex-col gap-3" aria-label="Capture thoughts">
@@ -366,9 +328,7 @@
 								readonly={held}
 								bind:value={
 									() => draft.newThought,
-									(value) => {
-										if (fieldsLive()) draft.inputNewThought(value);
-									}
+									draft.inputNewThought
 								}
 								onkeydown={submitOnModEnter}
 								rows={2}
@@ -385,7 +345,7 @@
 								{:else if draft.document.hasSection}
 									Thoughts you add are saved in this capture, under its Thoughts heading.
 								{:else}
-									No Thoughts section is readable here. Check Source before adding a new section.
+									No Thoughts section is readable here. Check the file in Files before adding a new section.
 								{/if}
 							</p>
 							<Button type="submit" size="sm" disabled={held}>Add thought</Button>
@@ -393,77 +353,10 @@
 					</form>
 
 					{#if draft.document.hasOtherContent}
-						<p class="text-muted-foreground">This file has more Markdown after its thoughts. It is kept as it is, and shown in Source.</p>
+						<p class="text-muted-foreground">This file has more Markdown after its thoughts. It is kept as it is, and shown in Files.</p>
 					{/if}
 				</section>
-			{/if}
-		</Tabs.Content>
-
-		<Tabs.Content value="source" class="flex flex-col gap-4">
-			{#if sourceOnly !== undefined}
-				<Alert.Root aria-label="Source only">
-					<Alert.Title>This capture can only be edited as Source</Alert.Title>
-					<Alert.Description>
-						<p>{sourceOnly}</p>
-						{#if draft.reading.parseError}
-							<ul class="list-disc pl-5">
-								{#each draft.reading.parseError.diagnostics as diagnostic, index (index)}
-									{#if diagnostic.message !== draft.reading.parseError.message}<li>{diagnostic.message}</li>{/if}
-								{/each}
-							</ul>
-						{/if}
-						Nothing was changed. The whole file is in Source, where you can edit it directly.
-					</Alert.Description>
-				</Alert.Root>
-			{/if}
-			<Field.Field>
-				<Field.Label for="capture-source">Markdown source</Field.Label>
-				<Field.Description>
-					This is <code class="break-all">{draft.path}</code>. It saves exactly as you type, frontmatter included.
-				</Field.Description>
-				<Textarea
-					id="capture-source"
-					bind:ref={sourceField}
-					readonly={held}
-					bind:value={
-						() => toTextarea(draft.source),
-						(value) => {
-							if (sourceLive()) draft.inputSource(value);
-						}
-					}
-					rows={18}
-					spellcheck={false}
-					class="min-h-64 resize-y font-mono"
-				/>
-			</Field.Field>
-			{#if draft.status === 'invalid'}
-				<Alert.Root aria-label="Needs repair">
-					<Alert.Title>This file needs repair</Alert.Title>
-					<Alert.Description>
-						<p>{draft.rowProblem}</p>
-						<p>It is saved as you type it, so you can fix it here. The Capture tab becomes available once it is a valid capture.</p>
-					</Alert.Description>
-				</Alert.Root>
-			{/if}
-		</Tabs.Content>
-	</Tabs.Root>
-
-	<Dialog.Root bind:open={() => draft.deletionReview !== undefined, (open) => { if (!open) cancelDeletion(); }}>
-		<Dialog.Content class="sm:max-w-xl">
-			<Dialog.Header>
-				<Dialog.Title>Permanently delete this capture file?</Dialog.Title>
-				<Dialog.Description>This is the saved file as it is now. Its thoughts are part of it and go with it. Recorded earlier versions remain in Git history.</Dialog.Description>
-			</Dialog.Header>
-			<div class="flex min-w-0 flex-col gap-3">
-				{#if draft.hasUnsentInput || draft.notice !== undefined}<p class="font-medium">Text in this window that is not saved will be discarded too.</p>{/if}
-				<!-- svelte-ignore a11y_no_noninteractive_tabindex: the preview scrolls, so the keyboard must reach it -->
-				<pre aria-label="Saved file" role="region" tabindex="0" class="max-h-64 overflow-auto whitespace-pre-wrap break-words rounded-md border bg-background p-3 text-xs">{draft.deletionReview?.entry.text}</pre>
-				{#if draft.deletionReview?.problem}<p role="status">{draft.deletionReview.problem}</p>{/if}
 			</div>
-			<Dialog.Footer>
-				<Button variant="outline" disabled={draft.removing} onclick={cancelDeletion}>Cancel</Button>
-				<Button variant="destructive" disabled={!mayDelete} onclick={confirmDeletion}>{draft.removing ? 'Deleting…' : 'Permanently delete'}</Button>
-			</Dialog.Footer>
-		</Dialog.Content>
-	</Dialog.Root>
+		{/if}
+	</div>
 {/if}

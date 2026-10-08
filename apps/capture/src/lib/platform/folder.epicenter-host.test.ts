@@ -513,7 +513,6 @@ test('Try again with nothing newer sends exactly the accepted text, Source comme
 				cause: 'disk full',
 			},
 		});
-	draft.setView('source');
 	draft.inputSource(handWritten);
 	await draft.settle();
 	expect(draft.notice).toMatchObject({ kind: 'failed', missing: false });

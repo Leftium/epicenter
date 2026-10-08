@@ -9,6 +9,13 @@
  * see `draft.svelte.ts`. A listing never reads an open draft's file into it:
  * an open capture shows its own input until the person reloads it.
  *
+ * The timeline and Files open the same draft for a path, so a file has one
+ * publisher here whichever workspace shows it, and a failed save's input is
+ * the draft's in both. The timeline offers only rows that read as captures
+ * (`editable`) and names the rest, with why (`repairs`); Files lists every
+ * capture file (`files`). Validity decides where a row is listed, never
+ * whether its draft is kept.
+ *
  * A listing can be older than a create, copy, or import this page made while
  * it was running. Those writes move `writes`; a listing that saw it move is
  * discarded and taken again. An open draft's own saves need no such guard:
@@ -59,7 +66,10 @@ export type CaptureRow = {
 	readonly capturedAt: Date | undefined;
 	readonly preview: string;
 	readonly thoughtCount: number;
-	/** Why the text does not read as a capture, when it does not. */
+	/**
+	 * Why the text cannot be edited as a capture, when it cannot: it does not
+	 * read as a row, a field is not valid, or its Thoughts markup is ambiguous.
+	 */
 	readonly problem: string | undefined;
 	/** This page holds input for it that is not saved. */
 	readonly unsettled: boolean;
@@ -359,7 +369,7 @@ export function createCaptures(host: Pick<CaptureHost, 'folder' | 'location'>) {
 				capturedAt: timeOf(reading),
 				preview: excerpt(document),
 				thoughtCount: document.thoughts.length,
-				problem: problemOf(reading),
+				problem: problemOf(reading) ?? document.refusal?.message,
 				unsettled: draft?.unsettled ?? false,
 				attention: draft?.notice?.kind,
 			};
@@ -385,6 +395,16 @@ export function createCaptures(host: Pick<CaptureHost, 'folder' | 'location'>) {
 			return left.stem < right.stem ? -1 : left.stem > right.stem ? 1 : 0;
 		});
 	});
+	/** What the timeline offers to edit: rows that read as captures. */
+	const editable = $derived(rows.filter((row) => row.problem === undefined));
+	/** What the timeline names for repair in Files instead, each with why. */
+	const repairs = $derived(rows.filter((row) => row.problem !== undefined));
+	/** Every capture file, valid or not, by path: what Files lists. */
+	const files = $derived(
+		[...rows].sort((left, right) =>
+			left.path < right.path ? -1 : left.path > right.path ? 1 : 0,
+		),
+	);
 
 	const unsettledDrafts = () =>
 		[...drafts.values()].filter((draft) => draft.unsettled);
@@ -404,8 +424,18 @@ export function createCaptures(host: Pick<CaptureHost, 'folder' | 'location'>) {
 
 	return {
 		location: host.location,
+		/** Every capture this page lists or holds a draft for, newest first, with why it needs repair when it does. */
 		get rows() {
 			return rows;
+		},
+		get editable() {
+			return editable;
+		},
+		get repairs() {
+			return repairs;
+		},
+		get files() {
+			return files;
 		},
 		get unreadable() {
 			return unreadable;
@@ -538,8 +568,8 @@ export function createCaptures(host: Pick<CaptureHost, 'folder' | 'location'>) {
 		 * whose save failed or was not confirmed, whose file is gone, or whose
 		 * delete was not confirmed. Its own file is left as it is.
 		 *
-		 * The copy is the source only: the editor's latest input. Text typed
-		 * but not yet in the source
+		 * The copy is the file text only: the editor's latest input. Text typed
+		 * but not yet in that text
 		 * (a new thought or a thought being edited)
 		 * would be dropped with the draft, so the copy is refused while any
 		 * exists, and nothing is written. The draft is held while the copy is
@@ -555,7 +585,7 @@ export function createCaptures(host: Pick<CaptureHost, 'folder' | 'location'>) {
 				return {
 					ok: false,
 					message:
-						'A copy holds the capture as it is in Source. This capture also has a new thought or a thought you are editing that is not in it yet. Save it, or copy it somewhere and clear it, then save the copy.',
+						'A copy holds the capture file as its text is now. This capture also has a new thought or a thought you are editing that is not in it yet. Save it, or copy it somewhere and clear it, then save the copy.',
 				};
 			const started = (async (): Promise<
 				{ ok: true; stem: string } | { ok: false; message: string }

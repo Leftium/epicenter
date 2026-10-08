@@ -77,6 +77,10 @@ export function createClock(start = Date.UTC(2026, 9, 7)) {
  * GitHub's authorize, token, scoped-token, REST, and Git smart-HTTP
  * endpoints, enough to exercise every connector branch.
  *
+ * A scoped token reaches only its repository through `GET /repositories/{id}`
+ * (404 elsewhere) and Git (403 elsewhere), but installation listings still
+ * show every repository the user can see, as GitHub was observed to do.
+ *
  * Seeded world:
  * - `alice` (101) installed the app on her account (installation 7001) with
  *   `alice/notes` (9001, private, write), `alice/site` (9002, public, write),
@@ -122,15 +126,9 @@ export function createFakeGitHub(clock: { now(): number }) {
 		 * How the scoped-token endpoint behaves: `supported` follows the
 		 * documented contract (404 for an invalid parent, 422 for an unreachable
 		 * target); `unexpected` is a 400 the contract does not describe;
-		 * `empty` is a 200 without a token; `echo` returns the parent token;
-		 * `broad` issues a token that still sees every repository.
+		 * `empty` is a 200 without a token; `echo` returns the parent token.
 		 */
-		scopeMode: 'supported' as
-			| 'supported'
-			| 'unexpected'
-			| 'empty'
-			| 'echo'
-			| 'broad',
+		scopeMode: 'supported' as 'supported' | 'unexpected' | 'empty' | 'echo',
 		/** Runs as a scoping request arrives, to race it with other events. */
 		beforeScope: undefined as (() => void) | undefined,
 		/** Overrides the Git endpoint response status for the next N requests. */
@@ -444,13 +442,11 @@ export function createFakeGitHub(clock: { now(): number }) {
 		)
 			return Response.json({ message: 'Validation Failed' }, { status: 422 });
 		const token = `ghu_scoped_${++serial}`;
-		if (fake.scopeMode !== 'broad')
-			scoped.set(token, {
-				token,
-				parent: parent.access,
-				repositoryId: repository.id,
-			});
-		else tokens.set(token, { ...parent, access: token });
+		scoped.set(token, {
+			token,
+			parent: parent.access,
+			repositoryId: repository.id,
+		});
 		return Response.json({
 			id: serial,
 			token,
@@ -488,15 +484,14 @@ export function createFakeGitHub(clock: { now(): number }) {
 				!visibleInstallations(caller.user).includes(installation)
 			)
 				return Response.json({ message: 'Not Found' }, { status: 404 });
+			// Listing ignores a token's repository scope, as GitHub was observed
+			// to: a scoped token still lists the whole installation.
 			const list =
 				page === 1
 					? [...installation.repositoryIds]
 							.map((id) => repositories.get(id))
 							.filter(
-								(r): r is FakeRepository =>
-									!!r &&
-									canSee(caller.user, r) &&
-									(caller.only === undefined || caller.only === r.id),
+								(r): r is FakeRepository => !!r && canSee(caller.user, r),
 							)
 					: [];
 			return Response.json({
@@ -504,7 +499,25 @@ export function createFakeGitHub(clock: { now(): number }) {
 				repositories: list.map((r) => repositoryJson(r, caller.user)),
 			});
 		}
+		const byId = url.pathname.match(/^\/repositories\/(\d+)$/);
+		if (byId) {
+			const repository = repositories.get(Number(byId[1]));
+			if (!repository || !reaches(caller, repository))
+				return Response.json({ message: 'Not Found' }, { status: 404 });
+			return Response.json(repositoryJson(repository, caller.user));
+		}
 		return Response.json({ message: 'Not Found' }, { status: 404 });
+	}
+
+	/** Actual access: the user's, further limited to a scoped token's repository. */
+	function reaches(
+		caller: { user: FakeUser; only?: number },
+		repository: FakeRepository,
+	) {
+		return (
+			canSee(caller.user, repository) &&
+			(caller.only === undefined || caller.only === repository.id)
+		);
 	}
 
 	function git(request: Request, url: URL) {
@@ -517,16 +530,14 @@ export function createFakeGitHub(clock: { now(): number }) {
 		const repository = [...repositories.values()].find(
 			(r) => r.owner.login === path?.[1] && r.name === path?.[2],
 		);
-		if (
-			!caller ||
-			!repository ||
-			!canSee(caller.user, repository) ||
-			(caller.only !== undefined && caller.only !== repository.id)
-		)
+		if (!caller || !repository || !canSee(caller.user, repository))
 			return new Response('auth', {
 				status: 401,
 				headers: { 'www-authenticate': 'Basic realm="GitHub"' },
 			});
+		// A valid scoped token is refused outside its repository, as observed.
+		if (!reaches(caller, repository))
+			return new Response('forbidden', { status: 403 });
 		const service =
 			path?.[3] === 'info/refs' ? url.searchParams.get('service') : path?.[3];
 		const kind = path?.[3] === 'info/refs' ? 'advertisement' : 'result';

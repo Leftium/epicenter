@@ -39,6 +39,7 @@ import {
 import type {
 	GitHubClient,
 	GitHubUser,
+	InstallationView,
 	ProviderFailure,
 	RepositoryView,
 	TokenGrant,
@@ -399,14 +400,33 @@ export function createGitHubConnection({
 	}
 
 	/**
+	 * One of this app's installations that the granted user can reach, read
+	 * with the parent token. Its account id is the `target_id` for scoping.
+	 */
+	async function reachableInstallation(
+		parentToken: string,
+		installationId: number,
+	): Promise<Result<InstallationView, ConnectorError>> {
+		const { data: installations, error } =
+			await github.installations(parentToken);
+		if (error) return Err({ code: 'upstream_unavailable' });
+		const installation = installations.find(
+			(candidate) => candidate.id === installationId,
+		);
+		return installation ? Ok(installation) : Err(unavailableRepository());
+	}
+
+	/**
 	 * Mint a token scoped to one repository id under one installation account,
-	 * then read that repository through the installation with the scoped
-	 * token. The mutable owner/name path is learned only after the credential
-	 * is narrowed, and only from the repository id.
+	 * then read that repository by id with the scoped token. The installation
+	 * listing is not used here: GitHub lists every repository in the
+	 * installation even for a scoped token, so only a read by id shows what
+	 * the token reaches. The mutable owner/name path is learned only after the
+	 * credential is narrowed, and only from the repository id.
 	 */
 	async function scopedAccess(
 		parentToken: string,
-		target: Pick<PairedRepository, 'id' | 'installationId' | 'ownerId'>,
+		target: Pick<PairedRepository, 'id' | 'ownerId'>,
 	): Promise<Result<{ token: string; view: RepositoryView }, ConnectorError>> {
 		const { data: token, error: scopeError } = await github.scopeToken({
 			accessToken: parentToken,
@@ -423,16 +443,15 @@ export function createGitHubConnection({
 			return Err({ code: 'upstream_unavailable' });
 		if (scopeError) return Err(unavailableRepository());
 
-		const { data: visible, error: listError } =
-			await github.installationRepositories(token, target.installationId);
-		if (listError === 'rejected') return Err({ code: 'upstream_unavailable' });
-		if (listError) return Err(providerError(listError));
-		// A scoped token that still sees other repositories was not narrowed.
-		if (visible.some((repository) => repository.id !== target.id))
-			return Err({ code: 'credential_scoping_unsupported' });
-		const view = visible.find((repository) => repository.id === target.id);
+		const { data: view, error: readError } = await github.repository(
+			token,
+			target.id,
+		);
+		// The token was minted just now; a 401 for it says nothing about the grant.
+		if (readError === 'rejected') return Err({ code: 'upstream_unavailable' });
+		if (readError) return Err(providerError(readError));
 		if (
-			!view ||
+			view.id !== target.id ||
 			view.ownerId !== target.ownerId ||
 			!view.private ||
 			!view.pull ||
@@ -636,7 +655,8 @@ export function createGitHubConnection({
 		/**
 		 * Pair a folder with a repository chosen by id and installation id. The
 		 * installation must be one the granted user can reach, and a token
-		 * scoped to the repository id must see it as private with push access.
+		 * scoped to the repository id must read it by id as owned by the
+		 * installation account, private, with push access.
 		 * An existing pairing is returned unchanged, revision included, for the
 		 * same choice; anything else needs `replace`, which mints a new
 		 * revision.
@@ -659,20 +679,12 @@ export function createGitHubConnection({
 						(input.branch === undefined || input.branch === existing.branch);
 					return same ? Ok(existing) : Err({ code: 'pairing_conflict' });
 				}
-				const { data: installations, error: listError } =
-					await github.installations(live.accessToken);
-				if (listError) return Err({ code: 'upstream_unavailable' });
-				const installation = installations.find(
-					(candidate) => candidate.id === input.installationId,
-				);
-				if (!installation) return Err(unavailableRepository());
+				const { data: installation, error: installationError } =
+					await reachableInstallation(live.accessToken, input.installationId);
+				if (installationError) return Err(installationError);
 				const { data: access, error: accessError } = await scopedAccess(
 					live.accessToken,
-					{
-						id: input.repositoryId,
-						installationId: installation.id,
-						ownerId: installation.account.id,
-					},
+					{ id: input.repositoryId, ownerId: installation.account.id },
 				);
 				if (accessError) return Err(accessError);
 				const pairing: Pairing = {
@@ -738,8 +750,9 @@ export function createGitHubConnection({
 		/**
 		 * Admit one Git request for a pairing revision: refuse a revision that
 		 * is no longer current before any GitHub call, confirm the grant with
-		 * GitHub (refreshing when due or rejected), then scope a token to the
-		 * paired repository id and resolve its current clone URL with it.
+		 * GitHub (refreshing when due or rejected), require the paired
+		 * installation among the user's installations, then scope a token to
+		 * the paired repository id and resolve its current clone URL with it.
 		 */
 		authorizeTransfer(
 			principalId: string,
@@ -757,6 +770,14 @@ export function createGitHubConnection({
 				if (error) return Err(error);
 				if (pairing.githubUserId !== live.grant.user.id)
 					return Err({ code: 'github_account_mismatch' });
+				const { data: installation, error: installationError } =
+					await reachableInstallation(
+						live.accessToken,
+						pairing.repository.installationId,
+					);
+				if (installationError) return Err(installationError);
+				if (installation.account.id !== pairing.repository.ownerId)
+					return Err(unavailableRepository());
 				const { data: access, error: accessError } = await scopedAccess(
 					live.accessToken,
 					pairing.repository,

@@ -15,7 +15,8 @@
  * - Every pairing creation or replacement mints a revision; a transfer for
  *   any other revision is refused before GitHub is called
  * - Transfers carry a repository-scoped token, never the parent token, and
- *   refuse when scoping is unsupported
+ *   refuse when scoping is unsupported; the scoped token must read the paired
+ *   repository by id, since installation listings ignore its scope
  * - Grant expiry, revocation, and identity changes delete the grant and keep
  *   pairings; only the same GitHub user can use them again
  * - Concurrent transfers share one serialized refresh, and a rotated pair is
@@ -47,6 +48,8 @@ const MALLORY = 'principal-mallory';
 const FOLDER = 'folder-1';
 const NOTES = { repositoryId: 9001, installationId: 7001 };
 const SCOPE_URL = `https://api.github.com/applications/${CLIENT_ID}/token/scoped`;
+/** alice/notes read by its immutable id. */
+const REPOSITORY_URL = 'https://api.github.com/repositories/9001';
 
 async function setup() {
 	const fixture = await createFixtureRuntime();
@@ -554,10 +557,107 @@ test('a transfer carries a token scoped to the paired repository id', async () =
 	});
 });
 
+test('a transfer resolves the repository by id with the scoped token, not a listing', async () => {
+	const { paired, github } = await setup();
+	const { transfer } = await paired();
+	const before = github.requests.length;
+	const grant = expectOk(await transfer());
+	const withScoped = github.requests
+		.slice(before)
+		.filter(
+			(r) =>
+				r.headers.get('authorization') === `Bearer ${grant.accessToken}`,
+		);
+	expect(withScoped.map((r) => r.url)).toEqual([REPOSITORY_URL]);
+});
+
+test('a scoped token that still lists the installation reaches only its repository', async () => {
+	const { paired, github } = await setup();
+	const { transfer } = await paired();
+	const { accessToken } = expectOk(await transfer());
+	const get = (url: string, authorization = `Bearer ${accessToken}`) =>
+		github.fetch(url, { headers: { authorization } });
+	// The listing is discovery: it still shows every repository alice sees.
+	const listed = (await (
+		await get('https://api.github.com/user/installations/7001/repositories')
+	).json()) as { repositories: { id: number }[] };
+	expect(listed.repositories.map((r) => r.id)).toEqual([
+		9001, 9002, 9003, 9004,
+	]);
+	// Actual access is the paired repository only.
+	expect((await get(REPOSITORY_URL)).status).toBe(200);
+	expect(
+		(await get('https://api.github.com/repositories/9004')).status,
+	).toBe(404);
+	const refs = (name: string) =>
+		get(
+			`https://github.com/alice/${name}.git/info/refs?service=git-upload-pack`,
+			`Basic ${btoa(`x-access-token:${accessToken}`)}`,
+		);
+	expect((await refs('notes')).status).toBe(200);
+	expect((await refs('journal')).status).toBe(403);
+});
+
+test('a scoped token denied the selected repository fails closed', async () => {
+	const { paired, github, memory } = await setup();
+	const { transfer } = await paired();
+	const notes = github.repositories.get(9001);
+	if (!notes) throw new Error('fixture');
+	// Access is lost after scoping, before the read by id.
+	const providerFetch = github.fetch;
+	github.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+		if (new Request(input, init).url === REPOSITORY_URL)
+			notes.access.delete(github.alice.id);
+		return providerFetch(input, init);
+	}) as HttpFetch;
+	expect(expectErr(await transfer())).toEqual({
+		code: 'repository_unavailable',
+		installUrl: INSTALL_URL,
+	});
+	expect(memory.read(ALICE, 'grant')).toBeDefined();
+});
+
+test('a read by id that names another repository or owner fails closed', async () => {
+	const { paired, github } = await setup();
+	const { connection, transfer } = await paired();
+	const providerFetch = github.fetch;
+	for (const mutate of [
+		(body: Record<string, unknown>) => ({ ...body, id: 9004 }),
+		(body: Record<string, unknown>) => ({
+			...body,
+			owner: { id: 666, login: 'mallory' },
+		}),
+	]) {
+		github.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+			const response = await providerFetch(input, init);
+			if (new Request(input, init).url !== REPOSITORY_URL) return response;
+			return Response.json(
+				mutate((await response.json()) as Record<string, unknown>),
+			);
+		}) as HttpFetch;
+		expect(expectErr(await transfer()).code).toBe('repository_unavailable');
+		expect(
+			expectErr(await connection.pair(ALICE, { folderId: 'other', ...NOTES }))
+				.code,
+		).toBe('repository_unavailable');
+	}
+	github.fetch = providerFetch;
+	expectOk(await transfer());
+});
+
+test('a transfer requires the paired installation among the user’s installations', async () => {
+	const { paired, github, scopeRequests } = await setup();
+	const { transfer } = await paired();
+	github.reinstall(7001, 7011);
+	const scoped = scopeRequests().length;
+	expect(expectErr(await transfer()).code).toBe('repository_unavailable');
+	expect(scopeRequests()).toHaveLength(scoped);
+});
+
 test('unsupported scoping refuses instead of using the parent token', async () => {
 	const { paired, github, memory } = await setup();
 	const { transfer } = await paired();
-	for (const mode of ['unexpected', 'empty', 'echo', 'broad'] as const) {
+	for (const mode of ['unexpected', 'empty', 'echo'] as const) {
 		github.scopeMode = mode;
 		expect(expectErr(await transfer()).code).toBe(
 			'credential_scoping_unsupported',

@@ -26,9 +26,9 @@ export type ProviderFailure = 'rejected' | 'denied' | 'unavailable';
  * - `denied`: GitHub refused the target or repository for this user (422 or
  *   403): the installation does not cover it, the person lost access, or the
  *   repository id no longer exists.
- * - `unsupported`: any other status, or a 200 the connector cannot prove is
- *   a narrower token. The caller must refuse the transfer; it must never
- *   fall back to the parent token.
+ * - `unsupported`: any other status, or a 200 without a token or echoing the
+ *   parent. The caller must refuse the transfer; it must never fall back to
+ *   the parent token.
  * - `misconfigured`: GitHub rejected the client id and secret (401).
  * - `unavailable`: network failure, rate limit, or 5xx. Nothing is known
  *   about the parent token.
@@ -289,8 +289,9 @@ export function createGitHubClient({
 
 		/**
 		 * `GET /user/installations/{id}/repositories`: repositories the user can
-		 * reach through one installation, with that user's permissions. With a
-		 * repository-scoped token the list narrows to the scoped repository.
+		 * reach through one installation, with that user's permissions. A
+		 * repository-scoped token still lists the whole installation, so the
+		 * list is discovery, not evidence of what a token can access.
 		 */
 		async installationRepositories(
 			accessToken: string,
@@ -309,6 +310,24 @@ export function createGitHubClient({
 				repositories.push(repository);
 			}
 			return Ok(repositories);
+		},
+
+		/**
+		 * `GET /repositories/{id}`: one repository by immutable id, as the
+		 * token's own access sees it. The caller validates the returned identity
+		 * and permissions before admitting a transfer.
+		 */
+		async repository(
+			accessToken: string,
+			repositoryId: number,
+		): Promise<Result<RepositoryView, ProviderFailure>> {
+			const { data: body, error } = await api(
+				`/repositories/${repositoryId}`,
+				accessToken,
+			);
+			if (error) return Err(error);
+			const repository = parseRepository(body);
+			return repository ? Ok(repository) : Err('unavailable');
 		},
 
 		/**

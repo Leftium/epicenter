@@ -203,3 +203,103 @@ benchmark report. After user confirmation, PlanetScale database `epicenter`
 was permanently deleted; its dashboard confirmed success and showed no
 databases. Outstanding invoices remain separate from deletion. GitHub
 repositories and hosted data namespaces were not deleted.
+
+## Live acceptance resumed after database repair
+
+Baseline: Epicenter `d0927f622d`, API version
+`ce4e9172-5ce6-4282-a916-2bfa64eb2d9f`, Zhongwen source
+`1db1476af275b6b4fc362c973e352a848f8e5ba2`, deployed Zhongwen version
+`6a887f22-ed64-4ad7-a284-ca5a5c952034`.
+
+Zen reloaded Sync and retained its signed-in account. Connect GitHub reached
+GitHub's actual Epicenter Folder Sync authorization page, owned by EpicenterHQ.
+Final App authorization awaits action-time user confirmation. No callback,
+pairing, or Git transfer has been claimed from reaching that page.
+Read-only GitHub inspection confirms private repository ID `1406974656` has
+existing `main` history with `entries` and `conversations`; do not initialize
+or overwrite it. Its observed tip was `1bddce6c45adb679086ad3702e6f82464774bccf`.
+
+Next: complete App authorization, explicitly pair the existing repository,
+download before opening, add a distinguishable demo expression, Sync, and
+verify its actual Git commit. Repeat download in a fresh browser and then
+exercise the installed SPA's native account Download and reverse transfer.
+The shared checkout has concurrent changes; release builds must use a verified
+isolated snapshot. Existing native candidate work is retained, not restarted.
+
+### Real scoping counterexample
+
+User completed App authorization in Zen. Sync displayed GitHub connected as
+braden-w and discovered the two selected private repositories. Pairing
+zhongwen-data failed `credential_scoping_unsupported` before publication.
+Sanitized diagnostics identified `scopedAccess` rejecting the broad installation
+repository listing: two entries, including the target. Under diagnostic API
+version `b6f4be85-f9d1-45eb-aa3d-da3beb5ed0b3`, read-only Git info/refs probes
+using the same scoped token returned 200 for Zhongwen and 403 for Honeycrisp.
+No repository data was written. Diagnostics record only target booleans and
+status codes, with no credential or response-body logging. Tail was stopped.
+
+Claude read-only review identified the test fake's narrowed-list assumption.
+A bounded implementation is correcting admission to read the selected immutable
+repository ID through the scoped token, keeping user/installation admission and
+never sending the parent token to Git. The broad discovery list stays discovery.
+Temporary live diagnostics will be removed when the accepted fix is deployed.
+
+### Correction and first real browser push
+
+Integrated the bounded correction after independent GPT and Claude reviews.
+GPT supported a direct ID read with current installation/owner admission;
+Claude preferred retaining selected membership in the broad listing, and accepted
+the ID read conditionally on live evidence. The latter condition is now met:
+real pairing succeeded and Download fetched `1bddce6`. Parent credentials
+remain REST-only, and every Git request mints a singleton-scoped token. The
+new installation admission preserves the stored installation's lifetime.
+The false exclusivity check and its fixture assumption were removed. No
+production negative probes were retained.
+
+Coordinator reproduced 90 connector tests, 521 assertions, and API typecheck,
+both in the isolated candidate and after integration. Worker tests could not
+load dependencies through sandbox-external symlinks; its report is not used as
+passing-test evidence. API version `7bd5309b-391d-4889-8888-6ceffb7623ed` removes
+temporary diagnostic logging and read-only probes.
+
+Zen downloaded and opened the account dataset, added the uniquely labeled
+expression 云端接力（GitHub应用验收20261008）, and explicitly synced.
+GitHub tip is `fdd4ff775b725413ba9cf031a81e09ba541ee657`; its exact Markdown file
+is `entries/ayuulf0687.md`. Comparison with the prior tip shows two additions:
+`definition.json` and that expression. No existing expression was replaced.
+UI reports both histories at fdd4ff7, zero commits ahead or behind. This is real
+hosted GitHub App authorization, fetch, and push, not fixture transport.
+
+A separate Chrome Guest profile reached GitHub sign-in and awaits the user's
+login. Native release build completed, and the source-built Zhongwen SPA was
+installed in `/tmp/epicenter-zhongwen-live-20261008/data`. Direct execution of
+the packaged Rust executable produced Tauri "unknown path" before starting
+Bun; launching the .app through macOS resolved it. Temporary stack diagnostics
+were reverted. Native Home is running from the reviewed isolated candidate,
+with separate demo folder/data roots. Native sign-in is underway.
+
+### Browser-to-Epicenter round trip passed
+
+Launching the .app through macOS succeeded. Native sign-in used Zen's existing
+Epicenter session, handed the PKCE result to the app, and restarted the native
+host with the verified account. Home discovered the Zhongwen pairing, offered
+Download, fetched the private history into the separate demo folder, and
+opened the source-built installed SPA. Its Expressions page displayed the
+browser-created expression.
+
+In the installed SPA, the note was changed to:
+"Edited in Epicenter, returned through the hosted GitHub App. Acceptance 20261008."
+The native file and local Git HEAD were inspected. Explicit native Sync pushed
+`03905ff54f5142ba28087781aa02a915aa34e840`, updating only the demo expression.
+GitHub returned that exact Markdown text. Native UI reported zero commits ahead
+or behind. Zen's Sync then fetched that commit, reported one file came from
+GitHub, and its expression editor displayed the exact native note. Both devices
+and GitHub agree at `03905ff`.
+
+This establishes the defining two-way journey using hosted account credentials
+and the GitHub App, not the earlier gh-token relay. The native demo roots are
+`/tmp/epicenter-zhongwen-live-20261008/data` and
+`/tmp/epicenter-zhongwen-live-20261008/folders`; the earlier desktop demo data was
+not overwritten. Chrome Guest login and its independent download remain open.
+No second authorized account was available for multi-user isolation acceptance.
+Fixture isolation tests do not establish that live multi-user acceptance.

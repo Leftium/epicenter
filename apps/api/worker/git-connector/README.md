@@ -142,7 +142,8 @@ repository the granted user can reach through this app's installations, from
 `GET /user/installations` and `GET /user/installations/{id}/repositories`.
 Each entry has `id`, `installationId`, `ownerId`, `fullName`, `cloneUrl`,
 `defaultBranch`, and `push`. Discovery makes REST reads only, no Git request
-and no scoped token.
+and no scoped token. The listing shows what the person can reach through an
+installation; it is never evidence of what a scoped token can reach.
 
 ### 5. Pair a folder
 
@@ -160,8 +161,8 @@ to the repository's default branch. Pairing:
 2. requires `installationId` among the user's installations, and takes its
    account id as the owner;
 3. mints a token scoped to `repositoryId` under that owner (see Transfers);
-4. reads the installation's repositories with the scoped token and requires
-   exactly that id, owned by that account, private, with pull and push;
+4. reads `GET /repositories/{repositoryId}` with the scoped token and
+   requires that id, owned by that account, private, with pull and push;
 5. stores the pairing with a new random 22-character `revision`.
 
 A forged, public, read-only, or unreachable selection is
@@ -213,19 +214,27 @@ Each request is admitted once. The principal's object:
    token is refreshed first, and a token `/user` rejects is refreshed once;
 4. refuses with `github_account_mismatch` if the grant's GitHub user did not
    make the pairing;
-5. calls `POST /applications/{client_id}/token/scoped` with client id and
+5. requires the paired `installationId` among the user's installations,
+   read with the parent token, with the paired owner as its account;
+6. calls `POST /applications/{client_id}/token/scoped` with client id and
    secret as Basic auth and
    `{ access_token, target_id: ownerId, repository_ids: [repositoryId], permissions: { contents: "write" } }`;
-6. reads `GET /user/installations/{installationId}/repositories` with the
-   scoped token and requires exactly the paired id, private, with push. A
-   scoped token that still sees other repositories counts as unsupported;
-7. returns the scoped token and the clone URL GitHub reported for that id.
+7. reads `GET /repositories/{repositoryId}` with the scoped token and
+   requires the paired id and owner, private, with pull and push. A denied
+   read, or a body naming another id or owner, is `repository_unavailable`;
+8. returns the scoped token and the clone URL GitHub reported for that id.
+
+The installation listing is not used to judge the scoped token: GitHub lists
+every repository in the installation even for a token scoped to one. The read
+by id and Git itself are the token's actual access. The connector does not
+probe unrelated repositories to prove the narrowing on each transfer.
 
 The edge sends one Git request to `https://github.com/<owner>/<name>.git`,
-with the scoped token as Basic auth. The parent user token never leaves the
-object. Because the path comes from the repository id after narrowing, a
-repository deleted and replaced at the same name cannot get a scoped token,
-and a renamed repository is reached at its new path.
+with the scoped token as Basic auth. The parent user token is used only for
+REST reads and scoping, never for Git, and never leaves the object. Because
+the path comes from the repository id after narrowing, a repository deleted
+and replaced at the same name cannot get a scoped token, and a renamed
+repository is reached at its new path.
 
 A request admitted before its pairing is replaced finishes against the
 repository it was admitted for; the next request for the old revision is
@@ -236,12 +245,12 @@ Scoping failures:
 
 | GitHub answer | Result |
 | --- | --- |
-| 200 with a token that is not the parent and sees only the repository | used for this request |
+| 200 with a token that is not the parent and reads the repository by id | used for this request |
 | 404 (documented for an invalid parent token) | the grant was revoked after `/user` confirmed it: grant deleted, `github_authorization_required` |
 | 422, or 403 without rate limiting | `repository_unavailable` |
 | 401 | `not_configured`: GitHub rejected the client credentials |
 | 429, rate-limited 403, 5xx, network failure | `upstream_unavailable`; the grant is kept |
-| any other status, a 200 without a token, the parent echoed, or a token that is not narrowed | `credential_scoping_unsupported` (503) |
+| any other status, a 200 without a token, or the parent echoed | `credential_scoping_unsupported` (503) |
 
 There is no fallback to the parent token.
 
@@ -299,7 +308,7 @@ Every connector error is JSON `{ "error": code, "message": string }`, plus
 | `invalid_request` | 400 | Malformed parameters, headers, encoding, or body. |
 | `payload_too_large` | 413 | Body over the limit. |
 | `upstream_rejected` | 502 | Unexpected Git status or content type. |
-| `credential_scoping_unsupported` | 503 | GitHub did not return a provably narrowed token. |
+| `credential_scoping_unsupported` | 503 | GitHub did not return a scoped token distinct from the parent. |
 | `upstream_unavailable` | 503 | GitHub unreachable, rate limited, or 5xx. Nothing is known about the grant. |
 | `not_configured` | 503 | Bindings missing or malformed, or GitHub rejected the client credentials. |
 
@@ -317,19 +326,29 @@ The coordinating session checked the official REST reference for
 `POST /applications/{client_id}/token/scoped`: client id and secret as Basic
 auth; a body of `access_token`, a target (`target_id`), repositories
 (`repository_ids`), and `permissions`; a 200 carrying `token`; and 404 for an
-invalid parent token. This session could not reach docs.github.com, and no
-request has reached GitHub.
+invalid parent token.
 
-Still unproved against GitHub, and each needs a live probe with a registered
-app before mounting:
+A live probe on October 8 with the registered app established:
+user authorization succeeded and scoping returned a distinct token.
+`GET /user/installations/{id}/repositories` with that scoped token still
+listed both private repositories in the installation. Git `info/refs` with
+the same scoped token as `x-access-token` Basic auth answered 200 for the
+scoped repository and 403 for the other private repository. The listing is
+therefore discovery only; the connector judges a scoped token by the read by
+id. GitHub enforces the repository restriction requested by the scoped-token
+endpoint; metadata listing is not an independent proof of exclusion.
+Live pairing through `GET /repositories/{id}` succeeded, including identity,
+privacy, and explicit pull/push checks. Browser Download fetched the existing
+private history at `1bddce6`. Discovery also returned the required installation
+and repository fields.
+
+Still unproved against GitHub:
 
 | Unproved | Why it matters |
 | --- | --- |
-| Git over HTTPS succeeds with a scoped user token as `x-access-token` Basic auth. | Every transfer |
-| `GET /user/installations/{id}/repositories` with a scoped token lists only the scoped repository. | The narrowing check; if GitHub lists more, every transfer fails closed as unsupported |
+| A scoped token's metadata read of another private repository is denied. Only Git advertisement denial was probed live. | Scope enforcement evidence; production does not probe unrelated repositories |
 | Limits on how many scoped tokens a user and app may hold, and whether minting past a limit revokes the earliest token, including the parent. The connector mints one per Git request, so check that the parent still works after at least 20 scopes. | A limit that revokes the parent would end the grant after a few requests |
 | Refresh-token rotation, and that scoped tokens minted from an old parent stop or keep working after a refresh. | Refresh ordering and in-flight transfers |
-| `GET /user/installations` and the installation repository list return `installations[].account.id` and `repositories[]` with `owner.id`, `private`, `clone_url`, `default_branch`, and the user's `permissions`. | Discovery and pairing |
 | Revoking the app makes `/user` return 401. | The consent check |
 | [Git v2.50.1 remote-curl source](https://github.com/git/git/blob/v2.50.1/remote-curl.c) compresses buffered RPC bodies larger than 1 KiB when gzip is enabled. The coordinator verified this source. | Accepting `Content-Encoding: gzip` |
 | A local workerd probe preserves the gzip header, byte count, and SHA-256 through the connector (`work/zhongwen-github-connector-20261007/gzip-worker-result.json`). Cloudflare’s deployed edge and real GitHub forwarding remain unverified. | gzip pass-through |
@@ -344,7 +363,7 @@ connector follows them. They do not show GitHub does.
 | --- | --- |
 | `app.ts` | `createGitHubConnectorApp`: routes, auth seam, CORS, Git relay, error codes |
 | `connection.ts` | Per-principal connection: transactions, grant, pairings and revisions, scoping, refresh |
-| `github.ts` | GitHub OAuth token, `/user`, installation, and scoped-token calls over an injected fetch |
+| `github.ts` | GitHub OAuth token, `/user`, installation, repository-by-id, and scoped-token calls over an injected fetch |
 | `crypto.ts` | Random secrets, secret hashes, PKCE S256, AES-GCM sealing |
 | `config.ts` | Bindings type, secret reading, exact callback allow-list |
 | `worker.ts` | `GitHubConnection` Durable Object, principal directory, Worker runtime resolver |
@@ -432,12 +451,14 @@ with a fixture session resolver. The simulated GitHub seeds `alice`,
 `mallory`, and `bob` with installations and repositories. Tests change its
 fields to simulate revocation, races with scoping, outages, refresh races,
 reinstalled apps, replaced or renamed repositories, unsupported scoping, and
-oversized bodies. No binding, variable, or request parameter selects it.
+oversized bodies. Like GitHub, it lists a whole installation for a scoped
+token but serves the read by id and Git only for the scoped repository. No binding, variable, or request parameter selects it.
 
 ## Limits
 
-- Every Git request costs three GitHub REST calls (`/user`, scoping,
-  repository read), plus a refresh when due, and one Epicenter session lookup.
+- Every Git request costs four GitHub REST calls (`/user`, installations,
+  scoping, repository read by id), plus a refresh when due, and one Epicenter
+  session lookup.
   User tokens allow 5,000 REST calls per hour. A fetch or push is several Git
   requests.
 - Discovery reads at most 1,000 installations and 1,000 repositories per

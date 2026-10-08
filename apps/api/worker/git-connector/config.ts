@@ -15,7 +15,7 @@ import type { GitHubAppCredentials } from './github.js';
  */
 export type GitConnectorBindings = {
 	/** Base64 (standard or URL-safe) of exactly 32 random bytes; seals GitHub grants. */
-	GIT_GRANT_KEY?: string;
+	GIT_GRANT_ENCRYPTION_KEY?: string;
 	GIT_GITHUB_CLIENT_ID?: string;
 	GIT_GITHUB_CLIENT_SECRET?: string;
 	/** Public slug from `https://github.com/apps/<slug>`; enables install links. */
@@ -34,7 +34,7 @@ export async function readGitConnectorSecrets(
 	const clientId = env.GIT_GITHUB_CLIENT_ID?.trim();
 	const clientSecret = env.GIT_GITHUB_CLIENT_SECRET?.trim();
 	if (!clientId || !clientSecret) return undefined;
-	const sealKey = await importSealKey(env.GIT_GRANT_KEY);
+	const sealKey = await importSealKey(env.GIT_GRANT_ENCRYPTION_KEY);
 	if (!sealKey) return undefined;
 	const appSlug = env.GIT_GITHUB_APP_SLUG?.trim();
 	return {

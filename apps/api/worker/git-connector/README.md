@@ -64,7 +64,7 @@ The object also records the principal that first wrote it and refuses calls
 naming another. Every operation runs through one in-object queue, so
 concurrent requests from any Worker isolate share one token refresh.
 
-Tokens are sealed with AES-GCM under `GIT_GRANT_KEY`, with the object id as
+Tokens are sealed with AES-GCM under `GIT_GRANT_ENCRYPTION_KEY`, with the object id as
 additional data. Secrets in state and handoff codes are stored as SHA-256
 hashes. An alarm fires at the next transaction or grant expiry and deletes
 what has expired; pairings are never swept.
@@ -391,11 +391,11 @@ where the app is installed and the person has access.
 Use the hosted deployment credentials in Infisical production `/ci`, from the
 repository root. The ordinary Wrangler login selects Braden's personal account,
 which is a different Worker. Provide secret values through the interactive
-input, never command arguments or this documentation. `GIT_GRANT_KEY` must be
+input, never command arguments or this documentation. `GIT_GRANT_ENCRYPTION_KEY` must be
 32 random bytes encoded as base64 and retained in deployment secret storage.
 
 ```sh
-infisical run --silent --env=prod --path=/ci -- bun x wrangler secret put GIT_GRANT_KEY --config apps/api/wrangler.jsonc
+infisical run --silent --env=prod --path=/ci -- bun x wrangler secret put GIT_GRANT_ENCRYPTION_KEY --config apps/api/wrangler.jsonc
 infisical run --silent --env=prod --path=/ci -- bun x wrangler secret put GIT_GITHUB_CLIENT_ID --config apps/api/wrangler.jsonc
 infisical run --silent --env=prod --path=/ci -- bun x wrangler secret put GIT_GITHUB_CLIENT_SECRET --config apps/api/wrangler.jsonc
 infisical run --silent --env=prod --path=/ci -- bun x wrangler secret put GIT_GITHUB_APP_SLUG --config apps/api/wrangler.jsonc
@@ -404,8 +404,8 @@ infisical run --silent --env=prod --path=/ci -- bun x wrangler secret put GIT_GI
 The slug is public metadata and optional. These commands administer production;
 none has been run for this connector.
 
-When a value is missing or `GIT_GRANT_KEY` does not decode to 32 bytes, every
-route answers 503 `not_configured`. Rotating `GIT_GRANT_KEY` makes every
+When a value is missing or `GIT_GRANT_ENCRYPTION_KEY` does not decode to 32 bytes, every
+route answers 503 `not_configured`. Rotating `GIT_GRANT_ENCRYPTION_KEY` makes every
 grant fail to unseal; each is deleted at next use and its pairings stay.
 
 ### Callbacks

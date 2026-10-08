@@ -64,7 +64,7 @@ export async function pkceChallenge(verifier: string): Promise<string> {
 }
 
 /**
- * Import `GIT_GRANT_KEY` (standard or URL-safe base64 of exactly 32 bytes)
+ * Import `GIT_GRANT_ENCRYPTION_KEY` (standard or URL-safe base64 of exactly 32 bytes)
  * as a non-extractable AES-GCM key. Returns undefined for anything else, so a
  * malformed key reads as missing configuration rather than a weaker key.
  */

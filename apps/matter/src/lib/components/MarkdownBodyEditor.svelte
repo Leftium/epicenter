@@ -51,16 +51,17 @@
 		view: EditorView;
 		vimCompartment: Compartment;
 		appliedVimEnabled: boolean;
+		/** Fresh state for `doc` with this editor's extensions. */
+		stateFor: (doc: string, vim: boolean) => EditorState;
 	};
 
 	let {
-		body,
+		body = $bindable(),
 		vimEnabled,
-		onCommit,
 	}: {
+		/** The accepted body. A different value replaces the document. */
 		body: string;
 		vimEnabled: boolean;
-		onCommit: (body: string) => void;
 	} = $props();
 
 	let container: HTMLDivElement | undefined;
@@ -70,34 +71,14 @@
 	$effect(() => {
 		if (!container) return;
 
-		// RowDetailDialog remounts this editor on file changes. These props seed
-		// one EditorView instance without making save echoes recreate it.
-		const initialBody = untrack(() => body);
-		const initialVimEnabled = untrack(() => vimEnabled);
+		// The widget owns the document, selection, and undo history; `body` seeds it
+		// here and the effect below replaces it only when the accepted body differs.
 		const vimCompartment = new Compartment();
-		let submittedBody = initialBody;
-
-		/**
-		 * Flush the CodeMirror buffer to the parent once per changed body.
-		 *
-		 * Blur and teardown both call this. The submitted snapshot dedupes the common
-		 * blur-then-destroy path while still saving a dirty editor on unmount.
-		 */
-		function commitCurrentBody(): void {
-			const body = editorView.state.doc.toString();
-			if (body === submittedBody) return;
-			submittedBody = body;
-			onCommit(body);
-		}
-
-		const editorView = new EditorView({
-			parent: container,
-			state: EditorState.create({
-				doc: initialBody,
+		const stateFor = (doc: string, vim: boolean) =>
+			EditorState.create({
+				doc,
 				extensions: [
-					vimCompartment.of(
-						initialVimEnabled ? matterVimExtension() : [],
-					),
+					vimCompartment.of(vim ? matterVimExtension() : []),
 					history(),
 					keymap.of(markdownShortcutKeymap),
 					keymap.of([...historyKeymap, ...defaultKeymap]),
@@ -106,24 +87,43 @@
 					markdown(),
 					markdownLivePreview(),
 					placeholder('Start writing'),
-					EditorView.domEventHandlers({
-						blur: commitCurrentBody,
+					EditorView.updateListener.of((update) => {
+						if (update.docChanged) body = update.state.doc.toString();
 					}),
 					matterEditorTheme,
 				],
-			}),
+			});
+
+		const initialVimEnabled = untrack(() => vimEnabled);
+		const editorView = new EditorView({
+			parent: container,
+			state: stateFor(
+				untrack(() => body),
+				initialVimEnabled,
+			),
 		});
 		mountedEditor = {
 			view: editorView,
 			vimCompartment,
 			appliedVimEnabled: initialVimEnabled,
+			stateFor,
 		};
 
 		return () => {
-			commitCurrentBody();
 			editorView.destroy();
 			if (mountedEditor?.view === editorView) mountedEditor = undefined;
 		};
+	});
+
+	// Typing publishes first, so the accepted body already equals the document and
+	// nothing happens. A body that differs came from elsewhere (Discard, or the file
+	// changing before any input here): show it in fresh state, as the file reads.
+	// `setState` calls no update listener, so the replacement is not published back.
+	$effect(() => {
+		const accepted = body;
+		const editor = mountedEditor;
+		if (!editor || editor.view.state.doc.toString() === accepted) return;
+		editor.view.setState(editor.stateFor(accepted, editor.appliedVimEnabled));
 	});
 
 	$effect(() => {

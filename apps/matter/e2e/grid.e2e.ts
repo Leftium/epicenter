@@ -161,6 +161,30 @@ test('collapsed navigation leaves focus on visible workspace controls', async ({
 	).toBeFocused();
 });
 
+// Real keystrokes into the CodeMirror body editor: each change saves the whole body while the
+// editor keeps focus (no blur commit), and the text is still there after closing and reopening.
+test('typing in the body editor saves without leaving it', async ({ page }) => {
+	await page.goto(`/vault/${VAULT_ID}`);
+	await page.getByRole('button', { name: 'Open row detail' }).first().click();
+
+	const body = page.locator('.cm-content');
+	await body.click();
+	await page.keyboard.press('ControlOrMeta+End');
+	await page.keyboard.type('Typed here');
+
+	await expect
+		.poll(() => page.evaluate(() => (window.__E2E_WRITES__ ?? []).at(-1)))
+		.toEqual({
+			fileName: 'card-a.md',
+			content: '---\ntitle: Card A\nstatus: todo\n---\n# Card A\nTyped here',
+		});
+	await expect(body).toBeFocused();
+
+	await page.getByRole('button', { name: 'Close', exact: true }).click();
+	await page.getByRole('button', { name: 'Open row detail' }).first().click();
+	await expect(page.locator('.cm-content')).toContainText('Typed here');
+});
+
 test('row editor preserves heading hierarchy', async ({ page }) => {
 	await page.goto(`/vault/${VAULT_ID}`);
 	await page.getByRole('button', { name: 'Open row detail' }).first().click();

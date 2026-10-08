@@ -78,7 +78,6 @@
 
 	const read = $derived(table.read);
 	const onSaveField = $derived(table.saveField);
-	const onSaveBody = $derived(table.saveBody);
 	const view = $derived(read.view);
 
 	type RowFilter = 'all' | 'attention' | 'ready';
@@ -210,6 +209,8 @@
 		}
 	}
 
+	// The dialog closes when its row stops conforming (removed or unparseable). Body input
+	// it took stays with the table, and a failed save of it shows in the table pane.
 	$effect(() => {
 		if (!detailOpen) {
 			detailFileName = undefined;
@@ -580,6 +581,6 @@
 		bind:open={detailOpen}
 		conformance={detailConformance}
 		{onSaveField}
-		{onSaveBody}
+		bodyEditor={table.bodyEditor}
 	/>
 {/if}

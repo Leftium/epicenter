@@ -76,9 +76,12 @@ The ownership cases are finite:
 Immediate submission relies on synchronous accepted-content ownership. A store
 that exposes only successful disk writes cannot replace an editor: an earlier
 save echo can overwrite newer typing, and failure can leave no owner for it.
-Matter currently submits its widget document on blur or teardown. Skills binds
-its widget directly to a live body node. Neither needs another mirrored widget
-document merely to look like the row-editor apps.
+Matter binds its widget to a table-owned accepted body and publishes each change
+immediately. The table retains accepted input through failed saves and dialog
+teardown, separately from its disk projection. Discard returns to the last
+observed file version. This retention lasts while the table remains open. Skills
+binds its widget directly to a live body node. Both widgets retain their document,
+selection, and undo state without another mirrored widget document.
 
 An app that promises to retain refused input owns that additional value. A
 control origin identifies where it belongs; it does not select a patch to merge.

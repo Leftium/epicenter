@@ -102,15 +102,22 @@ function ok<T>(result: Result<T, { name: string; message: string }>): T {
 	return value;
 }
 
-async function open(id: string, options: { remote?: boolean } = {}) {
+async function open(
+	id: string,
+	options: {
+		remote?: boolean;
+		definition?: typeof definition;
+		commitOnEdit?: boolean;
+	} = {},
+) {
 	used.add(id);
 	const { data: folder, error: openError } = await openFolder({
 		id,
-		definition,
+		definition: options.definition ?? definition,
 		browser: {
 			scope,
 			author,
-			commitOnEdit: false,
+			commitOnEdit: options.commitOnEdit ?? false,
 			remote: options.remote ? remote : undefined,
 		},
 	});
@@ -349,14 +356,7 @@ async function publication(id: string) {
 				...definition,
 				title: 'Changed publication',
 			});
-			const next = ok(
-				await openFolder({
-					id,
-					definition: changed,
-					browser: { scope, author, commitOnEdit: false },
-				}),
-			);
-			opened.push(next);
+			await open(id, { definition: changed });
 			assert(
 				decoder.decode(await rawRead(id, 'definition.json')) ===
 					ok(exportSchema(changed)),
@@ -373,18 +373,6 @@ async function publication(id: string) {
 		'history-enabled publication settles and identical reopening adds no commit',
 		async () => {
 			const historyId = `${id}-history`;
-			used.add(historyId);
-			const acquire = async () => {
-				const folder = ok(
-					await openFolder({
-						id: historyId,
-						definition,
-						browser: { scope, author, commitOnEdit: true },
-					}),
-				);
-				opened.push(folder);
-				return folder;
-			};
 			const settle = async (folder: Folder<typeof definition>) => {
 				for (let attempt = 0; attempt < 1000; attempt++) {
 					if (!folder.git.snapshot.activity.commit.active) return;
@@ -392,12 +380,12 @@ async function publication(id: string) {
 				}
 				throw new Error('automatic history did not settle');
 			};
-			const first = await acquire();
+			const first = await open(historyId, { commitOnEdit: true });
 			await settle(first);
 			const commits = ok(await first.git.log(10));
 			assert(commits.length === 1, `initial commits ${commits.length}`);
 			await first.close();
-			const second = await acquire();
+			const second = await open(historyId, { commitOnEdit: true });
 			await settle(second);
 			const after = ok(await second.git.log(10));
 			assert(

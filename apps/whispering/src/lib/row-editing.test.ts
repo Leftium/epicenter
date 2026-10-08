@@ -251,7 +251,6 @@ test('a malformed file opens in the same editor as its source; typing there is e
 	// Valid now, and the source the person typed in stays shown until they choose.
 	expect(editing.row.status).toBe('valid');
 	expect(editing.view).toBe('source');
-	expect(editing.source).toBe(true);
 	// Rows from fields wait for the person to choose them.
 	expect(typeField(editing, 'title', 'From a field')).toBeUndefined();
 	expect(editing.row.text).toBe(repaired);

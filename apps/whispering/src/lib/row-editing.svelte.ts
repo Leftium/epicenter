@@ -135,13 +135,6 @@ export function createRowEditing<TFields>(
 		get view(): RowView {
 			return view();
 		},
-		/** Whether the path prefers its source to its fields. */
-		get source() {
-			return source;
-		},
-		get released() {
-			return released;
-		},
 		/**
 		 * Whether input is taken now, by the same rule every setter applies; a
 		 * view shows its controls read-only while it is not. Each setter's own

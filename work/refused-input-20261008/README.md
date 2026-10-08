@@ -163,3 +163,45 @@ The source clone and completed worker report remain separate from live acceptanc
 Implementation and doctrine committed as `eb1683b6ac`. The task stops after this
 bounded Whispering wave; other apps and native storage retain their existing
 contracts. The folder-opening blocker remains visible and outside this change.
+
+## Straggler hunt after integration
+
+The follow-up inventory traced the four apps' row owners and consumers, including
+Whispering's leave tests when the full typecheck exposed one more test caller.
+The changed-file inventory extends the tree above with src/lib/leave.test.ts.
+Comparison reads included:
+
+```text
+apps/
+|-- todos/src/lib/todo-editor.svelte.ts
+|-- honeycrisp/src/
+|   |-- lib/note-editor.svelte.ts
+|   |-- lib/editor/rich-text.ts
+|   `-- routes/components/NoteDetail.svelte
+`-- capture/src/lib/draft.svelte.ts
+.agents/skills/collapse-pass/
+|-- SKILL.md
+`-- references/refactoring-methods.md
+```
+
+Whispering exposed source and released getters consumed only by tests. Its public
+view already reports fields/source/released, and each affected assertion is on a
+valid or released row. Removing those getters makes tests check the same public
+view as actual panels without exposing the owner's private state. One duplicate
+Source assertion was deleted. The underlying preference and release guards stay.
+
+The cross-app search found no BoundText/LiveTextarea/LiveInput, setField/setBody,
+or syncedBody paths in Capture, Honeycrisp, Todos or Whispering. Other hits named
+refused were publication/recovery outcomes or intentionally retained input.
+Honeycrisp's snapshot getter still has real copy/operation callers; its rich
+control origin protects retained Source input. Todos and Capture likewise still
+promise to retain rejected input. Changing their policies is a separate app
+behavior change, not an accidental straggler of Whispering's implementation.
+
+Post-implementation review found no further deletion with a grounded benefit.
+All touched files were re-read with their callers. Verification: owner 13 pass;
+mounted panels 15 pass; leave 24 pass; browser/native typecheck passed. Sixteen
+focused library/desktop lifecycle tests yielded 10 pass and 6 failures, all
+failing names already present in the pre-pass integrated broad-suite log. The
+scripted native protocol failures were not changed to make this cleanup green.
+Scoped whitespace checks passed.

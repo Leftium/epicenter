@@ -897,5 +897,5 @@ test('released row editors cannot accept typing or resume admission', async () =
 	expect(editor.retry()).toContain('no longer open');
 	expect(library.admitting).toBe(false);
 	expect(editor.row).toBe(before);
-	expect(editor.released).toBe(true);
+	expect(editor.view).toBe('released');
 });

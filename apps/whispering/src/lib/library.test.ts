@@ -758,7 +758,7 @@ test('an open recording whose file left the folder, holding nothing, is put down
 
 	await library.refreshAll();
 
-	expect(editor.released).toBe(true);
+	expect(editor.view).toBe('released');
 	expect(library.selection).toBeUndefined();
 	expect(library.holdsUnsavedWork).toBe(false);
 	expect(await Bun.file(path).exists()).toBe(false);
@@ -2659,7 +2659,7 @@ test('a transcript’s editor is settled before it moves, takes no typing while 
 
 	const to = 'transcriptions/renamed.md';
 	expect(await Bun.file(join(root, transcript.path)).exists()).toBe(false);
-	expect(draft.released).toBe(true);
+	expect(draft.view).toBe('released');
 	// Its card opens the new name, as a transcript card does for its path.
 	await library.openTranscript(to);
 	const moved = editingOf(library.transcriptAt(to));
@@ -2742,7 +2742,7 @@ test('a transcript renamed while the page decides to close takes its settled typ
 	expect(leaving).toBe(true);
 	expect(await readFile(join(root, to), 'utf8')).toContain(TYPED);
 	expect(await Bun.file(join(root, transcript.path)).exists()).toBe(false);
-	expect(draft.released).toBe(true);
+	expect(draft.view).toBe('released');
 	expect(library.unsavedWork).toEqual([]);
 });
 
@@ -2834,7 +2834,7 @@ test('a transcript rename whose reply is lost while the page decides to close pu
 	expect(said).toContain('did not confirm the rename');
 	expect(leaving).toBe(true);
 	expect(library.unsavedWork).toEqual([]);
-	expect(draft.released).toBe(true);
+	expect(draft.view).toBe('released');
 	expect(library.transcriptAt(transcript.path)).toBeUndefined();
 	// What moved is what was settled first; nothing was written after.
 	expect(
@@ -3031,7 +3031,7 @@ test('a transcript rename that left the file at both paths puts its editor down,
 		'both are in the folder now',
 	);
 
-	expect(draft.released).toBe(true);
+	expect(draft.view).toBe('released');
 	expect(library.holdsUnsavedWork).toBe(false);
 	const before = await readFile(join(root, transcript.path), 'utf8');
 	expect(await readFile(join(root, to), 'utf8')).toBe(before);
@@ -3133,7 +3133,7 @@ test('a transcript body no file can hold is not taken, so it neither holds the c
 	expect(library.holdsUnsavedWork).toBe(false);
 
 	expect(await library.rename(transcript.path, 'renamed.md')).toBeUndefined();
-	expect(draft.released).toBe(true);
+	expect(draft.view).toBe('released');
 	expect(draft.refusal).toBeUndefined();
 	expect(
 		await readFile(join(root, 'transcriptions', 'renamed.md'), 'utf8'),
@@ -3243,7 +3243,7 @@ test('a recording being deleted takes no typing, and nothing writes its row agai
 	expect(await removing).toBeUndefined();
 
 	expect(await Bun.file(path).exists()).toBe(false);
-	expect(editor.released).toBe(true);
+	expect(editor.view).toBe('released');
 	expect(library.holdsUnsavedWork).toBe(false);
 });
 
@@ -3343,7 +3343,7 @@ test('a recording’s results take no typing while it is deleted, and nothing wr
 
 	expect(await Bun.file(join(root, transcript.path)).exists()).toBe(false);
 	expect(await readdir(join(root, 'transcriptions'))).toEqual([]);
-	expect(draft.released).toBe(true);
+	expect(draft.view).toBe('released');
 	expect(library.holdsUnsavedWork).toBe(false);
 });
 
@@ -3418,7 +3418,7 @@ test('a result being deleted with its recording is not renamed, and keeps taking
 	expect(await removing).toBeUndefined();
 
 	expect(await readdir(join(root, 'transcriptions'))).toEqual(['taken.md']);
-	expect(draft.released).toBe(true);
+	expect(draft.view).toBe('released');
 	expect(library.holdsUnsavedWork).toBe(false);
 });
 
@@ -3438,7 +3438,7 @@ test('a recording whose result is being renamed is not deleted, and the result�
 	expect(await renaming).toBeUndefined();
 
 	const to = 'transcriptions/renamed.md';
-	expect(draft.released).toBe(true);
+	expect(draft.view).toBe('released');
 	expect(library.holdsUnsavedWork).toBe(false);
 	expect(await readFile(join(root, to), 'utf8')).toContain(
 		'Typed before it moved.',

@@ -362,7 +362,7 @@ test('a saved editor whose file another writer removed is not a failed save, and
 	owner.disk.delete(PATH);
 	await library.refreshAll();
 
-	expect(editor.released).toBe(true);
+	expect(editor.view).toBe('released');
 	expect(library.selectedTransformation).toBeUndefined();
 	expect(library.saveProblems).toBe(0);
 	expect(library.holdsUnsavedWork).toBe(false);
@@ -458,7 +458,7 @@ test('a row being deleted takes no input, and a late save cannot reach it', asyn
 
 	expect(owner.text(PATH)).toBeUndefined();
 	expect(kinds()).toEqual(['remove']);
-	expect(editor.released).toBe(true);
+	expect(editor.view).toBe('released');
 });
 
 test('a deletion whose reply was lost puts the editor down, recreates nothing, and the file is shown as it is when opened again', async () => {
@@ -469,7 +469,7 @@ test('a deletion whose reply was lost puts the editor down, recreates nothing, a
 	const problem = await library.remove(deletion);
 
 	expect(problem).toContain('did not confirm the deletion');
-	expect(editor.released).toBe(true);
+	expect(editor.view).toBe('released');
 	expect(library.selectedTransformation).toBeUndefined();
 	expect(library.holdsUnsavedWork).toBe(false);
 	expect(owner.text(PATH)).toBeUndefined();
@@ -499,7 +499,7 @@ test('a rename settles the editor, captures the file after that, and the file op
 	expect(kinds()).toEqual(['replace', 'move']);
 	expect(owner.text(TWO)).toContain('Typed before the rename.\n');
 	expect(owner.text(ONE)).toBeUndefined();
-	expect(editor.released).toBe(true);
+	expect(editor.view).toBe('released');
 	expect(library.selectedPath).toBe(TWO);
 	expect(editingOf(library.transcriptAt(TWO)).row).toMatchObject({
 		status: 'valid',
@@ -522,7 +522,7 @@ test('a move that landed with its reply lost takes no typing meanwhile, puts the
 	expect(await renaming).toContain('did not confirm the rename');
 	expect(owner.text(ONE)).toBeUndefined();
 	expect(owner.text(TWO)).toBe(TRANSCRIPT);
-	expect(editor.released).toBe(true);
+	expect(editor.view).toBe('released');
 	expect(library.holdsUnsavedWork).toBe(false);
 	expect(kinds()).toEqual(['move']);
 
@@ -546,7 +546,7 @@ test('a move whose reply was lost before it happened leaves the file where it wa
 
 	expect(owner.text(ONE)).toBe(TRANSCRIPT);
 	expect(owner.text(TWO)).toBeUndefined();
-	expect(editor.released).toBe(true);
+	expect(editor.view).toBe('released');
 	expect(library.holdsUnsavedWork).toBe(false);
 
 	await library.open(ONE);

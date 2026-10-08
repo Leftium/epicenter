@@ -208,7 +208,7 @@ test('the whole-file source of a reused view edits the path it shows now, and it
 		transcript('Beta, as text.\n').replace('model: m', 'model: n'),
 	);
 	expect(await readFile(join(root, A), 'utf8')).toBe(transcript('Alpha.\n'));
-	expect(editorAt(library, A).source).toBe(true);
+	expect(editorAt(library, A).view).toBe('source');
 });
 
 test('a control kept after its view is gone, or after the component is destroyed, changes nothing', async () => {
@@ -229,7 +229,7 @@ test('a control kept after its view is gone, or after the component is destroyed
 	type(field, 'Typed into a detached field.\n');
 	edit?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
 	expect(editor.row).toMatchObject({ body: 'Alpha.\n' });
-	expect(editor.source).toBe(false);
+	expect(editor.view).toBe('fields');
 
 	// Shown again: a new view, and typing there lands.
 	page.shown = true;
@@ -350,7 +350,7 @@ test('a transformation’s title and source are one editor, and its source prefe
 	flushSync();
 	page.shown = true;
 	flushSync();
-	expect(editor.source).toBe(true);
+	expect(editor.view).toBe('source');
 	expect(
 		target.querySelector('[data-testid="transformation-title"]'),
 	).toBeNull();
@@ -436,7 +436,7 @@ test('controls from an earlier mode stay inert after that mode returns: fields, 
 	toSource?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
 	toFields?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
 	expect(editor.row).toMatchObject({ body: 'Alpha.\n' });
-	expect(editor.source).toBe(false);
+	expect(editor.view).toBe('fields');
 
 	type(fieldsAgain, 'Typed into the fields shown now.\n');
 	expect(editor.row).toMatchObject({

@@ -75,18 +75,19 @@
 		const initialBody = untrack(() => body);
 		const initialVimEnabled = untrack(() => vimEnabled);
 		const vimCompartment = new Compartment();
-		const bodyBuffer = { draft: initialBody, committed: initialBody };
+		let submittedBody = initialBody;
 
 		/**
 		 * Flush the CodeMirror buffer to the parent once per changed body.
 		 *
-		 * Blur and teardown both call this. The committed snapshot dedupes the common
+		 * Blur and teardown both call this. The submitted snapshot dedupes the common
 		 * blur-then-destroy path while still saving a dirty editor on unmount.
 		 */
 		function commitCurrentBody(): void {
-			if (bodyBuffer.draft === bodyBuffer.committed) return;
-			bodyBuffer.committed = bodyBuffer.draft;
-			onCommit(bodyBuffer.draft);
+			const body = editorView.state.doc.toString();
+			if (body === submittedBody) return;
+			submittedBody = body;
+			onCommit(body);
 		}
 
 		const editorView = new EditorView({
@@ -105,10 +106,6 @@
 					markdown(),
 					markdownLivePreview(),
 					placeholder('Start writing'),
-					EditorView.updateListener.of((update) => {
-						if (!update.docChanged) return;
-						bodyBuffer.draft = update.state.doc.toString();
-					}),
 					EditorView.domEventHandlers({
 						blur: commitCurrentBody,
 					}),

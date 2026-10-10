@@ -159,9 +159,8 @@ export const MoveError = defineErrors({
 	 * and `from` is still there. Nothing was rolled back. `cause` is why
 	 * `from` was not removed.
 	 *
-	 * `moved` is `to` with the SHA-256 the move was guarded by, and
-	 * `undefined` when it was not: an unguarded move never learned which bytes
-	 * it carried, so it names no hash. It is a receipt conditioned on that
+	 * `moved` is `to` with the SHA-256 the move was guarded by: every move
+	 * names the bytes it carries. It is a receipt conditioned on that
 	 * baseline, never a read of `to`: another program may have written there
 	 * since, and a native directory checks the source only as well as another
 	 * program lets it. Read `to` to learn what it holds now.
@@ -174,7 +173,7 @@ export const MoveError = defineErrors({
 	}: {
 		from: string;
 		to: string;
-		moved: FileCapture | undefined;
+		moved: FileCapture;
 		cause: FileError;
 	}) => ({
 		message: `The file reached '${to}', but '${from}' could not be removed, so both paths hold it: ${cause.message}`,
@@ -185,14 +184,6 @@ export const MoveError = defineErrors({
 	}),
 });
 export type MoveError = InferErrors<typeof MoveError>;
-
-/**
- * A guarded move's `SourceNotRemoved` always names `moved`: `to` with the
- * SHA-256 the caller reviewed and guarded the move by. It is that baseline
- * at the new address, not a verification of the bytes at `to`; read `to` to
- * learn what it holds.
- */
-export type CapturedMoveError = MoveError & { readonly moved: FileCapture };
 
 /**
  * Failures of reading a row or `kv.json` as text and of preparing a
@@ -296,7 +287,7 @@ export type RowSaveError =
 	| AutosaveError;
 
 /** A guarded row move preserves the file move's failures, its landed capture included. */
-export type TableRenameError = FileError | CapturedMoveError;
+export type TableRenameError = FileError | MoveError;
 
 /** Removing a row preserves the storage operation's failures. */
 export type TableDeleteError = FileError;

@@ -5,12 +5,7 @@
 import { Err, Ok, type Result } from 'wellcrafted/result';
 import type { FileChange, FolderStorage } from './boundary.js';
 import { type FileCapture, fileCapture, hashBytes } from './capture.js';
-import {
-	type CapturedMoveError,
-	FileError,
-	type FileStep,
-	MoveError,
-} from './errors.js';
+import { FileError, type FileStep, MoveError } from './errors.js';
 import type { History } from './git/history.js';
 
 const stepPaths = (step: FileStep | FileChange): string[] =>
@@ -98,10 +93,9 @@ type Move = Extract<FileChange, { kind: 'move' }>;
  *
  * Raw storage reports a move whose destination landed but whose source was
  * not removed as a partial application; that becomes
- * `MoveError.SourceNotRemoved`. A guarded move names the destination with its
+ * `MoveError.SourceNotRemoved`, which names the destination with the move's
  * guard hash, a baseline-conditioned receipt rather than a read of what the
- * destination holds now; an unguarded one never learned a hash, so it names
- * the paths alone. Any other partial report contradicts a single
+ * destination holds now. Any other partial report contradicts a single
  * change, so its outcome is `Unconfirmed` and carries the report as its
  * cause. Accounting below this call has already seen the raw report and
  * announced the landed paths.
@@ -113,14 +107,10 @@ export function applyOne(
 export function applyOne(
 	storage: Pick<FolderStorage, 'apply'>,
 	change: Move & { expectedSha256: string },
-): Promise<Result<undefined, FileError | CapturedMoveError>>;
-export function applyOne(
-	storage: Pick<FolderStorage, 'apply'>,
-	change: Move,
 ): Promise<Result<undefined, FileError | MoveError>>;
 export async function applyOne(
 	storage: Pick<FolderStorage, 'apply'>,
-	change: FileChange,
+	change: Exclude<FileChange, Move> | (Move & { expectedSha256: string }),
 ): Promise<Result<undefined, FileError | MoveError>> {
 	const { error } = await storage.apply([change]);
 	if (error === null) return Ok(undefined);
@@ -135,10 +125,7 @@ export async function applyOne(
 		return MoveError.SourceNotRemoved({
 			from: change.from,
 			to: change.to,
-			moved:
-				change.expectedSha256 === undefined
-					? undefined
-					: fileCapture(change.to, change.expectedSha256),
+			moved: fileCapture(change.to, change.expectedSha256),
 			cause: error.error,
 		});
 	return FileError.Unconfirmed({

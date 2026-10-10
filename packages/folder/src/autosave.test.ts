@@ -116,7 +116,10 @@ describe('snapshot saves', () => {
 		expect(last.text).toBe('C');
 		last.resolve(Ok(undefined));
 		expect(await settled).toEqual(saved('C'));
-		expect(states).toEqual([{ status: 'saving' }, saved('C')]);
+		expect(states).toEqual([
+			{ status: 'saving', file: at('initial') },
+			saved('C'),
+		]);
 		expect(writer.texts).toEqual(['A', 'C']);
 		expect(writer.maxActive).toBe(1);
 	});
@@ -163,12 +166,18 @@ describe('snapshot saves', () => {
 			status: 'error',
 			error: { message: 'cannot save C' },
 		} as const;
-		expect(states.at(-1)).toEqual(refusal);
+		expect(states.at(-1)).toEqual({ ...refusal, file: at('initial') });
 		active.resolve(Ok(undefined));
-		expect(await saves.settled()).toEqual(refusal);
+		// The refusal stands, and names the bytes A confirmed, so a guarded
+		// rename or delete does not conflict with the session's own save.
+		expect(await saves.settled()).toEqual({ ...refusal, file: at('A') });
 		// B was pending before C failed, and C's failure dropped it.
 		expect(writer.texts).toEqual(['A']);
-		expect(states).toEqual([{ status: 'saving' }, refusal]);
+		expect(states).toEqual([
+			{ status: 'saving', file: at('initial') },
+			{ ...refusal, file: at('initial') },
+			{ ...refusal, file: at('A') },
+		]);
 	});
 
 	test('a valid request after a preparation failure saves over what the older write confirmed', async () => {
@@ -196,7 +205,10 @@ describe('snapshot saves', () => {
 		active.resolve(Err({ message: 'A failed' }));
 		(await second).resolve(Ok(undefined));
 		expect(await saves.settled()).toEqual(saved('C'));
-		expect(states).toEqual([{ status: 'saving' }, saved('C')]);
+		expect(states).toEqual([
+			{ status: 'saving', file: at('initial') },
+			saved('C'),
+		]);
 		expect(writer.texts).toEqual(['A', 'C']);
 	});
 
@@ -208,6 +220,7 @@ describe('snapshot saves', () => {
 		expect(await saves.settled()).toEqual({
 			status: 'error',
 			error: { message: 'Unavailable' },
+			file: at('initial'),
 		});
 		const retry = writer.next();
 		saves.request({ text: 'A' });

@@ -19,7 +19,7 @@ import {
 	ownBytes,
 	ownCapture,
 } from './capture.js';
-import type { CapturedMoveError, FileError } from './errors.js';
+import type { FileError, MoveError } from './errors.js';
 import { applyOne, replaceCaptured } from './storage.js';
 
 /**
@@ -62,7 +62,7 @@ export type FolderFiles = {
 	move(
 		file: FileCapture,
 		destination: string,
-	): Promise<Result<FileCapture, FileError | CapturedMoveError>>;
+	): Promise<Result<FileCapture, FileError | MoveError>>;
 	/** Save at the path whatever is there, as a shell redirection does. */
 	overwrite(
 		path: string,

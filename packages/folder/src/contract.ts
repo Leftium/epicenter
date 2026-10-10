@@ -45,7 +45,6 @@ export {
 	type PreparedFolderTable,
 } from './definition.js';
 export {
-	type CapturedMoveError,
 	FileError,
 	type FileStep,
 	type KvReadError,

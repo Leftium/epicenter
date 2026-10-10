@@ -12,7 +12,6 @@ import type * as contract from './contract.js';
 import * as root from './index.js';
 import {
 	type CapturedFile,
-	type CapturedMoveError,
 	type CreateRowOf,
 	type DeepReadonly,
 	defineFolder,
@@ -555,17 +554,15 @@ async function typedValues(
 	const { error: moveError } = await folder.files.move(replaced, 'b.md');
 	// A file move is always guarded, so a kept source names the moved capture.
 	if (moveError !== null) {
-		expectTypeOf(moveError).toEqualTypeOf<FileError | CapturedMoveError>();
+		expectTypeOf(moveError).toEqualTypeOf<FileError | MoveError>();
 		if (moveError.name === 'SourceNotRemoved')
 			expectTypeOf(moveError.moved).toEqualTypeOf<FileCapture>();
 	}
-	// A row rename is always guarded, so a kept source names the moved capture.
-	expectTypeOf<TableRenameError>().toEqualTypeOf<
-		FileError | CapturedMoveError
-	>();
+	// Every move is guarded, so a kept source always names the moved capture.
+	expectTypeOf<TableRenameError>().toEqualTypeOf<FileError | MoveError>();
 	expectTypeOf<
 		Extract<MoveError, { name: 'SourceNotRemoved' }>['moved']
-	>().toEqualTypeOf<FileCapture | undefined>();
+	>().toEqualTypeOf<FileCapture>();
 	// @ts-expect-error Several changes are several calls; there is no batch.
 	folder.batch;
 

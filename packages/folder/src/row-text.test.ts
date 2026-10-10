@@ -360,3 +360,58 @@ test('a float is written with a decimal point, which every YAML version reads as
 		half: 0.5,
 	});
 });
+
+test('strings some YAML reader reads differently are quoted, whatever their case', () => {
+	// Each was written plain at one point and misread by PyYAML or Ruby's
+	// Psych: case-varied booleans and null, comma numbers, a symbol, the 1.1
+	// value tag, a tab, and characters some reader rejects unescaped.
+	const doubtful = [
+		'tRue',
+		'oN',
+		'nO',
+		'yEs',
+		'FALSe',
+		'nUll',
+		'1,000',
+		'-1,000',
+		':x',
+		'=',
+		'a\tb',
+		'a\u0085b',
+		'a\u2028b',
+		'a\u007fb',
+		'a\ufeffb',
+	];
+	for (const value of doubtful) {
+		const text = expectOk(
+			formatRow(todos, {
+				fields: { title: value, done: false, tags: [] },
+				body: '',
+			}),
+		);
+		expect(text.split('\n')[1]).toStartWith('title: "');
+		expect(expectOk(parseRow(todos, text)).fields.title).toBe(value);
+	}
+});
+
+test('multi-line strings every reader keeps exactly are literal blocks; the rest are quoted', () => {
+	const cases: [string, string][] = [
+		['line one\nline two\n', 'title: |\n  line one\n  line two\n'],
+		['no trailing break\nhere', 'title: |-\n  no trailing break\n  here\n'],
+		['  \n', 'title: "  \\n"\n'],
+		[' \n \n', 'title: " \\n \\n"\n'],
+		['\tx\n', 'title: "\\tx\\n"\n'],
+		['x\n\n', 'title: "x\\n\\n"\n'],
+		['x\r\ny', 'title: "x\\r\\ny"\n'],
+	];
+	for (const [value, expected] of cases) {
+		const text = expectOk(
+			formatRow(todos, {
+				fields: { title: value, done: false, tags: [] },
+				body: '',
+			}),
+		);
+		expect(text).toContain(expected);
+		expect(expectOk(parseRow(todos, text)).fields.title).toBe(value);
+	}
+});

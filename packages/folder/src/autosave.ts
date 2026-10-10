@@ -34,14 +34,25 @@ export const AutosaveError = defineErrors({
 export type AutosaveError = InferErrors<typeof AutosaveError>;
 
 /**
- * The outcome of an editing session's latest requested save. `saved` names
- * the bytes the session last confirmed, which guard its next write and any
- * other guarded action on the file.
+ * The outcome of an editing session's latest requested save. Every state
+ * names `file`, the bytes the session last confirmed: they guard its next
+ * write and any other guarded action on the file, such as a rename, even
+ * while a newer request is saving or has failed.
  */
 export type SaveState<TError> =
 	| { readonly status: 'saved'; readonly file: FileCapture }
-	| { readonly status: 'saving' }
-	| { readonly status: 'error'; readonly error: TError };
+	| { readonly status: 'saving'; readonly file: FileCapture }
+	| {
+			readonly status: 'error';
+			readonly error: TError;
+			readonly file: FileCapture;
+	  };
+
+/** A save state before the session's confirmed capture is attached. */
+type Outcome<TError> =
+	| { status: 'saved' }
+	| { status: 'saving' }
+	| { status: 'error'; error: TError };
 
 /** One editing session's saves: request a snapshot, or wait for the work in flight. */
 export type Autosave<TValue, TError> = {
@@ -87,8 +98,8 @@ export function createAutosave<TValue, TSnapshot, TError>({
 	let refused: { error: TError } | undefined;
 	let batch: Promise<State> | undefined;
 
-	function publish(next: State) {
-		state = Object.freeze(next);
+	function publish(next: Outcome<TError | AutosaveError>) {
+		state = Object.freeze({ ...next, file: confirmed });
 		callObserver('save state observer', onState, state);
 	}
 
@@ -107,13 +118,15 @@ export function createAutosave<TValue, TSnapshot, TError>({
 
 		// A generic error type cannot narrow `data`; a null error means it is the capture.
 		if (outcome.error === null) confirmed = outcome.data as FileCapture;
-		// The latest request's own failure already stands; this older write
-		// cannot replace it, with `saved` or with its own error.
-		if (pending === undefined && refused === undefined)
+		if (pending === undefined)
 			publish(
-				outcome.error === null
-					? { status: 'saved', file: confirmed }
-					: { status: 'error', error: outcome.error },
+				// The latest request's own failure stands: this older write cannot
+				// replace it, though a landed write still advances its `file`.
+				refused !== undefined
+					? { status: 'error', error: refused.error }
+					: outcome.error === null
+						? { status: 'saved' }
+						: { status: 'error', error: outcome.error },
 			);
 
 		// A terminal observer can synchronously request more. Take that

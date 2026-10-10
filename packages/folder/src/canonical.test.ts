@@ -139,7 +139,8 @@ test('parse and format are idempotent byte for byte', () => {
 	const third = canonical(second);
 	expect(second).toBe(first);
 	expect(third).toBe(first);
-	expect(first).toContain(' ');
+	// The separator is escaped: some YAML readers end a line at a raw one.
+	expect(first).toContain('\\u2028');
 	expect(parse(first).fields.title).toBe(
 		'Unicode é 漢字 😀 and a literal   separator',
 	);
@@ -352,8 +353,9 @@ test('-0 survives parse and format', () => {
 		const document = parse(`---\nn: ${spelling}\n---\n`);
 		expect(Object.is(document.fields.n, -0)).toBe(true);
 		const text = format(document);
-		// The key is quoted: a YAML 1.1 reader reads a bare n as false.
-		expect(text).toBe('---\n"n": -0\n---\n');
+		// The key is quoted: a YAML 1.1 reader reads a bare n as false. The
+		// value is a float, since -0 is integer zero to a YAML 1.1 reader.
+		expect(text).toBe('---\n"n": -0.0\n---\n');
 		expect(Object.is(parse(text).fields.n, -0)).toBe(true);
 	}
 	expect(Object.is(parse('---\nn: 0\n---\n').fields.n, 0)).toBe(true);

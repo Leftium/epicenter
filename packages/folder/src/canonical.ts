@@ -22,14 +22,12 @@
  */
 import { Err, Ok, type Result } from 'wellcrafted/result';
 import {
-	Document,
+	type Document,
 	isAlias,
 	isMap,
 	isScalar,
 	isSeq,
 	parseDocument,
-	type ScalarTag,
-	type Tags,
 } from 'yaml';
 import { frameRowText } from './markdown.js';
 
@@ -423,15 +421,7 @@ export function formatRowSource(
 		if (error !== null) return Err({ ...error, field: key });
 		owned.set(key, copy);
 	}
-	const header =
-		owned.size === 0
-			? ''
-			: new Document(owned, {
-					version: '1.2',
-					// Quote whatever a YAML 1.1 reader would read differently.
-					compat: 'yaml-1.1',
-					customTags: withDecimalPoint,
-				}).toString({ lineWidth: 0 });
+	const header = mappingLines(owned, '');
 	const text = `---\n${header}---\n${body}`;
 	const { data: reread, error: parseError } = parseRowSource(text);
 	if (parseError !== null)
@@ -445,24 +435,137 @@ export function formatRowSource(
 }
 
 /**
- * The schema's tags, with floats always written with a decimal point. A YAML
- * 1.1 reader such as PyYAML or Ruby's Psych reads `1e-7` as a string; every
- * reader reads `1.0e-7` as the same float. Numbers are the one case
- * `compat` leaves to the writer, since it chooses only scalar styles.
+ * Block-style YAML lines for a mapping at an indentation. Every scalar is
+ * written so that a YAML 1.2 reader and a YAML 1.1 reader (PyYAML, Ruby's
+ * Psych, Go's yaml.v2) read the same value; anything doubtful is quoted.
  */
-function withDecimalPoint(tags: Tags): Tags {
-	return tags.map((tag) => {
-		if (typeof tag !== 'object' || tag.tag !== 'tag:yaml.org,2002:float')
-			return tag;
-		const scalar = tag as ScalarTag;
-		const { stringify } = scalar;
-		if (stringify === undefined) return tag;
-		return {
-			...scalar,
-			stringify: (...args: Parameters<typeof stringify>) =>
-				stringify(...args).replace(/^(-?\d+)e/, '$1.0e'),
-		};
-	});
+function mappingLines(map: OwnedMap, indent: string): string {
+	let lines = '';
+	for (const [key, value] of map) {
+		const name = scalarText(key);
+		lines += isNested(value)
+			? `${indent}${name}:\n${collectionLines(value, `${indent}  `)}`
+			: `${indent}${name}: ${valueText(value, indent)}\n`;
+	}
+	return lines;
+}
+
+/** Block-style YAML lines for a sequence at an indentation. */
+function sequenceLines(items: OwnedValue[], indent: string): string {
+	let lines = '';
+	for (const item of items) {
+		if (!isNested(item)) {
+			lines += `${indent}- ${valueText(item, indent)}\n`;
+			continue;
+		}
+		// The item's first line follows its dash: `- key: value` or `- - item`.
+		const nested = collectionLines(item, `${indent}  `);
+		lines += `${indent}- ${nested.slice(indent.length + 2)}`;
+	}
+	return lines;
+}
+
+function collectionLines(value: OwnedMap | OwnedValue[], indent: string) {
+	return value instanceof Map
+		? mappingLines(value, indent)
+		: sequenceLines(value, indent);
+}
+
+/** A non-empty mapping or sequence, which takes its own lines. */
+function isNested(value: OwnedValue): value is OwnedMap | OwnedValue[] {
+	return value instanceof Map
+		? value.size > 0
+		: Array.isArray(value) && value.length > 0;
+}
+
+/** A value written after its key or dash, at the indentation of that line. */
+function valueText(value: OwnedValue, indent: string): string {
+	if (value instanceof Map) return '{}';
+	if (Array.isArray(value)) return '[]';
+	if (value === null) return 'null';
+	if (typeof value === 'boolean') return String(value);
+	if (typeof value === 'number') return numberText(value);
+	if (isLiteralBlock(value)) {
+		const content = value.endsWith('\n') ? value.slice(0, -1) : value;
+		const lines = content
+			.split('\n')
+			.map((line) => (line === '' ? '' : `${indent}  ${line}`));
+		return `${value.endsWith('\n') ? '|' : '|-'}\n${lines.join('\n')}`;
+	}
+	return scalarText(value);
+}
+
+/**
+ * A number every YAML reader reads as this number. Floats keep a decimal
+ * point, since a YAML 1.1 reader reads `1e-7` as a string, and negative
+ * zero is `-0.0`, since `-0` is integer zero there.
+ */
+function numberText(value: number): string {
+	if (Object.is(value, -0)) return '-0.0';
+	return String(value).replace(/^(-?\d+)e/, '$1.0e');
+}
+
+/**
+ * A string as a plain scalar only when every YAML reader reads it as this
+ * same string: it starts with a letter or `_`, holds only letters, digits,
+ * spaces, and `_ . , ' ( ) / -`, does not end with a space, and is no
+ * boolean or null word in any case. Every other string is double-quoted.
+ */
+function scalarText(text: string): string {
+	return PLAIN.test(text) && !RESERVED.test(text) ? text : quoted(text);
+}
+
+const PLAIN = /^[\p{L}_](?:[\p{L}\p{N}_.,'()/ -]*[\p{L}\p{N}_.,'()/-])?$/u;
+const RESERVED = /^(?:y|n|yes|no|on|off|true|false|null)$/i;
+
+/**
+ * A multi-line string as a literal block when every reader keeps it exactly:
+ * no tab or special character anywhere, a first line that starts with
+ * neither a space nor a line break, and at most one trailing line break.
+ */
+function isLiteralBlock(text: string): boolean {
+	return (
+		text.includes('\n') &&
+		![...text].some(
+			(char) => char !== '\n' && (char < ' ' || isSpecialCharacter(char)),
+		) &&
+		!text.startsWith(' ') &&
+		!text.startsWith('\n') &&
+		!text.endsWith('\n\n')
+	);
+}
+
+/**
+ * A YAML double-quoted scalar. JSON escapes are YAML escapes; the characters
+ * some YAML reader rejects or rewrites when unescaped (DEL, C1 controls
+ * including NEL, the line and paragraph separators, and U+FEFF, U+FFFE,
+ * U+FFFF) are escaped too.
+ */
+function quoted(text: string): string {
+	return [...JSON.stringify(text)]
+		.map((char) =>
+			isSpecialCharacter(char)
+				? `\\u${char.charCodeAt(0).toString(16).padStart(4, '0')}`
+				: char,
+		)
+		.join('');
+}
+
+/**
+ * A character some YAML reader rejects or rewrites when it is written as is:
+ * DEL, a C1 control (NEL included), a line or paragraph separator, or
+ * U+FEFF, U+FFFE, U+FFFF.
+ */
+function isSpecialCharacter(char: string): boolean {
+	const code = char.charCodeAt(0);
+	return (
+		(code >= 0x7f && code <= 0x9f) ||
+		code === 0x2028 ||
+		code === 0x2029 ||
+		code === 0xfeff ||
+		code === 0xfffe ||
+		code === 0xffff
+	);
 }
 
 /** A value ready to write: mappings are Maps, so their key order is the written order. */

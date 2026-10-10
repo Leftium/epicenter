@@ -2,8 +2,8 @@
 
 - **Status:** Proposed
 - **Date:** 2026-10-11
-- **Relates:** [ADR-0517](0517-a-data-folder-can-live-inside-any-repository.md) (only a repository-root data folder syncs through apps), [ADR-0488](0488-cloud-folders-use-independent-git-histories.md) (GitHub pairing), [ADR-0490](0490-the-cli-discovers-folders-and-delegates-history-to-git.md) (CLI account commands), [ADR-0492](0492-the-source-cli-keeps-sessions-in-one-operating-system-credential.md) (CLI sessions), [ADR-0509](0509-folder-remotes-and-http-fetch-have-separate-contracts.md) (remote and transport)
-- **Unbuilt:** the provider interface in the hosted API, repository-addressed GitHub transfers in place of folder-ID pairings, listing data folders by `epicenter.json`, the Cloudflare Artifacts provider, and retiring the CLI's Epicenter session commands.
+- **Relates:** [ADR-0517](0517-a-data-folder-can-live-inside-any-repository.md) (only a repository-root data folder syncs through apps), [ADR-0488](0488-cloud-folders-use-independent-git-histories.md) (GitHub pairing), [ADR-0490](0490-the-cli-discovers-folders-and-delegates-history-to-git.md) (CLI account commands), [ADR-0509](0509-folder-remotes-and-http-fetch-have-separate-contracts.md) (remote and transport)
+- **Unbuilt:** the provider interface in the hosted API, repository-addressed GitHub transfers in place of folder-ID pairings, listing data folders by `epicenter.json`, and the Cloudflare Artifacts provider.
 
 ## Context
 
@@ -66,8 +66,9 @@ first version; people use it through plain Git.
 
 **The CLI has no Epicenter account system.** CLI users already have Git and
 the host's own tools. A later `epicenter list` or `epicenter get` uses the
-GitHub CLI's existing sign-in. The CLI's `login`, `accounts`, and `logout`
-commands retire, and apps keep their own Epicenter sign-in.
+GitHub CLI's existing sign-in. The CLI's uncommitted `login`, `accounts`, and
+`logout` commands and their operating-system credential store were removed
+without landing, and apps keep their own Epicenter sign-in.
 
 ## Consequences
 

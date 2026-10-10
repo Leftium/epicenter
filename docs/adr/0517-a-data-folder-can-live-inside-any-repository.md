@@ -3,7 +3,7 @@
 - **Status:** Proposed
 - **Date:** 2026-10-11
 - **Relates:** [ADR-0494](0494-file-folders-reserve-epicenter-for-rebuildable-caches.md) (queries build transient projections), [ADR-0488](0488-cloud-folders-use-independent-git-histories.md) (one pairing per repository), [ADR-0490](0490-the-cli-discovers-folders-and-delegates-history-to-git.md) (discovery lists repositories), [ADR-0508](0508-folder-opening-overwrites-root-definition-json.md) (opening publishes the declaration), [ADR-0510](0510-authored-dataset-locations-are-independent-of-sign-in.md) (stable authored locations)
-- **Unbuilt:** reading `epicenter.json` as input, discovering data folders by it, renaming opener publication from `definition.json` to `epicenter.json`, the query command over a hosted data folder, opener refusal of a root inside another repository, extraction tooling, and opening a submodule-hosted data folder in the native engine.
+- **Unbuilt:** discovering data folders by `epicenter.json`, renaming opener publication from `definition.json` to `epicenter.json`, opener refusal of a root inside another repository, extraction tooling, and opening a submodule-hosted data folder in the native engine.
 
 ## Context
 
@@ -56,9 +56,9 @@ ADR-0494; nothing persists a database beside the data folder.
 lock, and receive credentials per repository (ADR-0488). An app never holds
 credentials to a host repository in order to reach a data folder inside it.
 Discovery lists repositories (ADR-0490); data folders inside a repository are
-found by their `epicenter.json`, not registered. Folder IDs, pairings, and
-ADR-0510's one-directory rule apply to repository-root data folders. A hosted
-data folder has no folder ID; its address is its host repository and its path
+found by their `epicenter.json`, not registered. ADR-0510's one-directory rule
+applies to repository-root data folders, which sync with their Git origin
+(ADR-0521). A hosted data folder's address is its host repository and its path
 inside it.
 
 **A hosted data folder moves to its own repository by extraction.** Split its
@@ -99,8 +99,9 @@ git submodule add <repository-url> plan
 - If the host is itself an app-opened data folder, the engine refuses
   whole-folder commits once it contains a submodule. Extract only from hosts
   that people and agents commit with ordinary Git.
-- No production code reads `epicenter.json` as input today. `prepareSchema`
-  accepts what `exportSchema` writes, so a reader needs no new format.
+- The CLI's `check` and `query` read `epicenter.json` (ADR-0520); apps do not
+  yet. `prepareSchema` accepts what `exportSchema` writes, so a reader needs no
+  new format.
 - ADR-0508 publication still writes `definition.json` until the folder package
   renames it, so an app-opened data folder is not yet discoverable by
   `epicenter.json`. A hosted data folder that no app opens keeps the

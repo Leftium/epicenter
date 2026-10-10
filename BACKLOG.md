@@ -56,6 +56,10 @@ starting: a prior session may already have completed it.
 
 ## Complete the account-folder journey from sign-in to explicit cloud transfer
 
+- Revised direction (2026-10-11): ADR-0521 replaces folder-ID pairings with each
+  checkout's Git origin and a provider interface in the hosted API, and the CLI
+  keeps no Epicenter account system; developers use Git and `gh`. Bullets below
+  that assume a server pairing table or CLI sign-in predate that decision.
 - Current direction (2026-10-05): One GitHub connection supports several
   account-folder pairings, each with its own private repository and history.
   GitHub owns remote storage; Epicenter owns connection authorization, pairing,
@@ -70,21 +74,14 @@ starting: a prior session may already have completed it.
   cached identity before any remote exists. Existing local files remain intact
   when a remote is configured later. Sign-in never uploads or moves Local data.
 - Grounding: The user retained this journey in the folder and CLI discussion.
-  On 2026-10-04 outcome consolidation verified `scripts/epicenter.ts`,
-  `epicenter-auth.ts`, and `epicenter-auth-credentials.ts`: source-CLI login,
-  offline account listing, logout, and OS credential storage exist. The CLI's
-  folder listing and Git passthrough accept Local only. Whispering still opens
+  The source-CLI login, account listing, logout, OS credential storage, Local
+  folder listing, and Git passthrough consolidated on 2026-10-04 were removed
+  without landing on 2026-10-11 (ADR-0520, ADR-0521). Whispering still opens
   its Local default; its browser opener names no account. Cloud serves the
   existing store-sync authority, with no folder repository lifecycle/listing or
   Git endpoint. ADR-0461, ADR-0488, and ADR-0489 describe the remaining design;
-  they do not establish its implementation. The consolidation passed 66 source
-  CLI/auth/managed-directory tests with 633 assertions; no live cloud journey
-  was exercised.
-- Smallest login acceptance: Complete one browser handoff with a designated
-  test account, then restart the source CLI and verify offline `accounts` and
-  logout. Confirm OS credential persistence without printing a token or
-  creating a data folder. The current tests exercise injected credentials and
-  a real loopback receiver; they do not establish a live hosted sign-in.
+  they do not establish its implementation. No live cloud journey was
+  exercised.
 - Smallest discovery continuation: With a designated development GitHub App
   and personal test account, prove selected-repository authorization, explicit
   private creation, access to the new repository, and ordinary Git fetch/push.

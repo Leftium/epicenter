@@ -2,7 +2,7 @@
 
 - **Status:** Proposed
 - **Date:** 2026-10-02
-- **Implemented:** Local discovery, interactive Git passthrough, and source CLI `login`, `accounts`, and `logout`; `validate` remains available.
+- **Implemented:** nothing. The uncommitted Local discovery, Git passthrough, and source CLI `login`, `accounts`, and `logout` were removed before landing; ADR-0520 and ADR-0521 replace them.
 - **Unbuilt:** hosted callback deployment, real OS credential acceptance, account-folder discovery, hosted Git credentials, `get`, and `create`. Account folder and transfer examples below remain proposals.
 
 ## Context
@@ -111,7 +111,7 @@ Applications can instead present Download folder and an explicit Sync action thr
 
 ## Private account sessions
 
-The source CLI's session owner follows [ADR-0492](0492-the-source-cli-keeps-sessions-in-one-operating-system-credential.md). Login, cached account listing, and logout do not require a cloud repository listing. The account-key function belongs to `@epicenter/principal`; account paths use its exact-byte contract from ADR-0461.
+The source CLI's session owner, recorded in a since-deleted ADR-0492, was removed before landing (ADR-0521). Login, cached account listing, and logout do not require a cloud repository listing. The account-key function belongs to `@epicenter/principal`; account paths use its exact-byte contract from ADR-0461.
 
 The CLI binds `http://127.0.0.1:39132/_epicenter/cli/callback` before opening the browser. This callback is separate from desktop development's default port. The hosted allowlist source admits the exact destination. Hosted login requires deployment of that change; this implementation does not deploy it.
 

@@ -2,7 +2,7 @@
 
 - **Status:** Proposed
 - **Date:** 2026-10-11
-- **Relates:** [ADR-0517](0517-a-data-folder-can-live-inside-any-repository.md) (only a repository-root data folder syncs through apps), [ADR-0488](0488-cloud-folders-use-independent-git-histories.md) (GitHub pairing), [ADR-0490](0490-the-cli-discovers-folders-and-delegates-history-to-git.md) (CLI account commands), [ADR-0509](0509-folder-remotes-and-http-fetch-have-separate-contracts.md) (remote and transport)
+- **Relates:** [ADR-0517](0517-a-data-folder-can-live-inside-any-repository.md) (only a repository-root data folder syncs through apps), [ADR-0488](0488-cloud-folders-use-independent-git-histories.md) (GitHub pairing), [ADR-0490](0490-the-cli-discovers-folders-and-delegates-history-to-git.md) (the withdrawn CLI cloud commands), [ADR-0509](0509-folder-remotes-and-http-fetch-have-separate-contracts.md) (remote and transport)
 - **Unbuilt:** the provider interface in the hosted API, repository-addressed GitHub transfers in place of folder-ID pairings, listing data folders by `epicenter.json`, and the Cloudflare Artifacts provider.
 
 ## Context

@@ -43,36 +43,36 @@ field:
 posts/2026-10-20-launch.md:3: status does not conform: must be equal to one of the allowed values
 ```
 
-It exits 0 when every row conforms, 1 when any row file is invalid, and 2 when
-the declaration or a file cannot be read. Bytes that are not UTF-8 make the
-row invalid, not the tool fail.
+Both commands exit 0 on success, 1 when a row file does not conform, and 2
+when the folder, the declaration, or a statement cannot be used. Bytes that
+are not UTF-8 and row files that are symbolic links or directories do not
+conform. A table directory that is a symbolic link cannot be used, because its
+rows would come from outside the data folder.
 
-**The projection holds only rows that conform; `check` explains the rest.**
+**`query` answers only when every row conforms.** A broken row is fixed in its
+Markdown first. With any row file that does not conform, `query` prints how
+many and the `check` command that names them, and returns no rows. An answer
+is therefore never computed from part of the folder, and diagnostics have one
+home.
+
 `query` builds an in-memory SQLite database under ADR-0494 with one table per
 declared table and nothing else. Each table has `stem` (the row's file is
 `<table>/<stem>.md`), each declared field, and `body` (the Markdown after the
 frontmatter). Declared fields keep their names and are quoted, because field
 names may be SQL keywords. A null or absent value is `NULL`, a boolean is `0`
 or `1`, a list or object is JSON text, and strings and numbers are stored as
-they are.
-
-A row file that is invalid or unreadable is not in the database. After a
-statement's results, `query` prints one line on stderr for each table that
-excluded files, with the count and the `check` command that lists why, and
-`--json` carries the same counts as `excluded`. An answer is never silently
-incomplete, and diagnostics have one home.
-
-`query` refuses a declaration it cannot project as tables: two fields in one
+they are. `query` refuses a declaration it cannot project: two fields in one
 table that differ only by case, because SQLite compares column names without
-case, or a field named `stem` or `body`. `check` still reads such a folder.
+case, or a field named `stem` or `body`.
 
 The database is made read-only, and `query` runs exactly one statement, which
 must start with `SELECT`, `WITH`, `VALUES`, or `EXPLAIN`. A read-only
 connection still lets `ATTACH` and `VACUUM INTO` create files, so other
-statements are refused, and so is any text after the first statement. Without
-a statement, `query` prints each table's columns, allowed values, reference
-targets, row count, and excluded count. It exits 0 when the statement ran and
-2 when the declaration or the statement failed.
+statements are refused, and so is any text after the first statement.
+
+Without a statement, `query` describes the declaration alone: each table's
+columns, allowed values, and reference targets. It reads no row, so it works
+while rows are being fixed.
 
 **The CLI has no account or transfer commands.** Under ADR-0521, people and
 agents use Git and the host's own tools for cloning, history, and transfer.
@@ -107,6 +107,9 @@ agents use Git and the host's own tools for cloning, history, and transfer.
   data.
 - **`sql` or a separate `describe` command.** `query` without a statement
   already describes the folder.
+- **Answering from the rows that conform** and reporting what was excluded.
+  An answer computed from part of the folder invites acting on it before the
+  broken rows are fixed.
 - **Invalid rows or metadata in the database** (an `_invalid` table, an
   attached `epicenter` schema, `_path` and `_sha256` columns, `kv.json` as a
   table). Diagnostics belong to `check`, a row's path is `<table>/<stem>.md`,

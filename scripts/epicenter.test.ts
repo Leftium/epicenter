@@ -11,6 +11,7 @@ import {
 	readdir,
 	readFile,
 	rm,
+	symlink,
 	writeFile,
 } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -107,24 +108,14 @@ test('check reports invalid rows compiler style and exits 1', async () => {
 	const report = JSON.parse(result.stdout);
 	expect(report.rows).toBe(1);
 	expect(report.invalid).toEqual([
+		expect.objectContaining({ path: 'posts/broken.md', line: 1 }),
+		{ path: 'posts/latin1.md', message: 'The file is not valid UTF-8' },
 		expect.objectContaining({
-			table: 'posts',
-			path: 'posts/broken.md',
-			line: 1,
-		}),
-		expect.objectContaining({
-			table: 'posts',
-			path: 'posts/latin1.md',
-			message: 'The file is not valid UTF-8',
-		}),
-		expect.objectContaining({
-			table: 'posts',
 			path: 'posts/launch.md',
 			line: 3,
 			field: 'status',
 		}),
 	]);
-	expect(report.invalid[0].sha256).toMatch(/^[0-9a-f]{64}$/);
 	expect(run('check', folder).stdout).toContain(
 		'posts/launch.md:3: status does not conform',
 	);
@@ -184,14 +175,14 @@ test('a folder never runs its own code', async () => {
 // query
 // ============================================================================
 
-test('query without a statement describes columns, allowed values, and references', async () => {
+test('query without a statement describes the declaration, even while rows are broken', async () => {
 	const { folder, write, run } = await setup();
 	await write('posts/broken.md', 'no fences\n');
 	const result = run('query', folder);
 	expect(result.exitCode).toBe(0);
 	expect(result.stdout).toBe(
 		[
-			'posts: 1 row, 1 file excluded',
+			'posts:',
 			"  stem: the row's file is posts/<stem>.md",
 			'  title: string',
 			'  status: planned|drafting|done',
@@ -201,19 +192,16 @@ test('query without a statement describes columns, allowed values, and reference
 			'  tags: list of string',
 			'  account: stem in accounts',
 			'  body: Markdown after the frontmatter',
-			'accounts: 0 rows',
+			'accounts:',
 			"  stem: the row's file is accounts/<stem>.md",
 			'  kind: social',
 			'  body: Markdown after the frontmatter',
 			'',
 		].join('\n'),
 	);
-	const described = JSON.parse(run('query', folder, '--json').stdout);
-	expect(described.tables[0]).toMatchObject({ rows: 1, excluded: 1 });
-	expect(described.tables[0].columns).toContainEqual({
-		name: 'status',
-		values: 'planned|drafting|done',
-	});
+	expect(
+		JSON.parse(run('query', folder, '--json').stdout).tables[0].columns,
+	).toContainEqual({ name: 'status', values: 'planned|drafting|done' });
 });
 
 test('query projects rows with quoted keyword columns and SQLite values', async () => {
@@ -237,7 +225,6 @@ test('query projects rows with quoted keyword columns and SQLite values', async 
 				body: 'Cut done.\n',
 			},
 		],
-		excluded: {},
 	});
 });
 
@@ -247,20 +234,49 @@ test('query prints one line per row, escaping tabs, newlines, and backslashes', 
 	expect(result.stdout).toBe('body\tx\nCut done.\\n\ta\\tb\\\\c\n');
 });
 
-test('query holds only rows that conform and points to check for the rest', async () => {
+test('query answers only when every row conforms; broken rows are fixed in Markdown first', async () => {
 	const { folder, write, run } = await setup();
 	await write('posts/broken.md', 'no fences\n');
-	const counted = run('query', folder, 'SELECT count(*) AS n FROM posts');
-	expect(counted.exitCode).toBe(0);
-	expect(counted.stdout).toBe('n\n1\n');
-	expect(counted.stderr).toBe(
-		`posts: 1 file excluded; run \`epicenter check ${folder}\` to see why\n`,
+	const refused = run('query', folder, 'SELECT count(*) AS n FROM posts');
+	expect(refused.exitCode).toBe(1);
+	expect(refused.stdout).toBe('');
+	expect(refused.stderr).toBe(
+		`1 file does not conform, so query will not answer; fix the Markdown that \`epicenter check ${folder}\` names\n`,
 	);
 	expect(
-		JSON.parse(run('query', folder, 'SELECT stem FROM posts', '--json').stdout)
-			.excluded,
-	).toEqual({ posts: 1 });
-	expect(run('query', folder, 'SELECT * FROM _invalid').exitCode).toBe(2);
+		JSON.parse(run('query', folder, 'SELECT 1', '--json').stdout).error,
+	).toContain('1 file does not conform');
+
+	await write(
+		'posts/broken.md',
+		'---\ntitle: Fixed\nstatus: done\ndue: null\norder: 3\npinned: false\ntags: []\naccount: instagram\n---\n',
+	);
+	expect(run('query', folder, 'SELECT count(*) AS n FROM posts').stdout).toBe(
+		'n\n2\n',
+	);
+});
+
+test('rows are read only from regular files inside the data folder', async () => {
+	const { folder, run } = await setup();
+	const outside = await mkdtemp(join(tmpdir(), 'epicenter-cli-test-'));
+	temporaryFolders.push(outside);
+	await writeFile(join(outside, 'secret.md'), '---\ntitle: Secret\n---\n');
+	await symlink(join(outside, 'secret.md'), join(folder, 'posts/linked.md'));
+	await symlink(outside, join(folder, 'accounts'));
+
+	const report = JSON.parse(run('check', folder, '--json').stdout);
+	expect(report.exitCode).toBe(2);
+	expect(report.invalid).toEqual([
+		{
+			path: 'posts/linked.md',
+			message: 'A row must be a regular file, not a symbolic link or directory',
+		},
+	]);
+	expect(report.unreadable).toEqual([
+		{ path: 'accounts', message: 'The table directory is a symbolic link' },
+	]);
+	expect(run('query', folder, 'SELECT 1').exitCode).toBe(2);
+	expect(JSON.stringify(report)).not.toContain('Secret');
 });
 
 test('query refuses statements that write, attach, or vacuum, and leaves the directory unchanged', async () => {

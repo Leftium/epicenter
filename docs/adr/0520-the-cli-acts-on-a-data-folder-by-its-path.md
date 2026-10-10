@@ -34,9 +34,7 @@ epicenter query <dir> [<sql>] [--json]
 Both read `<dir>/epicenter.json` and nothing executable, and parse every row
 file of every declared table with the folder package's `parseRow`. Neither
 writes a file, takes a lock, reads Git, contacts a network, or requires an
-account. A declaration that cannot be read or prepared is a tool failure. So
-is one whose table declares two fields that differ only by case, because
-SQLite compares column names without case.
+account. A declaration that cannot be read or prepared is a tool failure.
 
 `check` prints one line per finding, compiler style. The message names its
 field:
@@ -49,30 +47,32 @@ It exits 0 when every row conforms, 1 when any row file is invalid, and 2 when
 the declaration or a file cannot be read. Bytes that are not UTF-8 make the
 row invalid, not the tool fail.
 
-`query` builds an in-memory SQLite projection under ADR-0494, makes it
-read-only, and runs exactly one statement, which must start with `SELECT`,
-`WITH`, `VALUES`, or `EXPLAIN`. A read-only connection still lets `ATTACH` and
-`VACUUM INTO` create files, so other statements are refused, and so is any
-text after the first statement. Without a statement it prints each table's
-columns, allowed values, reference targets, row count, and invalid count. The
-projection has:
+**The projection holds only rows that conform; `check` explains the rest.**
+`query` builds an in-memory SQLite database under ADR-0494 with one table per
+declared table and nothing else. Each table has `stem` (the row's file is
+`<table>/<stem>.md`), each declared field, and `body` (the Markdown after the
+frontmatter). Declared fields keep their names and are quoted, because field
+names may be SQL keywords. A null or absent value is `NULL`, a boolean is `0`
+or `1`, a list or object is JSON text, and strings and numbers are stored as
+they are.
 
-| Table | Columns |
-| --- | --- |
-| one per declared table | `id` (the file stem, not a validated row ID), `_path`, `_sha256`, each declared field, `_body` |
-| `_invalid` | `table_name`, `_path`, `_sha256`, `line`, `field`, `message` |
+A row file that is invalid or unreadable is not in the database. After a
+statement's results, `query` prints one line on stderr for each table that
+excluded files, with the count and the `check` command that lists why, and
+`--json` carries the same counts as `excluded`. An answer is never silently
+incomplete, and diagnostics have one home.
 
-Declared fields keep their names and are quoted, because field names may be
-SQL keywords. The field grammar refuses `id` and names that start with `_`, and
-table names start with a letter, so projection columns and `_invalid` never
-collide with a declaration. A null or absent value
-is `NULL`, a boolean is `0` or `1`, a list or object is JSON text, and strings
-and numbers are stored as they are.
+`query` refuses a declaration it cannot project as tables: two fields in one
+table that differ only by case, because SQLite compares column names without
+case, or a field named `stem` or `body`. `check` still reads such a folder.
 
-Invalid rows are absent from their table and listed in `_invalid`. After a
-statement's results, `query` reports on stderr how many files each table left
-out and every finding. It exits 0 when the statement ran and 2 when the
-declaration or the statement failed.
+The database is made read-only, and `query` runs exactly one statement, which
+must start with `SELECT`, `WITH`, `VALUES`, or `EXPLAIN`. A read-only
+connection still lets `ATTACH` and `VACUUM INTO` create files, so other
+statements are refused, and so is any text after the first statement. Without
+a statement, `query` prints each table's columns, allowed values, reference
+targets, row count, and excluded count. It exits 0 when the statement ran and
+2 when the declaration or the statement failed.
 
 **The CLI has no account or transfer commands.** Under ADR-0521, people and
 agents use Git and the host's own tools for cloning, history, and transfer.
@@ -107,5 +107,10 @@ agents use Git and the host's own tools for cloning, history, and transfer.
   data.
 - **`sql` or a separate `describe` command.** `query` without a statement
   already describes the folder.
+- **Invalid rows or metadata in the database** (an `_invalid` table, an
+  attached `epicenter` schema, `_path` and `_sha256` columns, `kv.json` as a
+  table). Diagnostics belong to `check`, a row's path is `<table>/<stem>.md`,
+  nothing writes from a query result, and `kv.json` is one small object with
+  nothing to join.
 - **Write commands such as `add` or `set`.** People and agents edit the
   Markdown directly; a second write path would duplicate it.

@@ -26,7 +26,9 @@ const usage = `Usage:
 check prints one line per row that does not conform and exits 0 when every row
 conforms, 1 when a row does not, and 2 when the folder cannot be read.
 query without a statement describes the folder's tables; with one, it runs that
-single read-only statement and prints tab-separated rows.`;
+single read-only statement over the rows that conform and prints tab-separated
+rows. Rows that do not conform are not in the database; query says how many
+each table excluded, and check says why.`;
 
 const DECLARATION = 'epicenter.json';
 
@@ -40,13 +42,7 @@ type Diagnostic = {
 	message: string;
 };
 
-type Row = {
-	id: string;
-	path: string;
-	sha256: string;
-	fields: Record<string, unknown>;
-	body: string;
-};
+type Row = { stem: string; fields: Record<string, unknown>; body: string };
 
 type Table = {
 	name: string;
@@ -108,17 +104,6 @@ async function readDataFolder(dir: string): Promise<Reading> {
 			name: field,
 			schema,
 		}));
-		const seen = new Map<string, string>();
-		for (const { name: field } of fields) {
-			const folded = field.toLowerCase();
-			const other = seen.get(folded);
-			// SQLite compares column names without case, so these cannot both be columns.
-			if (other !== undefined)
-				throw new Error(
-					`${join(root, DECLARATION)}: table '${name}' declares '${other}' and '${field}', which differ only by case`,
-				);
-			seen.set(folded, field);
-		}
 		const projected: Table = { name, fields, rows: [], invalid: [] };
 		reading.tables.push(projected);
 		let files: string[];
@@ -175,9 +160,7 @@ async function readDataFolder(dir: string): Promise<Reading> {
 				continue;
 			}
 			projected.rows.push({
-				id: file.slice(0, -'.md'.length),
-				path,
-				sha256,
+				stem: file.slice(0, -'.md'.length),
 				fields: row.fields as Record<string, unknown>,
 				body: row.body,
 			});
@@ -188,7 +171,7 @@ async function readDataFolder(dir: string): Promise<Reading> {
 
 /**
  * `path:line: message`, compiler style. The message already names its field,
- * so the field stays in `--json` and `_invalid` rather than the text.
+ * so the field stays in `--json` rather than the text.
  */
 function formatDiagnostic({ path, line, message }: Diagnostic) {
 	return `${line === undefined ? path : `${path}:${line}`}: ${message}`;
@@ -201,6 +184,16 @@ function invalidFindings(reading: Reading) {
 /** Files with at least one finding, so a row with three issues counts once. */
 function invalidFileCount(table: Table) {
 	return new Set(table.invalid.map(({ path }) => path)).size;
+}
+
+/** Row files of a table that `query` leaves out: invalid or unreadable. */
+function excludedFileCount(reading: Reading, table: Table) {
+	return new Set([
+		...table.invalid.map(({ path }) => path),
+		...reading.unreadable
+			.filter((finding) => finding.table === table.name)
+			.map(({ path }) => path),
+	]).size;
 }
 
 // ============================================================================
@@ -258,55 +251,52 @@ function toSql(value: unknown) {
 	return value as string | number;
 }
 
+/** Columns the projection adds beside the declared fields. */
+const ROW_COLUMNS = ['stem', 'body'];
+
 /**
- * Build the projection ADR-0520 describes, then make it read-only, so a
- * statement that changes rows fails rather than appearing to succeed.
+ * Refuse a declaration that cannot be one SQLite table per declared table:
+ * SQLite compares column names without case, and `stem` and `body` are the
+ * projection's own columns.
+ */
+function assertProjectable(table: Table) {
+	const seen = new Map(ROW_COLUMNS.map((column) => [column, column]));
+	for (const { name } of table.fields) {
+		const other = seen.get(name.toLowerCase());
+		if (other !== undefined)
+			throw new Error(
+				ROW_COLUMNS.includes(other)
+					? `table '${table.name}' declares a field '${name}', but query uses '${other}' for the row itself`
+					: `table '${table.name}' declares '${other}' and '${name}', which differ only by case`,
+			);
+		seen.set(name.toLowerCase(), name);
+	}
+}
+
+/**
+ * Build the projection ADR-0520 describes: only rows that conform, one table
+ * per declared table. Then make it read-only, so a statement that changes
+ * rows fails rather than appearing to succeed.
  */
 function project(reading: Reading) {
+	for (const table of reading.tables) assertProjectable(table);
 	const db = new Database(':memory:');
 	db.transaction(() => {
 		for (const table of reading.tables) {
-			const columns = [
-				'id',
-				'_path',
-				'_sha256',
-				...table.fields.map(({ name }) => name),
-				'_body',
-			];
+			const fields = table.fields.map(({ name }) => quote(name));
 			db.run(
-				`CREATE TABLE ${quote(table.name)} (${columns
-					.map((column) =>
-						column === 'id' ? 'id TEXT PRIMARY KEY' : quote(column),
-					)
-					.join(', ')})`,
+				`CREATE TABLE ${quote(table.name)} (stem TEXT PRIMARY KEY, ${[...fields, 'body'].join(', ')})`,
 			);
 			const insert = db.prepare(
-				`INSERT INTO ${quote(table.name)} VALUES (${columns.map(() => '?').join(', ')})`,
+				`INSERT INTO ${quote(table.name)} VALUES (${['?', ...fields.map(() => '?'), '?'].join(', ')})`,
 			);
 			for (const row of table.rows)
 				insert.run(
-					row.id,
-					row.path,
-					row.sha256,
+					row.stem,
 					...table.fields.map(({ name }) => toSql(row.fields[name])),
 					row.body,
 				);
 		}
-		db.run(
-			'CREATE TABLE _invalid (table_name TEXT, _path TEXT, _sha256 TEXT, line INTEGER, field TEXT, message TEXT)',
-		);
-		const invalid = db.prepare(
-			'INSERT INTO _invalid VALUES (?, ?, ?, ?, ?, ?)',
-		);
-		for (const finding of [...invalidFindings(reading), ...reading.unreadable])
-			invalid.run(
-				finding.table ?? null,
-				finding.path,
-				finding.sha256 ?? null,
-				finding.line ?? null,
-				finding.field ?? null,
-				finding.message,
-			);
 	})();
 	db.run('PRAGMA query_only = ON');
 	return db;
@@ -373,28 +363,25 @@ function describe(reading: Reading) {
 	return reading.tables.map((table) => ({
 		name: table.name,
 		rows: table.rows.length,
-		invalid: invalidFileCount(table),
+		excluded: excludedFileCount(reading, table),
 		columns: [
-			{ name: 'id', values: 'the file stem' },
-			{ name: '_path', values: 'path from the data folder' },
-			{ name: '_sha256', values: 'hash of the file bytes' },
+			{ name: 'stem', values: `the row's file is ${table.name}/<stem>.md` },
 			...table.fields.map(({ name, schema }) => ({
 				name,
 				values: valuesOf(schema),
 			})),
-			{ name: '_body', values: 'Markdown after the frontmatter' },
+			{ name: 'body', values: 'Markdown after the frontmatter' },
 		],
 	}));
 }
 
 function formatDescription(reading: Reading) {
-	return [
-		...describe(reading).flatMap((table) => [
-			`${table.name}: ${count(table.rows, 'row')}${table.invalid ? `, ${table.invalid} invalid` : ''}`,
+	return describe(reading)
+		.flatMap((table) => [
+			`${table.name}: ${count(table.rows, 'row')}${table.excluded ? `, ${count(table.excluded, 'file')} excluded` : ''}`,
 			...table.columns.map(({ name, values }) => `  ${name}: ${values}`),
-		]),
-		'_invalid: table_name, _path, _sha256, line, field, message',
-	].join('\n');
+		])
+		.join('\n');
 }
 
 /**
@@ -416,32 +403,33 @@ function formatRows(columns: string[], rows: Record<string, unknown>[]) {
 	].join('\n');
 }
 
-/** Per table, how many files the projection left out, and every finding. */
-function formatLeftOut(reading: Reading) {
-	const lines = [
-		...reading.unreadable.map(formatDiagnostic),
-		...reading.tables.flatMap((table) =>
-			table.invalid.length
-				? [
-						`${table.name}: ${count(invalidFileCount(table), 'file')} left out`,
-						...table.invalid.map(formatDiagnostic),
-					]
-				: [],
-		),
-	];
-	return lines.length ? `${lines.join('\n')}\n` : '';
+/** Excluded files per table, only for tables that excluded any. */
+function excluded(reading: Reading) {
+	return Object.fromEntries(
+		reading.tables
+			.map((table) => [table.name, excludedFileCount(reading, table)] as const)
+			.filter(([, files]) => files > 0),
+	);
+}
+
+/** One line per table whose answer is incomplete, pointing at `check`. */
+function formatExcluded(reading: Reading, dir: string) {
+	return Object.entries(excluded(reading))
+		.map(
+			([table, files]) =>
+				`${table}: ${count(files, 'file')} excluded; run \`epicenter check ${dir}\` to see why\n`,
+		)
+		.join('');
 }
 
 async function query(dir: string, sql: string | undefined, json: boolean) {
 	const reading = await readDataFolder(dir);
-	const leftOut = [...reading.unreadable, ...invalidFindings(reading)];
 	if (sql === undefined) {
 		process.stdout.write(
 			json
-				? `${JSON.stringify({ tables: describe(reading), leftOut }, null, 2)}\n`
+				? `${JSON.stringify({ tables: describe(reading) }, null, 2)}\n`
 				: `${formatDescription(reading)}\n`,
 		);
-		if (!json) process.stderr.write(formatLeftOut(reading));
 		return 0;
 	}
 	const db = project(reading);
@@ -451,11 +439,11 @@ async function query(dir: string, sql: string | undefined, json: boolean) {
 		const columns = statement.columnNames;
 		if (json)
 			process.stdout.write(
-				`${JSON.stringify({ columns, rows, leftOut }, null, 2)}\n`,
+				`${JSON.stringify({ columns, rows, excluded: excluded(reading) }, null, 2)}\n`,
 			);
 		else {
 			process.stdout.write(`${formatRows(columns, rows)}\n`);
-			process.stderr.write(formatLeftOut(reading));
+			process.stderr.write(formatExcluded(reading, dir));
 		}
 		return 0;
 	} finally {

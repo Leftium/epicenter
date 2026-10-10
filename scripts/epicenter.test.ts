@@ -148,22 +148,25 @@ test('a missing or unusable epicenter.json is a tool failure with exit 2', async
 	expect(run('check', folder).exitCode).toBe(2);
 });
 
-test('fields that differ only by case are refused before any query', async () => {
+test('query refuses fields it cannot project: case duplicates, stem, and body', async () => {
 	const { folder, write, run } = await setup();
-	await write(
-		'epicenter.json',
-		JSON.stringify({
-			kv: {},
-			tables: {
-				posts: {
-					fields: { title: { type: 'string' }, Title: { type: 'string' } },
-				},
-			},
-		}),
-	);
-	const result = run('query', folder, 'SELECT 1');
-	expect(result.exitCode).toBe(2);
-	expect(result.stderr).toContain("'title' and 'Title'");
+	for (const [fields, message] of [
+		[
+			{ title: { type: 'string' }, Title: { type: 'string' } },
+			"'title' and 'Title'",
+		],
+		[{ body: { type: 'string' } }, "a field 'body'"],
+		[{ Stem: { type: 'string' } }, "a field 'Stem'"],
+	] as const) {
+		await write(
+			'epicenter.json',
+			JSON.stringify({ kv: {}, tables: { posts: { fields } } }),
+		);
+		const result = run('query', folder, 'SELECT 1');
+		expect(result.exitCode).toBe(2);
+		expect(result.stderr).toContain(message);
+		expect(run('check', folder).exitCode).not.toBe(2);
+	}
 });
 
 test('a folder never runs its own code', async () => {
@@ -182,15 +185,14 @@ test('a folder never runs its own code', async () => {
 // ============================================================================
 
 test('query without a statement describes columns, allowed values, and references', async () => {
-	const { folder, run } = await setup();
+	const { folder, write, run } = await setup();
+	await write('posts/broken.md', 'no fences\n');
 	const result = run('query', folder);
 	expect(result.exitCode).toBe(0);
 	expect(result.stdout).toBe(
 		[
-			'posts: 1 row',
-			'  id: the file stem',
-			'  _path: path from the data folder',
-			'  _sha256: hash of the file bytes',
+			'posts: 1 row, 1 file excluded',
+			"  stem: the row's file is posts/<stem>.md",
 			'  title: string',
 			'  status: planned|drafting|done',
 			'  due: date|null',
@@ -198,18 +200,16 @@ test('query without a statement describes columns, allowed values, and reference
 			'  pinned: boolean',
 			'  tags: list of string',
 			'  account: stem in accounts',
-			'  _body: Markdown after the frontmatter',
+			'  body: Markdown after the frontmatter',
 			'accounts: 0 rows',
-			'  id: the file stem',
-			'  _path: path from the data folder',
-			'  _sha256: hash of the file bytes',
+			"  stem: the row's file is accounts/<stem>.md",
 			'  kind: social',
-			'  _body: Markdown after the frontmatter',
-			'_invalid: table_name, _path, _sha256, line, field, message',
+			'  body: Markdown after the frontmatter',
 			'',
 		].join('\n'),
 	);
 	const described = JSON.parse(run('query', folder, '--json').stdout);
+	expect(described.tables[0]).toMatchObject({ rows: 1, excluded: 1 });
 	expect(described.tables[0].columns).toContainEqual({
 		name: 'status',
 		values: 'planned|drafting|done',
@@ -221,54 +221,46 @@ test('query projects rows with quoted keyword columns and SQLite values', async 
 	const result = run(
 		'query',
 		folder,
-		`SELECT id, _path, "order", pinned, tags, due, _body FROM posts WHERE status != 'done'`,
+		`SELECT stem, "order", pinned, tags, due, body FROM posts WHERE status != 'done'`,
 		'--json',
 	);
 	expect(result.exitCode).toBe(0);
 	expect(JSON.parse(result.stdout)).toEqual({
-		columns: ['id', '_path', 'order', 'pinned', 'tags', 'due', '_body'],
+		columns: ['stem', 'order', 'pinned', 'tags', 'due', 'body'],
 		rows: [
 			{
-				id: 'reel',
-				_path: 'posts/reel.md',
+				stem: 'reel',
 				order: 1,
 				pinned: 1,
 				tags: '["a","b"]',
 				due: '2026-10-11',
-				_body: 'Cut done.\n',
+				body: 'Cut done.\n',
 			},
 		],
-		leftOut: [],
+		excluded: {},
 	});
 });
 
 test('query prints one line per row, escaping tabs, newlines, and backslashes', async () => {
 	const { folder, run } = await setup();
-	const result = run(
-		'query',
-		folder,
-		`SELECT _body, 'a\tb\\c' AS x FROM posts`,
-	);
-	expect(result.stdout).toBe('_body\tx\nCut done.\\n\ta\\tb\\\\c\n');
+	const result = run('query', folder, `SELECT body, 'a\tb\\c' AS x FROM posts`);
+	expect(result.stdout).toBe('body\tx\nCut done.\\n\ta\\tb\\\\c\n');
 });
 
-test('query leaves invalid rows out, lists them in _invalid, and reports them per table', async () => {
+test('query holds only rows that conform and points to check for the rest', async () => {
 	const { folder, write, run } = await setup();
 	await write('posts/broken.md', 'no fences\n');
 	const counted = run('query', folder, 'SELECT count(*) AS n FROM posts');
+	expect(counted.exitCode).toBe(0);
 	expect(counted.stdout).toBe('n\n1\n');
 	expect(counted.stderr).toBe(
-		'posts: 1 file left out\nposts/broken.md:1: The source does not start with a --- line\n',
+		`posts: 1 file excluded; run \`epicenter check ${folder}\` to see why\n`,
 	);
-	const listed = run(
-		'query',
-		folder,
-		'SELECT table_name, _path, line FROM _invalid',
-		'--json',
-	);
-	expect(JSON.parse(listed.stdout).rows).toEqual([
-		{ table_name: 'posts', _path: 'posts/broken.md', line: 1 },
-	]);
+	expect(
+		JSON.parse(run('query', folder, 'SELECT stem FROM posts', '--json').stdout)
+			.excluded,
+	).toEqual({ posts: 1 });
+	expect(run('query', folder, 'SELECT * FROM _invalid').exitCode).toBe(2);
 });
 
 test('query refuses statements that write, attach, or vacuum, and leaves the directory unchanged', async () => {

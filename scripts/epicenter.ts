@@ -15,8 +15,12 @@ import {
 	type JsonObject,
 	prepareData,
 } from '../packages/definition/src/index.js';
+import { runDataFolderCommand } from './epicenter-data-folder.js';
 
-const usage = 'Usage: epicenter validate <folder> [--json]';
+const usage = `Usage:
+  epicenter check <dir> [--json]
+  epicenter query <dir> [<sql>] [--json]
+  epicenter validate <folder> [--json]`;
 
 async function validateFolder(path: string) {
 	const root = resolve(path);
@@ -121,6 +125,12 @@ if (import.meta.main) {
 			},
 		});
 		if (values.help) process.stdout.write(`${usage}\n`);
+		else if (positionals[0] === 'check' || positionals[0] === 'query')
+			process.exitCode = await runDataFolderCommand(
+				positionals[0],
+				positionals.slice(1),
+				values.json ?? false,
+			);
 		else if (positionals.length !== 2 || positionals[0] !== 'validate') {
 			throw new Error(usage);
 		} else {

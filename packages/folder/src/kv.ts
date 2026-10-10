@@ -139,6 +139,7 @@ function parseObject(
 
 /**
  * Interpret `kv.json` source against the definition's prepared `kv` fields.
+ * Reads nothing, so a tool can interpret a data folder without opening it.
  * Parsing comes first and fails as a whole. The shared input check then
  * checks each stored declared value by itself; nothing is coerced,
  * defaulted, or repaired.
@@ -147,7 +148,7 @@ function parseObject(
  * nothing a caller holds. They are frozen before a field checks them, so a
  * field's callback cannot make a reading say what its source does not.
  */
-function inspectSource<TValues>(
+export function inspectKv<TValues>(
 	schemas: FieldMap,
 	source: string,
 ): KvReading<TValues> {
@@ -353,7 +354,7 @@ export function createKv<TValues>(
 	{ storage }: { storage: FolderStorage },
 	schemas: FieldMap,
 ): FileKv<TValues> {
-	const inspect = (source: string) => inspectSource<TValues>(schemas, source);
+	const inspect = (source: string) => inspectKv<TValues>(schemas, source);
 
 	/** The snapshot of captured bytes: what was read, or exactly what was submitted. */
 	function snapshotOf(text: string, sha256: string): KvSnapshot<TValues> {

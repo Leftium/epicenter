@@ -3,7 +3,7 @@
 - **Status:** Proposed
 - **Date:** 2026-10-11
 - **Relates:** [ADR-0517](0517-a-data-folder-can-live-inside-any-repository.md) (a data folder is a directory with `epicenter.json`), [ADR-0494](0494-file-folders-reserve-epicenter-for-rebuildable-caches.md) (queries build transient projections), [ADR-0490](0490-the-cli-discovers-folders-and-delegates-history-to-git.md) (account and Git commands)
-- **Unbuilt:** `epicenter check`, `epicenter query`, and the retirement of `epicenter validate` with its executable configuration.
+- **Unbuilt:** the retirement of `epicenter validate` with its executable configuration. `check` and `query` are implemented in `scripts/epicenter-data-folder.ts`.
 
 ## Context
 

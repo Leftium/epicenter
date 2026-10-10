@@ -34,6 +34,7 @@ import {
 	scratch,
 } from './git-http.test-support.js';
 import { createNativeFileBoundary } from './native-store.js';
+import { parseRow } from './row-text.js';
 import { useWebLocks } from './web-locks.test-support.js';
 
 const openNativeFolder = async <const TDefinition extends FolderDefinition>(
@@ -123,9 +124,10 @@ describe('native folder', () => {
 		);
 
 		const createdText = await readFile(join(root, 'todos/walk.md'), 'utf8');
-		expect(createdText).toBe(
-			'---\n"title": "Walk"\n"done": false\n---\nAround the block.\n',
-		);
+		expect(expectOk(parseRow(definition.tables.todos, createdText))).toEqual({
+			fields: { title: 'Walk', done: false },
+			body: 'Around the block.\n',
+		});
 		await settled(folder);
 		expect(await git(root, 'log', '--format=%s')).toBe(
 			'Add todos/walk.md\nAdd definition.json',
@@ -150,9 +152,15 @@ describe('native folder', () => {
 			'Update todos/walk.md',
 		);
 		expect(await git(root, 'status', '--porcelain')).toBe('');
-		expect(await git(root, 'show', 'HEAD:todos/walk.md')).toContain(
-			'"done": true',
-		);
+		// The helper trims Git's output, so only the fields are compared.
+		expect(
+			expectOk(
+				parseRow(
+					definition.tables.todos,
+					await git(root, 'show', 'HEAD:todos/walk.md'),
+				),
+			).fields,
+		).toEqual(done.row.fields);
 		await folder.close();
 	});
 

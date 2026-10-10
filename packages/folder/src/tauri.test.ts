@@ -46,6 +46,7 @@ import {
 import { hashBytes } from './capture.js';
 import { defineFolder, defineTable, field } from './contract.js';
 import type { RecordedIncoming } from './git/backend.js';
+import { formatRow } from './row-text.js';
 
 type Call = { cmd: string; args: Record<string, unknown> };
 type Reply = (call: Call) => unknown;
@@ -456,11 +457,9 @@ test('a table replace still hashing is sent after a raw save made meanwhile', as
 	if (stored === undefined) throw new Error('the row is missing');
 	const digest = holdNextDigest();
 
-	const edited = '---\n"title": "Taken"\n"done": false\n---\n';
-	const replacing = folder.tables.todos.replace(stored, {
-		fields: { title: 'Taken', done: false },
-		body: '',
-	});
+	const taken = { fields: { title: 'Taken', done: false }, body: '' };
+	const edited = expectOk(formatRow(definition.tables.todos, taken));
+	const replacing = folder.tables.todos.replace(stored, taken);
 	await digest.reached;
 	expectOk(await folder.files.overwrite('todos/take.md', 'raw'));
 	digest.release();
@@ -562,12 +561,8 @@ test("a table save changes exactly its row file, under that file's exact conditi
 	// replacement is never sent as an overwrite.
 	expectOk(await folder.tables.todos.rename(created, 'next'));
 	expectOk(await folder.tables.todos.delete(created));
-	expectOk(
-		await folder.tables.todos.replace(created, {
-			fields: { title: 'Taken', done: false },
-			body: '',
-		}),
-	);
+	const taken = { fields: { title: 'Taken', done: false }, body: '' };
+	expectOk(await folder.tables.todos.replace(created, taken));
 	// A guarded change publishes; it reads no row back.
 	expect(calls.some((call) => call.cmd === 'read')).toBe(false);
 	expect(sent('apply').map((call) => call.args.changes)).toEqual([
@@ -586,7 +581,7 @@ test("a table save changes exactly its row file, under that file's exact conditi
 				path: 'todos/take.md',
 				bytes: Array.from(
 					new TextEncoder().encode(
-						'---\n"title": "Taken"\n"done": false\n---\n',
+						expectOk(formatRow(definition.tables.todos, taken)),
 					),
 				),
 				expectedSha256: created.sha256,

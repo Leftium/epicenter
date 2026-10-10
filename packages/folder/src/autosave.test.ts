@@ -361,7 +361,7 @@ describe('table.autosave', () => {
 		row.fields.title = 'later, unrequested';
 		const settled = await saves.settled();
 		expect(await s.text('todos/a.md')).toBe(
-			'---\n"title": "B"\n"done": false\n---\n',
+			'---\ntitle: B\ndone: false\n---\n',
 		);
 		expect(states).toEqual(['saving', 'saved']);
 		if (settled.status !== 'saved') throw new Error('not saved');

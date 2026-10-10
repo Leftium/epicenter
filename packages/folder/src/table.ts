@@ -53,7 +53,7 @@ import {
 	rowPath,
 	rowStemOf,
 } from './paths.js';
-import { formatRow, parseRow, type Row } from './row-text.js';
+import { parseRow, type Row, writeRow } from './row-text.js';
 import { applyOne, replaceCaptured } from './storage.js';
 
 /**
@@ -191,54 +191,24 @@ export function createTable<TFields>(
 	}
 
 	/**
-	 * The exact text and bytes a valid row is saved as, prepared synchronously
-	 * so later changes to the row change nothing. The text is read back as a
-	 * row, which is the check that it is valid and the row it returns.
+	 * The exact bytes a valid row is saved as, and the row they read back
+	 * as, prepared synchronously so later changes to the row change nothing.
 	 */
 	function prepare(
 		row: Row<TFields>,
 	): Result<
-		{ text: string; bytes: Uint8Array; row: Row<TFields> },
+		{ bytes: Uint8Array; row: Row<TFields> },
 		Extract<TableError, { name: 'InvalidValues' }>
 	> {
-		const { data: formatted, error: refusal } = formatRow(
+		const { data: written, error: issues } = writeRow(
 			table,
-			row as Parameters<typeof formatRow>[1],
+			row as Parameters<typeof writeRow>[1],
 		);
-		if (refusal !== null)
-			return TableError.InvalidValues({ issues: [refusal] });
-		const { text, bytes } = submittedText(formatted);
-		const { data: saved, error: issues } = parseRow(table, text);
-		// Lines point into text the caller never saw, so only the reasons stay.
-		if (issues !== null)
-			return TableError.InvalidValues({
-				issues: issues.map(({ message, field }) =>
-					field === undefined ? { message } : { message, field },
-				),
-			});
-		return Ok({ text, bytes, row: saved as Row<TFields> });
-	}
-
-	/**
-	 * The one destination check before publication (ADR-0477): refuse a path a
-	 * file already occupies, by the table's directory as it was just read.
-	 * Names are compared exactly. Another program can still take the path
-	 * afterward, and a filesystem that holds one file for two spellings refuses
-	 * the second at publication, where the exclusive destination condition runs.
-	 */
-	async function vacant(
-		path: string,
-	): Promise<
-		Result<
-			undefined,
-			TableEnumerationError | Extract<FileError, { name: 'Exists' }>
-		>
-	> {
-		const { data: filenames, error: listError } = await filenamesOf();
-		if (listError !== null) return Err(listError);
-		if (filenames.includes(path.slice(name.length + 1)))
-			return FileError.Exists({ path });
-		return Ok(undefined);
+		if (issues !== null) return TableError.InvalidValues({ issues });
+		return Ok({
+			bytes: submittedText(written.text).bytes,
+			row: written.row as Row<TFields>,
+		});
 	}
 
 	/** The filenames directly in the table's directory; none when it does not exist yet. */
@@ -302,8 +272,6 @@ export function createTable<TFields>(
 			if (addressError !== null) return Err(addressError);
 			const { data: prepared, error: prepareError } = prepare(row);
 			if (prepareError !== null) return Err(prepareError);
-			const vacancy = await vacant(path);
-			if (vacancy.error !== null) return vacancy;
 			const sha256 = await hashBytes(prepared.bytes);
 			const { error: applyError } = await applyOne(storage, {
 				kind: 'create',
@@ -339,8 +307,6 @@ export function createTable<TFields>(
 					path: to,
 					reason: 'A row cannot be renamed to the stem it already has',
 				});
-			const vacancy = await vacant(to);
-			if (vacancy.error !== null) return vacancy;
 			const { error: moveError } = await applyOne(storage, {
 				kind: 'move',
 				from: captured.path,

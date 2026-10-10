@@ -341,12 +341,12 @@ test('a prepared table rebuilt with a cloned field still type-checks, and readin
 	).toEqual(['title']);
 	// Once one appears, the read is refused as a programmer error, not an issue.
 	expect(() => parseRow(rebuilt, text)).toThrow('This schema was not prepared');
-	// Formatting checks no value, so it writes the text without noticing.
-	expect(
-		expectOk(
-			formatRow(rebuilt, { fields: { title: 'Milk', done: false }, body: '' }),
-		),
-	).toBe('---\n"title": "Milk"\n"done": false\n---\n');
+	// Formatting checks no value, so it writes the prepared table's text
+	// without noticing.
+	const milk = { fields: { title: 'Milk', done: false }, body: '' };
+	expect(expectOk(formatRow(rebuilt, milk))).toBe(
+		expectOk(formatRow(prepared, milk)),
+	);
 
 	// Preparing the rebuilt declaration again is the remedy.
 	const again = defineFolder({

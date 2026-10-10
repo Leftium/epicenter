@@ -12,20 +12,24 @@
  *
  * Formatting writes one fixed text for a document and a declared key order:
  * declared keys first in declared order, other keys in UTF-16 code unit
- * order, nested mapping keys in that order too, every key quoted and every
- * value in JSON flow style, which is valid YAML 1.2. Comments, quoting, key
- * order, a byte-order mark, and header CRLF are normalized away. The body is
- * appended byte for byte. Formatted text is parsed again before it is
- * returned, so whatever this writes, this reads back as the same document.
+ * order, nested mapping keys in that order too, as block-style YAML through
+ * the `yaml` package. Scalars are plain wherever a YAML 1.2 reader and a
+ * YAML 1.1 reader read the same value, and quoted elsewhere; multi-line
+ * strings are literal blocks. Comments, quoting, key order, a byte-order
+ * mark, and header CRLF are normalized away. The body is appended byte for
+ * byte. Formatted text is parsed again before it is returned, so whatever
+ * this writes, this reads back as the same document.
  */
 import { Err, Ok, type Result } from 'wellcrafted/result';
 import {
-	type Document,
+	Document,
 	isAlias,
 	isMap,
 	isScalar,
 	isSeq,
 	parseDocument,
+	type ScalarTag,
+	type Tags,
 } from 'yaml';
 import { frameRowText } from './markdown.js';
 
@@ -369,6 +373,25 @@ export function formatCanonicalDocument(
 	document: CanonicalDocument,
 	declaredKeys: readonly string[],
 ): Result<string, CanonicalRefusal> {
+	const { data: formatted, error } = formatRowSource(document, declaredKeys);
+	return error === null ? Ok(formatted.text) : Err(error);
+}
+
+/**
+ * Format a document and read the text back: the text, and the document it
+ * reads as, which is the one parse a validating write needs. Internal to the
+ * package; `formatCanonicalDocument` is its public form.
+ *
+ * The frontmatter is block-style YAML with plain scalars wherever a YAML 1.2
+ * reader and a YAML 1.1 reader both read the same value, and quoted
+ * scalars elsewhere: `yes`, `off`, `2026-10-11`, `0o17`, and `1:30` are
+ * strings in both. Multi-line strings are literal blocks. An `undefined`
+ * value in a mapping is an absent key, as in JSON.
+ */
+export function formatRowSource(
+	document: CanonicalDocument,
+	declaredKeys: readonly string[],
+): Result<{ text: string; document: CanonicalDocument }, CanonicalRefusal> {
 	const supplied: unknown = document;
 	if (typeof supplied !== 'object' || supplied === null)
 		return refuse('The document is not an object');
@@ -389,40 +412,79 @@ export function formatCanonicalDocument(
 		...declaredKeys.filter((key) => Object.hasOwn(fields, key)),
 		...extra,
 	];
-	let header = '';
+	// A Map keeps this order; an object would put integer-like keys first.
+	const owned: OwnedMap = new Map();
 	for (const key of keys) {
-		const { data: text, error: textError } = flow(
-			fields[key],
-			[key],
-			new Set(),
-		);
-		if (textError !== null) return Err({ ...textError, field: key });
-		const { data: quoted, error: quoteError } = quote(key, [key]);
-		if (quoteError !== null) return Err({ ...quoteError, field: key });
-		header += `${quoted}: ${text}\n`;
+		if (!key.isWellFormed())
+			return refuse('A key contains a lone surrogate', [key]);
+		const value = fields[key];
+		if (value === undefined) continue;
+		const { data: copy, error } = ownValue(value, [key], new Set());
+		if (error !== null) return Err({ ...error, field: key });
+		owned.set(key, copy);
 	}
+	const header =
+		owned.size === 0
+			? ''
+			: new Document(owned, {
+					version: '1.2',
+					// Quote whatever a YAML 1.1 reader would read differently.
+					compat: 'yaml-1.1',
+					customTags: withDecimalPoint,
+				}).toString({ lineWidth: 0 });
 	const text = `---\n${header}---\n${body}`;
-	const { data: reread, error: parseError } = parseCanonicalDocument(text);
+	const { data: reread, error: parseError } = parseRowSource(text);
 	if (parseError !== null)
 		return refuse(`The canonical text does not parse: ${parseError.reason}`);
-	if (reread.body !== body || !sameValue(reread.fields, fields))
+	if (
+		reread.document.body !== body ||
+		!sameAsOwned(reread.document.fields, owned)
+	)
 		return refuse('The canonical text does not read back as the document');
-	return Ok(text);
+	return Ok({ text, document: reread.document });
 }
 
-function flow(
+/**
+ * The schema's tags, with floats always written with a decimal point. A YAML
+ * 1.1 reader such as PyYAML or Ruby's Psych reads `1e-7` as a string; every
+ * reader reads `1.0e-7` as the same float. Numbers are the one case
+ * `compat` leaves to the writer, since it chooses only scalar styles.
+ */
+function withDecimalPoint(tags: Tags): Tags {
+	return tags.map((tag) => {
+		if (typeof tag !== 'object' || tag.tag !== 'tag:yaml.org,2002:float')
+			return tag;
+		const scalar = tag as ScalarTag;
+		const { stringify } = scalar;
+		if (stringify === undefined) return tag;
+		return {
+			...scalar,
+			stringify: (...args: Parameters<typeof stringify>) =>
+				stringify(...args).replace(/^(-?\d+)e/, '$1.0e'),
+		};
+	});
+}
+
+/** A value ready to write: mappings are Maps, so their key order is the written order. */
+type OwnedValue = null | boolean | number | string | OwnedValue[] | OwnedMap;
+type OwnedMap = Map<string, OwnedValue>;
+
+/**
+ * The JSON value of a supplied value, copied with mapping keys in UTF-16
+ * code unit order, or why it has none. An `undefined` mapping value is left
+ * out; anything else that JSON or YAML would lose is refused.
+ */
+function ownValue(
 	value: unknown,
 	path: Path,
 	ancestors: Set<object>,
-): Result<string, CanonicalRefusal> {
-	if (value === null) return Ok('null');
-	if (typeof value === 'boolean') return Ok(String(value));
-	if (typeof value === 'number') {
-		const number = numberValue(value, path);
-		if (number.error !== null) return number;
-		return Ok(Object.is(value, -0) ? '-0' : String(value));
-	}
-	if (typeof value === 'string') return quote(value, path);
+): Result<OwnedValue, CanonicalRefusal> {
+	if (value === null || typeof value === 'boolean') return Ok(value);
+	if (typeof value === 'number') return numberValue(value, path);
+	if (typeof value === 'string')
+		return value.isWellFormed()
+			? Ok(value)
+			: refuse('A string contains a lone surrogate', path);
 	if (typeof value !== 'object')
 		return refuse(`A ${typeof value} has no JSON value`, path);
 	if (ancestors.has(value)) return refuse('A value contains itself', path);
@@ -432,33 +494,34 @@ function flow(
 			// Holes, extra properties, and symbols would be lost.
 			if (Reflect.ownKeys(value).length !== value.length + 1)
 				return refuse('An array has holes or extra properties', path);
-			const items: string[] = [];
+			const items: OwnedValue[] = [];
 			for (const [index, item] of value.entries()) {
-				const { data: text, error: textError } = flow(
+				const { data: copy, error } = ownValue(
 					item,
 					[...path, index],
 					ancestors,
 				);
-				if (textError !== null) return Err(textError);
-				items.push(text);
+				if (error !== null) return Err(error);
+				items.push(copy);
 			}
-			return Ok(`[${items.join(', ')}]`);
+			return Ok(items);
 		}
 		if (!isPlainRecord(value))
 			return refuse('An object is not a plain JSON object', path);
-		const entries: string[] = [];
+		const record: OwnedMap = new Map();
 		for (const key of Object.keys(value).sort(compareKeys)) {
-			const { data: quoted, error: quoteError } = quote(key, [...path, key]);
-			if (quoteError !== null) return Err(quoteError);
-			const { data: text, error: textError } = flow(
+			if (!key.isWellFormed())
+				return refuse('A key contains a lone surrogate', [...path, key]);
+			if (value[key] === undefined) continue;
+			const { data: copy, error } = ownValue(
 				value[key],
 				[...path, key],
 				ancestors,
 			);
-			if (textError !== null) return Err(textError);
-			entries.push(`${quoted}: ${text}`);
+			if (error !== null) return Err(error);
+			record.set(key, copy);
 		}
-		return Ok(`{${entries.join(', ')}}`);
+		return Ok(record);
 	} finally {
 		ancestors.delete(value);
 	}
@@ -475,41 +538,27 @@ function isPlainRecord(value: unknown): value is Record<string, unknown> {
 	);
 }
 
-/**
- * A YAML double-quoted scalar. JSON escapes are YAML escapes; the code points
- * YAML does not allow unescaped (DEL, C1 controls, U+FEFF, U+FFFE, U+FFFF) are
- * escaped too. Everything else, U+2028 included, is written literally.
- */
-function quote(text: string, path: Path): Result<string, CanonicalRefusal> {
-	if (!text.isWellFormed())
-		return refuse('A string contains a lone surrogate', path);
-	return Ok(
-		JSON.stringify(text).replace(
-			/[\u007f-\u009f﻿￾￿]/g,
-			(char) => `\\u${char.charCodeAt(0).toString(16).padStart(4, '0')}`,
-		),
-	);
-}
-
 /** UTF-16 code unit order: fixed, locale-independent, and total. */
 function compareKeys(left: string, right: string): number {
 	return left < right ? -1 : left > right ? 1 : 0;
 }
 
-function sameValue(left: unknown, right: unknown): boolean {
-	if (Object.is(left, right)) return true;
-	if (Array.isArray(left))
+/** Whether a parsed value is the owned value it was written from. */
+function sameAsOwned(parsed: unknown, owned: OwnedValue): boolean {
+	if (owned instanceof Map)
 		return (
-			Array.isArray(right) &&
-			left.length === right.length &&
-			left.every((item, index) => sameValue(item, right[index]))
+			isPlainRecord(parsed) &&
+			Object.keys(parsed).length === owned.size &&
+			[...owned].every(
+				([key, value]) =>
+					Object.hasOwn(parsed, key) && sameAsOwned(parsed[key], value),
+			)
 		);
-	if (!isPlainRecord(left) || !isPlainRecord(right)) return false;
-	const keys = Object.keys(left);
-	return (
-		keys.length === Object.keys(right).length &&
-		keys.every(
-			(key) => Object.hasOwn(right, key) && sameValue(left[key], right[key]),
-		)
-	);
+	if (Array.isArray(owned))
+		return (
+			Array.isArray(parsed) &&
+			parsed.length === owned.length &&
+			owned.every((item, index) => sameAsOwned(parsed[index], item))
+		);
+	return Object.is(parsed, owned);
 }

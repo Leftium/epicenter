@@ -54,6 +54,7 @@ import {
 	type FolderHistory,
 } from './folder.js';
 import { GIT_ENV, scratch } from './git-http.test-support.js';
+import { formatRow, parseRow } from './row-text.js';
 
 const definition = defineFolder({
 	kv: {},
@@ -130,8 +131,11 @@ describe.each(Object.keys(openers))('%s folder file verbs', (kind) => {
 		const saved = expectOk(await saving);
 		expect(saved.path).toBe(entry.path);
 		expect(saved.row).toEqual({ fields: { title: 'Mine' }, body: '' });
-		const source = '---\n"title": "Mine"\n---\n';
-		expect(await text(folder, entry.path)).toBe(source);
+		const landed = expectOk(await folder.files.read(entry.path));
+		expect(landed.sha256).toEqual(saved.sha256);
+		expect(
+			expectOk(parseRow(definition.tables.todos, decoder.decode(landed.bytes))),
+		).toEqual(saved.row);
 
 		const moving = { path: saved.path, sha256: saved.sha256 };
 		const renamed = table.rename(moving, 'b');
@@ -140,7 +144,9 @@ describe.each(Object.keys(openers))('%s folder file verbs', (kind) => {
 			path: 'todos/b.md',
 			sha256: saved.sha256,
 		});
-		expect(await text(folder, 'todos/b.md')).toBe(source);
+		expect(expectOk(await folder.files.read('todos/b.md')).sha256).toEqual(
+			saved.sha256,
+		);
 		expect(expectErr(await folder.files.read(entry.path)).name).toBe(
 			'NotFound',
 		);
@@ -526,7 +532,9 @@ describe('a save never reads its bytes back', () => {
 			),
 		);
 		expect(row.row).toEqual({ fields: { title: 'Mine' }, body: '' });
-		expect(row.sha256).toEqual(await versionOf('---\n"title": "Mine"\n---\n'));
+		expect(row.sha256).toEqual(
+			await versionOf(expectOk(formatRow(definition.tables.todos, row.row))),
+		);
 		// An explicit get is the new observation; it never acknowledges the draft.
 		const current = expectOk(await folder.tables.todos.get('r'));
 		expect(current!.row.fields).toEqual({ title: 'Theirs' });

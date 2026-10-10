@@ -73,10 +73,12 @@ test('sources that differ only in YAML presentation format to identical bytes', 
 	expect(canonical(plain)).toBe(
 		[
 			'---',
-			'"title": "Plan"',
-			'"done": false',
-			'"owner": "sam"',
-			'"tags": ["a", "b"]',
+			'title: Plan',
+			'done: false',
+			'owner: sam',
+			'tags:',
+			'  - a',
+			'  - b',
 			'---',
 			'Body.\n',
 		].join('\n'),
@@ -101,12 +103,12 @@ test('declared keys come first in declared order, then other keys in code unit o
 	expect(text).toBe(
 		[
 			'---',
-			'"title": "T"',
-			'"priority": "high"',
-			'"10": "ten"',
-			'"2": "two"',
-			'"Alpha": 3',
-			'"zeta": 1',
+			'title: T',
+			'priority: high',
+			'"10": ten',
+			'"2": two',
+			'Alpha: 3',
+			'zeta: 1',
 			'---',
 			'',
 		].join('\n'),
@@ -162,8 +164,18 @@ test('nested unknown values are kept, with nested keys sorted', () => {
 	expect(format(document)).toBe(
 		[
 			'---',
-			'"title": "T"',
-			'"extra": {"alpha": {"inner": {"deep": "x"}}, "zed": [1, "two", null, false, {"a": [], "b": 2}]}',
+			'title: T',
+			'extra:',
+			'  alpha:',
+			'    inner:',
+			'      deep: x',
+			'  zed:',
+			'    - 1',
+			'    - two',
+			'    - null',
+			'    - false',
+			'    - a: []',
+			'      b: 2',
 			'---',
 			'',
 		].join('\n'),
@@ -210,7 +222,6 @@ test('format refuses values that have no exact JSON form', () => {
 		2 ** 53,
 		Number.NaN,
 		10n,
-		undefined,
 		new Date(0),
 		cyclic,
 		'\ud800',
@@ -257,7 +268,7 @@ test('format refuses a malformed document shape instead of throwing, and reads o
 		fields: { title: 'Plan' },
 		body: 'Body.\n',
 	};
-	expect(format(row)).toBe('---\n"title": "Plan"\n---\nBody.\n');
+	expect(format(row)).toBe('---\ntitle: Plan\n---\nBody.\n');
 });
 
 test('safe aliases expand; alias expansion is bounded', () => {
@@ -265,7 +276,8 @@ test('safe aliases expand; alias expansion is bounded', () => {
 		['---', 'base: &b {x: 1, y: [a]}', 'copy: *b', '---', ''].join('\n'),
 	);
 	expect(document.fields.copy).toEqual({ x: 1, y: ['a'] });
-	expect(format(document)).toContain('"copy": {"x": 1, "y": ["a"]}');
+	// `y` is quoted because a YAML 1.1 reader reads a bare y as true.
+	expect(format(document)).toContain('copy:\n  x: 1\n  "y":\n    - a\n');
 
 	const laughs = ['---', 'a: &a [x, x, x, x, x, x, x, x, x, x]'];
 	for (const [name, previous] of [
@@ -321,7 +333,10 @@ test('a __proto__ key is an own field and never a prototype', () => {
 	expect(text).toBe(
 		[
 			'---',
-			'"__proto__": {"__proto__": {"polluted": true}, "constructor": 1}',
+			'__proto__:',
+			'  __proto__:',
+			'    polluted: true',
+			'  constructor: 1',
 			'---',
 			'',
 		].join('\n'),
@@ -337,6 +352,7 @@ test('-0 survives parse and format', () => {
 		const document = parse(`---\nn: ${spelling}\n---\n`);
 		expect(Object.is(document.fields.n, -0)).toBe(true);
 		const text = format(document);
+		// The key is quoted: a YAML 1.1 reader reads a bare n as false.
 		expect(text).toBe('---\n"n": -0\n---\n');
 		expect(Object.is(parse(text).fields.n, -0)).toBe(true);
 	}
@@ -349,7 +365,7 @@ test('the body is kept exactly: CRLF, trailing spaces, and blank lines', () => {
 	const document = parse(source);
 	expect(document.body).toBe(body);
 	const text = format(document);
-	expect(text).toBe(`---\n"title": "T"\n---\n${body}`);
+	expect(text).toBe(`---\ntitle: T\n---\n${body}`);
 	expect(parse(text).body).toBe(body);
 	// A body line that looks like a fence is still body.
 	expect(parse(format({ fields: {}, body: '---\nnot: yaml\n' })).body).toBe(
@@ -364,9 +380,7 @@ test('schema-invalid values survive: validation is outside the codec', () => {
 	);
 	expect(document.fields).toEqual({ title: 'A', done: 'A', priority: 7 });
 	expect(format(document)).toBe(
-		['---', '"title": "A"', '"done": "A"', '"priority": 7', '---', ''].join(
-			'\n',
-		),
+		['---', 'title: A', 'done: A', 'priority: 7', '---', ''].join('\n'),
 	);
 });
 

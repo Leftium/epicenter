@@ -570,7 +570,7 @@ describe('scopes and history', () => {
 		expect(folder.git.snapshot.lastCommit?.status).toBe('committed');
 		const shell = folder.terminal();
 		const listed = await shell.exec('cat notes/first.md && git status --short');
-		expect(listed.stdout).toContain('"title": "First"');
+		expect(listed.stdout).toContain('title: First\n');
 		expectOk(await folder.files.create('loose.txt', 'x'));
 		const status = expectOk(await folder.git.status());
 		expect(status.changes.map((change) => change.path)).toEqual(['loose.txt']);

@@ -12,12 +12,15 @@
  * - A schema failure has one issue per problem, at its key's line
  * - A missing declared field is the only issue without a line
  * - Lines count the whole text; CRLF and a byte-order mark do not shift them
+ * - Formatting writes plain block YAML, quoting exactly the strings a YAML
+ *   1.1 reader would read as something else, and reads back as the row
  */
 import { expect, test } from 'bun:test';
 import {
 	defineFolder,
 	defineTable,
 	field,
+	formatRow,
 	parseRow,
 	type RowIssue,
 } from '@epicenter/folder/browser';
@@ -269,4 +272,91 @@ test('a field callback judges a frozen copy, never the row it returns', () => {
 			field: 'data',
 		},
 	]);
+});
+
+test('a row formats as plain block YAML and reads back as the same row', () => {
+	const row = {
+		fields: {
+			title: 'Buy milk',
+			done: false,
+			tags: ['home', 'errand'],
+			notes: { owner: 'sam', score: 3.5 },
+			lines: 'line one\nline two\n',
+		},
+		body: 'Two percent.\n',
+	};
+	const text = expectOk(formatRow(todos, row as never));
+	expect(text).toBe(
+		lines(
+			'---',
+			'title: Buy milk',
+			'done: false',
+			'tags:',
+			'  - home',
+			'  - errand',
+			'lines: |',
+			'  line one',
+			'  line two',
+			'notes:',
+			'  owner: sam',
+			'  score: 3.5',
+			'---',
+			'Two percent.\n',
+		),
+	);
+	expect<unknown>(expectOk(parseRow(todos, text))).toEqual(row);
+});
+
+test('strings a YAML 1.1 reader would read as something else are quoted', () => {
+	const ambiguous = {
+		answer: 'yes',
+		light: 'Off',
+		date: '2026-10-11',
+		octal: '0o17',
+		sexagesimal: '1:30',
+		number: '42',
+		tilde: '~',
+		empty: '',
+		spaced: '  leading',
+		colon: 'a: b',
+	};
+	const text = expectOk(
+		formatRow(todos, {
+			fields: { title: 'T', done: false, tags: [], ...ambiguous },
+			body: '',
+		} as never),
+	);
+	for (const [key, value] of Object.entries(ambiguous))
+		expect(text).toContain(`${key}: ${JSON.stringify(value)}\n`);
+	expect<unknown>(expectOk(parseRow(todos, text)).fields).toMatchObject(
+		ambiguous,
+	);
+});
+
+test('an undefined field is an absent key', () => {
+	const text = expectOk(
+		formatRow(todos, {
+			fields: { title: 'T', done: false, tags: [], gone: undefined },
+			body: '',
+		} as never),
+	);
+	expect(text).toBe(
+		lines('---', 'title: T', 'done: false', 'tags: []', '---', ''),
+	);
+});
+
+test('a float is written with a decimal point, which every YAML version reads as the same number', () => {
+	const text = expectOk(
+		formatRow(todos, {
+			fields: { title: 'T', done: false, tags: [], small: 1e-7, half: 0.5 },
+			body: '',
+		} as never),
+	);
+	// PyYAML and Ruby's Psych read a bare 1e-7 as a string.
+	expect(text).toContain('small: 1.0e-7\n');
+	expect(text).toContain('half: 0.5\n');
+	expect<unknown>(expectOk(parseRow(todos, text)).fields).toMatchObject({
+		small: 1e-7,
+		half: 0.5,
+	});
 });

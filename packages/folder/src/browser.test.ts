@@ -29,6 +29,7 @@ import {
 } from './browser-storage.test-support.js';
 import { hashBytes } from './capture.js';
 import { createHistory } from './git/history.js';
+import { parseRow } from './row-text.js';
 import { useWebLocks } from './web-locks.test-support.js';
 
 const definition = defineFolder({
@@ -137,9 +138,11 @@ describe('browser folder tables', () => {
 
 		expect(created.path).toBe('todos/milk.md');
 		const raw = expectOk(await folder.files.read('todos/milk.md'));
-		expect(new TextDecoder().decode(raw.bytes)).toBe(
-			'---\n"title": "Buy milk"\n"done": false\n---\nTwo liters.\n',
-		);
+		expect(
+			expectOk(
+				parseRow(definition.tables.todos, new TextDecoder().decode(raw.bytes)),
+			),
+		).toEqual(created.row);
 		expect(raw.sha256).toEqual(created.sha256);
 
 		created.row.fields.done = true;
@@ -747,7 +750,7 @@ describe('browser terminal', () => {
 
 		expect((await terminal.exec('ls todos')).stdout).toBe('one.md\n');
 		expect((await terminal.exec('cat todos/one.md')).stdout).toContain(
-			'"title": "One"',
+			'title: One\n',
 		);
 		const wrote = await terminal.exec(
 			'echo "shell note" > notes.txt && mkdir -p a/b && ls',

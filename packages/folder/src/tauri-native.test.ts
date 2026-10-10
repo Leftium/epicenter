@@ -276,12 +276,7 @@ async function setup(options: { manual?: boolean; remote?: string } = {}) {
 		other,
 		todos: folder.tables.todos,
 		/** A write from window B, landing right after window A's next directory read. */
-		interleave(path: string, text: string) {
-			running.afterListing = () =>
-				b(async () => {
-					expectOk(await other.files.overwrite(path, text));
-				});
-		},
+
 		files: async () => {
 			const { data: listed, error: listError } = await a(() =>
 				folder.files.children('todos'),
@@ -634,15 +629,17 @@ describe.skipIf(!enabled)('tauri folder against the native owner', () => {
 			expect(lost.actualSha256).toEqual(now.sha256);
 	});
 
-	test('a row another window changed after the directory read is an exact-sha256 conflict', async () => {
-		const { folder, todos, interleave, files } = await setup({ manual: true });
+	test('a row another window changed after this window captured it is an exact-sha256 conflict', async () => {
+		const { folder, todos, other, files } = await setup({ manual: true });
 		expectOk(await a(() => folder.files.create('todos/take.png', IMAGE)));
 		const entry = expectOk(await a(() => todos.create(...row('take'))));
 		const changed = '---\ntitle: Changed\ndone: true\n---\n';
-		interleave('todos/take.md', changed);
+		// Window B saves over the row after window A captured it.
+		await b(async () => {
+			expectOk(await other.files.overwrite('todos/take.md', changed));
+		});
 
-		// A rename reads the directory for its destination check, then moves
-		// the row under the sha256 the entry captured.
+		// The rename moves the row under the sha256 the entry captured.
 		const refused = expectErr(await a(() => todos.rename(entry, 'next')));
 
 		expect(refused.name).toBe('Conflict');

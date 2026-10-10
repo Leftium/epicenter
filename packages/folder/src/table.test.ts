@@ -245,7 +245,7 @@ test('create writes canonical text that reads back as the same row', async () =>
 
 	const text = await s.stored('todos/milk.md');
 	expect(text).toBe(
-		'---\n"title": "Milk"\n"done": false\n"tags": ["home"]\n"priority": "high"\n---\nTwo percent.\n',
+		'---\ntitle: Milk\ndone: false\ntags:\n  - home\npriority: high\n---\nTwo percent.\n',
 	);
 	expect(created.sha256).toBe(await hashBytes(encoder.encode(text)));
 	expect(expectOk(await s.table.get('milk'))).toEqual(created);

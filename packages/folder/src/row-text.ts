@@ -19,7 +19,9 @@ import { type CreateRowOf, conformance } from '@epicenter/definition';
 import { Err, Ok, type Result } from 'wellcrafted/result';
 import {
 	type CanonicalDocument,
+	type CanonicalRefusal,
 	formatCanonicalDocument,
+	formatRowSource,
 	parseRowSource,
 } from './canonical.js';
 import type { PreparedFolderTable } from './definition.js';
@@ -115,15 +117,48 @@ export function formatRow<const TTable extends PreparedFolderTable>(
 		Object.keys(table.fields),
 	);
 	if (refusal === null) return Ok(text);
-	return Err(
-		Object.freeze(
-			refusal.field === undefined
-				? { message: `The row cannot be saved: ${refusal.reason}` }
-				: {
-						message: `${refusal.field} cannot be saved: ${refusal.reason}`,
-						field: refusal.field,
-					},
-		),
+	return Err(writeIssue(refusal));
+}
+
+/**
+ * The text a valid row is saved as, and the row that text reads back as:
+ * one format and one parse, the parse doubling as the schema check. Fails
+ * with every reason the row is not valid, without lines, since they would
+ * point into text the caller never saw. Internal to the package; every
+ * validating table write goes through it.
+ */
+export function writeRow<const TTable extends PreparedFolderTable>(
+	table: TTable,
+	row: Row<CreateRowOf<TTable>>,
+): Result<{ text: string; row: Row<CreateRowOf<TTable>> }, RowIssues> {
+	const { data: written, error: refusal } = formatRowSource(
+		row as unknown as CanonicalDocument,
+		Object.keys(table.fields),
+	);
+	if (refusal !== null) return Err(issueList([writeIssue(refusal)]));
+	const { issues } = conformance(table.fields, written.document.fields);
+	if (issues.length > 0)
+		return Err(
+			issueList(issues.map(({ field, message }) => ({ message, field }))),
+		);
+	return Ok({
+		text: written.text,
+		row: {
+			fields: written.document.fields as Row<CreateRowOf<TTable>>['fields'],
+			body: written.document.body,
+		},
+	});
+}
+
+/** Why a row cannot be written, as an issue about its field when it names one. */
+function writeIssue(refusal: CanonicalRefusal): RowIssue {
+	return Object.freeze(
+		refusal.field === undefined
+			? { message: `The row cannot be saved: ${refusal.reason}` }
+			: {
+					message: `${refusal.field} cannot be saved: ${refusal.reason}`,
+					field: refusal.field,
+				},
 	);
 }
 

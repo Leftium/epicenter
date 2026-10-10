@@ -106,24 +106,8 @@ async function held() {
 	const order: string[] = [];
 	const { promise: released, resolve: release } = Promise.withResolvers<void>();
 	const { promise: reached, resolve: reach } = Promise.withResolvers<void>();
-	const rows = {
-		/** Set to hold the next directory listing, as a row creation's vacancy check makes. */
-		hold: undefined as Promise<void> | undefined,
-		listing: Promise.withResolvers<void>(),
-	};
 	const boundary: FileBoundary = {
 		...base,
-		async children(directory) {
-			const reading = base.children(directory);
-			const hold = rows.hold;
-			rows.hold = undefined;
-			if (hold !== undefined) {
-				rows.listing.resolve();
-				await hold;
-				order.push('row check done');
-			}
-			return reading;
-		},
 		async apply(changes) {
 			const applying = base.apply(changes);
 			reach();
@@ -180,7 +164,6 @@ async function held() {
 		release,
 		real,
 		commits,
-		rows,
 		base,
 		pushes: () => pushes,
 	};
@@ -277,23 +260,6 @@ test('a save refused while closing changes nothing, and close still settles', as
 	// Closing twice is the same close.
 	await folder.close();
 	expect(order).toEqual(['released', 'saved']);
-});
-
-test('a helper between its directory read and publication is fenced without holding close', async () => {
-	const { folder, order, release, rows } = await held();
-	release();
-	const { promise: holding, resolve: letGo } = Promise.withResolvers<void>();
-	rows.hold = holding;
-	const saving = folder.tables.todos.create(
-		{ fields: { title: 'Preparing' }, body: '' },
-		{ stem: 'a' },
-	);
-	await rows.listing.promise;
-	await folder.close();
-	expect(order).toEqual(['released']);
-	letGo();
-	expect(expectErr(await saving).name).toBe('Closed');
-	expect(order).toEqual(['released', 'row check done']);
 });
 
 test('close reentered by abort and history observers shares one completion and releases once', async () => {

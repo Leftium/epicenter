@@ -1,4 +1,4 @@
-# OPFS and row editor acceptance
+# OPFS acceptance
 
 ## Current page
 
@@ -15,19 +15,14 @@ those directories when the run finishes. Keep the same host and port: the
 origin is the storage. No application origin is touched.
 
 Besides the file, history, recovery, identity, and closing checks, which
-use conditional file and table commands, the page checks the row editor
-against real OPFS:
+use conditional file and table commands, the page checks row repair against
+real OPFS: malformed and schema-invalid text reads as `InvalidRow` with its
+exact text, and a `replace` guarded by that read saves the canonical row.
 
-- Each `set` is the snapshot before it returns. Three inputs in one turn
-  leave one write running; the file then holds the latest input. An outside
-  save leaves the editor alone until `reload`, which makes it the row
-  exactly. `subscribe` makes no initial call.
-- Malformed and schema-invalid text opens as an `invalid` row, and
-  `setText` through the same editor repairs it.
-- A row removed before the editor's write is `NotFound`, and the file stays
-  absent. A failed `reload` keeps the failed input in view. Made again by an
-  explicit `files.create`, the file keeps its own text, and `reload` adopts
-  it and clears the failed save.
+2026-10-11: the three row editor checks (ordered `set` and observation,
+repair through the editor, and a removed row's failed save and `reload`)
+were retired with the row-API clean break (ADR-0515), which removed the row
+editor.
 
 Stream probes use the browser's own OPFS API in a directory of the run's own:
 

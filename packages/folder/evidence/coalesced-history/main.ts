@@ -1,5 +1,5 @@
 /**
- * Manual acceptance app over production OPFS and the public row editor.
+ * Manual acceptance app over production OPFS and guarded table saves.
  * A real Web Lock creates contention. The one-shot lock adapter rejection
  * creates a controlled failure before Git work; all persistence is real OPFS.
  * Reload retains the disposable folder on this dedicated evidence origin.
@@ -121,17 +121,49 @@ if (existing.error?.name === 'NotFound')
 		'notes/note.md',
 		'---\ntitle: Disposable note\n---\nInitial text.\n',
 	);
-const acquired = await folder.tables.notes.edit('note');
-if (acquired.error) throw new Error(acquired.error.message);
-const editor = acquired.data;
-const current = await folder.files.read('notes/note.md');
-if (current.error) throw new Error(current.error.message);
-text.value = new TextDecoder().decode(current.data.bytes);
-text.oninput = () => editor.setText(text.value);
-const showSave = () => {
-	element('save').textContent = `Save: ${editor.get().save.status}`;
+const read = await folder.tables.notes.get('note');
+if (read.error) throw new Error(read.error.message);
+if (read.data === undefined) throw new Error('The disposable note is missing');
+let stored = read.data;
+// The textarea edits the body. One guarded replace runs at a time, and only
+// the newest body waits; each save is guarded by the capture the last one
+// returned. This page owns that queue: the folder has no row editor.
+text.value = stored.row.body;
+let waiting: string | undefined;
+let saveStatus: 'saved' | 'saving' | 'failed' = 'saved';
+let saves: Promise<void> = Promise.resolve();
+const showSave = (detail?: string) => {
+	element('save').textContent =
+		detail === undefined
+			? `Save: ${saveStatus}`
+			: `Save: ${saveStatus} (${detail})`;
 };
-editor.subscribe(showSave);
+async function drain() {
+	while (waiting !== undefined) {
+		const body = waiting;
+		waiting = undefined;
+		const saved = await folder.tables.notes.replace(stored, {
+			...stored.row,
+			body,
+		});
+		if (saved.error) {
+			saveStatus = 'failed';
+			showSave(saved.error.message);
+			return;
+		}
+		stored = saved.data;
+	}
+	saveStatus = 'saved';
+	showSave();
+}
+text.oninput = () => {
+	waiting = text.value;
+	if (saveStatus === 'saving') return;
+	saveStatus = 'saving';
+	showSave();
+	saves = drain();
+};
+const waitForSaves = () => saves;
 showSave();
 folder.git.subscribe((snapshot) => {
 	element('activity').textContent = JSON.stringify(
@@ -173,14 +205,14 @@ element('checkpoint').onclick = () =>
 		element('gate').textContent = `Explicit checkpoint: ${outcome.status}`;
 	});
 element('close').onclick = async () => {
-	await editor.waitForSaves();
+	await waitForSaves();
 	await folder.close();
 	text.disabled = true;
 	element('gate').textContent = 'Folder closed; reload to reopen';
 };
 
 async function inspect() {
-	await editor.waitForSaves();
+	await waitForSaves();
 	const saved = await folder.files.read('notes/note.md');
 	element('saved').textContent = saved.error
 		? saved.error.message

@@ -34,11 +34,10 @@ import {
 	defineTable,
 	type FolderDefinition,
 	field,
+	formatRow,
 	hashBytes,
-	inspectRow,
 	openFolder,
-	type PreparedFolderTable,
-	type TableWriteReceipt,
+	parseRow,
 } from '@epicenter/folder/bun';
 import type { Result } from 'wellcrafted/result';
 
@@ -129,14 +128,6 @@ function ok<T, E>({ data, error }: Result<T, E>): T {
 	return data as T;
 }
 
-/** A write receipt with its text interpreted: what a read of those bytes returns. */
-function interpreted<const TTable extends PreparedFolderTable>(
-	table: TTable,
-	receipt: TableWriteReceipt,
-) {
-	return { ...receipt, ...inspectRow(table, receipt.text) };
-}
-
 function refusal<T, E>({ data, error }: Result<T, E>): E {
 	if (error === null)
 		throw new Error(`Expected a refusal, got ${JSON.stringify(data)}`);
@@ -180,6 +171,7 @@ try {
 	console.log(`Bun ${Bun.version}, ${process.platform}`);
 
 	// -------------------------------------------------------------------------
+	// -------------------------------------------------------------------------
 	section('1. App A creates a row with title, done, and a body');
 	// -------------------------------------------------------------------------
 	const ROW = 'todos/milk.md';
@@ -187,22 +179,24 @@ try {
 	{
 		const a = await open(appA);
 		const created = ok(
-			await a.tables.todos.create({
-				stem: 'milk',
-				fields: { title: 'Buy milk', done: false },
-				body: BODY,
-			}),
+			await a.tables.todos.create(
+				{ fields: { title: 'Buy milk', done: false }, body: BODY },
+				{ stem: 'milk' },
+			),
 		);
 		await a.close();
 		const onDisk = await disk.text(ROW);
 		show(ROW, onDisk);
 		check(
 			'the row is one ordinary Markdown file at todos/milk.md',
-			disk.exists(ROW),
+			disk.exists(ROW) && created.path === ROW,
 		);
-		check('the receipt text is the bytes on disk', created.text === onDisk);
 		check(
-			'the receipt hash is the hash of the bytes on disk',
+			'the returned row formats to exactly the bytes on disk',
+			ok(formatRow(appA.tables.todos, created.row)) === onDisk,
+		);
+		check(
+			'the returned hash is the hash of the bytes on disk',
 			created.sha256 === (await hashBytes(await disk.bytes(ROW))),
 		);
 	}
@@ -225,83 +219,36 @@ try {
 	note('written with node:fs; no folder handle is open');
 
 	// -------------------------------------------------------------------------
-	section('3. App B reads its own schema and adds its own field');
+	section('3. App B reads a row that lacks its own field');
 	// -------------------------------------------------------------------------
 	{
 		const b = await open(appB);
 		const listed = ok(await b.tables.todos.list());
 		check(
 			'B discovers the row A created by listing',
-			listed.length === 1 && listed[0]?.path === ROW,
+			listed.length === 1 && listed[0]?.stem === 'milk',
 		);
-		const row = ok(await b.tables.todos.get('milk'));
-		if (row === undefined) throw new Error('B did not find the row');
+		const { error: invalid } = await b.tables.todos.get('milk');
 		check(
-			'B reads the title both applications declare',
-			row.fields.title === 'Buy milk',
-		);
-		check(
-			"B's fields hold nothing B did not declare (no done, no estimate)",
-			Object.keys(row.fields).join() === 'title',
-			Object.keys(row.fields),
-		);
-		check(
-			"B's own missing field is an issue, not a parse error",
-			row.parseError === undefined &&
-				row.issues.length === 1 &&
-				row.issues[0]?.field === 'priority',
-			row.issues,
+			"B's missing field makes the row InvalidRow for B, with one issue naming priority",
+			invalid?.name === 'InvalidRow' &&
+				invalid.issues.length === 1 &&
+				invalid.issues[0].field === 'priority',
+			invalid,
 		);
 		check(
 			'B still has the exact text, comment and unknown keys included',
-			row.text === AGENT_ROW,
+			invalid?.name === 'InvalidRow' && invalid.text === AGENT_ROW,
 		);
-		check('B reads the body exactly', row.body === BODY);
-
-		const updated = interpreted(
-			appB.tables.todos,
-			ok(await b.tables.todos.update('milk', { fields: { priority: 2 } }, {})),
+		check(
+			'the InvalidRow hash is the hash of the bytes on disk',
+			invalid?.name === 'InvalidRow' &&
+				invalid.sha256 === (await hashBytes(await disk.bytes(ROW))),
 		);
 		await b.close();
-		const onDisk = await disk.text(ROW);
-		show(ROW, onDisk);
-		const ADDED = 'priority: 2\n';
 		check(
-			'the update added exactly one line; every other byte is what the agent wrote',
-			onDisk.split(ADDED).length === 2 &&
-				onDisk.replace(ADDED, '') === AGENT_ROW,
-		);
-		check(
-			'the body is byte-for-byte unchanged',
-			onDisk.endsWith(`---\n${BODY}`),
-		);
-		check(
-			"the receipt is the bytes on disk and now reads B's field",
-			updated.text === onDisk && updated.fields.priority === 2,
-		);
-		check(
-			'the update left B with no issues',
-			updated.issues.length === 0,
-			updated.issues,
-		);
-
-		// A second application's value for a field it does not declare is refused.
-		const b2 = await open(appB);
-		const undeclared = refusal(
-			await b2.tables.todos.update(
-				'milk',
-				{
-					// @ts-expect-error `done` is not a field of B's table.
-					fields: { done: true },
-				},
-				{},
-			),
-		);
-		await b2.close();
-		check(
-			"B cannot assign A's field through its typed table: InvalidValues, nothing written",
-			undeclared.name === 'InvalidValues' && (await disk.text(ROW)) === onDisk,
-			undeclared.name,
+			'reading changed nothing on disk',
+			(await disk.text(ROW)) === AGENT_ROW,
 		);
 	}
 
@@ -310,36 +257,34 @@ try {
 	// -------------------------------------------------------------------------
 	{
 		const a = await open(appA);
-		const before = await disk.text(ROW);
-		const row = ok(await a.tables.todos.get('milk'));
-		if (row === undefined) throw new Error('A did not find the row');
+		const stored = ok(await a.tables.todos.get('milk'));
+		if (stored === undefined) throw new Error('A did not find the row');
 		check(
-			'A reads its own two fields and no others',
-			row.fields.title === 'Buy milk' &&
-				row.fields.done === false &&
-				Object.keys(row.fields).sort().join() === 'done,title',
-			row.fields,
+			"A reads its own two fields from the agent's text",
+			stored.row.fields.title === 'Buy milk' &&
+				stored.row.fields.done === false,
+			stored.row.fields,
 		);
 		check(
-			"B's field is not an issue for A",
-			row.issues.length === 0,
-			row.issues,
+			'the key neither application declares stays on fields',
+			(stored.row.fields as Record<string, unknown>).estimate === '15m',
+			stored.row.fields,
 		);
-		check(
-			"A's text still carries B's field and the agent's comment",
-			row.text.includes('priority: 2\n') &&
-				row.text.includes('# agent: reviewed'),
-		);
-		check('A reads the same body it wrote', row.body === BODY);
+		check('A reads the same body it wrote', stored.row.body === BODY);
 
-		ok(await a.tables.todos.update('milk', { fields: { done: true } }, {}));
+		stored.row.fields.done = true;
+		const ticked = ok(await a.tables.todos.replace(stored, stored.row));
 		await a.close();
 		const after = await disk.text(ROW);
 		show(ROW, after);
 		check(
-			'ticking the checkbox changed only the value span of done',
-			after === before.replace('done: false\n', 'done: true\n') &&
-				after !== before,
+			'the guarded replace saved the canonical text of the edited row',
+			after === ok(formatRow(appA.tables.todos, ticked.row)) &&
+				ticked.sha256 === (await hashBytes(await disk.bytes(ROW))),
+		);
+		check(
+			'the canonical save kept the unknown key and the body',
+			after.includes('"estimate": "15m"\n') && after.endsWith(`---\n${BODY}`),
 		);
 	}
 
@@ -573,56 +518,42 @@ try {
 	show(ROW, INVALID_FIELD);
 	{
 		const a = await open(appA);
-		const row = ok(await a.tables.todos.get('milk'));
-		if (row === undefined) throw new Error('A did not find the row');
+		const { error: invalid } = await a.tables.todos.get('milk');
+		if (invalid?.name !== 'InvalidRow')
+			throw new Error(`Expected InvalidRow, got ${JSON.stringify(invalid)}`);
 		check(
-			'the text parses: there is no parseError',
-			row.parseError === undefined,
+			'the read is InvalidRow with the exact text',
+			invalid.text === INVALID_FIELD,
 		);
-		check('the text is available exactly', row.text === INVALID_FIELD);
 		check(
-			'the healthy field is still available',
-			row.fields.title === 'Buy milk',
+			'the invalid field is named by one issue, at its line',
+			invalid.issues.length === 1 &&
+				invalid.issues[0].field === 'done' &&
+				invalid.issues[0].line === 3,
+			invalid.issues,
 		);
-		check('the body is still available', row.body === BODY);
-		check(
-			'the invalid field is left out and named by one issue',
-			!('done' in row.fields) &&
-				row.issues.length === 1 &&
-				row.issues[0]?.field === 'done',
-			row.issues,
-		);
-		note(`issue: ${row.issues[0]?.message}`);
+		note(`issue: ${invalid.issues[0].message}`);
 
-		// A structured update of the healthy field is not blocked by the other field's issue.
-		const retitled = interpreted(
-			appA.tables.todos,
-			ok(
-				await a.tables.todos.update(
-					'milk',
-					{
-						fields: { title: 'Buy oat milk' },
-					},
-					{},
-				),
-			),
+		// InvalidRow carries the text, not fields: the repair is a complete row
+		// built from what A knows, guarded by the bytes the read saw.
+		note(
+			"the repair below is a complete row of A's own fields; priority is not in it",
 		);
-		check(
-			"updating the healthy field succeeds and leaves the agent's invalid value in place",
-			retitled.text ===
-				INVALID_FIELD.replace('title: Buy milk', 'title: Buy oat milk') &&
-				retitled.issues[0]?.field === 'done',
+		const repaired = ok(
+			await a.tables.todos.replace(invalid, {
+				fields: { title: 'Buy milk', done: false },
+				body: BODY,
+			}),
 		);
-		// A structured update is also the repair for one invalid field.
-		const repaired = interpreted(
-			appA.tables.todos,
-			ok(await a.tables.todos.update('milk', { fields: { done: false } }, {})),
-		);
-		check(
-			'assigning the invalid field through update repairs it',
-			repaired.issues.length === 0 && repaired.fields.done === false,
-		);
+		const reread = ok(await a.tables.todos.get('milk'));
 		await a.close();
+		check(
+			'a guarded replace of a complete row repairs it, and the row reads back valid',
+			(await disk.text(ROW)) ===
+				ok(formatRow(appA.tables.todos, repaired.row)) &&
+				reread?.row.fields.done === false &&
+				reread.sha256 === repaired.sha256,
+		);
 	}
 
 	// -------------------------------------------------------------------------
@@ -635,54 +566,34 @@ try {
 		const a = await open(appA);
 		const listed = ok(await a.tables.todos.list());
 		check(
-			'the row is still listed, as a snapshot and not as an error',
-			listed.length === 1 && listed[0]?.result.error === null,
+			'the row is still listed, as an InvalidRow item',
+			listed.length === 1 && listed[0]?.result.error?.name === 'InvalidRow',
 		);
-		const row = ok(await a.tables.todos.get('milk'));
-		if (row === undefined) throw new Error('A did not find the row');
+		const { error: invalid } = await a.tables.todos.get('milk');
+		if (invalid?.name !== 'InvalidRow')
+			throw new Error(`Expected InvalidRow, got ${JSON.stringify(invalid)}`);
 		check(
-			'the snapshot has a parseError with at least one diagnostic',
-			row.parseError !== undefined && row.parseError.diagnostics.length >= 1,
+			'get() is InvalidRow with the exact text and one issue',
+			invalid.text === MALFORMED && invalid.issues.length === 1,
+			invalid.issues,
 		);
-		check('the text is available exactly', row.text === MALFORMED);
-		check(
-			'there are no fields, no body, and no issues',
-			Object.keys(row.fields).length === 0 &&
-				row.body === undefined &&
-				row.issues.length === 0,
-		);
-		note(`parseError: ${row.parseError?.message}`);
+		note(`issue: ${invalid.issues[0].message}`);
 
-		const refused = refusal(
-			await a.tables.todos.update('milk', { fields: { done: true } }, {}),
-		);
-		check(
-			'a structured update is refused as Unparsed and writes nothing',
-			refused.name === 'Unparsed' && (await disk.text(ROW)) === MALFORMED,
-			refused.name,
-		);
-
-		// Repair: complete replacement text against the unparsed snapshot's capture.
+		// Repair: complete replacement text, guarded by the invalid read's hash.
 		const REPAIRED = MALFORMED.replace('[Buy milk', 'Buy milk');
 		check(
-			'inspectRow() says the candidate repair parses, before anything is saved',
-			inspectRow(appA.tables.todos, REPAIRED).parseError === undefined,
+			'parseRow() says the candidate repair is a valid row, before anything is saved',
+			parseRow(appA.tables.todos, REPAIRED).error === null,
 		);
-		const repaired = interpreted(
-			appA.tables.todos,
-			ok(
-				await a.tables.todos.replace('milk', REPAIRED, {
-					expectedSha256: row.sha256,
-				}),
-			),
-		);
+		const capture = ok(await a.files.replace(invalid, REPAIRED));
+		const reread = ok(await a.tables.todos.get('milk'));
 		await a.close();
 		check(
-			'replace(stem, text, { expectedSha256 }) repairs it: the receipt parses and is the bytes on disk',
-			repaired.parseError === undefined &&
-				repaired.fields.title === 'Buy milk' &&
-				repaired.body === BODY &&
-				(await disk.text(ROW)) === REPAIRED,
+			'files.replace(invalid, text) saves the exact text, and the table reads it back as the row',
+			(await disk.text(ROW)) === REPAIRED &&
+				capture.sha256 === reread?.sha256 &&
+				reread.row.fields.title === 'Buy milk' &&
+				reread.row.body === BODY,
 		);
 	}
 
@@ -694,57 +605,53 @@ try {
 	show(ROW, UNFENCED);
 	{
 		const b = await open(appB);
-		const row = ok(await b.tables.todos.get('milk'));
-		if (row === undefined) throw new Error('B did not find the row');
-		check(
-			'the snapshot has a parseError and the exact text',
-			row.parseError !== undefined && row.text === UNFENCED,
-		);
+		const { error: invalid } = await b.tables.todos.get('milk');
+		if (invalid?.name !== 'InvalidRow')
+			throw new Error(`Expected InvalidRow, got ${JSON.stringify(invalid)}`);
+		check('get() is InvalidRow with the exact text', invalid.text === UNFENCED);
 		check(
 			'the text is not read as a body, and nothing inserted fences',
-			row.body === undefined && (await disk.text(ROW)) === UNFENCED,
+			(await disk.text(ROW)) === UNFENCED,
 		);
-		note(`parseError: ${row.parseError?.message}`);
-		const refused = refusal(
-			await b.tables.todos.update('milk', { body: 'x' }, {}),
-		);
-		check(
-			'a body-only update is refused as Unparsed too',
-			refused.name === 'Unparsed',
-			refused.name,
-		);
+		note(`issue: ${invalid.issues[0].message}`);
 
-		// Repair, keeping the agent's text as the body. The application builds the text itself.
-		const REPAIRED = `---\ntitle: Buy milk\npriority: 2\n---\n${UNFENCED}`;
-		const repaired = interpreted(
-			appB.tables.todos,
-			ok(
-				await b.tables.todos.replace('milk', REPAIRED, {
-					expectedSha256: row.sha256,
-				}),
-			),
+		// Repair, keeping the agent's text as the body.
+		const repaired = ok(
+			await b.tables.todos.replace(invalid, {
+				fields: { title: 'Buy milk', priority: 2 },
+				body: UNFENCED,
+			}),
 		);
 		await b.close();
+		const onDisk = await disk.text(ROW);
+		show(ROW, onDisk);
 		check(
-			"raw replacement repairs it and keeps the agent's text as the body",
-			repaired.parseError === undefined &&
-				repaired.body === UNFENCED &&
-				(await disk.text(ROW)) === REPAIRED,
+			"a guarded replace repairs it and keeps the agent's text as the body",
+			onDisk === ok(formatRow(appB.tables.todos, repaired.row)) &&
+				repaired.row.body === UNFENCED,
 		);
 		check(
 			"B's repair did not write A's field, so A will see an issue for done",
-			!repaired.text.includes('done'),
+			!onDisk.includes('done'),
 		);
 	}
 	{
 		const a = await open(appA);
-		const row = ok(await a.tables.todos.get('milk'));
-		ok(await a.tables.todos.update('milk', { fields: { done: false } }, {}));
+		const { error: invalid } = await a.tables.todos.get('milk');
+		if (invalid?.name !== 'InvalidRow')
+			throw new Error(`Expected InvalidRow, got ${JSON.stringify(invalid)}`);
+		ok(
+			await a.tables.todos.replace(invalid, {
+				fields: { title: 'Buy milk', done: false },
+				body: UNFENCED,
+			}),
+		);
 		await a.close();
 		check(
-			"A sees its field missing after B's repair, and restores it with one update",
-			row?.issues[0]?.field === 'done' &&
-				(await disk.text(ROW)).includes('done: false\n'),
+			"A sees its field missing after B's repair, and restores it with one guarded replace",
+			invalid.issues[0].field === 'done' &&
+				(await disk.text(ROW)).includes('"done": false\n'),
+			invalid.issues,
 		);
 	}
 
@@ -759,13 +666,13 @@ try {
 		});
 		const captured = ok(await a.tables.todos.get('milk'));
 		if (captured === undefined) throw new Error('A did not find the row');
-		const baseline = captured.text;
+		const baseline = await disk.text(ROW);
 
-		// The person in app A edits a draft of the whole text.
-		const candidate = baseline.replace(
-			'title: Buy milk',
-			'title: Buy milk and eggs',
-		);
+		// The person in app A edits the title in a copy of the row.
+		const candidate = {
+			fields: { ...captured.row.fields, title: 'Buy milk and eggs' },
+			body: captured.row.body,
+		};
 
 		// Meanwhile the agent appends a line to the body on disk.
 		const agentText = `${baseline}\nAgent: the shop closes at 18:00.\n`;
@@ -776,11 +683,7 @@ try {
 			hints,
 		);
 
-		const refused = refusal(
-			await a.tables.todos.replace('milk', candidate, {
-				expectedSha256: captured.sha256,
-			}),
-		);
+		const refused = refusal(await a.tables.todos.replace(captured, candidate));
 		stop();
 		check(
 			'the stale replacement is refused as Conflict',
@@ -802,64 +705,52 @@ try {
 			refused.actualSha256 === (await hashBytes(diskBytes)),
 		);
 		check(
-			'the captured snapshot is unchanged and still holds the baseline',
-			captured.text === baseline && Object.isFrozen(captured),
+			'the captured read is unchanged and still holds the baseline',
+			captured.row.fields.title === 'Buy milk' && Object.isFrozen(captured),
 		);
 
 		// The conflict carries hashes, not text: disk text takes one more read.
 		const current = ok(await a.tables.todos.get('milk'));
+		if (current === undefined) throw new Error('A did not find the row');
 		check(
-			'one more get() gives the disk text, and its hash is the one the conflict named',
-			current?.text === agentText && current.sha256 === refused.actualSha256,
+			'one more get() reads the agent text, and its hash is the one the conflict named',
+			current.row.body.includes('Agent: the shop closes') &&
+				current.sha256 === refused.actualSha256,
 		);
-		// The candidate is the caller's own string; the refusal neither took nor changed it.
+		const candidateText = ok(formatRow(appA.tables.todos, candidate));
 		check(
 			'all three texts are in hand and distinct: baseline, candidate, and disk',
-			candidate.includes('title: Buy milk and eggs') &&
-				new Set([baseline, candidate, current?.text]).size === 3,
+			new Set([baseline, candidateText, agentText]).size === 3,
 		);
-		show('candidate (unsaved)', candidate);
+		show('candidate (unsaved)', candidateText);
 		show('disk (agent)', agentText);
 
 		// What the application does next is its own decision. Here: redo the
-		// one-field change as a structured update, which reads the current text.
-		const merged = ok(
-			await a.tables.todos.update(
-				'milk',
-				{
-					fields: { title: 'Buy milk and eggs' },
-				},
-				{},
-			),
-		);
+		// one-field change on the current row and save it guarded by that read.
+		current.row.fields.title = 'Buy milk and eggs';
+		const merged = ok(await a.tables.todos.replace(current, current.row));
 		await a.close();
+		const onDisk = await disk.text(ROW);
 		check(
-			"a structured update against the current text keeps the agent's line and lands the title",
-			merged.text ===
-				agentText.replace('title: Buy milk', 'title: Buy milk and eggs') &&
-				(await disk.text(ROW)) === merged.text,
+			"redoing the change on the current row keeps the agent's line and lands the title",
+			onDisk === ok(formatRow(appA.tables.todos, merged.row)) &&
+				onDisk.includes('Agent: the shop closes') &&
+				onDisk.includes('"title": "Buy milk and eggs"\n'),
 		);
 	}
 
 	// -------------------------------------------------------------------------
-	section('11. Newlines and Unicode: the receipt is the bytes on disk');
+	section('11. Newlines and Unicode: saved bytes and the row read back');
 	// -------------------------------------------------------------------------
 	{
 		const a = await open(appA);
 		// A byte-order mark, CRLF line endings, a decomposed é (e + U+0301)
 		// beside a precomposed one, an emoji outside the BMP, and no final newline.
 		const EXACT =
-			'﻿---\r\ntitle: "Café vs Café \u{1F95B}"\r\ndone: false\r\n---\r\nLigne un\r\nLigne deux';
+			'﻿---\r\ntitle: "Cafe\u0301 vs Caf\u00e9 \u{1F95B}"\r\ndone: false\r\n---\r\nLigne un\r\nLigne deux';
 		const snapshot = ok(await a.tables.todos.get('milk'));
 		if (snapshot === undefined) throw new Error('A did not find the row');
-		const receipt = interpreted(
-			appA.tables.todos,
-			ok(
-				await a.tables.todos.replace('milk', EXACT, {
-					expectedSha256: snapshot.sha256,
-				}),
-			),
-		);
+		const capture = ok(await a.files.replace(snapshot, EXACT));
 		const diskBytes = await disk.bytes(ROW);
 		show(ROW, diskBytes.toString('utf8'));
 		check(
@@ -867,49 +758,34 @@ try {
 			Buffer.compare(diskBytes, Buffer.from(encoder.encode(EXACT))) === 0,
 		);
 		check(
-			'the receipt text is the submitted string, code unit for code unit',
-			receipt.text === EXACT,
+			'the returned hash is the hash of the bytes on disk',
+			capture.sha256 === (await hashBytes(diskBytes)),
 		);
-		check(
-			'the receipt hash is the hash of the bytes on disk',
-			receipt.sha256 === (await hashBytes(diskBytes)),
-		);
+		const reread = ok(await a.tables.todos.get('milk'));
+		if (reread === undefined) throw new Error('A did not find the row');
 		check(
 			'nothing normalized the decomposed é into the precomposed one',
-			receipt.fields.title === 'Café vs Café \u{1F95B}' &&
-				receipt.fields.title !== receipt.fields.title.normalize('NFC'),
+			reread.row.fields.title === 'Cafe\u0301 vs Caf\u00e9 \u{1F95B}' &&
+				reread.row.fields.title !== reread.row.fields.title.normalize('NFC'),
 		);
 		check(
 			'the body keeps CRLF and has no newline added at the end',
-			receipt.body === 'Ligne un\r\nLigne deux',
+			reread.row.body === 'Ligne un\r\nLigne deux',
 		);
 
-		// A structured update keeps the BOM and CRLF it finds.
-		const updated = ok(
-			await a.tables.todos.update('milk', { fields: { done: true } }, {}),
-		);
-		check(
-			'a structured update on that file keeps the BOM and every CRLF',
-			updated.text === EXACT.replace('done: false', 'done: true') &&
-				(await disk.text(ROW)) === updated.text,
-		);
-
-		// A string that is not valid UTF-16: the receipt reports the bytes, not the string.
-		const LONE = '---\ntitle: lone \uD800 surrogate\ndone: false\n---\n';
-		const lone = ok(
-			await a.tables.todos.replace('milk', LONE, {
-				expectedSha256: updated.sha256,
+		// A string that is not valid UTF-16 has no exact form in a file.
+		const lone = refusal(
+			await a.tables.todos.replace(reread, {
+				fields: { title: 'lone \uD800 surrogate', done: false },
+				body: '',
 			}),
 		);
-		const loneDisk = await disk.text(ROW);
 		await a.close();
 		check(
-			'for an unpaired surrogate the receipt differs from the submitted string',
-			lone.text !== LONE,
-		);
-		check(
-			'and it equals the text of the bytes on disk (U+FFFD)',
-			lone.text === loneDisk && loneDisk.includes('�'),
+			'a row with an unpaired surrogate is refused as InvalidValues and nothing is written',
+			lone.name === 'InvalidValues' &&
+				Buffer.compare(await disk.bytes(ROW), diskBytes) === 0,
+			lone.name,
 		);
 	}
 
@@ -935,9 +811,7 @@ try {
 		const a = await open(appA);
 		const listed = ok(await a.tables.todos.list());
 		const stems = listed
-			.map(({ result: { data: row, error } }) =>
-				error === null ? row.stem : '<error>',
-			)
+			.map(({ stem, result }) => (result.error === null ? stem : '<error>'))
 			.sort();
 		check(
 			'list() discovers the leading-dot, trailing-space, and empty-stem rows beside milk',
@@ -948,21 +822,24 @@ try {
 		check(
 			'shout.MD and nested/deep.md are not rows',
 			!listed.some(
-				(item) => item.path.includes('shout') || item.path.includes('nested'),
+				(item) => item.stem.includes('shout') || item.stem.includes('nested'),
 			),
 		);
 		for (const stem of names) {
 			const row = ok(await a.tables.todos.get(stem));
-			const updated = ok(
-				await a.tables.todos.update(stem, { fields: { done: true } }, {}),
+			if (row === undefined) throw new Error(`A did not find ${stem}`);
+			const saved = ok(
+				await a.tables.todos.replace(row, {
+					fields: { ...row.row.fields, done: true },
+					body: row.row.body,
+				}),
 			);
 			check(
-				`stem ${JSON.stringify(stem)}: get() finds it at ${JSON.stringify(`todos/${stem}.md`)} and update() saves it there`,
-				row?.stem === stem &&
-					row.path === `todos/${stem}.md` &&
-					row.fields.title === `stem=[${stem}]` &&
-					updated.stem === stem &&
-					(await disk.text(`todos/${stem}.md`)).includes('done: true\n'),
+				`stem ${JSON.stringify(stem)}: get() finds it at ${JSON.stringify(`todos/${stem}.md`)} and replace() saves it there`,
+				row.path === `todos/${stem}.md` &&
+					row.row.fields.title === `stem=[${stem}]` &&
+					saved.path === row.path &&
+					(await disk.text(`todos/${stem}.md`)).includes('"done": true\n'),
 			);
 		}
 		const files = ok(await a.files.list());

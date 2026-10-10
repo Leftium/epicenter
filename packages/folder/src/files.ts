@@ -1,5 +1,11 @@
 /** Ordinary file methods over the folder's accounted storage. */
 import { Err, Ok, type Result } from 'wellcrafted/result';
+import {
+	type Autosave,
+	type AutosaveError,
+	createAutosave,
+	type SaveState,
+} from './autosave.js';
 import type {
 	FileListing,
 	FileWriteIntent,
@@ -62,6 +68,17 @@ export type FolderFiles = {
 		path: string,
 		content: string | Uint8Array,
 	): Promise<Result<FileCapture, FileError>>;
+	/**
+	 * Save one editing session's content over the captured file. Each save is
+	 * guarded by the bytes the previous one confirmed, starting from the
+	 * capture, so a change made elsewhere is `Conflict` rather than
+	 * overwritten; the session then needs a fresh capture. Content is copied
+	 * when requested. Construction reads, writes, and reports nothing.
+	 */
+	autosave(
+		file: FileCapture,
+		options: { onState(state: SaveState<FileError | AutosaveError>): void },
+	): Autosave<string | Uint8Array, FileError | AutosaveError>;
 	mkdir(path: string): Promise<Result<undefined, FileError>>;
 	rmdir(path: string): Promise<Result<undefined, FileError>>;
 };
@@ -114,7 +131,11 @@ export function createFiles({
 			const { data: captured, error: captureError } = ownCapture(file);
 			if (captureError !== null) return Promise.resolve(Err(captureError));
 			const { path, sha256 } = captured;
-			return applyOne(storage, { kind: 'remove', path, expectedSha256: sha256 });
+			return applyOne(storage, {
+				kind: 'remove',
+				path,
+				expectedSha256: sha256,
+			});
 		},
 		move: async (file, destination) => {
 			const { data: captured, error: captureError } = ownCapture(file);
@@ -134,6 +155,28 @@ export function createFiles({
 		},
 		overwrite: (path, content) =>
 			save({ kind: 'overwrite', path, bytes: ownBytes(content) }),
+		autosave(file, { onState }) {
+			// The capture each save is guarded by; it advances only on a confirmed save.
+			const owned = ownCapture(file);
+			let confirmed = owned.data;
+			return createAutosave({
+				prepare: (content: string | Uint8Array) =>
+					owned.error !== null ? Err(owned.error) : Ok(ownBytes(content)),
+				async write(bytes) {
+					if (confirmed === null) return Err(owned.error as FileError);
+					const { path, sha256 } = confirmed;
+					const saved = await save({
+						kind: 'replace',
+						path,
+						bytes,
+						expectedSha256: sha256,
+					});
+					if (saved.error === null) confirmed = saved.data;
+					return saved;
+				},
+				onState,
+			});
+		},
 		mkdir: (path) => storage.mkdir(path),
 		rmdir: (path) => storage.rmdir(path),
 	} satisfies FolderFiles);

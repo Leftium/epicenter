@@ -26,7 +26,7 @@ import {
 	type FolderLocation,
 	type FolderTerminal,
 	field,
-	inspectRow,
+	formatRow,
 	type KvOf,
 	type KvReadError,
 	type KvReading,
@@ -38,20 +38,18 @@ import {
 	type OpenFolderOptions,
 	type ParseError,
 	type PreparedFolderTable,
-	serializeRow,
+	parseRow,
+	type Row,
+	type RowIssue,
+	type RowIssues,
+	type RowReadError,
+	type StoredRow,
 	type TableCreateError,
 	type TableDeleteError,
 	type TableEnumerationError,
-	type TableGetError,
 	type TableListing,
-	type TableReadError,
-	type TableReading,
 	type TableRenameError,
 	type TableReplaceError,
-	type TableSnapshot,
-	type TableUpdateError,
-	type TableWriteOptions,
-	type TableWriteReceipt,
 	type TextCapture,
 } from './index.js';
 import * as tauri from './tauri.js';
@@ -88,7 +86,7 @@ const nested = defineFolder({
 });
 type Note = CreateRowOf<typeof nested.tables.notes>;
 
-// Only a table `defineFolder` prepared is read or previewed without a folder.
+// Only a table `defineFolder` prepared is read or formatted without a folder.
 const rawTodos = defineTable({
 	fields: {
 		title: field.string(),
@@ -96,9 +94,9 @@ const rawTodos = defineTable({
 	},
 });
 // @ts-expect-error A raw declaration was never prepared.
-inspectRow(rawTodos, '---\ntitle: Milk\n---\n');
-// @ts-expect-error Nor is it previewed.
-serializeRow(rawTodos, { fields: { title: 'Milk' } });
+parseRow(rawTodos, '---\ntitle: Milk\n---\n');
+// @ts-expect-error Nor is it formatted.
+formatRow(rawTodos, { fields: { title: 'Milk', due: null }, body: '' });
 // An opener still takes a raw declaration and prepares it itself.
 void root.openFolder({
 	id: 'test.folder',
@@ -113,26 +111,24 @@ expectTypeOf<CreateRowOf<typeof definition.tables.todos>>().toEqualTypeOf<
 	CreateRowOf<typeof rawTodos>
 >();
 // A generic helper constrained to prepared tables keeps the exact table.
-function readDraft<const TTable extends PreparedFolderTable>(
+function readText<const TTable extends PreparedFolderTable>(
 	table: TTable,
 	text: string,
 ) {
-	return inspectRow(table, text);
+	return parseRow(table, text);
 }
-expectTypeOf(readDraft(definition.tables.todos, '')).toEqualTypeOf<
-	TableReading<CreateRowOf<typeof definition.tables.todos>>
+expectTypeOf(readText(definition.tables.todos, '')).toEqualTypeOf<
+	Result<Row<CreateRowOf<typeof definition.tables.todos>>, RowIssues>
 >();
 // @ts-expect-error It refuses a raw declaration as well.
-readDraft(rawTodos, '');
+readText(rawTodos, '');
 // A spread that keeps the prepared field objects keeps the mark, and reads.
 expectTypeOf(
-	inspectRow({ ...definition.tables.todos }, '').fields,
-).toEqualTypeOf<
-	DeepReadonly<Partial<CreateRowOf<typeof definition.tables.todos>>>
->();
+	parseRow({ ...definition.tables.todos }, '').data,
+).toEqualTypeOf<Row<CreateRowOf<typeof definition.tables.todos>> | null>();
 // The mark is a type, not a proof: a spread with replaced fields still
 // compiles, and reading a value through them throws (`definition.test.ts`).
-inspectRow({ ...definition.tables.todos, fields: rawTodos.fields }, '');
+parseRow({ ...definition.tables.todos, fields: rawTodos.fields }, '');
 
 // Readonly reaches every depth and stops at primitives, so a brand survives.
 expectTypeOf<DeepReadonly<InstantString>>().toEqualTypeOf<InstantString>();
@@ -158,38 +154,37 @@ async function nestedValues(
 	instant: InstantString,
 ) {
 	const { notes } = folder.tables;
-	const { data: snapshot, error: readError } = await notes.get('a');
-	if (readError !== null || snapshot === undefined) return;
-	const { tags, at, meta } = snapshot.fields;
-	// @ts-expect-error A snapshot's list cannot be changed in place.
-	snapshot.fields.tags?.push('later');
-	// @ts-expect-error Nor can its field map.
-	snapshot.fields.at = instant;
-	// Free-form JSON contains itself, and is readonly at every depth too.
-	type ReadonlyJson =
-		| string
-		| number
-		| boolean
-		| null
-		| readonly ReadonlyJson[]
-		| { readonly [key: string]: ReadonlyJson };
-	expectTypeOf(meta).toEqualTypeOf<ReadonlyJson | undefined>();
-
-	// Fields are partial whatever the diagnostics say, so each is checked.
-	// @ts-expect-error A reading is never a complete row.
-	notes.create({ fields: snapshot.fields });
-	if (tags !== undefined && at !== undefined && meta !== undefined)
-		// Snapshot values go back in with no cast, and so do plain mutable ones.
-		notes.create({ fields: { tags, at, meta } });
-	notes.create({ fields: { tags: ['a'], at: instant, meta: { a: [1] } } });
-	notes.update('a', { fields: snapshot.fields }, {});
-	notes.update('a', { fields: { tags: ['a'] as const } }, {});
-	// @ts-expect-error An unvalidated string still does not carry the brand.
-	notes.update('a', { fields: { at: '2026-10-01T00:00:00.000Z' } }, {});
-	// A draft's values are the same readonly types, read from the definition.
-	expectTypeOf(inspectRow(nested.tables.notes, '').fields).toEqualTypeOf(
-		snapshot.fields,
-	);
+	const { data: stored, error: readError } = await notes.get('a');
+	if (readError !== null || stored === undefined) return;
+	// A stored row is valid, so every declared field is present.
+	const { tags, at } = stored.row.fields;
+	expectTypeOf(tags).toEqualTypeOf<string[]>();
+	expectTypeOf(at).toEqualTypeOf<InstantString>();
+	// The row is the caller's own to edit and save.
+	stored.row.fields.tags.push('later');
+	stored.row.fields.at = instant;
+	stored.row.body = 'edited';
+	// @ts-expect-error The capture never changes.
+	stored.sha256 = 'changed';
+	// @ts-expect-error Nor does the row it read.
+	stored.row = { fields: stored.row.fields, body: '' };
+	notes.replace(stored, stored.row);
+	notes.create({
+		fields: { tags: ['a'], at: instant, meta: { a: [1] } },
+		body: '',
+	});
+	// @ts-expect-error A row is complete: it names its body.
+	notes.create({ fields: { tags: ['a'], at: instant, meta: null } });
+	notes.replace(stored, {
+		...stored.row,
+		// @ts-expect-error An unvalidated string still does not carry the brand.
+		fields: { ...stored.row.fields, at: '2026-10-01T00:00:00.000Z' },
+	});
+	// Text read without a folder holds the same types.
+	expectTypeOf(
+		parseRow(nested.tables.notes, '').data,
+	).toEqualTypeOf<Row<Note> | null>();
+	expectTypeOf(stored.row).toEqualTypeOf<Row<Note>>();
 
 	const { data: kv, error: kvError } = await folder.kv.get();
 	if (kvError !== null || kv === undefined) return;
@@ -233,30 +228,23 @@ expectTypeOf<
 
 async function tupleValues(folder: Folder<typeof tuples>) {
 	const { rows } = folder.tables;
-	const { data: snapshot, error: readError } = await rows.get('a');
-	if (readError !== null || snapshot === undefined) return;
-	const { span } = snapshot.fields;
-	expectTypeOf(span).toEqualTypeOf<
-		readonly [string, ...number[]] | undefined
-	>();
-	if (span === undefined) return;
+	const { data: stored, error: readError } = await rows.get('a');
+	if (readError !== null || stored === undefined) return;
+	const { span } = stored.row.fields;
+	expectTypeOf(span).toEqualTypeOf<[string, ...number[]]>();
 	expectTypeOf(span[0]).toEqualTypeOf<string>();
 	expectTypeOf(span[1]).toEqualTypeOf<number | undefined>();
-	// @ts-expect-error A snapshot's tuple cannot be changed in place.
-	span.push(1);
-	// @ts-expect-error Nor can one of its positions.
-	span[0] = 'b';
 
 	// What was read goes back in, and input keeps the head it requires.
-	rows.update('a', { fields: { span } }, {});
-	rows.update('a', { fields: { span: ['a', 1, 2] } }, {});
-	rows.create({ fields: { span: ['a'] } });
+	rows.replace(stored, { fields: { span }, body: '' });
+	rows.replace(stored, { fields: { span: ['a', 1, 2] }, body: '' });
+	rows.create({ fields: { span: ['a'] }, body: '' });
 	// @ts-expect-error The head is a string.
-	rows.update('a', { fields: { span: [1, 'a'] } });
+	rows.replace(stored, { fields: { span: [1, 'a'] }, body: '' });
 	// @ts-expect-error The head is required.
-	rows.update('a', { fields: { span: [] } });
+	rows.replace(stored, { fields: { span: [] }, body: '' });
 	// @ts-expect-error The rest are numbers.
-	rows.create({ fields: { span: ['a', 'b'] } });
+	rows.create({ fields: { span: ['a', 'b'] }, body: '' });
 
 	const { data: kv, error: kvError } = await folder.kv.get();
 	if (kvError !== null || kv === undefined) return;
@@ -339,18 +327,26 @@ async function typedValues(
 	snapshot: KvSnapshot<KvOf<typeof definition>>,
 	instant: InstantString,
 ) {
-	folder.tables.todos.create({ fields: { title: 'Milk', due: null } });
-	folder.tables.todos.create({ fields: { title: 'Milk', due: instant } });
+	folder.tables.todos.create({
+		fields: { title: 'Milk', due: null },
+		body: '',
+	});
+	folder.tables.todos.create({
+		fields: { title: 'Milk', due: instant },
+		body: '',
+	});
 	folder.tables.todos.create({
 		// @ts-expect-error An unvalidated string does not carry the instant brand.
 		fields: { title: 'Milk', due: '2026-10-01T00:00:00.000Z' },
+		body: '',
 	});
 	// @ts-expect-error Typed fields retain validation.
-	folder.tables.todos.create({ fields: { title: 12, due: null } });
+	folder.tables.todos.create({ fields: { title: 12, due: null }, body: '' });
 	// @ts-expect-error Creating a row supplies every declared field.
-	folder.tables.todos.create({ fields: { title: 'Milk' } });
+	folder.tables.todos.create({ fields: { title: 'Milk' }, body: '' });
 	folder.tables.todos.create({
 		fields: { title: 'Milk', due: null },
+		body: '',
 		// @ts-expect-error A row carries no attachment.
 		attachment: {},
 	});
@@ -419,117 +415,78 @@ async function typedValues(
 	expectTypeOf(await folder.files.remove(replaced)).toEqualTypeOf<
 		Awaited<ReturnType<Opened['files']['remove']>>
 	>();
-	// A table snapshot is a capture of its row file with its reading beside it.
+	// A stored row is a capture of its row file with the row it holds.
 	const entry = await folder.tables.todos.get('milk');
 	type Fields = CreateRowOf<typeof definition.tables.todos>;
 	if (entry.error === null) {
-		expectTypeOf(entry.data).toEqualTypeOf<TableSnapshot<Fields> | undefined>();
-	} else expectTypeOf(entry.error).toEqualTypeOf<TableGetError>();
+		expectTypeOf(entry.data).toEqualTypeOf<StoredRow<Fields> | undefined>();
+	} else expectTypeOf(entry.error).toEqualTypeOf<RowReadError>();
 	if (entry.data) {
-		expectTypeOf(entry.data).toExtend<TextCapture>();
-		expectTypeOf(entry.data).toExtend<TableReading<Fields>>();
-		// @ts-expect-error There is no parse Result to go through.
-		entry.data.content;
-		// @ts-expect-error A capture keeps its source.
-		entry.data.source = '';
-		// @ts-expect-error And its reading.
-		entry.data.fields = {};
-		// Fields are partial whether or not there are issues.
-		expectTypeOf(entry.data.fields).toEqualTypeOf<{
-			readonly title?: string;
-			readonly due?: InstantString | null;
-		}>();
-		// The body is absent exactly when the source does not parse.
-		expectTypeOf(entry.data.body).toEqualTypeOf<string | undefined>();
-		expectTypeOf(entry.data.parseError).toEqualTypeOf<ParseError | undefined>();
-		if (entry.data.parseError)
-			expectTypeOf(
-				entry.data.parseError.diagnostics[0].message,
-			).toEqualTypeOf<string>();
-		// Issues are always an array, so there is no presence check to make.
-		expectTypeOf(entry.data.issues).toEqualTypeOf<readonly FieldIssue[]>();
-		expectTypeOf<keyof FieldIssue>().toEqualTypeOf<
-			'field' | 'path' | 'message'
+		expectTypeOf(entry.data).toExtend<FileCapture>();
+		expectTypeOf<keyof StoredRow<Fields>>().toEqualTypeOf<
+			'path' | 'sha256' | 'row'
 		>();
-		// @ts-expect-error Diagnostics cannot be changed in place.
-		entry.data.issues.push({ field: 'title', message: '' });
+		// A valid row is complete: every declared field, and the body.
+		expectTypeOf(entry.data.row.fields).toEqualTypeOf<{
+			title: string;
+			due: InstantString | null;
+		}>();
+		expectTypeOf(entry.data.row.body).toEqualTypeOf<string>();
+		// @ts-expect-error A capture keeps its path.
+		entry.data.path = '';
+		// @ts-expect-error A valid row carries no diagnostics.
+		entry.data.issues;
 	}
-	// One synchronous interpreter for saved text and for drafts, on the
-	// definition rather than an open table: a plain reading.
-	expectTypeOf(inspectRow(definition.tables.todos, '---\n---\n')).toEqualTypeOf<
-		TableReading<Fields>
+	// Text that is not a valid row is an error that keeps the text and its capture.
+	if (entry.error?.name === 'InvalidRow') {
+		expectTypeOf(entry.error).toExtend<FileCapture>();
+		expectTypeOf(entry.error.text).toEqualTypeOf<string>();
+		expectTypeOf(entry.error.issues).toEqualTypeOf<RowIssues>();
+		expectTypeOf<keyof RowIssue>().toEqualTypeOf<
+			'message' | 'line' | 'field'
+		>();
+		// @ts-expect-error Issues cannot be changed in place.
+		entry.error.issues.push({ message: '' });
+		// A repair is a guarded raw save, or a guarded delete.
+		folder.files.replace(entry.error, entry.error.text);
+		folder.tables.todos.delete(entry.error);
+	}
+	// One synchronous reader and one writer for saved text and for drafts, on
+	// the definition rather than an open table.
+	expectTypeOf(parseRow(definition.tables.todos, '---\n---\n')).toEqualTypeOf<
+		Result<Row<Fields>, RowIssues>
 	>();
-	// @ts-expect-error A draft has no capture.
-	inspectRow(definition.tables.todos, '---\n---\n').sha256;
-	// @ts-expect-error Interpretation is not a method of an open table.
-	folder.tables.todos.inspect;
-	// A preview names declared keys and holds any value, conforming or not.
 	expectTypeOf(
-		serializeRow(definition.tables.todos, {
-			fields: { title: 12, due: 'not yet an instant' },
+		formatRow(definition.tables.todos, {
+			fields: { title: 'Milk', due: null },
 			body: 'b',
 		}),
-	).toEqualTypeOf<
-		Result<string, Extract<TableCreateError, { name: 'InvalidValues' }>>
-	>();
-	serializeRow(definition.tables.todos, { fields: {} });
-	// @ts-expect-error A preview names only declared fields.
-	serializeRow(definition.tables.todos, { fields: { titel: 'Milk' } });
-	// @ts-expect-error A preview takes a definition's table, not an open one.
-	serializeRow(folder.tables.todos, { fields: {} });
+	).toEqualTypeOf<Result<string, RowIssue>>();
+	// @ts-expect-error Formatting names only declared fields.
+	formatRow(definition.tables.todos, { fields: { titel: 'Milk' }, body: '' });
+	// @ts-expect-error Formatting takes a definition's table, not an open one.
+	formatRow(folder.tables.todos, {
+		fields: { title: 'Milk', due: null },
+		body: '',
+	});
+	// @ts-expect-error Interpretation is not a method of an open table.
+	folder.tables.todos.inspect;
 	// A listing is one array of per-file Results under one enumeration Result.
 	const listing = await folder.tables.todos.list();
 	expectTypeOf(listing).toEqualTypeOf<
 		Result<TableListing<Fields>, TableEnumerationError>
 	>();
 	if (listing.error === null) {
+		expectTypeOf(listing.data[0]!.stem).toEqualTypeOf<string>();
 		expectTypeOf(listing.data[0]!.result).toEqualTypeOf<
-			Result<TableSnapshot<Fields>, TableReadError>
+			Result<StoredRow<Fields>, RowReadError>
 		>();
 		// @ts-expect-error There is no separate list of unreadable files.
 		listing.data.unreadable;
 	}
-	// Each save adds its preparation errors to the shared storage error family.
-	const { data: receipt, error: saveError } = await folder.tables.todos.replace(
-		'milk',
-		'',
-		{},
-	);
-	if (saveError === null) {
-		// A write receipt names the submitted bytes; it carries no reading.
-		expectTypeOf(receipt).toEqualTypeOf<TableWriteReceipt>();
-		expectTypeOf<keyof TableWriteReceipt>().toEqualTypeOf<
-			'stem' | 'path' | 'text' | 'sha256'
-		>();
-		// @ts-expect-error Interpreting a receipt is `inspectRow(table, receipt.text)`.
-		receipt.fields;
-		// @ts-expect-error Whole-file content is `text`; `source` is gone.
-		receipt.source;
-	}
-	if (saveError !== null) {
-		expectTypeOf(saveError).toEqualTypeOf<TableReplaceError>();
-		// @ts-expect-error Saving text that does not parse is not a failure.
-		saveError.name === 'Unparsed';
-		// @ts-expect-error A replacement supplies no field values.
-		saveError.name === 'InvalidValues';
-	}
-	const { error: updateError } = await folder.tables.todos.update(
-		'milk',
-		{
-			body: '',
-		},
-		{},
-	);
-	if (updateError !== null) {
-		expectTypeOf(updateError).toEqualTypeOf<TableUpdateError>();
-		// The two preparation refusals are distinct names.
-		if (updateError.name === 'Unparsed')
-			expectTypeOf(updateError.error).toEqualTypeOf<ParseError>();
-		if (updateError.name === 'UnsupportedSource')
-			expectTypeOf(updateError.reason).toEqualTypeOf<string>();
-	}
 	const { error: createError } = await folder.tables.todos.create({
 		fields: { title: 'Milk', due: null },
+		body: '',
 	});
 	if (createError !== null) {
 		expectTypeOf(createError).toEqualTypeOf<TableCreateError>();
@@ -538,6 +495,8 @@ async function typedValues(
 			expectTypeOf(createError).toEqualTypeOf<
 				Extract<FileError, { name: 'Exists' }>
 			>();
+		if (createError.name === 'InvalidValues')
+			expectTypeOf(createError.issues).toEqualTypeOf<readonly RowIssue[]>();
 		// @ts-expect-error A table has no naming rule of its own.
 		createError.name === 'InvalidStem';
 		// @ts-expect-error Nor a collision rule.
@@ -545,76 +504,37 @@ async function typedValues(
 		// @ts-expect-error Text is decoded only by reads.
 		createError.name === 'InvalidUtf8';
 	}
-	folder.tables.todos.update(
-		'milk',
-		{
-			fields: { title: 'Next' },
-			body: 'body',
-		},
-		{},
-	);
-	// @ts-expect-error Updates name a stem, not a captured baseline.
-	folder.tables.todos.update(entry.data, { fields: { title: 'Next' } }, {});
-	// @ts-expect-error Structured commands still validate the supplied field types.
-	folder.tables.todos.update('milk', { fields: { title: 12 } }, {});
-	// Options are required on every mutation: `{}` is the current row.
-	// @ts-expect-error update without options
-	folder.tables.todos.update('milk', { body: '' });
-	// @ts-expect-error replace without options
-	folder.tables.todos.replace('milk', 'next');
-	// @ts-expect-error rename without options
-	folder.tables.todos.rename('milk', 'next');
-	// @ts-expect-error delete without options
+	// @ts-expect-error There is no structured update: replace a row that was read.
+	folder.tables.todos.update;
+	// @ts-expect-error Nor an unguarded write: every change after create names a capture.
 	folder.tables.todos.delete('milk');
-	// @ts-expect-error An explicit undefined is not options either.
-	folder.tables.todos.delete('milk', undefined);
-	// @ts-expect-error A misspelled guard is not an option.
-	folder.tables.todos.delete('milk', { expectedSHA256: 'a'.repeat(64) });
-	// A wrapper must pass options to its inner call, so a stem-only forwarder
-	// does not compile where it calls the table.
-	const forwarding: Pick<FileTable<Fields>, 'delete' | 'replace'> = {
-		delete: (stem, options) => folder.tables.todos.delete(stem, options),
-		replace: (stem, text, options) =>
-			folder.tables.todos.replace(stem, text, options),
-	};
-	void forwarding;
-	const dropping: Pick<FileTable<Fields>, 'delete'> = {
-		// @ts-expect-error The inner call drops the options it was given.
-		delete: (stem) => folder.tables.todos.delete(stem),
-	};
-	void dropping;
-	// The requirement stops at the call site: a wrapper that hands the table
-	// `{}` of its own compiles and drops its caller's guard. That is a choice
-	// the code states, not one the type can refuse.
-	const replacing: Pick<FileTable<Fields>, 'delete'> = {
-		delete: (stem, _options: TableWriteOptions) =>
-			folder.tables.todos.delete(stem, {}),
-	};
-	void replacing;
+	// @ts-expect-error The options-object guard is gone.
+	folder.tables.todos.delete('milk', { expectedSha256: 'a'.repeat(64) });
 	if (entry.data) {
-		// Every table mutation names a stem; a baseline is an option of bytes.
-		const guard = { expectedSha256: entry.data.sha256 };
-		folder.files.replace(entry.data, entry.data.text);
-		folder.tables.todos.update('milk', { body: '' }, guard);
-		folder.tables.todos.replace('milk', entry.data.text, guard);
-		folder.tables.todos.replace('milk', entry.data.text, {});
-		// @ts-expect-error A capture is not an address.
-		folder.tables.todos.replace(entry.data, entry.data.text, {});
-		// @ts-expect-error The old source-write spelling is removed.
-		folder.tables.todos.writeSource(entry.data, entry.data.text);
-		// @ts-expect-error A snapshot is not options: it has no `expectedSha256`.
-		folder.tables.todos.delete('milk', entry.data);
+		// Every change after create names the bytes it replaces.
+		const { data: saved, error: saveError } = await folder.tables.todos.replace(
+			entry.data,
+			entry.data.row,
+		);
+		if (saveError === null)
+			expectTypeOf(saved).toEqualTypeOf<StoredRow<Fields>>();
+		else {
+			expectTypeOf(saveError).toEqualTypeOf<TableReplaceError>();
+			// @ts-expect-error A table never saves text it cannot read back.
+			saveError.name === 'Unparsed';
+		}
+		// @ts-expect-error A table saves a row; complete text is an ordinary file.
+		folder.tables.todos.replace(entry.data, '---\n---\n');
+		folder.files.replace(entry.data, '---\n---\n');
+		// @ts-expect-error A stem is not a capture.
+		folder.tables.todos.replace('milk', entry.data.row);
 		expectTypeOf(
-			await folder.tables.todos.rename('milk', 'next', guard),
-		).toEqualTypeOf<Result<undefined, TableRenameError>>();
-		expectTypeOf(await folder.tables.todos.delete('milk', guard)).toEqualTypeOf<
+			await folder.tables.todos.rename(entry.data, 'next'),
+		).toEqualTypeOf<Result<FileCapture, TableRenameError>>();
+		expectTypeOf(await folder.tables.todos.delete(entry.data)).toEqualTypeOf<
 			Result<undefined, TableDeleteError>
 		>();
-		// @ts-expect-error A baseline is a hash, not a capture.
-		folder.tables.todos.delete('milk', { expectedSha256: entry.data });
 	}
-	folder.tables.todos.replace('milk', 'next', {});
-	folder.tables.todos.delete('milk', {});
 	// @ts-expect-error A captured hash is required for removal.
 	folder.files.remove({ path: 'a.md' });
 	folder.files.replace(
@@ -639,7 +559,7 @@ async function typedValues(
 		if (moveError.name === 'SourceNotRemoved')
 			expectTypeOf(moveError.moved).toEqualTypeOf<FileCapture>();
 	}
-	// A table rename may be unguarded, so its kept source may name no hash.
+	// A kept source's receipt still admits a move that named no hash.
 	expectTypeOf<TableRenameError>().toEqualTypeOf<FileError | MoveError>();
 	expectTypeOf<
 		Extract<MoveError, { name: 'SourceNotRemoved' }>['moved']

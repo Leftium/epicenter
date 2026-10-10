@@ -25,14 +25,12 @@ export {
 	field,
 	type KvOf,
 } from '@epicenter/definition';
-export type { FileListing } from './boundary.js';
 export {
-	type CanonicalDocument,
-	type CanonicalRefusal,
-	type CanonicalValue,
-	formatCanonicalDocument,
-	parseCanonicalDocument,
-} from './canonical.js';
+	type Autosave,
+	AutosaveError,
+	type SaveState,
+} from './autosave.js';
+export type { FileListing } from './boundary.js';
 export {
 	type CapturedFile,
 	type FileCapture,
@@ -47,18 +45,6 @@ export {
 	type PreparedFolderTable,
 } from './definition.js';
 export {
-	type RowEditor,
-	RowEditorError,
-	type RowEditorState,
-	type RowError,
-	type RowReloadError,
-	type RowSaveError,
-	type RowSetError,
-	type RowState,
-	type SaveState,
-	type TableEditError,
-} from './editor.js';
-export {
 	type CapturedMoveError,
 	FileError,
 	type FileStep,
@@ -66,15 +52,15 @@ export {
 	type KvWriteError,
 	MoveError,
 	OpenFolderError,
+	type RowReadError,
+	type RowSaveError,
 	type TableCreateError,
 	type TableDeleteError,
 	type TableEnumerationError,
 	TableError,
-	type TableGetError,
 	type TableReadError,
 	type TableRenameError,
 	type TableReplaceError,
-	type TableUpdateError,
 	type TableWriteError,
 } from './errors.js';
 export type { FolderFiles } from './files.js';
@@ -124,13 +110,7 @@ export { commitSubject, escapePath, type PathChange } from './git/messages.js';
 export type { Author, CommitSummary } from './git/objects.js';
 export type { FileKv, KvReading, KvSnapshot } from './kv.js';
 export { type KvMerge, type KvMergeInput, mergeKv } from './kv-merge.js';
-export {
-	frameRowText,
-	type PatchRefusal,
-	patchRowText,
-	type RowTextChange,
-	type RowTextFrame,
-} from './markdown.js';
+export { frameRowText, type RowTextFrame } from './markdown.js';
 export type {
 	OpfsDirectoryHandle,
 	OpfsEnvironment,
@@ -140,22 +120,13 @@ export type {
 export { pathProblem, rowPath, rowStemOf } from './paths.js';
 export type { DeepReadonly, FieldIssue, ParseError } from './reading.js';
 export {
-	inspectRow,
+	formatRow,
 	parseRow,
 	type Row,
-	type RowDraft,
 	type RowIssue,
 	type RowIssues,
-	serializeRow,
-	type TableReading,
 } from './row-text.js';
-export type {
-	FileTable,
-	TableListing,
-	TableSnapshot,
-	TableWriteOptions,
-	TableWriteReceipt,
-} from './table.js';
+export type { FileTable, StoredRow, TableListing } from './table.js';
 export type { FolderTerminal, TerminalResult } from './terminal.js';
 
 /**

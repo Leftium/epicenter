@@ -21,7 +21,7 @@
  * - An outcome the owner could not confirm stays `Unconfirmed` here
  * - A page built for another protocol version is refused at attach
  * - A commit replies with its outcome alone, and a push names no pass to join
- * - A caller that stops waiting during a commit starts no push afterward
+ * - Closing during a commit starts no push afterward
  * - A terminal command's steps are the same commands any save sends: nothing
  *   holds the folder around them, and a rewrite names the sha256 it read
  * - Closing stops a terminal command's later steps and waits for the one
@@ -447,21 +447,24 @@ test('a save still hashing is sent after a later one; nothing orders them', asyn
 	expect(applies()).toEqual(['later', 'earlier']);
 });
 
-test("a row editor's write still hashing is sent after a raw save made meanwhile", async () => {
+test('a table replace still hashing is sent after a raw save made meanwhile', async () => {
 	const folder = await attached();
 	const row = new TextEncoder().encode('---\ntitle: Take\ndone: false\n---\n');
 	replies.read = () => ({ bytes: [...row], sha256: 'a'.repeat(64) });
 	replies.apply = () => null;
-	const editor = expectOk(await folder.tables.todos.edit('take'));
+	const stored = expectOk(await folder.tables.todos.get('take'));
+	if (stored === undefined) throw new Error('the row is missing');
 	const digest = holdNextDigest();
 
-	const edited = '---\ntitle: Taken\ndone: false\n---\n';
-	editor.setText(edited);
+	const edited = '---\n"title": "Taken"\n"done": false\n---\n';
+	const replacing = folder.tables.todos.replace(stored, {
+		fields: { title: 'Taken', done: false },
+		body: '',
+	});
 	await digest.reached;
 	expectOk(await folder.files.overwrite('todos/take.md', 'raw'));
 	digest.release();
-	expectOk(await editor.waitForSaves());
-	expect(editor.get().save.status).toBe('idle');
+	expectOk(await replacing);
 
 	expect(applies()).toEqual(['raw', edited]);
 	// An existing-row replacement, never an overwrite.
@@ -539,10 +542,10 @@ test("a table save changes exactly its row file, under that file's exact conditi
 	replies.apply = () => null;
 
 	const created = expectOk(
-		await folder.tables.todos.create({
-			stem: 'take',
-			fields: { title: 'Take', done: false },
-		}),
+		await folder.tables.todos.create(
+			{ fields: { title: 'Take', done: false }, body: '' },
+			{ stem: 'take' },
+		),
 	);
 
 	expect(sent('apply')).toHaveLength(1);
@@ -555,15 +558,17 @@ test("a table save changes exactly its row file, under that file's exact conditi
 	]);
 
 	calls = [];
-	const guard = { expectedSha256: created.sha256 };
-	expectOk(await folder.tables.todos.rename('take', 'next', guard));
-	expectOk(await folder.tables.todos.delete('take', guard));
-	// Without a baseline, each change goes as an existing-only condition with
-	// no hash: a replacement is never sent as an overwrite.
-	expectOk(await folder.tables.todos.replace('take', 'text', {}));
-	expectOk(await folder.tables.todos.rename('take', 'next', {}));
-	expectOk(await folder.tables.todos.delete('take', {}));
-	// A rename reads the directory and publishes; it reads no row back.
+	// Every later change is guarded by the bytes the capture names: a
+	// replacement is never sent as an overwrite.
+	expectOk(await folder.tables.todos.rename(created, 'next'));
+	expectOk(await folder.tables.todos.delete(created));
+	expectOk(
+		await folder.tables.todos.replace(created, {
+			fields: { title: 'Taken', done: false },
+			body: '',
+		}),
+	);
+	// A guarded change publishes; it reads no row back.
 	expect(calls.some((call) => call.cmd === 'read')).toBe(false);
 	expect(sent('apply').map((call) => call.args.changes)).toEqual([
 		[
@@ -579,19 +584,14 @@ test("a table save changes exactly its row file, under that file's exact conditi
 			{
 				kind: 'replace',
 				path: 'todos/take.md',
-				bytes: Array.from(new TextEncoder().encode('text')),
-				expectedSha256: null,
+				bytes: Array.from(
+					new TextEncoder().encode(
+						'---\n"title": "Taken"\n"done": false\n---\n',
+					),
+				),
+				expectedSha256: created.sha256,
 			},
 		],
-		[
-			{
-				kind: 'move',
-				from: 'todos/take.md',
-				to: 'todos/next.md',
-				expectedSha256: null,
-			},
-		],
-		[{ kind: 'remove', path: 'todos/take.md', expectedSha256: null }],
 	]);
 });
 
@@ -668,10 +668,10 @@ test('a partial report that is not a move keeping its source is Unconfirmed, nev
 	};
 	replies.apply = () => refuse(report);
 	const created = expectErr(
-		await folder.tables.todos.create({
-			stem: 'take',
-			fields: { title: 'Take', done: false },
-		}),
+		await folder.tables.todos.create(
+			{ fields: { title: 'Take', done: false }, body: '' },
+			{ stem: 'take' },
+		),
 	);
 	expect(created).toMatchObject({
 		name: 'Unconfirmed',
@@ -759,7 +759,7 @@ test("a terminal command's steps are the commands any save sends, and nothing ho
 	expect(sent('apply')).toHaveLength(1);
 });
 
-test("a recursive copy whose source read is held sends its write after a save made meanwhile; nothing orders them", async () => {
+test('a recursive copy whose source read is held sends its write after a save made meanwhile; nothing orders them', async () => {
 	const folder = await attached();
 	const source = new TextEncoder().encode('source\n');
 	const sha256 = await hashBytes(source);
@@ -1311,9 +1311,7 @@ test('merge refusals keep their names, and a lost reply is Unconfirmed and sent 
 		],
 	] as const) {
 		replies.merge_incoming = () => refuse(refusal);
-		expect(expectErr(await folder.git.mergeIncoming())).toMatchObject(
-			expected,
-		);
+		expect(expectErr(await folder.git.mergeIncoming())).toMatchObject(expected);
 	}
 	calls = [];
 	replies.merge_incoming = () => {
@@ -1548,7 +1546,7 @@ test('a commit whose outcome is unknown leaves the push unknown, not skipped', a
 	expect(sent('push')).toHaveLength(0);
 });
 
-test('a caller that stops waiting during a commit starts no push, even after the commit lands', async () => {
+test('closing during a commit starts no push, even after the commit lands', async () => {
 	const folder = await attached();
 	// A remote exists, so a commit that completes is normally followed by a push.
 	emit('folder-snapshot-changed', {
@@ -1587,95 +1585,15 @@ test('a caller that stops waiting during a commit starts no push, even after the
 	calls = [];
 	const commit = held<typeof committed>();
 	replies.commit = commit.reply;
-	const waiting = new AbortController();
-	const stopped = folder.git.commitAndPush({ signal: waiting.signal });
-	waiting.abort();
-	expect(await stopped).toEqual({
-		commit: { status: 'stoppedWaiting' },
-		push: { status: 'stoppedWaiting' },
-	});
-	// The commit the caller left lands afterward. Nothing pushes it.
+	const result = folder.git.commitAndPush();
+	const closing = folder.close();
 	commit.settle(committed);
-	await Bun.sleep(0);
-	expect(calls.map((call) => call.cmd)).toEqual(['commit']);
-
-	// A caller that had already stopped when it asked still sends the commit
-	// it asked for, and nothing after it.
-	calls = [];
-	replies.commit = () => committed;
-	const already = AbortSignal.abort();
-	expect(await folder.git.commitAndPush({ signal: already })).toEqual({
-		commit: { status: 'stoppedWaiting' },
-		push: { status: 'stoppedWaiting' },
+	expect(await result).toMatchObject({
+		commit: { status: 'committed' },
+		push: { status: 'closed' },
 	});
-	await Bun.sleep(0);
-	expect(calls.map((call) => call.cmd)).toEqual(['commit']);
-});
-
-test('a caller that leaves a push or fetch asks for nothing, or withdraws exactly the request it opened', async () => {
-	const folder = await attached();
-	const push = held<{ status: string; oid: string | null }>();
-	replies.push = push.reply;
-	const fetch = held<{ oid: null }>();
-	replies.fetch = fetch.reply;
-
-	// Left before asking: no command reaches the owner at all.
-	const gone = AbortSignal.abort();
-	expect(await folder.git.push({ signal: gone })).toEqual({
-		status: 'stoppedWaiting',
-	});
-	expect(expectErr(await folder.git.fetch({ signal: gone })).name).toBe(
-		'StoppedWaiting',
-	);
-	expect(calls).toEqual([]);
-
-	// Left while the request was being opened: it is withdrawn the moment its
-	// number is known, and the push that would have named it is never sent.
-	const opening = held<number>();
-	const open = replies.open_request;
-	if (open === undefined) throw new Error('the request opener is configured');
-	replies.open_request = opening.reply;
-	const early = new AbortController();
-	const never = folder.git.push({ signal: early.signal });
-	early.abort();
-	expect(await never).toEqual({ status: 'stoppedWaiting' });
-	opening.settle(41);
-	await untilSent('withdraw_request');
-	expect(calls).toEqual([
-		{ cmd: 'open_request', args: { session: 7 } },
-		{ cmd: 'withdraw_request', args: { session: 7, request: 41 } },
-	]);
-
-	// Left after the commands were sent: each caller stops waiting, and each
-	// request is withdrawn once. The replies are still outstanding, so the
-	// page is told only that it stopped waiting.
-	calls = [];
-	replies.open_request = open;
-	const waiting = new AbortController();
-	const pushing = folder.git.push({ signal: waiting.signal });
-	const fetching = folder.git.fetch({ signal: waiting.signal });
-	await untilSent('push');
-	await untilSent('fetch');
-	const requests = [FIRST_REQUEST, FIRST_REQUEST + 1];
-	expect(
-		[sent('push')[0]?.args.request, sent('fetch')[0]?.args.request].sort(),
-	).toEqual(requests);
-	waiting.abort();
-	expect(await pushing).toEqual({ status: 'stoppedWaiting' });
-	expect(expectErr(await fetching).name).toBe('StoppedWaiting');
-	expect(
-		sent('withdraw_request')
-			.map((call) => call.args.request)
-			.sort(),
-	).toEqual(requests);
-
-	// The owner's late replies change nothing, and are not withdrawn again.
-	push.settle({ status: 'cancelled', oid: null });
-	fetch.settle({ oid: null });
-	await Bun.sleep(0);
-	expect(sent('withdraw_request')).toHaveLength(2);
-	await folder.close();
-	expect(sent('withdraw_request')).toHaveLength(2);
+	await closing;
+	expect(calls.map((call) => call.cmd)).toEqual(['commit', 'detach']);
 });
 
 test('an unacknowledged push or fetch releases its opened request without retrying', async () => {

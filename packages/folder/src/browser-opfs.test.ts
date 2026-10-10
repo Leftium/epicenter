@@ -18,7 +18,7 @@
  * - A write that fails before its close is `Io`; a close that throws is
  *   `Unconfirmed` whatever the path holds after, hinted, with no commit
  * - Saves are not ordered by when they were asked for: a save entered first
- *   that lands after a later one stays, across handles and row editors
+ *   that lands after a later one stays, across handles
  * - Closing refuses new work; a save already begun returns its real outcome
  */
 import { afterEach, describe, expect, spyOn, test } from 'bun:test';
@@ -392,41 +392,6 @@ describe('the last save to land on a path stays, whenever it was asked for', () 
 		expect(decoder.decode(opfs.files(ROOT).get('order.md'))).toBe('second');
 	});
 
-	test("a row editor's write still hashing when a listener's raw save lands, lands after it and stays", async () => {
-		const folder = await open();
-		const stem = 'plan';
-		expectOk(
-			await folder.tables.notes.create({ stem, fields: { title: 'Plan' } }),
-		);
-		const path = `notes/${stem}.md`;
-		const editor = expectOk(await folder.tables.notes.edit(stem));
-		let raw: ReturnType<typeof folder.files.overwrite> | undefined;
-		const stop = editor.subscribe(() => {
-			if (editor.get().save.status === 'saving' && raw === undefined)
-				raw = folder.files.overwrite(path, 'raw\n');
-		});
-		const opened = editor.get().row;
-		if (opened.status !== 'valid') throw new Error('expected a valid row');
-		// The editor's capture hashes first, inside set(); the listener's next.
-		const digest = holdNextDigest();
-		expectOk(
-			editor.set({
-				fields: { ...opened.fields, title: 'Edited' },
-				body: opened.body,
-			}),
-		);
-		await digest.reached;
-		if (raw === undefined) throw new Error('the listener never heard saving');
-		expectOk(await raw);
-		digest.release();
-		// Nothing places the editor's write first: it lands last and stays.
-		expectOk(await editor.waitForSaves());
-		expect(decoder.decode(opfs.files(ROOT).get(path))).toBe(
-			editor.get().row.text,
-		);
-		stop();
-	});
-
 	test('a later save whose outcome is unknown does not keep an older one out', async () => {
 		const [left, right] = [await open(), await open()];
 		const held = holdNextDigest();
@@ -593,10 +558,10 @@ describe('scopes and history', () => {
 	test('automatic commits, status, and the shell work over the same files', async () => {
 		const folder = await open({ commitOnEdit: true });
 		expectOk(
-			await folder.tables.notes.create({
-				stem: 'first',
-				fields: { title: 'First' },
-			}),
+			await folder.tables.notes.create(
+				{ fields: { title: 'First' }, body: '' },
+				{ stem: 'first' },
+			),
 		);
 		for (let index = 0; index < 200; index++) {
 			if (folder.git.snapshot.lastCommit !== undefined) break;
@@ -605,7 +570,7 @@ describe('scopes and history', () => {
 		expect(folder.git.snapshot.lastCommit?.status).toBe('committed');
 		const shell = folder.terminal();
 		const listed = await shell.exec('cat notes/first.md && git status --short');
-		expect(listed.stdout).toContain('title: First');
+		expect(listed.stdout).toContain('"title": "First"');
 		expectOk(await folder.files.create('loose.txt', 'x'));
 		const status = expectOk(await folder.git.status());
 		expect(status.changes.map((change) => change.path)).toEqual(['loose.txt']);

@@ -25,10 +25,9 @@
  *
  * The identity check writes a stray file into an unmarked directory, and a
  * ready marker naming another address into another, with the browser's own
- * OPFS API, and opens each. The editor checks drive the public row editor:
- * its ordered publication and observation, repair of text that opens
- * invalid, and a row removed before its write, which is never made again.
- * The stream probes use the browser's own OPFS API on a directory of their
+ * OPFS API, and opens each. The row check reads malformed and
+ * schema-invalid text as `InvalidRow` and repairs it with a guarded
+ * `replace`. The stream probes use the browser's own OPFS API on a directory of their
  * own: the lock an open write stream holds, and what a stream for a removed
  * file does with and without the recheck the replacement makes.
  *
@@ -927,147 +926,42 @@ async function identity(id: string) {
 	);
 }
 
-async function editing(id: string) {
+async function rowRepair(id: string) {
 	await check(
-		'a row editor accepts each input at once, saves the latest in order, and takes an outside save only on reload',
+		'malformed and schema-invalid text reads as InvalidRow with its exact text, and a guarded replace repairs it',
 		async () => {
 			const folder = await open(id);
-			const path = 'rows/plan.md';
+			const brokenText = '---\ntitle: [\n---\n';
+			const untitledText = '---\nowner: sam\n---\n';
+			ok(await folder.files.create('rows/broken.md', brokenText));
+			ok(await folder.files.create('rows/untitled.md', untitledText));
+			const { error: broken } = await folder.tables.rows.get('broken');
+			const { error: untitled } = await folder.tables.rows.get('untitled');
+			assert(
+				broken?.name === 'InvalidRow' && broken.text === brokenText,
+				`broken read as ${JSON.stringify(broken)}`,
+			);
+			assert(
+				untitled?.name === 'InvalidRow' &&
+					untitled.text === untitledText &&
+					untitled.issues[0].field === 'title',
+				`untitled read as ${JSON.stringify(untitled)}`,
+			);
+			const repaired = '---\n"title": "Repaired"\n---\n';
 			ok(
-				await folder.tables.rows.create({
-					stem: 'plan',
-					fields: { title: 'Plan' },
+				await folder.tables.rows.replace(broken, {
+					fields: { title: 'Repaired' },
+					body: '',
 				}),
 			);
-			const editor = ok(await folder.tables.rows.edit('plan'));
-			const { get, subscribe, set, waitForSaves, reload } = editor;
-			let calls = 0;
-			const stop = subscribe(() => {
-				calls += 1;
-			});
-			try {
-				assert(calls === 0, 'subscribe called its listener at once');
-				// Each input is the snapshot before `set` returns. The first
-				// write runs; each later input replaces the one waiting.
-				const titles = ['First', 'Second', 'Edited: a colon'];
-				for (const title of titles) {
-					ok(set({ fields: { title }, body: '' }));
-					const { row } = get();
-					assert(
-						row.status === 'valid' && row.fields.title === title,
-						`after set(${title}) the row is ${JSON.stringify(row)}`,
-					);
-				}
-				assert(get().save.status === 'saving', `save is ${get().save.status}`);
-				ok(await waitForSaves());
-				const accepted = get().row;
-				const stored = decoder.decode(await rawRead(id, path));
-				assert(
-					accepted.status === 'valid' && stored === accepted.text,
-					`stored ${JSON.stringify(stored)}, accepted ${JSON.stringify(accepted)}`,
-				);
-
-				// An outside save in another layout leaves the editor alone
-				// until reload replaces the accepted input with it, exactly.
-				const outside = "---\ntitle: 'From outside'\n---\n";
-				ok(
-					await folder.files.replace(
-						ok(await folder.files.read(path)),
-						outside,
-					),
-				);
-				assert(
-					get().row === accepted,
-					'the editor followed the file by itself',
-				);
-				ok(await reload());
-				const followed = get().row;
-				assert(
-					followed.status === 'valid' &&
-						followed.text === outside &&
-						followed.fields.title === 'From outside',
-					`after the outside save the row is ${JSON.stringify(followed)}`,
-				);
-				return `stored ${JSON.stringify(stored)}; followed ${JSON.stringify(outside)}; ${calls} invalidations`;
-			} finally {
-				stop();
-			}
-		},
-	);
-
-	await check(
-		'malformed and schema-invalid text opens, and the same editor repairs it',
-		async () => {
-			const folder = await open(id);
-			ok(await folder.files.create('rows/broken.md', '---\ntitle: [\n---\n'));
-			ok(
-				await folder.files.create('rows/untitled.md', '---\nowner: sam\n---\n'),
-			);
-			const broken = ok(await folder.tables.rows.edit('broken'));
-			const untitled = ok(await folder.tables.rows.edit('untitled'));
-			const brokenRow = broken.get().row;
-			const untitledRow = untitled.get().row;
-			assert(
-				brokenRow.status === 'invalid' &&
-					brokenRow.error.name === 'NoCanonicalForm',
-				`broken opened as ${JSON.stringify(brokenRow)}`,
-			);
-			assert(
-				untitledRow.status === 'invalid' &&
-					untitledRow.error.name === 'Nonconforming',
-				`untitled opened as ${JSON.stringify(untitledRow)}`,
-			);
-			const repaired = '---\ntitle: Repaired\n---\n';
-			broken.setText(repaired);
-			ok(await broken.waitForSaves());
 			const stored = decoder.decode(await rawRead(id, 'rows/broken.md'));
 			assert(stored === repaired, `stored ${JSON.stringify(stored)}`);
-			assert(broken.get().row.status === 'valid', 'the repair is not valid');
-			return `opened ${brokenRow.error.name} and ${untitledRow.error.name}; the raw repair saved ${JSON.stringify(stored)}`;
-		},
-	);
-
-	await check(
-		'a row removed before its write is NotFound and stays absent; a file made again keeps its text until reload discards the failed input',
-		async () => {
-			const folder = await open(id);
-			const path = 'rows/gone.md';
-			ok(await folder.files.create(path, '---\ntitle: Before\n---\n'));
-			const editor = ok(await folder.tables.rows.edit('gone'));
-			const { get, set, waitForSaves, reload } = editor;
-			ok(await folder.files.remove(ok(await folder.files.read(path))));
-			const typed = 'Typed after the removal';
-			ok(set({ fields: { title: typed }, body: '' }));
-			const { error: failed } = await waitForSaves();
-			assert(failed?.name === 'NotFound', `save ${JSON.stringify(failed)}`);
-			assert(!(await rawExists(id, path)), 'the write made the file again');
-			// A failed reload keeps the input in view.
-			const { error: missing } = await reload();
-			assert(missing?.name === 'NotFound', `reload ${JSON.stringify(missing)}`);
-			const kept = get().row;
+			const reread = ok(await folder.tables.rows.get('broken'));
 			assert(
-				kept.status === 'valid' && kept.fields.title === typed,
-				`while absent the row is ${JSON.stringify(kept)}`,
+				reread?.row.fields.title === 'Repaired',
+				`the repair read back as ${JSON.stringify(reread)}`,
 			);
-
-			// An explicit create makes the file again with other text. The
-			// failed editor writes nothing over it without new input; reload
-			// adopts it.
-			const recreated = '---\ntitle: Made again\n---\n';
-			ok(await folder.files.create(path, recreated));
-			const stored = decoder.decode(await rawRead(id, path));
-			assert(stored === recreated, `stored ${JSON.stringify(stored)}`);
-			ok(await reload());
-			const { row, save } = get();
-			assert(
-				row.status === 'valid' && row.text === recreated,
-				`after reload the row is ${JSON.stringify(row)}`,
-			);
-			assert(
-				save.status === 'idle',
-				`after reload the save is ${JSON.stringify(save)}`,
-			);
-			return `NotFound, nothing written; the made-again file keeps ${JSON.stringify(recreated)} until reload adopts it`;
+			return `read ${broken.issues.length} and ${untitled.issues.length} issues; the replacement saved ${JSON.stringify(stored)}`;
 		},
 	);
 }
@@ -1266,7 +1160,7 @@ async function main() {
 			await history(runId);
 			await recovery(runId);
 			await identity(runId);
-			await editing(`${runId}-editor`);
+			await rowRepair(`${runId}-rows`);
 			await streams(`${runId}-streams`);
 			await closing(runId);
 		}

@@ -32,8 +32,8 @@ export type FolderTable = DeclaredTable & { readonly body?: undefined };
 declare const PREPARED: unique symbol;
 
 /**
- * A table of a definition `defineFolder` prepared: what `inspectRow` and
- * `serializeRow` take. Only `defineFolder`'s return type carries the mark, so
+ * A table of a definition `defineFolder` prepared: what `parseRow` and
+ * `formatRow` take. Only `defineFolder`'s return type carries the mark, so
  * a raw `defineTable` declaration handed to either is a compile error rather
  * than a call that works until a declared value appears.
  *
@@ -95,7 +95,7 @@ export function prepareFolderDefinition<TDefinition extends FolderDefinition>(
  * body conversion, or an `id` throws at the declaration, not at the first
  * open. What comes back has the declared shape and type, and is the prepared
  * definition: an owned, frozen snapshot of each schema. Its tables are typed
- * {@link PreparedFolderTable}, so `inspectRow` and `serializeRow` take them.
+ * {@link PreparedFolderTable}, so `parseRow` and `formatRow` take them.
  */
 export function defineFolder<const TDefinition extends DataSchema>(
 	schema: TDefinition & {

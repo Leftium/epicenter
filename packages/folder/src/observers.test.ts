@@ -116,19 +116,24 @@ describe.each(['browser', 'directory'])('%s folder observers', (kind) => {
 			sha256: await hashBytes(encoder.encode('submitted')),
 		});
 		const row = expectOk(
-			await folder.tables.notes.create({ stem: 'a', fields: { title: 'A' } }),
+			await folder.tables.notes.create(
+				{ fields: { title: 'A' }, body: '' },
+				{ stem: 'a' },
+			),
 		);
 		expectOk(
-			await folder.tables.notes.update(
-				row.stem,
-				{ fields: { title: 'B' } },
-				{},
-			),
+			await folder.tables.notes.replace(row, {
+				fields: { title: 'B' },
+				body: '',
+			}),
 		);
 		expectOk(await folder.kv.create({ theme: 'dark' }));
 		expectOk(await folder.files.create('audio/a.webm', new Uint8Array([1])));
 		expectOk(
-			await folder.tables.notes.create({ stem: 'b', fields: { title: 'B' } }),
+			await folder.tables.notes.create(
+				{ fields: { title: 'B' }, body: '' },
+				{ stem: 'b' },
+			),
 		);
 
 		// The second listener heard everything the first one threw on.
@@ -192,9 +197,7 @@ describe.each(['browser', 'directory'])('%s folder observers', (kind) => {
 		// was made. A directory attempt is inside the protection at once, so
 		// closing waited for it. A browser attempt was still being granted the
 		// Web Lock, so it was refused and nothing was committed.
-		expect(folder.git.snapshot.lastCommit?.status).toBe(
-			'committed',
-		);
+		expect(folder.git.snapshot.lastCommit?.status).toBe('committed');
 		expect(calls).toEqual([1]);
 	});
 

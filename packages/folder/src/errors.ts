@@ -7,13 +7,15 @@
  * file change; a move that landed its destination but kept its source is
  * `MoveError.SourceNotRemoved`.
  *
- * These describe acquiring and publishing files. Whether a row's text parses
- * and whether its fields conform are not failures of an operation: a snapshot
- * carries them as `parseError` and `issues` (ADR-0462).
+ * A row file whose text was read but is not a valid row is `InvalidRow`: it
+ * carries the exact text, the hash of the bytes read, and every issue, so the
+ * row can be repaired as text and saved guarded by those bytes.
  */
 import { defineErrors, type InferErrors } from 'wellcrafted/error';
+import type { AutosaveError } from './autosave.js';
 import type { FileCapture } from './capture.js';
-import type { FieldIssue, ParseError } from './reading.js';
+import type { ParseError } from './reading.js';
+import type { RowIssue, RowIssues } from './row-text.js';
 
 export const FileError = defineErrors({
 	InvalidPath: ({ path, reason }: { path: string; reason: string }) => ({
@@ -203,7 +205,7 @@ export const TableError = defineErrors({
 	 * Supplied values are undeclared, do not conform to their fields, are
 	 * absent from a complete row, or cannot be copied or written to the file.
 	 */
-	InvalidValues: ({ issues }: { issues: readonly FieldIssue[] }) => ({
+	InvalidValues: ({ issues }: { issues: readonly RowIssue[] }) => ({
 		message: `Supplied values do not conform: ${issues.map((issue) => issue.message).join('; ')}`,
 		issues,
 	}),
@@ -221,6 +223,35 @@ export const TableError = defineErrors({
 		message: `The source of '${path}' cannot be changed safely: ${reason}`,
 		path,
 		reason,
+	}),
+	/**
+	 * The file was read as text, but it is not a valid row: its frontmatter
+	 * has no canonical form, or a declared field does not conform or is
+	 * missing. `text` is exactly what was read and `sha256` the hash of its
+	 * bytes, so a repair can show the text and save guarded by them.
+	 */
+	InvalidRow: ({
+		path,
+		sha256,
+		text,
+		issues,
+	}: {
+		path: string;
+		sha256: string;
+		text: string;
+		issues: RowIssues;
+	}) => ({
+		message: `'${path}' is not a valid row: ${issues
+			.map((issue) =>
+				issue.line === undefined
+					? issue.message
+					: `line ${issue.line}: ${issue.message}`,
+			)
+			.join('; ')}`,
+		path,
+		sha256,
+		text,
+		issues,
 	}),
 	/**
 	 * The file was read, but its bytes are not UTF-8. `sha256` is the hash of
@@ -242,22 +273,27 @@ type TableErrorOf<TName extends TableError['name']> = Extract<
 /** Storage failures are forwarded intact. Narrower storage signatures belong to their producers. */
 export type TableEnumerationError = FileError;
 
-/** Acquisition or UTF-8 decoding failed. A parse failure is the snapshot's `parseError`. */
+/** Acquisition or UTF-8 decoding failed: there is no text to read as a row. */
 export type TableReadError = FileError | TableErrorOf<'InvalidUtf8'>;
 
-/** get recovers NotFound as Ok(undefined); it shares the storage read error family. */
-export type TableGetError = TableReadError;
+/** Why a read row file is not a row: there was no text, or the text is not a valid row. */
+export type RowReadError = TableReadError | TableErrorOf<'InvalidRow'>;
 
-/** Storage publication or preparation of the supplied complete row failed. */
+/** The row cannot be written as a valid row, or publication failed. */
 export type TableCreateError = FileError | TableErrorOf<'InvalidValues'>;
 
-/** Structured preparation adds its failures to acquisition and publication failures. */
-export type TableUpdateError =
-	| TableReadError
-	| TableErrorOf<'InvalidValues' | 'Unparsed' | 'UnsupportedSource'>;
+/** The row cannot be written as a valid row, or the guarded publication failed. */
+export type TableReplaceError = FileError | TableErrorOf<'InvalidValues'>;
 
-/** Complete source publication needs no parsing or field preparation. */
-export type TableReplaceError = FileError;
+/**
+ * Why an autosave request saved nothing: its row cannot be written, or the
+ * replacement failed. `Unconfirmed` may have landed; present it as
+ * uncertainty. A writer defect is `AutosaveError.UnexpectedWriterError`.
+ */
+export type RowSaveError =
+	| FileError
+	| TableErrorOf<'InvalidValues'>
+	| AutosaveError;
 
 /** Moving a row preserves the file move's failures. */
 export type TableRenameError = FileError | MoveError;
@@ -268,7 +304,6 @@ export type TableDeleteError = FileError;
 /** Every failure a table write can report. */
 export type TableWriteError =
 	| TableCreateError
-	| TableUpdateError
 	| TableReplaceError
 	| TableRenameError
 	| TableDeleteError;

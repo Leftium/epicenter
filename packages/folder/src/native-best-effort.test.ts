@@ -6,6 +6,7 @@ import { expect, test } from 'bun:test';
 import { mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { expectOk } from 'wellcrafted/testing';
+import { hashBytes } from './capture.js';
 import { defineFolder, defineTable, field } from './contract.js';
 import { scratch } from './git-http.test-support.js';
 import { createNativeFileBoundary } from './native-store.js';
@@ -37,11 +38,11 @@ test('overlapping creates of one stem land one row and refuse the other, beside 
 		const table = createTable<{ title: string }>(
 			{ storage: boundary },
 			'todos',
-			definition.tables.todos.fields,
+			definition.tables.todos,
 		);
 		const results = await Promise.all([
-			table.create({ stem: 'take', fields: { title: 'First' } }),
-			table.create({ stem: 'take', fields: { title: 'Second' } }),
+			table.create({ fields: { title: 'First' }, body: '' }, { stem: 'take' }),
+			table.create({ fields: { title: 'Second' }, body: '' }, { stem: 'take' }),
 		]);
 		const landed = results.filter((result) => result.error === null);
 		expect(landed).toHaveLength(1);
@@ -54,15 +55,14 @@ test('overlapping creates of one stem land one row and refuse the other, beside 
 			'take.md',
 			'take.wav',
 		]);
-		expect(await readFile(join(root, 'todos/take.md'), 'utf8')).toBe(
-			landed[0]!.data!.text,
+		const winner = landed[0]!.data!;
+		expect(await hashBytes(await readFile(join(root, 'todos/take.md')))).toBe(
+			winner.sha256,
 		);
 		expect(
 			new Uint8Array(await readFile(join(root, 'todos/take.wav'))),
 		).toEqual(new Uint8Array([7, 7]));
-		const entry = expectOk(await table.get('take'));
-		expect(entry).toMatchObject({ parseError: undefined, issues: [] });
-		expect(entry?.sha256).toEqual(landed[0]!.data!.sha256);
+		expect(expectOk(await table.get('take'))).toEqual(winner);
 	} finally {
 		await rm(root, { recursive: true, force: true });
 	}

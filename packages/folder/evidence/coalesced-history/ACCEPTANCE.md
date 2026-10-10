@@ -1,7 +1,10 @@
 # Coalesced automatic history acceptance
 
-This app exercises the production browser opener and row editor with disposable
-OPFS data. The textarea publishes through `folder.tables.notes.edit().setText`.
+This app exercises the production browser opener with disposable OPFS data.
+The textarea edits the note's body and saves it with a guarded
+`folder.tables.notes.replace`, one at a time, keeping only the newest waiting
+body. 2026-10-11: the row editor this page used was retired with the row-API
+clean break (ADR-0515); the runs recorded below used it.
 The saved-file panel reads `folder.files`; the committed-file panel reads the
 blob in the branch's actual commit tree. Inspecting requests no checkpoint.
 
@@ -169,7 +172,8 @@ Screenshots: [Honeycrisp](honeycrisp-integrated.jpg) and
 
 ## Cross-task ownership
 
-The editor task owns the serial write and newest waiting document. This task
+The editor task owned the serial write and newest waiting document; since
+2026-10-11 this page does that itself. This task
 owns the folder's coalesced commit request. The Git testbed task owns explicit
 transfer commands and durable unfinished merge state. An additional history
 validation task contributes a separate failing-capture regression and dead

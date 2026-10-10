@@ -27,10 +27,10 @@
 import { afterAll, afterEach, beforeAll, expect, mock, test } from 'bun:test';
 import * as realFs from 'node:fs/promises';
 import { join, sep } from 'node:path';
-import { expectErr } from 'wellcrafted/testing';
+import { expectErr, expectOk } from 'wellcrafted/testing';
+import { hashBytes } from './capture.js';
 import { defineFolder, defineTable, field } from './contract.js';
 import { GIT_ENV, git, scratch } from './git-http.test-support.js';
-import { hashBytes } from './capture.js';
 
 const real = { ...realFs };
 const {
@@ -420,13 +420,15 @@ test('inherited GIT_DIR, GIT_WORK_TREE, and GIT_INDEX_FILE do not redirect the f
 		git: { author, commitOnEdit: false },
 	});
 	try {
-		const { error: createError } = await opened.tables.todos.create({
-			stem: 'one',
-			fields: { title: 'One', done: false },
-		});
-		expect(createError).toBeNull();
+		expectOk(
+			await opened.tables.todos.create(
+				{ fields: { title: 'One', done: false }, body: '' },
+				{ stem: 'one' },
+			),
+		);
+
 		expect((await opened.git.commit()).status).toBe('committed');
-		expect((await opened.git.stage('all')).error).toBeNull();
+		expectOk(await opened.git.stage('all'));
 		expect((await opened.git.paths()).data).toEqual([]);
 	} finally {
 		await opened.close();
@@ -460,8 +462,8 @@ test('a root that lost its .git never resolves to a repository above it', async 
 		await writeFile(join(folder, 'note.md'), 'text');
 		await rm(join(folder, '.git'), { recursive: true });
 
-		expect((await opened.git.stage('all')).error?.name).toBe('Failed');
-		expect((await opened.git.paths()).error?.name).toBe('Failed');
+		expect(expectErr(await opened.git.stage('all')).name).toBe('Failed');
+		expect(expectErr(await opened.git.paths()).name).toBe('Failed');
 	} finally {
 		await opened.close();
 	}

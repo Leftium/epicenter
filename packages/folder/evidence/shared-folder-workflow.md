@@ -6,14 +6,15 @@ directory and asserts every claim against bytes read back with `node:fs`.
 - Script: `packages/folder/evidence/shared-folder-workflow.ts`
 - Baseline: `b080da2db6`. No production source was changed.
 - Result on 2026-10-02, Bun 1.3.14, macOS (APFS): **87 assertions passed, 0 failed**.
+- Result on 2026-10-11, after the row-API clean break (ADR-0515), Bun 1.3.14,
+  macOS (APFS): **70 assertions passed, 0 failed**. See "Retired on
+  2026-10-11" below.
 
 ```sh
 bun packages/folder/evidence/shared-folder-workflow.ts   # exit 0; prints every file state and assertion
 ```
 
-The experiment is outside `tsconfig.json`'s `include`, so `bun run typecheck`
-does not see it. It was checked with the package's compiler options passed by
-hand (exit 0); the two `@ts-expect-error` lines are therefore verified claims.
+The package typecheck includes the script.
 
 ## Setup
 
@@ -28,7 +29,35 @@ Two definitions share the folder ID `so.epicenter.todos` and the table name
 
 The agent is `writeFile` into the same directory. It never holds a handle.
 
-## What was observed
+## Retired on 2026-10-11
+
+The row-API clean break (ADR-0515) removed `table.update`, comment-preserving
+row patches, and the flat snapshot with partial `fields`, `issues`, and
+`parseError`. A row read is now a `StoredRow` or an `InvalidRow` that carries
+only the exact text, its hash, and the issues; every table save after
+`create` is a guarded `replace` of a complete row, written as canonical text.
+These claims were retired with it and their assertions deleted from the
+script:
+
+- B adding `priority` with a one-line patch that left the agent's comment and
+  quoting byte for byte (2–3), and B's `InvalidValues` for assigning `done`
+  (3). B now reads the agent's row as `InvalidRow` naming `priority`.
+- A ticking `done` by changing only that value span (4). The guarded replace
+  now writes canonical text: the unknown `estimate` key and the body survive;
+  the agent's comment and hand quoting do not.
+- Partial reads of an invalid row: the healthy `title` and body beside the
+  `done` issue, and updating `title` around `maybe` (7). Repair is a guarded
+  replace of a complete row.
+- `Unparsed` refusals of structured updates (8, 9). Raw-text repair now goes
+  through `files.replace(invalidRow, text)`, checked first with `parseRow`.
+- A table receipt that is the submitted text, a later update keeping the BOM
+  and CRLF, and the unpaired-surrogate receipt equal to the disk text (11).
+  The table now refuses an unpaired surrogate as `InvalidValues` and writes
+  nothing; exact bytes are saved through `files.replace`.
+
+The KV scenarios (5–6c) are unchanged.
+
+## What was observed on 2026-10-02
 
 | # | Scenario | Outcome |
 | --- | --- | --- |
@@ -47,7 +76,7 @@ The agent is `writeFile` into the same directory. It never holds a handle.
 | 11 | BOM, CRLF, decomposed and precomposed é, an astral emoji, no final newline | Disk bytes are the UTF-8 of the submitted string; receipt source and hash match them; nothing was normalized. A later `update` kept the BOM and every CRLF. For an unpaired surrogate, the receipt equals the disk text (U+FFFD), not the submitted string. |
 | 12 | Agent creates `todos/.hidden.md`, `todos/trailing .md`, `todos/.md` | All three are listed with their literal stems, read by `get(stem)`, and saved in place by `update(stem)`. `shout.MD` and `nested/deep.md` are not rows but are in `files.list()`. |
 
-## What a consumer has to write
+## What a consumer had to write on 2026-10-02
 
 **An agent or editor that does not load the package** makes no calls. It must
 know four facts: a row is `<table>/<stem>.md`; it opens with a `---` line, has a
@@ -105,6 +134,9 @@ delete, the invariant that would replace the current one, and its cost.
 
 ### 2. Drop `tables.<name>.replace` in favor of `files.replace` and `inspect`
 
+2026-10-11: overtaken by the row-API clean break (ADR-0515). `tables.<name>.replace`
+now takes a complete row; raw text goes through `files.replace` and `parseRow`.
+
 - **Deletion prize:** one table method and `TableReplaceError`. KV already
   repairs this way, so rows and KV would repair alike.
 - **Replacement invariant:** a complete-text save returns a bare capture; how
@@ -156,7 +188,9 @@ the package can fix by itself.
   overwrite it. The same holds for a table field.
 - **A whole-text repair by one application can drop another's field** (9). B
   rebuilt the frontmatter with what it knew, and A then had an issue for
-  `done`. A structured `update` cannot do this; `replace` can.
+  `done`. Since 2026-10-11 an `InvalidRow` carries text, not fields, so its
+  table repair keeps only the fields the repairing application writes: A's
+  repair in 7 drops `priority`. A valid row's unknown keys survive a replace (4).
 - **The documented default merge hides an unreadable `kv.json`** (6c). With a
   trailing comma in the file, `{ ...DEFAULTS, ...snapshot.values }` showed A
   the default theme while its stored theme sat in the source. Telling the two

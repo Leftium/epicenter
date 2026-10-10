@@ -11,9 +11,9 @@ import { expectErr, expectOk } from 'wellcrafted/testing';
 import {
 	defineFolder,
 	defineTable,
-	field,
 	type Folder,
 	type FolderDefinition,
+	field,
 } from './contract.js';
 import { events } from './publication-log.test-support.js';
 
@@ -120,11 +120,10 @@ for (const adapter of ['browser', 'bun'] as const) {
 				decode(expectOk(await folder.files.read('definition.json')).bytes),
 			).toBe(expectOk(exportSchema(definition)));
 			expectOk(
-				await folder.tables.notes!.create({
-					stem: 'kept',
-					fields: { title: 'Saved' },
-					body: 'Body stays\n',
-				}),
+				await folder.tables.notes!.create(
+					{ fields: { title: 'Saved' }, body: 'Body stays\n' },
+					{ stem: 'kept' },
+				),
 			);
 			expectOk(await folder.kv.create({ theme: 'dark' }));
 			const row = expectOk(await folder.files.read('notes/kept.md'));

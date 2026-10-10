@@ -17,7 +17,6 @@ import {
 	defineTable,
 	type Folder,
 	field,
-	inspectRow,
 	openFolder,
 } from './browser.js';
 import {
@@ -127,103 +126,92 @@ describe('browser folder tables', () => {
 		).rejects.toThrow();
 	});
 
-	test('creates, lists, updates, completes, renames, and deletes plain Markdown rows', async () => {
+	test('creates, lists, replaces, renames, and deletes canonical Markdown rows', async () => {
 		const folder = await open({ commitOnEdit: false });
-		const { data: created, error: createError } =
-			await folder.tables.todos.create({
-				stem: 'milk',
-				fields: { title: 'Buy milk', done: false },
-				body: 'Two liters.\n',
-			});
-		expect(createError).toBeNull();
-		expect(created!.path).toBe('todos/milk.md');
-		expect(created!.text).toBe(
-			'---\ntitle: Buy milk\ndone: false\n---\nTwo liters.\n',
-		);
-		const { data: raw, error: rawError } =
-			await folder.files.read('todos/milk.md');
-		expect(rawError).toBeNull();
-		expect(new TextDecoder().decode(raw!.bytes)).toBe(created!.text);
-		expect(raw!.sha256).toEqual(created!.sha256);
-
-		const completed = expectOk(
-			await folder.tables.todos.update(
-				'milk',
-				{
-					fields: { done: true },
-				},
-				{},
+		const created = expectOk(
+			await folder.tables.todos.create(
+				{ fields: { title: 'Buy milk', done: false }, body: 'Two liters.\n' },
+				{ stem: 'milk' },
 			),
 		);
-		expect(inspectRow(definition.tables.todos, completed.text)).toMatchObject({
+
+		expect(created.path).toBe('todos/milk.md');
+		const raw = expectOk(await folder.files.read('todos/milk.md'));
+		expect(new TextDecoder().decode(raw.bytes)).toBe(
+			'---\n"title": "Buy milk"\n"done": false\n---\nTwo liters.\n',
+		);
+		expect(raw.sha256).toEqual(created.sha256);
+
+		created.row.fields.done = true;
+		const completed = expectOk(
+			await folder.tables.todos.replace(created, created.row),
+		);
+		expect(completed.row).toEqual({
 			fields: { title: 'Buy milk', done: true },
 			body: 'Two liters.\n',
-			parseError: undefined,
-			issues: [],
+		});
+		expect(expectOk(await folder.tables.todos.get('milk'))).toEqual(completed);
+
+		const renamed = expectOk(
+			await folder.tables.todos.rename(completed, 'groceries'),
+		);
+		expect(renamed).toEqual({
+			path: 'todos/groceries.md',
+			sha256: completed.sha256,
 		});
 
-		const { error: renameError } = await folder.tables.todos.rename(
-			'milk',
-			'groceries',
-			{ expectedSha256: completed.sha256 },
-		);
-		expect(renameError).toBeNull();
 		expect((await folder.tables.todos.get('milk')).data).toBeUndefined();
 		const listed = expectOk(await folder.tables.todos.list());
 		expect(listed.map((item) => expectOk(item.result).path)).toEqual([
 			'todos/groceries.md',
 		]);
 
-		expectOk(
-			await folder.tables.todos.delete('groceries', {
-				expectedSha256: completed.sha256,
-			}),
-		);
+		expectOk(await folder.tables.todos.delete(renamed));
 		expect(expectOk(await folder.tables.todos.list())).toEqual([]);
 	});
 
 	test('create is exclusive, keeps names exactly, and refuses a path outside its table', async () => {
 		const folder = await open({ commitOnEdit: false });
-		await folder.tables.todos.create({
-			stem: 'Plan',
-			fields: { title: 'P', done: false },
-		});
+		await folder.tables.todos.create(
+			{ fields: { title: 'P', done: false }, body: '' },
+			{ stem: 'Plan' },
+		);
 		expect(
-			(
-				await folder.tables.todos.create({
-					stem: 'Plan',
-					fields: { title: 'Q', done: false },
-				})
-			).error?.name,
+			expectErr(
+				await folder.tables.todos.create(
+					{ fields: { title: 'Q', done: false }, body: '' },
+					{ stem: 'Plan' },
+				),
+			).name,
 		).toBe('Exists');
 		// Browser storage keeps names exactly: another spelling is another row.
 		expect(
 			expectOk(
-				await folder.tables.todos.create({
-					stem: 'plan',
-					fields: { title: 'Q', done: false },
-				}),
+				await folder.tables.todos.create(
+					{ fields: { title: 'Q', done: false }, body: '' },
+					{ stem: 'plan' },
+				),
 			).path,
 		).toBe('todos/plan.md');
 		expect(
-			(
-				await folder.tables.todos.create({
-					stem: '../x',
-					fields: { title: 'Q', done: false },
-				})
-			).error?.name,
+			expectErr(
+				await folder.tables.todos.create(
+					{ fields: { title: 'Q', done: false }, body: '' },
+					{ stem: '../x' },
+				),
+			).name,
 		).toBe('InvalidPath');
 		expect(
-			(
-				await folder.tables.todos.create({
-					stem: 'ok',
-					fields: { title: 3 as unknown as string, done: false },
-				})
-			).error?.name,
+			expectErr(
+				await folder.tables.todos.create(
+					{ fields: { title: 3 as unknown as string, done: false }, body: '' },
+					{ stem: 'ok' },
+				),
+			).name,
 		).toBe('InvalidValues');
 	});
 
-	test('readable rows stay snapshots: field issues beside valid fields, and a parse failure with no fields', async () => {
+	test('text that is not a valid row is InvalidRow with its exact text, and is repaired by a guarded replace', async () => {
 		const folder = await open({ commitOnEdit: false });
 		const source =
 			'﻿---\r\ntitle: Kept # comment\r\ndone: maybe\r\nextra: unknown\r\n---\r\nBody\r\n';
@@ -234,51 +222,45 @@ describe('browser folder tables', () => {
 			new Uint8Array([0xff, 0xfe, 0x00]),
 		);
 		const listed = expectOk(await folder.tables.todos.list());
-		const item = (path: string) =>
-			listed.find((found) => found.path === path)!.result;
-		expect(expectErr(item('todos/bad.md')).name).toBe('InvalidUtf8');
-		const odd = expectOk(item('todos/odd.md'));
+		const item = (stem: string) =>
+			listed.find((found) => found.stem === stem)!.result;
+		expect(expectErr(item('bad')).name).toBe('InvalidUtf8');
+
+		const odd = expectErr(item('odd'));
+		if (odd.name !== 'InvalidRow') throw new Error(odd.message);
+		expect(odd.path).toBe('todos/odd.md');
 		expect(odd.text).toBe(source);
-		expect(odd.parseError).toBeUndefined();
 		expect(odd.issues.map((issue) => issue.field)).toEqual(['done']);
-		expect(odd.fields).toEqual({ title: 'Kept' });
-		expect(odd.stem).toBe('odd');
-
-		// A typed update of the valid-in-isolation field replaces only that span.
-		const { data: fixed, error: fixError } = await folder.tables.todos.update(
-			'odd',
-			{
-				fields: { done: true },
-			},
-			{},
+		const fixed = expectOk(
+			await folder.tables.todos.replace(odd, {
+				fields: { title: 'Kept', done: true },
+				body: 'Body\n',
+			}),
 		);
-		expect(fixError).toBeNull();
-		expect(fixed!.text).toBe(source.replace('done: maybe', 'done: true'));
-		expect(inspectRow(definition.tables.todos, fixed!.text).issues).toEqual([]);
-
-		const broken = expectOk(item('todos/broken.md'));
-		expect(broken.parseError).toBeDefined();
-		expect(broken).toMatchObject({ fields: {}, body: undefined, issues: [] });
+		expect(expectOk(await folder.tables.todos.get('odd'))).toEqual(fixed);
+		// The capture named bytes that are gone: a second write conflicts.
 		expect(
-			(
-				await folder.tables.todos.update(
-					'broken',
-					{ fields: { done: true } },
-					{},
-				)
-			).error?.name,
-		).toBe('Unparsed');
+			expectErr(
+				await folder.tables.todos.replace(odd, {
+					fields: { title: 'Again', done: false },
+					body: '',
+				}),
+			).name,
+		).toBe('Conflict');
+
+		const broken = expectErr(item('broken'));
+		if (broken.name !== 'InvalidRow') throw new Error(broken.message);
+		// Text with no canonical form has exactly one issue.
+		expect(broken.issues).toHaveLength(1);
 		const repaired = expectOk(
-			await folder.tables.todos.replace(
-				'broken',
-				'---\ntitle: Repaired\ndone: false\n---\n',
-				{ expectedSha256: broken.sha256 },
-			),
+			await folder.tables.todos.replace(broken, {
+				fields: { title: 'Repaired', done: false },
+				body: '',
+			}),
 		);
-		expect(inspectRow(definition.tables.todos, repaired.text)).toMatchObject({
+		expect(repaired.row).toEqual({
 			fields: { title: 'Repaired', done: false },
-			parseError: undefined,
-			issues: [],
+			body: '',
 		});
 	});
 
@@ -289,36 +271,22 @@ describe('browser folder tables', () => {
 		const opus = expectOk(await folder.files.create('todos/rec.opus', audio));
 		expectOk(await folder.files.create('todos/rec.wav', new Uint8Array([9])));
 		const receipt = expectOk(
-			await folder.tables.todos.create({
-				stem: 'rec',
-				fields: { title: 'Recording', done: false },
-			}),
+			await folder.tables.todos.create(
+				{ fields: { title: 'Recording', done: false }, body: '' },
+				{ stem: 'rec' },
+			),
 		);
 		// Siblings can also arrive after the row was captured.
 		expectOk(await folder.files.create('todos/rec.flac', 'late'));
 		const created = expectOk(await folder.tables.todos.get('rec'))!;
-		expect(created.sha256).toEqual(receipt.sha256);
-		expect(created.issues).toEqual([]);
-		// A snapshot is the capture and its reading: no attachment, no sibling.
-		expect(Object.keys(created).sort()).toEqual([
-			'body',
-			'fields',
-			'issues',
-			'parseError',
-			'path',
-			'sha256',
-			'stem',
-			'text',
-		]);
+		expect(created).toEqual(receipt);
+		// A stored row is the capture and its row: no attachment, no sibling.
+		expect(Object.keys(created).sort()).toEqual(['path', 'row', 'sha256']);
 		// Two siblings are not an ambiguity; the listed row is as valid as it was.
 		const listed = expectOk(await folder.tables.todos.list());
 		expect(listed.map((item) => expectOk(item.result))).toEqual([created]);
 
-		expectOk(
-			await folder.tables.todos.rename('rec', 'rec2', {
-				expectedSha256: created.sha256,
-			}),
-		);
+		const renamed = expectOk(await folder.tables.todos.rename(created, 'rec2'));
 		expect(expectOk(await folder.files.children('todos')).files).toEqual([
 			'rec.flac',
 			'rec.opus',
@@ -336,11 +304,7 @@ describe('browser folder tables', () => {
 		const changedAudio = expectOk(
 			await folder.files.replace(movedAudio, 'rewritten'),
 		);
-		expectOk(
-			await folder.tables.todos.delete('rec2', {
-				expectedSha256: created.sha256,
-			}),
-		);
+		expectOk(await folder.tables.todos.delete(renamed));
 		expect(expectOk(await folder.files.children('todos')).files).toEqual([
 			'rec.flac',
 			'rec.wav',
@@ -358,8 +322,8 @@ describe('browser folder tables', () => {
 			),
 		);
 		expect(expectOk(await folder.tables.todos.get('rec.take'))).toMatchObject({
-			parseError: undefined,
-			issues: [],
+			path: 'todos/rec.take.md',
+			row: { fields: { title: 'T', done: false }, body: '' },
 		});
 	});
 
@@ -415,78 +379,67 @@ describe('browser folder tables', () => {
 			// The schema is the whole check: a nonempty string, existing or not.
 			expect(
 				expectErr(
-					await todos.create({
-						stem: 'empty',
-						fields: { title: 'T', list: '' },
-					}),
+					await todos.create(
+						{ fields: { title: 'T', list: '' }, body: '' },
+						{ stem: 'empty' },
+					),
 				).name,
 			).toBe('InvalidValues');
 			expectOk(
-				await todos.create({
-					stem: 'dangling',
-					fields: { title: 'T', list: 'no-such-list' },
-				}),
+				await todos.create(
+					{ fields: { title: 'T', list: 'no-such-list' }, body: '' },
+					{ stem: 'dangling' },
+				),
 			);
 			const home = expectOk(
-				await lists.create({ stem: 'home', fields: { title: 'Home' } }),
+				await lists.create(
+					{ fields: { title: 'Home' }, body: '' },
+					{ stem: 'home' },
+				),
 			);
 			expectOk(
-				await todos.create({
-					stem: 'milk',
-					fields: { title: 'M', list: 'home' },
-				}),
+				await todos.create(
+					{ fields: { title: 'M', list: 'home' }, body: '' },
+					{ stem: 'milk' },
+				),
 			);
 
 			// Renaming the row a reference names rewrites nothing that names it.
-			expectOk(
-				await lists.rename('home', 'house', { expectedSha256: home.sha256 }),
-			);
+			expectOk(await lists.rename(home, 'house'));
 			for (const [stem, list] of [
 				['milk', 'home'],
 				['dangling', 'no-such-list'],
 			] as const) {
-				const row = expectOk(await todos.get(stem));
-				expect(row).toMatchObject({ fields: { list }, issues: [] });
+				const stored = expectOk(await todos.get(stem));
+				expect(stored).toMatchObject({ row: { fields: { list } } });
 			}
 		} finally {
 			await folder.close();
 		}
 	});
 
-	test('a todo with an unresolvable alias stays a snapshot and is repaired through its source', async () => {
+	test('a todo with an unresolvable alias is an InvalidRow, repaired by replacing its captured bytes', async () => {
 		const folder = await open({ commitOnEdit: false });
 		const source = '---\ntitle: *missing\ndone: false\n---\nNotes stay.\n';
 		await folder.files.create('todos/alias.md', source);
 		const listed = expectOk(await folder.tables.todos.list());
 		expect(listed).toHaveLength(1);
-		const entry = expectOk(listed[0]!.result);
-		expect(entry.text).toBe(source);
-		// The source is the repair baseline; a failed parse recovers no body.
-		expect(entry.parseError?.diagnostics[0].message).toContain(
-			'Unresolved alias',
-		);
-		expect(entry.body).toBeUndefined();
-
-		// A structured edit, as the editor's title field makes, is refused safely.
-		for (const change of [{ fields: { title: 'Fixed' } }, { body: 'New.\n' }])
-			expect(
-				expectErr(await folder.tables.todos.update(entry.stem, change, {}))
-					.name,
-			).toBe('Unparsed');
-		expect((await folder.tables.todos.get('alias')).data!.text).toBe(source);
+		const invalid = expectErr(listed[0]!.result);
+		if (invalid.name !== 'InvalidRow') throw new Error(invalid.message);
+		// The exact text is the repair baseline.
+		expect(invalid.text).toBe(source);
+		expect(invalid.issues[0].message).toContain('alias');
 
 		const repaired = expectOk(
-			await folder.tables.todos.replace(
-				entry.stem,
-				source.replace('*missing', 'Fixed'),
-				{ expectedSha256: entry.sha256 },
-			),
+			await folder.tables.todos.replace(invalid, {
+				fields: { title: 'Fixed', done: false },
+				body: 'Notes stay.\n',
+			}),
 		);
-		expect(inspectRow(definition.tables.todos, repaired.text)).toMatchObject({
+		expect(expectOk(await folder.tables.todos.get('alias'))).toEqual(repaired);
+		expect(repaired.row).toEqual({
 			fields: { title: 'Fixed', done: false },
 			body: 'Notes stay.\n',
-			parseError: undefined,
-			issues: [],
 		});
 	});
 
@@ -509,10 +462,10 @@ describe('browser folder tables', () => {
 describe('browser folder persistence and history', () => {
 	test('files, directories, and history survive reopening the folder', async () => {
 		const first = await open();
-		await first.tables.todos.create({
-			stem: 'kept',
-			fields: { title: 'Kept', done: false },
-		});
+		await first.tables.todos.create(
+			{ fields: { title: 'Kept', done: false }, body: '' },
+			{ stem: 'kept' },
+		);
 		await first.files.mkdir('empty/dir');
 		await settled(first);
 		const head = first.git.snapshot.lastCommit;
@@ -520,21 +473,21 @@ describe('browser folder persistence and history', () => {
 		await first.close();
 
 		const second = await open();
-		expect(expectOk(await second.tables.todos.get('kept'))?.fields.title).toBe(
-			'Kept',
-		);
+		expect(
+			expectOk(await second.tables.todos.get('kept'))?.row.fields.title,
+		).toBe('Kept');
 		expect((await second.files.children('empty')).data!.directories).toEqual([
 			'dir',
 		]);
-		const { data: commits, error: logError } = await second.git.log(10);
-		expect(logError).toBeNull();
-		expect(commits!.map((commit) => commit.message)).toEqual([
+		const commits = expectOk(await second.git.log(10));
+
+		expect(commits.map((commit) => commit.message)).toEqual([
 			'Add todos/kept.md\n',
 			'Add definition.json\n',
 		]);
-		const { data: status, error: statusError } = await second.git.status();
-		expect(statusError).toBeNull();
-		expect(status!.changes).toEqual([]);
+		const status = expectOk(await second.git.status());
+
+		expect(status.changes).toEqual([]);
 	});
 
 	test('file create, move, and remove request automatic history', async () => {
@@ -572,7 +525,10 @@ describe('browser folder persistence and history', () => {
 			),
 		);
 		expect(conflict.name).toBe('Conflict');
-		expect(folder.git.snapshot.lastCommit).toMatchObject({ status: 'committed', message: 'Add definition.json' });
+		expect(folder.git.snapshot.lastCommit).toMatchObject({
+			status: 'committed',
+			message: 'Add definition.json',
+		});
 		expect(folder.git.snapshot.activity.commit).toEqual({ active: false });
 	});
 
@@ -621,10 +577,10 @@ describe('browser folder persistence and history', () => {
 
 	test('commitOnEdit false suppresses implicit commits; commitAndPush still commits', async () => {
 		const folder = await open({ commitOnEdit: false });
-		await folder.tables.todos.create({
-			stem: 'manual',
-			fields: { title: 'M', done: false },
-		});
+		await folder.tables.todos.create(
+			{ fields: { title: 'M', done: false }, body: '' },
+			{ stem: 'manual' },
+		);
 		expectOk(await folder.files.create('manual.txt', 'x'));
 		expectOk(await folder.kv.create({}));
 		await Bun.sleep(20);
@@ -658,10 +614,10 @@ describe('browser folder persistence and history', () => {
 					},
 				}),
 			);
-			await folder.tables.todos.create({
-				stem: 'a',
-				fields: { title: 'A', done: false },
-			});
+			await folder.tables.todos.create(
+				{ fields: { title: 'A', done: false }, body: '' },
+				{ stem: 'a' },
+			);
 			await settled(folder);
 			expect(requests).toBe(0);
 			const pushing = folder.git.push();
@@ -669,11 +625,13 @@ describe('browser folder persistence and history', () => {
 				await Bun.sleep(5);
 			expect(folder.git.snapshot.activity.push.active).toBe(true);
 
-			const { error: saveError } = await folder.tables.todos.create({
-				stem: 'b',
-				fields: { title: 'B', done: false },
-			});
-			expect(saveError).toBeNull();
+			expectOk(
+				await folder.tables.todos.create(
+					{ fields: { title: 'B', done: false }, body: '' },
+					{ stem: 'b' },
+				),
+			);
+
 			for (let index = 0; index < 200; index++) {
 				if (!folder.git.snapshot.activity.commit.active) break;
 				await Bun.sleep(5);
@@ -690,7 +648,7 @@ describe('browser folder persistence and history', () => {
 			expect(folder.git.snapshot.lastPush?.status).toBe('cancelled');
 			expect(folder.git.snapshot.activity.push).toEqual({ active: false });
 			expect(requests).toBe(1);
-			expect((await folder.tables.todos.list()).error?.name).toBe('Closed');
+			expect(expectErr(await folder.tables.todos.list()).name).toBe('Closed');
 		} finally {
 			globalThis.fetch = originalFetch;
 		}
@@ -782,14 +740,14 @@ describe('browser terminal', () => {
 	test('shell reads and writes the same files; git staging semantics are real', async () => {
 		const folder = await open({ commitOnEdit: false });
 		const terminal = folder.terminal();
-		await folder.tables.todos.create({
-			stem: 'one',
-			fields: { title: 'One', done: false },
-		});
+		await folder.tables.todos.create(
+			{ fields: { title: 'One', done: false }, body: '' },
+			{ stem: 'one' },
+		);
 
 		expect((await terminal.exec('ls todos')).stdout).toBe('one.md\n');
 		expect((await terminal.exec('cat todos/one.md')).stdout).toContain(
-			'title: One',
+			'"title": "One"',
 		);
 		const wrote = await terminal.exec(
 			'echo "shell note" > notes.txt && mkdir -p a/b && ls',
@@ -805,10 +763,14 @@ describe('browser terminal', () => {
 		expect(folder.git.snapshot.lastCommit).toBeUndefined();
 
 		let status = await terminal.exec('git status');
-		expect(status.stdout).toBe('## main\n?? definition.json\n?? notes.txt\n?? todos/one.md\n');
+		expect(status.stdout).toBe(
+			'## main\n?? definition.json\n?? notes.txt\n?? todos/one.md\n',
+		);
 		expect((await terminal.exec('git add notes.txt')).exitCode).toBe(0);
 		status = await terminal.exec('git status');
-		expect(status.stdout).toBe('## main\n?? definition.json\nA  notes.txt\n?? todos/one.md\n');
+		expect(status.stdout).toBe(
+			'## main\n?? definition.json\nA  notes.txt\n?? todos/one.md\n',
+		);
 		const committed = await terminal.exec('git commit -m "Add a shell note"');
 		expect(committed.exitCode).toBe(0);
 		expect(committed.stdout).toMatch(
@@ -821,11 +783,15 @@ describe('browser terminal', () => {
 		});
 		status = await terminal.exec('git status');
 		expect(status.stderr).toBe('');
-		expect(status.stdout).toBe('## main\n?? definition.json\n?? todos/one.md\n');
+		expect(status.stdout).toBe(
+			'## main\n?? definition.json\n?? todos/one.md\n',
+		);
 
 		await terminal.exec('echo "more" >> notes.txt');
 		status = await terminal.exec('git status --short');
-		expect(status.stdout).toBe('## main\n?? definition.json\n M notes.txt\n?? todos/one.md\n');
+		expect(status.stdout).toBe(
+			'## main\n?? definition.json\n M notes.txt\n?? todos/one.md\n',
+		);
 		const diff = await terminal.exec('git diff');
 		expect(diff.stdout).toContain('+more');
 		expect(diff.stdout).toContain('diff --git a/notes.txt b/notes.txt');

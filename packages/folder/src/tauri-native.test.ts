@@ -22,7 +22,9 @@
  * - Two windows saving over one version: one lands, one conflicts
  * - A save the shell receives after a later save of its page landed on the
  *   same path lands over it and stays, whether it was late in transit or
- *   still hashing, through any handle of the page or a row editor
+ *   still hashing, through any handle of the page
+ * - A guarded table replace still hashing when a raw save lands is refused
+ *   as an exact-sha256 conflict, and the raw save stays
  * - A row another window changed after a table's directory read is still an
  *   exact-sha256 conflict
  * - A terminal command holds nothing: another window saves, and runs a whole
@@ -47,10 +49,10 @@
 import { afterEach, describe, expect, mock, spyOn, test } from 'bun:test';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { existsSync } from 'node:fs';
-import { realpath, rm, writeFile, readFile } from 'node:fs/promises';
+import { readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import type { FileSink } from 'bun';
 import { exportSchema } from '@epicenter/definition';
+import type { FileSink } from 'bun';
 import { expectErr, expectOk } from 'wellcrafted/testing';
 import { hashBytes } from './capture.js';
 import { defineFolder, defineTable, field } from './contract.js';
@@ -400,20 +402,23 @@ class HeldRemote {
 	}
 }
 
-const row = (stem: string) => ({
-	stem,
-	fields: { title: stem, done: false },
-});
+/** `create` arguments for a valid row at `stem`. */
+const row = (stem: string) =>
+	[{ fields: { title: stem, done: false }, body: '' }, { stem }] as const;
 const IMAGE = new Uint8Array([1, 2, 3]);
 
 describe.skipIf(!enabled)('tauri folder against the native owner', () => {
 	test('opening publishes root discovery JSON and identical reopening creates no additional native commit', async () => {
 		const { root, settled } = await setup();
-		expect(await readFile(join(root, 'definition.json'), 'utf8')).toBe(expectOk(exportSchema(definition)));
+		expect(await readFile(join(root, 'definition.json'), 'utf8')).toBe(
+			expectOk(exportSchema(definition)),
+		);
 		await settled();
 		const before = await git(root, 'rev-parse', 'HEAD');
 		expect(await git(root, 'rev-list', '--count', 'HEAD')).toBe('1');
-		const reopened = expectOk(await a(() => openFolder({ id: 'notes', definition })));
+		const reopened = expectOk(
+			await a(() => openFolder({ id: 'notes', definition })),
+		);
 		await settled();
 		expect(await git(root, 'rev-parse', 'HEAD')).toBe(before);
 		expect(await git(root, 'status', '--porcelain')).toBe('');
@@ -422,14 +427,28 @@ describe.skipIf(!enabled)('tauri folder against the native owner', () => {
 
 	test('manual native opening replaces the previous description without committing or changing saved row bytes', async () => {
 		const { root, folder } = await setup({ manual: true });
-		expectOk(await a(() => folder.tables.todos.create(row('kept'))));
+		expectOk(await a(() => folder.tables.todos.create(...row('kept'))));
 		const before = await readFile(join(root, 'todos/kept.md'), 'utf8');
-		expectOk(await a(() => folder.files.overwrite('definition.json', 'manual description')));
-		const changed = defineFolder({ ...definition, title: 'Changed declaration' });
-		const reopened = expectOk(await a(() => openFolder({ id: 'notes', definition: changed })));
-		expect(await readFile(join(root, 'definition.json'), 'utf8')).toBe(expectOk(exportSchema(changed)));
+		expectOk(
+			await a(() =>
+				folder.files.overwrite('definition.json', 'manual description'),
+			),
+		);
+		const changed = defineFolder({
+			...definition,
+			title: 'Changed declaration',
+		});
+		const reopened = expectOk(
+			await a(() => openFolder({ id: 'notes', definition: changed })),
+		);
+		expect(await readFile(join(root, 'definition.json'), 'utf8')).toBe(
+			expectOk(exportSchema(changed)),
+		);
 		expect(await readFile(join(root, 'todos/kept.md'), 'utf8')).toBe(before);
-		expect(await a(() => reopened.git.log(10))).toEqual({ data: [], error: null });
+		expect(await a(() => reopened.git.log(10))).toEqual({
+			data: [],
+			error: null,
+		});
 		await a(() => reopened.close());
 	});
 
@@ -509,7 +528,7 @@ describe.skipIf(!enabled)('tauri folder against the native owner', () => {
 			await a(() => folder.files.create('todos/take.png', IMAGE)),
 		);
 		await settled();
-		const created = expectOk(await a(() => todos.create(row('take'))));
+		const created = expectOk(await a(() => todos.create(...row('take'))));
 		await settled();
 
 		expect(await git(root, 'log', '--format=%s')).toBe(
@@ -530,11 +549,7 @@ describe.skipIf(!enabled)('tauri folder against the native owner', () => {
 		expect(image.sha256).toEqual(await hashBytes(IMAGE));
 
 		// Deleting the row leaves the image: the owner removes one file.
-		expectOk(
-			await a(() =>
-				todos.delete(reread.stem, { expectedSha256: reread.sha256 }),
-			),
-		);
+		expectOk(await a(() => todos.delete(reread)));
 		expect(
 			expectOk(await a(() => folder.files.children('todos'))).files,
 		).toEqual(['take.png']);
@@ -622,17 +637,13 @@ describe.skipIf(!enabled)('tauri folder against the native owner', () => {
 	test('a row another window changed after the directory read is an exact-sha256 conflict', async () => {
 		const { folder, todos, interleave, files } = await setup({ manual: true });
 		expectOk(await a(() => folder.files.create('todos/take.png', IMAGE)));
-		const entry = expectOk(await a(() => todos.create(row('take'))));
+		const entry = expectOk(await a(() => todos.create(...row('take'))));
 		const changed = '---\ntitle: Changed\ndone: true\n---\n';
 		interleave('todos/take.md', changed);
 
 		// A rename reads the directory for its destination check, then moves
 		// the row under the sha256 the entry captured.
-		const refused = expectErr(
-			await a(() =>
-				todos.rename('take', 'next', { expectedSha256: entry.sha256 }),
-			),
-		);
+		const refused = expectErr(await a(() => todos.rename(entry, 'next')));
 
 		expect(refused.name).toBe('Conflict');
 		if (refused.name !== 'Conflict') return;
@@ -663,7 +674,9 @@ describe.skipIf(!enabled)('tauri folder against the native owner', () => {
 		// and a whole terminal command of B's own runs to its end.
 		expectOk(await b(() => other.files.create('from-b.md', 'did not wait')));
 		await settled();
-		expect(await git(root, 'log', '--format=%s')).toBe('Add from-b.md\nAdd definition.json');
+		expect(await git(root, 'log', '--format=%s')).toBe(
+			'Add from-b.md\nAdd definition.json',
+		);
 		const theirs = await b(() =>
 			other.terminal().exec('echo "b ran" > b.md && cat b.md'),
 		);
@@ -792,7 +805,9 @@ describe.skipIf(!enabled)('tauri folder against the native owner', () => {
 			// each save on its own, and explicit Git work runs.
 			expectOk(await b(() => other.files.create('from-b.md', 'did not wait')));
 			await settled();
-			expect(await git(root, 'log', '--format=%s')).toBe('Add from-b.md\nAdd definition.json');
+			expect(await git(root, 'log', '--format=%s')).toBe(
+				'Add from-b.md\nAdd definition.json',
+			);
 			expectOk(await a(() => folder.files.create('from-a.md', 'nor did this')));
 			await settled();
 			expect((await git(root, 'log', '--format=%s')).split('\n')[0]).toBe(
@@ -977,28 +992,31 @@ describe.skipIf(!enabled)('tauri folder against the native owner', () => {
 		await a(() => second.close());
 	});
 
-	test("a row editor's write still hashing when a raw save lands, lands after it and saves", async () => {
+	test('a table replace still hashing when a raw save lands is refused, and the raw save stays', async () => {
 		const { folder, other } = await setup({ manual: true });
 		const created = expectOk(
 			await a(() =>
-				folder.tables.todos.create({
-					stem: 'plan',
-					fields: { title: 'Plan', done: false },
-				}),
+				folder.tables.todos.create(
+					{ fields: { title: 'Plan', done: false }, body: '' },
+					{ stem: 'plan' },
+				),
 			),
 		);
-		const editor = expectOk(
-			await a(() => folder.tables.todos.edit(created.stem)),
-		);
-		const edited = '---\n"title": "Edited"\n"done": false\n---\n';
 		const digest = holdNextDigest();
-		await a(async () => editor.setText(edited));
+		const replacing = a(() =>
+			folder.tables.todos.replace(created, {
+				fields: { title: 'Edited', done: false },
+				body: '',
+			}),
+		);
 		await digest.reached;
 		expectOk(await a(() => folder.files.overwrite(created.path, 'raw')));
 		digest.release();
-		expectOk(await a(() => editor.waitForSaves()));
+		// The replace names the bytes it captured, which the raw save replaced.
+		const refused = expectErr(await replacing);
+		expect(refused.name).toBe('Conflict');
 		const current = expectOk(await b(() => other.files.read(created.path)));
-		expect(decoder.decode(current.bytes)).toBe(edited);
+		expect(decoder.decode(current.bytes)).toBe('raw');
 	});
 
 	test('an apply delivered after detach returns the owner refusal without writing or replay', async () => {
@@ -1057,7 +1075,9 @@ describe.skipIf(!enabled)('tauri folder against the native owner', () => {
 		// The owner finished that save's commit without the page, and window B
 		// carries on.
 		expectOk(await b(() => other.git.paths()));
-		expect(await git(root, 'log', '--format=%s')).toBe('Add one.md\nAdd definition.json');
+		expect(await git(root, 'log', '--format=%s')).toBe(
+			'Add one.md\nAdd definition.json',
+		);
 		expectOk(await b(() => other.files.create('after.md', 'b carries on')));
 		expectOk(await b(() => other.git.paths()));
 		expect(await git(root, 'ls-tree', '-r', '--name-only', 'HEAD')).toBe(
@@ -1087,7 +1107,9 @@ describe.skipIf(!enabled)('tauri folder against the native owner', () => {
 		// Window B waits on the owner's Git lock: the admitted commit finished
 		// without the page that saved. Closing committed nothing itself.
 		expectOk(await b(() => other.git.paths()));
-		expect(await git(root, 'log', '--format=%s')).toBe('Add last.md\nAdd definition.json');
+		expect(await git(root, 'log', '--format=%s')).toBe(
+			'Add last.md\nAdd definition.json',
+		);
 
 		expectOk(
 			await b(() => other.files.create('after.md', 'window b carries on')),

@@ -39,8 +39,8 @@ import {
 	defineFolder,
 	defineTable,
 	field,
-	inspectRow,
-	serializeRow,
+	formatRow,
+	parseRow,
 } from './contract.js';
 import { prepareFolderDefinition } from './definition.js';
 import { installWebLocks } from './web-locks.test-support.js';
@@ -75,6 +75,8 @@ async function open<
 	closers.push(() => folder.close());
 	return folder;
 }
+
+const text = (bytes: Uint8Array) => new TextDecoder().decode(bytes);
 
 const paths = async (folder: Pick<Awaited<ReturnType<typeof open>>, 'files'>) =>
 	expectOk(await folder.files.list()).files.map((file) => file.path);
@@ -169,20 +171,25 @@ test('one prepared definition opens two folders that stay apart, and another def
 	expect(personal.location).toEqual(locationOf('so.epicenter.todos'));
 	expect(work.location).toEqual(locationOf('so.epicenter.todos.work'));
 
-	const made = expectOk(
-		await personal.tables.todos.create({
-			stem: 'milk',
-			fields: { title: 'Milk', done: false },
-		}),
+	expectOk(
+		await personal.tables.todos.create(
+			{ fields: { title: 'Milk', done: false }, body: '' },
+			{ stem: 'milk' },
+		),
 	);
+	const made = text(expectOk(await personal.files.read('todos/milk.md')).bytes);
 	expectOk(await personal.kv.create({ theme: 'dark' }));
 	expectOk(
-		await work.tables.todos.create({
-			stem: 'report',
-			fields: { title: 'Report', done: false },
-		}),
+		await work.tables.todos.create(
+			{ fields: { title: 'Report', done: false }, body: '' },
+			{ stem: 'report' },
+		),
 	);
-	expect(await paths(personal)).toEqual(['definition.json', 'kv.json', 'todos/milk.md']);
+	expect(await paths(personal)).toEqual([
+		'definition.json',
+		'kv.json',
+		'todos/milk.md',
+	]);
 	expect(await paths(work)).toEqual(['definition.json', 'todos/report.md']);
 	expect(expectOk(await work.tables.todos.get('milk'))).toBeUndefined();
 	expect(expectOk(await work.kv.get())).toBeUndefined();
@@ -194,24 +201,21 @@ test('one prepared definition opens two folders that stay apart, and another def
 		tables: { todos: defineTable({ fields: { title: field.string() } }) },
 	});
 	const reopened = await open(titles, { id: 'so.epicenter.todos', storage });
-	expect(expectOk(await reopened.tables.todos.get('milk'))?.fields).toEqual({
-		title: 'Milk',
-	});
-	const renamed = expectOk(
-		await reopened.tables.todos.update(
-			'milk',
-			{
-				fields: { title: 'Oat milk' },
-			},
-			{},
-		),
+	const milk = expectOk(await reopened.tables.todos.get('milk'))!;
+	// Keys the narrower definition does not declare are still on the row.
+	expect<object>(milk.row.fields).toEqual({ title: 'Milk', done: false });
+	expectOk(
+		await reopened.tables.todos.replace(milk, {
+			...milk.row,
+			fields: { ...milk.row.fields, title: 'Oat milk' },
+		}),
 	);
-	expect(renamed.text).toBe(made.text.replace('Milk', 'Oat milk'));
-	expect(
-		new TextDecoder().decode(
-			expectOk(await reopened.files.read('kv.json')).bytes,
-		),
-	).toContain('"theme"');
+	expect(text(expectOk(await reopened.files.read('todos/milk.md')).bytes)).toBe(
+		made.replace('Milk', 'Oat milk'),
+	);
+	expect(text(expectOk(await reopened.files.read('kv.json')).bytes)).toContain(
+		'"theme"',
+	);
 });
 
 test('tables named like Object.prototype members, and one table under two names, each keep their own directory', async () => {
@@ -229,20 +233,23 @@ test('tables named like Object.prototype members, and one table under two names,
 	]);
 
 	const made = expectOk(
-		await folder.tables.constructor.create({
-			stem: 'a',
-			fields: { title: 'Made' },
-		}),
+		await folder.tables.constructor.create(
+			{ fields: { title: 'Made' }, body: '' },
+			{ stem: 'a' },
+		),
 	);
 	expect(made.path).toBe('constructor/a.md');
 	expectOk(
-		await folder.tables.toString.create({
-			stem: 'b',
-			fields: { title: 'Text' },
-		}),
+		await folder.tables.toString.create(
+			{ fields: { title: 'Text' }, body: '' },
+			{ stem: 'b' },
+		),
 	);
 	expectOk(
-		await folder.tables.notes.create({ stem: 'b', fields: { title: 'Note' } }),
+		await folder.tables.notes.create(
+			{ fields: { title: 'Note' }, body: '' },
+			{ stem: 'b' },
+		),
 	);
 	expect((await paths(folder)).sort()).toEqual([
 		'constructor/a.md',
@@ -251,22 +258,22 @@ test('tables named like Object.prototype members, and one table under two names,
 		'toString/b.md',
 	]);
 	// The same stem in two tables is two rows, each read by its own table.
-	expect(expectOk(await folder.tables.toString.get('b'))?.fields).toEqual({
+	expect(expectOk(await folder.tables.toString.get('b'))?.row.fields).toEqual({
 		title: 'Text',
 	});
-	expect(expectOk(await folder.tables.notes.get('b'))?.fields).toEqual({
+	expect(expectOk(await folder.tables.notes.get('b'))?.row.fields).toEqual({
 		title: 'Note',
 	});
 	expect(expectOk(await folder.tables.constructor.get('b'))).toBeUndefined();
 	expect(
-		expectOk(await folder.tables.constructor.list()).map((entry) => entry.path),
-	).toEqual(['constructor/a.md']);
+		expectOk(await folder.tables.constructor.list()).map((entry) => entry.stem),
+	).toEqual(['a']);
 	// Each name checks its own rows.
 	const refused = expectErr(
-		await folder.tables.toString.create({
-			stem: 'c',
-			fields: { title: 7 as never },
-		}),
+		await folder.tables.toString.create(
+			{ fields: { title: 7 as never }, body: '' },
+			{ stem: 'c' },
+		),
 	);
 	expect(refused.name).toBe('InvalidValues');
 
@@ -295,22 +302,14 @@ test('a schema edited after defineFolder changes nothing the folder accepts, and
 
 	const older = await open(first);
 	const newer = await open(second);
-	const fields = { title: 'Longer' };
+	const row = { fields: { title: 'Longer' }, body: '' };
 	expect(
-		expectErr(await older.tables.todos.create({ stem: 'a', fields })).name,
+		expectErr(await older.tables.todos.create(row, { stem: 'a' })).name,
 	).toBe('InvalidValues');
-	expect(
-		inspectRow(
-			second.tables.todos,
-			expectOk(await newer.tables.todos.create({ stem: 'a', fields })).text,
-		).fields,
-	).toEqual(fields);
-	expect(
-		inspectRow(first.tables.todos, '---\ntitle: Longer\n---\n').issues,
-	).toHaveLength(1);
-	expect(
-		inspectRow(second.tables.todos, '---\ntitle: Longer\n---\n').issues,
-	).toEqual([]);
+	const made = expectOk(await newer.tables.todos.create(row, { stem: 'a' }));
+	const saved = text(expectOk(await newer.files.read(made.path)).bytes);
+	expect(expectOk(parseRow(second.tables.todos, saved))).toEqual(row);
+	expect(expectErr(parseRow(first.tables.todos, saved))).toHaveLength(1);
 });
 
 test('a prepared table rebuilt with a cloned field still type-checks, and reading a value through that field throws until defineFolder prepares it again', () => {
@@ -326,7 +325,7 @@ test('a prepared table rebuilt with a cloned field still type-checks, and readin
 	const text = '---\ntitle: Milk\ndone: false\n---\n';
 
 	// A spread that keeps the prepared field objects reads as the table does.
-	expect(inspectRow({ ...prepared }, text)).toEqual(inspectRow(prepared, text));
+	expect(parseRow({ ...prepared }, text)).toEqual(parseRow(prepared, text));
 
 	// The prepared-table mark survives the spread, so the compiler accepts a
 	// rebuilt table; the clone is an object no preparation ever saw.
@@ -334,25 +333,27 @@ test('a prepared table rebuilt with a cloned field still type-checks, and readin
 		...prepared,
 		fields: { ...prepared.fields, title: { ...prepared.fields.title } },
 	};
-	// A value the cloned field never has to read passes unchecked.
-	expect(inspectRow(rebuilt, '---\ndone: false\n---\n').fields).toEqual({
-		done: false,
-	});
-	// Once one appears, the read is refused as a programmer error, not an issue.
-	expect(() => inspectRow(rebuilt, text)).toThrow(
-		'This schema was not prepared',
-	);
-	// A preview checks no value, so it writes the text without noticing.
+	// A missing value is reported without the cloned field ever reading one.
 	expect(
-		expectOk(serializeRow(rebuilt, { fields: { title: 'Milk', done: false } })),
-	).toBe(text);
+		expectErr(parseRow(rebuilt, '---\ndone: false\n---\n')).map(
+			(issue) => issue.field,
+		),
+	).toEqual(['title']);
+	// Once one appears, the read is refused as a programmer error, not an issue.
+	expect(() => parseRow(rebuilt, text)).toThrow('This schema was not prepared');
+	// Formatting checks no value, so it writes the text without noticing.
+	expect(
+		expectOk(
+			formatRow(rebuilt, { fields: { title: 'Milk', done: false }, body: '' }),
+		),
+	).toBe('---\n"title": "Milk"\n"done": false\n---\n');
 
 	// Preparing the rebuilt declaration again is the remedy.
 	const again = defineFolder({
 		kv: {},
 		tables: { todos: defineTable({ fields: rebuilt.fields }) },
 	});
-	expect(inspectRow(again.tables.todos, text).fields).toEqual({
+	expect(expectOk(parseRow(again.tables.todos, text)).fields).toEqual({
 		title: 'Milk',
 		done: false,
 	});

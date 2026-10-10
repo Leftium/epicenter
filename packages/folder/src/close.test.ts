@@ -60,10 +60,10 @@ test('browser helpers still preparing when close starts are refused without writ
 	const folder = await open();
 	while (folder.git.snapshot.activity.commit.active) await Bun.sleep(5);
 	const saving = folder.files.create('note.md', 'preparing');
-	const row = folder.tables.todos.create({
-		stem: 'last',
-		fields: { title: 'Last' },
-	});
+	const row = folder.tables.todos.create(
+		{ fields: { title: 'Last' }, body: '' },
+		{ stem: 'last' },
+	);
 	await folder.close();
 	for (const pending of [saving, row])
 		expect(expectErr(await pending).name).toBe('Closed');
@@ -71,9 +71,14 @@ test('browser helpers still preparing when close starts are refused without writ
 		'Closed',
 	);
 	expect(folder.git.snapshot.closed).toBe(true);
-	expect(folder.git.snapshot.lastCommit).toMatchObject({ status: 'committed', message: 'Add definition.json' });
+	expect(folder.git.snapshot.lastCommit).toMatchObject({
+		status: 'committed',
+		message: 'Add definition.json',
+	});
 	const reopened = await open();
-	expect(expectOk(await reopened.files.list()).files.map((file) => file.path)).toEqual(['definition.json']);
+	expect(
+		expectOk(await reopened.files.list()).files.map((file) => file.path),
+	).toEqual(['definition.json']);
 	await reopened.close();
 });
 
@@ -279,10 +284,10 @@ test('a helper between its directory read and publication is fenced without hold
 	release();
 	const { promise: holding, resolve: letGo } = Promise.withResolvers<void>();
 	rows.hold = holding;
-	const saving = folder.tables.todos.create({
-		stem: 'a',
-		fields: { title: 'Preparing' },
-	});
+	const saving = folder.tables.todos.create(
+		{ fields: { title: 'Preparing' }, body: '' },
+		{ stem: 'a' },
+	);
 	await rows.listing.promise;
 	await folder.close();
 	expect(order).toEqual(['released']);

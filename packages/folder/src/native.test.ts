@@ -21,7 +21,6 @@ import {
 	type Folder,
 	type FolderDefinition,
 	field,
-	inspectRow,
 	openFolder,
 } from './bun.js';
 import { hashBytes } from './capture.js';
@@ -116,44 +115,43 @@ describe('native folder', () => {
 			git: { author },
 		});
 		await settled(folder);
-		const { data: created, error: createError } =
-			await folder.tables.todos.create({
-				stem: 'walk',
-				fields: { title: 'Walk', done: false },
-				body: 'Around the block.\n',
-			});
-		expect(createError).toBeNull();
-		expect(await readFile(join(root, 'todos/walk.md'), 'utf8')).toBe(
-			created!.text,
+		expectOk(
+			await folder.tables.todos.create(
+				{ fields: { title: 'Walk', done: false }, body: 'Around the block.\n' },
+				{ stem: 'walk' },
+			),
+		);
+
+		const createdText = await readFile(join(root, 'todos/walk.md'), 'utf8');
+		expect(createdText).toBe(
+			'---\n"title": "Walk"\n"done": false\n---\nAround the block.\n',
 		);
 		await settled(folder);
-		expect(await git(root, 'log', '--format=%s')).toBe('Add todos/walk.md\nAdd definition.json');
+		expect(await git(root, 'log', '--format=%s')).toBe(
+			'Add todos/walk.md\nAdd definition.json',
+		);
 		expect(await git(root, 'status', '--porcelain')).toBe('');
 
 		// An external edit is preserved when a command updates current content.
 		await writeFile(
 			join(root, 'todos/walk.md'),
-			created!.text.replace('Walk', 'Run'),
+			createdText.replace('Walk', 'Run'),
 		);
 		const current = expectOk(await folder.tables.todos.get('walk'))!;
-		expect(current.fields.title).toBe('Run');
-		const { data: done, error: updateError } = await folder.tables.todos.update(
-			'walk',
-			{ fields: { done: true } },
-			{},
+		expect(current.row.fields.title).toBe('Run');
+		current.row.fields.done = true;
+		const done = expectOk(
+			await folder.tables.todos.replace(current, current.row),
 		);
-		expect(updateError).toBeNull();
-		expect(inspectRow(definition.tables.todos, done!.text).fields).toEqual({
-			title: 'Run',
-			done: true,
-		});
+
+		expect(done.row.fields).toEqual({ title: 'Run', done: true });
 		await settled(folder);
 		expect(await git(root, 'log', '-1', '--format=%s')).toBe(
 			'Update todos/walk.md',
 		);
 		expect(await git(root, 'status', '--porcelain')).toBe('');
 		expect(await git(root, 'show', 'HEAD:todos/walk.md')).toContain(
-			'done: true',
+			'"done": true',
 		);
 		await folder.close();
 	});
@@ -168,7 +166,10 @@ describe('native folder', () => {
 		try {
 			await settled(folder);
 			await writeFile(join(root, 'external.md'), 'external');
-			expect(folder.git.snapshot.lastCommit).toMatchObject({ status: 'committed', message: 'Add definition.json' });
+			expect(folder.git.snapshot.lastCommit).toMatchObject({
+				status: 'committed',
+				message: 'Add definition.json',
+			});
 			expect(folder.git.snapshot.activity.commit).toEqual({ active: false });
 			expectOk(await folder.files.create('saved.md', 'saved'));
 			await settled(folder);
@@ -249,7 +250,9 @@ describe('native folder', () => {
 			'todos/Plan.md',
 			'---\ntitle: P\ndone: false\n---\n',
 		);
-		expect((await folder.tables.todos.get('Plan')).data?.stem).toBe('Plan');
+		expect((await folder.tables.todos.get('Plan')).data?.path).toBe(
+			'todos/Plan.md',
+		);
 		expect((await folder.tables.todos.get('plan')).data).toBeUndefined();
 
 		// Creating the other spelling is this filesystem's question, not a
@@ -258,14 +261,12 @@ describe('native folder', () => {
 			() => true,
 			() => false,
 		);
-		const other = await folder.tables.todos.create({
-			stem: 'plan',
-			fields: { title: 'Q', done: false },
-		});
+		const other = await folder.tables.todos.create(
+			{ fields: { title: 'Q', done: false }, body: '' },
+			{ stem: 'plan' },
+		);
 		const plan = expectOk(await folder.tables.todos.get('Plan'))!;
-		const moved = await folder.tables.todos.rename('Plan', 'PLAN', {
-			expectedSha256: plan.sha256,
-		});
+		const moved = await folder.tables.todos.rename(plan, 'PLAN');
 		if (oneFile) {
 			expect(expectErr(other)).toMatchObject({
 				name: 'Exists',
@@ -274,7 +275,7 @@ describe('native folder', () => {
 			expect(expectErr(moved).name).toBe('Exists');
 			expect(await readdir(join(root, 'todos'))).toEqual(['Plan.md']);
 			expect(await readFile(join(root, 'todos/Plan.md'), 'utf8')).toBe(
-				plan.text,
+				'---\ntitle: P\ndone: false\n---\n',
 			);
 		} else {
 			expectOk(other);
@@ -297,33 +298,25 @@ describe('native folder', () => {
 		const stems = ['', '.hidden', 'trailing ', 'a: b', 'q?*'];
 		for (const stem of stems) {
 			const created = expectOk(
-				await folder.tables.todos.create({
-					stem,
-					fields: { title: stem, done: false },
-				}),
+				await folder.tables.todos.create(
+					{ fields: { title: stem, done: false }, body: '' },
+					{ stem },
+				),
 			);
-			expect(created.stem).toBe(stem);
-			expect(await readFile(join(root, 'todos', `${stem}.md`), 'utf8')).toBe(
-				created.text,
-			);
-			expect(expectOk(await folder.tables.todos.get(stem))).toEqual({
-				...created,
-				...inspectRow(definition.tables.todos, created.text),
-			});
+			expect(created.path).toBe(`todos/${stem}.md`);
+			const bytes = await readFile(join(root, 'todos', `${stem}.md`));
+			expect(await hashBytes(bytes)).toBe(created.sha256);
+			expect(expectOk(await folder.tables.todos.get(stem))).toEqual(created);
+			created.row.fields.done = true;
 			const updated = expectOk(
-				await folder.tables.todos.update(stem, { fields: { done: true } }, {}),
+				await folder.tables.todos.replace(created, created.row),
 			);
-			expect(inspectRow(definition.tables.todos, updated.text)).toMatchObject({
-				parseError: undefined,
-				issues: [],
-			});
+			expect(expectOk(await folder.tables.todos.get(stem))).toEqual(updated);
 		}
 		// An uppercase extension is an ordinary file, not a row.
 		await writeFile(join(root, 'todos/Loud.MD'), 'not a row');
 		const listing = expectOk(await folder.tables.todos.list());
-		expect(listing.map((item) => expectOk(item.result).stem).sort()).toEqual(
-			[...stems].sort(),
-		);
+		expect(listing.map((item) => item.stem).sort()).toEqual([...stems].sort());
 		expect(expectOk(await folder.tables.todos.get('Loud'))).toBeUndefined();
 
 		// Bytes that are not text fail that file alone.
@@ -331,15 +324,12 @@ describe('native folder', () => {
 		const withBinary = expectOk(await folder.tables.todos.list());
 		expect(withBinary).toHaveLength(stems.length + 1);
 		expect(
-			expectErr(
-				withBinary.find((item) => item.path === 'todos/binary.md')!.result,
-			).name,
+			expectErr(withBinary.find((item) => item.stem === 'binary')!.result).name,
 		).toBe('InvalidUtf8');
 
 		const empty = expectOk(await folder.tables.todos.get(''))!;
-		const guard = { expectedSha256: empty.sha256 };
-		expectOk(await folder.tables.todos.rename('', 'named', guard));
-		expectOk(await folder.tables.todos.delete('named', guard));
+		const named = expectOk(await folder.tables.todos.rename(empty, 'named'));
+		expectOk(await folder.tables.todos.delete(named));
 		expect(await readdir(join(root, 'todos'))).not.toContain('.md');
 		await folder.close();
 	});
@@ -355,17 +345,12 @@ describe('native folder', () => {
 		const audio = new Uint8Array([1, 2, 3]);
 		expectOk(await folder.files.create('todos/take.opus', audio));
 		const created = expectOk(
-			await folder.tables.todos.create({
-				stem: 'take',
-				fields: { title: 'Take', done: false },
-			}),
+			await folder.tables.todos.create(
+				{ fields: { title: 'Take', done: false }, body: '' },
+				{ stem: 'take' },
+			),
 		);
-		expect(inspectRow(definition.tables.todos, created.text)).toMatchObject({
-			parseError: undefined,
-			issues: [],
-		});
-
-		expectOk(await folder.tables.todos.rename('take', 'take2', {}));
+		const take2 = expectOk(await folder.tables.todos.rename(created, 'take2'));
 		expect((await readdir(join(root, 'todos'))).sort()).toEqual([
 			'take.opus',
 			'take2.md',
@@ -373,19 +358,11 @@ describe('native folder', () => {
 
 		// The audio disappears outside the app. The row does not depend on it.
 		await rm(join(root, 'todos/take.opus'));
-		expectOk(
-			await folder.tables.todos.rename('take2', 'take3', {
-				expectedSha256: created.sha256,
-			}),
-		);
+		const take3 = expectOk(await folder.tables.todos.rename(take2, 'take3'));
 		await writeFile(join(root, 'todos/take3.opus'), audio);
 		await writeFile(join(root, 'todos/take3.wav'), audio);
 
-		expectOk(
-			await folder.tables.todos.delete('take3', {
-				expectedSha256: created.sha256,
-			}),
-		);
+		expectOk(await folder.tables.todos.delete(take3));
 		expect((await readdir(join(root, 'todos'))).sort()).toEqual([
 			'take3.opus',
 			'take3.wav',
@@ -448,19 +425,18 @@ describe('native folder', () => {
 		});
 		await folder.files.create('a.txt', 'a\n');
 		await folder.files.create('b.txt', 'b\n');
-		expect((await folder.git.stage(['a.txt'])).error).toBeNull();
+		expectOk(await folder.git.stage(['a.txt']));
 		expect((await folder.git.paths()).data).toEqual([
 			{ path: 'a.txt', index: 'A', worktree: ' ' },
 			{ path: 'b.txt', index: '?', worktree: '?' },
 			{ path: 'definition.json', index: '?', worktree: '?' },
 		]);
-		const { error: commitError } =
-			await folder.git.commitStaged('Stage one file');
-		expect(commitError).toBeNull();
+		expectOk(await folder.git.commitStaged('Stage one file'));
+
 		expect(await git(root, 'log', '--format=%s%n%an')).toBe(
 			'Stage one file\nApp',
 		);
-		expect((await folder.git.commitStaged('again')).error?.name).toBe(
+		expect(expectErr(await folder.git.commitStaged('again')).name).toBe(
 			'NothingToCommit',
 		);
 		await folder.close();
@@ -604,10 +580,10 @@ describe('browser and native exchange through a real bare repository', () => {
 			}),
 		);
 		await settled(browser);
-		await browser.tables.todos.create({
-			stem: 'first',
-			fields: { title: 'First', done: false },
-		});
+		await browser.tables.todos.create(
+			{ fields: { title: 'First', done: false }, body: '' },
+			{ stem: 'first' },
+		);
 		await settled(browser);
 		expect(browser.git.snapshot.lastPush).toBeUndefined();
 		expect((await browser.git.push()).status).toBe('pushed');
@@ -628,20 +604,16 @@ describe('browser and native exchange through a real bare repository', () => {
 		expect((await native.git.fetch()).data?.oid).toBe(
 			await git(bare, 'rev-parse', 'main'),
 		);
-		const { data: pulled, error: pullError } =
-			await native.git.pullFastForward();
-		expect(pullError).toBeNull();
+		const pulled = expectOk(await native.git.pullFastForward());
+
 		expect(pulled?.status).toBe('upToDate');
 		expect(await git(nativeRoot, 'status', '--porcelain')).toBe('');
 		const nativeEntry = expectOk(await native.tables.todos.get('first'))!;
-		expect(nativeEntry.fields.title).toBe('First');
+		expect(nativeEntry.row.fields.title).toBe('First');
 
-		await native.tables.todos.update(
-			nativeEntry.stem,
-			{
-				fields: { done: true },
-			},
-			{},
+		nativeEntry.row.fields.done = true;
+		const nativeDone = expectOk(
+			await native.tables.todos.replace(nativeEntry, nativeEntry.row),
 		);
 		await settled(native);
 		expect(native.git.snapshot.lastPush).toBeUndefined();
@@ -650,24 +622,18 @@ describe('browser and native exchange through a real bare repository', () => {
 			'Update todos/first.md',
 		);
 
-		expect((await browser.git.fetch()).error).toBeNull();
-		const { data: incoming, error: incomingError } =
-			await browser.git.pullFastForward();
-		expect(incomingError).toBeNull();
+		expectOk(await browser.git.fetch());
+		const incoming = expectOk(await browser.git.pullFastForward());
+
 		expect(incoming?.status).toBe('fastForwarded');
 		const browserEntry = expectOk(await browser.tables.todos.get('first'))!;
-		expect(browserEntry.fields.done).toBe(true);
+		expect(browserEntry.row.fields.done).toBe(true);
 		expect((await browser.git.status()).data?.changes).toEqual([]);
 		expect((await browser.git.paths()).data).toEqual([]);
 
 		// A dirty folder refuses the next fast-forward before writing anything.
-		await native.tables.todos.update(
-			'first',
-			{
-				fields: { title: 'Native edit' },
-			},
-			{},
-		);
+		nativeDone.row.fields.title = 'Native edit';
+		expectOk(await native.tables.todos.replace(nativeDone, nativeDone.row));
 		await settled(native);
 		expect((await native.git.push()).status).toBe('pushed');
 		// Another writer publishes without a save request on this handle.
@@ -689,9 +655,9 @@ describe('browser and native exchange through a real bare repository', () => {
 		await browser.git.fetch();
 		const { error: dirtyError } = await browser.git.pullFastForward();
 		expect(dirtyError?.name).toBe('Dirty');
-		expect((await browser.tables.todos.get('first')).data!.fields.title).toBe(
-			'First',
-		);
+		expect(
+			(await browser.tables.todos.get('first')).data!.row.fields.title,
+		).toBe('First');
 
 		// Divergence: the browser commits locally; its push is rejected and pull refuses.
 		expect((await browser.git.commit()).status).toBe('committed');
@@ -703,9 +669,9 @@ describe('browser and native exchange through a real bare repository', () => {
 			);
 		const { error: divergedError } = await browser.git.pullFastForward();
 		expect(divergedError?.name).toBe('Diverged');
-		expect((await browser.tables.todos.get('first')).data!.fields.title).toBe(
-			'First',
-		);
+		expect(
+			(await browser.tables.todos.get('first')).data!.row.fields.title,
+		).toBe('First');
 
 		await browser.close();
 		await native.close();

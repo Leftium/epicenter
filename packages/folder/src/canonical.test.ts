@@ -1,7 +1,7 @@
 /**
  * Canonical Row Document Tests
  *
- * Counterexamples for the codec a row editor saves through. Each test names a
+ * Counterexamples for the codec every row is read and written through. Each test names a
  * way a canonical form could lose or invent data, and shows the codec either
  * keeps the data exactly or refuses.
  *
@@ -10,26 +10,28 @@
  * - Declared keys come first in declared order; unknown keys are kept, sorted
  * - Anything without an exact JSON value is refused, never converted lossily
  * - The body is kept byte for byte; schema validation is not the codec's job
- * - Public codecs compose with file publication and explicit restoration
+ * - An invalid row keeps its unknown and invalid fields: the table refuses to
+ *   save it, the file verbs save its canonical text guarded by the
+ *   `InvalidRow` capture, and only an explicit create restores a deleted row
  *
  * See also:
- * - `editor.test.ts` for the editor that holds and saves these documents
+ * - `row-text.test.ts` for `parseRow` and `formatRow` over this codec
  */
 import { expect, test } from 'bun:test';
-import {
-	type CanonicalDocument,
-	formatCanonicalDocument,
-	parseCanonicalDocument,
-} from '@epicenter/folder';
 import {
 	defineFolder,
 	defineTable,
 	field,
-	inspectRow,
 	openFolder,
+	parseRow,
 } from '@epicenter/folder/browser';
 import { expectErr, expectOk } from 'wellcrafted/testing';
 import { testBrowserStorage } from './browser-storage.test-support.js';
+import {
+	type CanonicalDocument,
+	formatCanonicalDocument,
+	parseCanonicalDocument,
+} from './canonical.js';
 
 /** A todos table's declared field order. */
 const DECLARED = ['title', 'done', 'priority'] as const;
@@ -280,7 +282,7 @@ test('safe aliases expand; alias expansion is bounded', () => {
 	expect(expectErr(result).reason).toContain('too many');
 });
 
-test("a canonical form honors the ordinary row reader's alias bound, so both accept the same aliases", () => {
+test('the row reader applies exactly the codec alias bound, so both accept the same aliases', () => {
 	const notes = defineFolder({
 		kv: {},
 		tables: { notes: defineTable({ fields: { title: field.string() } }) },
@@ -290,18 +292,17 @@ test("a canonical form honors the ordinary row reader's alias bound, so both acc
 	const items = Array.from({ length: 50 }, (_, i) => `i${i}`).join(', ');
 	const list = `---\ntitle: Plan\nlist: &l [${items}]\na: *l\nb: *l\nc: *l\n---\n`;
 	expect(parse(list).fields.c).toHaveLength(50);
-	expect(inspectRow(notes, list).parseError).toBeUndefined();
+	expect<object>(expectOk(parseRow(notes, list)).fields).toEqual(
+		parse(list).fields,
+	);
 
-	// yaml weighs `*b` by every earlier use of `*a` in the document: 2 x 61
-	// exceeds its bound, though only 64 aliases expand. The ordinary reader
-	// refuses it, so it has no canonical form either.
+	// Only the expansions the codec counts are bounded: 64 aliases expand
+	// here, under its limit, however many earlier uses each one follows.
 	const uses = Array.from({ length: 60 }, (_, i) => `u${i}: *a`).join('\n');
 	const weighted = `---\ntitle: Plan\na: &a x\n${uses}\nb: &b [*a]\nc: *b\nd: *b\n---\n`;
-	expect(inspectRow(notes, weighted).parseError?.message).toContain(
-		'Excessive alias count',
-	);
-	expect(expectErr(parseCanonicalDocument(weighted)).reason).toContain(
-		'Excessive alias count',
+	expect(parse(weighted).fields.d).toEqual(['x']);
+	expect<object>(expectOk(parseRow(notes, weighted)).fields).toEqual(
+		parse(weighted).fields,
 	);
 });
 
@@ -379,7 +380,7 @@ test('a body that UTF-8 encoding would change is refused rather than rewritten',
 	).toEqual(['body']);
 });
 
-test('complete-document editing saves unknown and invalid fields and restores only explicitly', async () => {
+test('an invalid row keeps unknown and invalid fields through a guarded raw save, and restores only explicitly', async () => {
 	const definition = defineFolder({
 		kv: {},
 		tables: {
@@ -403,34 +404,46 @@ test('complete-document editing saves unknown and invalid fields and restores on
 		const source =
 			'---\n# presentation\ntitle: Milk\ndone: invalid\nowner: {agent: alice}\n---\nBody\r\n';
 		expectOk(await folder.files.create('todos/milk.md', source));
-		const document = expectOk(parseCanonicalDocument(source));
+		const invalid = expectErr(await folder.tables.todos.get('milk'));
+		if (invalid.name !== 'InvalidRow') throw new Error(invalid.message);
+		expect(invalid.text).toBe(source);
+		const document = expectOk(parseCanonicalDocument(invalid.text));
+		const edited = {
+			...document,
+			fields: { ...document.fields, title: 'Oat milk' },
+		};
 		const text = expectOk(
 			formatCanonicalDocument(
-				{
-					...document,
-					fields: { ...document.fields, title: 'Oat milk' },
-				},
+				edited,
 				Object.keys(definition.tables.todos.fields),
 			),
 		);
-		const receipt = expectOk(
-			await folder.tables.todos.replace('milk', text, {}),
-		);
-		expect(expectOk(parseCanonicalDocument(receipt.text))).toEqual({
+
+		// The table saves only valid rows.
+		expect(
+			expectErr(await folder.tables.todos.replace(invalid, edited as never))
+				.name,
+		).toBe('InvalidValues');
+		// The file verbs save the repair, guarded by the bytes that were read.
+		expectOk(await folder.files.replace(invalid, text));
+		const repaired = expectErr(await folder.tables.todos.get('milk'));
+		if (repaired.name !== 'InvalidRow') throw new Error(repaired.message);
+		expect(repaired.text).toBe(text);
+		expect(expectOk(parseCanonicalDocument(repaired.text))).toEqual({
 			fields: { title: 'Oat milk', done: 'invalid', owner: { agent: 'alice' } },
 			body: 'Body\r\n',
 		});
-		expect(
-			inspectRow(definition.tables.todos, receipt.text).issues,
-		).toHaveLength(1);
-		expect(expectOk(await folder.tables.todos.get('milk'))?.text).toBe(text);
-		expectOk(await folder.tables.todos.delete('milk', {}));
-		expect(
-			expectErr(await folder.tables.todos.replace('milk', text, {})).name,
-		).toBe('NotFound');
+		expect(repaired.issues).toHaveLength(1);
+		expect(repaired.issues[0].field).toBe('done');
+
+		expectOk(await folder.tables.todos.delete(repaired));
+		expect(expectErr(await folder.files.replace(repaired, text)).name).toBe(
+			'Conflict',
+		);
 		expect(expectOk(await folder.tables.todos.get('milk'))).toBeUndefined();
 		expectOk(await folder.files.create('todos/milk.md', text));
-		expect(expectOk(await folder.tables.todos.get('milk'))?.text).toBe(text);
+		const restored = expectErr(await folder.tables.todos.get('milk'));
+		expect(restored).toMatchObject({ name: 'InvalidRow', text });
 	} finally {
 		await folder.close();
 	}

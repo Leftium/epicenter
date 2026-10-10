@@ -1,21 +1,22 @@
 /**
- * Canonical row documents: complete fields and Markdown body for editing.
+ * The row codec under `parseRow` and `formatRow`: complete fields and the
+ * Markdown body, with no schema.
  *
  * A document is every frontmatter field as an unvalidated JSON value plus the
- * Markdown body as opaque text. Parsing builds values by walking the YAML syntax tree,
- * so anything that would convert lossily (custom
- * tags, binary, sets, timestamps, non-string keys, unsafe integers, non-finite
- * numbers, lone surrogates, cyclic aliases) is refused before a value exists.
- * The ordinary reader's conversion also checks its alias limits on that same
- * syntax tree; its converted values are discarded.
+ * Markdown body as opaque text. Parsing builds values by walking the YAML
+ * syntax tree, so anything that would convert lossily (custom tags, binary,
+ * sets, timestamps, non-string keys, unsafe integers, non-finite numbers,
+ * lone surrogates, cyclic aliases) is refused before a value exists. Alias
+ * expansions and converted values are bounded, so a small file cannot expand
+ * into an unbounded one. A refusal of source names the line it points at.
  *
  * Formatting writes one fixed text for a document and a declared key order:
  * declared keys first in declared order, other keys in UTF-16 code unit
  * order, nested mapping keys in that order too, every key quoted and every
  * value in JSON flow style, which is valid YAML 1.2. Comments, quoting, key
  * order, a byte-order mark, and header CRLF are normalized away. The body is
- * appended byte for byte. Schema validation is not this codec's job:
- * `inspectRow` reads the formatted text like any other row text.
+ * appended byte for byte. Formatted text is parsed again before it is
+ * returned, so whatever this writes, this reads back as the same document.
  */
 import { Err, Ok, type Result } from 'wellcrafted/result';
 import {
@@ -26,7 +27,7 @@ import {
 	isSeq,
 	parseDocument,
 } from 'yaml';
-import { convertFrontmatter, frameRowText } from './markdown.js';
+import { frameRowText } from './markdown.js';
 
 /** A JSON value with an exact YAML and JSON form. */
 export type CanonicalValue =
@@ -44,14 +45,16 @@ export type CanonicalDocument = {
 };
 
 /**
- * Why source or a document has no canonical form. `path` locates the value.
- * A refusal of source has the 1-based `line` of the whole source it points
- * at; a refusal of a document has none.
+ * Why source or a document has no canonical form. `path` locates the value
+ * within its field. A refusal of source has the 1-based `line` of the whole
+ * source it points at; a refusal of a document has none.
  */
 export type CanonicalRefusal = {
 	readonly reason: string;
 	readonly path: readonly (string | number)[];
 	readonly line?: number;
+	/** The top-level field the refusal is inside; absent for the body and the document as a whole. */
+	readonly field?: string;
 };
 
 type Path = readonly (string | number)[];
@@ -107,16 +110,13 @@ function lineOf(walk: Walk, node: unknown): number | undefined {
 export function parseRowSource(source: string): Result<
 	{
 		readonly document: CanonicalDocument;
-		/** The 1-based line of a top-level frontmatter key; found only when asked. */
-		keyLine(key: string): number | undefined;
+		/**
+		 * The 1-based line of a top-level field's value at a JSON pointer
+		 * within it, or else of the field's key; found only when asked.
+		 */
+		lineOf(field: string, pointer?: string): number | undefined;
 	},
-	{
-		readonly reason: string;
-		readonly path: readonly (string | number)[];
-		readonly line?: number;
-		/** The top-level field the refusal is inside, when it is inside one. */
-		readonly field?: string;
-	}
+	CanonicalRefusal
 > {
 	const frame = frameRowText(source);
 	if (frame.kind === 'missing')
@@ -157,7 +157,7 @@ export function parseRowSource(source: string): Result<
 		nodes: 0,
 	};
 	if (document.contents === null)
-		return Ok({ document: { fields: {}, body }, keyLine: () => undefined });
+		return Ok({ document: { fields: {}, body }, lineOf: () => undefined });
 	if (!isMap(document.contents))
 		return refuse(
 			'The frontmatter is not a mapping',
@@ -175,19 +175,29 @@ export function parseRowSource(source: string): Result<
 			typeof field === 'string' ? { ...fieldsError, field } : fieldsError,
 		);
 	}
-	// Ordinary row reads convert this same parse under yaml's alias bound,
-	// which can refuse what the count above allows. Refuse it here too, so
-	// text with a canonical form always reads as an ordinary row.
-	const { error: conversionError } = convertFrontmatter(document);
-	if (conversionError !== null)
-		return refuse(conversionError, [], lineAt(source, frame.yamlStart));
-	const pairs = document.contents.items;
+	const root = document.contents;
 	return Ok({
 		document: { fields: fields as CanonicalDocument['fields'], body },
-		keyLine(key) {
+		lineOf(field, pointer) {
 			// Conversion refused every key that is not a string scalar.
-			const pair = pairs.find((p) => isScalar(p.key) && p.key.value === key);
-			return pair === undefined ? undefined : lineOf(walk, pair.key);
+			const pair = root.items.find(
+				(p) => isScalar(p.key) && p.key.value === field,
+			);
+			if (pair === undefined) return undefined;
+			const segments = (pointer ?? '')
+				.split('/')
+				.slice(1)
+				.map((segment) => segment.replaceAll('~1', '/').replaceAll('~0', '~'));
+			let node: unknown = pair.value;
+			for (const segment of segments) {
+				if (isMap(node))
+					node = node.items.find(
+						(p) => isScalar(p.key) && p.key.value === segment,
+					)?.value;
+				else if (isSeq(node)) node = node.items[Number(segment)];
+				else node = undefined;
+			}
+			return lineOf(walk, node) ?? lineOf(walk, pair.key);
 		},
 	});
 }
@@ -203,7 +213,7 @@ export function parseCanonicalDocument(
 	source: string,
 ): Result<CanonicalDocument, CanonicalRefusal> {
 	const { data: parsed, error } = parseRowSource(source);
-	if (error !== null) return refuse(error.reason, error.path, error.line);
+	if (error !== null) return Err(error);
 	return Ok(parsed.document);
 }
 
@@ -386,9 +396,9 @@ export function formatCanonicalDocument(
 			[key],
 			new Set(),
 		);
-		if (textError !== null) return Err(textError);
+		if (textError !== null) return Err({ ...textError, field: key });
 		const { data: quoted, error: quoteError } = quote(key, [key]);
-		if (quoteError !== null) return Err(quoteError);
+		if (quoteError !== null) return Err({ ...quoteError, field: key });
 		header += `${quoted}: ${text}\n`;
 	}
 	const text = `---\n${header}---\n${body}`;

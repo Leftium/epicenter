@@ -8,8 +8,8 @@
  * Key behaviors:
  * - Every content verb copies the caller's array before any await, so saved
  *   bytes and the returned capture match what was passed
- * - Rename and delete change exactly one Markdown file, whatever same-stem
- *   siblings appeared, changed, or multiplied after the entry was captured
+ * - Rename and delete change exactly one Markdown file, guarded by the
+ *   captured sha256; a stale capture is a `Conflict`
  * - A stem is one literal segment; `todos/a/b.md` is not a row, while an
  *   externally written row with an invalid stem stays listable
  * - An empty directory lists, removes, and works from the terminal
@@ -19,7 +19,7 @@
  * - `files.test.ts` for captures and the file verbs
  */
 import { afterEach, describe, expect, test } from 'bun:test';
-import { expectOk } from 'wellcrafted/testing';
+import { expectErr, expectOk } from 'wellcrafted/testing';
 import {
 	defineFolder,
 	defineTable,
@@ -122,28 +122,26 @@ describe('byte ownership', () => {
 });
 
 describe('row files', () => {
-	test('a stale entry is refused by its own sha256, and nothing else decides', async () => {
+	test('a stale capture is refused by its own sha256, and nothing else decides', async () => {
 		const folder = await open();
 		const row = expectOk(
-			await folder.tables.todos.create({
-				stem: 'row',
-				fields: { title: 'Row', done: false },
-			}),
-		);
-		expectOk(
-			await folder.tables.todos.update(
-				row.stem,
-				{ fields: { done: true } },
-				{},
+			await folder.tables.todos.create(
+				{ fields: { title: 'Row', done: false }, body: '' },
+				{ stem: 'row' },
 			),
 		);
-		const stale = { expectedSha256: row.sha256 };
-		expect(
-			(await folder.tables.todos.rename(row.stem, 'next', stale)).error?.name,
-		).toBe('Conflict');
-		expect(
-			(await folder.tables.todos.delete(row.stem, stale)).error?.name,
-		).toBe('Conflict');
+		expectOk(
+			await folder.tables.todos.replace(row, {
+				fields: { title: 'Row', done: true },
+				body: '',
+			}),
+		);
+		expect(expectErr(await folder.tables.todos.rename(row, 'next')).name).toBe(
+			'Conflict',
+		);
+		expect(expectErr(await folder.tables.todos.delete(row)).name).toBe(
+			'Conflict',
+		);
 		expect(expectOk(await folder.files.children('todos')).files).toEqual([
 			'row.md',
 		]);
@@ -151,51 +149,54 @@ describe('row files', () => {
 
 	test('stems are one literal segment; nested paths are not rows', async () => {
 		const folder = await open();
-		await folder.files.create(
-			'todos/a/b.md',
-			'---\ntitle: Nested\ndone: false\n---\n',
+		const nested = expectOk(
+			await folder.files.create(
+				'todos/a/b.md',
+				'---\ntitle: Nested\ndone: false\n---\n',
+			),
 		);
-		expect((await folder.tables.todos.get('a/b')).error?.name).toBe(
+		expect(expectErr(await folder.tables.todos.get('a/b')).name).toBe(
 			'InvalidPath',
 		);
 		expect(expectOk(await folder.tables.todos.list())).toEqual([]);
 
-		expectOk(
-			await folder.tables.todos.create({
-				stem: 'real',
-				fields: { title: 'Real', done: false },
-			}),
+		const real = expectOk(
+			await folder.tables.todos.create(
+				{ fields: { title: 'Real', done: false }, body: '' },
+				{ stem: 'real' },
+			),
 		);
 		expect(
-			(await folder.tables.todos.replace('a/b', 'x', {})).error?.name,
+			expectErr(
+				await folder.tables.todos.replace(nested, {
+					fields: { title: 'X', done: true },
+					body: '',
+				}),
+			).name,
 		).toBe('InvalidPath');
-		expect(
-			(await folder.tables.todos.update('a/b', { fields: { done: true } }, {}))
-				.error?.name,
-		).toBe('InvalidPath');
-		expect((await folder.tables.todos.delete('a/b', {})).error?.name).toBe(
+		expect(expectErr(await folder.tables.todos.delete(nested)).name).toBe(
 			'InvalidPath',
 		);
-		expect((await folder.tables.todos.rename('a/b', 'c', {})).error?.name).toBe(
+		expect(expectErr(await folder.tables.todos.rename(nested, 'c')).name).toBe(
 			'InvalidPath',
 		);
-		expect(
-			(await folder.tables.todos.rename('real', 'a/b', {})).error?.name,
-		).toBe('InvalidPath');
+		expect(expectErr(await folder.tables.todos.rename(real, 'a/b')).name).toBe(
+			'InvalidPath',
+		);
 
 		// An externally written row with an unusual name is an ordinary row.
 		await folder.files.create(
 			'todos/bad .md',
 			'---\ntitle: B\ndone: false\n---\n',
 		);
-		const bad = expectOk(
-			expectOk(await folder.tables.todos.list()).find(
-				(item) => item.path === 'todos/bad .md',
-			)!.result,
+		const listed = expectOk(await folder.tables.todos.list()).find(
+			(item) => item.stem === 'bad ',
 		);
-		expect(bad.stem).toBe('bad ');
 		// A name is never a diagnostic.
-		expect(bad).toMatchObject({ parseError: undefined, issues: [] });
+		expect(expectOk(listed!.result)).toMatchObject({
+			path: 'todos/bad .md',
+			row: { fields: { title: 'B', done: false }, body: '' },
+		});
 		expect((await folder.tables.todos.get('bad ')).data?.path).toBe(
 			'todos/bad .md',
 		);
@@ -205,7 +206,7 @@ describe('row files', () => {
 describe('empty directories', () => {
 	test('an empty directory lists, is removable, and works from the terminal', async () => {
 		const folder = await open();
-		expect((await folder.files.mkdir('empty')).error).toBeNull();
+		expectOk(await folder.files.mkdir('empty'));
 		expect((await folder.files.children('empty')).data).toEqual({
 			files: [],
 			directories: [],
@@ -213,8 +214,10 @@ describe('empty directories', () => {
 		expect((await folder.files.children('')).data!.directories).toEqual([
 			'empty',
 		]);
-		expect((await folder.files.rmdir('empty')).error).toBeNull();
-		expect((await folder.files.children('empty')).error?.name).toBe('NotFound');
+		expectOk(await folder.files.rmdir('empty'));
+		expect(expectErr(await folder.files.children('empty')).name).toBe(
+			'NotFound',
+		);
 
 		const terminal = folder.terminal();
 		const made = await terminal.exec('mkdir -p a/b && ls a && ls a/b');

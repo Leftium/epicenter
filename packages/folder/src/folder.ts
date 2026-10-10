@@ -19,7 +19,7 @@
 import type { CreateRowOf, KvOf } from '@epicenter/definition';
 import type { Result } from 'wellcrafted/result';
 import type { FolderStorage } from './boundary.js';
-import type { FolderDefinition } from './definition.js';
+import type { FolderDefinition, PreparedFolderTable } from './definition.js';
 import { createFiles, type FolderFiles } from './files.js';
 import type { GitRemote, PathStatus } from './git/backend.js';
 import type {
@@ -331,8 +331,13 @@ export function assembleFolder<TDefinition extends FolderDefinition>({
 	const storage = fenceStorage(suppliedStorage, controller.signal);
 	const tables: Record<string, FileTable<unknown>> = {};
 	// A table's key is its name and its directory.
+	// The opener prepared every table, which is what the type's mark records.
 	for (const [name, table] of Object.entries(prepared.tables))
-		tables[name] = createTable<unknown>({ storage }, name, table.fields);
+		tables[name] = createTable<unknown>(
+			{ storage },
+			name,
+			table as PreparedFolderTable,
+		);
 	const files = createFiles({ storage });
 	const git = createFolderGit(history);
 

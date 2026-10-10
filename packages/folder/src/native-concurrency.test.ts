@@ -10,7 +10,7 @@
  * - Two conditional writes of one version through one boundary give one
  *   success and one `Conflict`
  * - Two raw file writes of one version through an opened folder save once
- * - Two table updates of one captured entry save once, and the refused
+ * - Two table replaces of one captured row save once, and the refused
  *   caller can reread and retry
  * - A save queued behind one that fails, or that ends `Partial`, still
  *   publishes
@@ -23,7 +23,7 @@ import * as realFs from 'node:fs/promises';
 import { join, sep } from 'node:path';
 import { expectErr, expectOk } from 'wellcrafted/testing';
 import { hashBytes } from './capture.js';
-import { defineFolder, defineTable, field, inspectRow } from './contract.js';
+import { defineFolder, defineTable, field } from './contract.js';
 import { GIT_ENV, scratch } from './git-http.test-support.js';
 
 const real = { ...realFs };
@@ -185,7 +185,7 @@ test('two raw writes of one version through an opened folder save once', async (
 	}
 });
 
-test('racing current-row updates return a conflict without retrying', async () => {
+test('racing replaces of one captured row return a conflict without retrying', async () => {
 	const folder = await root('native-same-owner-update-');
 	const opened = await openNativeFolder({
 		root: folder,
@@ -194,22 +194,22 @@ test('racing current-row updates return a conflict without retrying', async () =
 	});
 	try {
 		const captured = expectOk(
-			await opened.tables.todos.create({
-				stem: 'one',
-				fields: { title: 'One', done: false },
-			}),
+			await opened.tables.todos.create(
+				{ fields: { title: 'One', done: false }, body: '' },
+				{ stem: 'one' },
+			),
 		);
 		holdFirstPublication();
 
 		const results = await Promise.all([
-			opened.tables.todos.update(
-				captured.stem,
-				{
-					fields: { title: 'Renamed' },
-				},
-				{},
-			),
-			opened.tables.todos.update(captured.stem, { fields: { done: true } }, {}),
+			opened.tables.todos.replace(captured, {
+				fields: { title: 'Renamed', done: false },
+				body: '',
+			}),
+			opened.tables.todos.replace(captured, {
+				fields: { title: 'One', done: true },
+				body: '',
+			}),
 		]);
 
 		const firstWon = results[0].error === null;
@@ -217,25 +217,19 @@ test('racing current-row updates return a conflict without retrying', async () =
 		expect(expectErr(firstWon ? results[1] : results[0]).name).toBe('Conflict');
 		const current = expectOk(await opened.tables.todos.get('one'));
 		if (current === undefined) throw new Error('the row is missing');
-		expect(current.fields).toEqual(
+		expect(current.row.fields).toEqual(
 			firstWon
 				? { title: 'Renamed', done: false }
 				: { title: 'One', done: true },
 		);
-		// The caller explicitly resubmits; update performs its own current read.
+		// The caller explicitly rereads and resubmits against the current bytes.
 		const retried = expectOk(
-			await opened.tables.todos.update(
-				'one',
-				{
-					fields: firstWon ? { done: true } : { title: 'Renamed' },
-				},
-				{},
-			),
+			await opened.tables.todos.replace(current, {
+				fields: { title: 'Renamed', done: true },
+				body: '',
+			}),
 		);
-		expect(inspectRow(definition.tables.todos, retried.text).fields).toEqual({
-			title: 'Renamed',
-			done: true,
-		});
+		expect(expectOk(await opened.tables.todos.get('one'))).toEqual(retried);
 	} finally {
 		await opened.close();
 	}

@@ -269,6 +269,11 @@ test('nothing outside the data folder is read', async () => {
 	expect(result.exitCode).toBe(1);
 	expect(report.invalid).toEqual([
 		{
+			path: 'posts/linked.md',
+			message:
+				'The path is not usable: the path passes through a symbolic link',
+		},
+		{
 			path: 'accounts',
 			message:
 				'The path is not usable: the path passes through a symbolic link',
@@ -278,12 +283,15 @@ test('nothing outside the data folder is read', async () => {
 	expect(run('query', folder, 'SELECT title FROM posts').exitCode).toBe(1);
 });
 
-// table.list() currently omits these entries instead of reporting them, so
-// check reports "1 row conforms" for a table that holds one. Reported to the
-// folder package's owner; the CLI keeps no second copy of the path rules.
-test.todo(
-	'a symbolic link or directory named <stem>.md in a table is reported, not skipped',
-);
+test('a directory named <stem>.md in a table is a file to fix, not skipped', async () => {
+	const { folder, run } = await setup();
+	await mkdir(join(folder, 'posts/notes.md'));
+	const result = run('check', folder);
+	expect(result.exitCode).toBe(1);
+	expect(result.stdout).toBe(
+		'posts/notes.md: A row must be a file, not a directory\n1 row conforms; 1 file invalid; 0 unreadable.\n',
+	);
+});
 
 test('query refuses statements that write, attach, or vacuum, and leaves the directory unchanged', async () => {
 	const { folder, run } = await setup();

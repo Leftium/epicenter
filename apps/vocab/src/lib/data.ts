@@ -170,8 +170,12 @@ export function focusWord(
 	);
 }
 
-/** A row file Vocab cannot show as a row, and why. It is never dropped silently. */
-export type UnreadableFile = { path: string; reason: string };
+/**
+ * A row file Vocab cannot show as a row, and why. It is never dropped
+ * silently. `stem` is set when its text was read but is not a valid row, so
+ * it can be repaired as text.
+ */
+export type UnreadableFile = { path: string; reason: string; stem?: string };
 
 /** Why a row file could not be read as a row, in a sentence. */
 export function rowProblem(error: RowReadError): string {
@@ -221,6 +225,7 @@ export function readRows<TFields, TRow>(
 			unreadable.push({
 				path: rowPath(table, stem),
 				reason: rowProblem(result.error),
+				...(result.error.name === 'InvalidRow' ? { stem } : {}),
 			});
 	}
 	return { rows, unreadable };

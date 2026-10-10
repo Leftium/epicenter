@@ -259,7 +259,9 @@ test('a word another tab removed is saved again instead of being called present'
 	const otherTab = createEntriesState(entriesOf(await browser.open()));
 	await otherTab.refresh();
 	expect(await otherTab.remove(listed(otherTab, 'resilient'))).toBeUndefined();
-	expect(entries.has('resilient')).toBe(true);
+	expect(entries.entries.some((entry) => entry.text === 'resilient')).toBe(
+		true,
+	);
 
 	expect(expectOk(await entries.add('resilient'))).toBe('added');
 	expect(await tableFiles(folder, 'entries')).toHaveLength(1);
@@ -577,4 +579,88 @@ test('a closed folder answers with an error and lists nothing new', async () => 
 	expect(summary(entries)).toEqual([
 		{ text: 'in hindsight', note: '', stage: 'new' },
 	]);
+});
+
+test('a stage pressed on a word that is still opening saves it as listed', async () => {
+	await using context = await setup();
+	const { folder, entries } = context;
+	expectOk(await entries.add('lucid'));
+	const entry = listed(entries, 'lucid');
+	// The same folder, with opening a word held until `reading` resolves.
+	const reading = Promise.withResolvers<void>();
+	const real = folder.tables.entries;
+	const opening = createEntriesState({
+		table: {
+			...real,
+			async get(stem) {
+				await reading.promise;
+				return real.get(stem);
+			},
+		},
+		files: folder.files,
+	});
+	await opening.refresh();
+	const pending = opening.open(entry.id);
+	await Bun.sleep(0);
+	expect(opening.opened?.kind).toBe('loading');
+	expect(await opening.setStage(entry, 'usable')).toBeUndefined();
+	expect(await context.text(entry.stored.path)).toContain('stage: usable');
+	reading.resolve();
+	await pending;
+	expect(wordSession(opening).draft.fields.stage).toBe('usable');
+	await opening.close();
+});
+
+test('the list read after leaving a word lands, even when a word is added meanwhile', async () => {
+	await using context = await setup();
+	const { folder } = context;
+	const { gate, table } = gated(folder.tables.entries);
+	const entries = createEntriesState({ table, files: folder.files });
+	expectOk(await entries.add('candid'));
+	const { entry, session } = await openWord(entries, 'lucid');
+	entries.inputNote(entry.id, 'clear');
+	await session.settled();
+	// The relist that leaving starts reads now and answers late.
+	const delivery = Promise.withResolvers<void>();
+	gate.heldListing = delivery.promise;
+	expect(await entries.open(listed(entries, 'candid').id)).toBeUndefined();
+	gate.heldListing = undefined;
+	expectOk(await entries.add('subtle'));
+	delivery.resolve();
+	for (let i = 0; i < 200 && listed(entries, 'lucid').note !== 'clear'; i++)
+		await Bun.sleep(1);
+	expect(listed(entries, 'lucid').note).toBe('clear');
+	// The word added while the listing was out is still listed.
+	expect(entries.entries.map((e) => e.text).sort()).toEqual([
+		'candid',
+		'lucid',
+		'subtle',
+	]);
+	// A stage pressed from the list uses what was saved.
+	expect(
+		await entries.setStage(listed(entries, 'lucid'), 'usable'),
+	).toBeUndefined();
+	await entries.close();
+});
+
+test('close waits for a change already under way, and refuses one asked after it began', async () => {
+	await using context = await setup();
+	const { folder, entries } = context;
+	expectOk(await entries.add('lucid'));
+	const entry = listed(entries, 'lucid');
+	const { held, release } = context.holdNextWrite();
+	const pressing = entries.setStage(entry, 'usable');
+	await held;
+	expect(entries.unsaved).toBe(true);
+	let closed = false;
+	const closing = entries.close().then(() => {
+		closed = true;
+	});
+	await Bun.sleep(5);
+	expect(closed).toBe(false);
+	expect(await entries.remove(entry)).toContain('closing');
+	release();
+	expect(await pressing).toBeUndefined();
+	await closing;
+	expect(await fileText(folder, entry.stored.path)).toContain('stage: usable');
 });

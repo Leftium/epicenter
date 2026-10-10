@@ -12,6 +12,7 @@
 	import type { AgentMessage } from '@epicenter/agent';
 	import { auth } from '$lib/auth.svelte.js';
 	import { createVocabChat } from '$lib/chat/session.svelte.js';
+	import type { Admit } from '$lib/admissions.js';
 	import type { VocabFolder } from '$lib/data.js';
 	import type { EntriesState } from '$lib/entries.svelte.js';
 	import type { InferenceCatalog } from '@epicenter/app-shell/inference-picker';
@@ -26,6 +27,7 @@
 	let {
 		chatId,
 		folder,
+		admit,
 		catalog,
 		selections,
 		entries,
@@ -36,6 +38,7 @@
 	}: {
 		chatId: string;
 		folder: Pick<VocabFolder, 'tables' | 'files'>;
+		admit: Admit;
 		catalog: InferenceCatalog;
 		selections: InferenceSelections;
 		entries: EntriesState;
@@ -48,7 +51,7 @@
 	// The parent keys this component by chat ID. Its loop and draft end when
 	// another chat is selected; dictation ends sooner when Chat hides.
 	/* svelte-ignore state_referenced_locally */
-	const chat = createVocabChat({ folder, chatId, focus, catalog, selections });
+	const chat = createVocabChat({ folder, admit, chatId, focus, catalog, selections });
 
 	/**
 	 * Whether leaving this chat would drop a message the folder has not

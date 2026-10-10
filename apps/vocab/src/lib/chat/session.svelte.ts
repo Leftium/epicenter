@@ -10,6 +10,7 @@ import {
 } from '@epicenter/client';
 import { bindAgentConversation } from '@epicenter/svelte';
 import { createSubscriber } from 'svelte/reactivity';
+import type { Admit } from '../admissions.js';
 import {
 	tutorPrompt,
 	type UnreadableFile,
@@ -23,6 +24,7 @@ import { withTutorOpening } from './opening.js';
 /** One active tutor conversation for the lifetime of its keyed view. */
 export function createVocabChat({
 	folder,
+	admit,
 	chatId,
 	focus,
 	catalog,
@@ -30,6 +32,8 @@ export function createVocabChat({
 }: {
 	/** The folder whose `messages/` holds every chat's finished messages. */
 	folder: Pick<VocabFolder, 'tables' | 'files'>;
+	/** Counts each message write until it settles, so closing the page waits for it. */
+	admit?: Admit;
 	chatId: string;
 	focus: readonly { text: string }[];
 	catalog: InferenceCatalog;
@@ -55,7 +59,7 @@ export function createVocabChat({
 	let hasRead = $state(false);
 	let unreadable = $state.raw<UnreadableFile[]>([]);
 
-	const store = createChatMessageStore(folder, chatId);
+	const store = createChatMessageStore(folder, chatId, admit);
 	let reading: Promise<ChatHistoryError | null> | undefined;
 	/** Read the transcript from the folder; overlapping callers share one read. */
 	function read(): Promise<ChatHistoryError | null> {

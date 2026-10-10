@@ -21,10 +21,10 @@
 	});
 
 	onDestroy(() => {
-		// The open word's saves land before the folder closes.
+		// Changes under way and the open word's saves land before the folder closes.
 		void opening
-			.then(async ({ folder, entries }) => {
-				await entries.close();
+			.then(async ({ folder, entries, chats }) => {
+				await Promise.all([entries.close(), chats.close()]);
 				await folder.close();
 			})
 			.catch(() => {});

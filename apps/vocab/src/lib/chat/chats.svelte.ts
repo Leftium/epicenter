@@ -10,6 +10,7 @@
  */
 
 import type { Result } from 'wellcrafted/result';
+import { createAdmissions } from '../admissions.js';
 import {
 	type Chat,
 	type FocusItem,
@@ -39,6 +40,8 @@ export function createChatsState({
 	let loadError = $state<string | null>(null);
 	const summaries = $derived(listChats(chats, earlier));
 	let sequence = 0;
+	/** New chats and messages being saved; closing waits for them. */
+	const admissions = createAdmissions();
 
 	async function refresh() {
 		const mine = ++sequence;
@@ -77,23 +80,34 @@ export function createChatsState({
 			return loadError;
 		},
 		refresh,
-		/** Save the focus as a new chat; it is listed once the folder holds it. */
-		async start(
-			focus: readonly FocusItem[],
-		): Promise<Result<Chat, ChatHistoryError>> {
-			const started = await startChat(tables.chats, focus);
-			if (started.error === null) {
-				// A listing already under way may not hold it.
-				sequence++;
-				chats = [
-					...chats.filter(({ id }) => id !== started.data.id),
-					started.data,
-				];
-				void refresh();
-			}
-			return started;
+		/** Count a chat write until it settles, so closing waits for it. */
+		admit: admissions.admit,
+		/** Whether a chat or message is being saved now. */
+		get busy() {
+			return admissions.busy;
 		},
+		/** Resolve once every chat and message write under way has settled. */
+		close: () => admissions.quiet(),
+		/** Save the focus as a new chat; it is listed once the folder holds it. */
+		start: (focus: readonly FocusItem[]) =>
+			admissions.admit(() => start(focus)),
 	};
+
+	async function start(
+		focus: readonly FocusItem[],
+	): Promise<Result<Chat, ChatHistoryError>> {
+		const started = await startChat(tables.chats, focus);
+		if (started.error === null) {
+			// A listing already under way may not hold it.
+			sequence++;
+			chats = [
+				...chats.filter(({ id }) => id !== started.data.id),
+				started.data,
+			];
+			void refresh();
+		}
+		return started;
+	}
 }
 
 export type ChatsState = ReturnType<typeof createChatsState>;

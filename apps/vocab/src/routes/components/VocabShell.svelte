@@ -101,7 +101,7 @@
 	// this page alone. Leaving it asks first, and the browser's prompt lets the
 	// learner leave anyway; the open chat's unsaved message asks on its own.
 	beforeNavigate((navigation) => {
-		if (!entries.unsaved) return;
+		if (!entries.unsaved && !chats.busy) return;
 		if (navigation.willUnload || navigation.to?.route.id !== page.route.id) navigation.cancel();
 	});
 
@@ -112,7 +112,7 @@
 	}
 </script>
 
-<svelte:window onbeforeunload={(event) => { if (entries.unsaved) event.preventDefault(); }} onfocus={check} />
+<svelte:window onbeforeunload={(event) => { if (entries.unsaved || chats.busy) event.preventDefault(); }} onfocus={check} />
 <svelte:document onvisibilitychange={() => { if (document.visibilityState === 'visible') check(); }} />
 
 <div class="flex h-dvh min-w-0 flex-col">
@@ -187,7 +187,7 @@
 			{#if focusOpen && selectedChat}<div class="border-b p-3 md:hidden"><FocusWords focus={selectedChat.focus} {entries} /></div>{/if}
 			{#if !selectedChatId}<p class="m-auto text-center text-muted-foreground">Choose a chat from history.</p>{/if}
 			{#if selectedChatId && selectedChat}
-				{#key selectedChatId}<ConversationView bind:this={conversation} chatId={selectedChatId} {folder} {catalog} {selections} {entries} focus={selectedChat.focus} visible={view === 'chat'} startOpening={openingId === selectedChatId} onOpeningStarted={() => openingId = null} />{/key}
+				{#key selectedChatId}<ConversationView bind:this={conversation} chatId={selectedChatId} {folder} admit={chats.admit} {catalog} {selections} {entries} focus={selectedChat.focus} visible={view === 'chat'} startOpening={openingId === selectedChatId} onOpeningStarted={() => openingId = null} />{/key}
 			{/if}
 		</div>
 		<aside class="hidden w-60 shrink-0 overflow-y-auto border-l p-3 md:block" aria-label="Focus words">

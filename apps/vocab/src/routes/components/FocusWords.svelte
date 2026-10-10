@@ -25,7 +25,7 @@
 			{@const current = entries.fieldsOf(entry).stage}
 			<div class="mt-1 flex flex-wrap gap-1" aria-label="Your stage for {item.text}">
 				{#each STAGES as stage}
-					<Button size="sm" variant={current === stage ? 'default' : 'outline'} aria-pressed={current === stage} onclick={() => press(entry, stage)}>{STAGE_LABELS[stage]}</Button>
+					<Button size="sm" variant={current === stage ? 'default' : 'outline'} aria-pressed={current === stage} disabled={entries.isLocked(entry.id)} onclick={() => press(entry, stage)}>{STAGE_LABELS[stage]}</Button>
 				{/each}
 			</div>
 		{/if}

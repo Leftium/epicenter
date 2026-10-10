@@ -17,6 +17,7 @@ import {
 	type InferErrors,
 } from 'wellcrafted/error';
 import { Err, Ok, type Result } from 'wellcrafted/result';
+import type { Admit } from '../admissions.js';
 import {
 	type Chat,
 	type ChatMessage,
@@ -134,6 +135,8 @@ export async function readMessages(
 export function createChatMessageStore(
 	{ tables, files }: Pick<VocabFolder, 'tables' | 'files'>,
 	chatId: string,
+	/** Counts each write until it settles, so closing the page waits for it. */
+	admit: Admit = (work) => work(),
 ): AgentMessageStore & {
 	/** Message files of this chat that cannot be shown or sent to the tutor. */
 	readonly unreadable: UnreadableFile[];
@@ -155,6 +158,41 @@ export function createChatMessageStore(
 	const notify = () => {
 		for (const handler of handlers) handler();
 	};
+
+	async function save(
+		key: string,
+		value: AgentMessage,
+	): Promise<Result<undefined, AgentMessageStoreError>> {
+		const stem = messageStem(chatId, key);
+		const { error: createError } = await table.create(
+			{ fields: { chat: chatId, message: value }, body: '' },
+			{ stem },
+		);
+		if (createError !== null) {
+			if (createError.name !== 'Exists')
+				return AgentMessageStoreError.WriteFailed({ cause: createError });
+			// An earlier attempt may have landed without its answer.
+			const { data: current, error: readError } = await table.get(stem);
+			if (
+				readError !== null &&
+				readError.name !== 'InvalidRow' &&
+				readError.name !== 'InvalidUtf8'
+			)
+				return AgentMessageStoreError.WriteFailed({ cause: readError });
+			if (
+				current?.row.fields.chat !== chatId ||
+				!sameJson(current.row.fields.message, value)
+			) {
+				const { error: taken } = ChatHistoryError.Taken({
+					path: createError.path,
+				});
+				return AgentMessageStoreError.WriteFailed({ cause: taken });
+			}
+		}
+		created.set(key, value);
+		notify();
+		return Ok(undefined);
+	}
 
 	return {
 		get unreadable() {
@@ -189,37 +227,7 @@ export function createChatMessageStore(
 			notify();
 			return Ok(undefined);
 		},
-		async set(key, value) {
-			const stem = messageStem(chatId, key);
-			const { error: createError } = await table.create(
-				{ fields: { chat: chatId, message: value }, body: '' },
-				{ stem },
-			);
-			if (createError !== null) {
-				if (createError.name !== 'Exists')
-					return AgentMessageStoreError.WriteFailed({ cause: createError });
-				// An earlier attempt may have landed without its answer.
-				const { data: current, error: readError } = await table.get(stem);
-				if (
-					readError !== null &&
-					readError.name !== 'InvalidRow' &&
-					readError.name !== 'InvalidUtf8'
-				)
-					return AgentMessageStoreError.WriteFailed({ cause: readError });
-				if (
-					current?.row.fields.chat !== chatId ||
-					!sameJson(current.row.fields.message, value)
-				) {
-					const { error: taken } = ChatHistoryError.Taken({
-						path: createError.path,
-					});
-					return AgentMessageStoreError.WriteFailed({ cause: taken });
-				}
-			}
-			created.set(key, value);
-			notify();
-			return Ok(undefined);
-		},
+		set: (key, value) => admit(() => save(key, value)),
 		*entries() {
 			for (const [key, val] of listed)
 				if (!created.has(key)) yield { key, val };

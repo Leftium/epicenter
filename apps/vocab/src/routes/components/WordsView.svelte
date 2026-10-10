@@ -111,6 +111,10 @@
 				<Button size="sm" variant={stage === option ? 'default' : 'outline'} aria-pressed={stage === option} onclick={() => stage = option}>{option === 'all' ? 'All' : STAGE_LABELS[option]}</Button>
 			{/each}
 		</div>
+		{#if entries.opened?.kind === 'failed' && !entries.entries.some((entry) => entry.id === entries.opened?.id)}
+			<!-- A repair that could not open: its file is gone or no longer text. A word's card shows its own. -->
+			<p role="alert" class="text-sm text-destructive">{entries.opened.message}</p>
+		{/if}
 		{#if entries.opened?.kind === 'text'}
 			{#key entries.opened}<RepairCard {entries} id={entries.opened.id} session={entries.opened.session} />{/key}
 		{/if}

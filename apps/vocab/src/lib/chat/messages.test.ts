@@ -534,3 +534,28 @@ test('an older listing delivered after a newer one does not replace it', async (
 	expectOk(await older);
 	expect([...store.entries()]).toEqual([{ key: question.id, val: question }]);
 });
+
+test('closing the chats waits for a message write already under way', async () => {
+	await using context = await setup();
+	const { folder } = context;
+	const { gate, folder: gatedFolder } = gatedMessages(folder);
+	const chats = createChatsState(gatedFolder);
+	const store = createChatMessageStore(gatedFolder, 'chat-a', chats.admit);
+	const writing = Promise.withResolvers<void>();
+	gate.heldCreate = writing.promise;
+	const saving = store.set(question.id, question);
+	expect(chats.busy).toBe(true);
+	let closed = false;
+	const closing = chats.close().then(() => {
+		closed = true;
+	});
+	await Bun.sleep(5);
+	expect(closed).toBe(false);
+	writing.resolve();
+	expectOk(await saving);
+	await closing;
+	expect(chats.busy).toBe(false);
+	expect(await tableFiles(folder, 'messages')).toEqual([
+		'messages/chat-a.question.md',
+	]);
+});

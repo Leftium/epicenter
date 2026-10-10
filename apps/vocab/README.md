@@ -22,9 +22,9 @@ Every save is guarded by the version this page last saved or read. When the file
 
 The list is read when the page opens, after the learner's own actions, and when they return to the window. Returning also takes a newer version of the open word when it holds nothing unsaved; a word with a failed save keeps the learner's text.
 
-A file in `entries/` that is not a valid word is named under the list with why, and is not offered as a word. **Repair as text** opens its exact text; each change is saved as typed, and the problems are shown as the learner types. Once the text is a valid word, **Show note and stage** opens it as a word again. A file that is not text at all is only named.
+A file in `entries/` that is not a valid word is named under the list with why, and is not offered as a word. **Repair as text** opens its exact text (a file that is gone or no longer text says so instead); each change is saved as typed, and the problems are shown as the learner types. Once the text is a valid word, **Show note and stage** opens it as a word again. A file that is not text at all is only named.
 
-Delete asks first. Confirming waits for the open word's saves to land, then removes the file only if it is still what this page saved or, for a word that is not open, what the list showed; a file changed elsewhere since is refused, and the word is read again. A delete whose answer was lost is reported, and the list reads the folder again.
+Delete asks first. Confirming waits for the open word's saves to land, then removes the file only if it is still what this page saved or, for a word that is not open, what the list showed; a file changed elsewhere since is refused, and the word opens again as the file holds it. A delete whose answer was lost is reported, and the list reads the folder again. Closing the page waits for changes already under way, and leaving it while one runs asks first.
 
 ### Saving a phrase
 
@@ -85,5 +85,7 @@ This version is built on `@epicenter/folder`'s guarded autosave (`@epicenter/sve
 - The first save of a word written by an earlier version rewrites its file in the current plain YAML form. Comments in a hand-edited word file are lost.
 - A file that is not a valid word is repaired from a list under Words, not inside a word card. Closing it while its text is still not a valid word keeps it in that list.
 - Delete no longer has unconfirmed-delete states ("Check again", "Let it go"): a delete whose answer was lost is reported once, and the list reads the folder again. Delete is refused, and the word read again, when its file changed elsewhere since this page saved or listed it.
+- A refused delete of the open word opens it again from its file, and any draft it could not save is dropped. Before, a refused delete kept the word, its text, and a failed save exactly as they were.
+- One delete is no longer queued per word. Closing the page still waits for a delete already sent, and for any other change under way (a stage press, an added word, a new chat, or a message being saved); leaving the page while one runs asks first.
 - New message files are named `<chat id>.<message id>.md`, and a chat reads only its own. Message files from before this change are still read by every chat and by the chat list; there are as many of them as there will ever be.
-- Chats are listed newest first by when they started, not by their latest message. Earlier message-only chats are placed by their latest message from before this change.
+- Chats are listed newest first by when they started, not by their latest message. A chat with messages saved before this change also moves up to its latest such message, and an earlier message-only chat is placed by its latest message; messages saved after this change never move a chat.

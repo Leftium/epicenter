@@ -43,10 +43,15 @@ export type CanonicalDocument = {
 	readonly body: string;
 };
 
-/** Why source or a document has no canonical form. `path` locates the value. */
+/**
+ * Why source or a document has no canonical form. `path` locates the value.
+ * A refusal of source has the 1-based `line` of the whole source it points
+ * at; a refusal of a document has none.
+ */
 export type CanonicalRefusal = {
 	readonly reason: string;
 	readonly path: readonly (string | number)[];
+	readonly line?: number;
 };
 
 type Path = readonly (string | number)[];
@@ -54,7 +59,9 @@ type Path = readonly (string | number)[];
 const refuse = (
 	reason: string,
 	path: Path = [],
-): Result<never, CanonicalRefusal> => Err({ reason, path });
+	line?: number,
+): Result<never, CanonicalRefusal> =>
+	Err(line === undefined ? { reason, path } : { reason, path, line });
 
 /** Alias expansions allowed per document; more is refused, not evaluated. */
 const MAX_ALIAS_EXPANSIONS = 100;
@@ -69,24 +76,57 @@ const SCALAR_TAGS = new Set(
 type Walk = {
 	readonly document: Document.Parsed;
 	readonly converting: Set<unknown>;
+	/** The whole source and where its YAML starts, to locate refusals. */
+	readonly source: string;
+	readonly yamlStart: number;
 	aliases: number;
 	nodes: number;
 };
 
+/** The 1-based line of a UTF-16 index in source. A CRLF is one line break. */
+function lineAt(source: string, index: number): number {
+	let line = 1;
+	for (let i = 0; i < index; i++) if (source.charCodeAt(i) === 0x0a) line++;
+	return line;
+}
+
+/** The line where a YAML node starts, when the parser recorded its range. */
+function lineOf(walk: Walk, node: unknown): number | undefined {
+	const start = (node as { range?: readonly number[] | null } | null)
+		?.range?.[0];
+	return start === undefined
+		? undefined
+		: lineAt(walk.source, walk.yamlStart + start);
+}
+
 /**
- * Parse framed Markdown into its complete document. Every field is kept,
- * declared or not, without schema validation. A refusal carries no partial
- * document; keep the original text available for raw repair. Parsing does
- * not retain frontmatter comments or presentation.
+ * Parsed row source and where its top-level keys are. A refusal inside a
+ * top-level field names that `field`. Internal to the package: diagnostics
+ * locate issues with it; `parseCanonicalDocument` is its public form.
  */
-export function parseCanonicalDocument(
-	source: string,
-): Result<CanonicalDocument, CanonicalRefusal> {
+export function parseRowSource(source: string): Result<
+	{
+		readonly document: CanonicalDocument;
+		/** The 1-based line of a top-level frontmatter key; found only when asked. */
+		keyLine(key: string): number | undefined;
+	},
+	{
+		readonly reason: string;
+		readonly path: readonly (string | number)[];
+		readonly line?: number;
+		/** The top-level field the refusal is inside, when it is inside one. */
+		readonly field?: string;
+	}
+> {
 	const frame = frameRowText(source);
 	if (frame.kind === 'missing')
-		return refuse('The source does not start with a --- line');
+		return refuse('The source does not start with a --- line', [], 1);
 	if (frame.kind === 'unclosed')
-		return refuse('The frontmatter opening line has no closing --- line');
+		return refuse(
+			'The frontmatter opening line has no closing --- line',
+			[],
+			1,
+		);
 	const document = parseDocument(source.slice(frame.yamlStart, frame.yamlEnd), {
 		prettyErrors: false,
 		uniqueKeys: true,
@@ -96,32 +136,96 @@ export function parseCanonicalDocument(
 	});
 	const problem = document.errors[0] ?? document.warnings[0];
 	if (problem !== undefined)
-		return refuse(`The frontmatter is not supported YAML: ${problem.message}`);
+		return refuse(
+			`The frontmatter is not supported YAML: ${problem.message}`,
+			[],
+			lineAt(source, frame.yamlStart + problem.pos[0]),
+		);
 	const body = source.slice(frame.bodyStart);
 	if (!body.isWellFormed())
-		return refuse('The body contains a lone surrogate', ['body']);
-	if (document.contents === null) return Ok({ fields: {}, body });
-	if (!isMap(document.contents))
-		return refuse('The frontmatter is not a mapping');
-	const { data: fields, error: fieldsError } = convert(document.contents, [], {
+		return refuse(
+			'The body contains a lone surrogate',
+			['body'],
+			lineAt(source, frame.bodyStart),
+		);
+	const walk: Walk = {
 		document,
 		converting: new Set(),
+		source,
+		yamlStart: frame.yamlStart,
 		aliases: 0,
 		nodes: 0,
-	});
-	if (fieldsError !== null) return Err(fieldsError);
+	};
+	if (document.contents === null)
+		return Ok({ document: { fields: {}, body }, keyLine: () => undefined });
+	if (!isMap(document.contents))
+		return refuse(
+			'The frontmatter is not a mapping',
+			[],
+			lineOf(walk, document.contents),
+		);
+	const { data: fields, error: fieldsError } = convert(
+		document.contents,
+		[],
+		walk,
+	);
+	if (fieldsError !== null) {
+		const [field] = fieldsError.path;
+		return Err(
+			typeof field === 'string' ? { ...fieldsError, field } : fieldsError,
+		);
+	}
 	// Ordinary row reads convert this same parse under yaml's alias bound,
 	// which can refuse what the count above allows. Refuse it here too, so
 	// text with a canonical form always reads as an ordinary row.
 	const { error: conversionError } = convertFrontmatter(document);
-	if (conversionError !== null) return refuse(conversionError);
+	if (conversionError !== null)
+		return refuse(conversionError, [], lineAt(source, frame.yamlStart));
+	const pairs = document.contents.items;
 	return Ok({
-		fields: fields as CanonicalDocument['fields'],
-		body,
+		document: { fields: fields as CanonicalDocument['fields'], body },
+		keyLine(key) {
+			// Conversion refused every key that is not a string scalar.
+			const pair = pairs.find((p) => isScalar(p.key) && p.key.value === key);
+			return pair === undefined ? undefined : lineOf(walk, pair.key);
+		},
 	});
 }
 
+/**
+ * Parse framed Markdown into its complete document. Every field is kept,
+ * declared or not, without schema validation. A refusal carries no partial
+ * document, and the line of the source it points at; keep the original text
+ * available for raw repair. Parsing does not retain frontmatter comments or
+ * presentation.
+ */
+export function parseCanonicalDocument(
+	source: string,
+): Result<CanonicalDocument, CanonicalRefusal> {
+	const { data: parsed, error } = parseRowSource(source);
+	if (error !== null) return refuse(error.reason, error.path, error.line);
+	return Ok(parsed.document);
+}
+
+/**
+ * Convert one node, and locate a refusal at the innermost node that made it:
+ * a refusal that already has a line passes through unchanged.
+ */
 function convert(
+	node: unknown,
+	path: Path,
+	walk: Walk,
+): Result<CanonicalValue, CanonicalRefusal> {
+	const converted = convertNode(node, path, walk);
+	if (converted.error === null || converted.error.line !== undefined)
+		return converted;
+	const line = lineOf(walk, node);
+	return line === undefined
+		? converted
+		: refuse(converted.error.reason, converted.error.path, line);
+}
+
+function convertNode(
 	node: unknown,
 	path: Path,
 	walk: Walk,
@@ -189,9 +293,17 @@ function convert(
 					typeof key.value !== 'string' ||
 					(key.tag !== undefined && key.tag !== `${TAG}str`)
 				)
-					return refuse('A mapping key is not a string', path);
+					return refuse(
+						'A mapping key is not a string',
+						path,
+						lineOf(walk, key),
+					);
 				if (!key.value.isWellFormed())
-					return refuse('A mapping key contains a lone surrogate', path);
+					return refuse(
+						'A mapping key contains a lone surrogate',
+						path,
+						lineOf(walk, key),
+					);
 				const { data: value, error: valueError } = convert(
 					pair.value,
 					[...path, key.value],

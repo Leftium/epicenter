@@ -1,7 +1,8 @@
 /**
- * Row text without a folder: interpret it, or write draft values as it.
+ * Row text without a folder: read it as a row, interpret it, or write draft
+ * values as it.
  *
- * Both functions take a table of a prepared folder definition, the one
+ * Each function takes a table of a prepared folder definition, the one
  * `defineFolder` returns, so they work before `openFolder` and with no
  * storage at all. `PreparedFolderTable` marks that table in types only. Neither reads a file, hashes, or invents a snapshot or a
  * capture: they describe text, not a file.
@@ -9,6 +10,7 @@
  *     const definition = defineFolder({ kv: {}, tables: { todos } });
  *     const { data: text } = serializeRow(definition.tables.todos, { fields, body });
  *     const reading = inspectRow(definition.tables.todos, text);
+ *     const { data: row, error: issues } = parseRow(definition.tables.todos, text);
  *
  * `serializeRow` writes the declared values it is given, so it never
  * reproduces an existing file: a field that did not conform and every key the
@@ -22,7 +24,8 @@ import {
 	type FieldMap,
 	isJsonSafe,
 } from '@epicenter/definition';
-import { Ok, type Result } from 'wellcrafted/result';
+import { Err, Ok, type Result } from 'wellcrafted/result';
+import { parseRowSource } from './canonical.js';
 import { submittedText } from './capture.js';
 import type { PreparedFolderTable } from './definition.js';
 import { TableError } from './errors.js';
@@ -222,4 +225,78 @@ export function serializeRow<const TTable extends PreparedFolderTable>(
 	issues.push(...unrepresentable(supplied));
 	if (issues.length > 0) return TableError.InvalidValues({ issues });
 	return composeRowText(table.fields, supplied, draft.body ?? '');
+}
+
+/**
+ * The editable part of a row: every frontmatter field, unknown keys
+ * included, and the Markdown body after the closing fence.
+ */
+export type Row<TFields> = {
+	fields: TFields;
+	body: string;
+};
+
+/**
+ * One reason text is not a valid row, located like a compiler diagnostic.
+ * The message stands alone; neither its wording nor the number of issues is
+ * a machine contract.
+ */
+export type RowIssue = {
+	readonly message: string;
+	/** The 1-based line in the whole text. Absent only for a declared field the text lacks. */
+	readonly line?: number;
+	/** The top-level frontmatter key involved, when there is one. */
+	readonly field?: string;
+};
+
+/** Why text is not a valid row: never empty. */
+export type RowIssues = readonly [RowIssue, ...RowIssue[]];
+
+/**
+ * Read text as a row of a prepared table: parse the complete frontmatter,
+ * then check every declared field. Synchronous and pure, so it reads an
+ * unsaved buffer as readily as a file.
+ *
+ * Text that has no canonical form fails with exactly one issue: the first
+ * problem the parser met. Text that parses fails with one issue for each way
+ * a declared field does not conform or is missing, each at the line of its
+ * key. Keys the table does not declare are kept and never an issue.
+ *
+ * A valid row's values are this parse's own: mutable, shared with nothing,
+ * and with unknown keys still on `fields`, so a caller can edit them and save
+ * the complete row. Validation cannot change them: a field's callback is
+ * shown a frozen copy.
+ */
+export function parseRow<const TTable extends PreparedFolderTable>(
+	table: TTable,
+	text: string,
+): Result<Row<CreateRowOf<TTable>>, RowIssues> {
+	const { data: parsed, error: refusal } = parseRowSource(text);
+	if (refusal !== null)
+		return Err(
+			Object.freeze([
+				Object.freeze({
+					message: refusal.reason,
+					...(refusal.line === undefined ? {} : { line: refusal.line }),
+					...(refusal.field === undefined ? {} : { field: refusal.field }),
+				}),
+			]) as RowIssues,
+		);
+	const { document, keyLine } = parsed;
+	const { issues } = conformance(table.fields, document.fields);
+	if (issues.length > 0)
+		return Err(
+			Object.freeze(
+				issues.map(({ field, message }) => {
+					const line = keyLine(field);
+					return Object.freeze(
+						line === undefined ? { message, field } : { message, line, field },
+					);
+				}),
+			) as RowIssues,
+		);
+	return Ok({
+		fields: document.fields as CreateRowOf<TTable>,
+		body: document.body,
+	});
 }

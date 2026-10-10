@@ -115,9 +115,13 @@ export type ConformanceIssue = {
 	message: string;
 };
 
-/** What one bucket's fields read as, once the schemas are resolved. */
+/**
+ * What one bucket's fields read as, once the schemas are resolved. A field
+ * map is declared readonly; the values it describes are not, so the
+ * declaration's modifier is dropped.
+ */
 type FieldsOut<TFields extends FieldMap> = {
-	[K in keyof TFields]: Static<TFields[K]>;
+	-readonly [K in keyof TFields]: Static<TFields[K]>;
 };
 
 /** A value snapshot. A storage with live bodies reaches them through its own handle. */

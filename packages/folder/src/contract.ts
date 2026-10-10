@@ -141,7 +141,11 @@ export { pathProblem, rowPath, rowStemOf } from './paths.js';
 export type { DeepReadonly, FieldIssue, ParseError } from './reading.js';
 export {
 	inspectRow,
+	parseRow,
+	type Row,
 	type RowDraft,
+	type RowIssue,
+	type RowIssues,
 	serializeRow,
 	type TableReading,
 } from './row-text.js';

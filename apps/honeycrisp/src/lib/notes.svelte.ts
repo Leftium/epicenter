@@ -8,14 +8,15 @@
  * offers the rows that read as notes and names the rest, with why, for
  * repair as text.
  *
- * One item is open at a time, in one edit session
- * (`@epicenter/svelte/edit-session`): a note opened from the list is a row
- * session over its fields and body; any other text file, a note whose text
- * is not a valid row, or a note opened as its file, is a text session over
- * its exact text. Leaving an item waits for its saves, then releases its
- * session and lists again. A save that failed or conflicted keeps the item
- * open until the person discards the draft (`open` answers `unsaved`, and
- * the view asks).
+ * One item is open at a time, in the shared open-item slot
+ * (`@epicenter/svelte/open-item`), keyed by its path and how it opens. A
+ * note opened from the list is a row session over its fields and body; any
+ * other text file, a note whose text is not a valid row, or a note opened as
+ * its file, is a text session over its exact text. Leaving an item waits for
+ * its saves, then releases its session and lists again. A save that failed or
+ * conflicted keeps the item open until the person discards the draft (`open`
+ * answers `unsaved` with that session, and the view asks). Opening the item
+ * already open, the way it is open, does nothing.
  *
  * Every save is guarded by the bytes the session last saved, so a change
  * made elsewhere is a conflict the person resolves: Reload theirs or Keep
@@ -43,12 +44,18 @@ import {
 	dirname,
 	joinPath,
 } from '@epicenter/folder/file-browser';
+import { createAdmissions } from '@epicenter/svelte/admissions';
 import {
 	createRowSession,
 	createTextSession,
 	type RowSession,
 	type TextSession,
 } from '@epicenter/svelte/edit-session';
+import {
+	createOpenItem,
+	type OpenItem,
+	type Opening,
+} from '@epicenter/svelte/open-item';
 import { createSubscriber, SvelteSet } from 'svelte/reactivity';
 import { createLogger } from 'wellcrafted/logger';
 import { Err, Ok, type Result } from 'wellcrafted/result';
@@ -74,9 +81,11 @@ export type Notes = ReturnType<typeof createNotes>;
 /** How a path opens: as the note it is, or as its exact text. */
 export type OpenAs = 'note' | 'text';
 
-/** The one open item: what the detail shows. */
-export type Opened =
-	| { readonly kind: 'loading'; readonly path: string }
+/** The open item's edit session: a note's row, or a file's text. */
+export type Session = RowSession<NoteFields> | TextSession;
+
+/** What a path loads as. */
+type Item =
 	| { readonly kind: 'note'; readonly session: RowSession<NoteFields> }
 	| { readonly kind: 'text'; readonly session: TextSession }
 	| { readonly kind: 'failed'; readonly path: string; readonly message: string }
@@ -85,6 +94,15 @@ export type Opened =
 			readonly path: string;
 			readonly size: number;
 	  };
+
+/** The one open item, or the path still loading: what the detail shows. */
+export type Opened = Item | { readonly kind: 'loading'; readonly path: string };
+
+/**
+ * The open-item key: a path, and how it was asked to open. A rename of the
+ * open item moves its key's path, so a reload reads it where it is now.
+ */
+type Key = { path: string; readonly as: OpenAs | undefined };
 
 /** A listed file the lists cannot show as a row, and why. */
 export type Problem = { readonly path: string; readonly message: string };
@@ -103,9 +121,6 @@ const BUSY =
 	'A change to this note is still running. Try again when it finishes.';
 const OPEN_AS_TEXT =
 	'This note is open as a file. Open it as a note to change it here.';
-/** Why Reload theirs showed nothing: the file is there but is not text. */
-const NOT_TEXT =
-	'This file is no longer text, so it cannot be shown here. Keep mine saves your version over it.';
 const GONE = 'This file is no longer in the folder.';
 /** Why a new note did not open: the open one holds changes it could not save. */
 const UNSAVED_STAYS =
@@ -140,8 +155,8 @@ export function describeError(
 			return `"${basename(known.path)}" already exists here.`;
 		case 'Conflict':
 			return known.actualSha256 === undefined
-				? 'The file is no longer here. Nothing was changed.'
-				: 'The file changed elsewhere. Nothing was changed. Check it and try again.';
+				? 'The file is no longer here, so nothing was changed.'
+				: 'The file changed elsewhere, so nothing was changed. Check it and try again.';
 		case 'DirectoryNotEmpty':
 			return 'The folder is not empty, so nothing was deleted.';
 		case 'SourceNotRemoved':
@@ -215,7 +230,6 @@ export function createNotes(host: NotesHost) {
 	let listing = $state.raw<FileListing | undefined>();
 	let listingError = $state<string | undefined>();
 	const trackGit = createSubscriber((update) => folder.git.subscribe(update));
-	let opened = $state.raw<Opened | undefined>();
 	/** Bumped when a note is opened, so its editor takes focus. */
 	let focusRequest = $state(0);
 	/** Which notes the list shows. */
@@ -227,8 +241,6 @@ export function createNotes(host: NotesHost) {
 	/** Folders open in the file browser; kept while the browser is hidden. */
 	const expanded = new SvelteSet<string>([NOTES]);
 	let refreshSequence = 0;
-	/** Advanced by every open, so a load that answers late installs nothing. */
-	let openSequence = 0;
 	/** Set while a close is answered: no input and no action is taken. */
 	let fenced = $state(false);
 	/** Set once `close` begins. Nothing opens after it, and the fence stays. */
@@ -236,7 +248,7 @@ export function createNotes(host: NotesHost) {
 	/** Set once the folder is being released: nothing reads it after. */
 	let released = false;
 	/** Actions admitted and not finished; a close waits for them. */
-	const operations = new SvelteSet<Promise<unknown>>();
+	const admissions = createAdmissions();
 
 	/** Whether the open item refuses input now. */
 	const locked = () => fenced || closing !== undefined;
@@ -244,30 +256,49 @@ export function createNotes(host: NotesHost) {
 	/** Why no action starts now, if one does not. */
 	const refused = () => (locked() ? CLOSING : undefined);
 
-	/** Count `work` as running until it settles. */
-	function admitted<T>(work: Promise<T>): Promise<T> {
-		operations.add(work);
-		const done = () => {
-			operations.delete(work);
-		};
-		work.then(done, done);
-		return work;
-	}
-
-	async function quiet() {
-		while (operations.size > 0) await Promise.allSettled([...operations]);
-	}
-
-	function sessionOf(item: Opened | undefined) {
-		return item?.kind === 'note' || item?.kind === 'text'
+	function sessionOf(item: Item): Session | undefined {
+		return item.kind === 'note' || item.kind === 'text'
 			? item.session
 			: undefined;
 	}
 
+	const slot: OpenItem<Key, Item, Session> = createOpenItem<
+		Key,
+		Item,
+		Session
+	>({
+		load,
+		sessionOf,
+		/**
+		 * Whether `key` names the shown item the way it is shown. A path asked
+		 * without `as` matches either way it opened. An item without a session
+		 * (failed, binary, too large) is read again, so Try again reads.
+		 */
+		sameKey(shown, key): boolean {
+			const item: Item | undefined = slot.item;
+			if (item !== undefined && sessionOf(item) === undefined) return false;
+			const kind: string | undefined = item?.kind ?? shown.as;
+			return (
+				shown.path === key.path && (key.as === undefined || key.as === kind)
+			);
+		},
+		closed: () => closing !== undefined,
+	});
+
+	/** What the detail shows; one object per load, so the view can key on it. */
+	const opened = $derived.by((): Opened | undefined => {
+		const shown = slot.shown;
+		if (shown === undefined) return undefined;
+		return shown.status === 'open'
+			? shown.item
+			: { kind: 'loading', path: shown.key.path };
+	});
+
 	/** The open note's session when `path` is open as a note. */
 	function noteAt(path: string) {
-		return opened?.kind === 'note' && opened.session.path === path
-			? opened.session
+		const item = slot.item;
+		return item?.kind === 'note' && item.session.path === path
+			? item.session
 			: undefined;
 	}
 
@@ -323,36 +354,22 @@ export function createNotes(host: NotesHost) {
 		await Promise.all([refresh(), folder.git.status().catch(() => undefined)]);
 	}
 
-	/**
-	 * Leave the open item: wait for its saves, then release its session.
-	 * Answers false, leaving it open, when a save failed or conflicted, unless
-	 * the person chose to discard that session's draft.
-	 */
-	async function leave(discard: unknown): Promise<boolean> {
-		const session = sessionOf(opened);
-		if (session === undefined) return true;
-		const settled = await session.settled();
-		if (settled.status === 'error' && discard !== session) return false;
-		session.release();
-		return true;
-	}
-
-	function openNote(stored: StoredRow<NoteFields>): Opened {
+	function openNote(stored: StoredRow<NoteFields>): Item {
 		return {
 			kind: 'note',
 			session: createRowSession(notesTable, stored, { locked }),
 		};
 	}
 
-	function openText(file: FileCapture & { text: string }): Opened {
+	function openText(file: FileCapture & { text: string }): Item {
 		return {
 			kind: 'text',
 			session: createTextSession(folder.files, file, { locked }),
 		};
 	}
 
-	/** Read `path` the way it opens: a note as a row unless `as` says text. */
-	async function load(path: string, as: OpenAs | undefined): Promise<Opened> {
+	/** Read `key.path` the way it opens: a note as a row unless `key.as` says text. */
+	async function load({ path, as }: Key): Promise<Item> {
 		const stem = noteIdOf(path);
 		if (stem !== undefined && as !== 'text') {
 			const { data: stored, error } = await notesTable.get(stem);
@@ -384,51 +401,14 @@ export function createNotes(host: NotesHost) {
 	 */
 	async function open(
 		path: string,
-		{ as, discard }: { as?: OpenAs; discard?: unknown } = {},
-	): Promise<'unsaved' | undefined> {
-		if (closing !== undefined) return undefined;
+		{ as, discard }: { as?: OpenAs; discard?: Session } = {},
+	): Promise<Opening<Session>> {
 		focusRequest += 1;
-		const session = sessionOf(opened);
-		if (session?.path === path && (as === undefined || as === opened?.kind))
-			return undefined;
-		const sequence = ++openSequence;
-		const left = opened;
-		if (!(await leave(discard))) return 'unsaved';
-		if (left !== undefined) void refresh();
-		if (sequence !== openSequence || closing !== undefined) return undefined;
+		const opening = await slot.open({ path, as }, { discard });
+		if (opening.kind !== 'done') return opening;
+		if (opening.left) void refresh();
 		for (const ancestor of ancestorsOf(path)) expanded.add(ancestor);
-		opened = { kind: 'loading', path };
-		const item = await load(path, as);
-		if (sequence !== openSequence || closing !== undefined) {
-			sessionOf(item)?.release();
-			return undefined;
-		}
-		opened = item;
-		return undefined;
-	}
-
-	/**
-	 * Show `path` again from a fresh read, in place of the open item, whose
-	 * session the caller already released.
-	 */
-	async function reload(path: string, as: OpenAs) {
-		const sequence = ++openSequence;
-		opened = { kind: 'loading', path };
-		const item = await load(path, as);
-		if (sequence !== openSequence || closing !== undefined) {
-			sessionOf(item)?.release();
-			return;
-		}
-		opened = item;
-	}
-
-	/** Close the open item, if it is at `path`, without saving more. */
-	function forget(path: string) {
-		if (opened !== undefined && pathOf(opened) === path) {
-			sessionOf(opened)?.release();
-			openSequence += 1;
-			opened = undefined;
-		}
+		return opening;
 	}
 
 	/** The capture a deletion or rename of a closed file acts on: the file as it is now. */
@@ -440,15 +420,9 @@ export function createNotes(host: NotesHost) {
 		return Ok({ path: read.path, sha256: read.sha256 });
 	}
 
-	/** Whether the open item has a save running or a draft it could not save. */
-	function unsaved() {
-		const status = sessionOf(opened)?.state.status;
-		return status === 'saving' || status === 'error';
-	}
-
 	/** The open item's save problem, if it has one. */
 	function saveError() {
-		const state = sessionOf(opened)?.state;
+		const state = slot.session?.state;
 		return state?.status === 'error' ? state.error : undefined;
 	}
 
@@ -462,7 +436,7 @@ export function createNotes(host: NotesHost) {
 	 * its draft. A closed note is replaced, guarded by the version the list
 	 * read: one that changed since is refused, and the list reads it again.
 	 */
-	async function changeNote(
+	const changeNote = admissions.command(async function changeNote(
 		path: string,
 		fields: Partial<NoteFields>,
 	): Promise<string | undefined> {
@@ -476,47 +450,43 @@ export function createNotes(host: NotesHost) {
 			});
 			return undefined;
 		}
-		if (opened?.kind === 'text' && opened.session.path === path)
+		const item = slot.item;
+		if (item?.kind === 'text' && item.session.path === path)
 			return OPEN_AS_TEXT;
 		const entry = notes.find((note) => note.path === path);
 		if (entry === undefined)
 			return 'This note is not in the list as last read. Check again and retry.';
-		const { error } = await admitted(
-			notesTable.replace(entry, {
-				fields: { ...entry.row.fields, ...fields },
-				body: entry.row.body,
-			}),
-		);
+		const { error } = await notesTable.replace(entry, {
+			fields: { ...entry.row.fields, ...fields },
+			body: entry.row.body,
+		});
 		await refresh();
 		return error === null ? undefined : describeError(error);
-	}
+	});
 
 	/**
 	 * Delete `file`. The open item's session is released first and its last
 	 * saves land, so the delete removes what this app saved last; a file
-	 * another program changed since is refused.
+	 * another program changed since is refused, and the open item shows the
+	 * file again as it is now, in a new session.
 	 */
-	function removeFile(file: FileCapture): Promise<string | undefined> {
-		// Admitted before its first wait, so a close waits for all of it.
-		return admitted(
-			(async () => {
-				const item = opened;
-				const session = sessionOf(item);
-				let capture = file;
-				if (session?.path === file.path) {
-					session.release();
-					capture = (await session.settled()).file;
-				}
-				const { error } = await folder.files.remove(capture);
-				if (error === null) forget(file.path);
-				// The file stayed: show it again as it is now, in a new session.
-				else if (session !== undefined && sessionOf(opened) === session)
-					await reload(file.path, item?.kind === 'text' ? 'text' : 'note');
-				await refresh();
-				return error === null ? undefined : describeError(error);
-			})(),
-		);
-	}
+	const removeFile = admissions.command(
+		async (file: FileCapture): Promise<string | undefined> => {
+			const session = slot.session;
+			const removed =
+				session?.path === file.path
+					? await slot.removeOpen(session, (capture) =>
+							folder.files.remove(capture),
+						)
+					: await folder.files.remove(file);
+			const error = removed?.error ?? null;
+			// An item shown without a session (binary, too large) closes with its file.
+			if (error === null && opened !== undefined && pathOf(opened) === file.path)
+				slot.forget();
+			await refresh();
+			return error === null ? undefined : describeError(error);
+		},
+	);
 
 	/** Delete a folder after moving its notes out; see `deleteFolder` below. */
 	async function deleteFolder(entry: FolderEntry): Promise<string | undefined> {
@@ -541,7 +511,7 @@ export function createNotes(host: NotesHost) {
 			if (problem !== undefined)
 				return `A note could not be moved out of the folder: ${problem}`;
 		}
-		const settled = await sessionOf(opened)?.settled();
+		const settled = await slot.session?.settled();
 		if (settled?.status === 'error')
 			return 'The open note could not be saved outside the folder, so the folder was kept.';
 		await refresh();
@@ -624,12 +594,10 @@ export function createNotes(host: NotesHost) {
 		noteAt,
 		/** 1 while the open item has a save running or a draft it could not save, or an action runs. */
 		get unsettled() {
-			return unsaved() || operations.size > 0 ? 1 : 0;
+			return slot.unsaved || admissions.busy ? 1 : 0;
 		},
 		get saving() {
-			return (
-				sessionOf(opened)?.state.status === 'saving' || operations.size > 0
-			);
+			return slot.session?.state.status === 'saving' || admissions.busy;
 		},
 		/** 1 when the open item's draft is known not to be in its file. */
 		get notSaved() {
@@ -661,8 +629,8 @@ export function createNotes(host: NotesHost) {
 		 * item's, when its save failed, conflicted, or was not confirmed.
 		 */
 		async settleAll(): Promise<number> {
-			await quiet();
-			const settled = await sessionOf(opened)?.settled();
+			await admissions.quiet();
+			const settled = await slot.session?.settled();
 			return settled?.status === 'error' ? 1 : 0;
 		},
 		refresh,
@@ -670,118 +638,97 @@ export function createNotes(host: NotesHost) {
 		open,
 		/**
 		 * Reload theirs for `session`, the open item's: show the file as it is
-		 * now. A note whose text is no longer a valid row opens as text; a file
-		 * that is gone closes. Answers what the person is told, if anything.
+		 * now. A file that is gone closes; one that no longer reads the way it
+		 * opened (a note whose text is not a valid row, a file that is no
+		 * longer text) opens again as what it is now. Answers what the person
+		 * is told, if anything.
 		 */
-		async reloadTheirs(
-			session: RowSession<NoteFields> | TextSession,
-		): Promise<string | undefined> {
-			const why = refused();
-			if (why !== undefined) return why;
-			const item = opened;
-			if (item === undefined || sessionOf(item) !== session) return undefined;
-			if (item.kind === 'text') {
-				const { data: found, error } = await admitted(
-					item.session.reloadTheirs(),
-				);
-				if (error !== null) return describeError(error);
-				if (found.kind === 'gone') forget(item.session.path);
-				else if (found.kind === 'other') return NOT_TEXT;
+		reloadTheirs: admissions.command(
+			async (session: Session): Promise<string | undefined> => {
+				const why = refused();
+				if (why !== undefined) return why;
+				const reloaded = await slot.reloadTheirs(session);
+				if (reloaded === undefined) return undefined;
+				if (reloaded.error !== null) return describeError(reloaded.error);
 				await refresh();
 				return undefined;
-			}
-			if (item.kind !== 'note') return undefined;
-			const { data: found, error } = await admitted(
-				item.session.reloadTheirs(),
-			);
-			if (error !== null) return describeError(error);
-			if (opened !== item) return undefined;
-			if (found.kind === 'gone') forget(item.session.path);
-			else if (found.kind === 'other') {
-				if (found.detail.name !== 'InvalidRow') return NOT_TEXT;
-				item.session.release();
-				opened = openText(found.detail);
-			}
-			await refresh();
-			return undefined;
-		},
+			},
+		),
 		/** Keep mine for `session`, the open item's: save the draft over the file, or create it again. */
-		async keepMine(
-			session: RowSession<NoteFields> | TextSession,
-		): Promise<string | undefined> {
-			const why = refused();
-			if (why !== undefined) return why;
-			if (sessionOf(opened) !== session) return undefined;
-			const { error } = await admitted(session.keepMine());
-			await refresh();
-			return error === null ? undefined : describeError(error);
-		},
+		keepMine: admissions.command(
+			async (session: Session): Promise<string | undefined> => {
+				const why = refused();
+				if (why !== undefined) return why;
+				const kept = await slot.keepMine(session);
+				if (kept === undefined) return undefined;
+				await refresh();
+				return kept.error === null ? undefined : describeError(kept.error);
+			},
+		),
 		/** Discard the open item's draft and close it. Nothing is written. */
 		discard() {
-			if (opened !== undefined) forget(pathOf(opened));
+			slot.forget();
 		},
 		/** Create a note in the folder being shown and open it. */
-		async createNote(): Promise<string | undefined> {
+		createNote: admissions.command(async (): Promise<string | undefined> => {
 			const why = refused();
 			if (why !== undefined) return why;
 			const at = now();
-			const { data: created, error } = await admitted(
-				notesTable.create(
-					{
-						fields: {
-							folderId: view.deleted ? null : view.folderId,
-							title: '',
-							pinned: false,
-							createdAt: at,
-							updatedAt: at,
-							deletedAt: null,
-						},
-						body: '',
+			const { data: created, error } = await notesTable.create(
+				{
+					fields: {
+						folderId: view.deleted ? null : view.folderId,
+						title: '',
+						pinned: false,
+						createdAt: at,
+						updatedAt: at,
+						deletedAt: null,
 					},
-					{ stem: newId() },
-				),
+					body: '',
+				},
+				{ stem: newId() },
 			);
 			if (error !== null) return describeError(error);
 			await refresh();
-			return (await open(created.path)) === undefined
-				? undefined
-				: UNSAVED_STAYS;
-		},
+			return (await open(created.path)).kind === 'unsaved'
+				? UNSAVED_STAYS
+				: undefined;
+		}),
 		/** Change a note's fields from the list: in its draft when it is open, else guarded by what was listed. */
 		patchNote: changeNote,
 		/** Move a note to Recently Deleted. The file stays; `deletedAt` is set. */
 		trashNote: (path: string) => changeNote(path, { deletedAt: now() }),
 		restoreNote: (path: string) => changeNote(path, { deletedAt: null }),
-		async createFolder(name: string): Promise<string | undefined> {
-			const why = refused();
-			if (why !== undefined) return why;
-			const { error } = await admitted(
-				foldersTable.create(
+		createFolder: admissions.command(
+			async (name: string): Promise<string | undefined> => {
+				const why = refused();
+				if (why !== undefined) return why;
+				const { error } = await foldersTable.create(
 					{ fields: { name, icon: null }, body: '' },
 					{ stem: newId() },
-				),
-			);
-			await refresh();
-			return error === null ? undefined : describeError(error);
-		},
+				);
+				await refresh();
+				return error === null ? undefined : describeError(error);
+			},
+		),
 		/** Change a folder's fields, guarded by the version the list read. */
-		async patchFolder(
-			entry: FolderEntry,
-			fields: Partial<FolderFields>,
-		): Promise<string | undefined> {
-			const why = refused();
-			if (why !== undefined) return why;
-			if (sessionOf(opened)?.path === entry.path)
-				return 'This folder is open as a file. Change it there, or close it first.';
-			const { error } = await admitted(
-				foldersTable.replace(entry, {
+		patchFolder: admissions.command(
+			async (
+				entry: FolderEntry,
+				fields: Partial<FolderFields>,
+			): Promise<string | undefined> => {
+				const why = refused();
+				if (why !== undefined) return why;
+				if (slot.session?.path === entry.path)
+					return 'This folder is open as a file. Change it there, or close it first.';
+				const { error } = await foldersTable.replace(entry, {
 					fields: { ...entry.row.fields, ...fields },
 					body: entry.row.body,
-				}),
-			);
-			await refresh();
-			return error === null ? undefined : describeError(error);
-		},
+				});
+				await refresh();
+				return error === null ? undefined : describeError(error);
+			},
+		),
 		/**
 		 * Delete a folder after moving its notes out. It is refused while any
 		 * note cannot say which folder it is in. Each note moves through its
@@ -791,10 +738,7 @@ export function createNotes(host: NotesHost) {
 		 * moved out if the delete stops, and another program can still put a
 		 * note in the folder after the last read.
 		 */
-		deleteFolder(entry: FolderEntry): Promise<string | undefined> {
-			// Admitted whole before its first wait, so a close waits for all of it.
-			return admitted(deleteFolder(entry));
-		},
+		deleteFolder: admissions.command(deleteFolder),
 		/**
 		 * Put a committed version of a note in its draft, which saves it: the
 		 * version's fields over the draft's, and its body. A version that does
@@ -824,63 +768,64 @@ export function createNotes(host: NotesHost) {
 		 * moves from what its last save confirmed; a closed file moves from what
 		 * it holds now. A note keeps its .md extension.
 		 */
-		async rename(path: string, name: string): Promise<string | undefined> {
-			const why = refused();
-			if (why !== undefined) return why;
-			const directory = dirname(path);
-			const problem = nameProblem(directory, name);
-			if (problem !== undefined) return problem;
-			const to = joinPath(directory, name);
-			if (to === path) return undefined;
-			if (notePaths.has(path) && noteIdOf(to) === undefined)
-				return 'A note file keeps its .md extension.';
-			const session = sessionOf(opened);
-			let moved: Result<unknown, Parameters<typeof describeError>[0]>;
-			if (
-				opened?.kind === 'note' &&
-				opened.session.path === path &&
-				noteIdOf(to) === undefined
-			)
-				moved = Err({
-					name: 'Refused',
-					message: 'A note file keeps its .md extension.',
-				});
-			else if (session?.path === path)
-				moved = await admitted(
-					session.rename((file) => folder.files.move(file, to)),
-				);
-			else
-				moved = await admitted(
-					(async () => {
-						const { data: file, error } = await captureNow(path);
-						if (error !== null) return Err(error);
-						// A close that began during the read stops the move.
-						if (refused() !== undefined)
-							return Err({ name: 'Closing', message: CLOSING });
-						return folder.files.move(file, to);
-					})(),
-				);
-			await refresh();
-			return moved.error === null ? undefined : describeError(moved.error);
-		},
+		rename: admissions.command(
+			async (path: string, name: string): Promise<string | undefined> => {
+				const why = refused();
+				if (why !== undefined) return why;
+				const directory = dirname(path);
+				const problem = nameProblem(directory, name);
+				if (problem !== undefined) return problem;
+				const to = joinPath(directory, name);
+				if (to === path) return undefined;
+				if (notePaths.has(path) && noteIdOf(to) === undefined)
+					return 'A note file keeps its .md extension.';
+				const item = slot.item;
+				const session = slot.session;
+				let moved: Result<unknown, Parameters<typeof describeError>[0]>;
+				if (
+					item?.kind === 'note' &&
+					item.session.path === path &&
+					noteIdOf(to) === undefined
+				)
+					moved = Err({
+						name: 'Refused',
+						message: 'A note file keeps its .md extension.',
+					});
+				else if (session?.path === path) {
+					moved = await session.rename((file) => folder.files.move(file, to));
+					// The open item's key follows it, so a reload reads it at its new path.
+					const shown = slot.shown;
+					if (shown?.status === 'open' && slot.session === session)
+						shown.key.path = session.path;
+				} else {
+					const { data: file, error } = await captureNow(path);
+					if (error !== null) moved = Err(error);
+					// A close that began during the read stops the move.
+					else if (refused() !== undefined)
+						moved = Err({ name: 'Closing', message: CLOSING });
+					else moved = await folder.files.move(file, to);
+				}
+				await refresh();
+				return moved.error === null ? undefined : describeError(moved.error);
+			},
+		),
 		/** A new empty text file; it never replaces an existing one. */
-		async createFile(
-			directory: string,
-			name: string,
-		): Promise<string | undefined> {
-			const why = refused();
-			if (why !== undefined) return why;
-			const problem = nameProblem(directory, name);
-			if (problem !== undefined) return problem;
-			const path = joinPath(directory, name);
-			const { error } = await admitted(folder.files.create(path, ''));
-			if (error !== null) return describeError(error);
-			await refresh();
-			return (await open(path, { as: 'text' })) === undefined
-				? undefined
-				: UNSAVED_STAYS;
-		},
-		async createDirectory(
+		createFile: admissions.command(
+			async (directory: string, name: string): Promise<string | undefined> => {
+				const why = refused();
+				if (why !== undefined) return why;
+				const problem = nameProblem(directory, name);
+				if (problem !== undefined) return problem;
+				const path = joinPath(directory, name);
+				const { error } = await folder.files.create(path, '');
+				if (error !== null) return describeError(error);
+				await refresh();
+				return (await open(path, { as: 'text' })).kind === 'unsaved'
+					? UNSAVED_STAYS
+					: undefined;
+			},
+		),
+		createDirectory: admissions.command(async function createDirectory(
 			directory: string,
 			name: string,
 		): Promise<string | undefined> {
@@ -894,12 +839,12 @@ export function createNotes(host: NotesHost) {
 				listing?.files.some((file) => file.path === path)
 			)
 				return `"${name}" already exists here.`;
-			const { error } = await admitted(folder.files.mkdir(path));
+			const { error } = await folder.files.mkdir(path);
 			if (error !== null) return describeError(error);
 			if (directory !== '') expanded.add(directory);
 			await refresh();
 			return undefined;
-		},
+		}),
 		/**
 		 * Capture what deleting `path` would remove, for the person to confirm.
 		 * An open item's saves land first. Only empty folders can be deleted.
@@ -918,7 +863,7 @@ export function createNotes(host: NotesHost) {
 					);
 				return Ok({ kind: 'folder', path });
 			}
-			const session = sessionOf(opened);
+			const session = slot.session;
 			const listed = notes.find((note) => note.path === path);
 			let file: FileCapture;
 			if (session?.path === path) file = (await session.settled()).file;
@@ -937,19 +882,21 @@ export function createNotes(host: NotesHost) {
 			});
 		},
 		/** Delete what was confirmed; a file that changed since is refused. */
-		async remove(deletion: Deletion): Promise<string | undefined> {
-			const why = refused();
-			if (why !== undefined) return why;
-			if (deletion.kind === 'file') return removeFile(deletion);
-			const { error } = await admitted(folder.files.rmdir(deletion.path));
-			await refresh();
-			return error === null ? undefined : describeError(error);
-		},
+		remove: admissions.command(
+			async (deletion: Deletion): Promise<string | undefined> => {
+				const why = refused();
+				if (why !== undefined) return why;
+				if (deletion.kind === 'file') return removeFile(deletion);
+				const { error } = await folder.files.rmdir(deletion.path);
+				await refresh();
+				return error === null ? undefined : describeError(error);
+			},
+		),
 		/** Commit the saved files now. Unsaved drafts are not included. */
 		commitNow: (): ReturnType<typeof folder.git.commit> =>
 			locked()
 				? Promise.resolve({ status: 'blocked', reason: CLOSING })
-				: admitted(folder.git.commit()),
+				: admissions.admit(() => folder.git.commit()),
 		/**
 		 * Fence input for good, let running actions and the open item's saves
 		 * finish, and release the folder. A draft that could not save ends with
@@ -958,15 +905,11 @@ export function createNotes(host: NotesHost) {
 		close(): Promise<void> {
 			closing ??= (async () => {
 				fenced = true;
-				await quiet();
-				const session = sessionOf(opened);
-				const settled = await session?.settled();
-				session?.release();
-				if (settled?.status === 'error')
+				await admissions.quiet();
+				const unsaved = await slot.close();
+				if (unsaved !== undefined)
 					log.warn(
-						new Error(
-							`Closed with a draft that could not be saved, in ${settled.file.path}`,
-						),
+						new Error(`Closed with a draft that could not be saved, in ${unsaved}`),
 					);
 				released = true;
 				await host.close();

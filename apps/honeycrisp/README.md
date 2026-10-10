@@ -147,14 +147,14 @@ is overwritten without your say.
 
 | What happened | What Honeycrisp does |
 | --- | --- |
-| Another program changed the file | Nothing happens until your next save. That save stops with **This changed elsewhere**: **Reload theirs** shows their version in place of your edits, and **Keep mine** saves your edits over it. Nothing is written until you choose. Returning to the window reads the lists again but never replaces an open note's text, so its undo history stays. |
+| Another program changed the file | Nothing happens until your next save. That save stops with **This changed elsewhere**: **Reload theirs** shows their version in place of your edits, and **Keep mine** saves your edits over it. If their version no longer reads the way the item opened (a note whose text is not a valid note, or a file that is no longer text), Reload theirs opens it again as what it is now. Nothing is written until you choose. Returning to the window reads the lists again but never replaces an open note's text, so its undo history stays. |
 | Another program deleted the file | Your next save stops with **This was deleted elsewhere**: **Discard** closes the note, and **Keep mine** creates the file again from your edits. |
 | You typed while a save was running | The newer typing saves next. |
 | A value is not valid for a note | It is not written; the bar names what to fix, and the next valid edit saves. |
 | A save failed | Your text stays, with **Try again**. |
 | A save got no reply | It is shown as not confirmed, with **Save again**. If it did land, that save returns the conflict prompt with your own version as theirs. |
-| You rename or delete the open item | Its saves finish first, and the rename or delete acts on what it saved last. Typing is paused while a rename, Keep mine, or Reload theirs runs. Edits made while the delete confirmation is open are saved first, then the file is deleted. A file changed elsewhere since is refused. |
-| You open another item while a save failed or conflicted | Honeycrisp asks **Discard unsaved changes?** Discarding lets the draft go; cancelling keeps the item open. |
+| You rename or delete the open item | Its saves finish first, and the rename or delete acts on what it saved last. Typing is paused while a rename, Keep mine, or Reload theirs runs. Edits made while the delete confirmation is open are saved first, then the file is deleted. A file changed elsewhere since is refused, and the open item shows it again as it is now. |
+| You open another item while a save failed or conflicted | Honeycrisp asks **Discard unsaved changes?** Discarding lets that draft go; cancelling keeps the item open. Opening the item already open does nothing and does not ask. |
 
 Unsaved text exists only in the open window. Closing the window, quitting the
 app (including Cmd+Q), and reloading the page are held back while the open
@@ -367,7 +367,7 @@ delivers events to it.
 | `src/lib/editor/markdown.ts` | Markdown to document and back, the equivalence it is held to, the check that gates opening and editing, and `bodyCodec`, which decodes and encodes a note's whole body. |
 | `src/lib/editor/rich-text.ts` | ProseMirror commands, plugins, the rule that puts each transaction's Markdown in the draft, and semantic state replacement. `EditorView.state` owns live editing state. |
 | `src/lib/note-source.ts` | The body replacement Rich and Source share (`withBody`), and list previews. |
-| `src/lib/notes.svelte.ts` | Listings, the one open item and its edit session, conflict choices, note and folder actions, and the input fence. |
+| `src/lib/notes.svelte.ts` | Listings, the one open item (in `@epicenter/svelte/open-item`) and its edit session, conflict choices, note and folder actions (counted by `@epicenter/svelte/admissions`), and the input fence. |
 | `src/lib/platform/` | The `#platform/notes-host` seam, its two leaves, and `shell.tauri.ts`, the page side of the shell's commands. |
 | `src/routes/components/` | Header, folder list, note list, the note view and its save bar, files, terminal. |
 | `src-tauri/src/lib.rs` | The desktop shell: the folder plugin, the notes scope, the window, close routing. |
@@ -428,3 +428,8 @@ edit sessions, and dropped several promises of the version before it:
   tracking that went with it.
 - The first save of a hand-written note rewrites its frontmatter as plain
   YAML; comments and custom quoting are not kept.
+- Reload theirs on a file that is no longer text, or on a note whose text no
+  longer reads as a note, no longer keeps your draft with a notice. It takes
+  their version and opens the file again as what it is now (its text for
+  repair, or why it cannot be opened), so Keep mine is no longer offered
+  afterwards.

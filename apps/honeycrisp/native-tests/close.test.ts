@@ -408,7 +408,7 @@ test('a rich-text edit whose save failed is kept, with its undo history, when th
 
 test('a note opened as its file whose write failed holds the close, and keeps its text', async () => {
 	const { gate, disk, notes, prompts } = await editingNote();
-	expect(await notes.open(NOTE_PATH, { as: 'text' })).toBeUndefined();
+	expect((await notes.open(NOTE_PATH, { as: 'text' })).kind).toBe('done');
 	const item = notes.opened;
 	if (item?.kind !== 'text')
 		throw new Error('The note did not open as its file');

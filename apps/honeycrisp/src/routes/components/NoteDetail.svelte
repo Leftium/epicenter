@@ -21,7 +21,7 @@
 	import { confirmDelete, openItem } from './file-actions.js';
 	import NoteHistory from './NoteHistory.svelte';
 	import RichEditor from './RichEditor.svelte';
-	import SaveBar from './SaveBar.svelte';
+	import SaveBar from '@epicenter/svelte/save-bar';
 
 	let { notes, session }: { notes: Notes; session: RowSession<NoteFields> } = $props();
 

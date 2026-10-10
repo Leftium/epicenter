@@ -63,21 +63,20 @@ export async function confirmDelete(notes: Notes, path: string) {
 
 /**
  * Open `path`, asking first when the open item holds a draft it could not
- * save: discarding it lets the open proceed, cancelling keeps the item.
+ * save: discarding it lets the open proceed, cancelling keeps the item. The
+ * discard applies to the session the open answered, the one the dialog
+ * describes.
  */
 export async function openItem(notes: Notes, path: string, as?: OpenAs) {
-	// The draft the dialog describes: confirming discards this one only.
-	const item = notes.opened;
-	if ((await notes.open(path, { as })) !== 'unsaved') return;
-	const session =
-		item?.kind === 'note' || item?.kind === 'text' ? item.session : undefined;
+	const opening = await notes.open(path, { as });
+	if (opening.kind !== 'unsaved') return;
 	confirmationDialog.open({
 		title: 'Discard unsaved changes?',
 		description:
 			'The open file has changes that could not be saved. Discard them to open another file, or cancel to keep working on them.',
 		confirm: { text: 'Discard', variant: 'destructive' },
 		async onConfirm() {
-			await notes.open(path, { as, discard: session });
+			await notes.open(path, { as, discard: opening.session });
 		},
 	});
 }

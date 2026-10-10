@@ -19,7 +19,7 @@
 	import { type Notes, type Opened, pathOf } from '$lib/notes.svelte.js';
 	import { confirmDelete, copyPath, openItem } from './file-actions.js';
 	import FileNameBar from './FileNameBar.svelte';
-	import SaveBar from './SaveBar.svelte';
+	import SaveBar from '@epicenter/svelte/save-bar';
 
 	let {
 		notes,

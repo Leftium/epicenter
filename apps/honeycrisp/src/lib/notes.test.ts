@@ -74,7 +74,7 @@ function textSession(notes: Notes) {
 }
 
 async function openNote(notes: Notes, path = A) {
-	expect(await notes.open(path)).toBeUndefined();
+	expect((await notes.open(path)).kind).toBe('done');
 	return noteSession(notes);
 }
 
@@ -269,14 +269,14 @@ test('an invalid note is named for repair, opens as text, saves as typed, and re
 	await disk.write('notes/c.md', broken);
 	await notes.check();
 	expect(notes.repairs.map((repair) => repair.path)).toEqual(['notes/c.md']);
-	expect(await notes.open('notes/c.md')).toBeUndefined();
+	expect((await notes.open('notes/c.md')).kind).toBe('done');
 	const text = textSession(notes);
 	expect(text.draft).toBe(broken);
 	const repaired = noteText({ title: 'Gamma', body: 'Body.\n' });
 	text.input(repaired);
 	expect((await text.settled()).status).toBe('saved');
 	expect(disk.text('notes/c.md')).toBe(repaired);
-	expect(await notes.open('notes/c.md', { as: 'note' })).toBeUndefined();
+	expect((await notes.open('notes/c.md', { as: 'note' })).kind).toBe('done');
 	expect(noteSession(notes).draft.fields.title).toBe('Gamma');
 	await notes.refresh();
 	expect(notes.repairs).toEqual([]);
@@ -288,12 +288,12 @@ test('a note opens as its file and back, with one read each way', async () => {
 	session.edit((row) => {
 		row.body = 'Edited.\n';
 	});
-	expect(await notes.open(A, { as: 'text' })).toBeUndefined();
+	expect((await notes.open(A, { as: 'text' })).kind).toBe('done');
 	// The edit saved before the note was let go, and the text is the file's.
 	expect(textSession(notes).draft).toBe(disk.text(A) as string);
 	expect(textSession(notes).draft).toContain('Edited.\n');
 	expect(session.locked).toBe(true);
-	expect(await notes.open(A, { as: 'note' })).toBeUndefined();
+	expect((await notes.open(A, { as: 'note' })).kind).toBe('done');
 	expect(noteSession(notes).draft.body).toBe('Edited.\n');
 });
 
@@ -308,21 +308,62 @@ test('leaving a note whose save failed answers unsaved until the person discards
 	session.edit((row) => {
 		row.body = 'Mine.\n';
 	});
-	expect(await notes.open(B)).toBe('unsaved');
+	expect((await notes.open(B)).kind).toBe('unsaved');
 	expect(noteSession(notes)).toBe(session);
 	expect(notes.unsettled).toBe(1);
 	disk.failWrites(false);
-	expect(await notes.open(B, { discard: session })).toBeUndefined();
+	expect((await notes.open(B, { discard: session })).kind).toBe('done');
 	expect(noteSession(notes).path).toBe(B);
 	expect(session.locked).toBe(true);
 	expect(disk.text(A)).not.toContain('Mine.');
 });
 
-test('opening the open note again changes nothing', async () => {
-	const { notes } = await open();
+test('opening the open note again changes nothing, even when its save failed', async () => {
+	const { notes, disk } = await open();
 	const session = await openNote(notes);
-	expect(await notes.open(A)).toBeUndefined();
+	expect(await notes.open(A)).toEqual({ kind: 'done', left: false });
 	expect(noteSession(notes)).toBe(session);
+	disk.failWrites();
+	session.edit((row) => {
+		row.body = 'Mine.\n';
+	});
+	expect((await session.settled()).status).toBe('error');
+	// Not a discard prompt: the note is already open.
+	expect(await notes.open(A)).toEqual({ kind: 'done', left: false });
+	expect(noteSession(notes)).toBe(session);
+	expect(session.draft.body).toBe('Mine.\n');
+});
+
+test('a discard after Reload theirs reopened the item applies to the session the open answered', async () => {
+	const { notes, disk } = await open();
+	const before = await openNote(notes);
+	disk.put(A, '---\ntitle: [broken\n---\nTheirs.\n');
+	before.edit((row) => {
+		row.body = 'Mine.\n';
+	});
+	await before.settled();
+	expect(await notes.reloadTheirs(before)).toBeUndefined();
+	const text = textSession(notes);
+	disk.failWrites();
+	text.input('---\ntitle: [still broken\n---\nMine.\n');
+	expect((await text.settled()).status).toBe('error');
+	const opening = await notes.open(B);
+	if (opening.kind !== 'unsaved') throw new Error(`Expected unsaved, got ${opening.kind}`);
+	expect(opening.session).toBe(text);
+	// The session from before the swap discards nothing.
+	expect((await notes.open(B, { discard: before })).kind).toBe('unsaved');
+	disk.failWrites(false);
+	expect((await notes.open(B, { discard: opening.session })).kind).toBe('done');
+	expect(noteSession(notes).path).toBe(B);
+});
+
+test('Try again on a file that did not open reads it again', async () => {
+	const { notes, disk } = await open();
+	expect((await notes.open('notes/c.md')).kind).toBe('done');
+	expect(notes.opened?.kind).toBe('failed');
+	await disk.write('notes/c.md', noteText({ title: 'Gamma' }));
+	expect((await notes.open('notes/c.md')).kind).toBe('done');
+	expect(noteSession(notes).draft.fields.title).toBe('Gamma');
 });
 
 test('a list action on the open note is an edit to its draft', async () => {
@@ -469,6 +510,40 @@ test('close waits for a whole folder delete, not only the write running when it 
 	await closing;
 	expect(disk.text(B)).toContain('folderId: null');
 	expect(disk.text(folder.path)).toBeUndefined();
+});
+
+test('close waits for a rename of a closed file, from its read through its move', async () => {
+	const { notes, disk } = await open();
+	disk.hold();
+	const renaming = notes.rename(B, 'renamed.md');
+	await until(() => disk.held().length === 1, 'the move to start writing');
+	const closing = notes.close();
+	opened.splice(opened.indexOf(notes), 1);
+	let closed = false;
+	void closing.then(() => {
+		closed = true;
+	});
+	await Promise.resolve();
+	expect(closed).toBe(false);
+	disk.release({ all: true });
+	expect(await renaming).toBeUndefined();
+	await closing;
+	expect(disk.text(B)).toBeUndefined();
+	expect(disk.text('notes/renamed.md')).toContain('Beta');
+});
+
+test('a refused delete after renaming the open note shows it again at its new path', async () => {
+	const { notes, disk } = await open();
+	const session = await openNote(notes);
+	expect(await notes.rename(A, 'renamed.md')).toBeUndefined();
+	const { data: deletion } = await notes.deletionFor('notes/renamed.md');
+	if (deletion === null) throw new Error('No deletion');
+	disk.put('notes/renamed.md', noteText({ title: 'Changed elsewhere' }));
+	expect(await notes.remove(deletion)).toContain('changed elsewhere');
+	const reopened = noteSession(notes);
+	expect(reopened).not.toBe(session);
+	expect(reopened.path).toBe('notes/renamed.md');
+	expect(reopened.draft.fields.title).toBe('Changed elsewhere');
 });
 
 // ============================================================================

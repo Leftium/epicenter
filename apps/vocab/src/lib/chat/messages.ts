@@ -6,17 +6,25 @@ import {
 } from '@epicenter/agent';
 import { InstantString } from '@epicenter/app/field';
 import {
+	type FileError,
+	type FolderFiles,
+	rowPath,
+	rowStemOf,
+} from '@epicenter/folder';
+import {
 	defineErrors,
 	extractErrorMessage,
 	type InferErrors,
 } from 'wellcrafted/error';
-import { Ok, type Result } from 'wellcrafted/result';
+import { Err, Ok, type Result } from 'wellcrafted/result';
 import {
 	type Chat,
 	type ChatMessage,
 	type FocusItem,
 	readMessage,
+	rowProblem,
 	type UnreadableFile,
+	type VocabFolder,
 	type VocabTables,
 } from '../data.js';
 
@@ -41,38 +49,108 @@ export const ChatHistoryError = defineErrors({
 export type ChatHistoryError = InferErrors<typeof ChatHistoryError>;
 
 /**
+ * Whether two JSON values are equal. A file keeps neither key order nor a key
+ * whose value is `undefined`, so neither counts.
+ */
+function sameJson(a: unknown, b: unknown): boolean {
+	if (a === b) return true;
+	if (typeof a !== 'object' || typeof b !== 'object' || !a || !b) return false;
+	if (Array.isArray(a) !== Array.isArray(b)) return false;
+	const keys = (value: object) =>
+		Object.keys(value).filter(
+			(key) => (value as Record<string, unknown>)[key] !== undefined,
+		);
+	const [left, right] = [keys(a), keys(b)];
+	return (
+		left.length === right.length &&
+		left.every((key) =>
+			sameJson(
+				(a as Record<string, unknown>)[key],
+				(b as Record<string, unknown>)[key],
+			),
+		)
+	);
+}
+
+/** A message's file stem: its chat's ID, a dot, and the message ID. */
+export const messageStem = (chatId: string, messageId: string) =>
+	`${chatId}.${messageId}`;
+
+/**
+ * Whether a message stem predates chat prefixes. An earlier version named a
+ * message file by its message ID alone, which has no dot.
+ */
+export const isEarlierMessage = (stem: string) => !stem.includes('.');
+
+/** The stems of every row file in `messages/`, read from the directory alone. */
+export async function listMessageStems(
+	files: FolderFiles,
+): Promise<Result<string[], FileError>> {
+	const { data: children, error } = await files.children('messages');
+	if (error?.name === 'NotFound') return Ok([]);
+	if (error !== null) return Err(error);
+	return Ok(
+		children.files.flatMap((name) => {
+			const stem = rowStemOf('messages', `messages/${name}`);
+			return stem === undefined ? [] : [stem];
+		}),
+	);
+}
+
+/** Read the messages at `stems`, and report the files that are not valid messages. */
+export async function readMessages(
+	table: VocabTables['messages'],
+	stems: readonly string[],
+): Promise<{ rows: ChatMessage[]; unreadable: UnreadableFile[] }> {
+	const reads = await Promise.all(stems.map((stem) => table.get(stem)));
+	const rows: ChatMessage[] = [];
+	const unreadable: UnreadableFile[] = [];
+	reads.forEach(({ data: stored, error }, index) => {
+		const stem = stems[index] ?? '';
+		if (error !== null)
+			unreadable.push({
+				path: rowPath(table.name, stem),
+				reason: rowProblem(error),
+			});
+		else if (stored !== undefined) rows.push(readMessage(stem, stored));
+	});
+	return { rows, unreadable };
+}
+
+/**
  * One chat's finished messages, presented to the tutor loop.
  *
- * `entries` is what the folder has answered for: the messages of the latest
- * listing, and each message whose file receipt arrived after that listing
- * was asked for. A listing delivered late never removes such a message. `set` resolves
- * `Ok` only on that receipt, so the loop asks the tutor nothing before a
- * learner message is a file, and an answer is a phrase source only once it is.
+ * A message's file is `messages/<chat ID>.<message ID>.md`, so a chat reads
+ * only its own files, found by name, plus the files an earlier version
+ * named by message ID alone. `entries` is the latest read together with every
+ * message this store saved: a read never hides a message saved here. `set`
+ * resolves `Ok` only once the folder holds the file, so the loop asks the
+ * tutor nothing before a learner message is a file.
  *
- * A message's file is `messages/<message id>.md`. Creation is exclusive, so
- * saving a message again after an unconfirmed attempt finds its own file and
- * adds no second one, and a different message at that name is refused.
+ * Creation is exclusive. Saving a message again after an answer that never
+ * arrived finds its own file, compares it, and adds no second one; a
+ * different message at that name is refused.
  */
 export function createChatMessageStore(
-	table: VocabTables['messages'],
+	{ tables, files }: Pick<VocabFolder, 'tables' | 'files'>,
 	chatId: string,
 ): AgentMessageStore & {
 	/** Message files of this chat that cannot be shown or sent to the tutor. */
 	readonly unreadable: UnreadableFile[];
 	/**
 	 * Read this chat's messages from the folder. Until the first read
-	 * answers, the store is empty; a failed read leaves what it had.
+	 * answers, the store holds only what it saved; a failed read leaves what
+	 * it had.
 	 */
 	load(): Promise<Result<void, ChatHistoryError>>;
 } {
-	let saved = new Map<string, AgentMessage>();
+	const table = tables.messages;
+	const prefix = messageStem(chatId, '');
+	let listed = new Map<string, AgentMessage>();
+	/** Messages this store saved, kept over any read. */
+	const created = new Map<string, AgentMessage>();
 	let unreadable: UnreadableFile[] = [];
-	// A listing describes the folder at some moment before it is delivered. It
-	// never replaces a newer listing, and never removes a message whose
-	// receipt arrived after it was asked for.
 	let loads = 0;
-	let receipts = 0;
-	const receivedAt = new Map<string, number>();
 	const handlers = new Set<() => void>();
 	const notify = () => {
 		for (const handler of handlers) handler();
@@ -84,58 +162,53 @@ export function createChatMessageStore(
 		},
 		async load() {
 			const mine = ++loads;
-			const receiptsBefore = receipts;
-			const { data: listed, error: listError } = await table.list();
+			const { data: stems, error: listError } = await listMessageStems(files);
 			if (listError !== null)
 				return ChatHistoryError.NotRead({ cause: listError });
-			// A later load was asked for; its listing is the one to show.
+			const read = await readMessages(
+				table,
+				stems.filter(
+					(stem) => stem.startsWith(prefix) || isEarlierMessage(stem),
+				),
+			);
+			// A later load was asked for; its read is the one to show.
 			if (mine !== loads) return Ok(undefined);
-			const next = new Map<string, { stem: string; message: AgentMessage }>();
-			const problems: UnreadableFile[] = [];
-			for (const { path, result } of listed) {
-				const { data: file, error: readError } = result;
-				// A file that names no chat, because it could not be read or its
-				// text does not parse, is reported by the folder-wide list.
-				if (readError !== null || file.fields.chat !== chatId) continue;
-				const row = readMessage(file);
-				if (!row) {
-					problems.push({
-						path,
-						reason: file.issues.map((issue) => issue.message).join('; '),
-					});
-					continue;
-				}
+			const next = new Map<string, ChatMessage>();
+			for (const row of read.rows) {
+				if (row.chat !== chatId) continue;
 				// Two files can hold one message id; the lowest stem is shown.
 				const previous = next.get(row.message.id);
 				if (!previous || row.stem < previous.stem)
 					next.set(row.message.id, row);
 			}
-			const listing = new Map([...next].map(([id, row]) => [id, row.message]));
-			for (const [key, at] of receivedAt) {
-				const kept = saved.get(key);
-				if (at > receiptsBefore && kept && !listing.has(key))
-					listing.set(key, kept);
-			}
-			saved = listing;
-			unreadable = problems;
+			listed = new Map([...next].map(([id, row]) => [id, row.message]));
+			// An earlier file that cannot be read names no chat; the chat list reports it.
+			unreadable = read.unreadable.filter(({ path }) =>
+				path.startsWith(`messages/${prefix}`),
+			);
 			notify();
 			return Ok(undefined);
 		},
 		async set(key, value) {
-			const fields = { chat: chatId, message: value };
-			const { error: createError } = await table.create({ stem: key, fields });
+			const stem = messageStem(chatId, key);
+			const { error: createError } = await table.create(
+				{ fields: { chat: chatId, message: value }, body: '' },
+				{ stem },
+			);
 			if (createError !== null) {
 				if (createError.name !== 'Exists')
 					return AgentMessageStoreError.WriteFailed({ cause: createError });
-				// An earlier attempt may have landed without its receipt.
-				const { data: current, error: readError } = await table.get(key);
-				if (readError !== null)
-					return AgentMessageStoreError.WriteFailed({ cause: readError });
-				const held = current && readMessage(current);
+				// An earlier attempt may have landed without its answer.
+				const { data: current, error: readError } = await table.get(stem);
 				if (
-					!held ||
-					held.chat !== chatId ||
-					JSON.stringify(held.message) !== JSON.stringify(value)
+					readError !== null &&
+					readError.name !== 'InvalidRow' &&
+					readError.name !== 'InvalidUtf8'
+				)
+					return AgentMessageStoreError.WriteFailed({ cause: readError });
+				if (
+					current?.row.fields.chat !== chatId ||
+					!sameJson(current.row.fields.message, value)
 				) {
 					const { error: taken } = ChatHistoryError.Taken({
 						path: createError.path,
@@ -143,13 +216,14 @@ export function createChatMessageStore(
 					return AgentMessageStoreError.WriteFailed({ cause: taken });
 				}
 			}
-			saved.set(key, value);
-			receivedAt.set(key, ++receipts);
+			created.set(key, value);
 			notify();
 			return Ok(undefined);
 		},
 		*entries() {
-			for (const [key, val] of saved) yield { key, val };
+			for (const [key, val] of listed)
+				if (!created.has(key)) yield { key, val };
+			for (const [key, val] of created) yield { key, val };
 		},
 		observe(handler) {
 			handlers.add(handler);
@@ -181,14 +255,17 @@ export async function startChat(
 	};
 	const { data: created, error: createError } = await chats.create({
 		fields: chat,
+		body: '',
 	});
 	if (createError !== null)
 		return ChatHistoryError.NotSaved({ cause: createError });
-	return Ok({ id: created.stem, ...chat });
+	return Ok({ id: rowStemOf(chats.name, created.path) ?? '', ...chat });
 }
 
 /**
- * Every chat, newest activity first. A chat is a `chats` row; messages whose
+ * Every chat, newest first. A chat is a `chats` row, placed by when it
+ * started. `messages` are the files an earlier version saved, named by message
+ * ID alone: they move their chat up to their latest time, and those whose
  * chat has no row are an earlier, message-only chat, shown with its first
  * learner question as the title and no focus invented for it.
  */

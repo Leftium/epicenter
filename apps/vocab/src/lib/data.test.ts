@@ -40,17 +40,21 @@ test('a focus controls only the saved word with both its ID and its text', async
 	const folder = await browser.open();
 	// The file at the focus ID now holds another word, as another program may leave it.
 	expectOk(
-		await folder.tables.entries.create({
-			stem: 'lucid-id',
-			fields: {
-				text: 'lurid',
-				note: '',
-				stage: 'usable',
-				createdAt: InstantString.now(),
+		await folder.tables.entries.create(
+			{
+				fields: {
+					text: 'lurid',
+					note: '',
+					stage: 'usable',
+					createdAt: InstantString.now(),
+				},
+				body: '',
 			},
-		}),
+			{ stem: 'lucid-id' },
+		),
 	);
 	const { rows } = readRows(
+		'entries',
 		expectOk(await folder.tables.entries.list()),
 		readEntry,
 	);
@@ -67,7 +71,8 @@ test('a word saved on a first open is there after reopening, and the IndexedDB g
 	// Storage handed to the opener by the test helper is not seen here.
 	const read: string[] = [];
 	const globals = ['indexedDB', 'IDBKeyRange'].map(
-		(name) => [name, Object.getOwnPropertyDescriptor(globalThis, name)] as const,
+		(name) =>
+			[name, Object.getOwnPropertyDescriptor(globalThis, name)] as const,
 	);
 	for (const [name] of globals)
 		Object.defineProperty(globalThis, name, {
@@ -81,20 +86,26 @@ test('a word saved on a first open is there after reopening, and the IndexedDB g
 		await using browser = createBrowser();
 		const first = await browser.open();
 		expectOk(
-			await first.tables.entries.create({
-				stem: 'lucid',
-				fields: {
-					text: 'lucid',
-					note: 'clear',
-					stage: 'new',
-					createdAt: InstantString.now(),
+			await first.tables.entries.create(
+				{
+					fields: {
+						text: 'lucid',
+						note: 'clear',
+						stage: 'new',
+						createdAt: InstantString.now(),
+					},
+					body: '',
 				},
-			}),
+				{ stem: 'lucid' },
+			),
 		);
 		await first.close();
 		const again = await browser.open();
 		const reopened = expectOk(await again.tables.entries.get('lucid'));
-		expect(reopened?.fields).toMatchObject({ text: 'lucid', note: 'clear' });
+		expect(reopened?.row.fields).toMatchObject({
+			text: 'lucid',
+			note: 'clear',
+		});
 	} finally {
 		for (const [name, descriptor] of globals)
 			if (descriptor) Object.defineProperty(globalThis, name, descriptor);

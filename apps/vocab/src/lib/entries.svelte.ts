@@ -2,24 +2,37 @@
  * The learner's saved words, read from and saved to the folder's `entries`
  * table.
  *
- * What is listed is what the folder has answered for: a word appears once
- * its file's receipt arrives, and an edit is listed once its saves land and
- * the file is read. Notes and stages are edited through one row editor per
- * word (see `word.svelte.ts`), opened when the word's card is shown and kept
- * here, above every view of that word; its saves write the whole word.
- * Reading the list again never reloads an open word's editor. A removal is
- * fixed to the version shown when the learner asked, and made against a
- * capture read once the word's saves have settled, only when that capture is
- * that version; a word that changed elsewhere is refused and read again.
+ * The list is read when the page opens, after the app's own actions, and
+ * when the learner returns to the window; the latest read wins. It offers the
+ * files that read as words and names the rest, with why, for repair as text.
+ *
+ * One word is open at a time, in one edit session
+ * (`@epicenter/svelte/edit-session`): a valid word is a row session over its
+ * note and stage, and a file that is not a valid word is a text session over
+ * its exact text. Leaving a word waits for its saves, then releases its
+ * session and lists again. A save that failed or conflicted keeps the word
+ * open until the learner discards it (`open` answers `unsaved`, and the view
+ * asks). Returning to the window takes a newer version of the open word when
+ * it holds nothing unsaved.
  *
  * A new word's file is named by the SHA-256 of its exact text, and creation
- * is exclusive. Two adds of one text, in one tab or two, or a retry after an
- * answer that never arrived, therefore reach the same file: one creates it
- * and the others find it, with its note and stage as they are.
+ * is exclusive, so two adds of one text reach the same file.
  */
 
 import { InstantString } from '@epicenter/app/field';
-import { hashBytes, inspectRow } from '@epicenter/folder';
+import {
+	type FileCapture,
+	type FolderFiles,
+	hashBytes,
+	rowPath,
+} from '@epicenter/folder';
+import {
+	createRowSession,
+	createTextSession,
+	type RowSession,
+	type TextSession,
+	wellFormed,
+} from '@epicenter/svelte/edit-session';
 import {
 	defineErrors,
 	extractErrorMessage,
@@ -28,40 +41,20 @@ import {
 import { Ok, type Result } from 'wellcrafted/result';
 import {
 	type Entry,
+	type EntryFields,
 	readEntry,
-	readRows,
+	rowProblem,
+	type Stage,
 	type UnreadableFile,
 	type VocabTables,
-	vocabFolder,
 } from './data.js';
-import { createReread } from './reread.js';
-import { createWord, type Word } from './word.svelte.js';
 
 export const EntryError = defineErrors({
 	Empty: () => ({ message: 'There is no text to save.' }),
-	/** The file differs from what was read here. Nothing was written. */
-	Changed: () => ({
-		message:
-			'This word changed since it was shown here, so the change was not saved.',
-	}),
 	/** Another file is where this text's file belongs. Nothing was written. */
 	Taken: ({ path }: { path: string }) => ({
 		message: `A different file is already saved at '${path}', so this word was not added.`,
 		path,
-	}),
-	/** A delete was sent and its answer was lost: the word may or may not be gone. */
-	Unconfirmed: ({ cause }: { cause: unknown }) => ({
-		message: `The delete was sent, but no answer came back, so whether this word is gone is not known: ${extractErrorMessage(cause)}`,
-		cause,
-	}),
-	/** Another delete or a restoration of this word is under way. Nothing was sent. */
-	Busy: () => ({
-		message:
-			'This word is busy with another change. Nothing was deleted; try again once it finishes.',
-	}),
-	/** The words list is closing with the page. Nothing was read or deleted. */
-	Closed: () => ({
-		message: 'This page is closing, so the word was not deleted.',
 	}),
 	/** The folder did not confirm the save. */
 	NotSaved: ({ cause }: { cause: unknown }) => ({
@@ -71,14 +64,60 @@ export const EntryError = defineErrors({
 });
 export type EntryError = InferErrors<typeof EntryError>;
 
+/** The one open word: what its card, or its repair, shows. */
+export type Opened =
+	| { readonly kind: 'loading'; readonly id: string }
+	| {
+			readonly kind: 'word';
+			readonly id: string;
+			readonly session: RowSession<EntryFields>;
+	  }
+	| {
+			readonly kind: 'text';
+			readonly id: string;
+			readonly session: TextSession;
+	  }
+	| { readonly kind: 'failed'; readonly id: string; readonly message: string };
+
+/** A file in `entries/` that is not a valid word; `stem` is set when it can be repaired as text. */
+export type Repair = UnreadableFile & { readonly stem?: string };
+
+const CLOSED = 'This page is closing, so nothing was changed.';
+/** Why Reload theirs showed nothing: the file is there but is not text. */
+const NOT_TEXT =
+	'This file is no longer text, so it cannot be shown here. Keep mine saves your version over it.';
+
+/** What the learner is told about a failed change. */
+export function describeError(error: {
+	readonly name: string;
+	readonly message: string;
+}): string {
+	if (error.name === 'Conflict')
+		return 'actualSha256' in error && error.actualSha256 === undefined
+			? 'This word’s file is gone, so nothing was changed.'
+			: 'This word changed elsewhere, so nothing was changed. It has been read again.';
+	if (error.name === 'InvalidValues' && 'issues' in error)
+		return (error.issues as readonly { message: string }[])
+			.map((issue) => issue.message)
+			.join(' ');
+	return error.message;
+}
+
 export function createEntriesState({
 	table,
+	files,
 }: {
 	table: VocabTables['entries'];
+	files: FolderFiles;
 }) {
 	let rows = $state.raw<Entry[]>([]);
-	let unreadable = $state.raw<UnreadableFile[]>([]);
+	let repairs = $state.raw<Repair[]>([]);
 	let loadError = $state<string | null>(null);
+	let opened = $state.raw<Opened | undefined>();
+	let closed = false;
+	let listSequence = 0;
+	/** Advanced by every open, so a load that answers late installs nothing. */
+	let openSequence = 0;
 	/** Every saved entry, newest first. */
 	const entries = $derived(
 		rows.toSorted(
@@ -87,302 +126,293 @@ export function createEntriesState({
 		),
 	);
 
-	// Counts receipts. A listing asked for before a receipt may not hold that
-	// save, so it is not applied; the folder is read again instead, which keeps
-	// whatever else that listing held, such as another tab's new word.
-	let receipts = 0;
-	// One removal at a time per word, so each is made against the capture the
-	// one before it left.
-	const queues = new Map<string, Promise<unknown>>();
-	/** The editors of words opened on this page, kept while they are needed. */
-	const words = new Map<string, Word>();
+	const locked = () => closed;
+	const sessionOf = (item: Opened | undefined) =>
+		item?.kind === 'word' || item?.kind === 'text' ? item.session : undefined;
 
-	const refresh = createReread(async () => {
-		const before = receipts;
-		const { data: listing, error: listError } = await table.list();
-		if (before !== receipts) return false;
-		if (listError !== null) {
-			loadError = listError.message;
-			return true;
+	async function refresh() {
+		if (closed) return;
+		const sequence = ++listSequence;
+		const { data: listing, error } = await table.list();
+		if (closed || sequence !== listSequence) return;
+		if (error !== null) {
+			// Keep what was listed; never show an empty list for a failed read.
+			loadError = error.message;
+			return;
 		}
-		const read = readRows(listing, readEntry);
-		const ids = new Set(read.rows.map((entry) => entry.id));
-		// A word removed elsewhere stays listed while its save is running or
-		// failed, or its delete is unanswered, so the learner sees their text
-		// until they let it go. Nothing writes the word back. Otherwise its
-		// editor goes.
-		const kept = rows.filter(
-			(entry) => !ids.has(entry.id) && words.get(entry.id)?.unsettled,
-		);
-		for (const [id, word] of words)
-			if (!ids.has(id) && !word.unsettled) {
-				words.delete(id);
-				void word.close();
-			}
-		rows = [...read.rows, ...kept];
-		unreadable = read.unreadable;
+		const valid: Entry[] = [];
+		const repair: Repair[] = [];
+		for (const { stem, result } of listing) {
+			if (result.error === null) valid.push(readEntry(stem, result.data));
+			else if (result.error.name !== 'NotFound')
+				repair.push({
+					path: rowPath(table.name, stem),
+					reason: rowProblem(result.error),
+					// Text that is not a valid word is repaired as text; bytes that are not text are not.
+					...(result.error.name === 'InvalidRow' ? { stem } : {}),
+				});
+		}
+		rows = valid;
+		repairs = repair;
 		loadError = null;
+	}
+
+	/** List one word this page just saved, and drop any listing already under way. */
+	function receive(entry: Entry) {
+		listSequence++;
+		rows = [...rows.filter(({ id }) => id !== entry.id), entry];
+	}
+
+	/** Wait for the open word's saves, then release it; false keeps it when a save failed and was not discarded. */
+	async function leave(discard: unknown): Promise<boolean> {
+		const session = sessionOf(opened);
+		if (session === undefined) return true;
+		const settled = await session.settled();
+		if (settled.status === 'error' && discard !== session) return false;
+		session.release();
 		return true;
-	});
-
-	function receive(id: string, next: Entry | undefined) {
-		receipts++;
-		const others = rows.filter((entry) => entry.id !== id);
-		rows = next ? [...others, next] : others;
 	}
 
-	const has = (text: string) => rows.some((entry) => entry.text === text);
-
-	/** Run one removal of a word after the one before it has settled. */
-	function queued<T>(id: string, step: () => Promise<T>): Promise<T> {
-		const next = (queues.get(id) ?? Promise.resolve()).then(step, step);
-		queues.set(id, next);
-		const release = () => {
-			if (queues.get(id) === next) queues.delete(id);
+	async function load(id: string): Promise<Opened> {
+		const { data: stored, error } = await table.get(id);
+		if (error?.name === 'InvalidRow')
+			return {
+				kind: 'text',
+				id,
+				session: createTextSession(files, error, { locked }),
+			};
+		if (error !== null) return { kind: 'failed', id, message: error.message };
+		if (stored === undefined)
+			return { kind: 'failed', id, message: 'This word’s file is gone.' };
+		return {
+			kind: 'word',
+			id,
+			session: createRowSession(table, stored, { locked }),
 		};
-		void next.then(release, release);
-		return next;
 	}
 
 	/**
-	 * Read the word's file now and list what it holds. A word whose file is
-	 * gone leaves the list unless its save is running or failed.
+	 * Open the word at `id`: as its note and stage when it is a valid word,
+	 * else as its exact text. The open word's saves land first and the list is
+	 * read again. Answers `unsaved`, opening nothing, when the open word holds
+	 * a draft it could not save; `discard` names the session the learner let go.
 	 */
-	async function relist(id: string): Promise<void> {
-		const { data: current, error: readError } = await table.get(id);
-		if (readError !== null) return;
-		const entry = current && readEntry(current);
-		if (entry !== undefined) receive(id, entry);
-		else if (current === undefined && !words.get(id)?.unsettled)
-			receive(id, undefined);
-	}
-
-	/**
-	 * Delete the word's file as it is now, only when that is what the learner
-	 * chose: `listed`, the capture the list showed when they pressed Delete,
-	 * or `shown`, the exact text the word's editor held once its own admitted
-	 * saves settled. Nothing read from elsewhere since can stand in for them.
-	 * The file is read after the word's saves settled, and the delete is
-	 * conditional on exactly that read.
-	 */
-	async function deleteChosen(
-		id: string,
-		listed: Entry['file'],
-		shown: string | undefined,
-	): Promise<Result<undefined, EntryError>> {
-		const { data: current, error: readError } = await table.get(id);
-		if (readError !== null) return EntryError.NotSaved({ cause: readError });
-		// Already removed elsewhere: the word is gone, which is what was asked.
-		if (current === undefined) return Ok(undefined);
-		if (current.sha256 !== listed.sha256 && current.text !== shown)
-			return EntryError.Changed();
-		const { error: deleteError } = await table.delete(id, {
-			expectedSha256: current.sha256,
-		});
-		// Already removed elsewhere: the word is gone, which is what was asked.
-		const gone =
-			deleteError?.name === 'NotFound' ||
-			(deleteError?.name === 'Conflict' &&
-				deleteError.actualSha256 === undefined);
-		if (deleteError === null || gone) return Ok(undefined);
-		switch (deleteError.name) {
-			case 'Conflict':
-				return EntryError.Changed();
-			case 'Unconfirmed':
-				return EntryError.Unconfirmed({ cause: deleteError });
-			default:
-				return EntryError.NotSaved({ cause: deleteError });
+	async function open(id: string, { discard }: { discard?: unknown } = {}) {
+		if (closed) return undefined;
+		const sequence = ++openSequence;
+		const left = opened;
+		if (!(await leave(discard))) return 'unsaved' as const;
+		if (left !== undefined) void refresh();
+		if (sequence !== openSequence || closed) return undefined;
+		opened = { kind: 'loading', id };
+		const item = await load(id);
+		if (sequence !== openSequence || closed) {
+			sessionOf(item)?.release();
+			return undefined;
 		}
+		opened = item;
+		return undefined;
 	}
 
-	let closing: Promise<void> | undefined;
+	/** Close the open word, if it is `id`, without saving more. */
+	function forget(id: string) {
+		if (opened?.id !== id) return;
+		sessionOf(opened)?.release();
+		openSequence += 1;
+		opened = undefined;
+	}
+
+	/** The open word's row session, if `id` is open as a word. */
+	const wordSession = (id: string) =>
+		opened?.kind === 'word' && opened.id === id ? opened.session : undefined;
 
 	return {
+		/** Every saved word, newest first, as last listed. */
 		get entries() {
 			return entries;
 		},
-		/** Row files in `entries/` that cannot be shown as words. */
-		get unreadable() {
-			return unreadable;
+		/** Files in `entries/` that are not valid words, with why. */
+		get repairs() {
+			return repairs;
 		},
 		/** Why the words could not be listed at all, until a listing succeeds. */
 		get loadError() {
 			return loadError;
 		},
+		/** The open word, or `undefined`. */
+		get opened() {
+			return opened;
+		},
+		/** Whether the open word has a save running or a draft it could not save. */
+		get unsaved() {
+			const status = sessionOf(opened)?.state.status;
+			return status === 'saving' || status === 'error';
+		},
 		refresh,
-
-		/**
-		 * Whether an entry with exactly this text is in the list as last read.
-		 * A hint for what to show: `add` asks the folder before it answers.
-		 */
-		has,
+		/** Returning to the window: list again, and take a newer version of the open word when it holds nothing unsaved. */
+		async check() {
+			await Promise.all([refresh(), sessionOf(opened)?.adopt()]);
+		},
+		open,
+		/** The note and stage shown for `entry`: the open draft's when it is open. */
+		fieldsOf(entry: Entry): EntryFields {
+			return wordSession(entry.id)?.draft.fields ?? entry.stored.row.fields;
+		},
+		/** Whether a word with exactly this text is in the list as last read. */
+		has(text: string) {
+			return rows.some((entry) => entry.text === text);
+		},
 
 		/**
 		 * Save a word or a captured phrase, and answer once the folder holds its
 		 * file. The text is trimmed and otherwise exact. `present` means a word
-		 * with that exact text is already saved and nothing was written, so its
-		 * note and stage are untouched. `note` starts empty and `stage` new: both
-		 * are the learner's to set.
+		 * with that exact text is already saved and nothing was written. `note`
+		 * starts empty and `stage` new: both are the learner's to set.
 		 */
 		async add(text: string): Promise<Result<'added' | 'present', EntryError>> {
-			// The text a file can hold: saving replaces an unpaired surrogate.
-			const exact = text.trim().toWellFormed();
+			const exact = wellFormed(text.trim());
 			if (exact === '') return EntryError.Empty();
-			// The list catches a word whose file has another name, such as one
-			// written outside Vocab. It is only what was last read, so each match
-			// is read from the folder before it is called present: a word another
-			// tab removed is dropped from the list here and saved again below.
+			// A word under another name, such as one written outside Vocab, is
+			// found by its text; each match is read before it is called present.
 			for (const listed of rows.filter((entry) => entry.text === exact)) {
-				const { data: current, error: readError } = await table.get(listed.id);
-				if (readError !== null)
-					return EntryError.NotSaved({ cause: readError });
-				const held = current && readEntry(current);
-				receive(listed.id, held || undefined);
-				if (held?.text === exact) return Ok('present');
+				const { data: current } = await table.get(listed.id);
+				if (current?.row.fields.text === exact) return Ok('present');
 			}
 			const stem = await hashBytes(new TextEncoder().encode(exact));
-			const { data: created, error: createError } = await table.create({
-				stem,
-				fields: {
-					text: exact,
-					note: '',
-					stage: 'new',
-					createdAt: InstantString.now(),
+			const { data: created, error } = await table.create(
+				{
+					fields: {
+						text: exact,
+						note: '',
+						stage: 'new',
+						createdAt: InstantString.now(),
+					},
+					body: '',
 				},
-			});
-			if (createError === null) {
-				// The receipt names the bytes sent; the word is how they read.
-				receive(
-					stem,
-					readEntry({
-						...created,
-						...inspectRow(vocabFolder.tables.entries, created.text),
-					}),
-				);
+				{ stem },
+			);
+			if (error === null) {
+				receive(readEntry(stem, created));
 				return Ok('added');
 			}
-			if (createError.name !== 'Exists')
-				return EntryError.NotSaved({ cause: createError });
+			if (error.name !== 'Exists') return EntryError.NotSaved({ cause: error });
 			// Another add, another tab, or an earlier attempt whose answer was
 			// lost made the file. It is this word only if it holds this text.
 			const { data: current, error: readError } = await table.get(stem);
-			if (readError !== null) return EntryError.NotSaved({ cause: readError });
-			const held = current && readEntry(current);
-			if (!held || held.text !== exact)
-				return EntryError.Taken({ path: createError.path });
-			receive(stem, held);
+			if (
+				readError !== null &&
+				readError.name !== 'InvalidRow' &&
+				readError.name !== 'InvalidUtf8'
+			)
+				return EntryError.NotSaved({ cause: readError });
+			if (current?.row.fields.text !== exact)
+				return EntryError.Taken({ path: error.path });
+			receive(readEntry(stem, current));
 			return Ok('present');
 		},
 
+		/** Type the open word's note. */
+		inputNote(id: string, note: string) {
+			wordSession(id)?.edit((row) => {
+				row.fields.note = wellFormed(note);
+			});
+		},
+
 		/**
-		 * The editor of one word's note and stage, created on first use, opened
-		 * by its card or a stage press, and shared by every view of that word. The note and the stage are the
-		 * learner's: only their edits write them.
+		 * Press a stage. The open word takes it as an edit to its draft. A closed
+		 * word is replaced, guarded by the version the list read: one that changed
+		 * since is refused, and the list reads it again. Answers what the learner
+		 * is told, if anything.
 		 */
-		word(id: string): Word {
-			let word = words.get(id);
-			if (word === undefined) {
-				word = createWord({
-					table,
-					id,
-					listed: () => rows.find((entry) => entry.id === id),
-					onSettled: () => relist(id),
+		async setStage(entry: Entry, stage: Stage): Promise<string | undefined> {
+			if (closed) return CLOSED;
+			if (opened?.id === entry.id) {
+				if (opened.kind !== 'word')
+					return 'This word is open as text, so change its stage there.';
+				opened.session.edit((row) => {
+					row.fields.stage = stage;
 				});
-				words.set(id, word);
-				// After closing, a word is shown but starts no work.
-				if (closing) void word.close();
+				return undefined;
 			}
-			return word;
-		},
-
-		/**
-		 * Remove the entry's file, if it is still a version the learner was
-		 * shown: `chosen`, the entry as the list showed it when they asked,
-		 * which the caller fixes then, before any confirmation, so no listing
-		 * read meanwhile widens it. The word's input stops at once, its saves
-		 * already admitted settle, and only then is the file read and deleted
-		 * on that read's condition. A save that failed, or a note no file can
-		 * hold, does not stop it: the learner chose to destroy the word with
-		 * them. Done, its editor and everything typed there go with it;
-		 * refused, they stay as they were. Once the list is closing, nothing
-		 * is read or deleted.
-		 */
-		remove(chosen: Entry): Promise<Result<undefined, EntryError>> {
-			if (closing) return Promise.resolve(EntryError.Closed());
-			const { id, file: listed } = chosen;
-			const word = words.get(id);
-			const destroy = (shown: string | undefined) =>
-				queued(id, () => deleteChosen(id, listed, shown));
-			const removing = word ? word.remove(destroy) : destroy(undefined);
-			return (async () => {
-				let removed: Result<undefined, EntryError>;
-				try {
-					const answer = await removing;
-					// Another operation holds the word; it is left to finish.
-					if (answer === 'busy') return EntryError.Busy();
-					removed = answer;
-				} catch (cause) {
-					// The folder threw instead of answering: the word may be gone.
-					// The learner is told, and the word stays as it is shown.
-					return EntryError.Unconfirmed({ cause });
-				}
-				const { error: removeError } = removed;
-				if (removeError !== null) {
-					// The folder holds something other than what is shown: show that,
-					// in the word too unless its save is running or failed.
-					if (removeError.name === 'Changed') {
-						await refresh();
-						if (word?.save?.status === 'idle') await word.reload();
-					}
-					return removed;
-				}
-				if (words.get(id) === word) words.delete(id);
-				receive(id, undefined);
-				return removed;
-			})();
-		},
-
-		/** How many words have a save running or failed, or a delete in flight or unanswered. */
-		get unsettled() {
-			let count = 0;
-			for (const word of words.values()) if (word.unsettled) count++;
-			return count;
-		},
-
-		/**
-		 * The learner's choice for a word whose file is gone or whose delete
-		 * went unanswered: let the word go here. Its editor and any input it
-		 * holds go, nothing is written, and the list shows what the folder
-		 * holds.
-		 */
-		async letGo(id: string): Promise<void> {
-			const word = words.get(id);
-			words.delete(id);
-			await word?.close();
-			receive(id, undefined);
+			const { row } = entry.stored;
+			const { error } = await table.replace(entry.stored, {
+				fields: { ...row.fields, stage },
+				body: row.body,
+			});
 			await refresh();
+			return error === null ? undefined : describeError(error);
 		},
 
 		/**
-		 * Stop every word before the page releases its folder: no view takes
-		 * typing or starts new work, deletes and saves already admitted
-		 * settle, and every editor is let go.
+		 * Reload theirs for `session`, the open word's: show the file as it is
+		 * now. A word whose text is no longer valid opens as text; a file that is
+		 * gone closes. Answers what the learner is told, if anything.
 		 */
-		close(): Promise<void> {
-			closing ??= Promise.allSettled([
-				...[...words.values()].map((word) => word.close()),
-				...queues.values(),
-			]).then(() => undefined);
-			return closing;
+		async reloadTheirs(
+			session: RowSession<EntryFields> | TextSession,
+		): Promise<string | undefined> {
+			if (closed) return CLOSED;
+			const item = opened;
+			if (item === undefined || sessionOf(item) !== session) return undefined;
+			const { data: found, error } = await session.reloadTheirs();
+			if (error !== null) return describeError(error);
+			if (opened !== item) return undefined;
+			if (found.kind === 'gone') forget(item.id);
+			else if (found.kind === 'other') {
+				if (found.detail === 'binary' || found.detail.name !== 'InvalidRow')
+					return NOT_TEXT;
+				session.release();
+				opened = {
+					kind: 'text',
+					id: item.id,
+					session: createTextSession(files, found.detail, { locked }),
+				};
+			}
+			await refresh();
+			return undefined;
+		},
+		/** Keep mine for `session`, the open word's: save the draft over the file, or create it again. */
+		async keepMine(
+			session: RowSession<EntryFields> | TextSession,
+		): Promise<string | undefined> {
+			if (closed) return CLOSED;
+			if (sessionOf(opened) !== session) return undefined;
+			const { error } = await session.keepMine();
+			await refresh();
+			return error === null ? undefined : describeError(error);
+		},
+
+		/**
+		 * Delete `entry`. The open word's session is released first and its last
+		 * saves land, so the delete removes what this page saved last; a closed
+		 * word is deleted only as the list showed it. A file changed elsewhere
+		 * since is refused. Answers what the learner is told, if anything.
+		 */
+		async remove(entry: Entry): Promise<string | undefined> {
+			if (closed) return CLOSED;
+			const session = opened?.id === entry.id ? sessionOf(opened) : undefined;
+			let file: FileCapture = entry.stored;
+			if (session !== undefined) {
+				session.release();
+				file = (await session.settled()).file;
+			}
+			const { error } = await table.delete(file);
+			if (error === null) forget(entry.id);
+			// The file stayed: open it again as it is now, in a new session.
+			else if (session !== undefined && sessionOf(opened) === session)
+				await open(entry.id, { discard: session });
+			await refresh();
+			return error === null ? undefined : describeError(error);
+		},
+
+		/** Stop before the page releases its folder: the open word's saves land, and it is let go. */
+		async close() {
+			closed = true;
+			const session = sessionOf(opened);
+			await session?.settled();
+			session?.release();
 		},
 	};
 }
 
 export type EntriesState = ReturnType<typeof createEntriesState>;
-
-/** Narrow a failed change to what the learner is told. */
-export function entryErrorMessage(error: EntryError): string {
-	return error.name === 'Changed'
-		? 'This word changed in another tab, so it was not deleted. It has been read again.'
-		: error.message;
-}

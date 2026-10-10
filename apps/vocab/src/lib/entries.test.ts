@@ -1,55 +1,100 @@
 /**
  * Saved word tests.
- * The real entries state runs over Vocab's real browser folder on an in-memory OPFS stand-in. "Saved" is read back from the file, and from the folder opened
- * again, never assumed from the list on screen.
+ * The real entries state runs over Vocab's real browser folder on an
+ * in-memory OPFS stand-in. "Saved" is read back from the file, and from the
+ * folder opened again, never assumed from the list on screen.
  *
  * Key behaviors:
  * - A word is listed once its file exists, with a blank note and the New
- *   stage, and is there when the folder is opened again
- * - Text is trimmed and otherwise exact, whatever its script or spelling
- * - A phrase with the exact text of a saved word writes nothing and leaves
- *   that word's note and stage alone
- * - An open word reads another tab's edit only when it is reloaded; a save
- *   overwrites an edit that was never read here
- * - A removal of a word that changed elsewhere is refused, and the other
- *   change is kept
- * - A closed folder answers with an error and lists nothing new
- * - A row file that cannot be read as a word is reported, never dropped
- *
- * See `word.test.ts` for shared note and stage saves and raw repair.
+ *   stage; one exact text is one file, whoever adds it and however often
+ * - The open word saves each edit at once, and rapid typing writes only the
+ *   latest draft; a draft that is not a valid word is never written
+ * - A change made elsewhere is a conflict: Reload theirs shows it, Keep mine
+ *   saves the draft over it. A file deleted elsewhere: Keep mine creates it
+ *   again, Discard closes the word
+ * - A file that is not a valid word is named for repair, opens as text,
+ *   saves as typed, and reopens as a word once its text is valid
+ * - Leaving a word whose save failed answers `unsaved` until it is discarded
+ * - Returning adopts a newer version of an open word that holds nothing unsaved
+ * - A stage pressed on a closed word is guarded by the version the list read
+ * - Deleting the open word waits for its saves and removes what they saved
  */
 import './svelte-modules.test-support.js';
 import { expect, test } from 'bun:test';
 import { expectErr, expectOk } from 'wellcrafted/testing';
+import type { Entry } from './data.js';
 import {
 	createBrowser,
-	editWord,
 	entriesOf,
 	fileText,
 	gated,
-	listed,
 	tableFiles,
-	until,
 } from './folder.test-support.js';
 
 const { createEntriesState } = await import('./entries.svelte.js');
+type EntriesState = ReturnType<typeof createEntriesState>;
 
 async function setup() {
 	const browser = createBrowser();
 	const folder = await browser.open();
 	const entries = createEntriesState(entriesOf(folder));
 	await entries.refresh();
+	const { faults } = browser.opfs;
+	let entryWrites = 0;
+	let hold: PromiseWithResolvers<void> | undefined;
+	let held: PromiseWithResolvers<void> | undefined;
+	// Every stream opened under `entries/` is one write of a word file.
+	faults.open = async (path) => {
+		if (!path.includes('/entries/')) return;
+		entryWrites++;
+		const gate = hold;
+		if (gate === undefined) return;
+		hold = undefined;
+		held?.resolve();
+		await gate.promise;
+	};
 	return {
 		browser,
 		folder,
 		entries,
+		get entryWrites() {
+			return entryWrites;
+		},
+		/** Hold the next word file write until `release` runs. */
+		holdNextWrite() {
+			hold = Promise.withResolvers<void>();
+			held = Promise.withResolvers<void>();
+			return { held: held.promise, release: hold.resolve };
+		},
+		/** The next write of `path` fails before it publishes. */
+		failNextWrite(path: string) {
+			faults.write = (key) => {
+				if (!key.endsWith(`/${path}`)) return undefined;
+				faults.write = undefined;
+				return 'fail';
+			};
+		},
 		/** The words a reload would list, from a folder opened again. */
 		async reopened() {
 			const again = createEntriesState(entriesOf(await browser.open()));
 			await again.refresh();
 			return again;
 		},
-		[Symbol.asyncDispose]: () => browser[Symbol.asyncDispose](),
+		text: (path: string) => fileText(folder, path),
+		/** Another program writes the file. */
+		async writeElsewhere(path: string, content: string) {
+			expectOk(await folder.files.overwrite(path, content));
+		},
+		/** Another program deletes the file as it is now. */
+		async deleteElsewhere(path: string) {
+			expectOk(
+				await folder.files.remove(expectOk(await folder.files.read(path))),
+			);
+		},
+		async [Symbol.asyncDispose]() {
+			await entries.close();
+			await browser[Symbol.asyncDispose]();
+		},
 	};
 }
 
@@ -57,21 +102,52 @@ const summary = (state: {
 	entries: readonly { text: string; note: string; stage: string }[];
 }) => state.entries.map(({ text, note, stage }) => ({ text, note, stage }));
 
+function listed(entries: EntriesState, text: string): Entry {
+	const entry = entries.entries.find((candidate) => candidate.text === text);
+	if (entry === undefined) throw new Error(`${text} is not listed`);
+	return entry;
+}
+
+/** Add `text` and open it as a word. */
+async function openWord(entries: EntriesState, text: string) {
+	expectOk(await entries.add(text));
+	const entry = listed(entries, text);
+	expect(await entries.open(entry.id)).toBeUndefined();
+	return { entry, session: wordSession(entries) };
+}
+
+function wordSession(entries: EntriesState) {
+	const item = entries.opened;
+	if (item?.kind !== 'word')
+		throw new Error(`Expected an open word, got ${item?.kind}`);
+	return item.session;
+}
+
+function textSession(entries: EntriesState) {
+	const item = entries.opened;
+	if (item?.kind !== 'text')
+		throw new Error(`Expected open text, got ${item?.kind}`);
+	return item.session;
+}
+
+const wordText = (text: string, stage = 'new') =>
+	`---\ntext: ${text}\nnote: theirs\nstage: ${stage}\ncreatedAt: 2026-10-03T00:00:00.000Z\n---\n`;
+
+// ============================================================================
+// Adding words
+// ============================================================================
+
 test('a word is listed once its file exists, with a blank note and the New stage, and is there after reopening', async () => {
 	await using context = await setup();
 	const { folder, entries } = context;
 
 	const adding = entries.add('  lucid  ');
-	// Not listed on the request alone: only the folder's receipt lists it.
 	expect(entries.entries).toEqual([]);
 	expect(expectOk(await adding)).toBe('added');
 	expect(summary(entries)).toEqual([{ text: 'lucid', note: '', stage: 'new' }]);
-
-	const [path] = await tableFiles(folder, 'entries');
-	expect(path).toBe(`entries/${entries.entries[0]?.id}.md`);
-	expect(await fileText(folder, path ?? '')).toBe(
-		entries.entries[0]?.file.text,
-	);
+	expect(await tableFiles(folder, 'entries')).toEqual([
+		listed(entries, 'lucid').stored.path,
+	]);
 	expect(summary(await context.reopened())).toEqual([
 		{ text: 'lucid', note: '', stage: 'new' },
 	]);
@@ -81,202 +157,46 @@ test('text is trimmed and otherwise exact in any script or spelling', async () =
 	await using context = await setup();
 	const { entries } = context;
 	const texts = [
-		'\u00e9 和 \u00e9。',
+		'é 和 é。',
 		// The same letters spelled with a combining accent are another phrase.
-		'e\u0301 和 e\u0301。',
+		'é 和 é。',
 		'银行，顺便买',
 		'naïve — “quoted”: yes',
 		'مرحبا بالعالم',
 		'👩🏽‍🚀 to the 🌕',
 		'a: b # not a comment',
 	];
-
 	expect(expectErr(await entries.add('   ')).name).toBe('Empty');
 	for (const text of texts)
 		expect(expectOk(await entries.add(text))).toBe('added');
-	expect(entries.entries.map((entry) => entry.text).sort()).toEqual(
-		[...texts].sort(),
-	);
+	const sorted = [...texts].sort();
+	expect(entries.entries.map((entry) => entry.text).sort()).toEqual(sorted);
 	expect(
 		(await context.reopened()).entries.map((entry) => entry.text).sort(),
-	).toEqual([...texts].sort());
+	).toEqual(sorted);
 });
 
 test('a phrase with the exact text of a saved word writes nothing and leaves its note and stage alone', async () => {
 	await using context = await setup();
 	const { folder, entries } = context;
-
-	expectOk(await entries.add('by and large'));
-	const [entry] = entries.entries;
-	if (!entry) throw new Error('the word was not added');
-	expect(
-		await editWord(entries, entry.id, {
-			note: 'mostly; on the whole',
-			stage: 'understood',
-		}),
-	).toBeNull();
-	const before = await fileText(folder, entry.file.path);
+	const { entry, session } = await openWord(entries, 'by and large');
+	session.edit((row) => {
+		row.fields.note = 'mostly';
+		row.fields.stage = 'understood';
+	});
+	await session.settled();
+	const before = await context.text(entry.stored.path);
 
 	expect(expectOk(await entries.add(' by and large '))).toBe('present');
 	expect(await tableFiles(folder, 'entries')).toHaveLength(1);
-	expect(await fileText(folder, entry.file.path)).toBe(before);
-	expect(summary(entries)).toEqual([
-		{ text: 'by and large', note: 'mostly; on the whole', stage: 'understood' },
-	]);
+	expect(await context.text(entry.stored.path)).toBe(before);
 });
-
-test('an open word reads another tab’s edit only when reloaded, and a stage pressed here then keeps that note', async () => {
-	await using context = await setup();
-	const { browser, entries } = context;
-	expectOk(await entries.add('nuance'));
-	const id = entries.entries[0]?.id ?? '';
-	await entries.word(id).open();
-
-	const otherTab = createEntriesState(entriesOf(await browser.open()));
-	await otherTab.refresh();
-	expect(await editWord(otherTab, id, { note: 'a subtle difference' })).toBe(
-		null,
-	);
-
-	// The other tab's hint is read into the list, not into the open word.
-	await entries.refresh();
-	expect(entries.entries[0]?.note).toBe('a subtle difference');
-	expect(entries.word(id).note()).toBe('');
-	expect(await entries.word(id).reload()).toBeNull();
-	expect(entries.word(id).note()).toBe('a subtle difference');
-	expect(await entries.word(id).setStage('recognized')).toBeNull();
-	expect(summary(await context.reopened())).toEqual([
-		{ text: 'nuance', note: 'a subtle difference', stage: 'recognized' },
-	]);
-});
-
-test('a save here overwrites another tab’s edit that was never read here', async () => {
-	await using context = await setup();
-	const { browser, entries } = context;
-	expectOk(await entries.add('nuance'));
-	const id = entries.entries[0]?.id ?? '';
-	await entries.word(id).open();
-
-	const otherTab = createEntriesState(entriesOf(await browser.open()));
-	await otherTab.refresh();
-	expect(await editWord(otherTab, id, { note: 'theirs' })).toBeNull();
-
-	// No hint was read here: the stage saves this tab's whole word.
-	expect(await entries.word(id).setStage('usable')).toBeNull();
-	expect(summary(await context.reopened())).toEqual([
-		{ text: 'nuance', note: '', stage: 'usable' },
-	]);
-});
-
-test('removing deletes exactly the word shown, and refuses one that changed elsewhere', async () => {
-	await using context = await setup();
-	const { browser, folder, entries } = context;
-	expectOk(await entries.add('resilient'));
-	expectOk(await entries.add('ambiguous'));
-	const byText = (text: string) => listed(entries, text);
-
-	const otherTab = createEntriesState(entriesOf(await browser.open()));
-	await otherTab.refresh();
-	expect(
-		await editWord(otherTab, byText('resilient').id, { stage: 'usable' }),
-	).toBeNull();
-
-	expect(expectErr(await entries.remove(byText('resilient'))).name).toBe(
-		'Changed',
-	);
-	expect(await tableFiles(folder, 'entries')).toHaveLength(2);
-
-	expectOk(await entries.remove(byText('ambiguous')));
-	expect(summary(entries)).toEqual([
-		{ text: 'resilient', note: '', stage: 'usable' },
-	]);
-	expect(summary(await context.reopened())).toEqual([
-		{ text: 'resilient', note: '', stage: 'usable' },
-	]);
-	// A word the other tab still lists is already gone: that is not a failure.
-	expectOk(await otherTab.remove(listed(otherTab, 'ambiguous')));
-});
-
-test('a refused save lists nothing, and saving again adds one file', async () => {
-	await using context = await setup();
-	const { folder } = context;
-	const { gate, table } = gated(folder.tables.entries);
-	const entries = createEntriesState({ table });
-
-	gate.failing = true;
-	expect(expectErr(await entries.add('subtle')).name).toBe('NotSaved');
-	expect(entries.entries).toEqual([]);
-	expect(await tableFiles(folder, 'entries')).toEqual([]);
-
-	gate.failing = false;
-	expect(expectOk(await entries.add('subtle'))).toBe('added');
-	expect(expectOk(await entries.add('subtle'))).toBe('present');
-	expect(await tableFiles(folder, 'entries')).toHaveLength(1);
-});
-
-test('a closed folder answers with an error for a new word, an edit, and a removal', async () => {
-	await using context = await setup();
-	const { folder, entries } = context;
-	expectOk(await entries.add('in hindsight'));
-	const id = entries.entries[0]?.id ?? '';
-	const word = entries.word(id);
-	await word.open();
-	await folder.close();
-
-	expect(expectErr(await entries.add('on the fence')).name).toBe('NotSaved');
-	// The failure is shown, and the note stays shown as the learner typed it.
-	word.inputNote('looking back');
-	await until(() => word.save?.status === 'failed', 'the save to fail');
-	expect(word.note()).toBe('looking back');
-	expect(word.unsettled).toBe(true);
-	expect(
-		expectErr(await entries.remove(listed(entries, 'in hindsight'))).name,
-	).toBe('NotSaved');
-	expect(summary(entries)).toEqual([
-		{ text: 'in hindsight', note: '', stage: 'new' },
-	]);
-	await entries.refresh();
-	expect(entries.loadError).not.toBeNull();
-	// The file is as it was.
-	expect(summary(await context.reopened())).toEqual([
-		{ text: 'in hindsight', note: '', stage: 'new' },
-	]);
-});
-
-test('a row file that cannot be read as a word is reported with its path and left as it is', async () => {
-	await using context = await setup();
-	const { folder, entries } = context;
-	expectOk(await entries.add('cut to the chase'));
-	const unparsed = 'no frontmatter here\n';
-	const wrongStage =
-		'---\ntext: lucid\nnote: ""\nstage: mastered\ncreatedAt: 2026-10-03T00:00:00.000Z\n---\n';
-	expectOk(await folder.files.create('entries/unparsed.md', unparsed));
-	expectOk(await folder.files.create('entries/wrong-stage.md', wrongStage));
-
-	await entries.refresh();
-	expect(summary(entries)).toEqual([
-		{ text: 'cut to the chase', note: '', stage: 'new' },
-	]);
-	expect(entries.unreadable.map((file) => file.path).sort()).toEqual([
-		'entries/unparsed.md',
-		'entries/wrong-stage.md',
-	]);
-	expect(entries.unreadable.every((file) => file.reason.length > 0)).toBe(true);
-	expect(await fileText(folder, 'entries/unparsed.md')).toBe(unparsed);
-	expect(await fileText(folder, 'entries/wrong-stage.md')).toBe(wrongStage);
-});
-
-// ============================================================================
-// One file per exact text
-// ============================================================================
 
 test('adds of one text made together, in one tab or two, save one word', async () => {
 	await using context = await setup();
 	const { browser, folder, entries } = context;
 	const otherTab = createEntriesState(entriesOf(await browser.open()));
 	await otherTab.refresh();
-
-	// None of these sees another's word in its list before it asks the folder.
 	const outcomes = await Promise.all([
 		entries.add('on the fence'),
 		entries.add(' on the fence '),
@@ -288,105 +208,373 @@ test('adds of one text made together, in one tab or two, save one word', async (
 		'present',
 	]);
 	expect(await tableFiles(folder, 'entries')).toHaveLength(1);
-	const one = [{ text: 'on the fence', note: '', stage: 'new' }];
-	expect(summary(entries)).toEqual(one);
-	// The tab that found the file lists it without waiting for a read.
-	expect(summary(otherTab)).toEqual(one);
-	expect(summary(await context.reopened())).toEqual(one);
-
+	expect(summary(otherTab)).toEqual([
+		{ text: 'on the fence', note: '', stage: 'new' },
+	]);
 	// A different text, however close, is another word.
 	expect(expectOk(await entries.add('On the fence'))).toBe('added');
 	expect(await tableFiles(folder, 'entries')).toHaveLength(2);
 });
 
-test('a save that landed without its answer is found by the retry, with the note and stage it has by then', async () => {
+test('a refused add lists nothing; an add that landed without its answer is found by the retry', async () => {
 	await using context = await setup();
-	const { browser, folder } = context;
+	const { folder } = context;
 	const { gate, table } = gated(folder.tables.entries);
-	const entries = createEntriesState({ table });
+	const entries = createEntriesState({ table, files: folder.files });
+
+	gate.failing = true;
+	expect(expectErr(await entries.add('subtle')).name).toBe('NotSaved');
+	expect(entries.entries).toEqual([]);
+	expect(await tableFiles(folder, 'entries')).toEqual([]);
+	gate.failing = false;
 
 	gate.losingReceipt = true;
-	expect(expectErr(await entries.add('by the way 顺便')).name).toBe('NotSaved');
-	// The word is not listed, and its file is there all the same.
-	expect(entries.entries).toEqual([]);
+	expect(expectErr(await entries.add('subtle')).name).toBe('NotSaved');
 	const files = await tableFiles(folder, 'entries');
 	expect(files).toHaveLength(1);
-
-	// Another tab, which read the folder, has since made the word its own.
-	const otherTab = createEntriesState(entriesOf(await browser.open()));
-	await otherTab.refresh();
-	const id = otherTab.entries[0]?.id ?? '';
-	expect(
-		await editWord(otherTab, id, { note: 'in passing', stage: 'understood' }),
-	).toBeNull();
-
-	// The retry still has an empty list: no hint and no read reached it.
-	expect(expectOk(await entries.add('by the way 顺便'))).toBe('present');
+	expect(expectOk(await entries.add('subtle'))).toBe('present');
 	expect(await tableFiles(folder, 'entries')).toEqual(files);
-	const kept = [
-		{ text: 'by the way 顺便', note: 'in passing', stage: 'understood' },
-	];
-	expect(summary(entries)).toEqual(kept);
-	expect(summary(await context.reopened())).toEqual(kept);
+	expect(summary(entries)).toEqual([
+		{ text: 'subtle', note: '', stage: 'new' },
+	]);
 });
 
 test('a different file where a new word belongs is refused and left as it is', async () => {
 	await using context = await setup();
 	const { folder, entries } = context;
 	expectOk(await entries.add('lucid'));
-	const [path] = await tableFiles(folder, 'entries');
-	if (!path) throw new Error('the word was not added');
-	// Another program rewrote the file to hold another word.
-	const other = entries.entries[0]?.file.text.replace('lucid', 'lurid') ?? '';
-	expectOk(await folder.files.overwrite(path, other));
+	const path = listed(entries, 'lucid').stored.path;
+	const other = wordText('lurid');
+	await context.writeElsewhere(path, other);
 
 	const stale = createEntriesState(entriesOf(folder));
 	expect(expectErr(await stale.add('lucid')).name).toBe('Taken');
-	expect(stale.entries).toEqual([]);
-	expect(await fileText(folder, path)).toBe(other);
+	expect(await context.text(path)).toBe(other);
 });
 
-test('a word another tab removed, with no hint yet read here, is saved again instead of being called present', async () => {
+test('a word another tab removed is saved again instead of being called present', async () => {
 	await using context = await setup();
 	const { browser, folder, entries } = context;
 	expectOk(await entries.add('resilient'));
-	// A word whose file is not named by its text, as one written elsewhere may be.
-	expectOk(
-		await folder.tables.entries.create({
-			stem: 'earlier-id',
-			fields: {
-				text: 'ambiguous',
-				note: 'unclear',
-				stage: 'usable',
-				createdAt: entries.entries[0]?.createdAt as never,
-			},
-		}),
-	);
-	await entries.refresh();
-	expect(entries.has('resilient') && entries.has('ambiguous')).toBe(true);
-
-	// Still there: present, read from the folder, with nothing written.
-	expect(expectOk(await entries.add('ambiguous'))).toBe('present');
-	expect(await tableFiles(folder, 'entries')).toHaveLength(2);
-
-	// Another tab removes both. This tab's list still shows them.
 	const otherTab = createEntriesState(entriesOf(await browser.open()));
 	await otherTab.refresh();
-	for (const entry of otherTab.entries)
-		expectOk(await otherTab.remove(entry));
-	expect(await tableFiles(folder, 'entries')).toEqual([]);
-	expect(entries.has('resilient') && entries.has('ambiguous')).toBe(true);
+	expect(await otherTab.remove(listed(otherTab, 'resilient'))).toBeUndefined();
+	expect(entries.has('resilient')).toBe(true);
 
 	expect(expectOk(await entries.add('resilient'))).toBe('added');
-	expect(expectOk(await entries.add('ambiguous'))).toBe('added');
-	expect(await tableFiles(folder, 'entries')).toHaveLength(2);
-	// Each is one new word, not the removed one: blank note, New stage.
-	const fresh = [
-		{ text: 'ambiguous', note: '', stage: 'new' },
-		{ text: 'resilient', note: '', stage: 'new' },
-	];
-	const byText = (state: Parameters<typeof summary>[0]) =>
-		summary(state).sort((a, b) => a.text.localeCompare(b.text));
-	expect(byText(entries)).toEqual(fresh);
-	expect(byText(await context.reopened())).toEqual(fresh);
+	expect(await tableFiles(folder, 'entries')).toHaveLength(1);
+});
+
+// ============================================================================
+// Saving the open word
+// ============================================================================
+
+test('each edit saves at once, and rapid typing writes only the latest draft', async () => {
+	await using context = await setup();
+	const { entries } = context;
+	const { entry, session } = await openWord(entries, 'lucid');
+	const { held, release } = context.holdNextWrite();
+	entries.inputNote(entry.id, 'c');
+	await held;
+	const before = context.entryWrites;
+	for (const note of ['cl', 'cle', 'clea', 'clear'])
+		entries.inputNote(entry.id, note);
+	expect(session.state.status).toBe('saving');
+	release();
+	expect((await session.settled()).status).toBe('saved');
+	// The held write, then one write of the latest draft.
+	expect(context.entryWrites - before).toBe(1);
+	expect(await context.text(session.path)).toContain('note: clear');
+	expect(entries.fieldsOf(entry).note).toBe('clear');
+});
+
+test('a draft that is not a valid word is never written, and the next valid edit saves', async () => {
+	await using context = await setup();
+	const { entries } = context;
+	const { session } = await openWord(entries, 'lucid');
+	const saved = await context.text(session.path);
+	session.edit((row) => {
+		(row.fields as { stage: string }).stage = 'mastered';
+	});
+	const state = await session.settled();
+	expect(state.status === 'error' && state.error.name).toBe('InvalidValues');
+	expect(await context.text(session.path)).toBe(saved);
+	session.edit((row) => {
+		row.fields.stage = 'usable';
+	});
+	expect((await session.settled()).status).toBe('saved');
+	expect(await context.text(session.path)).toContain('stage: usable');
+});
+
+test('a note is kept well formed, so what saves is what is shown', async () => {
+	await using context = await setup();
+	const { entries } = context;
+	const { entry, session } = await openWord(entries, 'lucid');
+	entries.inputNote(entry.id, 'a\uD800b');
+	expect((await session.settled()).status).toBe('saved');
+	expect(session.draft.fields.note).toBe('a�b');
+	expect(summary(await context.reopened())[0]?.note).toBe('a�b');
+});
+
+test('a failed save keeps the draft; Try again saves it', async () => {
+	await using context = await setup();
+	const { entries } = context;
+	const { entry, session } = await openWord(entries, 'lucid');
+	context.failNextWrite(session.path);
+	entries.inputNote(entry.id, 'clear');
+	expect((await session.settled()).status).toBe('error');
+	expect(entries.unsaved).toBe(true);
+	expect(session.draft.fields.note).toBe('clear');
+	session.retry();
+	expect((await session.settled()).status).toBe('saved');
+	expect(await context.text(session.path)).toContain('note: clear');
+});
+
+// ============================================================================
+// The conflict prompt
+// ============================================================================
+
+test('a change made elsewhere is a conflict, and Reload theirs shows it without writing', async () => {
+	await using context = await setup();
+	const { entries } = context;
+	const { entry, session } = await openWord(entries, 'lucid');
+	const theirs = wordText('lucid', 'usable');
+	await context.writeElsewhere(session.path, theirs);
+	entries.inputNote(entry.id, 'mine');
+	const state = await session.settled();
+	expect(state.status === 'error' && state.error.name).toBe('Conflict');
+	expect(await context.text(session.path)).toBe(theirs);
+
+	expect(await entries.reloadTheirs(session)).toBeUndefined();
+	expect(session.draft.fields).toMatchObject({
+		note: 'theirs',
+		stage: 'usable',
+	});
+	expect(session.state.status).toBe('saved');
+	expect(await context.text(session.path)).toBe(theirs);
+	entries.inputNote(entry.id, 'after');
+	expect((await session.settled()).status).toBe('saved');
+	expect(await context.text(session.path)).toContain('note: after');
+});
+
+test('Keep mine saves the draft over a change made elsewhere', async () => {
+	await using context = await setup();
+	const { entries } = context;
+	const { entry, session } = await openWord(entries, 'lucid');
+	await context.writeElsewhere(session.path, wordText('lucid', 'usable'));
+	entries.inputNote(entry.id, 'mine');
+	await session.settled();
+	expect(await entries.keepMine(session)).toBeUndefined();
+	expect((await session.settled()).status).toBe('saved');
+	const saved = await context.text(session.path);
+	expect(saved).toContain('note: mine');
+	expect(saved).toContain('stage: new');
+});
+
+test('a word deleted elsewhere is a conflict: Keep mine creates it again from the draft', async () => {
+	await using context = await setup();
+	const { entries } = context;
+	const { entry, session } = await openWord(entries, 'lucid');
+	await context.deleteElsewhere(session.path);
+	entries.inputNote(entry.id, 'still mine');
+	const state = await session.settled();
+	expect(
+		state.status === 'error' &&
+			state.error.name === 'Conflict' &&
+			state.error.actualSha256,
+	).toBeUndefined();
+	// A deleted file is never recreated by a save.
+	expect(await context.text(session.path)).toBeUndefined();
+
+	expect(await entries.keepMine(session)).toBeUndefined();
+	expect(await context.text(session.path)).toContain('note: still mine');
+	expect(session.state.status).toBe('saved');
+	expect(summary(entries)).toEqual([
+		{ text: 'lucid', note: 'still mine', stage: 'new' },
+	]);
+});
+
+test('a word deleted elsewhere: Discard closes it without writing', async () => {
+	await using context = await setup();
+	const { entries } = context;
+	const { entry, session } = await openWord(entries, 'lucid');
+	await context.deleteElsewhere(session.path);
+	entries.inputNote(entry.id, 'mine');
+	await session.settled();
+	expect(await entries.reloadTheirs(session)).toBeUndefined();
+	expect(entries.opened).toBeUndefined();
+	expect(entries.entries).toEqual([]);
+	// The closed session takes nothing more.
+	session.edit((row) => {
+		row.fields.note = 'late';
+	});
+	await session.settled();
+	expect(await context.text(session.path)).toBeUndefined();
+});
+
+// ============================================================================
+// Repair as text
+// ============================================================================
+
+test('a file that is not a valid word is named for repair, opens as text, saves as typed, and reopens as a word', async () => {
+	await using context = await setup();
+	const { folder, entries } = context;
+	const path = 'entries/broken.md';
+	const broken =
+		'---\ntext: lucid\nnote: ""\nstage: mastered\ncreatedAt: 2026-10-03T00:00:00.000Z\n---\n';
+	expectOk(await folder.files.create(path, broken));
+	expectOk(
+		await folder.files.create('entries/unparsed.md', 'no frontmatter\n'),
+	);
+	await entries.refresh();
+	expect(entries.entries).toEqual([]);
+	expect(entries.repairs.map(({ path, stem }) => ({ path, stem }))).toEqual([
+		{ path, stem: 'broken' },
+		{ path: 'entries/unparsed.md', stem: 'unparsed' },
+	]);
+	expect(entries.repairs.every((repair) => repair.reason.length > 0)).toBe(
+		true,
+	);
+
+	expect(await entries.open('broken')).toBeUndefined();
+	const session = textSession(entries);
+	expect(session.draft).toBe(broken);
+	session.input(broken.replace('mastered', 'usabl'));
+	expect((await session.settled()).status).toBe('saved');
+	// Text that is still not a word saves exactly as typed.
+	expect(await context.text(path)).toBe(broken.replace('mastered', 'usabl'));
+	session.input(broken.replace('mastered', 'usable'));
+	await session.settled();
+
+	expect(await entries.open('broken')).toBeUndefined();
+	expect(wordSession(entries).draft.fields).toMatchObject({
+		text: 'lucid',
+		stage: 'usable',
+	});
+	await entries.refresh();
+	expect(entries.repairs.map((repair) => repair.path)).toEqual([
+		'entries/unparsed.md',
+	]);
+	expect(summary(entries)).toEqual([
+		{ text: 'lucid', note: '', stage: 'usable' },
+	]);
+});
+
+test('Reload theirs of a word made invalid elsewhere opens its text', async () => {
+	await using context = await setup();
+	const { entries } = context;
+	const { entry, session } = await openWord(entries, 'lucid');
+	await context.writeElsewhere(session.path, '---\ntext: [unclosed\n---\n');
+	entries.inputNote(entry.id, 'mine');
+	await session.settled();
+	expect(await entries.reloadTheirs(session)).toBeUndefined();
+	expect(textSession(entries).draft).toBe('---\ntext: [unclosed\n---\n');
+});
+
+// ============================================================================
+// Leaving, returning, stage presses, and deleting
+// ============================================================================
+
+test('opening another word waits for saves, and a failed save answers unsaved until discarded', async () => {
+	await using context = await setup();
+	const { entries } = context;
+	expectOk(await entries.add('candid'));
+	const { entry, session } = await openWord(entries, 'lucid');
+	context.failNextWrite(session.path);
+	entries.inputNote(entry.id, 'lost');
+	const other = listed(entries, 'candid');
+	expect(await entries.open(other.id)).toBe('unsaved');
+	expect(entries.opened?.id).toBe(entry.id);
+	expect(await entries.open(other.id, { discard: session })).toBeUndefined();
+	expect(entries.opened?.id).toBe(other.id);
+	expect(session.locked).toBe(true);
+	expect(await context.text(entry.stored.path)).not.toContain('lost');
+});
+
+test('returning adopts a newer version of an open word that holds nothing unsaved, and leaves a failed draft as it is', async () => {
+	await using context = await setup();
+	const { entries } = context;
+	const { entry, session } = await openWord(entries, 'lucid');
+	await context.writeElsewhere(session.path, wordText('lucid', 'usable'));
+	await entries.check();
+	expect(session.draft.fields).toMatchObject({
+		note: 'theirs',
+		stage: 'usable',
+	});
+
+	context.failNextWrite(session.path);
+	entries.inputNote(entry.id, 'mine');
+	await session.settled();
+	await context.writeElsewhere(session.path, wordText('lucid', 'understood'));
+	await entries.check();
+	expect(session.draft.fields.note).toBe('mine');
+});
+
+test('a stage on the open word is an edit to its draft; on a closed word it is guarded by the version the list read', async () => {
+	await using context = await setup();
+	const { entries } = context;
+	expectOk(await entries.add('candid'));
+	const { entry, session } = await openWord(entries, 'lucid');
+	expect(await entries.setStage(entry, 'recognized')).toBeUndefined();
+	expect(session.draft.fields.stage).toBe('recognized');
+	await session.settled();
+
+	const candid = listed(entries, 'candid');
+	expect(await entries.setStage(candid, 'usable')).toBeUndefined();
+	expect(listed(entries, 'candid').stage).toBe('usable');
+	// The version `candid` was read at is gone now: the press is refused.
+	expect(await entries.setStage(candid, 'new')).toContain('changed elsewhere');
+	expect(listed(entries, 'candid').stage).toBe('usable');
+});
+
+test('deleting the open word waits for its saves and removes what they saved', async () => {
+	await using context = await setup();
+	const { folder, entries } = context;
+	const { entry, session } = await openWord(entries, 'lucid');
+	const { held, release } = context.holdNextWrite();
+	entries.inputNote(entry.id, 'typed before delete');
+	await held;
+	const removing = entries.remove(entry);
+	// Input stops at once.
+	expect(session.locked).toBe(true);
+	release();
+	expect(await removing).toBeUndefined();
+	expect(entries.opened).toBeUndefined();
+	expect(entries.entries).toEqual([]);
+	expect(await tableFiles(folder, 'entries')).toEqual([]);
+});
+
+test('a delete is refused when the word changed elsewhere, and the word opens again as it is now', async () => {
+	await using context = await setup();
+	const { folder, entries } = context;
+	const { entry, session } = await openWord(entries, 'lucid');
+	await context.writeElsewhere(session.path, wordText('lucid', 'usable'));
+	expect(await entries.remove(entry)).toContain('changed elsewhere');
+	expect(await tableFiles(folder, 'entries')).toHaveLength(1);
+	expect(wordSession(entries).draft.fields.stage).toBe('usable');
+});
+
+test('a closed word is deleted only as the list showed it', async () => {
+	await using context = await setup();
+	const { folder, entries } = context;
+	expectOk(await entries.add('lucid'));
+	const entry = listed(entries, 'lucid');
+	await context.writeElsewhere(entry.stored.path, wordText('lucid', 'usable'));
+	expect(await entries.remove(entry)).toContain('changed elsewhere');
+	expect(await tableFiles(folder, 'entries')).toHaveLength(1);
+	expect(await entries.remove(listed(entries, 'lucid'))).toBeUndefined();
+	expect(await tableFiles(folder, 'entries')).toEqual([]);
+});
+
+test('a closed folder answers with an error and lists nothing new', async () => {
+	await using context = await setup();
+	const { folder, entries } = context;
+	expectOk(await entries.add('in hindsight'));
+	await folder.close();
+	expect(expectErr(await entries.add('on the fence')).name).toBe('NotSaved');
+	await entries.refresh();
+	expect(entries.loadError).not.toBeNull();
+	expect(summary(entries)).toEqual([
+		{ text: 'in hindsight', note: '', stage: 'new' },
+	]);
 });

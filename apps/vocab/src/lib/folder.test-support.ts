@@ -6,7 +6,7 @@
  * gated table is the real table with one refusal or delay put in front of it,
  * the way a full or slow browser store answers.
  */
-import { FileError } from '@epicenter/folder';
+import { FileError, type FolderFiles } from '@epicenter/folder';
 import { openFolder } from '@epicenter/folder/browser';
 import { expectOk } from 'wellcrafted/testing';
 import {
@@ -14,14 +14,7 @@ import {
 	createTestStorage,
 	opfsOf,
 } from '../../../../packages/folder/src/browser-storage.test-support.js';
-import {
-	type Entry,
-	type Stage,
-	type VocabFolder,
-	type VocabTables,
-	vocabFolder,
-} from './data.js';
-import type { EntriesState } from './entries.svelte.js';
+import { type VocabFolder, type VocabTables, vocabFolder } from './data.js';
 import { VOCAB_FOLDER_ID } from './folder.js';
 
 /** Let the folder answer until `done` holds. */
@@ -33,53 +26,10 @@ export async function until(done: () => boolean, what: string) {
 	throw new Error(`Timed out waiting for ${what}`);
 }
 
-/**
- * Edit a word the way its card does: type the note, then press a stage, and
- * wait until the saves land and the list shows them. Answers why it was not
- * saved, or null.
- */
-export async function editWord(
-	entries: EntriesState,
-	id: string,
-	edit: { note?: string; stage?: Stage },
-): Promise<string | null> {
-	const word = entries.word(id);
-	await word.open();
-	if (edit.note !== undefined) {
-		const refused = word.inputNote(edit.note);
-		if (refused !== null) return refused;
-	}
-	if (edit.stage !== undefined) {
-		const failed = await word.setStage(edit.stage);
-		if (failed !== null) return failed;
-	}
-	await until(() => word.save?.status !== 'saving', 'the word to save');
-	const { save } = word;
-	if (save?.status === 'failed') return `not saved: ${save.error.message}`;
-	await until(
-		() =>
-			entries.entries.find((entry) => entry.id === id)?.file.text ===
-			word.row?.text,
-		'the list to show the saved word',
-	);
-	return null;
-}
-
-/**
- * The word as the list shows it now, by its text or its ID: what a Delete
- * press fixes as the learner's choice.
- */
-export function listed(entries: EntriesState, key: string): Entry {
-	const entry = entries.entries.find(
-		(candidate) => candidate.text === key || candidate.id === key,
-	);
-	if (entry === undefined) throw new Error(`${key} is not listed`);
-	return entry;
-}
-
 /** What the words list is given from an open folder, as the page gives it. */
 export const entriesOf = (folder: VocabFolder) => ({
 	table: folder.tables.entries,
+	files: folder.files,
 });
 
 /**
@@ -156,50 +106,6 @@ export async function tableFiles(
 }
 
 /**
- * The real entries table with its word operations held where a test says.
- * `edit` and `get` wait before they read anything; `delete` runs for real
- * first, so the file is gone, and its answer waits. `deletes` counts deletes
- * sent. While `refusing` names `edit` or `get`,
- * that call answers with a storage failure and reads nothing, the way a
- * browser store that cannot read answers.
- */
-export function heldEntries(table: VocabTables['entries']) {
-	const holds: {
-		edit?: Promise<void>;
-		get?: Promise<void>;
-		deleteAnswer?: Promise<void>;
-		refusing: Set<'edit' | 'get'>;
-		deletes: number;
-	} = { refusing: new Set(), deletes: 0 };
-	const refused = (stem: string) =>
-		FileError.Io({
-			path: `entries/${stem}.md`,
-			operation: 'read',
-			cause: new Error('storage refused'),
-		});
-	const held: VocabTables['entries'] = {
-		...table,
-		async edit(stem, options) {
-			await holds.edit;
-			if (holds.refusing.has('edit')) return refused(stem);
-			return table.edit(stem, options);
-		},
-		async get(stem) {
-			await holds.get;
-			if (holds.refusing.has('get')) return refused(stem);
-			return table.get(stem);
-		},
-		async delete(stem, options) {
-			holds.deletes++;
-			const deleted = await table.delete(stem, options);
-			await holds.deleteAnswer;
-			return deleted;
-		},
-	};
-	return { holds, table: held };
-}
-
-/**
  * The real table behind a gate. While `failing`, `create` and `list` answer
  * with a storage failure and write or read nothing. A held operation waits
  * for its promise, then runs for real. A lost receipt and a held listing run
@@ -230,11 +136,14 @@ export function gated<TTable extends VocabTables[keyof VocabTables]>(
 		gate,
 		table: {
 			...table,
-			async create(input: Parameters<TTable['create']>[0]) {
+			async create(
+				row: Parameters<TTable['create']>[0],
+				options?: Parameters<TTable['create']>[1],
+			) {
 				await gate.heldCreate;
 				gate.creates++;
 				if (gate.failing) return refused('write');
-				const created = await table.create(input as never);
+				const created = await table.create(row as never, options);
 				if (!gate.losingReceipt) return created;
 				gate.losingReceipt = false;
 				return refused('confirm the write of');
@@ -250,5 +159,35 @@ export function gated<TTable extends VocabTables[keyof VocabTables]>(
 				return listed;
 			},
 		} as TTable,
+	};
+}
+
+/**
+ * The folder with its `messages` table behind a gate, and `messages/` listed
+ * through the same gate: a chat's read lists that directory, so `heldList`,
+ * `heldListing`, and `failing` hold or refuse it as they do a table listing.
+ */
+export function gatedMessages(folder: VocabFolder) {
+	const { gate, table } = gated(folder.tables.messages);
+	const files: FolderFiles = {
+		...folder.files,
+		async children(directory) {
+			const { heldListing } = gate;
+			gate.lists++;
+			await gate.heldList;
+			if (gate.failing)
+				return FileError.Io({
+					path: directory,
+					operation: 'list',
+					cause: new Error('storage refused'),
+				});
+			const listed = await folder.files.children(directory);
+			await heldListing;
+			return listed;
+		},
+	};
+	return {
+		gate,
+		folder: { tables: { ...folder.tables, messages: table }, files },
 	};
 }

@@ -46,7 +46,7 @@
 	let openingId = $state<string | null>(null);
 	let starting = $state(false);
 	const selectedChat = $derived(chats.chats.find((chat) => chat.id === selectedChatId));
-	const unreadable = $derived([...entries.unreadable, ...chats.unreadable]);
+	const unreadable = $derived(chats.unreadable);
 	const loadError = $derived(entries.loadError ?? chats.loadError);
 	let conversation = $state<ConversationView>();
 	// A chat switch held back because the open chat has an unsaved message.
@@ -97,17 +97,23 @@
 		void sources.then(({ account, connections }) => Promise.allSettled([account?.close(), connections?.close()]));
 	});
 
-	// A word still saving, a failed save, a note that could not be saved, or an
-	// unanswered delete holds input that may be in this page alone. Leaving it asks first, and the browser's
-	// prompt lets the learner leave anyway; the open chat's unsaved message
-	// asks on its own.
+	// The open word holds a save running or one that failed, which may be in
+	// this page alone. Leaving it asks first, and the browser's prompt lets the
+	// learner leave anyway; the open chat's unsaved message asks on its own.
 	beforeNavigate((navigation) => {
-		if (entries.unsettled === 0) return;
+		if (!entries.unsaved) return;
 		if (navigation.willUnload || navigation.to?.route.id !== page.route.id) navigation.cancel();
 	});
+
+	/** Returning to the window: read the lists again, and take a newer version of the open word when it holds nothing unsaved. */
+	function check() {
+		void entries.check();
+		void chats.refresh();
+	}
 </script>
 
-<svelte:window onbeforeunload={(event) => { if (entries.unsettled > 0) event.preventDefault(); }} />
+<svelte:window onbeforeunload={(event) => { if (entries.unsaved) event.preventDefault(); }} onfocus={check} />
+<svelte:document onvisibilitychange={() => { if (document.visibilityState === 'visible') check(); }} />
 
 <div class="flex h-dvh min-w-0 flex-col">
 	<!--
@@ -143,7 +149,7 @@
 	{#if loadError}
 		<div role="alert" class="flex items-center justify-between gap-2 border-b px-3 py-2 text-xs text-destructive">
 			<span>Vocab could not read its folder in this browser: {loadError}</span>
-			<Button variant="ghost" size="sm" onclick={() => { void entries.refresh(); void chats.refresh(); }}>Read again</Button>
+			<Button variant="ghost" size="sm" onclick={check}>Read again</Button>
 		</div>
 	{/if}
 	{#if unreadable.length > 0}
@@ -181,7 +187,7 @@
 			{#if focusOpen && selectedChat}<div class="border-b p-3 md:hidden"><FocusWords focus={selectedChat.focus} {entries} /></div>{/if}
 			{#if !selectedChatId}<p class="m-auto text-center text-muted-foreground">Choose a chat from history.</p>{/if}
 			{#if selectedChatId && selectedChat}
-				{#key selectedChatId}<ConversationView bind:this={conversation} chatId={selectedChatId} messages={folder.tables.messages} {catalog} {selections} {entries} focus={selectedChat.focus} visible={view === 'chat'} startOpening={openingId === selectedChatId} onOpeningStarted={() => openingId = null} />{/key}
+				{#key selectedChatId}<ConversationView bind:this={conversation} chatId={selectedChatId} {folder} {catalog} {selections} {entries} focus={selectedChat.focus} visible={view === 'chat'} startOpening={openingId === selectedChatId} onOpeningStarted={() => openingId = null} />{/key}
 			{/if}
 		</div>
 		<aside class="hidden w-60 shrink-0 overflow-y-auto border-l p-3 md:block" aria-label="Focus words">

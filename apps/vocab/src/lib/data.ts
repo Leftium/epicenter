@@ -3,10 +3,13 @@ import { jsonValue } from '@epicenter/app/field';
 import {
 	defineFolder,
 	defineTable,
+	type FileTable,
 	type Folder,
 	field,
+	type RowReadError,
+	rowPath,
+	type StoredRow,
 	type TableListing,
-	type TableSnapshot,
 } from '@epicenter/folder';
 import { Type } from 'typebox';
 /**
@@ -15,8 +18,7 @@ import { Type } from 'typebox';
  *
  * One local folder holds everything Vocab saves: the learner's words, each
  * chat's fixed focus, and every finished message. A saved thing is one
- * Markdown file, and a save is confirmed by the folder's receipt for that
- * file. Nothing here has an account in it.
+ * Markdown file. Nothing here has an account in it.
  */
 
 import type { ServableModel } from '@epicenter/constants/ai-providers';
@@ -130,14 +132,16 @@ export const vocabFolder = defineFolder({
 export type VocabFolder = Folder<typeof vocabFolder>;
 export type VocabTables = VocabFolder['tables'];
 
-type SnapshotOf<TName extends keyof VocabTables> = NonNullable<
-	Awaited<ReturnType<VocabTables[TName]['get']>>['data']
->;
+type FieldsOf<TTable> =
+	TTable extends FileTable<infer TFields> ? TFields : never;
+export type EntryFields = FieldsOf<VocabTables['entries']>;
+type ChatFields = FieldsOf<VocabTables['chats']>;
+type MessageFields = FieldsOf<VocabTables['messages']>;
 
 /**
- * One saved word. `id` is the file stem; `file` is the capture deletion is made
- * against, so deleting a word that changed since it was read is refused.
- * Structured edits use the canonical row editor and save the whole word.
+ * One saved word as the list last read it. `id` is the file stem; `stored`
+ * is that read, the capture a stage press or a delete of a closed word is
+ * guarded by.
  */
 export type Entry = {
 	id: string;
@@ -145,7 +149,7 @@ export type Entry = {
 	note: string;
 	stage: Stage;
 	createdAt: string;
-	file: SnapshotOf<'entries'>;
+	stored: StoredRow<EntryFields>;
 };
 
 export type FocusItem = { entryId: string; text: string };
@@ -169,73 +173,55 @@ export function focusWord(
 /** A row file Vocab cannot show as a row, and why. It is never dropped silently. */
 export type UnreadableFile = { path: string; reason: string };
 
-export function readEntry(file: SnapshotOf<'entries'>): Entry | undefined {
-	const { text, note, stage, createdAt } = file.fields;
-	if (
-		text === undefined ||
-		note === undefined ||
-		stage === undefined ||
-		createdAt === undefined
-	)
-		return undefined;
-	return { id: file.stem, text, note, stage, createdAt, file };
+/** Why a row file could not be read as a row, in a sentence. */
+export function rowProblem(error: RowReadError): string {
+	return error.name === 'InvalidRow'
+		? error.issues.map((issue) => issue.message).join(' ')
+		: error.message;
 }
 
-export function readChat(file: SnapshotOf<'chats'>): Chat | undefined {
-	const { createdAt, focus } = file.fields;
-	if (createdAt === undefined || focus === undefined) return undefined;
+export function readEntry(id: string, stored: StoredRow<EntryFields>): Entry {
+	const { text, note, stage, createdAt } = stored.row.fields;
+	return { id, text, note, stage, createdAt, stored };
+}
+
+export function readChat(id: string, stored: StoredRow<ChatFields>): Chat {
+	const { createdAt, focus } = stored.row.fields;
 	return {
-		id: file.stem,
+		id,
 		createdAt,
 		focus: focus.map(({ entryId, text }) => ({ entryId, text })),
 	};
 }
 
 export function readMessage(
-	file: SnapshotOf<'messages'>,
-): ChatMessage | undefined {
-	const { chat, message } = file.fields;
-	if (chat === undefined || message === undefined) return undefined;
-	// The reading is frozen and already checked against the message schema;
-	// the tutor loop owns a plain copy of it.
-	return {
-		stem: file.stem,
-		chat,
-		message: structuredClone(message) as AgentMessage,
-	};
+	stem: string,
+	stored: StoredRow<MessageFields>,
+): ChatMessage {
+	const { chat, message } = stored.row.fields;
+	// The tutor loop owns a plain copy of the message.
+	return { stem, chat, message: structuredClone(message) as AgentMessage };
 }
 
 /**
  * Split a table listing into the rows Vocab can show and the files it cannot.
- * A file that could not be read, whose text does not parse, or that lacks a
- * field the row needs is reported with its path, never left out.
+ * A file that could not be read or is not a valid row is reported with its
+ * path, never left out. A file removed after it was enumerated is gone.
  */
 export function readRows<TFields, TRow>(
+	table: string,
 	listing: TableListing<TFields>,
-	read: (file: TableSnapshot<TFields>) => TRow | undefined,
+	read: (stem: string, stored: StoredRow<TFields>) => TRow,
 ): { rows: TRow[]; unreadable: UnreadableFile[] } {
 	const rows: TRow[] = [];
 	const unreadable: UnreadableFile[] = [];
-	for (const { path, result } of listing) {
-		const { data: file, error: readError } = result;
-		if (readError !== null) {
-			// A file removed between enumeration and its read is simply gone.
-			if (readError.name !== 'NotFound')
-				unreadable.push({ path, reason: readError.message });
-			continue;
-		}
-		const row = read(file);
-		if (row !== undefined) {
-			rows.push(row);
-			continue;
-		}
-		unreadable.push({
-			path,
-			reason:
-				file.parseError?.message ??
-				(file.issues.map((issue) => issue.message).join('; ') ||
-					'A required field is missing.'),
-		});
+	for (const { stem, result } of listing) {
+		if (result.error === null) rows.push(read(stem, result.data));
+		else if (result.error.name !== 'NotFound')
+			unreadable.push({
+				path: rowPath(table, stem),
+				reason: rowProblem(result.error),
+			});
 	}
 	return { rows, unreadable };
 }

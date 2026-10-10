@@ -1,69 +1,74 @@
 /**
- * The chat list, read from the folder's `chats` and `messages` tables.
+ * The chat list, read from the folder's `chats` table and from the message
+ * files an earlier version saved.
  *
- * A chat is listed once its focus file has a receipt. Message files are read
- * for each chat's latest activity and for earlier, message-only chats; the
- * open conversation reads its own transcript.
+ * A chat is listed once its focus file is saved. Messages saved now are named
+ * by their chat, so the list never reads them; the open conversation reads its
+ * own. Message files from before chat prefixes are read for earlier,
+ * message-only chats. The list is read when the page opens, after a chat
+ * starts, and when the learner returns to the window; the latest read wins.
  */
 
 import type { Result } from 'wellcrafted/result';
 import {
 	type Chat,
-	type ChatMessage,
 	type FocusItem,
 	readChat,
-	readMessage,
 	readRows,
 	type UnreadableFile,
-	type VocabTables,
+	type VocabFolder,
 } from '../data.js';
-import { createReread } from '../reread.js';
-import { type ChatHistoryError, listChats, startChat } from './messages.js';
+import {
+	type ChatHistoryError,
+	isEarlierMessage,
+	listChats,
+	listMessageStems,
+	readMessages,
+	startChat,
+} from './messages.js';
 
 export function createChatsState({
 	tables,
-}: {
-	tables: Pick<VocabTables, 'chats' | 'messages'>;
-}) {
+	files,
+}: Pick<VocabFolder, 'tables' | 'files'>) {
 	let chats = $state.raw<Chat[]>([]);
-	let messages = $state.raw<ChatMessage[]>([]);
+	let earlier = $state.raw<Awaited<ReturnType<typeof readMessages>>['rows']>(
+		[],
+	);
 	let unreadable = $state.raw<UnreadableFile[]>([]);
 	let loadError = $state<string | null>(null);
-	const summaries = $derived(listChats(chats, messages));
-	// Counts new-chat receipts. A listing asked for before one may not hold
-	// that chat, so it is not applied and the folder is read again.
-	let receipts = 0;
+	const summaries = $derived(listChats(chats, earlier));
+	let sequence = 0;
 
-	const refresh = createReread(async () => {
-		const before = receipts;
+	async function refresh() {
+		const mine = ++sequence;
 		const [
-			{ data: chatListing, error: chatListError },
-			{ data: messageListing, error: messageListError },
-		] = await Promise.all([tables.chats.list(), tables.messages.list()]);
-		if (before !== receipts) return false;
-		if (chatListError !== null) {
-			loadError = chatListError.message;
-			return true;
+			{ data: chatListing, error: chatError },
+			{ data: stems, error: stemError },
+		] = await Promise.all([tables.chats.list(), listMessageStems(files)]);
+		if (chatError !== null || stemError !== null) {
+			if (mine === sequence)
+				loadError = chatError?.message ?? stemError?.message ?? null;
+			return;
 		}
-		if (messageListError !== null) {
-			loadError = messageListError.message;
-			return true;
-		}
-		const readChats = readRows(chatListing, readChat);
-		const readMessages = readRows(messageListing, readMessage);
-		chats = readChats.rows;
-		messages = readMessages.rows;
-		unreadable = [...readChats.unreadable, ...readMessages.unreadable];
+		const messages = await readMessages(
+			tables.messages,
+			stems.filter(isEarlierMessage),
+		);
+		if (mine !== sequence) return;
+		const read = readRows(tables.chats.name, chatListing, readChat);
+		chats = read.rows;
+		earlier = messages.rows;
+		unreadable = [...read.unreadable, ...messages.unreadable];
 		loadError = null;
-		return true;
-	});
+	}
 
 	return {
-		/** Every chat, newest activity first. */
+		/** Every chat, newest first. */
 		get chats() {
 			return summaries;
 		},
-		/** Row files in `chats/` and `messages/` that cannot be shown. */
+		/** Files in `chats/`, and earlier files in `messages/`, that cannot be shown. */
 		get unreadable() {
 			return unreadable;
 		},
@@ -77,10 +82,14 @@ export function createChatsState({
 			focus: readonly FocusItem[],
 		): Promise<Result<Chat, ChatHistoryError>> {
 			const started = await startChat(tables.chats, focus);
-			const { data: chat, error: startError } = started;
-			if (startError === null) {
-				receipts++;
-				chats = [...chats, chat];
+			if (started.error === null) {
+				// A listing already under way may not hold it.
+				sequence++;
+				chats = [
+					...chats.filter(({ id }) => id !== started.data.id),
+					started.data,
+				];
+				void refresh();
 			}
 			return started;
 		},

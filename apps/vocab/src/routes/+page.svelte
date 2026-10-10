@@ -12,24 +12,16 @@
 	// is no sign-in on this path: words and chats are in this browser's folder
 	// whether or not an account is signed in.
 	const opening = openVocabFolder().then(async (folder) => {
-		const entries = createEntriesState({ table: folder.tables.entries });
-		const chats = createChatsState({ tables: folder.tables });
-		// Listen before the first read, so no change falls between them. Another
-		// tab's saves arrive here as hints to read again. The folder drops the
-		// listener when it closes.
-		folder.onFilesChanged((paths) => {
-			if (paths.some((path) => path.startsWith('entries/')))
-				void entries.refresh();
-			if (paths.some((path) => /^(chats|messages)\//.test(path)))
-				void chats.refresh();
-		});
+		const entries = createEntriesState({ table: folder.tables.entries, files: folder.files });
+		const chats = createChatsState(folder);
+		// Read now; the shell reads again after its own actions and when the
+		// learner returns to the window.
 		await Promise.all([entries.refresh(), chats.refresh()]);
 		return { folder, entries, chats };
 	});
 
 	onDestroy(() => {
-		// Every word's editor settles the work it admitted and lets go before
-		// the folder does, so nothing lands on a closed folder.
+		// The open word's saves land before the folder closes.
 		void opening
 			.then(async ({ folder, entries }) => {
 				await entries.close();

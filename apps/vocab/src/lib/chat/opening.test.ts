@@ -17,7 +17,7 @@ async function open(
 	folder: VocabFolder,
 	engine: Parameters<typeof withTutorOpening>[0],
 ) {
-	const store = createChatMessageStore(folder.tables.messages, 'chat-a');
+	const store = createChatMessageStore(folder, 'chat-a');
 	expectOk(await store.load());
 	return createConversation({
 		store,

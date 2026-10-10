@@ -23,7 +23,11 @@ import type { AgentMessage } from '@epicenter/agent';
 import OpenAI from 'openai';
 import { expectOk } from 'wellcrafted/testing';
 import type { VocabFolder } from '../data.js';
-import { createBrowser, gated, tableFiles } from '../folder.test-support.js';
+import {
+	createBrowser,
+	gatedMessages,
+	tableFiles,
+} from '../folder.test-support.js';
 import { createChatMessageStore, startChat } from './messages.js';
 
 const { createVocabChat } = await import('./session.svelte.js');
@@ -50,7 +54,7 @@ async function setup() {
 	const chatId = expectOk(
 		await startChat(folder.tables.chats, [{ entryId: 'entry', text: 'lucid' }]),
 	).id;
-	const { gate, table } = gated(folder.tables.messages);
+	const { gate, folder: gatedFolder } = gatedMessages(folder);
 	const tutor = {
 		requests: 0,
 		finishReason: 'stop',
@@ -98,9 +102,9 @@ async function setup() {
 			);
 		},
 	});
-	const open = (messages: VocabFolder['tables']['messages'] = table) =>
+	const open = (target: Pick<VocabFolder, 'tables' | 'files'> = gatedFolder) =>
 		createVocabChat({
-			messages,
+			folder: target,
 			chatId,
 			focus: [{ text: 'lucid' }],
 			catalog: {
@@ -123,16 +127,13 @@ async function setup() {
 		open,
 		/** Save a message file directly, as an earlier session left it. */
 		async seed(...messages: AgentMessage[]) {
-			const store = createChatMessageStore(folder.tables.messages, chatId);
+			const store = createChatMessageStore(folder, chatId);
 			for (const message of messages)
 				expectOk(await store.set(message.id, message));
 		},
 		/** The roles a reload would show, from the folder opened again. */
 		async savedRoles() {
-			const store = createChatMessageStore(
-				(await browser.open()).tables.messages,
-				chatId,
-			);
+			const store = createChatMessageStore(await browser.open(), chatId);
 			expectOk(await store.load());
 			return [...store.entries()]
 				.map(({ val }) => val)
@@ -188,9 +189,7 @@ test('the draft stays until the learner message is a file, then clears, and the 
 	]);
 
 	// A reload: a new session over the folder opened again shows the same chat.
-	using reopened = await ready(
-		context.open((await context.browser.open()).tables.messages),
-	);
+	using reopened = await ready(context.open(await context.browser.open()));
 	expect(reopened.messages).toEqual(chat.messages);
 	expect(context.tutor.requests).toBe(1);
 });

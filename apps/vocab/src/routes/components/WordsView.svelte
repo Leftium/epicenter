@@ -10,6 +10,8 @@
 	import type { EntriesState } from '$lib/entries.svelte.js';
 	import { reviewImport, STARTER_LIST } from '$lib/import.js';
 	import EntryCard from './EntryCard.svelte';
+	import RepairCard from './RepairCard.svelte';
+	import { openWord } from './word-actions.js';
 	let { entries, starting, onStart }: {
 		entries: EntriesState;
 		/** A chat is being saved; another cannot be started yet. */
@@ -109,6 +111,25 @@
 				<Button size="sm" variant={stage === option ? 'default' : 'outline'} aria-pressed={stage === option} onclick={() => stage = option}>{option === 'all' ? 'All' : STAGE_LABELS[option]}</Button>
 			{/each}
 		</div>
+		{#if entries.opened?.kind === 'text'}
+			{#key entries.opened}<RepairCard {entries} id={entries.opened.id} session={entries.opened.session} />{/key}
+		{/if}
+		{#if entries.repairs.length > 0}
+			<section class="space-y-2 rounded-lg border p-3 text-xs" aria-label="Words that need repair">
+				<p class="text-destructive">{entries.repairs.length} saved {entries.repairs.length === 1 ? 'file is' : 'files are'} not shown as words because Vocab cannot read {entries.repairs.length === 1 ? 'it' : 'them'}. Nothing was changed or removed.</p>
+				<ul class="space-y-1">
+					{#each entries.repairs as repair (repair.path)}
+						<li class="flex flex-wrap items-center gap-2 break-words">
+							<span class="min-w-0 flex-1"><code>{repair.path}</code>: {repair.reason}</span>
+							{#if repair.stem !== undefined && entries.opened?.id !== repair.stem}
+								{@const stem = repair.stem}
+								<Button size="xs" variant="outline" onclick={() => void openWord(entries, stem)}>Repair as text</Button>
+							{/if}
+						</li>
+					{/each}
+				</ul>
+			</section>
+		{/if}
 		{#if entries.entries.length === 0}
 			<p class="py-8 text-center text-muted-foreground">Your words will appear here. Add one above or browse the starter list.</p>
 		{:else if shown.length === 0}

@@ -15,21 +15,21 @@ import {
 	type UnreadableFile,
 	VOCAB_MODEL,
 	VOCAB_SYSTEM_PROMPT,
-	type VocabTables,
+	type VocabFolder,
 } from '../data.js';
 import { type ChatHistoryError, createChatMessageStore } from './messages.js';
 import { withTutorOpening } from './opening.js';
 
 /** One active tutor conversation for the lifetime of its keyed view. */
 export function createVocabChat({
-	messages,
+	folder,
 	chatId,
 	focus,
 	catalog,
 	selections,
 }: {
-	/** The folder table that holds every chat's finished messages. */
-	messages: VocabTables['messages'];
+	/** The folder whose `messages/` holds every chat's finished messages. */
+	folder: Pick<VocabFolder, 'tables' | 'files'>;
 	chatId: string;
 	focus: readonly { text: string }[];
 	catalog: InferenceCatalog;
@@ -55,7 +55,7 @@ export function createVocabChat({
 	let hasRead = $state(false);
 	let unreadable = $state.raw<UnreadableFile[]>([]);
 
-	const store = createChatMessageStore(messages, chatId);
+	const store = createChatMessageStore(folder, chatId);
 	let reading: Promise<ChatHistoryError | null> | undefined;
 	/** Read the transcript from the folder; overlapping callers share one read. */
 	function read(): Promise<ChatHistoryError | null> {

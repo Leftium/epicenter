@@ -2,37 +2,26 @@
 /**
  * The Epicenter CLI: `check` and `query` a data folder by its path (ADR-0520).
  *
- * Both read `<dir>/epicenter.json` and parse every declared row with the
- * folder package's `parseRow`. `check` reports rows that do not conform.
- * `query` answers one read-only SQL statement over an in-memory projection
- * (ADR-0494), and only for a folder whose rows all conform: a broken row is
- * fixed in its Markdown first. Nothing here writes a file, executes the
- * folder's code, reads Git, or contacts a network.
+ * Both read the folder through `@epicenter/folder`'s `readFolder`, the same
+ * reading apps use. `check` reports files that do not conform. `query` answers
+ * one read-only SQL statement over an in-memory projection (ADR-0494), and
+ * only when `check` passes: a broken file is fixed first. Nothing here writes
+ * a file, executes the folder's code, reads Git, or contacts a network.
  */
 import { Database } from 'bun:sqlite';
-import type { Dirent } from 'node:fs';
-import { lstat, readdir, readFile } from 'node:fs/promises';
-import { join, resolve } from 'node:path';
-import {
-	type FolderDefinition,
-	type PreparedFolderTable,
-	prepareFolderDefinition,
-} from '../packages/folder/src/definition.js';
-import { parseRow } from '../packages/folder/src/row-text.js';
+import { readFolder } from '../packages/folder/src/bun.js';
 
 const usage = `Usage:
   epicenter check <dir> [--json]
   epicenter query <dir> [<sql>] [--json]
 
-check prints one line per row that does not conform. query without a statement
-describes the folder's tables; with one, it runs that single read-only
-statement and prints tab-separated rows. query answers only when every row
-conforms; otherwise fix the Markdown that check names.
+check prints one line per file that does not conform. query without a
+statement describes the folder's tables; with one, it runs that single
+read-only statement and prints tab-separated rows. query answers only when
+check passes; otherwise fix the files that check names.
 
-Both exit 0 on success, 1 when a row does not conform, and 2 when the folder,
+Both exit 0 on success, 1 when a file does not conform, and 2 when the folder,
 the declaration, or the statement cannot be used.`;
-
-const DECLARATION = 'epicenter.json';
 
 /** One finding, located as precisely as the source allows. */
 type Finding = { path: string; line?: number; field?: string; message: string };
@@ -41,20 +30,17 @@ type Row = { stem: string; fields: Record<string, unknown>; body: string };
 
 type Table = {
 	name: string;
-	schema: PreparedFolderTable;
 	fields: { name: string; schema: object }[];
 	rows: Row[];
 };
 
-const decoder = new TextDecoder('utf-8', { fatal: true });
-
-function messageOf(error: unknown) {
-	return error instanceof Error ? error.message : String(error);
-}
-
-function codeOf(error: unknown) {
-	return (error as { code?: unknown } | null)?.code;
-}
+/** The fields of the folder package's read errors that a finding draws on. */
+type ReadError = {
+	name: string;
+	message: string;
+	reason?: string;
+	issues?: readonly Omit<Finding, 'path'>[];
+};
 
 /** An error ends the command: JSON on stdout with `--json`, otherwise stderr. */
 function printError(message: string, json: boolean) {
@@ -63,108 +49,74 @@ function printError(message: string, json: boolean) {
 	else process.stderr.write(`${message}\n`);
 }
 
+function messageOf(error: unknown) {
+	return error instanceof Error ? error.message : String(error);
+}
+
 function count(n: number, noun: string) {
 	return `${n} ${noun}${n === 1 ? '' : 's'}`;
 }
 
-/** Read and prepare `<dir>/epicenter.json`; a declaration that cannot be used throws. */
-async function readDeclaration(dir: string): Promise<Table[]> {
-	const path = join(resolve(dir), DECLARATION);
-	let declared: unknown;
-	try {
-		declared = JSON.parse(decoder.decode(await readFile(path)));
-	} catch (error) {
-		throw new Error(
-			codeOf(error) === 'ENOENT'
-				? `${resolve(dir)} is not a data folder: it has no ${DECLARATION}`
-				: `${path}: ${messageOf(error)}`,
-		);
-	}
-	const { data: definition, error } = prepareFolderDefinition(
-		declared as FolderDefinition,
-	);
-	if (error !== null) throw new Error(`${path}: ${error.reason}`);
-	return Object.entries(definition.tables).map(([name, table]) => ({
-		name,
-		// JSON carries no body codec, so every declared table is a folder table.
-		schema: table as PreparedFolderTable,
-		fields: Object.entries(table.fields).map(([field, schema]) => ({
-			name: field,
-			schema,
-		})),
-		rows: [],
-	}));
-}
-
 /**
- * Read every row file of every table into `table.rows`. A row file that does
- * not conform is `invalid`, something to fix in the folder; what cannot be
- * read at all is `unreadable`. Nothing is skipped silently, and nothing
- * outside the data folder is read.
+ * Read the data folder through the folder package's `readFolder`, the same
+ * reading apps use, and sort what it reports. A file to fix in the folder is
+ * `invalid`: a row or `kv.json` that does not conform, bytes that are not
+ * UTF-8, or a path the folder cannot hold, such as a symbolic link. What could
+ * not be read at all is `unreadable`. A folder or declaration that cannot be
+ * used throws.
  */
-async function readRows(dir: string, tables: Table[]) {
-	const root = resolve(dir);
+async function readDataFolder(dir: string) {
+	const { data: folder, error } = await readFolder(dir);
+	if (error !== null) throw new Error(error.message);
 	const invalid: Finding[] = [];
 	const unreadable: Finding[] = [];
-	for (const table of tables) {
-		const directory = join(root, table.name);
-		let entries: Dirent[];
-		try {
-			// A symbolic link would read rows from outside the data folder.
-			if ((await lstat(directory)).isSymbolicLink()) {
-				unreadable.push({
-					path: table.name,
-					message: 'The table directory is a symbolic link',
-				});
-				continue;
-			}
-			entries = await readdir(directory, { withFileTypes: true });
-		} catch (error) {
-			// A declared table with no directory has no rows yet.
-			if (codeOf(error) !== 'ENOENT')
-				unreadable.push({ path: table.name, message: messageOf(error) });
+	function report(path: string, failure: ReadError) {
+		if (failure.issues)
+			for (const issue of failure.issues) invalid.push({ path, ...issue });
+		else if (failure.name === 'InvalidUtf8')
+			invalid.push({ path, message: 'The file is not valid UTF-8 text' });
+		else if (failure.name === 'InvalidPath')
+			invalid.push({
+				path,
+				message: `The path is not usable: ${failure.reason}`,
+			});
+		else if (failure.name === 'NotAFile')
+			invalid.push({ path, message: 'A row must be a file, not a directory' });
+		else unreadable.push({ path, message: failure.message });
+	}
+
+	const tables: Table[] = [];
+	for (const [name, listed] of Object.entries(folder.tables)) {
+		const table: Table = {
+			name,
+			fields: Object.entries(folder.definition.tables[name]?.fields ?? {}).map(
+				([field, schema]) => ({ name: field, schema }),
+			),
+			rows: [],
+		};
+		tables.push(table);
+		if (listed.error !== null) {
+			report(name, listed.error);
 			continue;
 		}
-		const files = entries
-			.filter((entry) => entry.name.endsWith('.md'))
-			.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
-		for (const entry of files) {
-			const path = `${table.name}/${entry.name}`;
-			if (!entry.isFile()) {
-				invalid.push({
-					path,
-					message:
-						'A row must be a regular file, not a symbolic link or directory',
+		// A listing has no promised order; sorting keeps output stable.
+		for (const { stem, result } of [...listed.data].sort((a, b) =>
+			a.stem < b.stem ? -1 : a.stem > b.stem ? 1 : 0,
+		)) {
+			if (result.error !== null) report(`${name}/${stem}.md`, result.error);
+			else
+				table.rows.push({
+					stem,
+					fields: result.data.row.fields,
+					body: result.data.row.body,
 				});
-				continue;
-			}
-			let bytes: Uint8Array;
-			try {
-				bytes = await readFile(join(root, path));
-			} catch (error) {
-				unreadable.push({ path, message: messageOf(error) });
-				continue;
-			}
-			let text: string;
-			try {
-				text = decoder.decode(bytes);
-			} catch {
-				invalid.push({ path, message: 'The file is not valid UTF-8' });
-				continue;
-			}
-			const { data: row, error: issues } = parseRow(table.schema, text);
-			if (issues !== null) {
-				for (const issue of issues) invalid.push({ path, ...issue });
-				continue;
-			}
-			table.rows.push({
-				stem: entry.name.slice(0, -'.md'.length),
-				fields: row.fields as Record<string, unknown>,
-				body: row.body,
-			});
 		}
 	}
-	return { invalid, unreadable };
+	if (folder.kv.error !== null) report('kv.json', folder.kv.error);
+	else
+		for (const issue of folder.kv.data?.issues ?? [])
+			invalid.push({ path: 'kv.json', ...issue });
+	return { tables, invalid, unreadable };
 }
 
 /**
@@ -185,8 +137,7 @@ function fileCount(findings: Finding[]) {
 // ============================================================================
 
 async function check(dir: string, json: boolean) {
-	const tables = await readDeclaration(dir);
-	const { invalid, unreadable } = await readRows(dir, tables);
+	const { tables, invalid, unreadable } = await readDataFolder(dir);
 	const rows = tables.reduce((sum, table) => sum + table.rows.length, 0);
 	const exitCode = unreadable.length ? 2 : invalid.length ? 1 : 0;
 	process.stdout.write(
@@ -360,7 +311,7 @@ function formatRows(columns: string[], rows: Record<string, unknown>[]) {
 }
 
 async function query(dir: string, sql: string | undefined, json: boolean) {
-	const tables = await readDeclaration(dir);
+	const { tables, invalid, unreadable } = await readDataFolder(dir);
 	if (sql === undefined) {
 		const description = describe(tables);
 		process.stdout.write(
@@ -378,11 +329,10 @@ async function query(dir: string, sql: string | undefined, json: boolean) {
 		return 0;
 	}
 	for (const table of tables) assertProjectable(table);
-	const { invalid, unreadable } = await readRows(dir, tables);
 	const broken = fileCount([...invalid, ...unreadable]);
 	if (broken) {
 		printError(
-			`${count(broken, 'file')} ${broken === 1 ? 'does' : 'do'} not conform, so query will not answer; fix the Markdown that \`epicenter check ${dir}\` names`,
+			`${count(broken, 'file')} ${broken === 1 ? 'does' : 'do'} not conform, so query will not answer; fix what \`epicenter check ${dir}\` names`,
 			json,
 		);
 		return unreadable.length ? 2 : 1;

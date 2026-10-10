@@ -3,7 +3,7 @@
 - **Status:** Proposed
 - **Date:** 2026-10-11
 - **Relates:** [ADR-0517](0517-a-data-folder-can-live-inside-any-repository.md) (a data folder is a directory with `epicenter.json`), [ADR-0494](0494-file-folders-reserve-epicenter-for-rebuildable-caches.md) (queries build transient projections), [ADR-0521](0521-a-data-folder-syncs-with-its-git-origin-through-a-provider.md) (the CLI keeps no account system)
-- **Unbuilt:** reading through the folder package's directory reader in place of the CLI's own enumeration, and checking `kv.json`.
+- **Unbuilt:** reporting a symbolic link or directory named `<stem>.md` in a table, which `table.list()` currently omits.
 
 ## Context
 
@@ -31,10 +31,11 @@ epicenter check <dir> [--json]
 epicenter query <dir> [<sql>] [--json]
 ```
 
-Both read `<dir>/epicenter.json` and nothing executable, and parse every row
-file of every declared table with the folder package's `parseRow`. Neither
-writes a file, takes a lock, reads Git, contacts a network, or requires an
-account. A declaration that cannot be read or prepared is a tool failure.
+Both read the folder through `@epicenter/folder`'s `readFolder`, the same
+reading apps use: `epicenter.json`, every declared table's `list()`, and
+`kv.get()`. Nothing executable is read. Neither command writes a file, takes a
+lock, reads Git, contacts a network, or requires an account. A folder or
+declaration that cannot be used is a tool failure.
 
 `check` prints one line per finding, compiler style. The message names its
 field:
@@ -43,17 +44,16 @@ field:
 posts/2026-10-20-launch.md:3: status does not conform: must be equal to one of the allowed values
 ```
 
-Both commands exit 0 on success, 1 when a row file does not conform, and 2
-when the folder, the declaration, or a statement cannot be used. Bytes that
-are not UTF-8 and row files that are symbolic links or directories do not
-conform. A table directory that is a symbolic link cannot be used, because its
-rows would come from outside the data folder.
+Both commands exit 0 on success, 1 when a file does not conform, and 2 when
+the folder, the declaration, a file, or a statement cannot be used. A row or
+`kv.json` that does not conform, bytes that are not UTF-8, and a path the
+folder cannot hold, such as a symbolic link, are files to fix. Nothing outside
+the data folder is read.
 
-**`query` answers only when every row conforms.** A broken row is fixed in its
-Markdown first. With any row file that does not conform, `query` prints how
-many and the `check` command that names them, and returns no rows. An answer
-is therefore never computed from part of the folder, and diagnostics have one
-home.
+**`query` answers only when `check` passes.** A broken file is fixed first.
+Otherwise `query` prints how many files do not conform and the `check` command
+that names them, and returns no rows. An answer is therefore never computed
+from part of the folder, and diagnostics have one home.
 
 `query` builds an in-memory SQLite database under ADR-0494 with one table per
 declared table and nothing else. Each table has `stem` (the row's file is
@@ -70,9 +70,9 @@ must start with `SELECT`, `WITH`, `VALUES`, or `EXPLAIN`. A read-only
 connection still lets `ATTACH` and `VACUUM INTO` create files, so other
 statements are refused, and so is any text after the first statement.
 
-Without a statement, `query` describes the declaration alone: each table's
-columns, allowed values, and reference targets. It reads no row, so it works
-while rows are being fixed.
+Without a statement, `query` describes the declaration: each table's
+columns, allowed values, and reference targets. It ignores the rows, so it
+works while files are being fixed.
 
 **The CLI has no account or transfer commands.** Under ADR-0521, people and
 agents use Git and the host's own tools for cloning, history, and transfer.
@@ -80,9 +80,9 @@ agents use Git and the host's own tools for cloning, history, and transfer.
 ## Consequences
 
 - `epicenter validate`, its `epicenter.config.ts` execution, and the CLI's use
-  of `parseRowFile` are removed. The CLI and the apps parse rows with one
-  parser; the CLI still lists and reads files itself until the folder package
-  offers a read-only directory reader.
+  of `parseRowFile` are removed. The CLI and the apps read a folder through
+  one pipeline, so `check` and the apps give the same verdict for every row
+  file they both read.
 - An agent's first call in an unfamiliar repository is `epicenter query <dir>`,
   which describes the data folder well enough to write SQL.
 - Every query reads the current working tree. Pulling newer commits is the

@@ -501,6 +501,7 @@
       "dependencies": {
         "@epicenter/epicenter": "workspace:*",
         "@epicenter/folder": "workspace:*",
+        "@epicenter/svelte": "workspace:*",
         "@tauri-apps/api": "catalog:",
         "buffer": "^6.0.3",
         "wellcrafted": "catalog:",
@@ -742,13 +743,13 @@
         "@epicenter/definition": "workspace:*",
         "@epicenter/folder": "workspace:*",
         "markdown-it": "^14.0.0",
+        "wellcrafted": "catalog:",
       },
       "devDependencies": {
         "@types/bun": "catalog:",
         "@types/markdown-it": "^14.0.0",
         "@y/y": "14.0.0-rc.26",
         "typescript": "catalog:",
-        "wellcrafted": "catalog:",
       },
     },
     "packages/client": {
@@ -948,6 +949,7 @@
       "version": "0.3.0",
       "dependencies": {
         "@epicenter/agent": "workspace:*",
+        "@epicenter/folder": "workspace:*",
         "arktype": "catalog:",
         "wellcrafted": "catalog:",
       },

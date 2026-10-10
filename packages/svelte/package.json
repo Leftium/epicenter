@@ -13,10 +13,12 @@
 		"reactive state"
 	],
 	"exports": {
-		".": "./src/index.ts"
+		".": "./src/index.ts",
+		"./edit-session": "./src/edit-session.svelte.ts"
 	},
 	"dependencies": {
 		"@epicenter/agent": "workspace:*",
+		"@epicenter/folder": "workspace:*",
 		"arktype": "catalog:",
 		"wellcrafted": "catalog:"
 	},

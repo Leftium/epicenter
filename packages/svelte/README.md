@@ -20,6 +20,33 @@ This package is part of the Epicenter monorepo and is used internally. To use it
 
 ## Available Utilities
 
+### `edit-session` (`@epicenter/svelte/edit-session`)
+
+Edit sessions over `@epicenter/folder` files: the app owns the draft and the
+folder's guarded autosave writes it. `createRowSession(table, stored)` edits a
+valid row; `createTextSession(files, opened)` edits a file's text and keeps
+input well formed. Both are `createEditSession` over a source
+(`rowSource`, `textSource`) that says how to save, read again, and recreate.
+
+```ts
+const session = createRowSession(folder.tables.todos, stored, { locked });
+session.edit((row) => {
+	row.fields.title = 'Oat milk';
+}); // saves at once; only the latest request waits
+session.state; // saving | saved | error, each with `file`, the last confirmed capture
+await session.keepMine(); // after Conflict: save the draft over theirs, or recreate it
+await session.reloadTheirs(); // after Conflict: show theirs in place of the draft
+await session.rename((file) => folder.tables.todos.rename(file, 'next'));
+session.release(); // the person left: no input, and a running command starts nothing more
+```
+
+A save never assigns the draft. `keepMine`, `reloadTheirs`, and `rename` run
+one at a time with input locked (`session.locked`), and `settled()` waits for
+them. `adopt()` takes a newer version of the file only while the session is
+saved and idle. `generation` advances whenever a read replaces the draft, for
+views such as a rich text editor that must remount then. Which item is open,
+leaving, and what a person is told stay with the app.
+
 ### `fromData`
 
 Adapts one opened `@epicenter/app/store` handle into Svelte reactivity, mirroring

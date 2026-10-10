@@ -14,11 +14,15 @@
 	],
 	"exports": {
 		".": "./src/index.ts",
-		"./edit-session": "./src/edit-session.svelte.ts"
+		"./edit-session": "./src/edit-session.svelte.ts",
+		"./open-item": "./src/open-item.svelte.ts",
+		"./admissions": "./src/admissions.svelte.ts",
+		"./save-bar": "./src/save-bar.svelte"
 	},
 	"dependencies": {
 		"@epicenter/agent": "workspace:*",
 		"@epicenter/folder": "workspace:*",
+		"@epicenter/ui": "workspace:*",
 		"arktype": "catalog:",
 		"wellcrafted": "catalog:"
 	},

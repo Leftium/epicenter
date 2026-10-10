@@ -12,7 +12,7 @@
 	import XIcon from '@lucide/svelte/icons/x';
 	import { parseRow, rowStemOf } from '@epicenter/folder';
 	import { withFileNewlines } from '@epicenter/folder/file-browser';
-	import { wellFormed } from '@epicenter/svelte/edit-session';
+	import { wellFormed } from '@epicenter/folder';
 	import { audioPathIn, RECORDINGS, whisperingDefinition } from '$lib/definition.js';
 	import type { Draft, Library, RecordingEntry } from '$lib/library.svelte.js';
 	import { committedState } from '$lib/status.js';

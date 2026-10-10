@@ -23,6 +23,7 @@ import {
 	formatRow,
 	parseRow,
 	type Issue,
+	wellFormed,
 } from '@epicenter/folder/browser';
 import { expectErr, expectOk } from 'wellcrafted/testing';
 
@@ -414,4 +415,8 @@ test('multi-line strings every reader keeps exactly are literal blocks; the rest
 		expect(text).toContain(expected);
 		expect(expectOk(parseRow(todos, text)).fields.title).toBe(value);
 	}
+});
+
+test('wellFormed replaces each unpaired surrogate and keeps pairs', () => {
+	expect(wellFormed('a\uD800b\uDC00c😀')).toBe('a�b�c😀');
 });

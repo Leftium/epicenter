@@ -128,6 +128,7 @@ export {
 	type Row,
 	type Issue,
 	type Issues,
+	wellFormed,
 } from './row-text.js';
 export type { FileTable, StoredRow, TableListing } from './table.js';
 export type { FolderTerminal, TerminalResult } from './terminal.js';

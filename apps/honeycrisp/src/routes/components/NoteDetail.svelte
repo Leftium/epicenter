@@ -13,7 +13,8 @@
 	import HistoryIcon from '@lucide/svelte/icons/history';
 	import PinIcon from '@lucide/svelte/icons/pin';
 	import { withFileNewlines } from '@epicenter/folder/file-browser';
-	import { type RowSession, wellFormed } from '@epicenter/svelte/edit-session';
+	import { wellFormed } from '@epicenter/folder';
+	import type { RowSession } from '@epicenter/svelte/edit-session';
 	import { folderLabel, type NoteFields } from '$lib/data.js';
 	import { withBody } from '$lib/note-source.js';
 	import type { Notes } from '$lib/notes.svelte.js';

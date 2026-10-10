@@ -38,6 +38,7 @@ import {
 	type FolderFiles,
 	formatRow,
 	parseRow,
+	wellFormed,
 } from '@epicenter/folder';
 import {
 	CAPTURES_TABLE,
@@ -120,16 +121,6 @@ const capturePath = (stem: string) => `${CAPTURES_TABLE}/${stem}.md`;
 
 const captures = captureDefinition.tables.captures;
 
-/**
- * Text as UTF-8 can hold it: an unpaired surrogate becomes U+FFFD, as
- * encoding would. `String.prototype.toWellFormed` is missing from older
- * desktop webviews.
- */
-const wellFormed = (text: string) =>
-	text.replace(
-		/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g,
-		'\uFFFD',
-	);
 
 /**
  * A capture file as the captures table writes it. Text a file cannot hold

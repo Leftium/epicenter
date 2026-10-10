@@ -25,7 +25,7 @@ This package is part of the Epicenter monorepo and is used internally. To use it
 Edit sessions over `@epicenter/folder` files: the app owns the draft and the
 folder's guarded autosave writes it. `createRowSession(table, stored)` edits a
 valid row; `createTextSession(files, opened)` edits a file's text and keeps
-input well formed. Both are `createEditSession` over a source
+input well formed with `wellFormed` from `@epicenter/folder`. Both are `createEditSession` over a source
 (`rowSource`, `textSource`) that says how to save, read again, and recreate.
 
 ```ts
@@ -46,6 +46,34 @@ them. `adopt()` takes a newer version of the file only while the session is
 saved and idle. `generation` advances whenever a read replaces the draft, for
 views such as a rich text editor that must remount then. Which item is open,
 leaving, and what a person is told stay with the app.
+
+### `open-item` (`@epicenter/svelte/open-item`)
+
+The one item a page has open. `createOpenItem({ load, sessionOf, holds, closed })`
+keeps what `load` built for a key and owns how it is left: opening another key
+waits for the open session's saves and releases it, or answers
+`{ kind: 'unsaved', session }` so the app can ask and open again with
+`{ discard: session }`. Opening the shown key does nothing, and a load that
+answers after a newer open is released. `keepMine` and `reloadTheirs` act
+only on the session given while it is open; Reload theirs closes a gone file
+and reopens one that cannot be shown through `load`. `removeOpen(session, remove)`
+releases, waits for the saves, and removes what the last one confirmed. What an
+item is, listings, refusals, and wording stay with the app. A page with
+several drafts open at once keeps its own map.
+
+### `admissions` (`@epicenter/svelte/admissions`)
+
+`createAdmissions()` counts the work a page started so closing can wait for
+it. `command(fn)` wraps a whole method so each call counts from the call,
+before its first await; `admit(fn)` counts one piece; `quiet()` waits for all
+of it; `busy` is reactive.
+
+### `SaveBar` (`@epicenter/svelte/save-bar`)
+
+The save state and conflict prompt for one edit session: Reload theirs or
+Keep mine for a change made elsewhere, Discard or Keep mine for a file deleted
+elsewhere (Discard only without `onKeepMine`), Try again or Save again for
+other failures, and what to fix for a value a row cannot hold.
 
 ### `fromData`
 

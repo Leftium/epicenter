@@ -17,7 +17,7 @@
 	import PlayIcon from '@lucide/svelte/icons/play';
 	import { parseRow, rowStemOf } from '@epicenter/folder';
 	import { withFileNewlines } from '@epicenter/folder/file-browser';
-	import { wellFormed } from '@epicenter/svelte/edit-session';
+	import { wellFormed } from '@epicenter/folder';
 	import { tick, untrack } from 'svelte';
 	import { TRANSFORMATIONS, whisperingDefinition } from '$lib/definition.js';
 	import type { Draft, Library, TextRun, TransformationEntry } from '$lib/library.svelte.js';

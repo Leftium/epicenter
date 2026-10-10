@@ -33,6 +33,7 @@ import {
 	type RowReadError,
 	rowStemOf,
 	type SaveState,
+	wellFormed,
 } from '@epicenter/folder';
 import { defineErrors, type InferErrors } from 'wellcrafted/error';
 import { Err, Ok, type Result } from 'wellcrafted/result';
@@ -314,17 +315,6 @@ export type RowSession<TFields> = ReturnType<typeof createRowSession<TFields>>;
 // ---------------------------------------------------------------------------
 
 const utf8 = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true });
-
-/**
- * Text as a file can hold it: an unpaired surrogate becomes U+FFFD, as UTF-8
- * encoding would, so the text on screen is the text that saves.
- */
-export function wellFormed(text: string): string {
-	return text.replace(
-		/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g,
-		'�',
-	);
-}
 
 /** Text files as a session source. A file that is not UTF-8 text is `other`. */
 export function textSource(

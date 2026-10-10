@@ -19,7 +19,8 @@ import {
 	type CaptureFields,
 	captureBody,
 } from '@epicenter/capture';
-import { type RowSession, wellFormed } from '@epicenter/svelte/edit-session';
+import { wellFormed } from '@epicenter/folder';
+import type { RowSession } from '@epicenter/svelte/edit-session';
 
 /** One edit of a thought, from Edit until it is saved or cancelled. */
 export type ThoughtEdit = {

@@ -5,7 +5,7 @@
 	import { Spinner } from '@epicenter/ui/spinner';
 	import WandSparklesIcon from '@lucide/svelte/icons/wand-sparkles';
 	import { withFileNewlines } from '@epicenter/folder/file-browser';
-	import { wellFormed } from '@epicenter/svelte/edit-session';
+	import { wellFormed } from '@epicenter/folder';
 	import { untrack } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';

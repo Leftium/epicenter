@@ -10,7 +10,7 @@
 	import TriangleAlertIcon from '@lucide/svelte/icons/triangle-alert';
 	import { parseRow } from '@epicenter/folder';
 	import { basename, dirname, withFileNewlines } from '@epicenter/folder/file-browser';
-	import { wellFormed } from '@epicenter/svelte/edit-session';
+	import { wellFormed } from '@epicenter/folder';
 	import { toast } from '@epicenter/ui/sonner';
 	import { audioMimeTypeOf } from '$lib/audio-format.js';
 	import { TRANSCRIPTIONS, whisperingDefinition } from '$lib/definition.js';

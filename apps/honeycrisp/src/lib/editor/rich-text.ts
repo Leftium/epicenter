@@ -23,7 +23,7 @@
  */
 
 import type { RowSession } from '@epicenter/svelte/edit-session';
-import { wellFormed } from '@epicenter/svelte/edit-session';
+import { wellFormed } from '@epicenter/folder';
 import {
 	baseKeymap,
 	chainCommands,

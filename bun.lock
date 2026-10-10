@@ -953,6 +953,7 @@
       "dependencies": {
         "@epicenter/agent": "workspace:*",
         "@epicenter/folder": "workspace:*",
+        "@epicenter/ui": "workspace:*",
         "arktype": "catalog:",
         "wellcrafted": "catalog:",
       },

@@ -150,6 +150,18 @@ export function writeRow<const TTable extends PreparedFolderTable>(
 	});
 }
 
+/**
+ * Text as a file can hold it: each unpaired surrogate becomes U+FFFD, as
+ * UTF-8 encoding would. A row refuses a lone surrogate, so an editor that
+ * passes typed text through this saves exactly what it shows.
+ */
+export function wellFormed(text: string): string {
+	return text.replace(
+		/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g,
+		'\uFFFD',
+	);
+}
+
 /** Why a row cannot be written, as an issue about its field when it names one. */
 function writeIssue(refusal: CanonicalRefusal): Issue {
 	return Object.freeze(

@@ -124,7 +124,7 @@ shapes, see `docs/adr/`.
 
 ## Data API
 
-- **Data folder** (ADR-0517): a directory containing `definition.json`, which
+- **Data folder** (ADR-0517): a directory containing `epicenter.json`, which
   declares the `<table>/<stem>.md` directories and `kv.json` beside it. It may
   sit at any depth in any Git repository; apps open and sync only one at a
   repository root.

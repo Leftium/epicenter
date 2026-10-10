@@ -2,8 +2,8 @@
 
 - **Status:** Proposed
 - **Date:** 2026-10-11
-- **Relates:** [ADR-0494](0494-file-folders-reserve-epicenter-for-rebuildable-caches.md) (queries build transient projections), [ADR-0488](0488-cloud-folders-use-independent-git-histories.md) (one pairing per repository), [ADR-0490](0490-the-cli-discovers-folders-and-delegates-history-to-git.md) (discovery lists repositories), [ADR-0508](0508-folder-opening-overwrites-root-definition-json.md) (opening publishes `definition.json`), [ADR-0510](0510-authored-dataset-locations-are-independent-of-sign-in.md) (stable authored locations)
-- **Unbuilt:** reading `definition.json` as input, discovering data folders by it, the query command over a hosted data folder, opener refusal of a root inside another repository, extraction tooling, and opening a submodule-hosted data folder in the native engine.
+- **Relates:** [ADR-0494](0494-file-folders-reserve-epicenter-for-rebuildable-caches.md) (queries build transient projections), [ADR-0488](0488-cloud-folders-use-independent-git-histories.md) (one pairing per repository), [ADR-0490](0490-the-cli-discovers-folders-and-delegates-history-to-git.md) (discovery lists repositories), [ADR-0508](0508-folder-opening-overwrites-root-definition-json.md) (opening publishes the declaration), [ADR-0510](0510-authored-dataset-locations-are-independent-of-sign-in.md) (stable authored locations)
+- **Unbuilt:** reading `epicenter.json` as input, discovering data folders by it, renaming opener publication from `definition.json` to `epicenter.json`, the query command over a hosted data folder, opener refusal of a root inside another repository, extraction tooling, and opening a submodule-hosted data folder in the native engine.
 
 ## Context
 
@@ -22,23 +22,29 @@ separate repository buys nothing until an app needs to open it.
 
 ## Decision
 
-**A data folder is any directory containing `definition.json`.** The file
+**A data folder is any directory containing `epicenter.json`.** The file
 declares the table directories (`<table>/<stem>.md`) and the `kv.json` beside
 it. It claims nothing else: other files and directories beside it are ordinary
 files. A Git repository may contain any number of data folders at any depth.
-A directory declared as a table must not contain its own `definition.json`.
+A directory declared as a table must not contain its own `epicenter.json`.
+
+**`epicenter.json` is JSON and is only read.** Its format is what
+`exportSchema` writes: optional `title`, `kv`, and `tables` with portable
+field schemas. No tool executes a file to learn a data folder's declaration,
+because a data folder may arrive in any cloned repository. The filename alone
+marks a data folder, the way `package.json` marks a package.
 
 ```text
 vault/                            host repository
   plan/                           data folder
-    definition.json               declares accounts, posts, and kv
+    epicenter.json                declares accounts, posts, and kv
     kv.json
     accounts/instagram.md
     posts/2026-10-14-reel.md
   crm/                            another data folder in the same repository
-    definition.json
+    epicenter.json
     people/alex.md
-  journal/                        no definition.json: ordinary files
+  journal/                        no epicenter.json: ordinary files
 ```
 
 **Reading and querying need no repository of their own.** A data folder inside
@@ -50,7 +56,7 @@ ADR-0494; nothing persists a database beside the data folder.
 lock, and receive credentials per repository (ADR-0488). An app never holds
 credentials to a host repository in order to reach a data folder inside it.
 Discovery lists repositories (ADR-0490); data folders inside a repository are
-found by their `definition.json`, not registered. Folder IDs, pairings, and
+found by their `epicenter.json`, not registered. Folder IDs, pairings, and
 ADR-0510's one-directory rule apply to repository-root data folders. A hosted
 data folder has no folder ID; its address is its host repository and its path
 inside it.
@@ -72,7 +78,7 @@ git submodule add <repository-url> plan
 
 ## Consequences
 
-- Any repository adopts a data folder by adding `definition.json` and its
+- Any repository adopts a data folder by adding `epicenter.json` and its
   table directories. No Epicenter command, marker, or separate history is
   required.
 - A hosted data folder's history belongs to the host until extraction. Split
@@ -93,17 +99,17 @@ git submodule add <repository-url> plan
 - If the host is itself an app-opened data folder, the engine refuses
   whole-folder commits once it contains a submodule. Extract only from hosts
   that people and agents commit with ordinary Git.
-- No production code reads `definition.json` as input today. `prepareSchema`
+- No production code reads `epicenter.json` as input today. `prepareSchema`
   accepts what `exportSchema` writes, so a reader needs no new format.
-- ADR-0508 publication is unchanged: an app opening a data folder at a
-  repository root still overwrites its `definition.json`. A hosted data folder
-  that no app opens keeps the `definition.json` its authors wrote. Whether
-  opening should read an authored definition rather than replace it is
-  undecided.
+- ADR-0508 publication still writes `definition.json` until the folder package
+  renames it, so an app-opened data folder is not yet discoverable by
+  `epicenter.json`. A hosted data folder that no app opens keeps the
+  `epicenter.json` its authors wrote. Whether opening should read an authored
+  declaration rather than replace it is undecided.
 
 ## Considered alternatives
 
-- **One definition per directory of rows.** Each `definition.json` would
+- **One definition per directory of rows.** Each `epicenter.json` would
   describe only the `.md` files beside it. Related tables would split across
   files, and `kv.json` would have no declaration.
 - **Apps sync a nested data folder through its host repository.** The app
@@ -114,5 +120,10 @@ git submodule add <repository-url> plan
   paths.
 - **A subtree as the lasting arrangement.** It keeps two histories of the same
   files and a merge step that someone has to own.
+- **`definition.json`.** Other tools use the name, so discovery would need a
+  content check to tell an Epicenter declaration apart.
+- **`epicenter.config.ts` or `epicenter.config.json`.** An executable
+  declaration runs a cloned repository's code to read its data, and "config"
+  names tool settings rather than a data declaration.
 - **A separate repository from the start.** It requires a pointer, a setup
   step, and engine support for submodules before any app needs them.

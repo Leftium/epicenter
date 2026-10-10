@@ -259,9 +259,9 @@ Discard lets the edits go, Cancel keeps you on the item.
   **Keep mine**, which creates the file again from your edits. Nothing is
   written until you choose.
 - A save that fails for another reason keeps your edits and offers **Try
-  again**. A save whose reply was lost says it may or may not be in the file
-  and offers **Save again**; if it did land, that save returns the conflict
-  prompt with your own version as theirs.
+  again**. When a save's reply is lost, the folder reads the file once: if it
+  holds what was sent, the save counts as saved. Otherwise the bar says it may
+  or may not be in the file and offers **Save again**.
 - A value the file cannot hold, such as a title with a lone surrogate, is
   never written; the bar names it, and the next valid edit saves. Text in
   the plain editor is kept well formed, so a lone surrogate becomes U+FFFD as

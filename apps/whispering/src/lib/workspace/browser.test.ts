@@ -5,8 +5,8 @@
  * request was prepared for.
  */
 import { afterEach, expect, mock, test } from 'bun:test';
-import { expectOk } from 'wellcrafted/testing';
 import { Ok } from 'wellcrafted/result';
+import { expectOk } from 'wellcrafted/testing';
 import { openTestWorkspace } from '../workspace.test-support.js';
 import type { Workspace } from './types.js';
 

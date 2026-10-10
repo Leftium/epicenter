@@ -31,8 +31,8 @@ import { Err, Ok } from 'wellcrafted/result';
 import { expectOk } from 'wellcrafted/testing';
 import type { ConnectionChange } from './connections.js';
 import { STARTER_TRANSFORMATIONS } from './definition.js';
+import { transformationSession } from './drafts.test-support.js';
 import { resolvePostProcessing } from './post-processing.js';
-import { editingOf, typeField } from './row-slot.test-support.js';
 import type { Session } from './session.svelte.js';
 import type { Workspace } from './workspace/types.js';
 import {
@@ -79,10 +79,12 @@ async function cleanup(session: Session, model?: string) {
 	expect(
 		await library.createTransformation(STARTER_TRANSFORMATIONS[0]!),
 	).toBeUndefined();
-	const editor = editingOf(library.selectedTransformation?.slot);
+	const draft = transformationSession(library);
 	if (model !== undefined) {
-		typeField(editor, 'model', model);
-		expectOk(await editor.waitForSaves());
+		draft.edit((row) => {
+			row.fields.model = model;
+		});
+		expect((await draft.settled()).status).toBe('saved');
 		await library.refreshAll();
 	}
 	return library.transformations[0]!;
@@ -317,22 +319,25 @@ test('the earlier key moves only into the connections chosen, at the endpoint ea
 	expect(transformed).toEqual([]);
 });
 
-test.each([true, false])(
-	'saving another connection preserves unsaved settings with configured connections: %s',
-	async (configured) => {
-		const { session } = await open(undefined, configured ? {} : { connections: {} });
-		const { text, transcription } = session.settings;
-		text.baseUrl = 'http://127.0.0.1:9001/v1';
-		text.model = 'unsaved-text-model';
-		text.keyAction = 'remove';
-		transcription.model = 'changed-transcription-model';
+test.each([
+	true,
+	false,
+])('saving another connection preserves unsaved settings with configured connections: %s', async (configured) => {
+	const { session } = await open(
+		undefined,
+		configured ? {} : { connections: {} },
+	);
+	const { text, transcription } = session.settings;
+	text.baseUrl = 'http://127.0.0.1:9001/v1';
+	text.model = 'unsaved-text-model';
+	text.keyAction = 'remove';
+	transcription.model = 'changed-transcription-model';
 
-		expect(await transcription.save()).toBeUndefined();
-		expect(text.baseUrl).toBe('http://127.0.0.1:9001/v1');
-		expect(text.model).toBe('unsaved-text-model');
-		expect(text.keyAction).toBe('remove');
-	},
-);
+	expect(await transcription.save()).toBeUndefined();
+	expect(text.baseUrl).toBe('http://127.0.0.1:9001/v1');
+	expect(text.model).toBe('unsaved-text-model');
+	expect(text.keyAction).toBe('remove');
+});
 
 test('saving uses the submitted key and keeps typing done while the save is under way', async () => {
 	const started = deferred<void>();

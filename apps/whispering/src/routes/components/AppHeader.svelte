@@ -87,7 +87,7 @@
 		if (problem) toast.error('Could not open the folder', { description: problem });
 	}
 
-	// Debug controls: paused autosave everywhere they are offered, injected failures on the desktop.
+	// Debug controls: injected failures on the desktop.
 	let injection = $state<InjectionState | undefined>();
 	async function loadInjection() {
 		injection = await library.workspace.injection?.state().catch(() => undefined);
@@ -169,7 +169,7 @@
 				</div>
 			</dl>
 			<div class="flex items-center gap-2 border-t px-3 py-2">
-				<Button variant="outline" size="sm" onclick={() => void library.refreshAll()}>Check again</Button>
+				<Button variant="outline" size="sm" onclick={() => void library.check()}>Check again</Button>
 				<Button size="sm" disabled={committing || library.git.activity.commit.active} onclick={commitNow} data-testid="commit-now">
 					{#if committing}<Spinner class="size-3.5" />{/if}
 					Commit now
@@ -192,15 +192,6 @@
 					<p class="mb-2 font-medium">Debug controls</p>
 					<p class="mb-3 text-xs text-muted-foreground">Only in a debug build. A release build has none of these.</p>
 					<div class="flex flex-col gap-2">
-						<Button
-							size="sm"
-							variant={library.autosave.paused ? 'secondary' : 'outline'}
-							aria-pressed={library.autosave.paused}
-							onclick={() => (library.autosave.paused = !library.autosave.paused)}
-							data-testid="toggle-autosave"
-						>
-							{library.autosave.paused ? 'Autosave is paused: resume' : 'Pause autosave of text files (keep typing unsaved)'}
-						</Button>
 						{#if library.workspace.injection}
 							<Button size="sm" variant="outline" onclick={() => void arm({ rowWrites: (injection?.rowWrites ?? 0) + 1 })} data-testid="inject-row">
 								Fail the next recording file write (audio lands) · armed {injection?.rowWrites ?? 0}

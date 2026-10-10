@@ -44,16 +44,14 @@ function withTime(
 	return { ...line, detail: line.detail ? `${line.detail}\n${when}` : when };
 }
 
-/** What is saved to files: open editors and captured recordings waiting to be written. */
+/** What is saved to files: open drafts and captured recordings waiting to be written. */
 export function filesLine(state: {
 	saving: boolean;
+	/** Open drafts whose save failed or conflicted. */
 	problems: number;
-	unsaved: boolean;
-	/** Captured recordings not known to be in the folder. Published ones are not counted. */
+	/** Captured recordings not known to be in the folder. */
 	pendingCaptures: number;
 	capturesSaving: boolean;
-	/** Recordings confirmed published whose row could not be shown as theirs. */
-	publishedUnshown: number;
 	/** Transcripts received whose result file could not be written. */
 	unsavedResults: number;
 	/** Transformation results received whose file could not be written. */
@@ -103,20 +101,6 @@ export function filesLine(state: {
 		};
 	if (state.saving || state.capturesSaving)
 		return { label: 'Saving…', tone: 'busy' };
-	if (state.unsaved)
-		return { label: 'Unsaved typing', short: 'Unsaved', tone: 'busy' };
-	// Saved, and said so. What is open is how the folder's row reads now.
-	if (state.publishedUnshown > 0)
-		return {
-			label:
-				state.publishedUnshown === 1
-					? 'Saved · 1 recording to check'
-					: `Saved · ${state.publishedUnshown} recordings to check`,
-			short: 'Saved · check',
-			detail:
-				'The recording was written to the folder. Its file could not then be shown as this recording. Use Refresh in the notice under the header; nothing is written again.',
-			tone: 'warning',
-		};
 	return { label: 'All changes saved to files', short: 'Saved', tone: 'good' };
 }
 
@@ -124,24 +108,18 @@ export function filesLine(state: {
 export function filesLineOf(library: {
 	readonly saving: boolean;
 	readonly saveProblems: number;
-	readonly unsaved: boolean;
 	readonly pending: readonly { readonly state: { readonly kind: string } }[];
 	readonly unsavedResults: number;
 	readonly unsavedTransformations: number;
 	readonly unsavedTextResults: number;
 }): StatusLine {
-	let published = 0;
-	for (const item of library.pending)
-		if (item.state.kind === 'published') published++;
 	return filesLine({
 		saving: library.saving,
 		problems: library.saveProblems,
-		unsaved: library.unsaved,
-		pendingCaptures: library.pending.length - published,
+		pendingCaptures: library.pending.length,
 		capturesSaving: library.pending.some(
 			(item) => item.state.kind === 'saving',
 		),
-		publishedUnshown: published,
 		unsavedResults: library.unsavedResults,
 		unsavedTransformations: library.unsavedTransformations,
 		unsavedTextResults: library.unsavedTextResults,

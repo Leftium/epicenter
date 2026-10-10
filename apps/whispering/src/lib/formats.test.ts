@@ -16,7 +16,6 @@ import { decode, encode } from './bridge/codec.js';
 import { toneWav } from './capture.js';
 import { requestTranscription } from './transcription.js';
 
-const { conflictCopyPath } = await import('./editor.svelte.ts');
 const { recordingId } = await import('./library.svelte.ts');
 
 const roundTrip = (value: unknown) =>
@@ -90,12 +89,9 @@ test('a WAV reports its own length', () => {
 	expect(wavDurationMs(new Uint8Array(64))).toBeUndefined();
 });
 
-test('recording ids encode capture time and conflict copies name their source', () => {
+test('recording ids encode capture time', () => {
 	const id = recordingId(new Date('2026-01-02T03:04:05.678Z'));
 	expect(id).toMatch(/^20260102-030405-[0-9a-z]{4}$/);
-	expect(
-		conflictCopyPath('recordings/abc.md', new Date('2026-01-02T03:04:05.678Z')),
-	).toBe('conflicts/abc-20260102-030405.md');
 });
 
 test('a transcription request posts the audio and reads the text, refusing redirects and ambient credentials', async () => {

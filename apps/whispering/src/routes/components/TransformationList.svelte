@@ -12,7 +12,7 @@
 	import { STARTER_TRANSFORMATIONS } from '$lib/definition.js';
 	import type { Library, TransformationEntry } from '$lib/library.svelte.js';
 	import { recipeModel } from '$lib/recipe.js';
-	import { needsRepair } from '$lib/rows.js';
+	import { openItem } from './file-actions.js';
 
 	let { library, onOpen }: { library: Library; onOpen?: () => void } = $props();
 
@@ -31,8 +31,8 @@
 	}
 
 	function titleOf(entry: TransformationEntry) {
-		const { title } = entry.fields;
-		if (title !== undefined && title.trim() !== '') return title;
+		const { title } = entry.row.fields;
+		if (title.trim() !== '') return title;
 		// An empty ID (`transformations/.md`) is a real address but not a readable label.
 		return entry.stem === '' ? entry.path : entry.stem;
 	}
@@ -83,21 +83,19 @@
 		{#each library.transformations as entry (entry.path)}
 			{@const selected = library.selectedTransformationPath === entry.path}
 			{@const results = library.outputsOf(entry.stem).length + library.textOutputsOf(entry.stem).length}
-			{@const model = recipeModel(entry.fields)}
+			{@const model = recipeModel(entry.row.fields)}
 			<li class="border-b text-sm {selected ? 'bg-accent text-accent-foreground' : 'hover:bg-muted/50'}">
 				<button
 					type="button"
 					class="flex w-full min-w-0 flex-col gap-0.5 px-3 py-2 text-left sm:px-4"
 					aria-current={selected ? 'true' : undefined}
 					data-transformation={entry.path}
-					onclick={() => {
-						void library.open(entry.path);
-						onOpen?.();
+					onclick={async () => {
+						if (await openItem(library, entry.path)) onOpen?.();
 					}}
 				>
 					<span class="flex items-center gap-2">
 						<span class="truncate font-medium">{titleOf(entry)}</span>
-						{#if needsRepair(entry)}<Badge variant="destructive" class="shrink-0">Needs repair</Badge>{/if}
 					</span>
 					<span class="flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground">
 						<span>{model ?? 'The text connection’s model'}</span>
@@ -126,12 +124,16 @@
 		{/each}
 	</ul>
 
-	{#if library.unreadableTransformations.length > 0}
+	{#if library.transformationRepairs.length > 0}
 		<div class="border-t bg-warning/10 px-3 py-2 text-xs">
-			<p class="font-medium">Files that could not be read as text</p>
+			<p class="font-medium">Needs repair</p>
 			<ul class="mt-1 space-y-0.5">
-				{#each library.unreadableTransformations as item (item.path)}
-					<li><code class="font-mono">{item.path}</code>: {item.message}</li>
+				{#each library.transformationRepairs as item (item.path)}
+					<li>
+						<button type="button" class="font-mono underline" onclick={async () => {
+							if (await openItem(library, item.path)) onOpen?.();
+						}}>{item.path}</button>: {item.reason}
+					</li>
 				{/each}
 			</ul>
 		</div>

@@ -124,12 +124,6 @@ export type Workspace = {
 	readonly capture: CaptureDevice;
 	/** Something the person should know about capture, such as a refused fixture. */
 	readonly captureNotice: string | undefined;
-	/**
-	 * Files changed, so read again. On the desktop this is any program writing
-	 * the directory, this app included; in a browser it is a save from this tab
-	 * or another tab.
-	 */
-	onExternalChange(listener: () => void): () => void;
 	/** Show the folder in the system file manager; a problem is returned as text. */
 	readonly reveal: (() => Promise<string | undefined>) | undefined;
 	/**
@@ -206,7 +200,7 @@ export type Workspace = {
 				quitWithoutHost(): void;
 		  }
 		| undefined;
-	/** Whether debug controls (paused autosave) are offered. */
+	/** Whether debug controls are offered. */
 	readonly debugControls: boolean;
 	/** Failure injection, in a debug desktop shell only. */
 	readonly injection:

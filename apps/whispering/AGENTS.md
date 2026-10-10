@@ -83,13 +83,10 @@ behavior and delivery status, and `ARCHITECTURE.md` for structure.
 - **A receipt proves publication; it is not an observation.** A confirmed row
   creation, with the audio confirmed by its own creation or read as exactly
   the pending bytes, means the recording was saved. Never report that as
-  unsaved, and never build an entry or baseline from it. The row read that
-  follows is a separate fact about what can be shown now: when it fails, or
-  the row is gone or foreign, the state is "saved, cannot be shown", and the
-  only action from there is to read again. Do not publish again, recreate, or
-  repair after a confirmed receipt. A failed or `Unconfirmed` save and a
-  refusal before publication are not confirmed: they stay unsaved and keep the
-  close guard.
+  unsaved, and never build an entry or draft from it: opening the recording
+  afterward is its own read. Do not publish again, recreate, or repair after a
+  confirmed receipt. A failed or `Unconfirmed` save and a refusal before
+  publication are not confirmed: they stay unsaved and keep the close guard.
 - **Fixture audio and failure injection are debug-only.** They are enabled by
   the shell's build, never by an environment variable alone, and the UI says so
   while they are active. An injected publication failure obstructs the real

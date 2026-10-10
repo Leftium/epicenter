@@ -10,8 +10,8 @@
  *
  * Key behaviors:
  * - A search finds a recording by text remembered from any of its
- *   transcripts, its notes, its title, or its ID, shows the passage it found,
- *   and never hides a row that needs repair
+ *   transcripts, its notes, its title, or its ID, and shows the passage it
+ *   found; files that need repair are listed apart
  * - Sorting is the same order every time: equal rows keep one order in both
  *   directions and rows with no value come last
  * - The selection is by path: it survives a search, a sort, and a refresh,
@@ -21,31 +21,24 @@
  *   time, and reports what was sent, skipped, and failed without retrying
  * - Deleting several captures each deletion first, leaves out what the
  *   library refuses, removes only what was captured, and keeps the audio
- * - A transcript is edited through the one editor kept for its file while its
- *   recording stays selected, and saves as it is typed; an outside change is
- *   listed, loaded into the editor only when the person reloads, and
- *   otherwise written over by the next save; closing the details or changing
- *   page discards nothing
+ * - A transcript is edited in its own draft beside its recording, which stays
+ *   selected, and saves as it is typed; an outside change is a conflict on
+ *   the next save; closing the details or changing page discards nothing
  * - A recording that left the folder is unticked when a listing confirms it,
  *   so a file made later at its path is not ticked; a search and a failed
  *   listing untick nothing
- * - Once the session is closing, a transcript opening that answers late makes
- *   no draft, nothing new is opened, and a recording still waiting its turn
- *   to be transcribed is not sent
+ * - Once the session is closing, nothing new is opened, and a recording still
+ *   waiting its turn to be transcribed is not sent
  */
 import './svelte-modules.test-support.js';
 import { afterEach, expect, test } from 'bun:test';
 import { readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { inspectRow } from '@epicenter/folder/bun';
 import { Ok } from 'wellcrafted/result';
 import { expectOk } from 'wellcrafted/testing';
 import { toneWav } from './capture.js';
-import {
-	type RecordingFields,
-	type TranscriptionFields,
-	whisperingDefinition,
-} from './definition.js';
+import type { RecordingFields, TranscriptionFields } from './definition.js';
+import { transcriptSession } from './drafts.test-support.js';
 import {
 	captureDeletions,
 	DEFAULT_SORT,
@@ -60,7 +53,6 @@ import {
 	transcriptExcerpt,
 	transcriptsToCopy,
 } from './recording-collection.js';
-import { editingOf, typeBody } from './row-slot.test-support.js';
 import type { Session } from './session.svelte.js';
 import type { Workspace } from './workspace/types.js';
 import { deferred, openTestWorkspace } from './workspace.test-support.js';
@@ -105,17 +97,19 @@ async function history(
 		const audioPath = `recordings/${stem}.wav`;
 		expectOk(await folder.files.create(audioPath, toneWav()));
 		expectOk(
-			await folder.tables.recordings.create({
-				stem,
-				fields: {
-					title,
-					recordedAt: `2026-03-${day}T09:00:00.000Z`,
-					durationMs,
-					capture: 'microphone',
-					audioPath,
-				} as RecordingFields,
-				body,
-			}),
+			await folder.tables.recordings.create(
+				{
+					fields: {
+						title,
+						recordedAt: `2026-03-${day}T09:00:00.000Z`,
+						durationMs,
+						capture: 'microphone',
+						audioPath,
+					} as RecordingFields,
+					body,
+				},
+				{ stem },
+			),
 		);
 	};
 	const transcript = async (
@@ -125,16 +119,18 @@ async function history(
 		body: string,
 	) =>
 		expectOk(
-			await folder.tables.transcriptions.create({
-				stem,
-				fields: {
-					recordingId,
-					createdAt: `2026-03-${day}T10:00:00.000Z`,
-					model: 'verification-model',
-					endpoint: 'http://127.0.0.1:18080/v1',
-				} as TranscriptionFields,
-				body,
-			}),
+			await folder.tables.transcriptions.create(
+				{
+					fields: {
+						recordingId,
+						createdAt: `2026-03-${day}T10:00:00.000Z`,
+						model: 'verification-model',
+						endpoint: 'http://127.0.0.1:18080/v1',
+					} as TranscriptionFields,
+					body,
+				},
+				{ stem },
+			),
 		);
 
 	await recording('standup', 'Monday standup', '02', 300_000);
@@ -205,8 +201,6 @@ async function history(
 const path = (stem: string) => `recordings/${stem}.md`;
 const stems = (rows: readonly { entry: { stem: string } }[]) =>
 	rows.map((row) => row.entry.stem);
-/** The two rows that need repair, which no search hides: one names no audio, one does not read. */
-const REPAIR = ['orphan', 'broken'];
 /** One recording's row as the table has it now. */
 function rowOf(library: Session['library'], stem: string) {
 	const row = shownRows(library, '', DEFAULT_SORT).find(
@@ -225,11 +219,10 @@ test('text remembered from an older transcript finds its recording and shows the
 
 	const found = shownRows(library, '  Persimmon Tree ', DEFAULT_SORT);
 
-	// The rows that need repair are never searched out.
-	expect(stems(found)).toEqual(['walk', ...REPAIR]);
+	expect(stems(found)).toEqual(['walk']);
 	const walk = found[0]!;
 	// The newest transcript does not have the words; the row shows where they are.
-	expect(walk.transcripts[0]!.body).not.toContain('persimmon');
+	expect(walk.transcripts[0]!.row.body).not.toContain('persimmon');
 	const excerpt = transcriptExcerpt(walk, 'Persimmon Tree');
 	expect(excerpt).toContain('plant the persimmon tree by the north fence');
 	expect(excerpt?.startsWith('…')).toBe(true);
@@ -242,9 +235,7 @@ test('text remembered from an older transcript finds its recording and shows the
 test('a search also reads notes, titles, and IDs, and says nothing for a recording with no transcript', async () => {
 	const { library } = await history();
 	const search = (query: string) =>
-		stems(shownRows(library, query, DEFAULT_SORT)).filter(
-			(stem) => !REPAIR.includes(stem),
-		);
+		stems(shownRows(library, query, DEFAULT_SORT));
 
 	expect(search('garage')).toEqual(['dentist']);
 	expect(search('STANDUP')).toEqual(['standup']);
@@ -254,15 +245,19 @@ test('a search also reads notes, titles, and IDs, and says nothing for a recordi
 	const dentist = rowOf(library, 'dentist');
 	expect(transcriptExcerpt(dentist, 'garage')).toBeUndefined();
 	expect(dentist.status).toBe('untranscribed');
-	// A row with no audio named is one that needs repair, and says so.
-	expect(rowOf(library, 'orphan').status).toBe('repair');
+	// A file with no audio named, and one that does not read, need repair: they are listed apart.
+	expect(library.repairs.map((item) => item.stem)).toEqual([
+		'broken',
+		'orphan',
+	]);
+	expect(library.repairs[1]!.reason).toContain('audioPath');
 });
 
 // ============================================================================
 // Sorting
 // ============================================================================
 
-test('sorting gives one order every time: ties keep their order both ways and rows with no value come last', async () => {
+test('sorting gives one order every time: ties keep their order both ways', async () => {
 	const { library } = await history();
 	const order = (
 		key: 'recordedAt' | 'durationMs' | 'title' | 'status',
@@ -272,37 +267,29 @@ test('sorting gives one order every time: ties keep their order both ways and ro
 	expect(order('recordedAt', 'desc')).toEqual([
 		'dentist',
 		'walk',
-		'orphan',
 		'standup',
 		'lecture',
-		'broken',
 	]);
 	// standup and walk are the same length: standup's path sorts first, either way.
 	expect(order('durationMs', 'asc')).toEqual([
 		'dentist',
-		'orphan',
 		'standup',
 		'walk',
 		'lecture',
-		'broken',
 	]);
 	expect(order('durationMs', 'desc')).toEqual([
 		'lecture',
 		'standup',
 		'walk',
-		'orphan',
 		'dentist',
-		'broken',
 	]);
 	expect(order('title', 'asc').slice(0, 3)).toEqual([
-		'broken',
 		'dentist',
 		'lecture',
+		'standup',
 	]);
 	// What needs attention sorts ahead of what is done.
 	expect(order('status', 'asc')).toEqual([
-		'broken',
-		'orphan',
 		'dentist',
 		'lecture',
 		'standup',
@@ -348,7 +335,7 @@ test('a selection is by path: it holds through a search, a sort, and a refresh, 
 	// A search that hides two of them says so, and acts only on what it shows.
 	view.recordingQuery = 'garden';
 	const searched = shownRows(library, view.recordingQuery, view.recordingSort);
-	expect(stems(searched)).toEqual(['walk', ...REPAIR]);
+	expect(stems(searched)).toEqual(['walk']);
 	expect(selectionIn(view.recordingSelected, searched, library)).toMatchObject({
 		hidden: 2,
 	});
@@ -374,7 +361,7 @@ test('a selection is by path: it holds through a search, a sort, and a refresh, 
 		library,
 	);
 	expect(view.recordingSelected.sort()).toEqual(
-		['broken', 'dentist', 'lecture', 'orphan', 'walk'].map(path),
+		['dentist', 'lecture', 'walk'].map(path),
 	);
 
 	// A new order and a refresh change nothing about what is selected.
@@ -384,7 +371,7 @@ test('a selection is by path: it holds through a search, a sort, and a refresh, 
 	const sorted = shownRows(library, view.recordingQuery, view.recordingSort);
 	expect(
 		stems(selectionIn(view.recordingSelected, sorted, library).rows),
-	).toEqual(['broken', 'dentist', 'lecture', 'orphan', 'walk']);
+	).toEqual(['dentist', 'lecture', 'walk']);
 
 	// A selected recording deleted from the folder is no longer selected, or counted as hidden.
 	const deletion = expectOk(await library.deletionFor(path('lecture')));
@@ -395,7 +382,7 @@ test('a selection is by path: it holds through a search, a sort, and a refresh, 
 	});
 	expect(
 		stems(selectionIn(view.recordingSelected, after, library).rows),
-	).toEqual(['broken', 'orphan']);
+	).toEqual([]);
 	view.recordingSelected = toggleSelected(
 		view.recordingSelected,
 		path('standup'),
@@ -457,12 +444,10 @@ test('transcribing several sends the audio each row names once, in order, and sk
 	expect(outcome.failed).toEqual([]);
 	expect(outcome.skipped).toEqual([
 		{ title: 'Walk ideas', reason: 'It already has a transcript.' },
-		{ title: 'Lost audio', reason: 'Its file names no audio.' },
 		{ title: 'Monday standup', reason: 'It already has a transcript.' },
-		{ title: 'broken', reason: 'Its file names no audio.' },
 	]);
-	expect(progress).toEqual([1, 2, 3, 4, 5, 6]);
-	expect(library.resultsFor('dentist')[0]!.body).toBe(
+	expect(progress).toEqual([1, 2, 3, 4]);
+	expect(library.resultsFor('dentist')[0]!.row.body).toBe(
 		'words from recordings/dentist.wav\n',
 	);
 	expect((await readdir(join(root, 'transcriptions'))).length).toBe(5);
@@ -540,17 +525,15 @@ test('deleting several captures each deletion first, removes exactly those with 
 	]);
 
 	expect(captured.refused).toEqual([]);
-	expect(captured.deletions.map((item) => item.entry.stem)).toEqual([
+	expect(captured.deletions.map((item) => item.id)).toEqual([
 		'walk',
 		'standup',
 	]);
 	// Capturing deletes nothing.
-	expect(library.entries).toHaveLength(6);
+	expect(library.entries).toHaveLength(4);
 	const told = describeDeletions(captured);
 	expect(told.title).toBe('Delete 2 recordings?');
-	expect(told.description).toContain(
-		'2 recording files, 3 transcription results',
-	);
+	expect(told.description).toContain('2 recording files, 3 results');
 	expect(told.description).toContain('“Walk ideas”, “Monday standup”');
 	expect(told.description).toContain('The 2 audio files are not deleted');
 
@@ -584,9 +567,7 @@ test('a recording with a transcription under way is left out with the library’
 		path('lecture'),
 	]);
 
-	expect(captured.deletions.map((item) => item.entry.stem)).toEqual([
-		'lecture',
-	]);
+	expect(captured.deletions.map((item) => item.id)).toEqual(['lecture']);
 	expect(captured.refused).toHaveLength(1);
 	expect(captured.refused[0]!.reason).toContain('still running');
 	expect(describeDeletions(captured).description).toContain(
@@ -620,7 +601,7 @@ test('while a result cannot be told apart from a recording’s own, none is capt
 		'Walk ideas',
 	]);
 	expect(problems[0]!.reason).toContain('cannot be told apart');
-	expect(library.entries).toHaveLength(6);
+	expect(library.entries).toHaveLength(4);
 });
 
 // ============================================================================
@@ -629,7 +610,7 @@ test('while a result cannot be told apart from a recording’s own, none is capt
 
 const TRANSCRIPT = 'transcriptions/standup-t1.md';
 
-test('a transcript is edited through the one editor kept for its file, and its recording stays selected', async () => {
+test('a transcript is edited in its own draft beside its recording, which stays selected', async () => {
 	const { library, root } = await history();
 	await library.open(path('standup'));
 	const before = await readFile(join(root, TRANSCRIPT), 'utf8');
@@ -638,102 +619,84 @@ test('a transcript is edited through the one editor kept for its file, and its r
 
 	expect(library.selectedPath).toBe(path('standup'));
 	expect(library.selection?.kind).toBe('recording');
-	const slot = library.transcriptAt(TRANSCRIPT);
-	const editor = editingOf(slot);
-	typeBody(editor, 'Yesterday I finished the importer. Today: the exporter.\n');
+	const session = transcriptSession(library, TRANSCRIPT);
+	session.edit((row) => {
+		row.body = 'Yesterday I finished the importer. Today: the exporter.\n';
+	});
 	// Saving from the moment it is typed: leaving now would wait for it.
-	expect(editor.save.status).toBe('saving');
+	expect(session.state.status).toBe('saving');
 	expect(library.holdsUnsavedWork).toBe(true);
-	expectOk(await editor.waitForSaves());
+	expect((await session.settled()).status).toBe('saved');
 
 	const saved = await readFile(join(root, TRANSCRIPT), 'utf8');
-	// The whole row is saved in its one form: the fields as they were, the new text.
-	expect(saved).toBe(editor.row.text);
-	const inspect = (text: string) =>
-		inspectRow(whisperingDefinition.tables.transcriptions, text);
-	expect(inspect(saved).fields).toEqual(inspect(before).fields);
-	expect(inspect(saved).body).toBe(
-		'Yesterday I finished the importer. Today: the exporter.\n',
-	);
+	// The fields as they were, the new text.
+	expect(saved.split('---')[1]).toBe(before.split('---')[1]);
+	expect(saved).toContain('Today: the exporter.');
 	expect(library.holdsUnsavedWork).toBe(false);
 	await library.refreshAll();
-	// The table and a copy read the edited text.
 	expect(transcriptExcerpt(rowOf(library, 'standup'), '')).toBe(
 		'Yesterday I finished the importer. Today: the exporter.',
 	);
 
-	// Asking again, and opening the file from Files, reach the same editor.
+	// Asking again, and opening the file from Files, reach the same draft.
 	await library.openTranscript(TRANSCRIPT);
-	expect(library.transcriptAt(TRANSCRIPT)).toBe(slot);
-	await library.open(TRANSCRIPT);
-	expect(library.selection).toMatchObject({ kind: 'transcript', slot });
+	expect(transcriptSession(library, TRANSCRIPT)).toBe(session);
+	expect(await library.open(TRANSCRIPT)).toBeUndefined();
+	expect(library.selection).toMatchObject({ kind: 'file', path: TRANSCRIPT });
+	expect(transcriptSession(library, TRANSCRIPT)).toBe(session);
+	// The recording's draft was left when another item opened.
+	expect(library.draftAt(path('standup'))).toBeUndefined();
 	// A path that is not a transcript is not opened by this.
 	await library.openTranscript('notes.md');
-	expect(library.transcriptAt('notes.md')).toBeUndefined();
+	expect(library.draftAt('notes.md')).toBeUndefined();
 });
 
-test('a transcript changed outside is listed but not loaded into its open editor until the person reloads, and otherwise the next save writes over it', async () => {
+test('a transcript changed outside is listed, and its open draft reports the change as a conflict on the next save', async () => {
 	const { library, root } = await history();
 	await library.open(path('standup'));
 	await library.openTranscript(TRANSCRIPT);
-	const editor = editingOf(library.transcriptAt(TRANSCRIPT));
-	const opened = editor.row.text;
-	const outside = opened.replace('importer', 'migration');
+	const session = transcriptSession(library, TRANSCRIPT);
+	const outside = (await readFile(join(root, TRANSCRIPT), 'utf8')).replace(
+		'importer',
+		'migration',
+	);
 	await writeFile(join(root, TRANSCRIPT), outside);
 
 	await library.refreshAll();
-
-	// The list reads the folder; the open editor keeps what it shows.
 	expect(transcriptExcerpt(rowOf(library, 'standup'), '')).toContain(
 		'migration',
 	);
-	expect(editor.row.text).toBe(opened);
-	expect(editor.status.kind).toBe('saved');
-	expect(library.holdsUnsavedWork).toBe(false);
+	expect(session.draft.body).toContain('importer');
 
-	// Reloading, as the person asks, takes the file as it is and writes nothing.
-	expect(await library.reloadRow(TRANSCRIPT)).toBeUndefined();
-	expect(editor.row).toMatchObject({ status: 'valid', text: outside });
+	session.edit((row) => {
+		row.body = 'What I typed.\n';
+	});
+	const state = await session.settled();
+	expect(state.status === 'error' && state.error.name).toBe('Conflict');
 	expect(await readFile(join(root, TRANSCRIPT), 'utf8')).toBe(outside);
-
-	// Changed outside again and not reloaded: the next typing saves the whole
-	// row over it.
-	await writeFile(
-		join(root, TRANSCRIPT),
-		outside.replace('migration', 'rewrite'),
+	expect(await library.keepMine(session)).toBeUndefined();
+	expect(await readFile(join(root, TRANSCRIPT), 'utf8')).toContain(
+		'What I typed.',
 	);
-	await library.refreshAll();
-	typeBody(editor, 'What I typed.\n');
-	expectOk(await editor.waitForSaves());
-	const saved = await readFile(join(root, TRANSCRIPT), 'utf8');
-	expect(saved).toBe(editor.row.text);
-	expect(
-		inspectRow(whisperingDefinition.tables.transcriptions, saved).body,
-	).toBe('What I typed.\n');
 	expect(library.selectedPath).toBe(path('standup'));
-	expect(library.holdsUnsavedWork).toBe(false);
 });
 
-test('closing the details and changing page lose no typing: the editor is the session’s and saves as typed', async () => {
+test('closing the details and changing page lose no typing: the draft is the session’s and saves as typed', async () => {
 	const { session, library, view, root } = await history();
 	await library.open(path('standup'));
 	view.showingDetail = true;
 	await library.openTranscript(TRANSCRIPT);
-	const slot = library.transcriptAt(TRANSCRIPT);
-	const editor = editingOf(slot);
-	typeBody(editor, 'Typed just before closing the details.\n');
+	const draft = transcriptSession(library, TRANSCRIPT);
+	draft.edit((row) => {
+		row.body = 'Typed just before closing the details.\n';
+	});
 	view.recordingQuery = 'standup';
 
 	// Closing the pane, then a change of page: neither unloads the document.
 	view.showingDetail = false;
 	expect(session.blocksNavigation({ willUnload: false })).toBe(false);
-
-	expect(library.transcriptAt(TRANSCRIPT)).toBe(slot);
-	expect(editor.row).toMatchObject({
-		body: 'Typed just before closing the details.\n',
-	});
+	expect(transcriptSession(library, TRANSCRIPT)).toBe(draft);
 	expect(library.selectedPath).toBe(path('standup'));
-	expect(view.recordingQuery).toBe('standup');
 	// Leaving the app is what is held back while the save runs.
 	expect(session.blocksNavigation({ willUnload: true })).toBe(true);
 
@@ -741,10 +704,6 @@ test('closing the details and changing page lose no typing: the editor is the se
 	expect(await readFile(join(root, TRANSCRIPT), 'utf8')).toContain(
 		'Typed just before closing the details.',
 	);
-	// Coming back to the recording finds the same editor, saved.
-	await library.openTranscript(TRANSCRIPT);
-	expect(library.transcriptAt(TRANSCRIPT)).toBe(slot);
-	expect(editor.status.kind).toBe('saved');
 });
 
 // ============================================================================
@@ -814,64 +773,27 @@ test('a selected recording that left the folder is unticked once a listing confi
 // Closing
 // ============================================================================
 
-test('a transcript opening that answers after the session closed makes no draft, and nothing is opened or read after closing', async () => {
-	const answer = deferred<void>();
-	const read = deferred<void>();
+test('nothing is opened or read after closing', async () => {
 	const reads: string[] = [];
-	const opened: { get(): { readonly save: { readonly status: string } } }[] =
-		[];
-	const { session, library } = await history(undefined, (folder) => {
-		const { transcriptions } = folder.tables;
-		return {
-			...folder,
-			tables: {
-				...folder.tables,
-				transcriptions: {
-					...transcriptions,
-					async edit(stem: string, options?: { signal?: AbortSignal }) {
-						reads.push(stem);
-						// The row is read while the folder is open; the answer is held past its closing.
-						const edited = await transcriptions.edit(stem, options);
-						const { data: editor, error: editError } = edited;
-						if (editError === null) opened.push(editor);
-						if (stem === 'standup-t1') {
-							read.resolve();
-							await answer.promise;
-						}
-						return edited;
-					},
-				},
+	const { session, library } = await history(undefined, (folder) => ({
+		...folder,
+		files: {
+			...folder.files,
+			async read(target: string) {
+				reads.push(target);
+				return folder.files.read(target);
 			},
-			files: {
-				...folder.files,
-				async read(target: string) {
-					reads.push(target);
-					return folder.files.read(target);
-				},
-			},
-		};
-	});
+		},
+	}));
 	await library.open(path('standup'));
-	const opening = library.openTranscript(TRANSCRIPT);
-	expect(library.transcriptAt(TRANSCRIPT)?.kind).toBe('opening');
-	await read.promise;
-
-	// Closing does not wait for the opening, and finds no draft of it to settle.
 	await session.close();
 	expect(library.closing).toBe(true);
-	answer.resolve();
-	await opening;
-
-	expect(library.transcriptAt(TRANSCRIPT)).toBeUndefined();
-	// The editor that answered late belongs to no view: nothing holds it, and it holds nothing.
-	expect(opened.map((editor) => editor.get().save.status)).toEqual(['idle']);
-	// Nothing is admitted after closing: no selection, no draft, no read.
 	const before = reads.length;
 	await library.openTranscript('transcriptions/walk-t1.md');
 	await library.open('transcriptions/walk-t2.md');
 	await library.open(path('walk'));
-	expect(library.transcriptAt('transcriptions/walk-t1.md')).toBeUndefined();
-	expect(library.transcriptAt('transcriptions/walk-t2.md')).toBeUndefined();
+	expect(library.draftAt('transcriptions/walk-t1.md')).toBeUndefined();
+	expect(library.draftAt('transcriptions/walk-t2.md')).toBeUndefined();
 	expect(library.selectedPath).toBe(path('standup'));
 	expect(reads).toHaveLength(before);
 });
@@ -879,10 +801,9 @@ test('a transcript opening that answers after the session closed makes no draft,
 test('typing in a transcript that was opened before closing is saved before the folder closes', async () => {
 	const { session, library, root } = await history();
 	await library.openTranscript(TRANSCRIPT);
-	typeBody(
-		editingOf(library.transcriptAt(TRANSCRIPT)),
-		'Typed just before quitting.\n',
-	);
+	transcriptSession(library, TRANSCRIPT).edit((row) => {
+		row.body = 'Typed just before quitting.\n';
+	});
 
 	await session.close();
 

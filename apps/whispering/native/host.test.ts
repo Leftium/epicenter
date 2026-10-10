@@ -396,10 +396,8 @@ test('an injected row failure leaves the audio saved, and retry completes one re
 	]);
 	const listed = expectOk(await folder.tables.recordings.list());
 	expect(listed).toHaveLength(1);
-	// The one row was read, parses, and has no field issue.
-	const row = expectOk(listed![0]!.result);
-	expect(row!.parseError).toBeUndefined();
-	expect(row!.issues).toEqual([]);
+	// The one row was read, and reads as a valid row.
+	expect(listed![0]!.result.error).toBeNull();
 });
 
 test('an injected audio failure writes nothing, and retry saves', async () => {
@@ -452,10 +450,10 @@ test('an armed failure leaves a path that is already occupied alone, and is not 
 	// Asked for directly, the occupied row is left alone, and the folder refuses the write itself.
 	const refused = expectErr(
 		await obstacles(bridge)({ step: 'row', stem: pending.id }, () =>
-			folder.tables.recordings.create({
-				stem: pending.id,
-				fields: pending.fields,
-			}),
+			folder.tables.recordings.create(
+				{ fields: { ...pending.fields }, body: '' },
+				{ stem: pending.id },
+			),
 		),
 	);
 
@@ -507,7 +505,11 @@ test('a locked branch fails the commit and never the save; unlocking lets it com
 	expect(committed.status).toBe('committed');
 	expect(
 		git('ls-tree', '-r', '--name-only', 'HEAD').trim().split('\n').sort(),
-	).toEqual([`recordings/${pending.id}.md`, `recordings/${pending.id}.wav`]);
+	).toEqual([
+		'definition.json',
+		`recordings/${pending.id}.md`,
+		`recordings/${pending.id}.wav`,
+	]);
 });
 
 test('the terminal runs in the data folder, edits its files, and keeps its directory', async () => {
@@ -556,12 +558,14 @@ test('a terminal edit is an outside write: the owner’s next read sees it, and 
 	expect(run.stdout).toContain(`recordings/${pending.id}.md`);
 
 	const reread = expectOk(await folder.tables.recordings.get(pending.id));
-	expect(reread!.fields.title).toBe('Renamed in the shell');
+	expect(reread!.row.fields.title).toBe('Renamed in the shell');
 	// The page's older observation no longer matches: its save is refused, not applied.
 	const { error: replaceError } = await folder.tables.recordings.replace(
-		entry!.stem,
-		entry!.text.replace('First take', 'Lost update'),
-		{ expectedSha256: entry!.sha256 },
+		entry!,
+		{
+			...entry!.row,
+			fields: { ...entry!.row.fields, title: 'Lost update' },
+		},
 	);
 	expect(replaceError?.name).toBe('Conflict');
 	expect(
@@ -899,8 +903,9 @@ test('a connection’s key is kept out of the versioned folder and out of every 
 		expect(
 			await readFile(join(root, file.path), 'utf8').catch(() => ''),
 		).not.toContain('secret-key');
+	// The folder's published definition is the only change, and holds no key.
 	const status = expectOk(await folder.git.status());
-	expect(status?.changes).toEqual([]);
+	expect(status?.changes).toEqual([{ kind: 'add', path: 'definition.json' }]);
 	expect(
 		await readFile(
 			join(root, '.git', 'epicenter', 'whispering', 'device.json'),

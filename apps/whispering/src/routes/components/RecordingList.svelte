@@ -35,7 +35,7 @@
 		transcriptsToCopy,
 	} from '$lib/recording-collection.js';
 	import { getSession } from '$lib/session.svelte.js';
-	import { copyText, formatTime } from './file-actions.js';
+	import { copyText, formatTime, openItem } from './file-actions.js';
 
 	/**
 	 * Every recording in the folder as one table: search, sort, tick, and act
@@ -87,7 +87,6 @@
 	const order = $derived(orders.find(({ sort }) => orderValue(sort) === orderValue(view.recordingSort)));
 
 	const statusTone: Record<RecordingStatus, string> = {
-		repair: 'text-destructive',
 		failed: 'text-destructive',
 		unsaved: 'text-destructive',
 		transcribing: 'text-foreground',
@@ -103,8 +102,7 @@
 	}
 
 	async function openRow(path: string) {
-		await library.open(path);
-		onOpen();
+		if (await openItem(library, path)) onOpen();
 	}
 
 	const several = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
@@ -313,8 +311,8 @@
 					{#each rows as row (row.path)}
 						{@const open = view.showingDetail && library.selectedPath === row.path}
 						{@const excerpt = transcriptExcerpt(row, view.recordingQuery)}
-						{@const recorded = formatTime(row.entry.fields.recordedAt, 'short')}
-						{@const duration = length(row.entry.fields.durationMs)}
+						{@const recorded = formatTime(row.entry.row.fields.recordedAt, 'short')}
+						{@const duration = length(row.entry.row.fields.durationMs)}
 						<!--
 							The title is the row's button, so the keyboard reaches and opens a row the usual way.
 							A click anywhere else on the row opens it too, except in the tick's own cell.
@@ -348,7 +346,7 @@
 										>
 											{row.title}
 										</button>
-										{#if row.entry.fields.capture === 'fixture'}<Badge variant="outline" class="shrink-0">Fixture</Badge>{/if}
+										{#if row.entry.row.fields.capture === 'fixture'}<Badge variant="outline" class="shrink-0">Fixture</Badge>{/if}
 									</span>
 									{#if excerpt !== undefined}
 										<span class="line-clamp-2 text-xs break-words text-muted-foreground @3xl:line-clamp-1" data-testid="row-excerpt">
@@ -396,12 +394,14 @@
 		{/if}
 	</div>
 
-	{#if library.unreadable.length > 0}
-		<div class="border-t bg-warning/10 px-3 py-2 text-xs">
-			<p class="font-medium">Files that could not be read as text</p>
+	{#if library.repairs.length > 0}
+		<div class="border-t bg-warning/10 px-3 py-2 text-xs" data-testid="recording-repairs">
+			<p class="font-medium">Needs repair</p>
 			<ul class="mt-1 space-y-0.5">
-				{#each library.unreadable as item (item.path)}
-					<li><code class="font-mono">{item.path}</code>: {item.message}</li>
+				{#each library.repairs as item (item.path)}
+					<li>
+						<button type="button" class="font-mono underline" onclick={() => void openRow(item.path)}>{item.path}</button>: {item.reason}
+					</li>
 				{/each}
 			</ul>
 		</div>

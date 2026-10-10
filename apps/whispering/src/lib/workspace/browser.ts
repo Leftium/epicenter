@@ -154,8 +154,6 @@ export async function openBrowserWorkspace(): Promise<
 				})
 			: createMicrophoneDevice(),
 		captureNotice: undefined,
-		// A hint to read again: this tab's saves and other tabs' on this origin.
-		onExternalChange: (listener) => folder.onFilesChanged(() => listener()),
 		reveal: undefined,
 		transcribe: (request) =>
 			transcribeOverConnection(

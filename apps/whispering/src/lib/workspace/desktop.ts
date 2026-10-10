@@ -158,9 +158,6 @@ export async function openDesktopWorkspace(
 			: info.fixture?.size === 0
 				? `The fixture file ${info.fixture.name} could not be read. Recordings will fail until it can.`
 				: undefined,
-		// The owner announces every change it sees: this window's saves, the
-		// terminal's, and any other program's.
-		onExternalChange: (listener) => folder.onFilesChanged(() => listener()),
 		async reveal() {
 			try {
 				await bridge.app('reveal');

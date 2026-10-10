@@ -18,6 +18,10 @@ export function returnFocusToTrigger(
 ) {
 	event.preventDefault();
 	const focused = document.activeElement;
-	if (focused === null || focused === document.body || content?.contains(focused))
+	if (
+		focused === null ||
+		focused === document.body ||
+		content?.contains(focused)
+	)
 		trigger?.focus({ preventScroll: true });
 }

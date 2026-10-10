@@ -9,10 +9,9 @@
 	import { resolve } from '$app/paths';
 	import { audioPathIn } from '$lib/definition.js';
 	import { resolvePostProcessing, transformationName } from '$lib/post-processing.js';
-	import { needsRepair } from '$lib/rows.js';
 	import { getSession } from '$lib/session.svelte.js';
 	import AudioPlayer from './components/AudioPlayer.svelte';
-	import { copyText, formatTime, recordingTitle } from './components/file-actions.js';
+	import { copyText, formatTime, openItem, recordingTitle } from './components/file-actions.js';
 	import RecorderCard from './components/RecorderCard.svelte';
 	import TransformationOutput from './components/TransformationOutput.svelte';
 
@@ -21,7 +20,7 @@
 	/** The newest saved recording. A capture still being saved is in the notice under the header. */
 	const latest = $derived(library.entries[0]);
 	/** The audio the newest row names. Nothing is guessed from another file's name. */
-	const audioPath = $derived(latest ? audioPathIn(latest.fields) : undefined);
+	const audioPath = $derived(latest ? audioPathIn(latest.row.fields) : undefined);
 	const transcript = $derived(latest ? library.resultsFor(latest.stem)[0] : undefined);
 	const run = $derived(latest ? library.transcriptionRun(latest.stem) : undefined);
 	const model = $derived(library.connections?.transcription?.model);
@@ -45,7 +44,7 @@
 
 	/** Show the recording, or one of its results, on the Recordings page. */
 	async function openFile(path: string) {
-		await library.open(path);
+		if (!(await openItem(library, path))) return;
 		view.showingDetail = true;
 		await goto(resolve('/recordings'));
 	}
@@ -70,17 +69,16 @@
 			<section class="mt-8 flex flex-col gap-2 border-t pt-5" aria-label="Latest recording" data-testid="latest-recording">
 				<div class="flex items-center gap-2 text-sm">
 					<h2 class="min-w-0 flex-1 truncate font-medium">{recordingTitle(latest)}</h2>
-					{#if needsRepair(latest)}<Badge variant="destructive">Needs repair</Badge>{/if}
-					{#if latest.fields.capture === 'fixture'}<Badge variant="outline">Fixture</Badge>{/if}
-					<span class="shrink-0 text-xs text-muted-foreground max-sm:hidden">{formatTime(latest.fields.recordedAt, 'short')}</span>
+					{#if latest.row.fields.capture === 'fixture'}<Badge variant="outline">Fixture</Badge>{/if}
+					<span class="shrink-0 text-xs text-muted-foreground max-sm:hidden">{formatTime(latest.row.fields.recordedAt, 'short')}</span>
 				</div>
 
 				{#if transcript}
 					<div class="flex items-start gap-2 rounded-md border p-3 text-sm">
 						<p class="max-h-40 min-w-0 flex-1 overflow-y-auto whitespace-pre-wrap" data-testid="latest-transcript">
-							{transcript.body?.trim() || '(empty transcript)'}
+							{transcript.row.body.trim() || '(empty transcript)'}
 						</p>
-						<Button size="xs" variant="outline" onclick={() => void copyText(transcript.body ?? '', 'the transcript')} data-testid="copy-latest">
+						<Button size="xs" variant="outline" onclick={() => void copyText(transcript.row.body, 'the transcript')} data-testid="copy-latest">
 							Copy
 						</Button>
 					</div>
@@ -116,14 +114,14 @@
 							<Button size="sm" variant="outline" onclick={() => void copyText(text, 'the result')}>Copy</Button>
 						</div>
 					{:else if postProcessing.kind === 'ready'}
-						{@const chosen = library.resolve(postProcessing.entry)}
+						{@const chosen = library.resolve(postProcessing.entry.row)}
 						{@const name = transformationName(postProcessing.entry)}
 						<div class="flex flex-wrap items-center gap-2 text-sm">
 							<!-- The visible label stays short: a title can be longer than a narrow window. The name is in the accessible label and the tooltip. -->
 							<Button
 								size="sm"
 								variant="outline"
-								disabled={!transcript.body?.trim()}
+								disabled={!transcript.row.body.trim()}
 								aria-label="Run post-processing: {name}"
 								tooltip={chosen.kind === 'ready' ? `Runs “${name}”: sends this transcript to ${chosen.model} at ${chosen.endpoint}` : undefined}
 								onclick={() => void runPostProcessing()}

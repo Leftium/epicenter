@@ -90,9 +90,9 @@ function counted(target: PublishTarget) {
 		tables: {
 			recordings: {
 				get: (stem) => target.tables.recordings.get(stem),
-				create(input) {
-					writes.push(`recordings/${input.stem}.md`);
-					return target.tables.recordings.create(input);
+				create(row, options) {
+					writes.push(`recordings/${options?.stem}.md`);
+					return target.tables.recordings.create(row, options);
 				},
 			},
 		},
@@ -130,12 +130,7 @@ test('a capture is saved as audio and a row that names it, then committed and re
 		},
 	});
 	const row = expectOk(await folder.tables.recordings.get(pending.id));
-	expect(row).toMatchObject({
-		fields: pending.fields,
-		body: pending.body,
-		parseError: undefined,
-		issues: [],
-	});
+	expect(row?.row).toEqual({ fields: pending.fields, body: pending.body });
 	expect(await names(root)).toEqual([`${pending.id}.md`, `${pending.id}.wav`]);
 	// The stored audio is the captured bytes, exactly.
 	expect(await bytesAt(root, 'recordings', `${pending.id}.wav`)).toEqual(
@@ -187,7 +182,8 @@ test('a file that only shares the stem is not the recording’s and does not blo
 	);
 
 	expect(
-		expectOk(await folder.tables.recordings.get(pending.id))?.fields.audioPath,
+		expectOk(await folder.tables.recordings.get(pending.id))?.row.fields
+			.audioPath,
 	).toBe(`recordings/${pending.id}.wav`);
 	expect(await names(root)).toEqual([
 		`${pending.id}.m4a`,
@@ -266,7 +262,7 @@ test('a row that fails after the audio landed leaves the audio, and a retry crea
 	});
 	expect(writes.slice(3)).toEqual([`recordings/${pending.id}.md`]);
 	expect(
-		expectOk(await folder.tables.recordings.get(pending.id))?.fields,
+		expectOk(await folder.tables.recordings.get(pending.id))?.row.fields,
 	).toEqual(pending.fields);
 	expect(await names(root)).toEqual([`${pending.id}.md`, `${pending.id}.wav`]);
 	expect(await bytesAt(root, 'recordings', `${pending.id}.wav`)).toEqual(
@@ -276,7 +272,11 @@ test('a row that fails after the audio landed leaves the audio, and a retry crea
 	expect((await folder.git.commit()).status).not.toBe('failed');
 	expect(
 		git(root, 'ls-tree', '-r', '--name-only', 'HEAD').trim().split('\n').sort(),
-	).toEqual([`recordings/${pending.id}.md`, `recordings/${pending.id}.wav`]);
+	).toEqual([
+		'definition.json',
+		`recordings/${pending.id}.md`,
+		`recordings/${pending.id}.wav`,
+	]);
 	await folder.close();
 });
 
@@ -344,14 +344,12 @@ test('a published recording whose title was edited since is still this recording
 	const { root, folder } = await open();
 	const pending = capture();
 	await publishRecording(folder, pending, { retry: false });
+	const stored = expectOk(await folder.tables.recordings.get(pending.id))!;
 	expectOk(
-		await folder.tables.recordings.update(
-			pending.id,
-			{
-				fields: { title: 'Renamed by its owner' },
-			},
-			{},
-		),
+		await folder.tables.recordings.replace(stored, {
+			...stored.row,
+			fields: { ...stored.row.fields, title: 'Renamed by its owner' },
+		}),
 	);
 
 	const again = await publishRecording(folder, pending, { retry: true });
@@ -487,9 +485,10 @@ test('a row from before audioPath is not this recording, even beside matching au
 		await readFile(join(root, 'recordings', `${pending.id}.md`), 'utf8'),
 	).toBe(old);
 	const listed = expectOk(await folder.tables.recordings.list());
-	const row = expectOk(listed[0]!.result);
-	expect(row.parseError).toBeUndefined();
-	expect(row.issues.map((issue) => issue.field)).toEqual(['audioPath']);
+	const { error } = listed[0]!.result;
+	expect(
+		error?.name === 'InvalidRow' && error.issues.map((issue) => issue.field),
+	).toEqual(['audioPath']);
 	await folder.close();
 });
 
@@ -564,11 +563,11 @@ function losing(target: PublishTarget, lose: 'audio' | 'row'): PublishTarget {
 		tables: {
 			recordings: {
 				get: (stem) => target.tables.recordings.get(stem),
-				async create(input) {
-					const created = await target.tables.recordings.create(input);
-					const { data: row, error: createError } = created;
+				async create(row, options) {
+					const created = await target.tables.recordings.create(row, options);
+					const { data: stored, error: createError } = created;
 					return lose === 'row' && createError === null
-						? lost(row.path, 'create')
+						? lost(stored.path, 'create')
 						: created;
 				},
 			},
@@ -682,9 +681,9 @@ function landingBefore(
 		tables: {
 			recordings: {
 				get: (stem) => folder.tables.recordings.get(stem),
-				async create(input) {
-					if (`recordings/${input.stem}.md` === path) await land();
-					return folder.tables.recordings.create(input);
+				async create(row, options) {
+					if (`recordings/${options?.stem}.md` === path) await land();
+					return folder.tables.recordings.create(row, options);
 				},
 			},
 		},
@@ -776,11 +775,10 @@ test('this recording’s row that lands late is read and found, never written ov
 	const pending = capture();
 	expectOk(await folder.files.create(pending.fields.audioPath, pending.bytes));
 	const raced = landingBefore(folder, `recordings/${pending.id}.md`, () =>
-		folder.tables.recordings.create({
-			stem: pending.id,
-			fields: pending.fields,
-			body: 'Notes written since\n',
-		}),
+		folder.tables.recordings.create(
+			{ fields: { ...pending.fields }, body: 'Notes written since\n' },
+			{ stem: pending.id },
+		),
 	);
 
 	const outcome = await publishRecording(raced, pending, { retry: true });

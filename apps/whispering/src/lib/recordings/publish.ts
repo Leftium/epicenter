@@ -40,8 +40,8 @@ import {
 	type FileTable,
 	type FolderFiles,
 	hashBytes,
+	type Row,
 	rowPath,
-	type TableReading,
 } from '@epicenter/folder';
 import { RECORDINGS, type RecordingFields } from '../definition.js';
 import type { RecordingWriteHook } from '../workspace/types.js';
@@ -114,20 +114,17 @@ export type PublishTarget = {
 };
 
 /**
- * Whether a row's reading is this capture's recording: text that parses,
- * whose validated facts are the capture's own. The title and notes are the
- * person's to change, and fields the app does not declare are not part of a
- * capture, so neither is compared: a title that needs fixing does not make
- * the row another recording. A fact that did not validate is not the
- * capture's, and a row that does not parse states none.
+ * Whether a valid row is this capture's recording: its recorded facts are the
+ * capture's own. The title and notes are the person's to change, and fields
+ * the app does not declare are not part of a capture, so neither is
+ * compared. A row file whose text is not a valid row is never this capture's.
  */
 export function isThisRecording(
-	reading: Pick<TableReading<RecordingFields>, 'fields' | 'parseError'>,
+	row: Row<RecordingFields>,
 	capture: PendingCapture,
 ): boolean {
-	const { fields } = reading;
+	const { fields } = row;
 	return (
-		reading.parseError === undefined &&
 		fields.recordedAt === capture.fields.recordedAt &&
 		fields.durationMs === capture.fields.durationMs &&
 		fields.capture === capture.fields.capture &&
@@ -183,12 +180,17 @@ async function inspect(
 
 	const { data: existing, error: rowReadError } =
 		await target.tables.recordings.get(capture.id);
+	if (
+		rowReadError?.name === 'InvalidRow' ||
+		rowReadError?.name === 'InvalidUtf8'
+	)
+		return occupied(row);
 	if (rowReadError !== null)
 		return {
 			kind: 'unchecked',
 			message: `${row} could not be read, so nothing was written: ${rowReadError.message}`,
 		};
-	if (existing !== undefined && !isThisRecording(existing, capture))
+	if (existing !== undefined && !isThisRecording(existing.row, capture))
 		return occupied(row);
 
 	const { data: audio, error: audioReadError } =
@@ -292,11 +294,10 @@ export async function publishRecording(
 	}
 
 	const created = await write(around, { step: 'row', stem: capture.id }, () =>
-		target.tables.recordings.create({
-			stem: capture.id,
-			fields: capture.fields,
-			body: capture.body,
-		}),
+		target.tables.recordings.create(
+			{ fields: { ...capture.fields }, body: capture.body },
+			{ stem: capture.id },
+		),
 	);
 	if ('thrown' in created)
 		return {
@@ -310,19 +311,25 @@ export async function publishRecording(
 		// As for the audio: the row there may be this capture's own, landed late.
 		const { data: there, error: readError } =
 			await target.tables.recordings.get(capture.id);
+		const foreign =
+			readError?.name === 'InvalidRow' ||
+			readError?.name === 'InvalidUtf8' ||
+			(readError === null &&
+				there !== undefined &&
+				!isThisRecording(there.row, capture));
+		if (foreign)
+			return {
+				kind: 'rowNotSaved',
+				certainty: 'failed',
+				audio,
+				message: `${row} already exists and is not this recording. Nothing was overwritten.`,
+			};
 		if (readError !== null || there === undefined)
 			return {
 				kind: 'rowNotSaved',
 				certainty: 'unknown',
 				audio,
 				message: `${row} was occupied when this recording's row was written, and could not then be read, so whether it is this recording's row is not known${readError !== null ? `: ${readError.message}` : '.'}`,
-			};
-		if (!isThisRecording(there, capture))
-			return {
-				kind: 'rowNotSaved',
-				certainty: 'failed',
-				audio,
-				message: `${row} already exists and is not this recording. Nothing was overwritten.`,
 			};
 		return {
 			kind: 'published',

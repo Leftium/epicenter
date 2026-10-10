@@ -38,12 +38,12 @@
 	{@const selection = library.selection}
 	{#if selection?.kind === 'recording'}
 		{#key selection.path}
-			<RecordingDetail {library} path={selection.path} slot={selection.slot} entry={selection.entry} {onBack} {onClose} />
+			<RecordingDetail {library} path={selection.path} draft={selection.draft} entry={selection.entry} {onBack} {onClose} />
 		{/key}
-	{:else if selection?.kind === 'transcript'}
-		<FileView {library} path={selection.path} file={{ kind: 'row', slot: selection.slot }} onBack={onBack ?? onClose} />
 	{:else if selection?.kind === 'file'}
-		<FileView {library} path={selection.path} file={selection.file} onBack={onBack ?? onClose} />
+		{#key selection.path}
+			<FileView {library} path={selection.path} draft={selection.draft} onBack={onBack ?? onClose} />
+		{/key}
 	{:else}
 		<Empty.Root class="h-full">
 			{#if library.selectedPath !== undefined}

@@ -38,9 +38,8 @@ function snapshot(): GitSnapshot {
 }
 
 for (const state of [
-	{ unsaved: true, saving: false, problems: 0, expected: 'Unsaved typing' },
-	{ unsaved: false, saving: true, problems: 0, expected: 'Saving…' },
-	{ unsaved: false, saving: false, problems: 1, expected: '1 file not saved' },
+	{ saving: true, problems: 0, expected: 'Saving…' },
+	{ saving: false, problems: 1, expected: '1 file not saved' },
 ]) {
 	test(`${state.expected} takes priority over a failed commit`, () => {
 		const git = snapshot();
@@ -52,7 +51,6 @@ for (const state of [
 			...state,
 			pendingCaptures: 0,
 			capturesSaving: false,
-			publishedUnshown: 0,
 			unsavedResults: 0,
 			unsavedTransformations: 0,
 		});
@@ -73,12 +71,10 @@ test('a failed commit still needs attention after all files are saved', () => {
 		lastCommit: { status: 'failed' as const, error: 'branch locked', at: 1 },
 	};
 	const files = filesLine({
-		unsaved: false,
 		saving: false,
 		problems: 0,
 		pendingCaptures: 0,
 		capturesSaving: false,
-		publishedUnshown: 0,
 		unsavedResults: 0,
 		unsavedTransformations: 0,
 	});

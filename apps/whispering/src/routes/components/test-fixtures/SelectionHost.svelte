@@ -1,9 +1,8 @@
 <!--
 	Test fixture: the recordings page's and the transformations page's detail
-	views, rendered as those pages render them. A transcript or file selection
-	reuses one FileView for every selected path, unkeyed; a transformation is
-	keyed by its path. `shown` unmounts the views, as closing the details does,
-	while the library and its drafts stay.
+	views, rendered as those pages render them, each keyed by its path.
+	`shown` unmounts the views, as closing the details does, while the library
+	and its drafts stay.
 -->
 <script lang="ts">
 	import * as Tooltip from '@epicenter/ui/tooltip';
@@ -25,12 +24,12 @@
 		{@const selection = library.selection}
 		{#if selection?.kind === 'recording'}
 			{#key selection.path}
-				<RecordingDetail {library} path={selection.path} slot={selection.slot} entry={selection.entry} />
+				<RecordingDetail {library} path={selection.path} draft={selection.draft} entry={selection.entry} />
 			{/key}
-		{:else if selection?.kind === 'transcript'}
-			<FileView {library} path={selection.path} file={{ kind: 'row', slot: selection.slot }} />
 		{:else if selection?.kind === 'file'}
-			<FileView {library} path={selection.path} file={selection.file} />
+			{#key selection.path}
+				<FileView {library} path={selection.path} draft={selection.draft} />
+			{/key}
 		{/if}
 	{:else if page.shown && page.tab === 'transformations'}
 		{@const selected = library.selectedTransformation}
@@ -39,7 +38,7 @@
 				<TransformationDetail
 					{library}
 					path={selected.path}
-					slot={selected.slot}
+					draft={selected.draft}
 					entry={selected.entry}
 					bind:applyTo
 					bind:applySource

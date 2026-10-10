@@ -17,7 +17,7 @@ src/              the page      the UI; attaches to the folder, fetches the host
 │ loads http://127.0.0.1:<port>/, injects the token    │
 │                                                      │
 │   tauri-plugin-epicenter-folder: the one owner       │
-│   files, tables' bytes, history, lock, change hints  │
+│   files, tables' bytes, history, lock                │
 └────┬──────────────────▲────────────────┬─────────────┘
      │ spawns           │ invoke, events │ owns
      ▼                  │                ▼
@@ -109,7 +109,7 @@ What Whispering adds on top:
 Short file commands, including settings saves and file creation or deletion,
 start independently. The library joins their completion promises. Quit
 preparation awaits those accepted
-commands and the editors' saves before deciding what remains unsaved. Recording
+commands and the drafts' saves before deciding what remains unsaved. Recording
 publication and provider work keep their own pending states and discard choices.
 
 ## The storage boundary
@@ -125,7 +125,6 @@ implementation when the app layout mounts:
 | Transformation | The host reads the text connection and makes the request | The page makes the request, so the endpoint must allow its origin (CORS) |
 | Connections and keys | Fields of a file under `.git`; the page is told no key | `whispering.connections` in `localStorage` |
 | Chosen microphone | The same file under `.git`. The page's own storage does not last, since the host serves it from a new port each launch | `localStorage` |
-| Outside changes | The owner's hints: any program, this app included | Other tabs' saves, as hints to read again |
 | Reveal, failure injection | Yes | No |
 
 `isTauri()` selects the storage: inside a desktop app the folder is the
@@ -147,7 +146,7 @@ The page then checks that the owner and the host name the same directory and
 refuses with `FolderMismatch` if they do not, since the terminal and
 transcription would otherwise use a directory the saves do not go to.
 
-Everything above the seam (`library.svelte.ts`, the editors, the components)
+Everything above the seam (`library.svelte.ts`, the drafts, the components)
 is the same code for both. Opening returns a `Result`, and a refusal is shown
 on the "Could not open the recordings folder" screen as it is. The two
 storages are never substitutes: nothing that is missing or refuses inside a
@@ -424,32 +423,15 @@ block it.
 
 A `published` outcome names how each file is known to be in place: `receipt`
 when this attempt's own create was confirmed, `found` when the attempt read it
-there. A found file says nothing about which write put it there. Neither is a
-reading for the page to show, and no entry or editor input is made from
-them. So after a confirmed
-publication the row is read as a new observation, to have a current entry to
-show. Publication and observation are separate facts:
-
-| After a confirmed receipt, the row | Outcome |
-| --- | --- |
-| Reads as this recording | `saved`. The capture leaves the window's list and that entry is shown. |
-| Cannot be read | `published`, problem `unreadable`. |
-| Is gone | `published`, problem `missing`: another writer removed it after publication. |
-| Is there and is not this recording | `published`, problem `foreign`: another writer changed it after publication. |
+there. A found file says nothing about which write put it there. A
+`published` capture is saved: it leaves the window's list, the lists are read
+again, and the recording opens unless the person selected something else
+meanwhile. Opening it is an ordinary read; when the row cannot be read or is
+gone, the details say so, and nothing is written again.
 
 "This recording" is a valid row with the capture's `recordedAt`, `durationMs`,
 `capture`, and `audioPath`. The title and notes are the person's to change and
-are not compared, so an edited row is still this recording and is what its
-editor shows.
-
-A `published` capture is saved. It keeps its fixed ID and bytes and the two
-placements in `library.pending`, as state `published`, only so the notice can
-be shown and the row looked at again. It is not counted as unsaved: it does not
-hold the app open, and the status line reads "Saved · 1 recording to check".
-**Refresh** reads the row through its kept draft and nothing else.
-From a confirmed publication there is no path to another save, a file write,
-or a request: a missing or foreign row is left as found and the notice says
-what the person can do.
+are not compared, so an edited row is still this recording.
 
 `audioNotSaved`, `rowNotSaved`, `refused`, and `unchecked` (a retry that could
 not read the folder) are not confirmed publications. They stay unresolved, are
@@ -509,11 +491,13 @@ new run on pasted text is refused until it is saved or discarded, so a
 received answer is never replaced. Concurrent saves or retries of one run are
 one.
 
-Saving a run looks at the folder first, as recording publication does. No file
-at the stem: the row is created exclusively. This run's own row already there
-(an earlier write landed and its answer was lost): it is recognized and nothing
-is written. Its own row means a valid row with the same body and every field
-of the run's snapshot; fields the app does not declare are ignored. Any other
+Saving a run, or a received transcript, is one `createOnce`
+(`src/lib/runs.svelte.ts`): the row is created exclusively at its stem, and
+when the stem is taken, what is there is read. This run's own row already
+there (an earlier write landed and its answer was lost) is recognized and
+nothing is written. Its own row means a valid row with the same body and
+every field of the run's snapshot; fields the app does not declare are
+ignored. Any other
 file there, including one that differs only in its prompt, model, endpoint,
 input, or source, is not overwritten and the run stays unsaved. So one run
 can produce at most one result file. A run discarded while its row is being
@@ -524,9 +508,13 @@ A transformation only ever creates rows in `transformation_runs/` and
 A listing of `text_runs/` that fails keeps the last list and reports why; a
 file there that does not read is listed apart.
 
-Deleting a recording deletes its row, its transcripts, and the results made
-from them, and keeps its audio. It must not race the work that writes those
-rows. `deletionFor` and `remove`
+Deleting a recording (`src/lib/deletion.ts`) deletes its row, its
+transcripts, and the results made from them, each guarded by the bytes read
+when the person was asked, and keeps its audio: an ordinary file the table
+does not own, which Files can delete. What goes is read from
+the folder then, never taken from a listing; a result file that does not read
+refuses the deletion, since it might be this recording's. It must not race
+the work that writes those rows. `deletionFor` and `remove`
 both refuse while a transcription or transformation of that recording is
 running, or its answer is received and unsaved, and `remove` also refuses when
 a result was saved after the person was asked. While `remove` runs, no request
@@ -535,8 +523,7 @@ recording. Results on pasted text name no recording, so they are neither
 deleted with one nor in the way of deleting one, readable or not.
 
 What a deletion of a recording or transformation path removes is decided by
-its file as read after its draft settles, not by the last listing or by
-whether its editor opened. A row that reads is deleted as above. A file that
+its file as read after its draft settles, not by the last listing. A row that reads is deleted as above. A file that
 is there and does not read as a row (bytes that are not text, say) is removed
 alone, conditional on the exact bytes read, and the person is told its
 results are kept: nothing in the file says which results are its own, so
@@ -546,58 +533,44 @@ is running or unsaved, and nothing new starts for it while it is removed.
 
 ## Drafts and conflicts
 
-Each open path has one draft, of one of two kinds:
+Open files are drafts (`src/lib/drafts.svelte.ts`), each in its own edit
+session from `@epicenter/svelte/edit-session`. The app owns the draft; the
+folder's guarded autosave writes it.
 
-- A row of `recordings/`, `transcriptions/`, or `transformations/` is one row
-  editor (`table.edit`) and the little the app adds over it
-  (`src/lib/row-editing.svelte.ts`). Any readable text opens, valid or not,
-  and the fields view and the source view are two views of that one editor;
-  which one shows is a preference of the path, kept across views. The editor
-  owns the input and publication: one write at a time, the latest input
-  waiting behind it, every write replacing the existing file and never
-  creating a removed one. A file that cannot be read, or a row that is gone,
-  opens no editor, and a row path is never opened as an ordinary text file
-  instead: one that cannot be read stays shown as that row, with why and a
-  way to try again, and can still be deleted as the exact bytes it holds.
-- Any other text file is a text draft in `src/lib/editor.svelte.ts`: the exact
-  text on screen, saved conditionally against the file it was made on.
+- A recording, transcript, or transformation that reads as a row is a row
+  session over its fields and body.
+- A row file whose text is not a valid row, a row the person chose to edit in
+  Source, and any other text file is a text session over the exact text. A
+  row file's text shows its issues live (`parseRow`), and its fields open
+  once it reads.
+- Audio and files that are not text open as what they are.
 
-A row's editor takes the person's typing as it is typed, as the complete row:
-every field to keep, unknown ones included, and the body in its own line
-endings. Its row is that input at once, and the views show it. The fields view
-exists only while the whole row is valid; a value that does not conform is
-still saved, and the row is then edited in its source. The field controls
-send strings, and the codec refuses only one with a lone surrogate, which a
-paste can carry. That typed value is not taken and not kept: the row stays
-as it was, its control shows the row again, and an alert beside the save's
-own status says why. The alert is not unsaved work and holds no close, move,
-or run; the next input taken, a reload that reads the file, or putting the
-editor down lets it go. The editor never reads its file again on its
-own: a refresh lists another program's change, the open editor keeps what it
-shows, and the next save writes over the change. Reload, as the person asks,
-waits for running writes, reads the file, and replaces the input; the editor
-takes no input while it reads. A write that failed or was never answered
-keeps the input and error on screen. The latest waiting input proceeds
-after failure, and later input starts another save. Save again resubmits the
-current input; discarding it is a reload. A file removed under the editor fails its next save as
-gone; discarding then puts the editor down. An editor holding nothing whose
-file a listing no longer finds is put down. A text draft's save the folder
-refuses as stale holds both versions for review.
+Several drafts are open at once: the selected recording or file with the
+recording's transcripts beside it, and the selected transformation. Selecting
+another item leaves the drafts it replaces: their saves land, then their
+sessions are released. A draft whose save failed or conflicted is left only
+when the person discards it; the view asks "Discard unsaved changes?" and
+binds the discard to that session.
 
-Renaming or deleting a file first stops its draft's input, a row's editor or
-a text draft alike, and waits until no write runs. A draft that still holds
-anything then refuses the operation and keeps its exact input: a save that
-failed, was not confirmed, or is in review. So a rename moves saved files and never carries unsaved edits to another
-path. The file is read after that, and the rename or the confirmed deletion is
-conditional on what was read; a rename never replaces a file at the new name,
-and a draft there holding edits refuses it. Neither name's draft takes input
-until the move has an outcome, and its views show it read-only meanwhile
-(each editor's `editable`). Transformations and deletions settle the same
-way: they act on a file only when its draft holds nothing else. Any outcome but a refusal puts both drafts down,
-since neither holds anything; a rename whose reply was lost, or that left the
-file at both paths, says so, and opening either name shows what the folder
-holds. Closing waits for every admitted row write before the folder is
-released, and never tries a stopped one again.
+Each edit changes the draft and requests a save at once. One write runs at a
+time and only the latest request waits, so rapid typing writes the latest
+draft. A draft that is not a valid row is refused as `InvalidValues` and
+never written. Text typed into a field is kept well formed: a lone surrogate
+becomes U+FFFD, as a file holds it. Every write is guarded by the bytes the
+session last saved, so a change made elsewhere, or a deleted file, is
+`Conflict`, and the save bar asks: Reload theirs or Keep mine. Keep mine
+recreates a file deleted elsewhere, except a recording, whose audio may be
+gone too: for that it offers only Discard. Returning to the window takes a
+newer version of a draft that holds nothing unsaved; otherwise the next save
+reports the change. The lists are read when the page opens, after the app's
+own actions, and on return; a change hint from the folder does not reread.
+
+Renaming a file moves an open draft with it once its saves land
+(`session.rename`); a closed file moves as it is now. Recording and
+transformation files keep their names. Deleting an open file releases its
+session, waits for its saves, and deletes what its last save confirmed. While
+the app decides whether to close, every session is locked; closing waits for
+running saves and releases them.
 
 ## Closing
 
@@ -775,17 +748,15 @@ so hiding the terminal loses nothing.
 
 It is the person's real shell, not the folder's in-page one, and it writes the
 directory as any other program does, outside the owner. Nothing it writes is
-committed until a save or an explicit commit includes it. A text draft whose
-file it changed conflicts on its next save, and an open row's next save writes
-over it, like any other outside edit.
+committed until a save or an explicit commit includes it. An open draft whose
+file it changed conflicts on its next save, like any other outside edit.
 
 ## Noticing outside changes
 
-The owner watches the directory and tells every attached window which paths
-changed, its own saves included. The desktop workspace passes that on as
-`onExternalChange`, and the page rereads its lists, open text files, and Git
-status. An open row's editor is not reloaded by it.
-The host watches nothing and says nothing about files.
+The page reads the folder when it opens, after its own actions and terminal
+commands, and when the person returns to the window, which also takes a newer
+version of each open draft that holds nothing unsaved. It does not follow the
+folder's change hints. The host watches nothing and says nothing about files.
 
 ## Debug builds
 
@@ -829,12 +800,14 @@ attached and says so (`injection-launch`).
 | `src/lib/connections.ts` | The connection rules both storages apply: canonical base URLs, key keep/replace/remove, moving an earlier build's key. Pure; stores nothing. |
 | `src/lib/recipe.ts` | The one decision about whether a recipe runs and with what. |
 | `src/lib/post-processing.ts` | What the post-processing choice is now, read against the listed transformations and the recipe resolver. It runs nothing. |
-| `src/lib/library.svelte.ts` | Product state: lists, selections, retained editors, pending captures, transcription and transformation runs, settings. |
+| `src/lib/library.svelte.ts` | Product state: lists, selections, open drafts, pending captures, settings, and the conflict commands. |
+| `src/lib/drafts.svelte.ts` | The open files, one edit session each. |
+| `src/lib/runs.svelte.ts` | Transcription and recipe runs, and `createOnce` for their result rows. |
+| `src/lib/deletion.ts` | What a deletion removes, captured from fresh reads, and the removal. |
 | `src/lib/recordings/publish.ts` | Publication and recovery. |
 | `src/lib/capture.ts`, `microphone.ts`, `audio-format.ts`, `transcription.ts`, `transformation.ts` | The capture contract and fixture device, the real microphone, container detection, the transcription and transformation requests. |
 | `src/lib/microphone-input.svelte.ts` | The chosen microphone and the test of it, for one session. |
 | `src/lib/audio-source.ts` | What a player holds, reloaded by content version on each folder refresh. |
-| `src/lib/row-editing.svelte.ts`, `editor.svelte.ts` | The app's policy over each row's one editor (Source preference, when input is taken, status), and exact-text drafts of every other file. |
 | `src/lib/status.ts`, `files.ts`, `terminal.svelte.ts` | Status lines, the file tree, the terminal session. |
 | `src/routes/` | The layout that owns the session, and the three pages. |
 | `src/routes/components/` | The shell, navigation, header, unsaved notices, recorder, recording and transformation lists and details, file browser and view, terminal. |

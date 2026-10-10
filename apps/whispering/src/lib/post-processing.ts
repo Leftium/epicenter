@@ -12,7 +12,9 @@ import type { ResolvedRecipe } from './recipe.js';
 
 /** A transformation's title, or its file when the title cannot be read. */
 export function transformationName(entry: TransformationEntry): string {
-	return entry.fields.title || (entry.stem === '' ? entry.path : entry.stem);
+	return (
+		entry.row.fields.title || (entry.stem === '' ? entry.path : entry.stem)
+	);
 }
 
 export type PostProcessingChoice =
@@ -30,12 +32,12 @@ export type PostProcessingChoice =
 export function resolvePostProcessing(
 	path: string | undefined,
 	transformations: readonly TransformationEntry[],
-	resolve: (entry: TransformationEntry) => ResolvedRecipe,
+	resolve: (recipe: TransformationEntry['row']) => ResolvedRecipe,
 ): PostProcessingChoice {
 	if (path === undefined) return { kind: 'none' };
 	const entry = transformations.find((item) => item.path === path);
 	if (entry === undefined) return { kind: 'missing', path };
-	const resolved = resolve(entry);
+	const resolved = resolve(entry.row);
 	return resolved.kind === 'ready'
 		? { kind: 'ready', entry }
 		: { kind: 'repair', entry, reason: resolved.reason };

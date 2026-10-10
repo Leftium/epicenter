@@ -15,7 +15,7 @@ import { mkdirSync, rmdirSync } from 'node:fs';
 import { mkdtemp, realpath, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { FileError, openFolder } from '@epicenter/folder/bun';
+import { FileError, type FileTable, openFolder } from '@epicenter/folder/bun';
 import { Err, Ok } from 'wellcrafted/result';
 import { expectOk } from 'wellcrafted/testing';
 import { createFixtureDevice, toneWav } from './capture.js';
@@ -228,35 +228,35 @@ export type TestWorkspaceOptions = {
 	connections?: Partial<Record<Operation, StoredConnection>>;
 	/** A key an earlier build saved on the device. */
 	legacyKey?: string;
+	/** Open this folder instead of a directory with the Bun opener, such as a browser folder. */
+	folder?: Workspace['folder'] & { close(): Promise<void> };
 };
 
 /**
  * A result table whose next creates fail before writing, or land and then
  * answer as failed, as many times as `counts` says.
  */
-function withWriteFailures<
-	TTable extends {
-		create(input: { readonly stem?: string }): Promise<{ error: unknown }>;
-	},
->(table: TTable, name: string, counts: { fail: number; lose: number }): TTable {
+function withWriteFailures<TFields>(
+	table: FileTable<TFields>,
+	counts: { fail: number; lose: number },
+): FileTable<TFields> {
 	const refused = (stem: string | undefined) =>
 		FileError.Io({
-			path: `${name}/${stem}.md`,
+			path: `${table.name}/${stem}.md`,
 			operation: 'create',
 			cause: new Error('disk refused the result'),
 		});
 	return {
 		...table,
-		create: async (input: Parameters<TTable['create']>[0]) => {
+		async create(row, options) {
 			if (counts.fail > 0) {
 				counts.fail -= 1;
-				return refused(input.stem);
+				return refused(options?.stem);
 			}
-			const created = await table.create(input);
-			const { error: createError } = created;
-			if (counts.lose > 0 && createError === null) {
+			const created = await table.create(row, options);
+			if (counts.lose > 0 && created.error === null) {
 				counts.lose -= 1;
-				return refused(input.stem);
+				return refused(options?.stem);
 			}
 			return created;
 		},
@@ -274,19 +274,19 @@ export async function openTestWorkspace({
 	loseTextRunWriteAnswers = 0,
 	connections,
 	legacyKey,
+	folder: given,
 }: TestWorkspaceOptions = {}) {
 	const root = await realpath(
 		await mkdtemp(join(tmpdir(), 'whispering-workspace-')),
 	);
-	const folder = await openTestFolder(root);
+	const folder = given ?? (await openTestFolder(root));
 	const tables = {
 		...folder.tables,
-		transformation_runs: withWriteFailures(
-			folder.tables.transformation_runs,
-			'transformation_runs',
-			{ fail: failRunWrites, lose: loseRunWriteAnswers },
-		),
-		text_runs: withWriteFailures(folder.tables.text_runs, 'text_runs', {
+		transformation_runs: withWriteFailures(folder.tables.transformation_runs, {
+			fail: failRunWrites,
+			lose: loseRunWriteAnswers,
+		}),
+		text_runs: withWriteFailures(folder.tables.text_runs, {
 			fail: failTextRunWrites,
 			lose: loseTextRunWriteAnswers,
 		}),
@@ -324,9 +324,6 @@ export async function openTestWorkspace({
 			load: async () => ({ name: 'tone.wav', bytes: toneWav() }),
 		}),
 		captureNotice: undefined,
-		// The folder's own hints, this window's saves included, as the real
-		// workspaces relay them.
-		onExternalChange: (listener) => folder.onFilesChanged(() => listener()),
 		reveal: undefined,
 		// Each stub decides the connection as the host does, at entry, and only a
 		// request that would go out is counted as sent.

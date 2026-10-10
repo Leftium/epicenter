@@ -1,49 +1,30 @@
 /**
  * Save, repair, and delete sequences over the production desktop adapter.
  *
- * The real library and the folder's real row editor run over
- * `@epicenter/folder/tauri`, with the shell's owner scripted in memory
- * (`scripted-owner.test-support.ts`). That is where a write can be held while
- * the person types, refused before it lands, or have its reply lost after it
- * landed, and where a read can fail.
+ * The real library and its edit sessions run over `@epicenter/folder/tauri`,
+ * with the shell's owner scripted in memory (`scripted-owner.test-support.ts`).
+ * That is where a write can be held while the person types, refused before it
+ * lands, or have its reply lost after it landed, and where a read can fail.
  *
  * Key behaviors:
  * - typing is saved as it is typed: one write at a time, and the latest
  *   input behind it, so input superseded while a write runs is never written
- * - a save that failed, or whose reply was lost, stays on screen, holds the
- *   close while unresolved; later input saves again, and Save again
- *   resubmits the current input exactly
- * - another writer's change is not loaded into an open editor: the next save
- *   writes over it, and reloading, as the person asks, takes it and clears a
- *   stopped save; a reload whose read fails changes nothing
- * - a removed file is never created again; an editor holding nothing whose
- *   file is gone is put down
- * - a value with no form a file can hold is refused and not taken, and its
- *   notice holds nothing up; source text a file cannot hold exactly is kept
- *   and never written lossily
- * - a deletion is refused while a save of the row is out, a row being
- *   deleted takes no input, and a deletion whose reply was lost recreates
- *   nothing
- * - a row's editor takes no input while its file moves, follows a confirmed
- *   rename, and is put down after one that did not end as asked
+ * - a save that failed, or whose reply was lost, stays on screen and holds the
+ *   close while unresolved; Save again writes the current draft
+ * - another writer's change is a conflict, and Reload theirs takes it
+ * - a deletion waits for the open draft's saves, and one whose reply was lost
+ *   recreates nothing
  *
  * See also:
  * - `desktop.test.ts` for the workspace over scripted shell replies
- * - `row-editing.test.ts` for the editor's own policy over a real directory
+ * - `editing.test.ts` for editing over a browser folder
  */
 import '../svelte-modules.test-support.js';
 import { afterEach, expect, mock, test } from 'bun:test';
 import { expectOk } from 'wellcrafted/testing';
 import { whisperingDefinition } from '../definition.js';
+import { transformationSession } from '../drafts.test-support.js';
 import type { Library } from '../library.svelte.js';
-import {
-	bodyShown,
-	editingOf,
-	sourceShown,
-	typeBody,
-	typeField,
-	untyped,
-} from '../row-slot.test-support.js';
 import { deferred, openTestWorkspace } from '../workspace.test-support.js';
 import { createScriptedOwner } from './scripted-owner.test-support.js';
 import { WHISPERING_FOLDER_ID, type Workspace } from './types.js';
@@ -93,22 +74,28 @@ async function open(files: Record<string, string>, path = PATH) {
 	});
 	await library.start();
 	await library.open(path);
-	if (path === PATH) return { library, editor: current(library) };
-	const selection = library.selection;
-	if (selection?.kind !== 'transcript')
-		throw new Error(`Expected ${path} open as a transcript`);
-	return { library, editor: untyped(editingOf(selection.slot)) };
+	return { library, session: transformationSession(library) };
 }
 
-/** The editor the library keeps for the transformation now. */
-const current = (library: Library) =>
-	untyped(editingOf(library.selectedTransformation?.slot));
+/** Type a new body into the open transformation. */
+const type = (
+	session: ReturnType<typeof transformationSession>,
+	body: string,
+) =>
+	session.edit((row) => {
+		row.body = body;
+	});
 
-const kinds = () => owner.applied.map((change) => change.kind);
+/** The changes the owner applied to the data; opening publishes `definition.json` first. */
+const changes = () =>
+	owner.applied.filter(
+		(change) => !('path' in change) || change.path !== 'definition.json',
+	);
+const kinds = () => changes().map((change) => change.kind);
 
 /** The text of the `index`th change the owner applied. */
 function written(index: number): string | undefined {
-	const change = owner.applied[index];
+	const change = changes()[index];
 	return change !== undefined && 'bytes' in change
 		? new TextDecoder().decode(Uint8Array.from(change.bytes))
 		: undefined;
@@ -127,433 +114,100 @@ function holdNextApply(kind: string) {
 	return { reached: reached.promise, release: () => held.resolve() };
 }
 
-test('a save whose reply was lost stays unknown with its own message and later typing saves again', async () => {
-	const { library, editor } = await open({ [PATH]: SEED });
+test('a save whose reply was lost and cannot be read back stays unknown, holds the close, and Save again writes the draft', async () => {
+	const { library, session } = await open({ [PATH]: SEED });
 	owner.control.loseReplies = 1;
+	owner.control.failReads.add(PATH);
 
-	typeBody(editor, 'Tidy it.\n');
-	expect((await editor.waitForSaves()).error?.name).toBe('Unconfirmed');
-	await library.refreshAll();
-
-	// The owner wrote it, and a listing finding it there confirms nothing.
+	type(session, 'Tidy it.\n');
+	const state = await session.settled();
+	expect(state.status === 'error' && state.error.name).toBe('Unconfirmed');
 	expect(owner.text(PATH)).toContain('Tidy it.');
-	expect(editor.status).toMatchObject({
-		kind: 'unconfirmed',
-		message: expect.stringContaining('the reply never reached the window'),
-	});
-	expect(editor.holds).toBe(true);
 	expect(library.unsavedWork).toEqual([
 		`${PATH} has edits whose last save was not confirmed.`,
 	]);
 	expect(await library.prepareToLeave()).toBe(false);
 
-	// The source is a view of the same editor: it shows the latest input.
-	expect(library.editSource(PATH)).toBeUndefined();
-	expect(current(library)).toBe(editor);
-	expect(sourceShown(editor)).toBe(owner.text(PATH)!);
-
-	// Later typing starts another save, whose own reply confirms it.
-	editor.setText(`${sourceShown(editor)}More.\n`);
-	expect(editor.row.text).toContain('Tidy it.\nMore.\n');
-
-	expectOk(await editor.waitForSaves());
-	expect(owner.applied).toHaveLength(2);
-	expect(owner.text(PATH)).toContain('Tidy it.\nMore.\n');
-	expect(editor.status).toEqual({ kind: 'saved' });
-	expect(editor.holds).toBe(false);
-	expect(await library.prepareToLeave()).toBe(true);
-});
-
-test('saving again after a lost reply writes exactly the input it holds, its comments and quoting included', async () => {
-	const handmade =
-		"---\n# kept by hand\n'title': 'Clean up'\nmodel: null\nendpoint: null\n---\nTidy.\n";
-	const { library, editor } = await open({ [PATH]: SEED });
-	library.editSource(PATH);
-	owner.control.loseReplies = 1;
-	editor.setText(handmade);
-	expect((await editor.waitForSaves()).error?.name).toBe('Unconfirmed');
-	expect(editor.status.kind).toBe('unconfirmed');
-
-	expect(editor.retry()).toBeUndefined();
-	expectOk(await editor.waitForSaves());
-
-	expect(owner.applied).toHaveLength(2);
-	expect(owner.applied[1]).toEqual(owner.applied[0]);
-	expect(owner.text(PATH)).toBe(handmade);
-	expect(editor.row).toMatchObject({ status: 'valid', text: handmade });
-	expect(editor.holds).toBe(false);
+	owner.control.failReads.delete(PATH);
+	session.retry();
+	expect((await session.settled()).status).not.toBe('saving');
+	expect(owner.text(PATH)).toContain('Tidy it.');
 });
 
 test('typing during a save is shown at once and saved after it; input superseded meanwhile is never written', async () => {
-	const { editor } = await open({ [PATH]: SEED });
+	const { session } = await open({ [PATH]: SEED });
 	const first = holdNextApply('replace');
 
-	typeBody(editor, 'First.\n');
+	type(session, 'First.\n');
 	await first.reached;
-	expect(editor.save.status).toBe('saving');
-	typeBody(editor, 'Second.\n');
-	typeBody(editor, 'Third.\n');
-	// The latest is shown while the first is still being written.
-	expect(editor.row).toMatchObject({ status: 'valid', body: 'Third.\n' });
+	expect(session.state.status).toBe('saving');
+	type(session, 'Second.\n');
+	type(session, 'Third.\n');
+	expect(session.draft.body).toBe('Third.\n');
 	first.release();
-	expectOk(await editor.waitForSaves());
+	expect((await session.settled()).status).toBe('saved');
 
 	expect(kinds()).toEqual(['replace', 'replace']);
 	expect(written(0)).toContain('First.\n');
 	expect(written(1)).toContain('Third.\n');
 	expect(owner.text(PATH)).toContain('Third.\n');
-	expect(editor.holds).toBe(false);
 });
 
-test('a failed save keeps input and another writer’s change is not loaded; later typing writes the latest whole row over it', async () => {
-	const { library, editor } = await open({ [PATH]: SEED });
+test('a refused save keeps the draft on screen; Try again saves it', async () => {
+	const { library, session } = await open({ [PATH]: SEED });
 	owner.control.refuseNext = 1;
-	typeBody(editor, 'A.\n');
-	expect((await editor.waitForSaves()).error).not.toBeNull();
-	expect(editor.status).toMatchObject({
-		kind: 'failed',
-		message: expect.stringContaining('the disk refused the write'),
-	});
 
-	const other = SEED.replace('Tidy.', 'C from another program.');
-	owner.write(PATH, other);
-	await library.refreshAll();
-
-	// The failed input and its error stay visible; C is not loaded.
-	expect(editor.row).toMatchObject({ status: 'valid', body: 'A.\n' });
-	expect(editor.status.kind).toBe('failed');
-	expect(owner.text(PATH)).toBe(other);
-	expect(owner.applied).toEqual([]);
-	expect(library.unsavedWork).toEqual([
-		`${PATH} has edits whose last save failed.`,
-	]);
-
-	typeBody(editor, 'B.\n');
-	expectOk(await editor.waitForSaves());
-	expect(owner.text(PATH)).toBe(editor.row.text);
-	expect(owner.text(PATH)).toContain('B.\n');
-	expect(library.holdsUnsavedWork).toBe(false);
-});
-
-test('discarding a failed save loads the file as it is now into the same editor, and writes nothing', async () => {
-	const { library, editor } = await open({ [PATH]: SEED });
-	owner.control.refuseNext = 1;
-	typeBody(editor, 'A.\n');
-	await editor.waitForSaves();
-	const other = SEED.replace('Tidy.', 'C.');
-	owner.write(PATH, other);
-
-	expect(await library.discardDraft(PATH)).toBeUndefined();
-
-	expect(current(library)).toBe(editor);
-	expect(editor.row).toMatchObject({ status: 'valid', text: other });
-	expect(editor.status.kind).toBe('saved');
-	expect(editor.holds).toBe(false);
-	expect(owner.applied).toEqual([]);
-	expect(await library.prepareToLeave()).toBe(true);
-	// It takes typing and saves again as usual.
-	typeBody(editor, 'D.\n');
-	expectOk(await editor.waitForSaves());
-	expect(owner.text(PATH)).toContain('D.\n');
-});
-
-test('a discard whose read fails keeps the input on screen, the stopped save, and says why; once readable it loads the file', async () => {
-	const { library, editor } = await open({ [PATH]: SEED });
-	owner.control.refuseNext = 1;
-	typeBody(editor, 'A.\n');
-	await editor.waitForSaves();
-	owner.control.failReads.add(PATH);
-
-	expect(await library.discardDraft(PATH)).toContain(
-		'the disk could not be read',
-	);
-	expect(current(library)).toBe(editor);
-	expect(editor.row).toMatchObject({ status: 'valid', body: 'A.\n' });
-	expect(editor.status.kind).toBe('failed');
-	expect(library.holdsUnsavedWork).toBe(true);
-	// Still editable while unreadable; another refused save keeps newer input.
-	owner.control.refuseNext = 1;
-	typeBody(editor, 'A, still mine.\n');
-	expect(editor.row).toMatchObject({ body: 'A, still mine.\n' });
-	expect((await editor.waitForSaves()).error).not.toBeNull();
-
-	owner.control.failReads.delete(PATH);
-	expect(await library.reloadRow(PATH)).toBeUndefined();
-	expect(editor.row).toMatchObject({ status: 'valid', text: SEED });
-	expect(editor.holds).toBe(false);
-	expect(owner.applied).toEqual([]);
-});
-
-test('a row that cannot be read when it is opened stays shown with why, and trying again opens it', async () => {
-	const OTHER = 'transformations/other.md';
-	const { library } = await open({ [PATH]: SEED, [OTHER]: SEED });
-	owner.control.failReads.add(OTHER);
-
-	await library.open(OTHER);
-	expect(library.selectedTransformation?.slot).toMatchObject({
-		kind: 'unopened',
-		message: expect.stringContaining('the disk could not be read'),
-	});
-	expect(await library.retryOpen(OTHER)).toContain(
-		'the disk could not be read',
-	);
-	expect(library.holdsUnsavedWork).toBe(false);
-
-	owner.control.failReads.delete(OTHER);
-	expect(await library.retryOpen(OTHER)).toBeUndefined();
-	expect(current(library).row).toMatchObject({ status: 'valid', text: SEED });
-	expect(current(library).view).toBe('fields');
-	expect(owner.applied).toEqual([]);
-});
-
-test('a write over a corrupt file is the person’s choice of what to save, and the fields come back', async () => {
-	const { library, editor } = await open({ [PATH]: SEED });
-	owner.write(PATH, Uint8Array.from([0xff, 0xfe, 0x00]));
-	await library.refreshAll();
-	// Not loaded: the editor still shows the text it has.
-	expect(editor.row).toMatchObject({ status: 'valid', text: SEED });
-	expect(await library.reloadRow(PATH)).toContain('could not be read');
-	expect(owner.applied).toEqual([]);
-
-	typeBody(editor, 'Repaired.\n');
-	expectOk(await editor.waitForSaves());
-
-	expect(kinds()).toEqual(['replace']);
-	expect(owner.text(PATH)).toContain('Repaired.\n');
-	expect(editor.view).toBe('fields');
-	expect(editor.holds).toBe(false);
-});
-
-test('a submission whose file was removed before it was written fails as gone, stays on screen, and is never written', async () => {
-	const { library, editor } = await open({ [PATH]: SEED });
-	owner.control.beforeApply = async (change) => {
-		if (change.kind === 'replace') owner.disk.delete(PATH);
-	};
-	typeBody(editor, 'Mine.\n');
-	expect((await editor.waitForSaves()).error?.name).toBe('NotFound');
-	owner.control.beforeApply = undefined;
-	await library.refreshAll();
-
-	expect(editor.status).toMatchObject({
-		kind: 'removed',
-		message: expect.stringContaining('never creates it again'),
-	});
-	expect(current(library)).toBe(editor);
-	expect(editor.row).toMatchObject({ body: 'Mine.\n' });
-	expect(library.holdsUnsavedWork).toBe(true);
-	// Typing goes on and is kept; saving again creates nothing.
-	typeBody(editor, 'Mine, more.\n');
-	expect(editor.retry()).toBeUndefined();
-	expect((await editor.waitForSaves()).error?.name).toBe('NotFound');
-	expect(owner.text(PATH)).toBeUndefined();
-	expect(owner.applied).toEqual([]);
-
-	// Discarding puts it down: there is no file to load.
-	expect(await library.discardDraft(PATH)).toBeUndefined();
-	expect(library.selectedTransformation).toBeUndefined();
-	expect(library.holdsUnsavedWork).toBe(false);
-	expect(owner.text(PATH)).toBeUndefined();
-});
-
-test('a saved editor whose file another writer removed is not a failed save, and is put down', async () => {
-	const { library, editor } = await open({ [PATH]: SEED });
-	typeBody(editor, 'Saved.\n');
-	expectOk(await editor.waitForSaves());
-	owner.disk.delete(PATH);
-	await library.refreshAll();
-
-	expect(editor.view).toBe('released');
-	expect(library.selectedTransformation).toBeUndefined();
-	expect(library.saveProblems).toBe(0);
-	expect(library.holdsUnsavedWork).toBe(false);
-	expect(kinds()).toEqual(['replace']);
-});
-
-test('a typed value no file can hold is not taken: the row and its controls stay, why is shown, nothing is written, and the close is not held', async () => {
-	const { library, editor } = await open({ [PATH]: SEED });
-	const before = editor.row;
-
-	typeBody(editor, 'Half a pair: \uD800.\n');
-
-	expect(editor.row).toBe(before);
-	expect(bodyShown(editor)).toBe('Tidy.\n');
-	expect(editor.refusal?.reason).toContain('lone surrogate');
-	expect(editor.status.kind).toBe('saved');
-	expect(editor.holds).toBe(false);
-	expect(library.saveProblems).toBe(0);
-	expect(library.unsavedWork).toEqual([]);
-	expect(await library.prepareToLeave()).toBe(true);
+	type(session, 'Mine.\n');
+	expect((await session.settled()).status).toBe('error');
+	expect(session.draft.body).toBe('Mine.\n');
 	expect(owner.text(PATH)).toBe(SEED);
+	expect(library.saveProblems).toBe(1);
 
-	// Input that is taken saves and lets the notice go.
-	typeField(editor, 'title', 'Clean it');
-	expect(editor.refusal).toBeUndefined();
-	expectOk(await editor.waitForSaves());
-	expect(owner.text(PATH)).toContain('"title": "Clean it"');
-	expect(owner.text(PATH)).toContain('Tidy.\n');
-	expect(owner.text(PATH)).not.toContain('�');
+	session.retry();
+	expect((await session.settled()).status).toBe('saved');
+	expect(owner.text(PATH)).toContain('Mine.\n');
 });
 
-test('source text a file cannot hold exactly is kept as typed and never written; corrected input saves again', async () => {
-	const { library, editor } = await open({ [PATH]: SEED });
-	library.editSource(PATH);
-	const lone = `${SEED}Half a pair: \uD800.\n`;
-	editor.setText(lone);
+test('another writer’s change is a conflict, and Reload theirs takes it without writing', async () => {
+	const { library, session } = await open({ [PATH]: SEED });
+	const theirs = SEED.replace('Tidy.', 'Theirs.');
+	owner.write(PATH, theirs);
 
-	expect((await editor.waitForSaves()).error?.name).toBe('Unencodable');
-	expect(editor.row).toMatchObject({ status: 'invalid', text: lone });
-	expect(editor.status.kind).toBe('failed');
-	expect(owner.applied).toEqual([]);
+	type(session, 'Mine.\n');
+	const state = await session.settled();
+	expect(state.status === 'error' && state.error.name).toBe('Conflict');
+	expect(changes()).toEqual([]);
 
-	editor.setText(SEED.replace('Tidy.', 'Fixed.'));
-	// The corrected input starts another save.
-	expectOk(await editor.waitForSaves());
-	expect(owner.text(PATH)).toContain('Fixed.');
+	expect(await library.reloadTheirs(session)).toBeUndefined();
+	expect(session.draft.body).toBe('Theirs.\n');
+	expect(changes()).toEqual([]);
 });
 
-test('a deletion is refused while a save of the row is out, and the save lands', async () => {
-	const { library, editor } = await open({ [PATH]: SEED });
-	const deletion = expectOk(await library.deletionFor(PATH));
+test('a deletion waits for the save of the row, then removes what it saved', async () => {
+	const { library, session } = await open({ [PATH]: SEED });
 	const save = holdNextApply('replace');
-
-	typeBody(editor, 'Saved while it was being deleted.\n');
+	type(session, 'Saved first.\n');
 	await save.reached;
-	expect(await library.remove(deletion)).toContain('Save or discard');
+
+	const capturing = library.deletionFor(PATH);
 	save.release();
-	expectOk(await editor.waitForSaves());
+	const deletion = expectOk(await capturing);
 
-	expect(editor.status).toEqual({ kind: 'saved' });
-	expect(owner.text(PATH)).toContain('Saved while it was being deleted.');
-	expect(kinds()).toEqual(['replace']);
-});
-
-test('a deletion acts on the file captured after settling, and refuses a file changed after the person was asked', async () => {
-	const { library, editor } = await open({ [PATH]: SEED });
-	typeBody(editor, 'Settled first.\n');
-	const deletion = expectOk(await library.deletionFor(PATH));
-	expect(deletion).toMatchObject({
-		kind: 'transformation',
-		entry: { body: 'Settled first.\n' },
-	});
-	owner.write(PATH, SEED.replace('Tidy.', 'Changed after asking.'));
-
-	expect(await library.remove(deletion)).toContain('different content');
-	expect(owner.text(PATH)).toContain('Changed after asking.');
-	expect(kinds()).toEqual(['replace']);
-});
-
-test('a row being deleted takes no input, and a late save cannot reach it', async () => {
-	const { library, editor } = await open({ [PATH]: SEED });
-	const deletion = expectOk(await library.deletionFor(PATH));
-	const removal = holdNextApply('remove');
-
-	const removing = library.remove(deletion);
-	await removal.reached;
-	const before = editor.row;
-	typeBody(editor, 'Typed while it was deleted.\n');
-	expect(editor.row).toBe(before);
-	expect(editor.save.status).toBe('idle');
-	removal.release();
-	expect(await removing).toBeUndefined();
-
+	expect(await library.remove(deletion)).toBeUndefined();
+	expect(kinds()).toEqual(['replace', 'remove']);
 	expect(owner.text(PATH)).toBeUndefined();
-	expect(kinds()).toEqual(['remove']);
-	expect(editor.view).toBe('released');
+	expect(session.locked).toBe(true);
 });
 
-test('a deletion whose reply was lost puts the editor down, recreates nothing, and the file is shown as it is when opened again', async () => {
-	const { library, editor } = await open({ [PATH]: SEED });
+test('a deletion whose reply was lost says so and recreates nothing', async () => {
+	const { library } = await open({ [PATH]: SEED });
 	const deletion = expectOk(await library.deletionFor(PATH));
 	owner.control.loseReplies = 1;
 
-	const problem = await library.remove(deletion);
-
-	expect(problem).toContain('did not confirm the deletion');
-	expect(editor.view).toBe('released');
-	expect(library.selectedTransformation).toBeUndefined();
-	expect(library.holdsUnsavedWork).toBe(false);
-	expect(owner.text(PATH)).toBeUndefined();
-	expect(kinds()).toEqual(['remove']);
-
-	// Opening it again reads the folder: the file is gone.
-	await library.open(PATH);
-	expect(library.selectedTransformation).toBeUndefined();
-	expect(library.transformations).toEqual([]);
-});
-
-// ============================================================================
-// A rename, and one that did not end as asked
-// ============================================================================
-
-const ONE = 'transcriptions/one.md';
-const TWO = 'transcriptions/two.md';
-const TRANSCRIPT =
-	'---\nrecordingId: one\ncreatedAt: 2026-10-01T00:00:00.000Z\nmodel: m\nendpoint: http://127.0.0.1:18080/v1\n---\nThe words.\n';
-
-test('a rename settles the editor, captures the file after that, and the file opens at its new name', async () => {
-	const { library, editor } = await open({ [ONE]: TRANSCRIPT }, ONE);
-	typeBody(editor, 'Typed before the rename.\n');
-
-	expect(await library.rename(ONE, 'two.md')).toBeUndefined();
-
-	expect(kinds()).toEqual(['replace', 'move']);
-	expect(owner.text(TWO)).toContain('Typed before the rename.\n');
-	expect(owner.text(ONE)).toBeUndefined();
-	expect(editor.view).toBe('released');
-	expect(library.selectedPath).toBe(TWO);
-	expect(editingOf(library.transcriptAt(TWO)).row).toMatchObject({
-		status: 'valid',
-		body: 'Typed before the rename.\n',
-	});
-	expect(library.holdsUnsavedWork).toBe(false);
-});
-
-test('a move that landed with its reply lost takes no typing meanwhile, puts the editor down, and holds nothing', async () => {
-	const { library, editor } = await open({ [ONE]: TRANSCRIPT }, ONE);
-	const move = holdNextApply('move');
-	owner.control.loseReplies = 1;
-
-	const renaming = library.rename(ONE, 'two.md');
-	await move.reached;
-	typeBody(editor, 'Typed while it moved.\n');
-	expect(editor.row).toMatchObject({ body: 'The words.\n' });
-	move.release();
-
-	expect(await renaming).toContain('did not confirm the rename');
-	expect(owner.text(ONE)).toBeUndefined();
-	expect(owner.text(TWO)).toBe(TRANSCRIPT);
-	expect(editor.view).toBe('released');
-	expect(library.holdsUnsavedWork).toBe(false);
-	expect(kinds()).toEqual(['move']);
-
-	// The person opens the path that holds it, as it is.
-	await library.open(TWO);
-	expect(editingOf(library.transcriptAt(TWO)).row.text).toBe(TRANSCRIPT);
-	expect(kinds()).toEqual(['move']);
-});
-
-test('a move whose reply was lost before it happened leaves the file where it was, and opening it there edits it again', async () => {
-	const { library, editor } = await open({ [ONE]: TRANSCRIPT }, ONE);
-	owner.control.beforeApply = async (change) => {
-		if (change.kind !== 'move') return;
-		owner.control.beforeApply = undefined;
-		throw 'the reply never reached the window';
-	};
-
-	expect(await library.rename(ONE, 'two.md')).toContain(
-		'did not confirm the rename',
+	expect(await library.remove(deletion)).toContain(
+		'may or may not have happened',
 	);
-
-	expect(owner.text(ONE)).toBe(TRANSCRIPT);
-	expect(owner.text(TWO)).toBeUndefined();
-	expect(editor.view).toBe('released');
-	expect(library.holdsUnsavedWork).toBe(false);
-
-	await library.open(ONE);
-	const reopened = editingOf(library.transcriptAt(ONE));
-	typeBody(reopened, 'Typed after it was opened again.\n');
-	expectOk(await reopened.waitForSaves());
-	expect(owner.text(ONE)).toContain('Typed after it was opened again.\n');
-	expect(owner.text(TWO)).toBeUndefined();
-	expect(kinds()).toEqual(['replace']);
+	expect(owner.text(PATH)).toBeUndefined();
+	expect(kinds()).toEqual(['remove']);
+	expect(await library.prepareToLeave()).toBe(true);
 });

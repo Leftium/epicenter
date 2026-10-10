@@ -14,10 +14,6 @@
 	 * was not written, and requests still running or failed. It sits under the
 	 * header on every page, so recovery never depends on which page is open and
 	 * no list filter can hide it.
-	 *
-	 * One notice here is not about unsaved work: a recording that was saved, and
-	 * whose file could not then be shown as that recording. It says saved, offers
-	 * only to read the folder again, and never offers to save.
 	 */
 	let { library, onOpenRecording, onOpenTransformation }: {
 		library: Library;
@@ -60,38 +56,9 @@
 				return 'Not saved. Nothing was written, because the folder is not as this recording expects.';
 			case 'unchecked':
 				return 'Not saved. The folder could not be checked, so nothing was written.';
-			case 'published':
-				return state.checking
-					? 'Reading the saved recording again…'
-					: 'The recording was saved, but its file cannot be shown as this recording right now.';
 			default:
 				return state satisfies never;
 		}
-	}
-
-	type Published = Extract<PendingRecording['state'], { kind: 'published' }>;
-
-	/** What the person can do about a saved recording whose file does not read as theirs. */
-	function publishedAdvice(problem: Published['problem']) {
-		switch (problem) {
-			case 'unreadable':
-				return 'The folder could not be read just now.';
-			case 'missing':
-				return 'Something else removed the recording’s file after it was saved. The app does not write it again; restore it yourself, for example from Git history, if you want it back.';
-			case 'foreign':
-				return 'Something else changed the recording’s file after it was saved. The app leaves it as it is; open it in Files to see what it holds.';
-		}
-	}
-
-	/** Dismiss only changes the notice and the window's copy; publication was confirmed. */
-	function dismissPublished(item: PendingRecording) {
-		confirmationDialog.open({
-			title: 'Dismiss this notice?',
-			description:
-				'The recording was saved to the folder, and nothing there is changed by this. The notice and the copy of the audio held in this window are dropped.',
-			confirm: { text: 'Dismiss' },
-			onConfirm: () => library.discardPending(item.capture.id),
-		});
 	}
 
 	function discardPending(item: PendingRecording) {
@@ -136,23 +103,10 @@
 			{#each library.pending as item (item.capture.id)}
 				<li class="flex flex-col gap-2 px-3 py-3 sm:px-4" data-testid="pending-recording" data-pending-state={item.state.kind}>
 					<div class="flex items-center gap-2">
-						{#if item.state.kind === 'saving' || (item.state.kind === 'published' && item.state.checking)}<Spinner class="size-3.5" />{/if}
+						{#if item.state.kind === 'saving'}<Spinner class="size-3.5" />{/if}
 						<span class="font-medium">{pendingHeadline(item)}</span>
 					</div>
-					{#if item.state.kind === 'published'}
-						<!-- Saved. Only how the folder's file reads now is in question, so nothing here offers to save again. -->
-						<p class="text-xs text-muted-foreground" role="status" data-testid="published-problem">{item.state.message}</p>
-						<p class="text-xs text-muted-foreground">
-							{publishedAdvice(item.state.problem)} Refresh reads the folder again and writes nothing. The recording’s ID
-							is <code class="font-mono">{item.capture.id}</code>; its audio is
-							<code class="font-mono">{item.state.audio.file.path}</code>.
-						</p>
-						<AudioPlayer source={{ kind: 'bytes', bytes: item.capture.bytes, mimeType: item.mimeType }} label="The recording as it was saved" />
-						<div class="flex items-center gap-2">
-							<Button size="sm" disabled={item.state.checking} onclick={() => void library.retryPending(item.capture.id)} data-testid="refresh-published">Refresh</Button>
-							<Button size="sm" variant="ghost" onclick={() => dismissPublished(item)}>Dismiss</Button>
-						</div>
-					{:else if item.state.kind !== 'saving'}
+					{#if item.state.kind !== 'saving'}
 						<p class="text-xs text-muted-foreground" role="alert">{item.state.message}</p>
 						<p class="text-xs text-muted-foreground">
 							{#if item.state.kind === 'rowNotSaved'}

@@ -11,6 +11,7 @@
 	import { getSession } from '$lib/session.svelte.js';
 	import TransformationDetail from '../components/TransformationDetail.svelte';
 	import TransformationList from '../components/TransformationList.svelte';
+	import { openItem } from '../components/file-actions.js';
 
 	const { library, view } = getSession();
 
@@ -27,7 +28,7 @@
 
 	/** A result is an ordinary file: its source opens beside the recordings, like any other file. */
 	async function openFile(path: string) {
-		await library.open(path);
+		if (!(await openItem(library, path))) return;
 		view.showingDetail = true;
 		await goto(resolve('/recordings'));
 	}
@@ -42,7 +43,7 @@
 			<TransformationDetail
 				{library}
 				path={selected.path}
-				slot={selected.slot}
+				draft={selected.draft}
 				entry={selected.entry}
 				bind:applyTo={view.applyTo}
 				bind:applySource={view.applySource}

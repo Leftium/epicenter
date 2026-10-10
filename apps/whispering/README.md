@@ -58,10 +58,10 @@ between the two files:
 - The app plays, transcribes, and lists only the file `audioPath` names. A file
   that merely has the same name with another extension is an ordinary file and
   is not treated as the recording's audio.
-- A recording file with no `audioPath` is listed as "Needs repair" and has no
-  audio to play or transcribe. This includes any recording file written before
-  the field existed. The app does not fill the path in for you: add the line in
-  Source, or with any editor.
+- A recording file with no `audioPath` does not read as a recording. It is
+  listed under "Needs repair" and has no audio to play or transcribe. This
+  includes any recording file written before the field existed. The app does
+  not fill the path in for you: add the line in its text, or with any editor.
 - The audio file cannot be renamed from the app while a recording names it,
   since nothing would update the recording.
 
@@ -144,7 +144,7 @@ page, is anything that is not saved yet.
 | Post-processing | On Home, under the recorder. Chooses one of your transformations, or None. Choosing sends nothing; **Run** on the latest transcript does. |
 | Transcribe | Sends the saved audio over the transcription connection in Settings and saves the answer as a row in `transcriptions/`. Nothing is transcribed until you press it. |
 | A recording | Opens an optional detail pane for playback, title, transcript editing, Copy, Transform, and notes. Close restores the full table. Narrow windows show the detail with Back. Source edits the recording's Markdown. |
-| Search recordings | Matches the title, notes, ID, and every transcript. Excerpts show the matching passage. A recording that needs repair stays listed. |
+| Search recordings | Matches the title, notes, ID, and every transcript. Excerpts show the matching passage. Recording files that need repair are listed apart, under the table, and never searched out. |
 | Sort | Click Recording, Recorded, Length, or Status to sort; click again to reverse. |
 | Select recordings | Check individual rows or every row shown. Search keeps hidden selections; bulk actions use only selected rows shown. |
 | Transcribe selected | Sends recordings shown with no transcript, one at a time. Existing transcripts, missing audio, and pending or unsaved requests are skipped. Closing stops queued requests. |
@@ -163,9 +163,10 @@ The table starts at full width. Activate a recording to open its detail pane,
 then close the pane to return that space to the collection. Search, sorting,
 selection, and typed drafts stay when you change pages or hide details.
 
-Edit transcript text beside playback. The transcript and its file in Files
-share one editor, which saves as you type. Copy uses the text shown; Transform
-first waits for its saves and reads the saved transcript.
+Edit transcript text beside playback. Each transcript is its own draft beside
+the recording, saved as you type; opening its file from Files shows the same
+draft. Copy uses the text shown; Transform first waits for its saves and reads
+the saved transcript.
 Dates, file paths, capture information, endpoint, and history are under
 **File details**.
 
@@ -241,12 +242,11 @@ sent is the text connection in Settings, never the file.
 - A transformation's page has three tabs. **Instructions** opens first and
   edits the title and instructions; **Model and connection** below them holds
   the optional model and where requests go. **Try it** runs it (below).
-  **Source** directly edits the file's text. Invalid input opens Source for repair;
-  repair keeps Source selected until you choose Instructions or Try it. The
-  fields and the text are one editor of the one file, and typing in either
-  saves as you type. A save from
-  Instructions keeps fields the app does not know and writes the frontmatter
-  in the app's standard form; Source keeps the text exactly.
+  **Source** edits the file's exact text. A file that does not read as a
+  transformation opens in Source with its issues, and Instructions opens once
+  the text reads. Typing in either saves as you type. A save from Instructions
+  keeps fields the app does not know and writes the frontmatter as plain YAML;
+  Source keeps the text exactly.
 - A model typed in a transformation is used instead of the text connection's;
   leave it empty to use the connection's. Whispering keeps no list of
   providers or models.
@@ -402,24 +402,9 @@ file is at the recording's audio path or its own path, even audio of the same
 length, nothing is overwritten and the recording stays pending. A file that only shares the recording's name with
 another extension is not in the way.
 
-Sometimes a recording is saved and then cannot be shown: the folder confirmed
-the recording's file and its audio is the audio held in the window, and
-reading the recording's file straight afterward
-failed, or another program removed or replaced that file in between. That is
-not a failed save, and the app does not call it one. The status reads "Saved ·
-1 recording to check" and the notice says the recording was saved, with
-**Refresh** and **Dismiss**:
-
-- **Refresh** reads the folder again and writes nothing. When the file reads
-  as this recording, including after you have changed its title or notes, the
-  notice goes away and the recording opens.
-- If the file is gone or is no longer this recording, the app leaves it as it
-  is. It does not write the recording a second time. Restore the file
-  yourself, for example from Git history, if you want it back.
-- **Dismiss** drops the notice and the copy of the audio held in the window.
-  Nothing in the folder changes.
-
-This notice does not keep the app from closing, since nothing is unsaved.
+Once both files are confirmed, the recording opens. If its file cannot be read
+then, or another program removed it in between, the details say so; it is
+never written a second time.
 
 A transcript or a transformation result whose file could not be written is kept
 the same way: the status says it is not saved, and the notice shows the text
@@ -441,7 +426,7 @@ shutdown) all ask the window first:
 - When something is held (a recording in progress, a recording that is not in
   the folder, a transcript or transformation result whose file was not written,
   a result on pasted text not saved yet, a running transcription or
-  transformation, or edits whose save is running, failed, or was not
+  transformation, or edits whose save failed, conflicted, or was not
   confirmed),
   the app stays open and shows what would be lost. **Keep working** closes the
   prompt and changes nothing. **Discard and quit** closes the app and drops
@@ -488,61 +473,48 @@ cannot answer is never closed on its behalf.
 In a browser tab (`bun dev:whispering:ui`) the browser's own leave warning
 applies instead.
 
-### Changes from outside
+### Editing and conflicts
 
-The app notices changes to the folder from any program, usually at once and
-otherwise within a couple of seconds.
+Each open file is a draft, saved as you type: the recording or file you
+selected, the recording's transcripts beside it, and the transformation you
+selected. Selecting another item leaves the drafts it replaces once their
+saves land.
 
-- The lists show the new content. An open recording, transcript, or
-  transformation keeps showing what you see, and your next keystroke saves the
-  whole file over the change. **Reload from file** shows the file as it is now.
-- An open text file with no unsaved typing shows the new content. One with
-  unsaved typing keeps it, stops saving, and shows a conflict. **Show saved
-  version** displays the file as it is now. Then choose: discard yours and
-  load the saved file, save yours over it, or **Keep both**, which writes your
-  text to `conflicts/<name>-<time>.md` and loads the saved file.
-- A recording, transcript, or transformation file that is removed while it is
-  open is never created again by saving. Reload reports that it is missing and
-  keeps your input. **Copy mine** puts it on the clipboard; **Discard mine**
-  deliberately closes its editor.
-- A save that failed, or whose reply never arrived, keeps your text on screen
-  with its error visible during later saves until a save or reload succeeds.
-  The latest waiting edit proceeds, and later typing
-  saves again. **Save again** resubmits your current text; **Discard mine and
-  load the file** replaces it with the file. A reply that
-  never arrived is shown as not known, never as saved.
-- Text pasted into a title, a model, notes, a transcript, or instructions
-  that a file cannot hold exactly (a lone surrogate) is not taken. The field
-  goes back to what it showed before, and a notice beside the save status
-  says why. Nothing of it is kept or saved, so it does not stop closing,
-  renaming, or running. Your next change that is taken, or **Reload from
-  file**, clears the notice. Source keeps any text you type, readable or not.
+- Every save is guarded by the version this window last saved. When the file
+  changed elsewhere, nothing is written and the save line asks: **Reload
+  theirs** shows the file as it is now, **Keep mine** saves your version over
+  it. When the file was deleted elsewhere, **Keep mine** creates it again from
+  your version and **Discard** closes it. A recording deleted elsewhere offers
+  only **Discard**, because its audio may be gone too.
+- A save that failed, or whose reply never arrived, keeps your edits on screen.
+  **Try again** (or **Save again**) saves them; your next edit saves too.
+- Leaving an item whose save failed or conflicted asks "Discard unsaved
+  changes?" first. Keeping it keeps the item open.
+- A draft that is not a valid row, such as a field with the wrong kind of
+  value, is never written; the save line names what to fix.
+- Text typed or pasted into a field that a file cannot hold exactly (a lone
+  surrogate) is saved with U+FFFD in its place.
+- The lists are read when the page opens, after this window's own actions and
+  terminal commands, and when you return to the window. Returning also takes
+  a newer version of an open file that has nothing unsaved.
 
-A recording or transformation file whose text does not read as a row stays in
-its list marked "Needs repair" with its file untouched, and still opens. A row
-starts with a `---` line, its fields, and a closing `---` line; Markdown
-without those lines, bad YAML, or a repeated key does not read. Its details
-are unavailable and you fix it in Source. Saving it while it is still
-malformed works.
-
-A row that reads but has a missing or bad field is marked the same way, and
-everything that does not need that field keeps working: a recording with a bad
-title still plays and transcribes. Its fields are edited in Source until the
-whole row reads again; then the form returns. A transformation runs once its file reads without issues (title,
-model, and endpoint present, `null` allowed for the last two) and it has
-instructions. The messages shown describe the text on screen, saved or not.
-Fields the app does not know are kept. Saving a recording, transcript, or
-transformation from its form writes the frontmatter in the app's standard
-form: keys quoted, values in JSON spelling, declared fields first. Comments
-and the earlier spelling are not kept; the body is kept exactly. To keep a
-file's exact text, edit it in Source.
+A recording, transcript, or transformation file whose text does not read as a
+row is listed under "Needs repair" with why, and opens as its text with its
+issues shown as you type. Its fields open once the text reads. A row starts
+with a `---` line, its fields, and a closing `---` line; Markdown without
+those lines, bad YAML, a repeated key, a missing field, or a field with the
+wrong kind of value does not read. A transformation runs once its file reads
+and it has instructions. Fields the app does not know are kept. Saving a row
+from its fields writes the frontmatter as plain YAML; comments and the
+earlier spelling are not kept, and the body is kept exactly. To keep a file's
+exact text, edit it in Source.
 
 Any file name works for a row, including a trailing space or `recordings/.md`.
 Only `.md` in lowercase makes a file a row.
 
-Deleting a recording also deletes its results. It is refused while any result
-file cannot say which recording it belongs to (text that does not read, a bad
-`recordingId`, or a file that is not text). Repair or remove those from Files
+Deleting a recording also deletes its results; its audio stays. It is refused
+while any result file cannot say which recording it belongs to (text that does
+not read, or a file that is not text). Repair or remove those from Files
 first.
 
 ### The terminal
@@ -591,7 +563,6 @@ A debug build has a bug-icon menu in the header:
 
 | Control | Effect |
 | --- | --- |
-| Pause autosave | Typing in an ordinary text file stays unsaved until "Save now", so an outside edit can be raced against a draft. Recordings, transcripts, and transformations still save as you type. |
 | Fail the next recording file write | The next save lands the audio and fails the row, leaving audio with no recording file. Each press arms one more. |
 | Fail the next audio write | The next save of a new recording fails before anything is written. |
 | Lock the branch | Creates a lock on the branch ref, where an interrupted Git process leaves one, so commits fail while saves succeed. Press again to unlock. It never replaces a lock that already exists and only ever removes the lock it created. |
@@ -620,6 +591,35 @@ git -C "$WHISPERING_DATA_ROOT" log --oneline -- recordings/
 git clone "$WHISPERING_DATA_ROOT" /tmp/whispering-restore
 afplay /tmp/whispering-restore/recordings/<recording-id>.wav
 ```
+
+## Changed promises
+
+This build edits files through the folder's edit sessions. These promises of
+the earlier build changed:
+
+- **A change made elsewhere is a conflict, not overwritten.** The next save of
+  an open recording, transcript, or transformation used to write over another
+  program's change unless you chose **Reload from file**. Now it asks
+  **Reload theirs** or **Keep mine**.
+- **A file deleted elsewhere can be created again from your version** (Keep
+  mine), except a recording. It used to be never created again.
+- **No "Keep both".** A conflicting text file used to offer writing your
+  version to `conflicts/<name>-<time>.md`.
+- **No paused autosave.** The debug menu's "Pause autosave" is gone; every
+  draft saves as you type.
+- **Several drafts are no longer kept per path.** Leaving an item releases its
+  draft once its saves land; one whose save failed asks before it is
+  discarded. Drafts used to stay in the window for every file you had opened.
+- **A row that does not read is repaired as text.** A recording with one bad
+  field used to stay in the table and keep playing and transcribing; now it is
+  listed under "Needs repair" until its text reads.
+- **A lone surrogate is saved as U+FFFD.** It used to be refused with a notice.
+- **No "saved, cannot be shown" notice for a new recording.** Once both files
+  are confirmed the capture is dropped and the recording opens; the
+  "Saved · 1 recording to check" status and its Refresh are gone.
+- **The lists no longer follow change hints.** They used to refresh within a
+  couple of seconds of any program's change; now they refresh when you return
+  to the window, act, or press Check again.
 
 ## What is not supported
 

@@ -13,6 +13,8 @@
  * runs or with what. The run asks it again of the saved file, after the
  * draft has been saved, and that answer is what is sent.
  */
+
+import type { Row } from '@epicenter/folder';
 import {
 	type ConnectionInfo,
 	canonicalBaseUrl,
@@ -20,13 +22,8 @@ import {
 } from './connections.js';
 import type { TransformationFields } from './definition.js';
 
-/** How a recipe reads: a listed row, or a draft as the table interprets it. */
-export type RecipeReading = {
-	readonly fields: Readonly<Partial<TransformationFields>>;
-	readonly body: string | undefined;
-	readonly parseError?: unknown;
-	readonly issues: readonly unknown[];
-};
+/** A recipe as a row: a listed one, or a draft. Undefined when its text is not a valid row. */
+export type RecipeRow = Pick<Row<TransformationFields>, 'fields' | 'body'>;
 
 export type ResolvedRecipe =
 	| {
@@ -52,14 +49,14 @@ function given(value: string | null | undefined): string | undefined {
 
 /** The model a recipe names for itself, or undefined when it uses the connection's. */
 export function recipeModel(
-	fields: Readonly<Partial<TransformationFields>>,
+	fields: Readonly<TransformationFields>,
 ): string | undefined {
 	return given(fields.model);
 }
 
 /** The endpoint an earlier build wrote into a recipe, or undefined when it names none. */
 export function recipeEndpoint(
-	fields: Readonly<Partial<TransformationFields>>,
+	fields: Readonly<TransformationFields>,
 ): string | undefined {
 	return given(fields.endpoint);
 }
@@ -71,17 +68,11 @@ export function recipeEndpoint(
  * is assumed.
  */
 export function resolveRecipe(
-	recipe: RecipeReading,
+	recipe: RecipeRow | undefined,
 	text: ConnectionInfo | undefined,
 	connectionsProblem?: string,
 ): ResolvedRecipe {
-	const { title } = recipe.fields;
-	if (
-		recipe.parseError !== undefined ||
-		recipe.issues.length > 0 ||
-		recipe.body === undefined ||
-		title === undefined
-	)
+	if (recipe === undefined)
 		return {
 			kind: 'blocked',
 			fix: 'recipe',
@@ -130,7 +121,7 @@ export function resolveRecipe(
 		};
 	return {
 		kind: 'ready',
-		title,
+		title: recipe.fields.title,
 		prompt: recipe.body,
 		model,
 		endpoint: text.baseUrl,

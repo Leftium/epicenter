@@ -15,17 +15,15 @@
  * for each row first, as a single deletion is, and removed only as captured.
  */
 import { audioPathIn } from './definition.js';
-import { recordingTitle } from './deletion-copy.js';
+import { recordingTitle } from './deletion.js';
 import type {
 	Deletion,
 	Library,
 	RecordingEntry,
 	TranscriptionEntry,
 } from './library.svelte.js';
-import { needsRepair } from './rows.js';
 
 export type RecordingStatus =
-	| 'repair'
 	| 'transcribing'
 	| 'failed'
 	| 'unsaved'
@@ -34,7 +32,6 @@ export type RecordingStatus =
 
 /** What the table says for each status, and the order the Status column sorts in. */
 export const STATUS_LABELS: Record<RecordingStatus, string> = {
-	repair: 'Needs repair',
 	failed: 'Transcription failed',
 	unsaved: 'Transcript not saved',
 	transcribing: 'Transcribing',
@@ -68,15 +65,12 @@ export const DEFAULT_SORT: RecordingSort = {
 type Source = Pick<Library, 'entries' | 'resultsFor' | 'transcriptionRun'>;
 
 function statusOf(
-	entry: RecordingEntry,
 	transcripts: readonly TranscriptionEntry[],
 	run: ReturnType<Library['transcriptionRun']>,
 ): RecordingStatus {
 	if (run?.kind === 'running') return 'transcribing';
 	if (run?.kind === 'unsaved') return 'unsaved';
 	if (run?.kind === 'failed') return 'failed';
-	// A row that names no audio is one that needs repair: the field is missing.
-	if (needsRepair(entry)) return 'repair';
 	return transcripts.length > 0 ? 'transcribed' : 'untranscribed';
 }
 
@@ -89,11 +83,7 @@ export function recordingRows(library: Source): RecordingRow[] {
 			entry,
 			title: recordingTitle(entry),
 			transcripts,
-			status: statusOf(
-				entry,
-				transcripts,
-				library.transcriptionRun(entry.stem),
-			),
+			status: statusOf(transcripts, library.transcriptionRun(entry.stem)),
 		};
 	});
 }
@@ -103,23 +93,19 @@ function matches(row: RecordingRow, needle: string): boolean {
 	return [
 		row.title,
 		row.entry.stem,
-		row.entry.body ?? '',
-		...row.transcripts.map((transcript) => transcript.body ?? ''),
+		row.entry.row.body,
+		...row.transcripts.map((transcript) => transcript.row.body),
 	].some((text) => text.toLowerCase().includes(needle));
 }
 
-/**
- * The rows a search keeps. A row that needs repair is always kept: a search
- * must never hide the one file the person has to fix, and its title may be
- * unreadable anyway.
- */
+/** The rows a search keeps. Files that need repair are listed apart and never searched out. */
 export function searchRows(
 	rows: readonly RecordingRow[],
 	query: string,
 ): RecordingRow[] {
 	const needle = query.trim().toLowerCase();
 	if (needle === '') return [...rows];
-	return rows.filter((row) => needsRepair(row.entry) || matches(row, needle));
+	return rows.filter((row) => matches(row, needle));
 }
 
 /** How much of a transcript a row shows. */
@@ -139,7 +125,7 @@ export function transcriptExcerpt(
 ): string | undefined {
 	const needle = query.trim().toLowerCase();
 	const texts = row.transcripts
-		.map((transcript) => (transcript.body ?? '').replace(/\s+/g, ' ').trim())
+		.map((transcript) => transcript.row.body.replace(/\s+/g, ' ').trim())
 		.filter((text) => text !== '');
 	const newest = texts[0];
 	if (newest === undefined) return undefined;
@@ -170,9 +156,9 @@ export function sortRows(
 			case 'title':
 				return row.title.toLowerCase();
 			case 'recordedAt':
-				return row.entry.fields.recordedAt;
+				return row.entry.row.fields.recordedAt;
 			case 'durationMs':
-				return row.entry.fields.durationMs;
+				return row.entry.row.fields.durationMs;
 			case 'status':
 				return STATUS_ORDER.indexOf(row.status);
 		}
@@ -277,7 +263,7 @@ export function transcriptsToCopy(rows: readonly RecordingRow[]): {
 	without: number;
 } {
 	const parts = rows.flatMap((row) => {
-		const text = row.transcripts[0]?.body?.trim();
+		const text = row.transcripts[0]?.row.body.trim();
 		return text ? [{ title: row.title, text }] : [];
 	});
 	return {
@@ -334,7 +320,7 @@ export async function transcribeRows(
 		else if (entry === undefined) skip('It is no longer in the folder.');
 		else if (library.resultsFor(entry.stem).length > 0)
 			skip('It already has a transcript.');
-		else if (audioPathIn(entry.fields) === undefined)
+		else if (audioPathIn(entry.row.fields) === undefined)
 			skip('Its file names no audio.');
 		else if (before === 'running') skip('It is already being transcribed.');
 		else if (before === 'unsaved')
@@ -388,8 +374,8 @@ export async function captureDeletions(
 			captured.refused.push({
 				title,
 				reason:
-					deletion.kind === 'unreadableRow'
-						? `Its file cannot be read as a recording (${deletion.problem}). Delete it on its own from its page or Files.`
+					deletion.kind === 'file' && deletion.problem !== undefined
+						? `Its file does not read as a recording (${deletion.problem}). Delete it on its own from its page or Files.`
 						: 'It is not a recording.',
 			});
 	}
@@ -405,22 +391,12 @@ export function describeDeletions({ deletions, refused }: CapturedDeletions): {
 	description: string;
 } {
 	const results = deletions.reduce((sum, item) => sum + item.results.length, 0);
-	const outputs = deletions.reduce((sum, item) => sum + item.outputs.length, 0);
-	let audio = 0;
-	for (const item of deletions)
-		if (audioPathIn(item.entry.fields) !== undefined) audio++;
+	const audio = deletions.filter((item) => item.audioPath !== undefined).length;
 	const removed = [
 		count(deletions.length, 'recording file', 'recording files'),
-		...(results > 0
-			? [count(results, 'transcription result', 'transcription results')]
-			: []),
-		...(outputs > 0
-			? [count(outputs, 'transformation result', 'transformation results')]
-			: []),
+		...(results > 0 ? [count(results, 'result', 'results')] : []),
 	];
-	const names = deletions
-		.map((item) => `“${recordingTitle(item.entry)}”`)
-		.join(', ');
+	const names = deletions.map((item) => `“${item.title}”`).join(', ');
 	return {
 		title: `Delete ${count(deletions.length, 'recording', 'recordings')}?`,
 		description: `This deletes ${removed.join(', ')} from the folder: ${names}. ${
@@ -451,8 +427,7 @@ export async function removeCaptured(
 	for (const deletion of deletions) {
 		const problem = await library.remove(deletion);
 		if (problem === undefined) removed += 1;
-		else
-			problems.push({ title: recordingTitle(deletion.entry), reason: problem });
+		else problems.push({ title: deletion.title, reason: problem });
 	}
 	return { removed, problems };
 }

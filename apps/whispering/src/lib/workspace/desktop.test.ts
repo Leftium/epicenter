@@ -25,7 +25,6 @@ import type { GitSnapshot } from '../../../../../packages/folder/src/native/bind
 import { createHost, type HostOptions } from '../../../native/host.js';
 import { encode } from '../bridge/codec.js';
 import { toneWav } from '../capture.js';
-import { typeBody } from '../row-slot.test-support.js';
 
 type Call = { cmd: string; args: Record<string, unknown> };
 
@@ -58,7 +57,7 @@ const { openWorkspace } = await import('./index.js');
 const { openBrowserWorkspace } = await import('./browser.js');
 const { openDesktopWorkspace } = await import('./desktop.js');
 const { mountSession } = await import('../session.svelte.ts');
-const { createRowEditing } = await import('../row-editing.svelte.ts');
+const { createRowSession } = await import('@epicenter/svelte/edit-session');
 
 const ROOT = '/Users/someone/Epicenter/local/so.epicenter.whispering';
 const SCOPE = 'so.epicenter.whispering';
@@ -405,7 +404,10 @@ test('a host that uses another directory than the owner’s is refused, and the 
 	expect(refused.name).toBe('FolderMismatch');
 	expect(refused.message).toContain('/Users/someone/elsewhere');
 	expect(refused.message).toContain(ROOT);
-	expect(calls.map((call) => call.cmd)).toEqual(['attach', 'detach']);
+	// Attaching publishes the folder's definition; nothing else reaches the owner.
+	expect(
+		calls.map((call) => call.cmd).filter((cmd) => cmd !== 'apply'),
+	).toEqual(['attach', 'detach']);
 	expect(served.requested).toEqual(['/bridge/app']);
 });
 
@@ -437,9 +439,12 @@ test('saves and history go to the shell’s owner and never to the host', async 
 	expect(readError?.name).toBe('NotFound');
 
 	expect(
-		sent('apply').map((call) =>
-			(call.args.changes as { path: string }[]).map((change) => change.path),
-		),
+		sent('apply')
+			.map((call) =>
+				(call.args.changes as { path: string }[]).map((change) => change.path),
+			)
+			// Attaching publishes the folder's definition first.
+			.filter((paths) => !paths.includes('definition.json')),
 	).toEqual([['recordings/a.wav'], ['notes.md']]);
 	expect(sent('commit')).toHaveLength(1);
 	// The host was asked who it is, and for its event stream. Nothing else.
@@ -462,9 +467,11 @@ test('a row save whose reply the shell never sent stays unknown, and later input
 		],
 	]);
 	const written: string[] = [];
-	let loseReplies = true;
+	let loseReplies = false;
 	Object.assign(replies, {
+		// While replies are lost, the owner cannot be asked what landed either.
 		read: ({ args }: Call) => {
+			if (loseReplies) throw 'the reply was lost';
 			const bytes = disk.get(String(args.path));
 			if (bytes === undefined) throw { name: 'NotFound', path: args.path };
 			return {
@@ -489,91 +496,42 @@ test('a row save whose reply the shell never sent stays unknown, and later input
 	const workspace = expectOk(
 		await openDesktopWorkspace({ ...CONNECTION, fetch: served.fetch }),
 	);
-	const editor = expectOk(
-		await workspace.folder.tables.transformations.edit('clean'),
-	);
-	const editing = createRowEditing(editor, {
-		path: 'transformations/clean.md',
-		admits: () => true,
-	});
+	const table = workspace.folder.tables.transformations;
+	const session = createRowSession(table, expectOk(await table.get('clean'))!);
+	// From here the owner writes, and its replies never reach the page.
+	written.length = 0;
+	loseReplies = true;
+	const lost = async () => {
+		const state = await session.settled();
+		return state.status === 'error' ? state.error : undefined;
+	};
 
-	typeBody(editing, 'Tidy it.\n');
-	expect((await editing.waitForSaves()).error?.name).toBe('Unconfirmed');
-	expect(written).toHaveLength(1);
-	expect(editing.status).toMatchObject({
-		kind: 'unconfirmed',
+	session.edit((row) => {
+		row.body = 'Tidy it.\n';
+	});
+	expect(await lost()).toMatchObject({
+		name: 'Unconfirmed',
 		message: expect.stringContaining('the reply was lost'),
 	});
-	expect(editing.holds).toBe(true);
+	expect(written).toHaveLength(1);
 
 	// Later input starts another write, whose reply is lost too.
-	typeBody(editing, 'Tidy it more.\n');
-	expect(editing.row).toMatchObject({
-		status: 'valid',
-		body: 'Tidy it more.\n',
+	session.edit((row) => {
+		row.body = 'Tidy it more.\n';
 	});
-	expect((await editing.waitForSaves()).error?.name).toBe('Unconfirmed');
-	expect(editing.holds).toBe(true);
+	expect(session.draft.body).toBe('Tidy it more.\n');
+	expect((await lost())?.name).toBe('Unconfirmed');
 	expect(written).toHaveLength(2);
 
 	// Saving again is the person's choice, and writes the latest input; its
 	// own reply confirms it.
 	loseReplies = false;
-	expect(editing.retry()).toBeUndefined();
-	expect((await editing.waitForSaves()).error).toBeNull();
+	session.retry();
+	expect((await session.settled()).status).toBe('saved');
 	expect(written).toHaveLength(3);
 	expect(written[2]).toContain('Tidy it more.');
-	expect(editing.status).toEqual({ kind: 'saved' });
 
-	editing.release();
-	await workspace.close();
-});
-
-test('a change the owner announces, from the terminal or any other program, tells the page to read again', async () => {
-	setup();
-	attachable();
-	const served = host({
-		terminal: () => ({
-			stdout: '',
-			stderr: '',
-			exitCode: 0,
-			cwd: 'recordings',
-		}),
-	});
-	const workspace = expectOk(
-		await openDesktopWorkspace({ ...CONNECTION, fetch: served.fetch }),
-	);
-	let changes = 0;
-	const stop = workspace.onExternalChange(() => {
-		changes += 1;
-	});
-	const announce = (payload: unknown) => {
-		for (const listener of listeners.get(
-			'plugin:epicenter-folder:folder-files-changed',
-		) ?? [])
-			listener({ payload });
-	};
-
-	// The terminal is the host's real shell; it reports nothing about files itself.
-	const run = await workspace.terminal.exec('cd recordings && touch a.md');
-	expect(run.exitCode).toBe(0);
-	expect(workspace.terminal.cwd).toBe('/recordings');
-	expect(served.operationsAsked.at(-1)).toMatchObject({
-		op: 'terminal',
-		payload: { command: 'cd recordings && touch a.md', cwd: '' },
-	});
-	expect(changes).toBe(0);
-
-	// The owner sees the write on disk and says so.
-	announce({ scope: SCOPE, revision: 1, paths: ['recordings/a.md'] });
-	expect(changes).toBe(1);
-	// Another folder's changes are not this one's.
-	announce({ scope: 'so.epicenter.todos', revision: 2, paths: ['x.md'] });
-	expect(changes).toBe(1);
-
-	stop();
-	announce({ scope: SCOPE, revision: 3, paths: ['recordings/a.md'] });
-	expect(changes).toBe(1);
+	session.release();
 	await workspace.close();
 });
 
@@ -1089,7 +1047,9 @@ test('nothing is approved unasked: a failed opening by itself closes nothing', a
 	expect(served.approvals).toBe(0);
 	expect(shell.navigations).toEqual([]);
 	// The mismatch detached the window it had attached.
-	expect(calls.map((call) => call.cmd)).toEqual(['attach', 'detach']);
+	expect(
+		calls.map((call) => call.cmd).filter((cmd) => cmd !== 'apply'),
+	).toEqual(['attach', 'detach']);
 });
 
 test('after a failed opening with the host gone, the shell’s close attempt is answered with the quit address', async () => {

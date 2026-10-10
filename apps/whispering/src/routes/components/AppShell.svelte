@@ -14,6 +14,7 @@
 	import LeavePrompt from './LeavePrompt.svelte';
 	import RecoveryNotices from './RecoveryNotices.svelte';
 	import VerticalNav from './VerticalNav.svelte';
+	import { openItem } from './file-actions.js';
 
 	/**
 	 * The frame every page sits in: navigation, the header with status and
@@ -71,14 +72,13 @@
 
 	/** Open a recording beside the recordings, or a transformation on its page. */
 	async function openRecording(path: string) {
-		await library.open(path);
-		showOpened(path);
+		if (await openItem(library, path)) showOpened(path);
 	}
 </script>
 
 <!-- Returning to the app is a refresh boundary for files and Git status. -->
 <svelte:window
-	onfocus={() => void library.refreshAll()}
+	onfocus={() => void library.check()}
 	onkeydown={(event) => {
 		if ((event.metaKey || event.ctrlKey) && event.shiftKey && !event.altKey && event.key.toLowerCase() === 'e') {
 			event.preventDefault();

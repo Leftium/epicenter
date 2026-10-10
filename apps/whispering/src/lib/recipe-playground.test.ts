@@ -31,15 +31,18 @@ import './svelte-modules.test-support.js';
 import { afterEach, expect, test } from 'bun:test';
 import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { FileError, inspectRow } from '@epicenter/folder/bun';
+import { FileError } from '@epicenter/folder/bun';
 import { Ok } from 'wellcrafted/result';
 import { expectOk } from 'wellcrafted/testing';
 import type { ConnectionInfo } from './connections.js';
-import { STARTER_TRANSFORMATIONS, whisperingDefinition } from './definition.js';
+import {
+	STARTER_TRANSFORMATIONS,
+	type TransformationFields,
+} from './definition.js';
+import { transformationSession } from './drafts.test-support.js';
 import type { Library } from './library.svelte.js';
 import { resolvePostProcessing } from './post-processing.js';
 import { resolveRecipe } from './recipe.js';
-import { editingOf, typeBody, typeField } from './row-slot.test-support.js';
 import { filesLineOf } from './status.js';
 import { TransformationError } from './transformation.js';
 import {
@@ -82,9 +85,9 @@ async function open(options: TestWorkspaceOptions = {}) {
 				...tables,
 				text_runs: {
 					...textRuns,
-					async create(input: Parameters<typeof textRuns.create>[0]) {
+					async create(...args: Parameters<typeof textRuns.create>) {
 						await hooks.create?.();
-						return textRuns.create(input);
+						return textRuns.create(...args);
 					},
 					async list() {
 						return (await hooks.list?.()) ?? textRuns.list();
@@ -148,9 +151,8 @@ const TEXT: ConnectionInfo = {
 	readOnlyReason: undefined,
 };
 const reading = (fields: Record<string, unknown>, body = 'Fix it.\n') => ({
-	fields,
+	fields: fields as TransformationFields,
 	body,
-	issues: [],
 });
 
 test('the resolver uses the text connection, lets a recipe name its model, and takes an earlier endpoint only as an exact constraint', () => {
@@ -232,9 +234,9 @@ test('the resolver uses the text connection, lets a recipe name its model, and t
 			TEXT,
 		),
 	).toMatchObject({ reason: 'Write instructions to run this.' });
-	expect(
-		resolveRecipe({ ...reading({ title: 'x' }), issues: [{}] }, TEXT),
-	).toMatchObject({ reason: 'Repair this transformation before running it.' });
+	expect(resolveRecipe(undefined, TEXT)).toMatchObject({
+		reason: 'Repair this transformation before running it.',
+	});
 });
 
 test('the Run check, the post-processing choice, the menu, and the run agree about every recipe', async () => {
@@ -253,15 +255,10 @@ test('the Run check, the post-processing choice, the menu, and the run agree abo
 
 	for (const path of [fresh, matching, elsewhere]) {
 		const entry = library.transformations.find((item) => item.path === path)!;
-		const listed = library.resolve(entry);
-		// The text on the recipe's page is read by the same resolver.
+		const listed = library.resolve(entry.row);
+		// The draft on the recipe's page is read by the same resolver.
 		await library.open(path);
-		const shown = library.resolve(
-			inspectRow(
-				whisperingDefinition.tables.transformations,
-				editingOf(library.selectedTransformation?.slot).row.text,
-			),
-		);
+		const shown = library.resolve(transformationSession(library).draft);
 		const chosen = resolvePostProcessing(
 			path,
 			library.transformations,
@@ -279,7 +276,7 @@ test('the Run check, the post-processing choice, the menu, and the run agree abo
 					expectedBaseUrl: listed.endpoint,
 					model: listed.model,
 					prompt: listed.prompt,
-					input: transcript.body!,
+					input: transcript.row.body,
 				},
 			]);
 		} else {
@@ -301,13 +298,15 @@ test('removing an earlier endpoint from a recipe lets it run with the text conne
 		endpoint: 'https://api.openai.com/v1',
 	});
 	await library.open(path);
-	const editor = editingOf(library.selectedTransformation?.slot);
+	const editor = transformationSession(library);
 	expect(await library.transform(transcript.path, path)).toContain(
 		'runs only at https://api.openai.com/v1',
 	);
 
-	typeField(editor, 'endpoint', null);
-	expect(editor.row).toMatchObject({ fields: { endpoint: null } });
+	editor.edit((row) => {
+		row.fields.endpoint = null;
+	});
+	expect(editor.draft.fields.endpoint).toBeNull();
 	expect(await library.transform(transcript.path, path)).toBeUndefined();
 
 	expect(transformed).toEqual([
@@ -316,9 +315,9 @@ test('removing an earlier endpoint from a recipe lets it run with the text conne
 			model: 'old-model',
 		}),
 	]);
-	// The whole row is saved in its one form, with the other fields as they were.
+	// The whole row is saved, with the other fields as they were.
 	expect(await readFile(join(root, path), 'utf8')).toBe(
-		'---\n"title": "Earlier"\n"model": "old-model"\n"endpoint": null\n---\nFix it.\n',
+		'---\ntitle: Earlier\nmodel: old-model\nendpoint: null\n---\nFix it.\n',
 	);
 });
 
@@ -334,10 +333,9 @@ test('a result file and a recipe written by an earlier build still read and list
 	await writeFile(join(root, 'transformation_runs', 'earlier.md'), old);
 	await library.refreshAll();
 
-	const entry = library.transformations.find((item) => item.path === path)!;
-	expect(entry.issues).toEqual([]);
-	expect(library.outputsOf('old')).toEqual([
-		expect.objectContaining({ body: 'Fixed text.\n', issues: [] }),
+	expect(library.transformations.map((item) => item.path)).toEqual([path]);
+	expect(library.outputsOf('old').map((output) => output.row.body)).toEqual([
+		'Fixed text.\n',
 	]);
 	expect(library.textOutputsOf('old')).toEqual([]);
 });
@@ -395,12 +393,12 @@ test('a recipe runs on pasted text with no recordings; the answer is held until 
 	expect(await names(root, TEXT_RUNS)).toEqual([`${held.id}.md`]);
 	const saved = library.textOutputsOf(stem);
 	expect(saved).toHaveLength(1);
-	expect(saved[0]!.fields).toEqual(held.fields);
-	expect(saved[0]!.body).toBe('Transformed: so um this is pasted text\n');
+	expect(saved[0]!.row.fields).toEqual(held.fields);
+	expect(saved[0]!.row.body).toBe('Transformed: so um this is pasted text\n');
 	// Results on pasted text are not transcript results, and name no recording.
 	expect(library.outputsOf(stem)).toEqual([]);
 	expect(library.transformationResults).toEqual([]);
-	expect(Object.keys(saved[0]!.fields)).not.toContain('recordingId');
+	expect(Object.keys(saved[0]!.row.fields)).not.toContain('recordingId');
 	expect(transformed).toHaveLength(1);
 
 	// It is an ordinary file: deleting it from history works like any other result.
@@ -416,18 +414,22 @@ test('what is saved is what was sent: edits to the recipe or the connection whil
 		transform: () => answer.promise,
 	});
 	const path = await recipe(library);
-	const editor = editingOf(library.selectedTransformation?.slot);
+	const editor = transformationSession(library);
 	const stem = selectedStem(library);
-	typeBody(editor, 'Draft instructions.\n');
+	editor.edit((row) => {
+		row.body = 'Draft instructions.\n';
+	});
 
 	const running = library.transformText(path, PASTED);
 	await new Promise((resolve) => setTimeout(resolve, 20));
 	// Its save settled first, and the saved file is what went out.
 	expect(transformed[0]!.prompt).toBe('Draft instructions.\n');
 	const id = library.textRuns[0]!.id;
-	typeBody(editor, 'Edited while running.\n');
-	typeField(editor, 'model', 'other');
-	expectOk(await editor.waitForSaves());
+	editor.edit((row) => {
+		row.body = 'Edited while running.\n';
+		row.fields.model = 'other';
+	});
+	expect((await editor.settled()).status).toBe('saved');
 	expect(
 		await library.saveConnection('text', {
 			baseUrl: TEST_BASE_URL,
@@ -441,13 +443,13 @@ test('what is saved is what was sent: edits to the recipe or the connection whil
 	await library.saveTextRun(id);
 	const saved = library.textOutputsOf(stem)[0]!;
 	expect(saved.stem).toBe(id);
-	expect(saved.fields).toMatchObject({
+	expect(saved.row.fields).toMatchObject({
 		prompt: 'Draft instructions.\n',
 		model: 'connection-model',
 		endpoint: TEST_BASE_URL,
 		input: PASTED,
 	});
-	expect(saved.body).toBe('answer\n');
+	expect(saved.row.body).toBe('answer\n');
 	expect(transformed).toHaveLength(1);
 });
 
@@ -691,8 +693,9 @@ test('a text_runs/ file that does not read never holds up a recording’s deleti
 		new Uint8Array([0xff, 0xfe, 0x00]),
 	);
 	await library.refreshAll();
-	expect(library.unreadableTextResults.map((item) => item.path)).toEqual([
+	expect(library.textRepairs.map((item) => item.path)).toEqual([
 		'text_runs/binary.md',
+		'text_runs/broken.md',
 	]);
 
 	const deletion = expectOk(await library.deletionFor(recording.path));

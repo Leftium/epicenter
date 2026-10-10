@@ -4,52 +4,36 @@
 	import { toast } from '@epicenter/ui/sonner';
 	import { Spinner } from '@epicenter/ui/spinner';
 	import WandSparklesIcon from '@lucide/svelte/icons/wand-sparkles';
-	import { inspectRow } from '@epicenter/folder';
 	import { withFileNewlines } from '@epicenter/folder/file-browser';
+	import { wellFormed } from '@epicenter/svelte/edit-session';
 	import { untrack } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
-	import { whisperingDefinition } from '$lib/definition.js';
+	import { TRANSCRIPTIONS } from '$lib/definition.js';
 	import type { Library, TranscriptionEntry } from '$lib/library.svelte.js';
 	import { transformationName } from '$lib/post-processing.js';
-	import { copyText, formatTime, lf } from './file-actions.js';
-	import LiveButton from './LiveButton.svelte';
+	import { copyText, formatTime, lf, openItem } from './file-actions.js';
 	import { Textarea } from '@epicenter/ui/textarea';
-	import RowSaveStatus from './RowSaveStatus.svelte';
+	import SaveBar from './SaveBar.svelte';
 	import TransformationOutput from './TransformationOutput.svelte';
 
 	/**
 	 * One saved transcript of the recording that is open, edited where it is
-	 * read, beside the player. The text is the body of the transcript's own
-	 * file, through the one row editor the library keeps for that file: the
-	 * one Files shows for it, with the same saves. Nothing here selects the
-	 * transcript's file, so the recording stays open.
+	 * read, beside the player. Its text is the body of the transcript's own
+	 * file, in a draft opened beside the recording and left with it. Nothing
+	 * here selects the transcript's file, so the recording stays open.
 	 */
 	let { library, result }: { library: Library; result: TranscriptionEntry } = $props();
 
-	// Open the file's editor once for this path. The editor outlives this
-	// card: closing the details or changing page keeps what was typed.
+	// Open the file's draft once for this path, beside the recording.
 	$effect(() => {
 		const path = result.path;
 		untrack(() => void library.openTranscript(path));
 	});
-	const slot = $derived(library.transcriptAt(result.path));
-	/**
-	 * The one row editor kept for the transcript's file. It can be replaced
-	 * under this card (the file is opened again after it could not be read),
-	 * so the binding reads it when it runs.
-	 */
-	const editing = $derived(slot?.kind === 'open' ? slot.editing : undefined);
-	/** Only the fields view edits the text here; the whole file is edited in Files. */
-	const editable = $derived(editing?.view === 'fields');
-	/** The text now. Before the editor is open, the row as listed. */
-	const text = $derived.by(() => {
-		if (editing === undefined) return result.body;
-		if (editing.row.status === 'valid') return editing.row.body;
-		return inspectRow(whisperingDefinition.tables.transcriptions, editing.row.text).body;
-	});
-	// The live textarea has its own lifetime (Textarea): one that is gone
-	// delivers nothing, even after the fields view returns.
+	const draft = $derived(library.draftAt(result.path));
+	const row = $derived(draft?.kind === 'row' && draft.table === TRANSCRIPTIONS ? draft.session : undefined);
+	/** The text now: the draft's, or the row as listed. */
+	const text = $derived(row?.draft.body ?? result.row.body);
 
 	const outputs = $derived(library.outputsFor(result.stem));
 	const transforming = $derived(
@@ -62,7 +46,7 @@
 	 * the run itself makes. One that cannot is shown with why, and fixed on its
 	 * own page or in Settings first.
 	 */
-	const choices = $derived(library.transformations.map((item) => ({ item, resolved: library.resolve(item) })));
+	const choices = $derived(library.transformations.map((item) => ({ item, resolved: library.resolve(item.row) })));
 
 	/** Apply a transformation to this transcript. The result is a new file; the transcript is not changed by it. */
 	async function transform(path: string) {
@@ -72,39 +56,37 @@
 </script>
 
 <article class="flex flex-col gap-2 rounded border p-3 text-sm" data-testid="transcription-result">
-	{#if editable}
+	{#if row}
 		<Textarea
 			class="min-h-32 resize-y font-sans"
 			bind:value={
-				() => (editing?.row.status === 'valid' ? lf(editing.row.body) : ''),
-				(value) => {
-					const row = editing?.row;
-					if (row?.status === 'valid') editing?.set({ ...row, body: withFileNewlines(value, row.body) });
-				}
+				() => lf(row?.draft.body ?? ''),
+				(value) =>
+					row?.edit((draft) => {
+						draft.body = withFileNewlines(wellFormed(value), draft.body);
+					})
 			}
-			readonly={!editing?.editable}
+			disabled={row.locked}
 			placeholder="This transcript has no text."
-			aria-label="Transcript of {formatTime(result.fields.createdAt) || result.path}"
+			aria-label="Transcript of {formatTime(result.row.fields.createdAt) || result.path}"
 			data-testid="transcript-text"
 		/>
-	{:else if text !== undefined}
+		<SaveBar {library} session={row} compact />
+	{:else}
 		<p class="max-h-64 overflow-y-auto rounded border p-2 whitespace-pre-wrap" data-testid="transcript-text-readonly">{text}</p>
 	{/if}
-	{#if editing?.view === 'source'}
+	{#if draft?.kind === 'text'}
 		<p class="text-xs text-destructive" role="alert">
 			This transcript’s file is being edited as text, so its text cannot be edited here. Open it from Files.
 		</p>
-	{:else if slot?.kind === 'unopened'}
+		<SaveBar {library} session={draft.session} compact />
+	{:else if draft?.kind === 'failed'}
 		<p class="text-xs text-destructive" role="alert">
-			This transcript’s file could not be opened: {slot.message}
-			<LiveButton size="xs" variant="outline" class="ml-1" onclick={() => void library.retryOpen(result.path)}>Try again</LiveButton>
+			This transcript’s file could not be opened: {draft.message}
 		</p>
 	{/if}
-	{#if editing && (editing.status.kind !== 'saved' || editing.refusal !== undefined)}
-		<RowSaveStatus {library} {editing} />
-	{/if}
 	<footer class="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
-		<span>{formatTime(result.fields.createdAt) || 'Unknown time'} · {result.fields.model ?? 'unknown model'}</span>
+		<span>{formatTime(result.row.fields.createdAt) || 'Unknown time'} · {result.row.fields.model}</span>
 		<span class="ml-auto flex items-center gap-1">
 			<Button size="xs" variant="outline" disabled={!text?.trim()} onclick={() => void copyText(text ?? '', 'the transcript')} data-testid="copy-transcript">
 				Copy
@@ -149,7 +131,7 @@
 			{library}
 			output={{ source: 'transcript', entry: output }}
 			naming="transformation"
-			onOpenFile={(path) => void library.open(path)}
+			onOpenFile={(path) => void openItem(library, path)}
 		/>
 	{/each}
 </article>

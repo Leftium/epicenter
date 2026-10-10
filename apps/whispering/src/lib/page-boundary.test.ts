@@ -96,12 +96,10 @@ test('a folder is opened only by the two workspaces, each through its own entry'
 	const folderEntries = importers((specifier) =>
 		specifier.startsWith('@epicenter/folder'),
 	).map((found) => found.split(' imports ')[1]);
-	// `/svelte` reads a row editor the page was given; it opens nothing.
 	expect([...new Set(folderEntries)].sort()).toEqual([
 		'@epicenter/folder',
 		'@epicenter/folder/browser',
 		'@epicenter/folder/file-browser',
-		'@epicenter/folder/svelte',
 		'@epicenter/folder/tauri',
 	]);
 	// The bare specifier is built against the browser entry. It is the exact
@@ -153,7 +151,10 @@ test('the page imports no Yjs store, sync, or account module', () => {
 				specifier === 'yjs' ||
 				specifier.startsWith('@y/') ||
 				specifier.startsWith('@epicenter/sync') ||
-				specifier.startsWith('@epicenter/svelte') ||
+				// Edit sessions over folder files are the one entry of
+				// `@epicenter/svelte` the page uses; they hold no store.
+				(specifier.startsWith('@epicenter/svelte') &&
+					specifier !== '@epicenter/svelte/edit-session') ||
 				specifier.startsWith('@epicenter/auth') ||
 				specifier.startsWith('@epicenter/blobs') ||
 				specifier.startsWith('@epicenter/recorder') ||

@@ -21,7 +21,7 @@
 	import { basename, dirname, joinPath, type TreeRow, visibleRows } from '@epicenter/folder/file-browser';
 	import { audioMimeTypeOf } from '$lib/audio-format.js';
 	import type { Library } from '$lib/library.svelte.js';
-	import { confirmDelete, copyPath } from './file-actions.js';
+	import { confirmDelete, copyPath, openItem } from './file-actions.js';
 
 	let { library, onOpen }: {
 		library: Library;
@@ -56,7 +56,7 @@
 			else library.expanded.add(row.path);
 			return;
 		}
-		void library.open(row.path).then(() => onOpen(row.path));
+		void openItem(library, row.path).then((opened) => opened && onOpen(row.path));
 	}
 
 	function startCreate(directory: string, type: 'file' | 'folder') {

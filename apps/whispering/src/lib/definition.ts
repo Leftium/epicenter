@@ -39,7 +39,7 @@ import { defineFolder } from '@epicenter/folder';
  * The page and Whispering's Bun host both load this module, so it names only
  * the inert vocabulary. It names no folder: each workspace opens
  * `WHISPERING_FOLDER_ID`. `defineFolder` checks and prepares the definition
- * here, where it is written, so the openers and `inspectRow` read rows through
+ * here, where it is written, so the openers and `parseRow` read rows through
  * the same prepared fields without opening anything.
  */
 export const whisperingDefinition = defineFolder({

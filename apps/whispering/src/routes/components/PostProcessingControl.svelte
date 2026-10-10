@@ -105,7 +105,7 @@
 				<Label for="post-processing-none" class="font-normal">None</Label>
 			</div>
 			{#each library.transformations as item, index (item.path)}
-				{@const resolved = library.resolve(item)}
+				{@const resolved = library.resolve(item.row)}
 				{@const runnable = resolved.kind === 'ready'}
 				<!-- The group is a grid, so a row shrinks to the popover only with min-w-0; the label then takes what the radio leaves and the title truncates in it. -->
 				<div class="flex min-w-0 items-center gap-2">
@@ -141,11 +141,11 @@
 				This folder has no transformations yet. Create one to choose it here.
 			</p>
 		{/if}
-		{#if library.unreadableTransformations.length > 0}
+		{#if library.transformationRepairs.length > 0}
 			<p class="text-xs text-warning" role="status">
-				{library.unreadableTransformations.length === 1
-					? '1 file in transformations/ could not be read and is not listed.'
-					: `${library.unreadableTransformations.length} files in transformations/ could not be read and are not listed.`}
+				{library.transformationRepairs.length === 1
+					? '1 file in transformations/ needs repair and is not listed.'
+					: `${library.transformationRepairs.length} files in transformations/ need repair and are not listed.`}
 			</p>
 		{/if}
 		{#if choice.kind === 'repair'}

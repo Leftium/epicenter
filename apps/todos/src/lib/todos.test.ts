@@ -682,6 +682,22 @@ test('edits made while the delete dialog is open are saved before the delete, wh
 	expect(todos.opened).toBeUndefined();
 });
 
+test('a refused delete of the open todo reopens it as it is now, and it saves again', async () => {
+	const { todos } = await open();
+	const session = await addTodo(todos, 'Milk');
+	const deletion = expectOk(await todos.deletionFor(session.path));
+	await writeElsewhere(todos, session.path, '---\ntitle: Theirs\ndone: false\n---\n');
+	expect(await todos.remove(deletion)).toContain('changed elsewhere');
+	const reopened = todoSession(todos);
+	expect(reopened).not.toBe(session);
+	expect(reopened.draft.fields.title).toBe('Theirs');
+	reopened.edit((row) => {
+		row.fields.done = true;
+	});
+	expect((await reopened.settled()).status).toBe('saved');
+	expect(await text(todos, session.path)).toContain('done: true');
+});
+
 test('a delete is refused when the file changed after it was confirmed', async () => {
 	const { todos } = await open();
 	expectOk(await todos.folder.files.create('notes.txt', 'first'));

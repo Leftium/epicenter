@@ -606,14 +606,14 @@ export function createTodos(folder: TodosFolder) {
 			const why = refused();
 			if (why !== undefined) return why;
 			const done = !fieldsOf(entry).done;
-			if (opened !== undefined && pathOf(opened) === entry.path) {
-				if (opened.kind !== 'todo')
-					return 'This todo is open as text, so change done there.';
+			if (opened?.kind === 'todo' && opened.session.path === entry.path) {
 				opened.session.edit((row) => {
 					row.fields.done = done;
 				});
 				return undefined;
 			}
+			if (opened?.kind === 'text' && opened.session.path === entry.path)
+				return 'This todo is open as text, so change done there.';
 			const { error } = await admitted(
 				table.replace(entry, {
 					fields: { ...entry.row.fields, done },
@@ -734,26 +734,35 @@ export function createTodos(folder: TodosFolder) {
 		async remove(deletion: Deletion): Promise<string | undefined> {
 			const why = refused();
 			if (why !== undefined) return why;
-			let removed: Result<undefined, FileError | string>;
-			if (deletion.kind === 'folder')
-				removed = await admitted(folder.files.rmdir(deletion.path));
-			else {
-				const session = sessionOf(opened);
-				let file: FileCapture = deletion;
-				if (session?.path === deletion.path) {
-					session.release();
-					file = (await session.settled()).file;
-				}
-				removed = await admitted(
-					deletion.kind === 'todo' ? table.delete(file) : folder.files.remove(file),
-				);
-				if (removed.error === null) forget(deletion.path);
-				// The file stayed: open it again as it is now, in a new session.
-				else if (session !== undefined && sessionOf(opened) === session)
-					await open(deletion.path, workspaceOf(opened!), { discard: session });
-			}
-			await refresh();
-			return removed.error === null ? undefined : describeError(removed.error);
+			// Admitted whole, before its first await, so close waits for all of it.
+			return admitted(
+				(async () => {
+					let removed: Result<undefined, FileError | string>;
+					if (deletion.kind === 'folder')
+						removed = await folder.files.rmdir(deletion.path);
+					else {
+						const session = sessionOf(opened);
+						let file: FileCapture = deletion;
+						if (session?.path === deletion.path) {
+							session.release();
+							file = (await session.settled()).file;
+						}
+						removed = await (deletion.kind === 'todo'
+							? table.delete(file)
+							: folder.files.remove(file));
+						if (removed.error === null) forget(deletion.path);
+						// The file stayed: open it again as it is now, in a new session.
+						else if (session !== undefined && sessionOf(opened) === session)
+							await open(deletion.path, workspaceOf(opened!), {
+								discard: session,
+							});
+					}
+					await refresh();
+					return removed.error === null
+						? undefined
+						: describeError(removed.error);
+				})(),
+			);
 		},
 		/** Commit current saved files and push. */
 		async commitAndPush(): Promise<CommitAndPushResult> {

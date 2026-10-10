@@ -495,9 +495,8 @@ Saving a run, or a received transcript, is one `createOnce`
 (`src/lib/runs.svelte.ts`): the row is created exclusively at its stem, and
 when the stem is taken, what is there is read. This run's own row already
 there (an earlier write landed and its answer was lost) is recognized and
-nothing is written. Its own row means a valid row with the same body and
-every field of the run's snapshot; fields the app does not declare are
-ignored. Any other
+nothing is written. Its own row means a valid row with the same body and the
+same fields, including any field another writer added. Any other
 file there, including one that differs only in its prompt, model, endpoint,
 input, or source, is not overwritten and the run stays unsaved. So one run
 can produce at most one result file. A run discarded while its row is being

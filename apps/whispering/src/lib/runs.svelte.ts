@@ -44,13 +44,40 @@ const describe = (cause: unknown) =>
 /** A received answer as its row's body: the text, ending in one newline of its own. */
 const resultBody = (text: string) => (text.endsWith('\n') ? text : `${text}\n`);
 
-/** Whether a saved row is `row`: the same body, and every field `row` names the same. */
-function sameRow<TFields>(saved: Row<TFields>, row: Row<TFields>): boolean {
-	const fields = saved.fields as Record<string, unknown>;
+/** Deep equality of parsed values, ignoring the order of an object's keys. */
+function sameValue(a: unknown, b: unknown): boolean {
+	if (a === b) return true;
+	if (Array.isArray(a) || Array.isArray(b))
+		return (
+			Array.isArray(a) &&
+			Array.isArray(b) &&
+			a.length === b.length &&
+			a.every((item, index) => sameValue(item, b[index]))
+		);
+	if (
+		typeof a !== 'object' ||
+		typeof b !== 'object' ||
+		a === null ||
+		b === null
+	)
+		return false;
+	const left = a as Record<string, unknown>;
+	const right = b as Record<string, unknown>;
+	const keys = Object.keys(left);
 	return (
-		saved.body === row.body &&
-		Object.entries(row.fields).every(([key, value]) => fields[key] === value)
+		keys.length === Object.keys(right).length &&
+		keys.every(
+			(key) => Object.hasOwn(right, key) && sameValue(left[key], right[key]),
+		)
 	);
+}
+
+/**
+ * Whether a saved row is `row`: the same body and the same fields, keys
+ * another writer added included.
+ */
+function sameRow<TFields>(saved: Row<TFields>, row: Row<TFields>): boolean {
+	return saved.body === row.body && sameValue(saved.fields, row.fields);
 }
 
 /**
@@ -156,6 +183,7 @@ export function createRuns({
 	settle,
 	deleting,
 	refresh,
+	track,
 }: {
 	workspace: Workspace;
 	makeId: MakeId;
@@ -171,6 +199,12 @@ export function createRuns({
 	/** Recordings whose deletion is under way. No request starts for one. */
 	deleting: ReadonlySet<string>;
 	refresh: () => Promise<void>;
+	/**
+	 * Count folder work as running until it settles, so leaving and closing
+	 * wait for it. Waiting on an endpoint is not counted: a request that does
+	 * not answer must not keep the app from asking to close.
+	 */
+	track: <T>(work: Promise<T>) => Promise<T>;
 }) {
 	const { folder } = workspace;
 	/** Transcription runs, by recording ID. */
@@ -296,7 +330,7 @@ export function createRuns({
 			return;
 		}
 		if (run.destination === 'transcript') {
-			await saveRun(run, answer.text, running);
+			await track(saveRun(run, answer.text, running));
 			return;
 		}
 		if (recipes.get(run.id) === running)
@@ -394,7 +428,7 @@ export function createRuns({
 			const run = recipes.get(id);
 			if (run === undefined) return;
 			if (run.state.kind === 'unsaved') {
-				await saveRun(run, run.state.text, run);
+				await track(saveRun(run, run.state.text, run));
 				return;
 			}
 			if (run.state.kind !== 'failed') return;
@@ -406,8 +440,8 @@ export function createRuns({
 			const moved = connectionMoved(run.fields.endpoint);
 			if (moved !== undefined) return refuse(moved);
 			if (run.destination === 'transcript') {
-				const { data: source, error } = await transcriptAt(
-					rowPath(TRANSCRIPTIONS, run.fields.transcriptionId),
+				const { data: source, error } = await track(
+					transcriptAt(rowPath(TRANSCRIPTIONS, run.fields.transcriptionId)),
 				);
 				if (error !== null) return refuse(`${error} Dismiss this run.`);
 				if (
@@ -581,22 +615,24 @@ export function createRuns({
 				return;
 			}
 			const at = new Date();
-			await saveTranscript(
-				id,
-				{
-					id: makeId(at),
-					row: {
-						fields: {
-							recordingId: id,
-							createdAt: at.toISOString(),
-							model: connection.model,
-							endpoint: connection.baseUrl,
-						} as TranscriptionFields,
-						body: resultBody(answer.text),
+			await track(
+				saveTranscript(
+					id,
+					{
+						id: makeId(at),
+						row: {
+							fields: {
+								recordingId: id,
+								createdAt: at.toISOString(),
+								model: connection.model,
+								endpoint: connection.baseUrl,
+							} as TranscriptionFields,
+							body: resultBody(answer.text),
+						},
+						text: answer.text,
 					},
-					text: answer.text,
-				},
-				running,
+					running,
+				),
 			);
 		},
 		/** Save a held transcript again. The endpoint is not called. */
@@ -606,7 +642,7 @@ export function createRuns({
 			if (run?.kind !== 'unsaved' || run.saving) return;
 			const admitted: TranscriptionRun = { ...run, saving: true };
 			transcriptions.set(id, admitted);
-			await saveTranscript(id, run, admitted);
+			await track(saveTranscript(id, run, admitted));
 		},
 		/** Drop a transcription run that is not running. A write already begun may still land. */
 		dismissRun(id: string) {
@@ -629,12 +665,15 @@ export function createRuns({
 				return 'This transformation is already running on this transcript. Run it again when it has finished.';
 			applying.add(pair);
 			try {
-				const { data: recipe, error } = await recipeAt(transformationPath);
+				const { data: recipe, error } = await track(
+					recipeAt(transformationPath),
+				);
 				if (error !== null) return error;
 				const { resolved } = recipe;
 				if (resolved.kind !== 'ready') return resolved.reason;
-				const { data: source, error: sourceError } =
-					await transcriptAt(transcriptionPath);
+				const { data: source, error: sourceError } = await track(
+					transcriptAt(transcriptionPath),
+				);
 				if (sourceError !== null) return sourceError;
 				if (deleting.has(source.recordingId)) return BEING_DELETED;
 				const late = refused();
@@ -687,7 +726,9 @@ export function createRuns({
 				return 'A result of this transformation on pasted text is waiting. Save or discard it first, so it is not replaced.';
 			applying.add(key);
 			try {
-				const { data: recipe, error } = await recipeAt(transformationPath);
+				const { data: recipe, error } = await track(
+					recipeAt(transformationPath),
+				);
 				if (error !== null) return error;
 				const { resolved } = recipe;
 				if (resolved.kind !== 'ready') return resolved.reason;

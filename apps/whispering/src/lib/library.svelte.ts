@@ -74,6 +74,7 @@ import {
 	type Draft,
 	type DraftSession,
 	pathOf,
+	RECORDING_GONE,
 	rowTableOf,
 	sessionOf,
 } from './drafts.svelte.js';
@@ -270,6 +271,17 @@ export function createLibrary(workspace: Workspace) {
 		return work;
 	}
 
+	/**
+	 * A library command, counted as running from its call until it settles,
+	 * so leaving and closing wait for all of it, not only its later steps.
+	 */
+	const command =
+		<TArgs extends unknown[], TResult>(
+			work: (...args: TArgs) => Promise<TResult>,
+		) =>
+		(...args: TArgs): Promise<TResult> =>
+			admitted(work(...args));
+
 	async function quiet() {
 		while (operations.size > 0) await Promise.allSettled([...operations]);
 	}
@@ -348,6 +360,7 @@ export function createLibrary(workspace: Workspace) {
 		settle,
 		deleting,
 		refresh: refreshAll,
+		track: (work) => admitted(work),
 	});
 
 	async function readConnections() {
@@ -520,13 +533,20 @@ export function createLibrary(workspace: Workspace) {
 		return undefined;
 	}
 
-	/** Whether a recording row's file is gone: its audio may be gone too, so it is not recreated. */
+	/**
+	 * Recording sessions whose Keep mine found the file deleted. Their
+	 * sessions refuse to create it again (`drafts.svelte.ts`), so only
+	 * Discard is offered from then on.
+	 */
+	const gone = new SvelteSet<DraftSession>();
+
+	/** Whether a recording row's file is known to be gone: its audio may be gone too, so it is not recreated. */
 	function recordingGone(session: DraftSession) {
 		const draft = draftWith(session);
+		if (draft?.kind !== 'row' || draft.table !== RECORDINGS) return false;
+		if (gone.has(session)) return true;
 		const { state } = session;
 		return (
-			draft?.kind === 'row' &&
-			draft.table === RECORDINGS &&
 			state.status === 'error' &&
 			state.error.name === 'Conflict' &&
 			state.error.actualSha256 === undefined
@@ -896,7 +916,7 @@ export function createLibrary(workspace: Workspace) {
 		refreshAll,
 		/** The person's "Check again", and returning to the window. */
 		check,
-		open,
+		open: command(open),
 		/**
 		 * First read after opening: the folder, then what this device has set
 		 * up. Nothing is created and nothing is sent.
@@ -908,19 +928,19 @@ export function createLibrary(workspace: Workspace) {
 			await input.load();
 		},
 		/** Edit a row file's whole text instead of its fields. Answers why not. */
-		async editSource(path: string): Promise<string | undefined> {
+		editSource: command(async (path: string): Promise<string | undefined> => {
 			const why = refused();
 			if (why !== undefined) return why;
-			const unsaved = await admitted(drafts.reopen(path, 'text'));
+			const unsaved = await drafts.reopen(path, 'text');
 			return unsaved === undefined
 				? undefined
 				: 'Its last save did not finish. Resolve that first.';
-		},
+		}),
 		/**
 		 * Edit a row file's fields again after editing its text. Text that is
 		 * still not a valid row stays as text, and this says so.
 		 */
-		async useForm(path: string): Promise<string | undefined> {
+		useForm: command(async (path: string): Promise<string | undefined> => {
 			const why = refused();
 			if (why !== undefined) return why;
 			const draft = drafts.get(path);
@@ -931,55 +951,59 @@ export function createLibrary(workspace: Workspace) {
 					.error !== null
 			)
 				return STILL_TEXT;
-			const unsaved = await admitted(drafts.reopen(path, 'row'));
+			const unsaved = await drafts.reopen(path, 'row');
 			if (unsaved !== undefined)
 				return 'Its last save did not finish. Resolve that first.';
 			// Changed elsewhere since: it reads as text again.
 			return drafts.get(path)?.kind === 'text' ? STILL_TEXT : undefined;
-		},
+		}),
 		/**
 		 * Reload theirs for `session`: show the file as it is now. A row whose
 		 * text is no longer valid opens as text; a file that is gone closes.
 		 * Answers what the person is told, if anything.
 		 */
-		async reloadTheirs(session: DraftSession): Promise<string | undefined> {
-			const why = refused();
-			if (why !== undefined) return why;
-			const draft = draftWith(session);
-			if (draft === undefined) return undefined;
-			const path = pathOf(draft);
-			// Each kind of session answers its own kind of read; only its kind matters here.
-			const reloading = session.reloadTheirs() as Promise<
-				Result<Reread<unknown, unknown>, { name: string; message: string }>
-			>;
-			const { data: found, error } = await admitted(reloading);
-			if (error !== null) return describeError(error);
-			if (found.kind === 'gone') drafts.forget(path);
-			else if (found.kind === 'other') {
-				if (draft.kind === 'text') return NOT_TEXT;
-				// The row's text is no longer valid: it opens as text, for repair.
-				drafts.forget(path);
-				await drafts.open(path);
-			}
-			await refresh();
-			return undefined;
-		},
+		reloadTheirs: command(
+			async (session: DraftSession): Promise<string | undefined> => {
+				const why = refused();
+				if (why !== undefined) return why;
+				const draft = draftWith(session);
+				if (draft === undefined) return undefined;
+				const path = pathOf(draft);
+				// Each kind of session answers its own kind of read; only its kind matters here.
+				const reloading = session.reloadTheirs() as Promise<
+					Result<Reread<unknown, unknown>, { name: string; message: string }>
+				>;
+				const { data: found, error } = await reloading;
+				if (error !== null) return describeError(error);
+				if (found.kind === 'gone') drafts.forget(path);
+				else if (found.kind === 'other') {
+					if (draft.kind === 'text') return NOT_TEXT;
+					// The row's text is no longer valid: it opens as text, for repair.
+					drafts.forget(path);
+					await drafts.open(path);
+				}
+				await refresh();
+				return undefined;
+			},
+		),
 		/**
 		 * Keep mine for `session`: save the draft over the file, or create it
 		 * again. A recording deleted elsewhere is not created again, since its
 		 * audio may be gone too.
 		 */
-		async keepMine(session: DraftSession): Promise<string | undefined> {
-			const why = refused();
-			if (why !== undefined) return why;
-			if (draftWith(session) === undefined) return undefined;
-			if (recordingGone(session))
-				return 'This recording was deleted elsewhere, and its audio may be gone too, so it is not created again.';
-			const { error } = await admitted(session.keepMine());
-			await refresh();
-			return error === null ? undefined : describeError(error);
-		},
-		/** Whether Keep mine is offered for `session`: not for a recording deleted elsewhere. */
+		keepMine: command(
+			async (session: DraftSession): Promise<string | undefined> => {
+				const why = refused();
+				if (why !== undefined) return why;
+				if (draftWith(session) === undefined) return undefined;
+				// A recording's session refuses to create its file again; see `drafts.svelte.ts`.
+				const { error } = await session.keepMine();
+				if (error?.name === RECORDING_GONE.name) gone.add(session);
+				await refresh();
+				return error === null ? undefined : describeError(error);
+			},
+		),
+		/** Whether Keep mine is offered for `session`: not for a recording known to be deleted elsewhere. */
 		canKeepMine(session: DraftSession) {
 			return !recordingGone(session);
 		},
@@ -1021,7 +1045,7 @@ export function createLibrary(workspace: Workspace) {
 		 * Stop, keep the audio in this window, and publish it to the folder.
 		 * While new work is not admitted the recording stays as it is.
 		 */
-		async stopRecording() {
+		stopRecording: command(async () => {
 			if (recorder.phase !== 'recording' || active === undefined) return;
 			if (!admitting) return;
 			const capture = active;
@@ -1034,7 +1058,7 @@ export function createLibrary(workspace: Workspace) {
 				return;
 			}
 			await publish(accept(captured, new Date()));
-		},
+		}),
 		cancelRecording() {
 			starting?.abort();
 			starting = undefined;
@@ -1043,12 +1067,12 @@ export function createLibrary(workspace: Workspace) {
 			recorder = { phase: 'idle' };
 		},
 		/** Publish a held capture again, under the same id and with the same bytes. */
-		async retryPending(id: string) {
+		retryPending: command(async (id: string) => {
 			if (!admitting) return;
 			const item = pending.find((candidate) => candidate.capture.id === id);
 			if (item === undefined || item.state.kind === 'saving') return;
 			await publish(item);
-		},
+		}),
 		/** Drop a held capture. Files already in the folder are left as they are. */
 		discardPending(id: string) {
 			setPending(id, undefined);
@@ -1071,44 +1095,44 @@ export function createLibrary(workspace: Workspace) {
 		 * A new recipe file: a title and instructions. It names no endpoint and
 		 * no model of its own (`null`), so it runs with the text connection.
 		 */
-		async createTransformation({
-			title,
-			prompt,
-		}: {
-			title: string;
-			prompt: string;
-		}): Promise<string | undefined> {
-			const why = refused();
-			if (why !== undefined) return why;
-			const { data: created, error } = await admitted(
-				transformations.create({
+		createTransformation: command(
+			async ({
+				title,
+				prompt,
+			}: {
+				title: string;
+				prompt: string;
+			}): Promise<string | undefined> => {
+				const why = refused();
+				if (why !== undefined) return why;
+				const { data: created, error } = await transformations.create({
 					fields: { title, model: null, endpoint: null },
 					body: prompt,
-				}),
-			);
-			if (error !== null) return describeError(error);
-			await refreshAll();
-			await open(created.path);
-			return undefined;
-		},
-		async deleteTransformationResult(
-			entry: TransformationRunEntry,
-		): Promise<string | undefined> {
-			const why = refused();
-			if (why !== undefined) return why;
-			const { error } = await admitted(
-				folder.tables.transformation_runs.delete(entry),
-			);
-			await refreshAll();
-			return error === null ? undefined : describeError(error);
-		},
-		async deleteTextResult(entry: TextRunEntry): Promise<string | undefined> {
-			const why = refused();
-			if (why !== undefined) return why;
-			const { error } = await admitted(folder.tables.text_runs.delete(entry));
-			await refreshAll();
-			return error === null ? undefined : describeError(error);
-		},
+				});
+				if (error !== null) return describeError(error);
+				await refreshAll();
+				await open(created.path);
+				return undefined;
+			},
+		),
+		deleteTransformationResult: command(
+			async (entry: TransformationRunEntry): Promise<string | undefined> => {
+				const why = refused();
+				if (why !== undefined) return why;
+				const { error } = await folder.tables.transformation_runs.delete(entry);
+				await refreshAll();
+				return error === null ? undefined : describeError(error);
+			},
+		),
+		deleteTextResult: command(
+			async (entry: TextRunEntry): Promise<string | undefined> => {
+				const why = refused();
+				if (why !== undefined) return why;
+				const { error } = await folder.tables.text_runs.delete(entry);
+				await refreshAll();
+				return error === null ? undefined : describeError(error);
+			},
+		),
 
 		/**
 		 * Save one connection on this device. Nothing is sent to the endpoint
@@ -1149,109 +1173,109 @@ export function createLibrary(workspace: Workspace) {
 		 * waits for its saves and moves what its last save confirmed; a closed
 		 * file moves from what it holds now.
 		 */
-		async rename(path: string, name: string): Promise<string | undefined> {
-			const why = refused();
-			if (why !== undefined) return why;
-			const directory = dirname(path);
-			const problem = nameProblem(directory, name);
-			if (problem !== undefined) return problem;
-			const to = joinPath(directory, name);
-			if (to === path) return undefined;
-			if (rowStemOf(RECORDINGS, path) !== undefined) return RECORDING_NAME;
-			if (rowStemOf(TRANSFORMATIONS, path) !== undefined)
-				return TRANSFORMATION_NAME;
-			if (entries.some((entry) => audioPathIn(entry.row.fields) === path))
-				return RECORDING_AUDIO_NAME;
-			const stem = rowStemOf(TRANSCRIPTIONS, path);
-			const nextStem = rowStemOf(TRANSCRIPTIONS, to);
-			const move = (file: FileCapture) =>
-				stem !== undefined && nextStem !== undefined
-					? folder.tables.transcriptions.rename(file, nextStem)
-					: folder.files.move(file, to);
-			const draft = drafts.get(path);
-			const session = sessionOf(draft);
-			let moved: Result<unknown, { name: string; message: string }>;
-			if (draft?.kind === 'row' && nextStem === undefined)
-				moved = Err({ name: 'Refused', message: TRANSCRIPT_NAME });
-			else if (session !== undefined) {
-				moved = await admitted(session.rename(move));
-				if (moved.error === null) {
-					drafts.moved(path, to);
-					if (selectedPath === path) selectedPath = to;
+		rename: command(
+			async (path: string, name: string): Promise<string | undefined> => {
+				const why = refused();
+				if (why !== undefined) return why;
+				const directory = dirname(path);
+				const problem = nameProblem(directory, name);
+				if (problem !== undefined) return problem;
+				const to = joinPath(directory, name);
+				if (to === path) return undefined;
+				if (rowStemOf(RECORDINGS, path) !== undefined) return RECORDING_NAME;
+				if (rowStemOf(TRANSFORMATIONS, path) !== undefined)
+					return TRANSFORMATION_NAME;
+				if (entries.some((entry) => audioPathIn(entry.row.fields) === path))
+					return RECORDING_AUDIO_NAME;
+				const stem = rowStemOf(TRANSCRIPTIONS, path);
+				const nextStem = rowStemOf(TRANSCRIPTIONS, to);
+				const move = (file: FileCapture) =>
+					stem !== undefined && nextStem !== undefined
+						? folder.tables.transcriptions.rename(file, nextStem)
+						: folder.files.move(file, to);
+				const draft = drafts.get(path);
+				const session = sessionOf(draft);
+				let moved: Result<unknown, { name: string; message: string }>;
+				if (draft?.kind === 'row' && nextStem === undefined)
+					moved = Err({ name: 'Refused', message: TRANSCRIPT_NAME });
+				else if (session !== undefined) {
+					moved = await session.rename(move);
+					if (moved.error === null) {
+						drafts.moved(path, to);
+						if (selectedPath === path) selectedPath = to;
+					}
+				} else {
+					const { data: read, error } = await folder.files.read(path);
+					moved =
+						error !== null
+							? Err(error)
+							: await move({ path: read.path, sha256: read.sha256 });
+					if (moved.error === null && selectedPath === path) {
+						drafts.forget(path);
+						selectedPath = to;
+						await drafts.open(to);
+					}
 				}
-			} else {
-				const { data: read, error } = await folder.files.read(path);
-				moved =
-					error !== null
-						? Err(error)
-						: await admitted(move({ path: read.path, sha256: read.sha256 }));
-				if (moved.error === null && selectedPath === path) {
-					drafts.forget(path);
-					selectedPath = to;
-					await drafts.open(to);
-				}
-			}
-			await refreshAll();
-			return moved.error === null ? undefined : describeError(moved.error);
-		},
+				await refreshAll();
+				return moved.error === null ? undefined : describeError(moved.error);
+			},
+		),
 		/** A new empty text file; it never replaces an existing one. */
-		async createFile(
-			directory: string,
-			name: string,
-		): Promise<string | undefined> {
-			const why = refused();
-			if (why !== undefined) return why;
-			const problem = nameProblem(directory, name);
-			if (problem !== undefined) return problem;
-			const path = joinPath(directory, name);
-			if (listing?.directories.includes(path))
-				return `"${name}" already exists here.`;
-			const { error } = await admitted(folder.files.create(path, ''));
-			if (error !== null) return describeError(error);
-			await refreshAll();
-			const opened = await open(path);
-			return opened === undefined
-				? undefined
-				: 'It was added, but the open file has changes that are not saved, so it stays open.';
-		},
-		async createFolder(
-			directory: string,
-			name: string,
-		): Promise<string | undefined> {
-			const why = refused();
-			if (why !== undefined) return why;
-			const problem = nameProblem(directory, name);
-			if (problem !== undefined) return problem;
-			const path = joinPath(directory, name);
-			if (
-				listing?.directories.includes(path) ||
-				listing?.files.some((file) => file.path === path)
-			)
-				return `"${name}" already exists here.`;
-			const { error } = await admitted(folder.files.mkdir(path));
-			if (error !== null) return describeError(error);
-			if (directory !== '') expanded.add(directory);
-			await refresh();
-			return undefined;
-		},
+		createFile: command(
+			async (directory: string, name: string): Promise<string | undefined> => {
+				const why = refused();
+				if (why !== undefined) return why;
+				const problem = nameProblem(directory, name);
+				if (problem !== undefined) return problem;
+				const path = joinPath(directory, name);
+				if (listing?.directories.includes(path))
+					return `"${name}" already exists here.`;
+				const { error } = await folder.files.create(path, '');
+				if (error !== null) return describeError(error);
+				await refreshAll();
+				const opened = await open(path);
+				return opened === undefined
+					? undefined
+					: 'It was added, but the open file has changes that are not saved, so it stays open.';
+			},
+		),
+		createFolder: command(
+			async (directory: string, name: string): Promise<string | undefined> => {
+				const why = refused();
+				if (why !== undefined) return why;
+				const problem = nameProblem(directory, name);
+				if (problem !== undefined) return problem;
+				const path = joinPath(directory, name);
+				if (
+					listing?.directories.includes(path) ||
+					listing?.files.some((file) => file.path === path)
+				)
+					return `"${name}" already exists here.`;
+				const { error } = await folder.files.mkdir(path);
+				if (error !== null) return describeError(error);
+				if (directory !== '') expanded.add(directory);
+				await refresh();
+				return undefined;
+			},
+		),
 		/**
 		 * Capture what deleting `path` would remove, for the person to confirm.
 		 * Open drafts' saves land first; one whose save failed refuses.
 		 */
-		async deletionFor(path: string): Promise<Result<Deletion, string>> {
-			const why = refused();
-			if (why !== undefined) return Err(why);
-			return admitted(captureDeletion(deletionContext(), path));
-		},
+		deletionFor: command(
+			async (path: string): Promise<Result<Deletion, string>> => {
+				const why = refused();
+				if (why !== undefined) return Err(why);
+				return captureDeletion(deletionContext(), path);
+			},
+		),
 		/** Delete exactly what was confirmed; a file that changed since is refused. */
-		async remove(deletion: Deletion): Promise<string | undefined> {
+		remove: command(async (deletion: Deletion): Promise<string | undefined> => {
 			const why = refused();
 			if (why !== undefined) return why;
-			const problem = await admitted(
-				removeDeletion(
-					{ ...deletionContext(), deleting, dropFailed: runs.dropFailed },
-					deletion,
-				),
+			const problem = await removeDeletion(
+				{ ...deletionContext(), deleting, dropFailed: runs.dropFailed },
+				deletion,
 			);
 			if (selectedPath !== undefined && drafts.get(selectedPath) === undefined)
 				selectedPath = undefined;
@@ -1262,13 +1286,12 @@ export function createLibrary(workspace: Workspace) {
 				selectedTransformationPath = undefined;
 			await refreshAll();
 			return problem;
-		},
+		}),
 		/** Commit current saved files. */
-		commit(): Promise<CommitOutcome> {
-			if (!admitting)
-				return Promise.resolve({ status: 'blocked', reason: LEAVING });
+		commit: command(async (): Promise<CommitOutcome> => {
+			if (!admitting) return { status: 'blocked', reason: LEAVING };
 			return folder.git.commit();
-		},
+		}),
 		/**
 		 * Let running work and saves finish, then release the folder. A draft
 		 * that could not save, and audio that could not be published, end with

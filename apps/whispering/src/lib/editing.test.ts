@@ -297,7 +297,7 @@ test('a recording deleted elsewhere offers only Discard, which closes it without
 
 	// Its audio may be gone too, so it is not created again.
 	expect(library.canKeepMine(session)).toBe(false);
-	expect(await library.keepMine(session)).toContain('not created again');
+	expect(await library.keepMine(session)).toContain('cannot be restored');
 	expect(await text(library, path)).toBeUndefined();
 
 	expect(await library.reloadTheirs(session)).toBeUndefined();
@@ -305,6 +305,33 @@ test('a recording deleted elsewhere offers only Discard, which closes it without
 	expect(library.selection).toBeUndefined();
 	expect(await text(library, path)).toBeUndefined();
 	expect(await library.prepareToLeave()).toBe(true);
+});
+
+test('Keep mine never restores a recording deleted after its conflict was shown; only Discard is left', async () => {
+	const { library } = await open();
+	const session = await record(library);
+	const path = session.path;
+	await writeElsewhere(
+		library,
+		path,
+		recordingText('Theirs', session.draft.fields.audioPath),
+	);
+	session.edit((row) => {
+		row.fields.title = 'Mine';
+	});
+	await session.settled();
+	// Changed elsewhere, not deleted: Keep mine is offered.
+	expect(library.canKeepMine(session)).toBe(true);
+
+	// Another writer deletes it before the person chooses.
+	await deleteElsewhere(library, path);
+	expect(await library.keepMine(session)).toContain('cannot be restored');
+	expect(await text(library, path)).toBeUndefined();
+	expect(library.canKeepMine(session)).toBe(false);
+
+	expect(await library.reloadTheirs(session)).toBeUndefined();
+	expect(library.draftAt(path)).toBeUndefined();
+	expect(await text(library, path)).toBeUndefined();
 });
 
 test('Reload theirs of a recording made invalid elsewhere opens its text with the issues', async () => {

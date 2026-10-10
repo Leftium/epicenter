@@ -80,6 +80,8 @@ type Options = {
 	transcribe?: Workspace['transcribe'];
 	root?: string;
 	beforeFileCreate?: () => Promise<void>;
+	/** Runs before each `files.read` of the folder. */
+	beforeFileRead?: (path: string) => Promise<void>;
 	/** Stand in front of the folder's settings methods; `real` is the folder's own. */
 	kv?: (real: Kv) => Kv;
 	/** What the device has set up. Both connections, keyless, unless a test says otherwise. */
@@ -93,6 +95,7 @@ async function open({
 	loseResultReplies = 0,
 	transcribe,
 	beforeFileCreate,
+	beforeFileRead,
 	root,
 	kv,
 	connections,
@@ -146,6 +149,10 @@ async function open({
 				async create(path, content) {
 					await beforeFileCreate?.();
 					return folder.files.create(path, content);
+				},
+				async read(path) {
+					await beforeFileRead?.(path);
+					return folder.files.read(path);
 				},
 			},
 		} as Workspace['folder'],
@@ -904,7 +911,9 @@ test('a recording cannot be deleted while its transcription runs, including one 
 	expect(await transcripts(root)).toHaveLength(1);
 	const again = expectOk(await library.deletionFor(entry.path));
 	expect(await library.remove(again)).toBeUndefined();
-	expect(await readdir(join(root, 'recordings'))).toEqual([`${entry.stem}.wav`]);
+	expect(await readdir(join(root, 'recordings'))).toEqual([
+		`${entry.stem}.wav`,
+	]);
 	expect(await transcripts(root)).toEqual([]);
 });
 
@@ -1040,4 +1049,34 @@ test('close drains accepted commands and refuses a new command', async () => {
 	await closing;
 	opened.splice(opened.indexOf(library), 1);
 	expect(await readFile(join(root, 'first.txt'), 'utf8')).toBe('');
+});
+
+test('close waits for a rename whose read is still held, and the rename finishes before the folder closes', async () => {
+	const reached = Promise.withResolvers<void>();
+	const release = Promise.withResolvers<void>();
+	const { library, root } = await open({
+		beforeFileRead: async (path) => {
+			if (path !== 'notes.md') return;
+			reached.resolve();
+			await release.promise;
+		},
+	});
+	await writeFile(join(root, 'notes.md'), 'original\n');
+	await library.refreshAll();
+
+	const renaming = library.rename('notes.md', 'renamed.md');
+	await reached.promise;
+	let closed = false;
+	const closing = library.close().then(() => {
+		closed = true;
+	});
+	await Bun.sleep(10);
+	expect(closed).toBe(false);
+
+	release.resolve();
+	expect(await renaming).toBeUndefined();
+	await closing;
+	opened.splice(opened.indexOf(library), 1);
+	expect(await readFile(join(root, 'renamed.md'), 'utf8')).toBe('original\n');
+	expect(await Bun.file(join(root, 'notes.md')).exists()).toBe(false);
 });

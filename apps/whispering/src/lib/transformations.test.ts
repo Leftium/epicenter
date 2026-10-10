@@ -17,7 +17,8 @@
  * - A request that fails ends the run, keeps the transcript, and can be retried
  * - A result that cannot be saved keeps its text and its file name; saving it
  *   again does not call the endpoint and cannot make a second result; a row at
- *   that name counts as this result only if its body and whole snapshot match
+ *   that name counts as this result only if its body and every field match,
+ *   fields another writer added included
  * - What is sent is read from the folder when asked: an outside edit is sent,
  *   a deleted or malformed transcript or a deleted recording refuses
  * - A recording cannot be deleted while a request for it runs or its answer is
@@ -899,7 +900,7 @@ for (const [field, value] of [
 	});
 }
 
-test('this run’s exact row is recognized even with fields the app does not know', async () => {
+test('this run’s exact row is recognized, and the same row with a field another writer added is not', async () => {
 	const { library, root, table, held, text, transformed, workspace } =
 		await heldRun();
 	const mine = expectOk(
@@ -908,22 +909,30 @@ test('this run’s exact row is recognized even with fields the app does not kno
 			{ stem: held.id },
 		),
 	);
-	// Another program annotates the row without touching what the run recorded.
-	const annotated = (await readFile(join(root, mine.path), 'utf8')).replace(
-		'---\n',
-		'---\n# reviewed\nreviewedBy: someone\n',
-	);
+	const path = join(RUNS, `${held.id}.md`);
+	const exact = await readFile(join(root, path), 'utf8');
+	// Another program adds a field without touching what the run recorded.
+	const annotated = exact.replace('---\n', '---\nreviewedBy: someone\n');
 	expectOk(await workspace.folder.files.replace(mine, annotated));
 
+	await library.retryTransformation(held.id);
+
+	const still = library.transformationRuns[0]!;
+	expect(still.state).toMatchObject({
+		kind: 'unsaved',
+		message: expect.stringContaining('Nothing was overwritten'),
+	});
+	expect(await readFile(join(root, path), 'utf8')).toBe(annotated);
+
+	// The exact row, as an earlier save left it, is this result.
+	await writeFile(join(root, path), exact);
 	await library.retryTransformation(held.id);
 
 	expect(library.transformationRuns).toHaveLength(0);
 	expect(library.holdsUnsavedWork).toBe(false);
 	expect(transformed).toHaveLength(1);
 	expect(await names(root, RUNS)).toEqual([`${held.id}.md`]);
-	expect(await readFile(join(root, RUNS, `${held.id}.md`), 'utf8')).toBe(
-		annotated,
-	);
+	expect(await readFile(join(root, path), 'utf8')).toBe(exact);
 });
 
 // ============================================================================
@@ -992,7 +1001,6 @@ test('two asks for the same transcript and transformation at once send one reque
 	expect(await second).toContain('already running on this transcript');
 	expect(transformed).toEqual([]);
 	expect(library.holdsUnsavedWork).toBe(true);
-	expect(await library.prepareToLeave()).toBe(false);
 	reads.hold = undefined;
 	reading.resolve();
 	expect(await first).toBeUndefined();

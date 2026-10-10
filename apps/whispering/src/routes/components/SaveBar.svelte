@@ -29,7 +29,10 @@
 
 	const save = $derived(session.state);
 	const error = $derived(save.status === 'error' ? save.error : undefined);
-	const gone = $derived(error?.name === 'Conflict' && error.actualSha256 === undefined);
+	/** Deleted elsewhere, or a recording whose Keep mine found it deleted: only Discard is left. */
+	const gone = $derived(
+		error?.name === 'Conflict' && (error.actualSha256 === undefined || !library.canKeepMine(session)),
+	);
 </script>
 
 {#if !compact || save.status !== 'saved'}

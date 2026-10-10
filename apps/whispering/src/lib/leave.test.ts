@@ -709,7 +709,7 @@ test('a quit whose answer is lost stays committed: nothing is admitted again, an
 	expect(library.admitting).toBe(false);
 });
 
-test('a transformation whose reads were under way when the person quit is never sent', async () => {
+test('a transformation whose reads were under way when the shell asked to close is waited for and never sent', async () => {
 	let hold: PromiseWithResolvers<void> | undefined;
 	const started = await open({
 		beforeTransformationRead: () => hold?.promise ?? Promise.resolve(),
@@ -724,22 +724,21 @@ test('a transformation whose reads were under way when the person quit is never 
 	hold = Promise.withResolvers<void>();
 	const running = library.transform(transcript.path, profile.path);
 
-	await ask();
-	// Its reads count as a running transformation, so the person is asked.
-	expect(answers).toEqual(['asking']);
-	expect(guard.held).toContain(
-		'A transformation is still running; its result would be lost.',
-	);
-	await guard.discardAndQuit();
-	expect(answers).toEqual(['asking', 'proceed']);
-
+	// The page waits for its reads: they are admitted work.
+	const asking = ask();
+	await until(() => answers.length > 0, 'the acknowledgement');
+	expect(guard.phase).toBe('preparing');
 	hold.resolve();
+	await asking;
+
+	// Nothing new starts once the shell asked, so it was never sent.
 	expect(await running).toContain('closing');
 	expect(started.transformCalls).toBe(0);
 	expect(library.transformationRuns).toEqual([]);
+	expect(answers).toEqual(['asking', 'proceed']);
 });
 
-test('a recipe run on pasted text whose read was under way when the person quit is never sent, and none starts while asked', async () => {
+test('a recipe run on pasted text whose read was under way when the shell asked to close is never sent, and none starts meanwhile', async () => {
 	let hold: PromiseWithResolvers<void> | undefined;
 	const started = await open({
 		beforeTransformationRead: () => hold?.promise ?? Promise.resolve(),
@@ -751,22 +750,20 @@ test('a recipe run on pasted text whose read was under way when the person quit 
 	hold = Promise.withResolvers<void>();
 	const running = library.transformText(profile.path, 'pasted words\n');
 
-	await ask();
-	expect(answers).toEqual(['asking']);
-	expect(guard.held).toContain(
-		'A transformation is still running; its result would be lost.',
-	);
-	// A new run on pasted text is refused while the person decides.
+	const asking = ask();
+	await until(() => answers.length > 0, 'the acknowledgement');
+	expect(guard.phase).toBe('preparing');
+	// A new run on pasted text is refused while the page decides.
 	expect(await library.transformText(profile.path, 'other words\n')).toContain(
 		'closing',
 	);
-	await guard.discardAndQuit();
-	expect(answers).toEqual(['asking', 'proceed']);
-
 	hold.resolve();
+	await asking;
+
 	expect(await running).toContain('closing');
 	expect(started.transformCalls).toBe(0);
 	expect(library.textRuns).toEqual([]);
+	expect(answers).toEqual(['asking', 'proceed']);
 });
 
 test('a guard that was disposed answers nothing, whatever its prompt still offers', async () => {

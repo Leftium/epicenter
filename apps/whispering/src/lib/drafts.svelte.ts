@@ -14,14 +14,22 @@
  * draft whose save failed or conflicted is left only when the person
  * discards that session's draft.
  */
-import { type FileTable, rowPath, rowStemOf } from '@epicenter/folder';
 import {
+	type FileTable,
+	rowPath,
+	rowStemOf,
+	type StoredRow,
+} from '@epicenter/folder';
+import {
+	createEditSession,
 	createRowSession,
 	createTextSession,
 	type RowSession,
+	rowSource,
 	type TextSession,
 } from '@epicenter/svelte/edit-session';
 import { SvelteMap } from 'svelte/reactivity';
+import { Err } from 'wellcrafted/result';
 import { audioMimeTypeOf } from './audio-format.js';
 import {
 	RECORDINGS,
@@ -73,6 +81,16 @@ export type Draft =
 
 export type DraftSession = Extract<Draft, { session: unknown }>['session'];
 
+/**
+ * Why Keep mine does not create a recording deleted elsewhere: its audio may
+ * be gone too, so the recording is not restored.
+ */
+export const RECORDING_GONE = {
+	name: 'RecordingGone',
+	message:
+		'This recording was deleted elsewhere; its audio may be gone too, so it cannot be restored. Discard it instead.',
+} as const;
+
 /** How a row file opens: as fields when its text reads as a row, or as text. */
 export type OpenAs = 'row' | 'text';
 
@@ -110,7 +128,7 @@ export function createDrafts(
 		rows: FileTable<TFields>,
 		table: RowTable,
 		stem: string,
-		asRow: (session: RowSession<TFields>) => Draft,
+		asRow: (stored: StoredRow<TFields>) => Draft,
 	): Promise<Draft> {
 		const path = rowPath(table, stem);
 		const { data: stored, error } = await rows.get(stem);
@@ -123,7 +141,7 @@ export function createDrafts(
 		if (error !== null) return { kind: 'failed', path, message: error.message };
 		if (stored === undefined)
 			return { kind: 'failed', path, message: `${path} is not in the folder.` };
-		return asRow(createRowSession(rows, stored, { locked }));
+		return asRow(stored);
 	}
 
 	/** Read `path` the way `as` opens it. */
@@ -133,20 +151,30 @@ export function createDrafts(
 		if (stem !== undefined && as === 'row')
 			switch (table) {
 				case RECORDINGS:
-					return readRow(folder.tables.recordings, table, stem, (session) => ({
+					return readRow(folder.tables.recordings, table, stem, (stored) => ({
 						kind: 'row',
 						table,
-						session,
+						// Keep mine never creates a recording deleted elsewhere.
+						session: createEditSession(
+							{
+								...rowSource(folder.tables.recordings),
+								recreate: async () => Err(RECORDING_GONE),
+							},
+							{ file: stored, value: stored.row },
+							{ locked },
+						),
 					}));
 				case TRANSCRIPTIONS:
 					return readRow(
 						folder.tables.transcriptions,
 						table,
 						stem,
-						(session) => ({
+						(stored) => ({
 							kind: 'row',
 							table,
-							session,
+							session: createRowSession(folder.tables.transcriptions, stored, {
+								locked,
+							}),
 						}),
 					);
 				case TRANSFORMATIONS:
@@ -154,7 +182,13 @@ export function createDrafts(
 						folder.tables.transformations,
 						table,
 						stem,
-						(session) => ({ kind: 'row', table, session }),
+						(stored) => ({
+							kind: 'row',
+							table,
+							session: createRowSession(folder.tables.transformations, stored, {
+								locked,
+							}),
+						}),
 					);
 			}
 		if (table === undefined && audioMimeTypeOf(path) !== undefined)

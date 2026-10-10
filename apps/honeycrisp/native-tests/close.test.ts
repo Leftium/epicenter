@@ -11,7 +11,7 @@
  *
  * The folder is the real browser folder over the in-memory OPFS stand-in. A
  * write that fails, waits, or loses its reply does so in the stand-in's file
- * streams, under the production row editor; nothing wraps the editor. That
+ * streams, under the production edit sessions; nothing wraps them. That
  * proves the page's close handling against the real gate, not the desktop
  * folder's native storage: those writes go through the shell's folder
  * plugin, which `src-tauri/src/tests.rs` and the folder package test.
@@ -21,8 +21,10 @@
  * - Once the folder is held, a close proceeds only on the page's approval
  * - A raw file draft and a note's rich-text draft are settled first, and
  *   kept when the person keeps editing
- * - A note's file-view repair whose write was not confirmed holds the close,
- *   and keeps its text when the person keeps editing
+ * - A note opened as its file whose write failed holds the close, and keeps
+ *   its text when the person keeps editing
+ * - A change to a file with no open draft is waited for; one whose reply was
+ *   lost is reported and does not hold the close
  * - Input is fenced before drafts are settled and while the approval is on
  *   its way; Keep editing and a refused approval release it
  * - A declined, replaced, or earlier page's approval is never replayed
@@ -30,12 +32,12 @@
  */
 import '../src/lib/svelte-modules.test-support.js';
 import { afterEach, expect, test } from 'bun:test';
-import { type FileCapture, inspectRow } from '@epicenter/folder';
+import { type FileCapture, parseRow } from '@epicenter/folder';
+import type { TextSession } from '@epicenter/svelte/edit-session';
 import { undoDepth } from 'prosemirror-history';
 import { EditorState, type Transaction } from 'prosemirror-state';
 import { honeycrispDefinition } from '../src/lib/data.js';
 import { bodyCodec } from '../src/lib/editor/markdown.js';
-import { editingPlugins, stateAfter } from '../src/lib/editor/rich-text.js';
 import { openNotesFolder } from '../src/lib/folder.test-support.js';
 import {
 	type CloseRequest,
@@ -46,6 +48,16 @@ import type { NotesHost } from '../src/lib/platform/types.js';
 import { createGateShell } from './gate.js';
 
 const { createNotes } = await import('../src/lib/notes.svelte.ts');
+// The rich-text rules save through an edit session, a runes module.
+const { editingPlugins, stateAfter } = await import(
+	'../src/lib/editor/rich-text.js'
+);
+
+/** Type `text` into a text session; answers whether it was taken. */
+function typed(draft: TextSession, text: string): boolean {
+	draft.input(text);
+	return draft.draft === text;
+}
 
 const NOTE_PATH = 'notes/a.md';
 const NOTE = [
@@ -134,8 +146,7 @@ async function folder() {
 	return {
 		host,
 		/** How the notes table reads text. */
-		inspect: (text: string) =>
-			inspectRow(honeycrispDefinition.tables.notes, text),
+		parse: (text: string) => parseRow(honeycrispDefinition.tables.notes, text),
 		saved: disk.text,
 		/** Another program writes the file, as the shell's terminal could. */
 		outside: disk.put,
@@ -174,7 +185,7 @@ function page(
 	acquire: () => Promise<NotesHost>,
 	create = async (host: NotesHost) => {
 		const notes = createNotes(host);
-		await notes.refreshAll();
+		await notes.check();
 		return notes;
 	},
 ) {
@@ -200,9 +211,10 @@ async function editing(path: string) {
 	const { opening, prompts, problems } = page(async () => disk.host);
 	const notes = await opening;
 	await notes.open(path);
-	const draft = notes.sessionAt(path);
-	if (draft === undefined) throw new Error(`${path} did not open as text`);
-	cleanup.push(() => draft.dispose());
+	const item = notes.opened;
+	if (item?.kind !== 'text') throw new Error(`${path} did not open as text`);
+	const draft = item.session;
+	cleanup.push(() => draft.release());
 	return { gate, disk, notes, draft, prompts, problems };
 }
 
@@ -217,9 +229,7 @@ async function editingNote() {
 	if (draft === undefined)
 		throw new Error(`${NOTE_PATH} did not open as a note`);
 	cleanup.push(() => draft.release());
-	const opened = bodyCodec.decode(
-		draft.row.status === 'valid' ? draft.row.body : '',
-	);
+	const opened = bodyCodec.decode(draft.draft.body);
 	if (!opened.supported) throw new Error('The note is not rich text');
 	/** The rich-text view's state, and the state it shows after a transaction. */
 	const rich = {
@@ -228,7 +238,7 @@ async function editingNote() {
 			plugins: editingPlugins(),
 		}),
 		apply(transaction: Transaction) {
-			const next = stateAfter(rich.state, transaction, draft);
+			const next = stateAfter(rich.state, transaction, draft, () => {});
 			if (next !== undefined) rich.state = next;
 			return next;
 		},
@@ -316,18 +326,17 @@ test('a raw file draft that cannot be saved holds the close until the person cho
 	expect(gate.accepted('approve')).toEqual([]);
 	// While the person is asked, nothing more is typed.
 	expect(notes.fenced).toBe(true);
-	expect(draft.input('{"typed during the prompt": true}\n')).toBe(false);
+	expect(typed(draft, '{"typed during the prompt": true}\n')).toBe(false);
 
 	prompts[0]?.choose(false);
 	await until(() => gate.accepted('decline').length === 1, 'the decline');
-	expect(draft.buffer).toBe('{"kept": true}\n');
-	expect(draft.status).toBe('failed');
-	expect(draft.failure).toBeDefined();
+	expect(draft.draft).toBe('{"kept": true}\n');
+	expect(draft.state.status).toBe('error');
 	expect(notes.unsettled).toBe(1);
 	expect(disk.saved(RAW_PATH)).toBe(RAW);
 	// Keep editing means exactly that.
 	expect(notes.fenced).toBe(false);
-	expect(draft.input('{"kept": true, "more": 1}\n')).toBe(true);
+	expect(typed(draft, '{"kept": true, "more": 1}\n')).toBe(true);
 
 	// Keeping the draft approved nothing: the next close asks again.
 	expect(await gate.close()).toBe('held');
@@ -344,7 +353,7 @@ test('a rich-text edit that is still saving is written before the close is appro
 	disk.holdWrites();
 	expect(rich.apply(rich.state.tr.insertText('rich ', 1))).toBeDefined();
 	await until(() => disk.waitingWrites === 1, 'the save to start');
-	expect(draft.save.status).toBe('saving');
+	expect(draft.state.status).toBe('saving');
 
 	expect(await gate.close()).toBe('held');
 	// A second close while the save runs starts no second answer.
@@ -361,10 +370,10 @@ test('a rich-text edit that is still saving is written before the close is appro
 	expect(prompts).toEqual([]);
 	expect(gate.accepted('approve')).toEqual(['approve:1:1']);
 	const saved = disk.saved(NOTE_PATH) as string;
-	expect(disk.inspect(saved).body).toBe('rich body\n');
-	// The whole note is saved in one form: a value Honeycrisp does not know
-	// is kept, and the comment and the spelling are not.
-	expect(saved).toContain('"extra": 1\n');
+	expect(disk.parse(saved).data?.body).toBe('rich body\n');
+	// The whole note is saved as plain YAML: a value Honeycrisp does not
+	// know is kept, and the comment is not.
+	expect(saved).toContain('extra: 1\n');
 	expect(saved).not.toContain('# kept');
 	expect(await gate.close()).toBe('proceed');
 });
@@ -373,20 +382,19 @@ test('a rich-text edit whose save failed is kept, with its undo history, when th
 	const { gate, disk, notes, draft, rich, prompts } = await editingNote();
 	disk.failWrites();
 	expect(rich.apply(rich.state.tr.insertText('mine ', 1))).toBeDefined();
-	await draft.waitForSaves();
-	expect(draft.status).toBe('failed');
-	const mine = draft.row.text;
+	expect((await draft.settled()).status).toBe('error');
+	const mine = draft.draft.body;
 	const history = undoDepth(rich.state);
 
 	expect(await gate.close()).toBe('held');
 	await until(() => prompts.length === 1, 'the prompt');
 	// Nothing is chosen for the person while the close is being answered.
-	expect(await draft.reload()).toContain('closing');
-	expect(draft.retry()).toContain('closing');
+	expect(await notes.reloadTheirs(draft)).toContain('closing');
+	expect(await notes.keepMine(draft)).toContain('closing');
 	prompts[0]?.choose(false);
 	await until(() => gate.accepted('decline').length === 1, 'the decline');
-	expect(draft.row.text).toBe(mine);
-	expect(draft.status).toBe('failed');
+	expect(draft.draft.body).toBe(mine);
+	expect(draft.state.status).toBe('error');
 	// Nothing was written, and nothing was tried again.
 	expect(disk.saved(NOTE_PATH)).toBe(NOTE);
 	expect(gate.accepted('approve')).toEqual([]);
@@ -398,28 +406,32 @@ test('a rich-text edit whose save failed is kept, with its undo history, when th
 	expect(await gate.close()).toBe('held');
 });
 
-test('a note repaired in its file view whose write got no reply holds the close, and keeps its text', async () => {
-	const { gate, disk, notes, draft, prompts } = await editingNote();
-	expect(draft.showFile(true)).toBeUndefined();
+test('a note opened as its file whose write failed holds the close, and keeps its text', async () => {
+	const { gate, disk, notes, prompts } = await editingNote();
+	expect(await notes.open(NOTE_PATH, { as: 'text' })).toBeUndefined();
+	const item = notes.opened;
+	if (item?.kind !== 'text')
+		throw new Error('The note did not open as its file');
+	const draft = item.session;
 	const repair = '---\ntitle: [still broken\n---\nbody\n';
-	disk.loseReplies();
-	// The repair is written as typed, and its write lands with its reply lost.
-	expect(draft.setText(repair)).toBeUndefined();
+	disk.failWrites();
+	// The text is taken as typed, and its write fails.
+	expect(typed(draft, repair)).toBe(true);
 
 	expect(await gate.close()).toBe('held');
 	await until(() => prompts.length === 1, 'the prompt');
 	expect(prompts[0]?.remaining).toBe(1);
-	expect(draft.status).toBe('unconfirmed');
-	expect(disk.saved(NOTE_PATH)).toBe(repair);
+	expect(draft.state.status).toBe('error');
+	expect(disk.saved(NOTE_PATH)).toBe(NOTE);
 	expect(gate.accepted('approve')).toEqual([]);
 
 	prompts[0]?.choose(false);
 	await until(() => gate.accepted('decline').length === 1, 'the decline');
-	// Keep editing: the same editor, its text, and its unknown outcome.
+	// Keep editing: the same session, its text, and its failed save.
 	expect(notes.fenced).toBe(false);
-	expect(notes.noteAt(NOTE_PATH)).toBe(draft);
-	expect(draft.row.text).toBe(repair);
-	expect(draft.status).toBe('unconfirmed');
+	expect(notes.opened).toBe(item);
+	expect(draft.draft).toBe(repair);
+	expect(draft.state.status).toBe('error');
 
 	// Discarding is the person's choice at the next close, for this request only.
 	expect(await gate.close()).toBe('held');
@@ -471,48 +483,18 @@ test.each([
 	expect(await changing).toBeUndefined();
 	await until(() => gate.accepted('approve').length === 1, 'the approval');
 	expect(prompts).toEqual([]);
-	expect(notes.pending).toEqual([]);
 	expect(await gate.close()).toBe('proceed');
 });
 
-test('a new note whose reply is lost holds the close until the person chooses, and is not forgotten', async () => {
+test('a new note whose reply is lost is reported once and does not hold the close', async () => {
 	const { gate, disk, notes, prompts } = await browsing();
 	disk.loseReplies();
-	expect(await notes.createNote()).toContain('not confirmed');
-	expect(notes.pending).toMatchObject([
-		{ kind: 'createRow', label: 'New note' },
-	]);
-	expect(notes.unsettled).toBe(1);
-
+	expect(await notes.createNote()).toContain('nothing confirmed it');
+	expect(notes.unsettled).toBe(0);
 	expect(await gate.close()).toBe('held');
-	await until(() => prompts.length === 1, 'the prompt');
-	expect(prompts[0]?.remaining).toBe(1);
-	expect(gate.accepted('approve')).toEqual([]);
-	prompts[0]?.choose(false);
-	await until(() => gate.accepted('decline').length === 1, 'the decline');
-	// Keep editing keeps the record as it was.
-	expect(notes.fenced).toBe(false);
-	expect(notes.pending).toMatchObject([
-		{ kind: 'createRow', label: 'New note' },
-	]);
-});
-
-test('a reply lost while the close is being answered is counted by that close', async () => {
-	const { gate, disk, notes, prompts } = await browsing();
-	disk.loseReplies();
-	disk.holdWrites();
-	const creating = notes.createNote();
-	await until(() => disk.waitingWrites === 1, 'the creation to be sent');
-	expect(await gate.close()).toBe('held');
-	await until(() => notes.fenced, 'the fence');
-	disk.releaseWrites();
-	// The unknown outcome is on record before the close counts.
-	await until(() => prompts.length === 1, 'the prompt');
-	expect(prompts[0]?.remaining).toBe(1);
-	expect(await creating).toContain('not confirmed');
-	expect(gate.accepted('approve')).toEqual([]);
-	prompts[0]?.choose(false);
-	await until(() => gate.accepted('decline').length === 1, 'the decline');
+	await until(() => gate.accepted('approve').length === 1, 'the approval');
+	expect(prompts).toEqual([]);
+	expect(await gate.close()).toBe('proceed');
 });
 
 test('a rename still reading its file when the close begins is never sent', async () => {
@@ -531,7 +513,6 @@ test('a rename still reading its file when the close begins is never sent', asyn
 	expect(await renaming).toContain('closing');
 	expect(disk.moves).toBe(0);
 	expect(disk.paths()).toEqual(pathsBefore);
-	expect(notes.pending).toEqual([]);
 });
 
 // ============================================================================
@@ -609,14 +590,14 @@ test('nothing is typed while an approval is on its way, so the close proceeds wi
 
 	// The approval has left the page and has not reached the shell.
 	expect(notes.fenced).toBe(true);
-	expect(draft.input('{"typed late": true}\n')).toBe(false);
+	expect(typed(draft, '{"typed late": true}\n')).toBe(false);
 	expect(await notes.createNote()).toContain('closing');
 	expect(notes.unsettled).toBe(0);
 	await approval.deliver();
 
 	// The gate took the approval: the desktop shell exits here.
 	expect(gate.accepted('approve')).toEqual(['approve:1:1']);
-	expect(disk.saved(RAW_PATH)).toBe(draft.buffer);
+	expect(disk.saved(RAW_PATH)).toBe(draft.draft);
 	expect(notes.fenced).toBe(true);
 });
 
@@ -634,7 +615,7 @@ test('an approval the shell refuses releases the fence, and the page says why', 
 	expect(problems[0]).toBe('this page was replaced by a newer one');
 	expect(gate.accepted('approve')).toEqual([]);
 	expect(notes.fenced).toBe(false);
-	expect(draft.input('{"still editing": true}\n')).toBe(true);
+	expect(typed(draft, '{"still editing": true}\n')).toBe(true);
 });
 
 test('an approval the gate refuses because the request was already answered releases the fence', async () => {
@@ -652,7 +633,7 @@ test('an approval the gate refuses because the request was already answered rele
 	);
 	expect(gate.accepted('approve')).toEqual([]);
 	expect(notes.fenced).toBe(false);
-	expect(draft.input('{"still editing": true}\n')).toBe(true);
+	expect(typed(draft, '{"still editing": true}\n')).toBe(true);
 });
 
 test('"the app is already closing" keeps the fence: it is a refusal, and the app is going', async () => {
@@ -678,7 +659,7 @@ test('"the app is already closing" keeps the fence: it is a refusal, and the app
 	await until(() => problems.length === 1, 'the refused approval');
 	expect(problems[0]).toBe('the app is already closing');
 	expect(notes.fenced).toBe(true);
-	expect(draft.input('{"typed late": true}\n')).toBe(false);
+	expect(typed(draft, '{"typed late": true}\n')).toBe(false);
 	expect(await gate.close()).toBe('proceed');
 });
 
@@ -696,7 +677,7 @@ test.each([
 	// Whether the shell took it is unknown, so nothing may be typed.
 	expect(gate.accepted('approve')).toEqual([]);
 	expect(notes.fenced).toBe(true);
-	expect(draft.input('{"typed late": true}\n')).toBe(false);
+	expect(typed(draft, '{"typed late": true}\n')).toBe(false);
 	// The shell did not take it: the same request is asked again and answered.
 	expect(await gate.close()).toBe('held');
 	await until(() => gate.accepted('approve').length === 1, 'the approval');

@@ -17,8 +17,7 @@ import {
 	field,
 	rowPath,
 	rowStemOf,
-	type TableReading,
-	type TableSnapshot,
+	type StoredRow,
 } from '@epicenter/folder';
 
 export const honeycrispDefinition = defineFolder({
@@ -55,13 +54,12 @@ export type FolderFields = CreateRowOf<
 >;
 
 /**
- * A saved file as it was read. `fields` holds the declared fields that
- * validated, each by itself, and none when the text does not parse; `source`
- * is then all there is to show. A folder's id, the value a note's `folderId`
- * holds, is its literal `stem`.
+ * A row as the last listing read it: the bytes read, the row they hold, and
+ * its stem. A folder's id, the value a note's `folderId` holds, is its
+ * literal `stem`.
  */
-export type NoteEntry = TableSnapshot<NoteFields>;
-export type FolderEntry = TableSnapshot<FolderFields>;
+export type NoteEntry = StoredRow<NoteFields> & { readonly stem: string };
+export type FolderEntry = StoredRow<FolderFields> & { readonly stem: string };
 
 export const NOTES = 'notes';
 
@@ -78,22 +76,12 @@ export function noteIdOf(path: string): NoteId | undefined {
 	return rowStemOf(NOTES, path);
 }
 
-/** How a note's text reads: `inspectRow(honeycrispDefinition.tables.notes, text)`. */
-export type InspectNote = (text: string) => TableReading<NoteFields>;
-
 /** The name a person sees for a folder: its `name`, else its file. */
 export function folderLabel(folder: FolderEntry): string {
-	const { name } = folder.fields;
+	const { name } = folder.row.fields;
 	if (name !== undefined && name !== '') return name;
 	// An empty stem (`folders/.md`) is not a readable label.
 	return folder.stem === '' ? folder.path : folder.stem;
-}
-
-/** Why a saved file needs repair, in the first message that says so, or undefined. */
-export function repairReason(
-	entry: TableSnapshot<unknown>,
-): string | undefined {
-	return entry.parseError?.message ?? entry.issues[0]?.message;
 }
 
 /** The current time as the files store it. */

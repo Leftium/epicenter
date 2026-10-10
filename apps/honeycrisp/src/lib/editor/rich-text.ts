@@ -3,25 +3,27 @@
  * that keep its ProseMirror state the note's body.
  *
  * The view's `EditorState` is the one rich-text state: document, cursor,
- * pending formatting, and undo history. The note's row editor holds the one
- * body. Nothing records which body the state last read or wrote; the body is
- * compared by content:
+ * pending formatting, and undo history. The note's edit session holds the one
+ * body, in its draft. Nothing records which body the state last read or
+ * wrote; the body is compared by content:
  *
  * - `stateAfter` decides every transaction before it is shown. One that
- *   changes the document is checked against the current body first, then the
- *   whole note with its Markdown goes to the note's editor in the same step.
- *   If the Markdown would not open as the same document, or the editor does
- *   not acknowledge the note, the screen does not change. There is never text
- *   on screen that the editor does not hold, and nothing is shown that the
- *   editor would not take, even an edit that leaves the body as it is.
+ *   changes the document is checked against the current body first, then its
+ *   Markdown goes into the draft in the same step, which saves it. If the
+ *   Markdown would not open as the same document, or the session takes no
+ *   input, the screen does not change. There is never text on screen that the
+ *   draft does not hold.
  * - `stateShowing` follows the body. The same content keeps the state, so a
  *   body this view wrote, or a respelling in Source, changes nothing on
- *   screen. Different content (Source, a reloaded file, a chosen version)
- *   starts a new state and a new undo history, because the old history
- *   describes text that is gone.
+ *   screen. Different content (Source, or a chosen version) starts a new
+ *   state and a new undo history, because the old history describes text
+ *   that is gone.
  *
  * Neither needs a DOM. The view calls both; tests drive them the same way.
  */
+
+import type { RowSession } from '@epicenter/svelte/edit-session';
+import { wellFormed } from '@epicenter/svelte/edit-session';
 import {
 	baseKeymap,
 	chainCommands,
@@ -51,7 +53,7 @@ import {
 	type Plugin,
 	type Transaction,
 } from 'prosemirror-state';
-import type { NoteEditor } from '../note-editor.svelte.js';
+import type { NoteFields } from '../data.js';
 import { withBody } from '../note-source.js';
 import { bodyCodec, equivalentNoteDocs } from './markdown.js';
 import { noteSchema } from './schema.js';
@@ -169,43 +171,53 @@ export function stateShowing(state: EditorState, doc: Node): EditorState {
 	return EditorState.create({ doc, plugins: state.plugins });
 }
 
+/** What the rich-text view needs of a note's edit session. */
+export type NoteBody = Pick<
+	RowSession<NoteFields>,
+	'draft' | 'locked' | 'edit'
+>;
+
 /**
  * The state to show after `transaction`, or undefined when the screen stays
  * as it is.
  *
  * A transaction built on a document `state` no longer has is dropped: its
- * steps describe text that was replaced. One that changes the document first
- * meets the body `editor` holds now. A body that changed elsewhere since
- * `state` showed it is shown instead and the transaction is dropped; a body
- * that is no longer rich text takes nothing, and the view leaves for Source.
- * Then the whole note with the new body goes to `editor`, and the new state is
- * shown only once the editor acknowledged it. Markdown that cannot spell the
- * new document is refused with its reason. `editor` is the one holding the
- * note at this transaction: a rename hands the view to another.
+ * steps describe text that was replaced. One that changes the document is
+ * refused while the session takes no input. It then meets the body the draft
+ * holds now: a body that changed elsewhere since `state` showed it is shown
+ * instead and the transaction is dropped, and a body that is no longer rich
+ * text takes nothing. Markdown that cannot spell the new document is refused
+ * with its reason through `refuse`. Otherwise the new body goes into the
+ * draft, which saves it. A lone surrogate a file cannot hold becomes U+FFFD,
+ * and the screen shows what saves.
  */
 export function stateAfter(
 	state: EditorState,
 	transaction: Transaction,
-	editor: NoteEditor,
+	note: NoteBody,
+	refuse: (reason: string) => void,
 ): EditorState | undefined {
 	if (transaction.before !== state.doc) return undefined;
 	// A selection or pending formatting writes nothing: opening a note never
 	// changes its file.
 	if (!transaction.docChanged) return state.apply(transaction);
-	const { row } = editor;
-	if (row.status !== 'valid') return undefined;
-	const current = bodyCodec.decode(row.body);
+	if (note.locked) return undefined;
+	const { body } = note.draft;
+	const current = bodyCodec.decode(body);
 	if (!current.supported) return undefined;
 	const shown = stateShowing(state, current.doc);
 	if (shown !== state) return shown;
 	const next = state.apply(transaction);
-	const { data: body, error } = bodyCodec.encode(next.doc, row.body);
+	const { data: encoded, error } = bodyCodec.encode(next.doc, body);
 	if (error !== null) {
-		editor.refuse(error);
+		refuse(error);
 		return undefined;
 	}
+	const written = wellFormed(encoded);
 	// An edit Markdown has no spelling for (a new empty paragraph) gives the
-	// same body back, so `withBody` gives the row itself; the editor admits it
-	// without saving.
-	return editor.set(withBody(row, body)) === undefined ? next : undefined;
+	// same body back: it is shown, and nothing saves.
+	if (written !== body) note.edit((row) => withBody(row, written));
+	if (written === encoded) return next;
+	const saved = bodyCodec.decode(written);
+	return saved.supported ? stateShowing(next, saved.doc) : undefined;
 }

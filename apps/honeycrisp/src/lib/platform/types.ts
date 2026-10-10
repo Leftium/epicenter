@@ -8,7 +8,7 @@
  * the optional capabilities below.
  */
 import { APPS } from '@epicenter/constants/apps';
-import type { Folder, FolderFiles, FolderGit } from '@epicenter/folder';
+import type { Folder, FolderGit } from '@epicenter/folder';
 import type { honeycrispDefinition } from '../data.js';
 
 type Definition = typeof honeycrispDefinition;
@@ -21,39 +21,12 @@ type Definition = typeof honeycrispDefinition;
 export const HONEYCRISP_FOLDER_ID = APPS.HONEYCRISP.id;
 
 /**
- * The folder surface the notes UI uses. Tables are read as listings and
- * create new rows. An open note is changed through its table's row editor
- * (`edit`), which saves the complete canonical document; a field change to
- * a row with no editor assigns those fields in its current text (`update`).
- * A file being repaired is read with `inspectRow` and the definition, not
- * through the folder. Every other change to a file goes through `files`, on
- * a capture. The folder says when files changed, as a hint to read again.
+ * The folder surface the notes UI uses: its tables and files, whole, since an
+ * edit session saves through them, and the Git status and history it shows.
  * Remotes are outside this app.
  */
-export type NotesFolder = {
-	tables: {
-		notes: Pick<
-			Folder<Definition>['tables']['notes'],
-			'list' | 'create' | 'edit' | 'update'
-		>;
-		folders: Pick<
-			Folder<Definition>['tables']['folders'],
-			'list' | 'create' | 'update'
-		>;
-	};
-	files: Pick<
-		FolderFiles,
-		| 'list'
-		| 'read'
-		| 'create'
-		| 'replace'
-		| 'move'
-		| 'remove'
-		| 'mkdir'
-		| 'rmdir'
-	>;
+export type NotesFolder = Pick<Folder<Definition>, 'tables' | 'files'> & {
 	git: Pick<FolderGit, 'snapshot' | 'subscribe' | 'status' | 'commit' | 'log'>;
-	onFilesChanged: Folder<Definition>['onFilesChanged'];
 };
 
 export type TerminalRun = {

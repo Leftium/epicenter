@@ -1,40 +1,22 @@
 /**
  * Note View Tests
  *
- * Mounts the real note view, `NoteDetail`, with its status bar, rich-text
- * editor, and UI library, over the real notes state and the production row
- * editor on the in-memory OPFS stand-in. Events are delivered to the DOM the
- * view renders; jsdom has no layout, focus, selection, or IME, so these show
- * what a delivered event does, not that a person can type there.
+ * Mounts the real note view, `NoteDetail`, with its save bar, rich-text
+ * editor, and UI library, over the real notes state and a real row session
+ * on the in-memory OPFS stand-in. Events are delivered to the DOM the view
+ * renders; jsdom has no layout, focus, selection, or IME, so these show what
+ * a delivered event does, not that a person can type there.
  *
  * Key behaviors:
- * - One mounted view, reused for note A, then B, then A, edits the note it
- *   shows at the moment of each event
- * - A control that outlives its view, or its tab, delivers input nothing takes
- * - Each conditional control has its own lifetime: after file view A, the
- *   fields, then file view B (and Source A, rich text, Source B), A takes
- *   nothing for good and B works
- * - Switching between rich text and Source, or typing a title, keeps the one
- *   rich-text view, so its focus and undo history stay
- * - Rich-text typing and Enter reach the note through ProseMirror's own DOM
- *   reading, and stay undoable; the same content respelled in Source keeps
- *   that history, different Source text replaces it, and typing goes on
- * - A rich-text command that arrives before the view followed Source is
- *   dropped; Source the editor cannot hold shows Source only and writes
- *   nothing, and a repair opens rich text again
- * - Another program's change shows only on Reload file; with text not saved
- *   the person confirms first, and a reload that fails keeps the text
- * - A failed save keeps the text editable and offers Try again; typing
- *   afterwards saves again
- * - A save that finds no file offers Save as a note at once, with no reload,
- *   and a later save that lands clears the error and the offer
- * - A title or Source body the editor refuses changes nothing: after the
- *   event the control shows the note again, a notice says why, and the same
- *   refusal again is a new notice. A failed save keeps its text and error
- *   beside it, and an empty paragraph from rich text is shown with no save
- * - The file view shows LF and writes the file's own line endings back, and
- *   its control takes nothing once the fields show again
- * - Both status bars name an unconfirmed save in the folder's own words
+ * - Typing a title saves it, and switching between rich text and Source or
+ *   typing a title keeps the one rich-text view
+ * - Rich-text typing reaches the draft through ProseMirror's own DOM reading,
+ *   saves, and stays undoable after the save lands
+ * - Different Source text replaces the rich-text document
+ * - A change made elsewhere asks Reload theirs or Keep mine; Reload theirs
+ *   remounts the rich-text view on their text, Keep mine saves the draft
+ * - A note deleted elsewhere asks Discard or Keep mine
+ * - While the app answers a close, the controls take no input
  */
 import '../../lib/dom.test-support.ts';
 import { afterEach, expect, test } from 'bun:test';
@@ -44,7 +26,6 @@ import {
 	openNotesFolder,
 	until,
 } from '../../lib/folder.test-support.js';
-import type { NoteEditor } from '../../lib/note-editor.svelte.js';
 
 // jsdom has no layout, and its ranges cannot be measured. ProseMirror
 // measures the cursor to scroll it into view after typing; it gets no boxes.
@@ -55,205 +36,52 @@ Range.prototype.getBoundingClientRect ??= () =>
 
 const { flushSync, mount, unmount } = await import('svelte');
 const { createNotes } = await import('../../lib/notes.svelte.ts');
-const { switchable } = await import('../../lib/effects.test-support.svelte.ts');
 const { default: NoteDetail } = await import('./NoteDetail.svelte');
-const { default: DraftStatus } = await import('./DraftStatus.svelte');
 const { default: Host } = await import('../../lib/ui-host.test-support.svelte');
-
-/** Mount `component` as the page renders it, with `props` read when it reads them. */
-function render(component: unknown, props: Record<string, unknown>) {
-	const target = document.createElement('div');
-	document.body.append(target);
-	const host = mount(Host, {
-		target,
-		props: { component: component as never, props },
-	});
-	flushSync();
-	let mounted = true;
-	const close = () => {
-		if (!mounted) return;
-		mounted = false;
-		unmount(host);
-		flushSync();
-	};
-	cleanup.push(() => {
-		close();
-		target.remove();
-	});
-	return { target, close };
-}
 
 const cleanup: (() => unknown)[] = [];
 afterEach(async () => {
 	for (const stop of cleanup.splice(0).reverse()) await stop();
 });
 
-/** Two notes open in the notes state, and one view showing the first. */
+/** Note `a` open in the notes state, and its view mounted as the page renders it. */
 async function view() {
 	const fixture = await openNotesFolder();
 	const notes = createNotes(fixture.host);
 	cleanup.push(() => notes.close());
 	await fixture.write('notes/a.md', noteText({ title: 'Alpha' }));
-	await fixture.write('notes/b.md', noteText({ title: 'Beta' }));
-	await notes.refreshAll();
-	const opened = async (path: string) => {
-		await notes.open(path);
-		const session = notes.noteAt(path);
-		if (session === undefined) throw new Error(`${path} did not open`);
-		return session;
-	};
-	const a = await opened('notes/a.md');
-	const b = await opened('notes/b.md');
-	const shown = switchable(a);
-	const { target, close } = render(NoteDetail, {
-		notes,
-		get editor() {
-			return shown.value;
-		},
+	await notes.check();
+	await notes.open('notes/a.md');
+	const item = notes.opened;
+	if (item?.kind !== 'note')
+		throw new Error('notes/a.md did not open as a note');
+	const session = item.session;
+	const target = document.createElement('div');
+	document.body.append(target);
+	const host = mount(Host, {
+		target,
+		props: { component: NoteDetail as never, props: { notes, session } },
 	});
-	return { ...fixture, notes, a, b, opened, shown, target, close };
+	flushSync();
+	cleanup.push(() => {
+		unmount(host);
+		flushSync();
+		target.remove();
+	});
+	return { ...fixture, notes, session, target };
 }
 
-const titleOf = (session: NoteEditor) =>
-	session.row.status === 'valid' ? session.row.fields.title : undefined;
-
-/** Let a binding's after-input check run, then render. */
-async function tick() {
-	await new Promise((resolve) => setTimeout(resolve, 0));
-	flushSync();
-}
-
-test('one reused view edits the note it shows at each event: A, then B, then A', async () => {
-	const { a, b, shown, target } = await view();
-	const title = target.querySelector<HTMLInputElement>(
-		'input[aria-label="Title"]',
-	);
-	if (title === null) throw new Error('No title control');
-	expect(title.value).toBe('Alpha');
-
-	shown.value = b;
-	flushSync();
-	// The same control, now showing B.
-	expect(target.querySelector('input[aria-label="Title"]')).toBe(title);
-	expect(title.value).toBe('Beta');
-	const alpha = a.row.text;
-	type(title, 'Beta typed');
-	flushSync();
-	expect(titleOf(b)).toBe('Beta typed');
-	expect(a.row.text).toBe(alpha);
-
-	shown.value = a;
-	flushSync();
-	expect(title.value).toBe('Alpha');
-	type(title, 'Alpha typed');
-	flushSync();
-	expect(titleOf(a)).toBe('Alpha typed');
-	expect(titleOf(b)).toBe('Beta typed');
-});
-
-test('a control that outlives its view or its tab delivers input that nothing takes', async () => {
-	const { a, target, close } = await view();
-	const before = a.row.text;
-	click(target, 'Source');
-	flushSync();
-	const source = target.querySelector<HTMLTextAreaElement>(
-		'textarea[aria-label="Markdown source"]',
-	);
-	if (source === null) throw new Error('No Source view');
-	expect(source.value).toBe('Body.\n');
-	click(target, 'Rich text');
-	flushSync();
-	expect(source.isConnected).toBe(false);
-	// The Source tab is gone; its retained control still delivers input.
-	type(source, 'Typed into a tab that is gone\n');
-	flushSync();
-	expect(a.row.text).toBe(before);
-
-	const title = target.querySelector<HTMLInputElement>(
-		'input[aria-label="Title"]',
-	);
-	close();
-	type(title, 'Typed into a view that is gone');
-	expect(a.row.text).toBe(before);
-	expect(a.save.status).toBe('idle');
-});
-
-/** The one control matching `selector`, or a failure naming it. */
 function only<T extends Element>(target: ParentNode, selector: string): T {
 	const found = target.querySelector<T>(selector);
 	if (found === null) throw new Error(`Nothing matches ${selector}`);
 	return found;
 }
 
-test('a file view that is gone takes nothing for good, after the fields and a new file view show', async () => {
-	const { a, target } = await view();
-	click(target, 'Edit as file');
+/** Let a binding's after-input check run, then render. */
+async function tick() {
+	await new Promise((resolve) => setTimeout(resolve, 0));
 	flushSync();
-	const fileA = only<HTMLTextAreaElement>(
-		target,
-		'textarea[aria-label^="Contents of"]',
-	);
-	click(target, 'Open as note');
-	flushSync();
-	click(target, 'Edit as file');
-	flushSync();
-	const fileB = only<HTMLTextAreaElement>(
-		target,
-		'textarea[aria-label^="Contents of"]',
-	);
-	expect(fileB).not.toBe(fileA);
-	// The same view, mode, and session as when A was live: A still takes nothing.
-	const before = a.row.text;
-	type(fileA, 'from the old file view');
-	flushSync();
-	expect(a.row.text).toBe(before);
-	type(fileB, fileB.value.replace('Body.', 'From the new one.'));
-	flushSync();
-	expect(a.row.text).toContain('From the new one.');
-});
-
-test('a Source view that is gone takes nothing for good, after rich text and a new Source view show', async () => {
-	const { a, target } = await view();
-	click(target, 'Source');
-	flushSync();
-	const sourceA = only<HTMLTextAreaElement>(
-		target,
-		'textarea[aria-label="Markdown source"]',
-	);
-	click(target, 'Rich text');
-	flushSync();
-	click(target, 'Source');
-	flushSync();
-	const sourceB = only<HTMLTextAreaElement>(
-		target,
-		'textarea[aria-label="Markdown source"]',
-	);
-	expect(sourceB).not.toBe(sourceA);
-	const before = a.row.text;
-	type(sourceA, 'From the old Source\n');
-	flushSync();
-	expect(a.row.text).toBe(before);
-	type(sourceB, 'From the new Source\n');
-	flushSync();
-	expect(a.row).toMatchObject({ body: 'From the new Source\n' });
-});
-
-test('switching between rich text and Source, or typing a title, keeps the one rich-text view', async () => {
-	const { a, target } = await view();
-	const rich = only<HTMLElement>(target, '[aria-label="Note text"]');
-	click(target, 'Source');
-	flushSync();
-	click(target, 'Rich text');
-	flushSync();
-	expect(only(target, '[aria-label="Note text"]')).toBe(rich);
-	type(only<HTMLInputElement>(target, 'input[aria-label="Title"]'), 'Retitled');
-	await tick();
-	expect(titleOf(a)).toBe('Retitled');
-	expect(only(target, '[aria-label="Note text"]')).toBe(rich);
-	await a.waitForSaves();
-	flushSync();
-	expect(rich.isConnected).toBe(true);
-});
+}
 
 /**
  * Type into the rich-text view the way the browser reports typing: change the
@@ -266,59 +94,56 @@ async function typeRich(rich: HTMLElement, text: string) {
 	await tick();
 }
 
-/** The rich-text view's Undo button. */
+const richOf = (target: ParentNode) =>
+	only<HTMLElement>(target, '[aria-label="Note text"]');
+const titleOf = (target: ParentNode) =>
+	only<HTMLInputElement>(target, 'input[aria-label="Title"]');
 const undoButton = (target: ParentNode) =>
 	only<HTMLButtonElement>(target, 'button[aria-label="Undo"]');
 
-test('rich-text typing and Enter go into the note, keep the one view, and stay undoable', async () => {
-	const { a, target } = await view();
-	const rich = only<HTMLElement>(target, '[aria-label="Note text"]');
-	await typeRich(rich, ' Typed');
-	expect(a.row).toMatchObject({ body: 'Body. Typed\n' });
-	await typeRich(rich, ' more');
-	expect(a.row).toMatchObject({ body: 'Body. Typed more\n' });
-	rich.dispatchEvent(
-		new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }),
-	);
+test('typing a title saves it, and switching tabs or typing keeps the one rich-text view', async () => {
+	const { session, target, text } = await view();
+	const rich = richOf(target);
+	click(target, 'Source');
 	flushSync();
-	expect(rich.querySelectorAll('p')).toHaveLength(2);
-	// The view wrote that body itself: it stays, with its history.
-	expect(only(target, '[aria-label="Note text"]')).toBe(rich);
+	click(target, 'Rich text');
+	flushSync();
+	expect(richOf(target)).toBe(rich);
+	type(titleOf(target), 'Retitled');
+	await tick();
+	expect(session.draft.fields.title).toBe('Retitled');
+	expect((await session.settled()).status).toBe('saved');
+	flushSync();
+	expect(text('notes/a.md')).toContain('title: Retitled');
+	expect(richOf(target)).toBe(rich);
+	expect(rich.isConnected).toBe(true);
+});
+
+test('rich-text typing saves, and stays undoable after the save lands', async () => {
+	const { session, target, text } = await view();
+	const rich = richOf(target);
+	await typeRich(rich, ' Typed');
+	expect(session.draft.body).toBe('Body. Typed\n');
+	expect((await session.settled()).status).toBe('saved');
+	flushSync();
+	expect(text('notes/a.md')).toContain('Body. Typed\n');
+	// A save never assigns the draft: the same view and its history stay.
+	expect(richOf(target)).toBe(rich);
 	expect(undoButton(target).disabled).toBe(false);
-	// The cursor is at the start: Enter made an empty first paragraph, which
-	// Markdown cannot spell, so the note did not change.
-	expect(a.row).toMatchObject({ body: 'Body. Typed more\n' });
 	while (!undoButton(target).disabled) {
 		undoButton(target).dispatchEvent(
 			new MouseEvent('click', { bubbles: true }),
 		);
 		flushSync();
 	}
-	expect(a.row).toMatchObject({ body: 'Body.\n' });
+	expect(session.draft.body).toBe('Body.\n');
 	expect(rich.textContent).toBe('Body.');
 });
 
-test('Source with the same content keeps rich text’s undo; different Source text replaces it', async () => {
-	const { a, target } = await view();
-	const rich = only<HTMLElement>(target, '[aria-label="Note text"]');
+test('different Source text replaces the rich-text document, and typing goes on there', async () => {
+	const { session, target } = await view();
+	const rich = richOf(target);
 	await typeRich(rich, ' Typed');
-	click(target, 'Source');
-	flushSync();
-	const source = only<HTMLTextAreaElement>(
-		target,
-		'textarea[aria-label="Markdown source"]',
-	);
-	// Trailing blank lines: another spelling of the same document.
-	type(source, 'Body. Typed\n\n\n');
-	await tick();
-	click(target, 'Rich text');
-	flushSync();
-	expect(only(target, '[aria-label="Note text"]')).toBe(rich);
-	expect(undoButton(target).disabled).toBe(false);
-	undoButton(target).dispatchEvent(new MouseEvent('click', { bubbles: true }));
-	flushSync();
-	expect(a.row).toMatchObject({ body: 'Body.\n' });
-
 	click(target, 'Source');
 	flushSync();
 	type(
@@ -326,361 +151,74 @@ test('Source with the same content keeps rich text’s undo; different Source te
 		'Different\n',
 	);
 	await tick();
+	expect(session.draft.body).toBe('Different\n');
 	click(target, 'Rich text');
 	flushSync();
-	expect(only(target, '[aria-label="Note text"]')).toBe(rich);
 	expect(rich.textContent).toBe('Different');
 	expect(undoButton(target).disabled).toBe(true);
-	// Typing goes on in the replaced document.
 	await typeRich(rich, ' again');
-	expect(a.row).toMatchObject({ body: 'Different again\n' });
+	expect(session.draft.body).toBe('Different again\n');
 });
 
-test('a rich-text command that arrives before the view followed Source is dropped', async () => {
-	const { a, target } = await view();
-	const rich = only<HTMLElement>(target, '[aria-label="Note text"]');
-	click(target, 'Source');
-	flushSync();
-	type(
-		only<HTMLTextAreaElement>(target, 'textarea[aria-label="Markdown source"]'),
-		'From Source\n',
-	);
-	// Nothing has flushed: the rich-text view still shows the old document.
-	expect(rich.textContent).toBe('Body.');
-	only<HTMLButtonElement>(target, 'button[aria-label="Divider"]').dispatchEvent(
-		new MouseEvent('click', { bubbles: true }),
-	);
-	expect(a.row).toMatchObject({ body: 'From Source\n' });
-	expect(rich.textContent).toBe('From Source');
-	expect(rich.querySelector('hr')).toBeNull();
-	flushSync();
-	expect(undoButton(target).disabled).toBe(true);
+test('a change made elsewhere asks first; Reload theirs remounts the rich-text view on their text', async () => {
+	const { session, target, put } = await view();
+	const rich = richOf(target);
+	put('notes/a.md', noteText({ title: 'Theirs', body: 'Their body.\n' }));
+	type(titleOf(target), 'Mine');
+	await session.settled();
+	await tick();
+	expect(target.textContent).toContain('This changed elsewhere');
+	expect(buttonNamed(target, 'Keep mine')).toBeDefined();
+	click(target, 'Reload theirs');
+	await until(() => session.draft.fields.title === 'Theirs', 'the reload');
+	await tick();
+	expect(titleOf(target).value).toBe('Theirs');
+	expect(richOf(target)).not.toBe(rich);
+	expect(richOf(target).textContent).toBe('Their body.');
+	expect(target.textContent).not.toContain('This changed elsewhere');
 });
 
-test('Source the editor cannot hold shows rich text as Source only, writes nothing, and a repair opens rich text again', async () => {
-	const { opened, shown, target, write } = await view();
-	await write(
-		'notes/c.md',
-		noteText({ title: 'Tags', body: '\\<b>x\\</b>\n' }),
-	);
-	const c = await opened('notes/c.md');
-	shown.value = c;
-	flushSync();
-	expect(only(target, '[aria-label="Note text"]').textContent).toBe('<b>x</b>');
-	click(target, 'Source');
-	flushSync();
-	// Raw HTML reads as the same text, and the editor still refuses it.
-	type(
-		only<HTMLTextAreaElement>(target, 'textarea[aria-label="Markdown source"]'),
-		'<b>x</b>\n',
-	);
+test('Keep mine saves the draft over a change made elsewhere', async () => {
+	const { session, target, put, text } = await view();
+	put('notes/a.md', noteText({ title: 'Theirs' }));
+	type(titleOf(target), 'Mine');
+	await session.settled();
 	await tick();
-	expect(target.querySelector('[aria-label="Note text"]')).toBeNull();
-	expect(target.textContent).toContain('This note opens in Source only');
-	expect(target.textContent).toContain('It contains HTML.');
-	expect(c.row).toMatchObject({ body: '<b>x</b>\n' });
-
-	type(
-		only<HTMLTextAreaElement>(target, 'textarea[aria-label="Markdown source"]'),
-		'Repaired\n',
-	);
-	await tick();
-	click(target, 'Rich text');
-	flushSync();
-	const reopened = only<HTMLElement>(target, '[aria-label="Note text"]');
-	expect(reopened.textContent).toBe('Repaired');
-	await typeRich(reopened, ' and typed');
-	expect(c.row).toMatchObject({ body: 'Repaired and typed\n' });
-});
-
-test('a new editor with the same content keeps the rich-text view and its undo, and takes the next edit', async () => {
-	const { a, opened, shown, target, write } = await view();
-	const rich = only<HTMLElement>(target, '[aria-label="Note text"]');
-	await typeRich(rich, ' Typed');
-	expect(a.row).toMatchObject({ body: 'Body. Typed\n' });
-	// As a rename does: the same note at another path, here also respelled.
-	await write(
-		'notes/c.md',
-		noteText({ title: 'Alpha', body: 'Body. Typed\n\n\n' }),
-	);
-	const c = await opened('notes/c.md');
-	shown.value = c;
-	flushSync();
-	expect(only(target, '[aria-label="Note text"]')).toBe(rich);
-	expect(undoButton(target).disabled).toBe(false);
-	await typeRich(rich, ' more');
-	expect(c.row).toMatchObject({ body: 'Body. Typed more\n' });
-	expect(a.row).toMatchObject({ body: 'Body. Typed\n' });
-});
-
-/**
- * Type `value`, which must not be well formed, into `element`. Checked before
- * the event, so a normalized replacement character cannot pass for a refusal.
- */
-function typeMalformed(element: HTMLInputElement | HTMLTextAreaElement, value: string) {
-	element.value = value;
-	expect(element.value.isWellFormed()).toBe(false);
-	element.dispatchEvent(new window.Event('input', { bubbles: true }));
-}
-
-test('Source the editor refuses snaps back to the body after the event, says why each time, and rich text goes on without a save', async () => {
-	const { a, target } = await view();
-	const rich = only<HTMLElement>(target, '[aria-label="Note text"]');
-	click(target, 'Source');
-	flushSync();
-	const source = only<HTMLTextAreaElement>(
-		target,
-		'textarea[aria-label="Markdown source"]',
-	);
-	const shown = source.value;
-	const before = a.row;
-	typeMalformed(source, 'Half \uD800\n');
-	await tick();
-	expect(source.value).toBe(shown);
-	expect(a.row).toBe(before);
-	const notice = () => target.querySelector('[data-testid="note-refusal"]');
-	const first = notice();
-	expect(first?.getAttribute('role')).toBe('alert');
-	expect(first?.textContent).toContain('lone surrogate');
-	typeMalformed(source, 'Half \uD800\n');
-	await tick();
-	// The same reason again replaces the alert, so it is announced again.
-	expect(notice()).not.toBe(first);
-	expect(notice()?.textContent).toBe(first?.textContent);
-	expect(source.value).toBe(shown);
-	// The note is not unsaved, and the rich-text view takes an edit Markdown
-	// cannot spell (a new empty paragraph) with no save.
-	expect(only(target, '[data-testid="draft-status"]').getAttribute('data-status')).toBe('saved');
-	click(target, 'Rich text');
-	flushSync();
-	rich.dispatchEvent(
-		new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }),
-	);
-	flushSync();
-	expect(rich.querySelectorAll('p')).toHaveLength(2);
-	expect(a.row).toBe(before);
-	expect(a.save.status).toBe('idle');
-});
-
-test('a rich-text toolbar button from a view that is gone changes nothing', async () => {
-	const { a, target } = await view();
-	const divider = only<HTMLButtonElement>(
-		target,
-		'button[aria-label="Divider"]',
-	);
-	click(target, 'Edit as file');
-	flushSync();
-	click(target, 'Open as note');
-	flushSync();
-	const reopened = only<HTMLElement>(target, '[aria-label="Note text"]');
-	expect(divider.isConnected).toBe(false);
-	const before = a.row.text;
-	divider.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-	flushSync();
-	expect(a.row.text).toBe(before);
-	expect(reopened.querySelector('hr')).toBeNull();
-});
-
-test('another program’s change shows only on Reload file, and with text not saved the person confirms first', async () => {
-	const { a, target, put, failWrites } = await view();
-	const title = only<HTMLInputElement>(target, 'input[aria-label="Title"]');
-	put('notes/a.md', noteText({ title: 'Outside' }));
-	await tick();
-	expect(title.value).toBe('Alpha');
-	click(target, 'Reload file');
-	await until(() => titleOf(a) === 'Outside', 'the reload');
-	flushSync();
-	expect(title.value).toBe('Outside');
-
-	failWrites();
-	type(title, 'Mine');
-	await a.waitForSaves();
-	await tick();
-	click(target, 'Reload file');
-	flushSync();
-	// The text is not saved: nothing is read until the person confirms.
-	expect(target.textContent).toContain('your text that is not saved is lost');
-	click(target, 'Keep my text');
-	flushSync();
-	expect(buttonNamed(target, 'Reload and lose my text')).toBeUndefined();
-	expect(titleOf(a)).toBe('Mine');
-
-	// A reload that cannot read the file keeps the text and its failed save.
-	put('notes/a.md', new Uint8Array([0xff]));
-	click(target, 'Reload file');
-	flushSync();
-	click(target, 'Reload and lose my text');
-	await until(() => a.reloadError !== undefined, 'the failed reload');
-	flushSync();
-	expect(titleOf(a)).toBe('Mine');
-	expect(title.value).toBe('Mine');
-	expect(a.save.status).toBe('failed');
-	expect(target.textContent).toContain('Your text is unchanged');
-});
-
-test('a failed save stays visible during a held later edit, and its successful save clears the error', async () => {
-	const { a, target, failWrites, text, hold, held, release } = await view();
-	const title = only<HTMLInputElement>(target, 'input[aria-label="Title"]');
-	const status = only(target, '[data-testid="draft-status"]');
-	failWrites();
-	type(title, 'First');
-	await a.waitForSaves();
-	await tick();
-	expect(status.getAttribute('data-status')).toBe('failed');
-	expect(buttonNamed(target, 'Try again')).toBeDefined();
-	failWrites(false);
-	hold();
-	type(title, 'Second');
-	try {
-		await until(() => held().length === 1, 'the later write to be held');
-		await tick();
-		expect(status.getAttribute('data-status')).toBe('saving');
-		expect(status.textContent).toContain('Not saved');
-		expect(status.textContent).toContain('Saving');
-		expect(title.value).toBe('Second');
-		expect(title.disabled).toBe(false);
-	} finally {
-		release({ all: true });
-	}
-	expect((await a.waitForSaves()).error).toBeNull();
-	flushSync();
-	expect(text('notes/a.md')).toContain('"title": "Second"');
-	expect(status.getAttribute('data-status')).toBe('saved');
-	expect(status.textContent).not.toContain('Not saved');
-});
-
-test('a save that finds no file offers Save as a note at once and keeps the text editable; a later save that lands clears both', async () => {
-	const { a, target, drop, put, text } = await view();
-	const title = only<HTMLInputElement>(target, 'input[aria-label="Title"]');
-	const status = only(target, '[data-testid="draft-status"]');
-	expect(buttonNamed(target, 'Save as a note')).toBeUndefined();
-	drop('notes/a.md');
-	type(title, 'Kept');
-	expect((await a.waitForSaves()).error?.name).toBe('NotFound');
-	await tick();
-	// The failed save alone offers it: no reload ran and no path change is tracked.
-	expect(a.reloadError).toBeUndefined();
-	expect(a.pathChange).toBeUndefined();
-	expect(status.getAttribute('data-status')).toBe('failed');
-	expect(status.textContent).toContain('saving does not create it again');
-	expect(buttonNamed(target, 'Save as a note')).toBeDefined();
-	expect(title.value).toBe('Kept');
-	expect(title.disabled).toBe(false);
-
-	// Another program puts the file back, and the next edit saves over it.
-	put('notes/a.md', noteText({ title: 'Outside' }));
-	type(title, 'Kept again');
-	expect((await a.waitForSaves()).error).toBeNull();
-	await tick();
-	expect(text('notes/a.md')).toContain('"title": "Kept again"');
-	expect(status.getAttribute('data-status')).toBe('saved');
-	expect(status.textContent).not.toContain('Not saved');
-	expect(buttonNamed(target, 'Save as a note')).toBeUndefined();
-});
-
-test('a title the editor refuses snaps back after the event with the reason, and a failed save keeps its text and error beside it', async () => {
-	const { a, target, failWrites } = await view();
-	const title = only<HTMLInputElement>(target, 'input[aria-label="Title"]');
-	const before = a.row.text;
-	typeMalformed(title, 'Half \uD800');
-	await tick();
-	// The binding checks its getter after input and shows the note's title.
-	expect(title.value).toBe('Alpha');
-	expect(a.row.text).toBe(before);
-	const notice = () => target.querySelector('[data-testid="note-refusal"]');
-	expect(notice()?.textContent).toContain('lone surrogate');
-	type(title, 'Whole');
-	await tick();
-	expect(titleOf(a)).toBe('Whole');
-	expect(notice()).toBeNull();
-
-	failWrites();
-	type(title, 'Mine');
-	await a.waitForSaves();
-	await tick();
-	expect(a.save.status).toBe('failed');
-	typeMalformed(title, 'Mine \uD800');
-	await tick();
-	expect(title.value).toBe('Mine');
-	expect(a.save.status).toBe('failed');
-	expect(target.textContent).toContain('Not saved');
-	expect(notice()).not.toBeNull();
-	failWrites(false);
-	click(target, 'Try again');
-	expect((await a.waitForSaves()).error).toBeNull();
-	await tick();
-	expect(target.textContent).not.toContain('Not saved');
-});
-
-test('the file view shows LF, writes the file’s own line endings, and its control takes nothing once the fields show again', async () => {
-	const { opened, shown, target, write, text } = await view();
-	const crlf = noteText({ title: 'Lines' }).replace(/\n/g, '\r\n');
-	await write('notes/c.md', crlf);
-	const c = await opened('notes/c.md');
-	shown.value = c;
-	flushSync();
-	click(target, 'Edit as file');
-	flushSync();
-	const file = target.querySelector<HTMLTextAreaElement>(
-		'textarea[aria-label="Contents of notes/c.md"]',
-	);
-	if (file === null) throw new Error('No file view');
-	expect(file.value).toBe(crlf.replace(/\r\n/g, '\n'));
-	type(file, file.value.replace('Body.', 'Body typed.'));
-	flushSync();
-	expect(c.row.text).toBe(crlf.replace('Body.', 'Body typed.'));
-	expect((await c.waitForSaves()).error).toBeNull();
-	expect(text('notes/c.md')).toBe(crlf.replace('Body.', 'Body typed.'));
-
-	click(target, 'Open as note');
-	flushSync();
-	expect(file.isConnected).toBe(false);
-	type(file, 'not a note any more');
-	flushSync();
-	expect(c.row.text).toBe(crlf.replace('Body.', 'Body typed.'));
-	expect(c.rawMode).toBe(false);
-});
-
-test('the note status names an unconfirmed save in the folder’s own words', async () => {
-	const { a, target, loseReplies } = await view();
-	const title = target.querySelector<HTMLInputElement>(
-		'input[aria-label="Title"]',
-	);
-	loseReplies();
-	type(title, 'Maybe saved');
-	await a.waitForSaves();
-	flushSync();
-	const { save } = a;
-	if (save.status !== 'failed') throw new Error('Expected a stopped save');
-	const status = target.querySelector('[data-testid="draft-status"]');
-	expect(status?.getAttribute('data-status')).toBe('unconfirmed');
-	expect(status?.textContent).toContain(save.error.message);
-	expect(status?.textContent).toContain('may or may not');
-	expect(buttonNamed(target, 'Save again')).toBeDefined();
-});
-
-test('the text file status names an unconfirmed save in the folder’s own words', async () => {
-	const { notes, write, loseReplies } = await view();
-	await write('docs/plain.txt', 'plain\n');
-	await notes.refresh();
-	await notes.open('docs/plain.txt');
-	const session = notes.sessionAt('docs/plain.txt');
-	if (session === undefined) throw new Error('The text file did not open');
-	loseReplies();
-	session.input('changed\n');
-	await session.save();
-	const attempt = session.attempt;
-	if (attempt?.state !== 'unconfirmed')
-		throw new Error('Expected an unconfirmed save');
-	const { target } = render(DraftStatus, {
-		session,
-		onRecover: async () => undefined,
-		onDiscard: () => {},
-		onStopTracking: () => {},
-	});
+	click(target, 'Keep mine');
 	await until(
-		() => target.textContent?.includes('not confirmed') ?? false,
-		'the status',
+		() => text('notes/a.md')?.includes('title: Mine') === true,
+		'Keep mine',
 	);
-	expect(target.textContent).toContain(attempt.problem);
+	await session.settled();
+	await tick();
+	expect(titleOf(target).value).toBe('Mine');
+	expect(target.textContent).toContain('Saved to');
+});
+
+test('a note deleted elsewhere asks Discard or Keep mine', async () => {
+	const { session, target, drop, text } = await view();
+	drop('notes/a.md');
+	type(titleOf(target), 'Kept');
+	await session.settled();
+	await tick();
+	expect(target.textContent).toContain('This was deleted elsewhere');
+	expect(buttonNamed(target, 'Discard')).toBeDefined();
+	click(target, 'Keep mine');
+	await until(
+		() => text('notes/a.md')?.includes('title: Kept') === true,
+		'the file to be created again',
+	);
+});
+
+test('while the app answers a close, the controls take no input', async () => {
+	const { notes, session, target } = await view();
+	const release = notes.fenceInput();
+	flushSync();
+	expect(titleOf(target).disabled).toBe(true);
+	type(titleOf(target), 'Typed while closing');
+	await tick();
+	expect(session.draft.fields.title).toBe('Alpha');
+	release();
+	flushSync();
+	expect(titleOf(target).disabled).toBe(false);
 });

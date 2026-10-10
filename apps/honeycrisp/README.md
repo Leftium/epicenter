@@ -28,7 +28,7 @@ Checks, from `apps/honeycrisp`:
 | Command | What it checks |
 | --- | --- |
 | `bun run typecheck` | Both page builds and the scripts. |
-| `bun run test` | The page: editor, drafts, notes over a real directory and over the browser folder, bundle contents, then `test:dom`. Needs no Rust. It first prepares the folder package's file exchange addon, which needs a C compiler on macOS and Linux. |
+| `bun run test` | The page: the editor, the notes state over the browser folder, first open over a real directory, bundle contents, then `test:dom`. Needs no Rust. It first prepares the folder package's file exchange addon, which needs a C compiler on macOS and Linux. |
 | `bun run test:dom` | The note view, mounted with its UI library over jsdom, in its own process. |
 | `bun run test:native` | The shell: its Rust tests, then the page's close handling against the shell's real close gate. Needs Rust. |
 | `bun run test:quit` | macOS only, run by hand in a login session: the real app, on a fixture page in a fresh directory, quit through AppKit's `terminate:` twice. The first quit is declined; the second is approved while a save is still being written. See [the quit evidence](evidence/native-quit/README.md). Opens a window. |
@@ -65,61 +65,47 @@ A note's file stem is its identity. Its frontmatter holds `title`, `folderId`,
 Folders are logical: a note belongs to one through `folderId`, so moving a note
 between folders changes one field and never moves or renames its file.
 
-Saving a note from its fields, rich text, or Source writes its frontmatter in
-Honeycrisp's standard form: its fields first in declared order, then any keys
-Honeycrisp does not know, every key quoted and every value in JSON spelling.
-Unknown keys and their values are kept; comments, quoting, and the earlier key
-order are not. The body is kept exactly. Opening a note that is spelled
-differently writes nothing. To keep a file's exact text, or to change a key
-Honeycrisp does not show, use **Edit as file**: it saves exactly what you type.
+Saving a note writes its frontmatter as plain YAML: its declared fields
+first, then any keys Honeycrisp does not know, which are kept. Comments and
+custom quoting in the frontmatter are not kept, so the first save of a file
+written by hand rewrites its frontmatter. The body is kept exactly. Opening or
+listing a note writes nothing. To change a key Honeycrisp does not show, use
+**Edit as file**: it saves exactly what you type.
 
-An action from the note list or the folder list on a note or folder that is
-not open (pin, move to a folder, move to Recently Deleted, restore, rename a
-folder) changes that one field in the file's text and keeps every other byte,
-comments and quoting included. It writes even when the field already has that
-value. A note that is open takes the action in its editor, which saves in the
-standard form.
+An action from the note list or the folder list (pin, move to a folder, move to
+Recently Deleted, restore, rename a folder) on a note that is open goes into
+its draft and saves with it. On a note or folder that is not open it saves the
+row in the same form, only over the version the list read: a file changed
+elsewhere since is refused, and the list reads the folder again.
 
-A note file starts with a `---` line, its fields, and a closing `---` line.
-A file in `notes/` whose text does not read that way, including plain
-Markdown with no `---` lines, is still listed and still opens: it is marked
-"Needs repair", its fields and rich-text view are unavailable, and you fix it
-in its file view, in the same editor. Saving it while it is still malformed
-works. A note that reads but has a bad field, such as `pinned: maybe`, is
-marked the same way and opens in its file view too. Its list actions stay
-available when the fields they need read: it can be moved to a folder or to
-Recently Deleted, but not pinned or unpinned while `pinned` is bad. The
-messages describe the text on screen, saved or not. A file in `notes/` that is
-not text at all is listed apart and opens nothing; rename, delete, and the
-terminal still work on it.
+A file in `notes/` whose text does not read as a note, including plain
+Markdown with no `---` lines or a note with a bad field such as
+`pinned: maybe`, is listed under **Needs repair** with the reasons. It opens as
+its text, which saves as you type, with the problems named from the text on
+screen. Once it reads as a note, **Open as note** shows its fields again. A
+file in `notes/` that is not text at all, and a file in `folders/` that does
+not read as a folder, are listed apart and open nothing here; Files, rename,
+delete, and the terminal still work on them.
 
 Any file name works, for notes and for folders, including a leading dot, a
 trailing space, and `notes/.md` itself. A folder's id is its file stem.
 
-Deleting a folder first moves its notes out. It is refused while any note
-cannot say which folder it is in: a note that does not read, a `folderId` that
-is not valid, or a file that cannot be read as text. Repair or remove those
-first. It is also refused before any note moves while an open note holds text the
-note list does not show yet (its save is still running or stopped, or it was
-reloaded since the list was read) and that text or the listed file puts it in
-the folder, while a change to a note is still running, or while an
-unconfirmed change could put a note in it. A note whose other fields need repair is moved out with the rest of its
-text kept. A note that changed since the list was read stops the delete, so a
-move made elsewhere is not undone. After the notes move, the folder is read
-again and the same checks run before its file goes.
-
-This covers the notes the app knows of, and it is not one atomic step: a note
-already moved out stays moved out if the delete stops, and another program can
-still put a note in the folder after the last read. A note whose folder is
-gone shows under All Notes.
+Deleting a folder first moves its notes out, each as a list action above. It
+is refused while any note cannot say which folder it is in (a note that needs
+repair or is not text): repair or remove those first. The folder's file goes
+only after the notes moved and the list was read again. This is not one
+atomic step: a note already moved out stays moved out if the delete stops,
+and another program can still put a note in the folder after the last read.
+A note whose folder is gone shows under All Notes.
 
 ## Editing
 
-A note has three views of one text: **Rich text** and **Source** for its
-body, beside its title, folder, and pin, and **Edit as file** for its whole
-text. Switching between them saves nothing and discards nothing. Every edit
-saves as you make it; typing while a save runs saves next, and only the latest
-text waits.
+A note has two views of its body, **Rich text** and **Source**, beside its
+title, folder, and pin. Switching between them saves nothing and discards
+nothing. **Edit as file** opens the note's whole text instead; its edits save
+first. Every edit saves as you make it; typing while a save runs saves next,
+and only the latest text waits. A save never changes what is on screen, so the
+rich-text view keeps its cursor and undo history across saves.
 
 Opening a note does not change its file. A rich-text edit rewrites the body as
 Markdown and may respell it (`_a_` becomes `*a*`), without changing what it
@@ -140,7 +126,9 @@ dividers, and line breaks. There is no underline and there are no images.
   for them: an empty paragraph, a line break with nothing after it in its
   block, and bold, italic, or strikethrough on a space by itself. An empty
   paragraph from Enter shows at once and saves nothing until you type in it.
-  Like any edit, it shows only while the note is taking typing.
+- **Text a file cannot hold is saved as the replacement character.** Half of
+  an emoji (a lone surrogate) typed in the title, rich text, Source, or a
+  file's text becomes U+FFFD as you type, so what saves is what you see.
 - Spaces at the start or end of a line are kept. In Source they appear as
   `&#32;` (and a tab as `&#9;`), since Markdown would drop them otherwise.
 - Inline code is literal: it can be a link, but not bold, italic, or struck.
@@ -153,92 +141,32 @@ dividers, and line breaks. There is no underline and there are no images.
 
 ## When the file changes underneath you
 
-Every opened file has one editing session, kept by its path, and never two:
-
-- A note is one row editor of the folder. Its title, folder, and pin
-  controls, the rich-text view, the Source view, and its file view all change
-  that one editor's text, and each save writes the whole note over whatever
-  the file holds: the last writer wins. A save never creates the file. An
-  open note never picks up another program's change by itself; **Reload
-  file** reads the file into it when you ask.
-- Any other text file is a text session over the file's exact text. Its save
-  lands only if the file is still the version it read.
-
-**Edit as file** shows the same note's whole text, in the same editor.
-**Open as note** shows its fields again once the text reads as a note. A note that does not read as one is repaired there; it is never
-handed to a text session. Renaming a file moves its session with it instead
-of opening a second one; a note's editor is fixed to its path, so a renamed
-note gets a new editor at its new name, and the view stays. Each mutation
-reserves its paths before preparation starts, including its rename
-destination or recovery target. Opening a reserved path cannot create a
-competing editor. Close waits for preparation already admitted, and its input
-fence prevents a new publication.
-
-For a note:
+One item is open at a time: a note, or a file's text. Every save is guarded
+by the bytes this item last saved or read, so nothing another program wrote
+is overwritten without your say.
 
 | What happened | What Honeycrisp does |
 | --- | --- |
-| Another program changed the file | The open note keeps its text and saves nothing until you type. **Reload file** shows the file in its place; with text that is not saved it asks first. Your next save replaces the file. |
+| Another program changed the file | Nothing happens until your next save. That save stops with **This changed elsewhere**: **Reload theirs** shows their version in place of your edits, and **Keep mine** saves your edits over it. Nothing is written until you choose. Returning to the window reads the lists again but never replaces an open note's text, so its undo history stays. |
+| Another program deleted the file | Your next save stops with **This was deleted elsewhere**: **Discard** closes the note, and **Keep mine** creates the file again from your edits. |
 | You typed while a save was running | The newer typing saves next. |
-| Your text does not read as a note | It is saved as you type it, and the note shows its file view with the problems named until it reads as a note again. |
-| A value cannot be written at all, such as a title with half of an emoji | Nothing changes: the field shows the note's value again, and the note says why until your next accepted edit or a reload. What you typed is not kept and does not count as unsaved. In the rich-text view the keystroke is refused the same way. |
-| A save failed | Your text stays editable and the error stays visible, including during a later save, until a newer save or reload succeeds. A waiting edit proceeds, and later typing saves again. **Try again** saves the current text without changing it. **Reload file** replaces your text with the file. |
-| A save got no reply, or the folder threw an error during the save | It is shown as not confirmed, with the folder's own words, such as where it kept text it displaced: the file may or may not have it. A waiting edit proceeds, and later typing saves again. **Save again** resubmits the current text; **Reload file** replaces it with the file. |
-| A reload could not read the file | Your text and its save state stay as they were, and the note says why. |
-| The file was deleted | The note stays open with your text. Its next save, or a reload, finds no file and says so; nothing writes the file back by itself. **Save as a note** creates it again, exactly as the editor holds it, while the path is free, and as a new note when another file took the path; that file stays as it is. Text a file cannot hold exactly, such as half of an emoji, is not saved as a file at all, and **Save as a note** waits while such a value you typed is still in a field. |
-| Your text was saved as a file that then would not open | Your text stays on screen, exactly as saved, with **Copy text** and **Try opening again**, and counts as unsaved at close until the note opens or you choose **Stop keeping this text**. |
-| A rename or delete got no reply, or a rename created the new file without removing the old one | The editor stays where it was, takes no typing, and saves nothing, since a save would land at the old path. **Copy text** keeps your text, and **Stop tracking this rename** (or **delete**) concludes nothing about where the file is; typing waits until you choose **Save at** the old name or **Reload file**. |
-| You rename or delete a note | Typing waits while it runs. Its saves finish first, then the file is read: if it holds other text than the editor, nothing is renamed or deleted, and **Reload file** shows that text. A delete removes exactly the version you confirmed and reads nothing after you confirm. A confirmed rename opens the note at its new name. |
-| You move an open note to Recently Deleted or restore it, or pin or move it from the note list, while the note shows its file, or a rename or delete of it runs or is not finished | Refused, and the note is unchanged. A running or failed save does not block the action: it submits the complete current document after any running save. |
-| You open another note | Each note keeps its editor and its text. |
-
-A text session keeps these apart: the saved file it last agreed with, your
-draft, the exact text a save submitted, a rename or delete that was submitted,
-and any other version seen on disk. Its save is refused, writing nothing, when
-the file is no longer the version it read. It offers the same choices as a
-note: **Compare and choose**, **Save again** or **Try again** (a new save of
-what is on screen), and **Keep the file as it is**. A save that got no reply
-stays not confirmed even when a read finds its text. A draft saved back after
-its file was deleted goes to the same path, only while it is free, and is
-never moved to another path.
-
-A change to a file that is not open and got no reply (a new note, a pin, a
-rename or delete from Files) is listed under **Not confirmed** in the status
-menu, never as failed. Nothing else is changed at that file from the app, and
-a second new note is not made under another name. A new file or a field change
-is marked when the folder shows exactly what was asked for, and stays listed
-until you dismiss it or send it again and that is confirmed. A field change is
-sent again under its first condition: one that moved a note out of a folder
-being deleted applies only while the note is still the version that was
-listed. A rename or delete stays listed for as long as the app runs;
-restarting stops listing it and does not show that it did or did not happen.
-Closing waits for a change that is still being sent, and asks before leaving
-one that was never confirmed.
-
-A note's save is not conditional: a write by another program that lands
-between the editor's last read and the save is replaced. It does require the
-file: a note removed before its save lands stays removed. A list action on a
-note that is not open reads the file and writes only over what it read; a
-write in between refuses it. A text session's save
-checks the file just before it replaces it, and on a real directory that check
-is not atomic either: another program can still write in the instant between
-the check and the replacement. A refused save means staleness was detected; it
-is not a guarantee that every stale save is caught.
+| A value is not valid for a note | It is not written; the bar names what to fix, and the next valid edit saves. |
+| A save failed | Your text stays, with **Try again**. |
+| A save got no reply | It is shown as not confirmed, with **Save again**. If it did land, that save returns the conflict prompt with your own version as theirs. |
+| You rename or delete the open item | Its saves finish first, and the rename or delete acts on what it saved last. Typing is paused while a rename, Keep mine, or Reload theirs runs. Edits made while the delete confirmation is open are saved first, then the file is deleted. A file changed elsewhere since is refused. |
+| You open another item while a save failed or conflicted | Honeycrisp asks **Discard unsaved changes?** Discarding lets the draft go; cancelling keeps the item open. |
 
 Unsaved text exists only in the open window. Closing the window, quitting the
-app (including Cmd+Q), and reloading the page are held back while any text is
-unsaved: Honeycrisp waits for saves already running, saves text-file drafts
-it can, and asks before discarding the rest. A note whose save failed is not
-tried again for you. Any change that was not confirmed counts too, with or
-without an open editor, and the prompt says so: quitting stops keeping track
-of it and does not cancel it. Unsaved text does not survive the app being
-killed or crashing.
+app (including Cmd+Q), and reloading the page are held back while the open
+item's save is running, failed, or conflicted: Honeycrisp waits for running
+saves and actions, and asks before discarding the rest. A failed save is not
+tried again for you. Unsaved text does not survive the app being killed or
+crashing.
 
 While the desktop app answers a close it takes no input: typing, buttons,
 menus, and the terminal do nothing until you choose **Keep editing** or the
-app closes. The
-editors stay as they are, with their undo history. A browser tab has no such
-step; its leave prompt is the browser's.
+app closes. The editors stay as they are, with their undo history. A browser
+tab has no such step; its leave prompt is the browser's.
 
 Every native close asks the page. The shell cannot infer permission from an
 earlier observation of the drafts: once the notes are open, only the page's
@@ -249,7 +177,7 @@ is asked again on the next attempt, and the window stays.
 
 | Control | What it does |
 | --- | --- |
-| Status | The most important current fact. Open it for three separate lines: **Drafts** (text in this window), **Saved files** (files not yet committed), and **Git history** (the last commit attempt), plus recent commits, **Check again**, and **Commit saved files**. |
+| Status | The most important current fact. Open it for three separate lines: **Drafts** (the open item's save), **Saved files** (files not yet committed), and **Git history** (the last commit attempt), plus recent commits, **Check again**, and **Commit saved files**. |
 | Files (Ctrl+B) | The file browser for the same directory: open, create, rename, and delete any file. **Reveal folder** opens the directory in the system file manager. |
 | Terminal (Ctrl+`) | A shell in the same directory. Its output, history, typed command, and working directory stay while it is hidden. |
 
@@ -309,23 +237,17 @@ cannot be opened is an error on screen, never a fallback to browser storage.
 browser store and no Git implementation, that neither bundle holds a Yjs or
 Node module, and that the browser bundle holds no desktop adapter.
 
-An open note is saved by its row editor (`folder.tables.notes.edit`): each
-edit gives it the complete document with `set`, or the file view's exact text
-with `setText`, and the editor writes the whole note by replacing the existing
-file, one write at a time with only the latest waiting. After a failed write
-the latest waiting input proceeds, and later input starts another save.
-`retry` resubmits the current text; `waitForSaves` waits for all consecutive admitted
-writes and reports the final outcome, and
-`reload` is the one read of the file after opening. The views read it
-through `fromRowEditor` from `@epicenter/folder/svelte`. A deleted note is
-created again only by `files.create`, at the person's request. A field change to a
-note or folder with no editor is `tables.<name>.update`, which assigns those
-fields in the current text and publishes only over the bytes it read, under
-`{}` or the listed `expectedSha256`. A new note or folder is
-`tables.<name>.create`. Every other change names a capture:
-`files.create` for a file that must not exist, and `files.replace`,
-`files.move`, and `files.remove` on the capture the session holds.
-`folder.onFilesChanged` is a hint to read again.
+The open item is an edit session from `@epicenter/svelte/edit-session`: a
+note is a row session over `folder.tables.notes.autosave`, and any file's text
+is a text session over `folder.files.autosave`. The page owns the draft;
+each edit requests a save, one write runs at a time with only the latest
+waiting, and each write is guarded by the bytes the previous one saved. A
+field change to a row that is not open is `tables.<name>.replace` on the row
+the list read. A new note or folder is `tables.<name>.create`. Every other
+change names a capture: `files.create` for a file that must not exist, and
+`files.move` and `files.remove` on the capture the session saved last or a
+fresh read. Nothing follows `folder.onFilesChanged`: the page reads the
+folder when it opens, after its own actions, and when you return to it.
 
 ### What the shell decides
 
@@ -425,19 +347,16 @@ and `src-tauri/src/tests.rs` runs the same two through the folder plugin.
 | --- | --- | --- |
 | A save that fails: your text stays editable, with **Try again** | `chmod a-w notes`, then edit a note | `chmod u+w notes`, then **Try again** |
 | A commit that fails while the file stays saved | `touch .git/refs/heads/main.lock`, then edit a note | `rm .git/refs/heads/main.lock`, then **Commit saved files** |
-| A reload that cannot read the file: your text stays as it was | With a note open, `printf '\377' > notes/<id>.md`, then **Reload file** | Type in the note to save over it, or restore the file from Git |
-| A note file deleted under you: nothing writes it back | With a note open, `rm notes/<id>.md`, then type in it | **Save as a note**, or restore the file from Git |
+| A change made elsewhere: the conflict prompt | With a note open, edit `notes/<id>.md` in the terminal, then type in the note | **Reload theirs** or **Keep mine** |
+| A note file deleted under you: nothing writes it back until you choose | With a note open, `rm notes/<id>.md`, then type in it | **Keep mine**, or **Discard** |
 
 What cannot be produced by hand in the running app is a save held open or
 slowed on purpose, so that typing lands while it runs, or a reply lost after
-the write landed. Those orders are fixed in tests instead, over the folder's
-own row editor with faults in its storage stand-in:
-`src/lib/note-editor.test.ts` (one note) and `src/lib/file-session.test.ts`
-(text files) hold a save and type during it, lose a reply before or after the
-write lands, and change the file under an open editor; `src/lib/notes.folder.test.ts`
-does the same with the notes state, over a real directory and over the browser
-folder. `src/routes/components/NoteDetail.dom.test.ts` mounts the note view
-and delivers events to it, including to controls that outlived it.
+the write landed. Those orders are fixed in tests instead, with faults in the
+browser folder's storage stand-in: `src/lib/notes.test.ts` holds a save and
+types during it, fails writes, and changes or deletes a file under an open
+note. `src/routes/components/NoteDetail.dom.test.ts` mounts the note view and
+delivers events to it.
 
 ## Layout
 
@@ -446,13 +365,11 @@ and delivers events to it, including to controls that outlived it.
 | `src/lib/data.ts` | The inert declaration: the `notes` and `folders` tables. |
 | `src/lib/editor/schema.ts` | The bounded ProseMirror schema. |
 | `src/lib/editor/markdown.ts` | Markdown to document and back, the equivalence it is held to, the check that gates opening and editing, and `bodyCodec`, which decodes and encodes a note's whole body. |
-| `src/lib/editor/rich-text.ts` | ProseMirror commands, plugins, transaction admission, and semantic state replacement. `EditorView.state` owns live editing state. |
-| `src/lib/note-editor.svelte.ts` | One open note's editor: the app's policy around the folder's row editor (`table.edit`). `set` takes the complete note from a view or command; it decides the fields or file view, when input is taken, why the last change was refused, the person's Try again and Reload file, and the fences around a rename, delete, or close. The row editor owns the note's text and its writes. |
-| `src/lib/file-session.svelte.ts` | One open text file's session (any file that is not a note): saved capture, buffer, submitted attempt, external version, and the conditional file calls. |
-| `src/lib/note-source.ts` | The body replacement Rich and Source share (`withBody`), list previews, and field repair. |
-| `src/lib/notes.svelte.ts` | Listings, selection, the one session kept per path, note and folder actions, and the input fence. |
+| `src/lib/editor/rich-text.ts` | ProseMirror commands, plugins, the rule that puts each transaction's Markdown in the draft, and semantic state replacement. `EditorView.state` owns live editing state. |
+| `src/lib/note-source.ts` | The body replacement Rich and Source share (`withBody`), and list previews. |
+| `src/lib/notes.svelte.ts` | Listings, the one open item and its edit session, conflict choices, note and folder actions, and the input fence. |
 | `src/lib/platform/` | The `#platform/notes-host` seam, its two leaves, and `shell.tauri.ts`, the page side of the shell's commands. |
-| `src/routes/components/` | Header, folder list, note list, editors, files, terminal. |
+| `src/routes/components/` | Header, folder list, note list, the note view and its save bar, files, terminal. |
 | `src-tauri/src/lib.rs` | The desktop shell: the folder plugin, the notes scope, the window, close routing. |
 | `src-tauri/src/root.rs` | Choosing and resolving the root directory. |
 | `src/lib/platform/first-open.ts` | Setting up a folder that has no layout yet, through the attached folder. |
@@ -474,6 +391,40 @@ replaced the host and which native checks are still to be run.
 
 - [SvelteKit](https://kit.svelte.dev) with the static adapter, SSR disabled
 - [ProseMirror](https://prosemirror.net) with `prosemirror-history` and `prosemirror-markdown`
-- `@epicenter/folder` for the folder, its note and folder listings, and the row editor notes are saved through, and `@epicenter/definition` for the declaration
+- `@epicenter/folder` for the folder, its note and folder listings, and guarded autosave; `@epicenter/svelte/edit-session` for the open item's draft; and `@epicenter/definition` for the declaration
 - [Tauri](https://tauri.app) for the desktop shell, with the `tauri-plugin-epicenter-folder` crate owning the directory and its Git history
 - `@epicenter/ui` and [Tailwind CSS](https://tailwindcss.com)
+
+## Changed promises
+
+This version is built on `@epicenter/folder`'s guarded autosave and the shared
+edit sessions, and dropped several promises of the version before it:
+
+- An open note no longer saves last-writer-wins over changes made elsewhere,
+  and there is no **Reload file** button. Every save is guarded; a change
+  made elsewhere is a conflict, and Reload theirs lives in the conflict
+  prompt. Returning to the window still never replaces an open note's text.
+- A note deleted elsewhere is no longer kept with **Save as a note** at a new
+  name when its path is taken. **Keep mine** creates it again at its own
+  path, and **Discard** closes it.
+- One item is open at a time. Switching no longer keeps each file's editor
+  and text; leaving an item whose save failed asks to discard it.
+- Change reports from the folder no longer reread the lists while you work.
+  The lists read again on open, after your actions, and when you return.
+- List actions on a note that is not open no longer patch one field keeping
+  every other byte; they write the note's standard form, guarded by the
+  version the list read.
+- Text a file cannot hold (a lone surrogate) is no longer refused with a
+  notice; it becomes U+FFFD as you type.
+- A note with a bad field no longer keeps the list actions whose fields read.
+  It is listed under **Needs repair** and opens as text. **Set the missing
+  fields to their defaults** is gone.
+- **Edit as file** is a separate open of the note's text, after its saves
+  land, not a second view of one editor.
+- **Not confirmed** records are gone. A change to a file that is not open
+  whose reply was lost is reported once; nothing tracks it afterwards, and it
+  does not hold a close. The **Compare and choose** view of a text file's
+  draft against the file is gone, with the per-file rename and delete
+  tracking that went with it.
+- The first save of a hand-written note rewrites its frontmatter as plain
+  YAML; comments and custom quoting are not kept.

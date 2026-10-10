@@ -4,7 +4,6 @@
 	import { toast } from '@epicenter/ui/sonner';
 	import { tick } from 'svelte';
 	import { beforeNavigate } from '$app/navigation';
-	import { basename } from '@epicenter/folder/file-browser';
 	import type { Notes } from '$lib/notes.svelte.js';
 	import AppHeader from './AppHeader.svelte';
 	import FileBrowser from './FileBrowser.svelte';
@@ -20,7 +19,7 @@
 	let terminalOpen = $state(false);
 
 	// Drafts live only in this window. Three things can end it, and each is held
-	// back while a draft is unsettled:
+	// back while the open item's save runs or failed:
 	// - a reload or in-page navigation: cancelled here, and the webview asks first;
 	// - closing the window or quitting the app: the shell asks the page, which
 	//   answers from `+page.svelte` before these notes exist. While it answers,
@@ -38,9 +37,15 @@
 	}
 </script>
 
-<!-- Returning to the app is a refresh boundary for files and Git status. -->
+<!-- Returning to the app reads the lists and Git status again. An open note
+     keeps its draft: a change made elsewhere shows as a conflict on its next save. -->
+<svelte:document
+	onvisibilitychange={() => {
+		if (document.visibilityState === 'visible') void notes.check();
+	}}
+/>
 <svelte:window
-	onfocus={() => void notes.refreshAll()}
+	onfocus={() => void notes.check()}
 	onbeforeunload={(event) => {
 		if (notes.unsettled > 0) event.preventDefault();
 	}}
@@ -50,8 +55,8 @@
 			// A reload would end this window's drafts. The leave prompt below is
 			// the webview's to show or not; refusing the shortcut does not depend on it.
 			event.preventDefault();
-			toast.warning('Reload stopped: some changes are not saved or not confirmed', {
-				description: 'Wait for them to save, or resolve them in the note or the status menu, then reload.',
+			toast.warning('Reload stopped: the open note is not saved', {
+				description: 'Wait for them to save, or resolve them in the note, then reload.',
 			});
 		} else if (mod && !event.altKey && !event.shiftKey && event.key.toLowerCase() === 'b') {
 			event.preventDefault();
@@ -90,23 +95,20 @@
 				</Resizable.Pane>
 				<Resizable.Handle />
 				<Resizable.Pane id="detail" order={3} defaultSize={filesOpen ? 40 : 60} minSize={30}>
-					{@const selection = notes.selection}
-					{#if selection?.kind === 'note'}
-						<!-- One mount per note; a rename hands it a new editor without remounting. -->
-						{#key selection.key}
-							<NoteDetail {notes} editor={selection.session} />
+					{@const opened = notes.opened}
+					{#if opened?.kind === 'note'}
+						<!-- One mount per session: leaving the note releases it. -->
+						{#key opened.session}
+							<NoteDetail {notes} session={opened.session} />
 						{/key}
-					{:else if selection?.kind === 'file'}
-						<FileView {notes} path={selection.path} file={selection.file} />
+					{:else if opened !== undefined}
+						{#key opened}
+							<FileView {notes} item={opened} />
+						{/key}
 					{:else}
 						<Empty.Root class="h-full">
-							{#if notes.selectedPath !== undefined}
-								<Empty.Title>{basename(notes.selectedPath)} is no longer in the folder</Empty.Title>
-								<Empty.Description>It was renamed or deleted outside this editor.</Empty.Description>
-							{:else}
-								<Empty.Title>No note selected</Empty.Title>
-								<Empty.Description>Choose a note from the list, or press ⌘N to create one.</Empty.Description>
-							{/if}
+							<Empty.Title>No note selected</Empty.Title>
+							<Empty.Description>Choose a note from the list, or press ⌘N to create one.</Empty.Description>
 						</Empty.Root>
 					{/if}
 				</Resizable.Pane>

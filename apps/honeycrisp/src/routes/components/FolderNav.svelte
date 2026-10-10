@@ -9,8 +9,9 @@
 	import FolderIcon from '@lucide/svelte/icons/folder';
 	import PlusIcon from '@lucide/svelte/icons/plus';
 	import TrashIcon from '@lucide/svelte/icons/trash-2';
-	import { type FolderEntry, folderLabel as nameOf, repairReason } from '$lib/data.js';
+	import { type FolderEntry, folderLabel as nameOf } from '$lib/data.js';
 	import type { Notes } from '$lib/notes.svelte.js';
+	import { openItem } from './file-actions.js';
 
 	let { notes }: { notes: Notes } = $props();
 
@@ -20,7 +21,7 @@
 	const counts = $derived.by(() => {
 		const result = { active: 0, deleted: 0, folders: new Map<string, number>() };
 		for (const note of notes.notes) {
-			const { fields } = note;
+			const fields = notes.fieldsOf(note);
 			if (typeof fields.deletedAt === 'string') {
 				result.deleted += 1;
 				continue;
@@ -137,13 +138,12 @@
 					aria-current={notes.view.folderId === folder.stem && !notes.view.deleted ? 'true' : undefined}
 					onclick={() => notes.showFolder(folder.stem)}
 				>
-					{#if folder.fields.icon}
-						<span class="text-base leading-none">{folder.fields.icon}</span>
+					{#if folder.row.fields.icon}
+						<span class="text-base leading-none">{folder.row.fields.icon}</span>
 					{:else}
 						<FolderIcon class="size-4" />
 					{/if}
 					<span class="truncate">{nameOf(folder)}</span>
-					{#if repairReason(folder)}<span class="text-xs text-destructive">needs repair</span>{/if}
 					<span class="ml-auto text-xs text-muted-foreground">{counts.folders.get(folder.stem) ?? 0}</span>
 				</button>
 				<DropdownMenu.Root>
@@ -162,7 +162,7 @@
 						>
 							Rename
 						</DropdownMenu.Item>
-						<DropdownMenu.Item disabled={notes.fenced} onSelect={() => void notes.open(folder.path)}>
+						<DropdownMenu.Item disabled={notes.fenced} onSelect={() => void openItem(notes, folder.path)}>
 							Open file
 						</DropdownMenu.Item>
 						<DropdownMenu.Separator />

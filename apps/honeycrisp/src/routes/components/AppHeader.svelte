@@ -8,7 +8,7 @@
 	import FolderTreeIcon from '@lucide/svelte/icons/folder-tree';
 	import SquareTerminalIcon from '@lucide/svelte/icons/square-terminal';
 	import { getAbortSignal } from 'svelte';
-	import { canResend, type Notes, type PendingChange } from '$lib/notes.svelte.js';
+	import type { Notes } from '$lib/notes.svelte.js';
 	import {
 		draftsLine,
 		historyLine,
@@ -76,11 +76,6 @@
 		);
 	});
 
-	async function retryPending(change: PendingChange) {
-		const problem = await notes.retryPending(change);
-		if (problem) toast.warning('Still not confirmed', { description: problem });
-	}
-
 	async function commitNow() {
 		const outcome = await notes.commitNow();
 		if (outcome.status === 'committed') toast.success(`Committed ${outcome.oid.slice(0, 7)}`);
@@ -88,7 +83,7 @@
 		else if (outcome.status === 'failed') toast.error('Commit failed', { description: outcome.error });
 		else if (outcome.status === 'blocked') toast.warning('Commit blocked', { description: outcome.reason });
 		else if (outcome.status === 'unconfirmed') toast.warning('Commit reply was lost', { description: `${outcome.error} Check history before committing again.` });
-		await notes.refreshAll();
+		await notes.check();
 	}
 </script>
 
@@ -128,43 +123,6 @@
 						</dd>
 					</div>
 				{/each}
-				{#if notes.pending.length > 0}
-					<div class="grid grid-cols-[5.5rem_1fr] gap-x-3 px-3 py-2">
-						<dt class="text-xs text-muted-foreground">Not confirmed</dt>
-						<dd class="min-w-0 space-y-2 text-xs" data-testid="status-pending">
-							{#each notes.pending as change (change)}
-								<div>
-									<span class="block font-medium">{change.label}</span>
-									<span class="block break-words text-muted-foreground">
-										{#if change.state === 'sourceNotRemoved' && change.kind === 'move'}
-											<code class="font-mono">{change.to}</code> was created and
-											<code class="font-mono">{change.from.path}</code> was not removed. Both hold the same
-											text; neither is changed from here.
-										{:else}
-											This may or may not have happened, and nothing read since can say which.
-											{#if notes.found(change)}
-												The folder shows what was asked for now; that does not show this change did it.
-											{/if}
-											Nothing else is changed there from this app until you send it again or dismiss it.
-										{/if}
-										{change.problem}
-									</span>
-									<span class="mt-1 flex gap-1">
-										{#if canResend(change)}
-											<Button variant="outline" size="xs" disabled={notes.fenced} onclick={() => void retryPending(change)}>
-												Send it again
-											</Button>
-										{/if}
-										<!-- The popover is outside the app's inert root. -->
-										<Button variant="ghost" size="xs" disabled={notes.fenced} onclick={() => notes.dismissPending(change)}>
-											Dismiss
-										</Button>
-									</span>
-								</div>
-							{/each}
-						</dd>
-					</div>
-				{/if}
 				<div class="grid grid-cols-[5.5rem_1fr] gap-x-3 px-3 py-2">
 					<dt class="text-xs text-muted-foreground">Recent commits</dt>
 					<dd class="min-w-0 font-mono text-xs" data-testid="status-log">
@@ -181,7 +139,7 @@
 				</div>
 			</dl>
 			<div class="flex items-center gap-2 border-t px-3 py-2">
-				<Button variant="outline" size="sm" onclick={() => void notes.refreshAll()}>Check again</Button>
+				<Button variant="outline" size="sm" onclick={() => void notes.check()}>Check again</Button>
 				<!-- The popover is outside the app's inert root. -->
 				<Button variant="ghost" size="sm" disabled={notes.git.activity.commit.active || notes.fenced} onclick={commitNow}>
 					Commit saved files

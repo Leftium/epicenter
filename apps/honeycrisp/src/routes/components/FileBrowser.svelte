@@ -19,7 +19,7 @@
 	import { tick } from 'svelte';
 	import { basename, dirname, joinPath, type TreeRow, visibleRows } from '@epicenter/folder/file-browser';
 	import type { Notes } from '$lib/notes.svelte.js';
-	import { confirmDelete, copyPath } from './file-actions.js';
+	import { confirmDelete, copyPath, openItem } from './file-actions.js';
 
 	let { notes }: { notes: Notes } = $props();
 
@@ -50,7 +50,7 @@
 			else notes.expanded.add(row.path);
 			return;
 		}
-		void notes.open(row.path);
+		void openItem(notes, row.path);
 	}
 
 	function startCreate(directory: string, type: 'file' | 'folder') {

@@ -14,7 +14,7 @@
 	const opening = openNotes({
 		async create(host) {
 			const notes = createNotes(host);
-			await notes.refreshAll();
+			await notes.check();
 			return notes;
 		},
 		askToDiscard: (remaining) =>

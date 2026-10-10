@@ -1,39 +1,53 @@
+<!--
+	An open item other than a note: a file's exact text in a text session, or
+	why it does not open. A note or folder file whose text is not a valid row
+	shows its issues, read live from what is typed, and is repaired here; a
+	note that reads opens as a note again.
+-->
 <script lang="ts">
+	import { Badge } from '@epicenter/ui/badge';
 	import { Button } from '@epicenter/ui/button';
 	import * as Empty from '@epicenter/ui/empty';
 	import { Loading } from '@epicenter/ui/loading';
-	import { toast } from '@epicenter/ui/sonner';
 	import { Textarea } from '@epicenter/ui/textarea';
 	import CopyIcon from '@lucide/svelte/icons/copy';
 	import FileIcon from '@lucide/svelte/icons/file';
 	import TriangleAlertIcon from '@lucide/svelte/icons/triangle-alert';
+	import { parseRow, rowStemOf } from '@epicenter/folder';
 	import { basename, dirname, withFileNewlines } from '@epicenter/folder/file-browser';
-	import type { Notes, OpenFile } from '$lib/notes.svelte.js';
-	import { confirmDelete, copyPath } from './file-actions.js';
+	import { honeycrispDefinition, noteIdOf } from '$lib/data.js';
+	import { type Notes, type Opened, pathOf } from '$lib/notes.svelte.js';
+	import { confirmDelete, copyPath, openItem } from './file-actions.js';
 	import FileNameBar from './FileNameBar.svelte';
-	import DraftStatus from './DraftStatus.svelte';
+	import SaveBar from './SaveBar.svelte';
 
 	let {
 		notes,
-		path,
-		file,
+		item,
 	}: {
 		notes: Notes;
-		path: string;
-		file: OpenFile;
+		/** The open item, other than a note. The parent keys this view by it. */
+		item: Exclude<Opened, { kind: 'note' }>;
 	} = $props();
 
+	const path = $derived(pathOf(item));
 	const name = $derived(basename(path));
 	const directory = $derived(dirname(path));
-
-	async function copyText(text: string) {
-		try {
-			await navigator.clipboard.writeText(text);
-			toast.success('Copied your text');
-		} catch {
-			toast.error('Could not copy your text', { description: 'Select it below and copy it from there.' });
-		}
-	}
+	const isNote = $derived(noteIdOf(path) !== undefined);
+	/** The table a row file at this path belongs to, if any. */
+	const table = $derived(
+		isNote
+			? honeycrispDefinition.tables.notes
+			: rowStemOf('folders', path) !== undefined
+				? honeycrispDefinition.tables.folders
+				: undefined,
+	);
+	/** Why the text is not a row yet, read live from what is typed. */
+	const issues = $derived.by(() => {
+		if (table === undefined || item.kind !== 'text') return undefined;
+		const { error } = parseRow(table, item.session.draft);
+		return error ?? undefined;
+	});
 
 	/** A file shown as details: its extension names the type, then its size. */
 	function details(size: number) {
@@ -52,72 +66,70 @@
 			<h2 class="truncate text-sm font-medium">{name}</h2>
 			<p class="truncate font-mono text-xs text-muted-foreground">{path}</p>
 		</div>
+		{#if isNote && item.kind === 'text'}
+			<Button
+				size="sm"
+				variant="outline"
+				disabled={issues !== undefined}
+				tooltip={issues === undefined ? undefined : 'Fix the text first'}
+				onclick={() => void openItem(notes, path, 'note')}
+			>
+				Open as note
+			</Button>
+		{/if}
 		<Button variant="ghost" size="icon-sm" tooltip="Copy path" aria-label="Copy path" onclick={() => void copyPath(path)}>
 			<CopyIcon />
 		</Button>
 	</div>
 
-	{#if file.kind === 'loading'}
+	{#if item.kind === 'loading'}
 		<Loading class="flex-1" label="Opening {name}…" />
-	{:else if file.kind === 'failed'}
+	{:else if item.kind === 'failed'}
 		<Empty.Root class="flex-1">
 			<Empty.Media><TriangleAlertIcon class="size-8 text-muted-foreground" /></Empty.Media>
 			<Empty.Title>Could not open this file</Empty.Title>
-			<Empty.Description>{file.message}</Empty.Description>
-			<Button variant="outline" size="sm" onclick={() => void notes.open(path)}>Try again</Button>
+			<Empty.Description>{item.message}</Empty.Description>
+			<Button variant="outline" size="sm" onclick={() => void openItem(notes, path)}>Try again</Button>
 		</Empty.Root>
-	{:else if file.kind === 'unopened'}
-		<!-- The person's text, kept exactly as it was saved until the note opens or they dismiss it. -->
-		<div class="flex flex-wrap items-center gap-2 border-b px-4 py-1.5 text-xs">
-			<span class="text-destructive" role="alert">{file.message} Your text is kept below, exactly as saved.</span>
-			<Button
-				size="xs"
-				variant="outline"
-				disabled={notes.fenced}
-				onclick={async () => {
-					const problem = await notes.reopen(path);
-					if (problem) toast.error('Could not open the note', { description: problem });
-				}}
-			>
-				Try opening again
-			</Button>
-			<Button size="xs" variant="ghost" onclick={() => void copyText(file.text)}>Copy text</Button>
-			<Button size="xs" variant="ghost-destructive" disabled={notes.fenced} onclick={() => notes.dismiss(path)}>
-				Stop keeping this text
-			</Button>
-		</div>
-		<div class="flex min-h-0 flex-1 flex-col px-3 py-3 sm:px-4">
-			<Textarea
-				class="min-h-40 flex-1 resize-none font-mono text-xs"
-				value={file.text}
-				readonly
-				aria-label="Your saved text, read-only"
-				spellcheck={false}
-			/>
-		</div>
-	{:else if file.kind === 'text'}
-		{@const session = file.session}
-		<DraftStatus
-			{session}
-			onRecover={() => notes.recoverDraft(session.path)}
-			onDiscard={() => void notes.discardDraft(session.path)}
-			onStopTracking={() => notes.stopTracking(session.path)}
+	{:else if item.kind === 'text'}
+		{@const session = item.session}
+		<SaveBar
+			save={session.state}
+			onRetry={() => session.retry()}
+			onKeepMine={() => notes.keepMine(session)}
+			onReloadTheirs={() => notes.reloadTheirs(session)}
 		/>
+		{#if issues}
+			<div class="shrink-0 border-b bg-destructive/5 px-4 py-2 text-xs" role="status" data-testid="row-issues">
+				<p class="mb-1 flex flex-wrap items-center gap-2 font-medium">
+					<Badge variant="destructive">Needs repair</Badge>
+					This text does not read as a {isNote ? 'note' : 'folder'} yet. Fix it here; it saves as you type.
+				</p>
+				<ul class="space-y-0.5 text-muted-foreground">
+					{#each issues as issue, index (index)}
+						<li>{issue.line === undefined ? '' : `Line ${issue.line}: `}{issue.message}</li>
+					{/each}
+				</ul>
+			</div>
+		{/if}
 		<div class="flex min-h-0 flex-1 flex-col px-3 py-3 sm:px-4">
 			<Textarea
 				class="min-h-40 flex-1 resize-none font-mono text-xs"
-				value={session.buffer}
 				aria-label="Contents of {name}"
 				spellcheck={false}
-				oninput={(event) => session.input(withFileNewlines(event.currentTarget.value, session.buffer))}
+				disabled={session.locked}
+				bind:value={
+					() => session.draft.replace(/\r\n?/g, '\n'),
+					(text) => session.input(withFileNewlines(text, session.draft))
+				}
 			/>
 		</div>
-	{:else if file.kind === 'binary' || file.kind === 'tooLarge'}
+	{:else}
 		<Empty.Root class="flex-1">
 			<Empty.Media><FileIcon class="size-8 text-muted-foreground" /></Empty.Media>
-			<Empty.Title>{details(file.size)}</Empty.Title>
+			<Empty.Title>{details(item.size)}</Empty.Title>
 			<Empty.Description>
-				{file.kind === 'binary'
+				{item.kind === 'binary'
 					? 'This file is not text, so it is listed here but not opened for editing.'
 					: 'This text file is larger than 1 MB, so it is not opened in the editor.'}
 				Rename, delete, and the terminal still work on it.

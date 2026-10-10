@@ -28,109 +28,43 @@ against the code. The constraints below apply to every edit here.
   only when a read confirmed it absent and only if it is still absent, and
   never retry an outcome that is unknown. Table directories come from the
   declaration; do not list them a second time in Rust.
-- An open note uses one row editor from `folder.tables.notes.edit(stem)`,
-  retained per path above the views. Its title, folder, pin, rich-text,
-  Source, and file view all go through it. Do not add another save or
-  observation engine for notes, a second publisher for their raw text, or a
-  temporary editor for a one-off change.
-- A structured edit gives the editor the complete document at once, every
-  field it has (unknown ones included) and the body, through `set`; a key
-  left out is removed. The file view gives it its exact text through
-  `setText`. Every write replaces the existing file and never creates one: a
-  note deleted elsewhere is written again only by the person's explicit,
-  exclusive create. Opening and listing do not rewrite a file.
-- A field command on a row with no open editor (pin, trash, restore, folder
-  assignment, folder name) uses `folder.tables.<name>.update`, which keeps
-  every other byte and publishes even when the values already match. Pass
-  `{}` when the value stands on its own and `{ expectedSha256 }` when it was
-  derived from a listed snapshot; keep that condition in the pending record
-  so a resend is never rebased. On an open note the same command goes into
-  its editor as the whole note. It is refused, before it changes the editor,
-  while the note shows its file, has fields that do not read, or a rename
-  or delete runs or stopped short:
-  the command must not save to an unsettled path. A running or failed save
-  is no reason to refuse; the new complete document queues behind any running
-  write.
-- A note whose text does not read as one opens the same row editor and is
-  repaired in its file view. Never hand a note path to a text session or an
-  ordinary file publisher, including when its editor does not open; a file
-  with no text to edit shows why.
-- A file whose text does not parse stays listed and opens for repair. Show an
-  open note's diagnostics from the editor's text, never from the saved file.
-- An action checks the fields it needs, not whether the whole entry is free
-  of issues. A destructive action that must find every related file refuses
-  when any file's relation did not validate (`deleteFolder`).
+- One item is open at a time, in one edit session from
+  `@epicenter/svelte/edit-session`: a note in a row session, any other text
+  (a file, a note opened as its file, a note whose text is not a valid row)
+  in a text session. Its title, folder, pin, rich-text, and Source controls
+  all change that session's draft through `session.edit`. Do not add another
+  save engine, a retained editor per path, or a second draft beside the
+  session's.
+- Every write is guarded by bytes this page read or saved: the session's
+  autosave, `replace` on the row a list read, and `move`/`remove` on a
+  capture. A change made elsewhere is the conflict prompt (Reload theirs /
+  Keep mine), never overwritten silently. `create` is the only unguarded
+  write and refuses an occupied path.
+- A field command on a row that is not open (pin, trash, restore, folder
+  assignment, folder name) is a guarded `replace` of the row the list read,
+  then a re-list. On the open note it is an edit to its draft. On a note
+  open as text it is refused.
+- A note whose text does not read as one is listed for repair and opens as
+  text, with its issues read live from the text on screen (`parseRow`).
+  There is no structured partial-row repair.
+- The page reads the folder when it opens, after its own actions and
+  terminal commands, and on focus or visibility. Do not follow
+  `folder.onFilesChanged` hints, and never call `session.adopt()`: an open
+  note's draft is replaced only by Reload theirs, which protects its
+  rich-text undo history.
+- A destructive action that must find every related file refuses when any
+  file's relation did not read (`deleteFolder`).
 
 ## Editor ownership
 
-- The row editor owns the note's one input and the one queue that
-  publishes it. Every accepted edit goes to it at once; there is no app
-  draft, baseline, submission timer, or copy of submitted text beside it.
-  The app-owned note editor (`note-editor.svelte.ts`) owns only the raw or fields
-  view, input admission and fences, the rename or delete being tracked, and
-  release. Views read the editor through `fromRowEditor`; do not copy its
-  row, diagnostics, or save state into app state.
-- The editor never reads the file by itself, and the app never adopts
-  another program's text into an open note. Only the person's **Reload
-  file** (`reload`) does, with input fenced while it reads; warn first when
-  text is not saved. A reload that fails, or that input overtook, changes
-  nothing: the text and its save state stay. `notes.refresh` refreshes
-  listings and text-file sessions, not open notes. A note save replaces the
-  file: the last writer wins.
-- A save receipt acknowledges submitted bytes. A later read is a separate
-  observation and never proves which request published those bytes.
-- A failed or unconfirmed write keeps its error visible and the text
-  editable. The error stays visible during a later save until a save or
-  explicit reload succeeds. The latest waiting input proceeds after failure, and later input
-  starts another save. Try again (`retry`) resubmits the current text. Present
-  unconfirmed as uncertainty, with the folder's own message. Nothing replays
-  an old request, and `waitForSaves` waits for every consecutive admitted write and
-  reports the final outcome.
-- Typed text the editor refuses (a title or Markdown source with an
-  unpaired surrogate) changes nothing: its control shows the editor's value
-  again, and the note editor keeps only why, shown beside the save state
-  until input is taken or a reload succeeds. Do not keep the refused text,
-  which control it came from, or count it as unsaved; the person types it
-  again. A failed or unconfirmed save of accepted text is different: that
-  text stays in the editor.
-- Arbitrary text files remain raw file workflows over their exact text. Do
-  not invent a table schema for them or introduce a second current-content
-  store. Note repair is not one of them.
-- Rename and delete fence the note's input, wait for every admitted write
-  (`waitForSaves`), then capture the file; they refuse after a failed save and
-  when the file is not the text the editor holds. Delete removes exactly the
-  capture the person confirmed and reads nothing after the confirmation.
-  While a rename or delete is unconfirmed, stopped short, or no longer
-  tracked, the note takes no typing, since every edit publishes at its old
-  path. Inspect both paths after an interrupted or unknown move before a
-  renewed destructive action. A generic batch journal or permanent
-  path-change lock is not required.
-- Register admitted file actions before awaiting them and check the input fence
-  at admission. Close counts unsaved text, admitted work and unknown workflow
-  outcomes separately. A failed or unknown reply is not proof that nothing was
-  saved.
-- A view reused across sessions reads its `session` prop when each getter,
-  setter, and handler runs; do not bind to method references taken when it
-  mounted. Svelte keeps binding listeners on detached elements. Shared `Input` and
-  `Textarea` retire their value bindings when destroyed; do not duplicate
-  that guard in their app setters. Native controls and commands check their
-  own block lifetime (`Lifetime.svelte`), not the whole view's. A control
-  from a block that is gone takes nothing, even after the same kind of block
-  mounts again. A destroyed rich-text view takes no transaction, and a
-  released session refuses everything for good. Do not key or remount a view per input to get
-  around any of this; that loses focus and undo.
-- A save never creates a note file. After a save or reload found no file,
-  saving the editor's exact text as a file is a separate exclusive create,
-  at the note's own path when it is free, else as a new note; a file found
-  at either path stays as it is. Refuse text a file cannot hold exactly (an
-  unpaired surrogate) rather than let encoding replace it. Never try another
-  path after a create whose reply was lost. Keep the exact text on screen
-  until an editor opens over the new file, or the person dismisses it.
+- The session owns the draft; a save never assigns it. ProseMirror's
+  `EditorState` owns the rich-text document, cursor, and undo history.
 - Every ProseMirror transaction that changes the document goes through
-  current-body reconciliation and checked Markdown serialization before it is
-  displayed. Get admission from the note's editor before `view.updateState`,
-  including when the encoded body is unchanged.
-  Discard a transaction based on content that reconciliation replaced.
+  `stateAfter`: current-body reconciliation, checked Markdown serialization,
+  then `session.edit` with the body made `wellFormed`, before it is shown.
+  Refuse it while `session.locked`. Do not refuse an edit only because a file
+  cannot hold it (a lone surrogate): sanitize it, or ProseMirror and the
+  draft diverge.
 - Do not weaken `checkNoteDoc` to let an edit through. If Markdown cannot
   spell it, the edit is refused. If it should be spellable, fix the
   serializer and add the case to `markdown.test.ts`; the property tests in
@@ -139,16 +73,16 @@ against the code. The constraints below apply to every edit here.
 - Adding a node or mark to `editor/schema.ts` requires its Markdown in both
   directions and tests for both. Source the schema cannot hold is refused by
   `inspectNoteBody`, not dropped.
-- A view shows content only after the note's editor admits it. If the editor
-  refuses a change, the rich view refuses that transaction too. The editor
-  admits its current row itself without saving, which is how an edit
-  Markdown cannot spell (a new empty paragraph) is shown.
-- The rich-text view's lifetime depends on one boolean (`editable`) and its
-  element. Do not make its mount effect read anything that changes on a
-  keystroke; that recreates the view and erases undo history.
-- An open note's text is never replaced by an observation, a failed save, a
-  refused save, a rename, a delete, or a selection change. Only the person's
-  reload replaces it.
+- The rich-text view's lifetime depends on one boolean (`editable`), its
+  element, and the session's `generation` (a read replaced the draft). Do not
+  make its mount effect read anything that changes on a keystroke; that
+  recreates the view and erases undo history.
+- Leaving an item waits for `settled()`, then releases its session. A draft
+  whose save failed or conflicted is let go only when the person confirms
+  the discard for that session. Rename and delete act on
+  `settled().file`; delete releases the session first.
+- Views disable their inputs with `session.locked`, and a released session
+  takes no input, so a control that outlives its view changes nothing.
 
 ## Closing
 
@@ -164,7 +98,7 @@ against the code. The constraints below apply to every edit here.
   `src-tauri/src/close.rs`, and keep **Keep editing** an explicit decline.
 - Input is fenced before drafts are counted and stays fenced while the
   approval is on its way. `notes.fenceInput()` is the one switch: sessions
-  refuse input and choices, notes actions and the terminal refuse to run,
+  lock, notes actions and the terminal refuse to run,
   and `NotesView` is `inert`. A new way to change a file must check it, and
   a control in a menu, popover, or dialog must also be `disabled`, because
   those render outside the inert root. Do not unmount the editors to fence
@@ -225,7 +159,7 @@ against the code. The constraints below apply to every edit here.
 - Do not add fault injection to the shell or wrap the folder's writes to
   simulate failures. The README lists how to produce a real failure in a
   disposable directory; never test against the default one. Tests fault the
-  folder's storage stand-in, never a wrapper around the row editor.
+  folder's storage stand-in, never a wrapper around a session.
 - A commit failure is a Git fact. Do not turn one into a save error, and do
   not make a save wait for a commit.
 - `bun run test` must not need Rust. Tests that need the shell live in

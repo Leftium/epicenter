@@ -45,14 +45,15 @@ export function draftsLine(state: {
 	if (state.notSaved > 0)
 		return {
 			label: `${state.notSaved} ${state.notSaved === 1 ? 'draft' : 'drafts'} not saved`,
-			detail: 'Open the note to retry, compare, or choose a version.',
+			detail:
+				'Open the note to try again, or to choose between your version and theirs.',
 			tone: 'error',
 		};
 	if (state.unconfirmed > 0)
 		return {
 			label: `${state.unconfirmed} ${state.unconfirmed === 1 ? 'change' : 'changes'} not confirmed`,
 			detail:
-				'Each may or may not have happened. Open the note, or see Not confirmed below.',
+				'It may or may not be in the file. Open the note to save it again.',
 			tone: 'warning',
 		};
 	if (state.saving) return { label: 'Saving…', tone: 'busy' };

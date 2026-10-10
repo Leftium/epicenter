@@ -67,9 +67,10 @@ export type StoredRow<TFields> = {
 };
 
 /**
- * One item for every `.md` file directly in the table's directory, in no
- * promised order, each read through the same pipeline as `get`. A file that
- * went away after it was enumerated is that item's `NotFound`.
+ * One item for every `.md` name directly in the table's directory, in no
+ * promised order, each read through the same pipeline as `get`. A symbolic
+ * link is that item's `InvalidPath` and a directory its `NotAFile`. A file
+ * that went away after it was enumerated is that item's `NotFound`.
  */
 export type TableListing<TFields> = readonly {
 	readonly stem: string;

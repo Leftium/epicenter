@@ -434,6 +434,11 @@ tables, settings, and native file boundary an opened folder uses, so a tool
 and an application reach the same verdict on every file. A symbolically
 linked table directory is that table's `InvalidPath`, never followed.
 
+The declaration must be one an opener could have published. A top-level key
+other than `title`, `kv`, `tables`, or `$schema` (which only helps an editor
+offer completion), or anything `exportSchema` refuses, such as an unknown
+`format`, is `InvalidDeclaration`.
+
 It writes nothing: no Git repository, marker, lock, or declaration, and it
 loads no native addon. It can read a folder an application has open, or one
 nested anywhere in another repository. Each file is read whole, but the
@@ -533,8 +538,10 @@ refuses removing the file or a directory above it; a Chrome 142 probe showed
 that, and other engines are unverified. Bytes another program writes in that
 last window are still replaced: the hash check stays best effort.
 
-`list()` inventories the whole folder; `children(directory)` lists one level
-and accepts `''` for the root. `open(path)` returns a stable `Blob` for
+`list()` inventories the whole folder's regular files and directories;
+`children(directory)` lists one level and accepts `''` for the root. It names
+every entry: real subdirectories in `directories`, and everything else in
+`files`, including a symbolic link or special entry that a read refuses. `open(path)` returns a stable `Blob` for
 consumption, without holding a file descriptor. `mkdir(path)` creates missing
 parents; `rmdir(path)` removes an empty directory. These directory operations
 do not request history through the file publisher.

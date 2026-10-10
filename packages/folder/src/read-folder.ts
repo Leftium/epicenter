@@ -14,6 +14,7 @@
  */
 
 import { lstat, realpath } from 'node:fs/promises';
+import { exportSchema } from '@epicenter/definition';
 import { defineErrors, type InferErrors } from 'wellcrafted/error';
 import { Ok, type Result } from 'wellcrafted/result';
 import {
@@ -38,8 +39,9 @@ export const ReadFolderError = defineErrors({
 		root,
 	}),
 	/**
-	 * `epicenter.json` is not a readable file, is not UTF-8 JSON, or declares
-	 * nothing a folder can keep.
+	 * `epicenter.json` is not a readable file, is not UTF-8 JSON, has a
+	 * top-level key other than `title`, `kv`, `tables`, or `$schema`, or
+	 * declares something an opener could not have published.
 	 */
 	InvalidDeclaration: ({ root, reason }: { root: string; reason: string }) => ({
 		message: `'${root}/${DECLARATION_PATH}' cannot be used: ${reason}`,
@@ -70,6 +72,9 @@ export type FolderReading = {
 };
 
 const utf8 = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true });
+
+/** `$schema` lets an editor offer completion; it is not interpreted. */
+const DECLARATION_KEYS = new Set(['title', 'kv', 'tables', '$schema']);
 
 /**
  * Read the data folder at `root`. A directory with no `epicenter.json` is
@@ -111,14 +116,47 @@ export async function readFolder(
 			reason: `it is not UTF-8 JSON (${cause instanceof Error ? cause.message : String(cause)})`,
 		});
 	}
+	if (
+		declared === null ||
+		typeof declared !== 'object' ||
+		Array.isArray(declared)
+	)
+		return ReadFolderError.InvalidDeclaration({
+			root,
+			reason: 'it is not a JSON object',
+		});
+	// A misspelled top-level key would otherwise read as an empty declaration.
+	const unknown = Object.keys(declared).filter(
+		(key) => !DECLARATION_KEYS.has(key),
+	);
+	if (unknown.length > 0)
+		return ReadFolderError.InvalidDeclaration({
+			root,
+			reason: `unknown top-level key ${unknown.map((key) => `'${key}'`).join(', ')}; expected title, kv, tables, or $schema`,
+		});
+	const { $schema: _editorHint, ...described } = declared as Record<
+		string,
+		unknown
+	>;
 	// prepareFolderDefinition checks the parsed value at runtime.
 	const { data: definition, error: definitionError } = prepareFolderDefinition(
-		declared as FolderDefinition,
+		described as FolderDefinition,
 	);
 	if (definitionError !== null)
 		return ReadFolderError.InvalidDeclaration({
 			root,
 			reason: definitionError.reason,
+		});
+	// epicenter.json is what exportSchema writes (ADR-0517), so a declaration
+	// it refuses, such as an unknown format, could not have been published.
+	const { error: exportError } = exportSchema(definition);
+	if (exportError !== null)
+		return ReadFolderError.InvalidDeclaration({
+			root,
+			reason:
+				exportError.cause instanceof Error
+					? exportError.cause.message.replace(/^\$\./, '')
+					: exportError.message,
 		});
 
 	const tables: Record<

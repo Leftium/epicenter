@@ -9,7 +9,8 @@
  *   and `kv` is exactly what its `kv.get()` returns
  * - A directory without `epicenter.json` is `NotDataFolder`; a declaration
  *   that is not UTF-8 JSON or declares nothing a folder can keep is
- *   `InvalidDeclaration`; a missing root is `NotFound`, a file root
+ *   `InvalidDeclaration`, as is an unknown top-level key or anything
+ *   `exportSchema` refuses, such as an unknown format; a missing root is `NotFound`, a file root
  *   `NotADirectory`
  * - A symbolically linked table directory is that table's refusal, never
  *   followed, and the other tables still read
@@ -111,13 +112,57 @@ test('a directory without epicenter.json is NotDataFolder', async () => {
 });
 
 test('a declaration that cannot be used is InvalidDeclaration', async () => {
-	for (const text of ['{ not json', '{"tables": {"t": {"fields": 3}}}']) {
+	for (const text of [
+		'{ not json',
+		'null',
+		'[]',
+		'{"tables": {"t": {"fields": 3}}}',
+	]) {
 		const root = await scratch();
 		await writeFile(join(root, DECLARATION_PATH), text);
 		expect(expectErr(await readFolder(root))).toMatchObject({
 			name: 'InvalidDeclaration',
 		});
 	}
+});
+
+test('an unknown top-level key is InvalidDeclaration, and $schema is allowed', async () => {
+	const root = await scratch();
+	const tables = { todos: { fields: { title: { type: 'string' } } } };
+	await writeFile(
+		join(root, DECLARATION_PATH),
+		JSON.stringify({ kv: {}, tabels: tables }),
+	);
+	const refused = expectErr(await readFolder(root));
+	expect(refused).toMatchObject({ name: 'InvalidDeclaration' });
+	expect(refused.message).toContain("'tabels'");
+
+	await writeFile(
+		join(root, DECLARATION_PATH),
+		JSON.stringify({ $schema: 'https://example.test/s.json', kv: {}, tables }),
+	);
+	expect(Object.keys(expectOk(await readFolder(root)).tables)).toEqual([
+		'todos',
+	]);
+});
+
+test('a declaration exportSchema refuses, such as an unknown format, is InvalidDeclaration', async () => {
+	const root = await scratch();
+	await writeFile(
+		join(root, DECLARATION_PATH),
+		JSON.stringify({
+			kv: {},
+			tables: {
+				todos: {
+					fields: { due: { type: 'string', format: 'date-tme' } },
+				},
+			},
+		}),
+	);
+	const refused = expectErr(await readFolder(root));
+	expect(refused).toMatchObject({ name: 'InvalidDeclaration' });
+	expect(refused.message).toContain('tables.todos.fields.due.format');
+	expect(refused.message).toContain('date-tme');
 });
 
 test('a missing root is NotFound and a file root is NotADirectory', async () => {

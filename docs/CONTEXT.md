@@ -124,12 +124,14 @@ shapes, see `docs/adr/`.
 
 ## Data API
 
-- **Data folder** (file-first proposal, unbuilt): one definition's current
-  Markdown rows, `kv.json`, and owned attachments within a Local or account scope.
+- **Data folder** (ADR-0517): a directory containing `definition.json`, which
+  declares the `<table>/<stem>.md` directories and `kv.json` beside it. It may
+  sit at any depth in any Git repository; apps open and sync only one at a
+  repository root.
 - **Owned attachment** (ADR-0456): zero or one `<id>.<extension>` sibling of
   `<table>/<id>.md`, created and deleted with its row; links do not acquire ownership.
-- **Query index** (ADR-0463, unbuilt): optional root `index.sqlite3`, generated
-  from a data folder for external reads and excluded from source synchronization.
+- **Query projection** (ADR-0494): an in-memory SQLite database built from a
+  data folder's current files for one query or session; nothing persists it.
 
 - **Store**: one replica with tables, KV, and a blob namespace. Opening acquires
   documents and blobs before returning the handle. Row and KV access is

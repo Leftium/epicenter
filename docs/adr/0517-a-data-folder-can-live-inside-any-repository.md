@@ -1,0 +1,118 @@
+# 0517. A data folder can live inside any repository
+
+- **Status:** Proposed
+- **Date:** 2026-10-11
+- **Relates:** [ADR-0494](0494-file-folders-reserve-epicenter-for-rebuildable-caches.md) (queries build transient projections), [ADR-0488](0488-cloud-folders-use-independent-git-histories.md) (one pairing per repository), [ADR-0490](0490-the-cli-discovers-folders-and-delegates-history-to-git.md) (discovery lists repositories), [ADR-0508](0508-folder-opening-overwrites-root-definition-json.md) (opening publishes `definition.json`), [ADR-0510](0510-authored-dataset-locations-are-independent-of-sign-in.md) (stable authored locations)
+- **Unbuilt:** reading `definition.json` as input, discovering data folders by it, the query command over a hosted data folder, opener refusal of a root inside another repository, extraction tooling, and opening a submodule-hosted data folder in the native engine.
+
+## Context
+
+ADR-0510 gives one dataset one stable directory containing its files and Git
+history, and ADR-0488 names each dataset by a folder ID paired with one
+repository. Together they treat a data folder as one directory, one Git
+repository, and one folder ID. That equivalence serves app sync: transfers,
+ownership locks, history adoption, and repository-scoped credentials all
+operate on one repository.
+
+It also prevents adding structured Markdown to a repository that already
+exists. A personal vault, a project repository, or a team repository can hold
+a publishing plan that people and agents edit as files and query with SQL.
+Requiring a separate repository first makes that plan harder to start, and a
+separate repository buys nothing until an app needs to open it.
+
+## Decision
+
+**A data folder is any directory containing `definition.json`.** The file
+declares the table directories (`<table>/<stem>.md`) and the `kv.json` beside
+it. It claims nothing else: other files and directories beside it are ordinary
+files. A Git repository may contain any number of data folders at any depth.
+A directory declared as a table must not contain its own `definition.json`.
+
+```text
+vault/                            host repository
+  plan/                           data folder
+    definition.json               declares accounts, posts, and kv
+    kv.json
+    accounts/instagram.md
+    posts/2026-10-14-reel.md
+  crm/                            another data folder in the same repository
+    definition.json
+    people/alex.md
+  journal/                        no definition.json: ordinary files
+```
+
+**Reading and querying need no repository of their own.** A data folder inside
+a host repository is edited as ordinary files and recorded in the host's
+history. Queries build an in-memory projection from the current files under
+ADR-0494; nothing persists a database beside the data folder.
+
+**App sync requires a data folder at a repository root.** Apps transfer,
+lock, and receive credentials per repository (ADR-0488). An app never holds
+credentials to a host repository in order to reach a data folder inside it.
+Discovery lists repositories (ADR-0490); data folders inside a repository are
+found by their `definition.json`, not registered. Folder IDs, pairings, and
+ADR-0510's one-directory rule apply to repository-root data folders. A hosted
+data folder has no folder ID; its address is its host repository and its path
+inside it.
+
+**A hosted data folder moves to its own repository by extraction.** Split its
+history out of the host into a new repository, remove the directory from the
+host, and add the new repository back at the same path as a submodule. Leave
+`ignore` unset so the host's status shows when the recorded commit falls
+behind. Extraction keeps each commit's whole message, so a commit that touches
+a hosted data folder touches nothing else.
+
+```sh
+git subtree split --prefix=plan -b plan-only
+# create the new repository and push plan-only to it as main
+git rm -r plan
+git commit -m "Move plan to its own repository"
+git submodule add <repository-url> plan
+```
+
+## Consequences
+
+- Any repository adopts a data folder by adding `definition.json` and its
+  table directories. No Epicenter command, marker, or separate history is
+  required.
+- A hosted data folder's history belongs to the host until extraction. Split
+  history has new commit IDs; the host keeps the original commits.
+- After a fresh `git clone --recurse-submodules`, the submodule sits at the
+  recorded commit with a detached HEAD. A setup step switches it to `main` and
+  pulls. Plain `git clone` leaves the directory empty, and the
+  `submodule.recurse` setting does not apply to `clone`.
+- The Bun and Tauri openers do not recognize a hosted data folder. Given its
+  directory, they stop Git discovery at that directory and run `git init`
+  there, creating a nested repository inside the host. Do not open a hosted
+  data folder with them until they refuse a root inside another repository's
+  work tree.
+- A submodule's `.git` is a `gitdir:` file. Both openers refuse that layout
+  (`verifyNativeLayout` and the Rust `verify_layout`), so an app on the same
+  machine opens its own clone of the extracted repository until
+  submodule-hosted data folders are supported.
+- If the host is itself an app-opened data folder, the engine refuses
+  whole-folder commits once it contains a submodule. Extract only from hosts
+  that people and agents commit with ordinary Git.
+- No production code reads `definition.json` as input today. `prepareSchema`
+  accepts what `exportSchema` writes, so a reader needs no new format.
+- ADR-0508 publication is unchanged: an app opening a data folder at a
+  repository root still overwrites its `definition.json`. A hosted data folder
+  that no app opens keeps the `definition.json` its authors wrote. Whether
+  opening should read an authored definition rather than replace it is
+  undecided.
+
+## Considered alternatives
+
+- **One definition per directory of rows.** Each `definition.json` would
+  describe only the `.md` files beside it. Related tables would split across
+  files, and `kv.json` would have no declaration.
+- **Apps sync a nested data folder through its host repository.** The app
+  would need credentials to the whole host and would merge files it does not
+  understand.
+- **An ignored inner repository instead of a submodule.** The host cannot
+  restore it on clone, and ripgrep, which agents use to search, skips ignored
+  paths.
+- **A subtree as the lasting arrangement.** It keeps two histories of the same
+  files and a merge step that someone has to own.
+- **A separate repository from the start.** It requires a pointer, a setup
+  step, and engine support for submodules before any app needs them.

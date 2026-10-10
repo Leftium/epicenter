@@ -2,7 +2,7 @@
 
 - **Status:** Proposed
 - **Date:** 2026-10-03
-- **Relates:** [ADR-0436](0436-stores-own-local-sqlite-namespaces.md) defines current store-owned SQL; [ADR-0459](0459-sqlite-is-a-local-capability-for-derived-or-transactional-state.md) separates authored files from application SQL; [ADR-0463](0463-queryable-exports-contain-completed-sqlite-snapshots.md) records the deferred query export proposal.
+- **Relates:** [ADR-0436](0436-stores-own-local-sqlite-namespaces.md) defines current store-owned SQL; [ADR-0459](0459-sqlite-is-a-local-capability-for-derived-or-transactional-state.md) separates authored files from application SQL; [ADR-0463](0463-queryable-exports-contain-completed-sqlite-snapshots.md) records the deferred query export proposal. [ADR-0517](0517-a-data-folder-can-live-inside-any-repository.md) supplies the first caller: queries over a data folder inside a host repository.
 - **Unbuilt:** folder query sessions, projection schema and capture contract, managed-folder ignore initialization and file-first Mail resource composition. Persistent folder caches and their locations are deferred, not implementation tasks.
 
 ## Context
@@ -76,6 +76,14 @@ A concrete consumer and end-to-end measurements must establish the benefit over
 retaining a projection in memory. Measure enumeration, reads, parsing, SQL
 construction, repeated queries, and peak memory on native files and browser
 IndexedDB source. A synthetic Yjs or insertion-only benchmark cannot settle this.
+
+The first caller is a command that answers one SQL query over a data folder
+inside a host repository (ADR-0517) and builds its projection on every call. On
+2026-10-11, reading 2,615 Markdown pages (9.6 MB) from a native directory,
+parsing each with `parseRow`, and inserting them into in-memory Bun SQLite took
+about 0.2 seconds on an Apple silicon Mac. That measures one cold native call,
+not repeated queries, peak memory, or browser source. At that size a rebuild
+per query needs no persistent file.
 
 A later decision must select cache ownership, placement, validation, publication,
 and recovery together. There is no current commitment to a folder-local file,

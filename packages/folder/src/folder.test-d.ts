@@ -559,8 +559,10 @@ async function typedValues(
 		if (moveError.name === 'SourceNotRemoved')
 			expectTypeOf(moveError.moved).toEqualTypeOf<FileCapture>();
 	}
-	// A kept source's receipt still admits a move that named no hash.
-	expectTypeOf<TableRenameError>().toEqualTypeOf<FileError | MoveError>();
+	// A row rename is always guarded, so a kept source names the moved capture.
+	expectTypeOf<TableRenameError>().toEqualTypeOf<
+		FileError | CapturedMoveError
+	>();
 	expectTypeOf<
 		Extract<MoveError, { name: 'SourceNotRemoved' }>['moved']
 	>().toEqualTypeOf<FileCapture | undefined>();

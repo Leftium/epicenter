@@ -20,7 +20,7 @@ import {
 	ownCapture,
 } from './capture.js';
 import type { CapturedMoveError, FileError } from './errors.js';
-import { applyOne } from './storage.js';
+import { applyOne, replaceCaptured } from './storage.js';
 
 /**
  * Ordinary files at literal folder-relative paths (ADR-0479).
@@ -72,8 +72,9 @@ export type FolderFiles = {
 	 * Save one editing session's content over the captured file. Each save is
 	 * guarded by the bytes the previous one confirmed, starting from the
 	 * capture, so a change made elsewhere is `Conflict` rather than
-	 * overwritten; the session then needs a fresh capture. Content is copied
-	 * when requested. Construction reads, writes, and reports nothing.
+	 * overwritten; the session then needs a fresh capture. `saved` carries the
+	 * capture of the bytes now in the file. Content is copied when requested.
+	 * Construction reads, writes, and reports nothing.
 	 */
 	autosave(
 		file: FileCapture,
@@ -156,24 +157,12 @@ export function createFiles({
 		overwrite: (path, content) =>
 			save({ kind: 'overwrite', path, bytes: ownBytes(content) }),
 		autosave(file, { onState }) {
-			// The capture each save is guarded by; it advances only on a confirmed save.
 			const owned = ownCapture(file);
-			let confirmed = owned.data;
 			return createAutosave({
+				file: owned.data ?? file,
 				prepare: (content: string | Uint8Array) =>
 					owned.error !== null ? Err(owned.error) : Ok(ownBytes(content)),
-				async write(bytes) {
-					if (confirmed === null) return Err(owned.error as FileError);
-					const { path, sha256 } = confirmed;
-					const saved = await save({
-						kind: 'replace',
-						path,
-						bytes,
-						expectedSha256: sha256,
-					});
-					if (saved.error === null) confirmed = saved.data;
-					return saved;
-				},
+				write: (bytes, over) => replaceCaptured(storage, over, bytes),
 				onState,
 			});
 		},

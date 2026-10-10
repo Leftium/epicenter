@@ -4,7 +4,7 @@
  */
 import { Err, Ok, type Result } from 'wellcrafted/result';
 import type { FileChange, FolderStorage } from './boundary.js';
-import { fileCapture } from './capture.js';
+import { type FileCapture, fileCapture, hashBytes } from './capture.js';
 import {
 	type CapturedMoveError,
 	FileError,
@@ -146,4 +146,32 @@ export async function applyOne(
 		operation: 'publishing',
 		cause: error,
 	});
+}
+
+/**
+ * Replace the captured file's bytes and return the capture of the new ones.
+ * Refused as `Conflict` when the file no longer holds the captured bytes. A
+ * reply that leaves the outcome `Unconfirmed` is checked with one read:
+ * bytes that hash to what was sent are this save, confirmed after all, so a
+ * session does not mistake its own landed save for someone else's change.
+ */
+export async function replaceCaptured(
+	storage: Pick<FolderStorage, 'apply' | 'read'>,
+	file: FileCapture,
+	bytes: Uint8Array,
+): Promise<Result<FileCapture, FileError>> {
+	const sha256 = await hashBytes(bytes);
+	const applied = await applyOne(storage, {
+		kind: 'replace',
+		path: file.path,
+		bytes,
+		sha256,
+		expectedSha256: file.sha256,
+	});
+	if (applied.error === null) return Ok(fileCapture(file.path, sha256));
+	if (applied.error.name !== 'Unconfirmed') return Err(applied.error);
+	const read = await storage.read(file.path);
+	if (read.error === null && read.data.sha256 === sha256)
+		return Ok(fileCapture(file.path, sha256));
+	return Err(applied.error);
 }

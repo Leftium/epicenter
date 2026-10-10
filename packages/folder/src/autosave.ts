@@ -7,9 +7,11 @@
  * runs replace one pending snapshot, so intermediate snapshots may never be
  * written. A save result never assigns the caller's value.
  *
- * `onState` reports the latest request's outcome: `saving` while its work
- * runs or waits, `saved` once it is confirmed, or the `error` that stopped
- * it. A request that cannot be prepared is that error at once: it drops the
+ * Each write is guarded by the capture the previous one confirmed, starting
+ * from the session's own: a change made elsewhere is `Conflict`, never
+ * overwritten. `onState` reports the latest request's outcome: `saving`
+ * while its work runs or waits, `saved` with the capture of the bytes now
+ * in the file, or the `error` that stopped it. A request that cannot be prepared is that error at once: it drops the
  * pending snapshot, and an older write that finishes afterward cannot report
  * `saved` over it. Nothing retries; requesting again is the retry. Nothing
  * is saved when the session ends unless it was requested.
@@ -17,6 +19,7 @@
 import { defineErrors, type InferErrors } from 'wellcrafted/error';
 import { createLogger } from 'wellcrafted/logger';
 import type { Result } from 'wellcrafted/result';
+import type { FileCapture } from './capture.js';
 import { callObserver } from './observer.js';
 
 const log = createLogger('folder/autosave');
@@ -30,9 +33,13 @@ export const AutosaveError = defineErrors({
 });
 export type AutosaveError = InferErrors<typeof AutosaveError>;
 
-/** The outcome of an editing session's latest requested save. */
+/**
+ * The outcome of an editing session's latest requested save. `saved` names
+ * the bytes the session last confirmed, which guard its next write and any
+ * other guarded action on the file.
+ */
 export type SaveState<TError> =
-	| { readonly status: 'saved' }
+	| { readonly status: 'saved'; readonly file: FileCapture }
 	| { readonly status: 'saving' }
 	| { readonly status: 'error'; readonly error: TError };
 
@@ -52,21 +59,29 @@ export type Autosave<TValue, TError> = {
 };
 
 /**
- * Coordinate snapshot saves. `prepare` runs synchronously inside `request`;
- * `write` saves one prepared snapshot and owns its publication condition.
- * Construction reads, writes, and reports nothing.
+ * Coordinate snapshot saves over `file`. `prepare` runs synchronously inside
+ * `request`; `write` saves one prepared snapshot over the confirmed capture
+ * and returns the capture of what it saved. Construction reads, writes, and
+ * reports nothing.
  */
 export function createAutosave<TValue, TSnapshot, TError>({
+	file,
 	prepare,
 	write,
 	onState,
 }: {
+	file: FileCapture;
 	prepare(value: TValue): Result<TSnapshot, TError>;
-	write(snapshot: TSnapshot): Promise<Result<unknown, TError>>;
+	write(
+		snapshot: TSnapshot,
+		over: FileCapture,
+	): Promise<Result<FileCapture, TError>>;
 	onState(state: SaveState<TError | AutosaveError>): void;
 }): Autosave<TValue, TError | AutosaveError> {
 	type State = SaveState<TError | AutosaveError>;
-	let state: State = Object.freeze({ status: 'saved' });
+	/** What the file held after the last confirmed save: the next write's guard. */
+	let confirmed = file;
+	let state: State = Object.freeze({ status: 'saved', file: confirmed });
 	let pending: { snapshot: TSnapshot } | undefined;
 	/** The latest request's preparation failure, until a newer request prepares. */
 	let refused: { error: TError } | undefined;
@@ -78,11 +93,11 @@ export function createAutosave<TValue, TSnapshot, TError>({
 	}
 
 	async function writeFrom(snapshot: TSnapshot, done: (state: State) => void) {
-		let outcome: Result<unknown, TError | AutosaveError>;
+		let outcome: Result<FileCapture, TError | AutosaveError>;
 		try {
 			// Yield even when the writer throws synchronously, so a terminal
 			// observer's next request cannot grow the recursive stack.
-			outcome = await Promise.resolve().then(() => write(snapshot));
+			outcome = await Promise.resolve().then(() => write(snapshot, confirmed));
 		} catch (cause) {
 			const defect = AutosaveError.UnexpectedWriterError({ cause });
 			// Keep defects visible even when newer work supersedes them.
@@ -90,12 +105,14 @@ export function createAutosave<TValue, TSnapshot, TError>({
 			outcome = defect;
 		}
 
+		// A generic error type cannot narrow `data`; a null error means it is the capture.
+		if (outcome.error === null) confirmed = outcome.data as FileCapture;
 		// The latest request's own failure already stands; this older write
 		// cannot replace it, with `saved` or with its own error.
 		if (pending === undefined && refused === undefined)
 			publish(
 				outcome.error === null
-					? { status: 'saved' }
+					? { status: 'saved', file: confirmed }
 					: { status: 'error', error: outcome.error },
 			);
 

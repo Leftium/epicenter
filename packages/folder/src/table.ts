@@ -7,17 +7,15 @@
  * bytes read, and the row they hold. Text that is not a valid row is
  * `InvalidRow`, which keeps the exact text and its hash for raw repair.
  *
- * An editing session saves through `autosave`: the caller owns the row,
- * each request formats it before returning, and one write runs at a time
- * with only the latest request waiting. Its writes replace the existing row
- * whatever it holds, so a complete row can overwrite a change made
- * elsewhere; it never recreates a deleted row.
- *
- * Every other write after `create` names the bytes it replaces. `replace`,
+ * Every write after `create` names the bytes it replaces. `replace`,
  * `rename`, and `delete` take a capture, `{ path, sha256 }`: a `StoredRow`,
  * an `InvalidRow`, or a listed row passes as it is. The change is refused as
  * `Conflict` when the file no longer holds those bytes, and nothing retries
  * (ADR-0464). `create` alone is unconditional, and refuses an occupied stem.
+ * An editing session saves through `autosave`: the caller owns the row,
+ * each request is prepared before it returns, one write runs at a time with
+ * only the latest request waiting, and each write is guarded by the bytes
+ * the previous one saved.
  * The hash is a condition on bytes, not an identity or a revision.
  *
  * A table reads and writes exactly one Markdown file per row (ADR-0480). A
@@ -56,7 +54,7 @@ import {
 	rowStemOf,
 } from './paths.js';
 import { formatRow, parseRow, type Row } from './row-text.js';
-import { applyOne } from './storage.js';
+import { applyOne, replaceCaptured } from './storage.js';
 
 /**
  * One read of a row file: which bytes were read, and the row they hold. The
@@ -116,15 +114,17 @@ export type FileTable<TFields> = {
 	/** Remove the captured row file, guarded by its bytes. */
 	delete(file: FileCapture): Promise<Result<undefined, TableDeleteError>>;
 	/**
-	 * Save one editing session's row at `stem`. Each `request(row)` formats
-	 * the complete row before returning; a value that cannot be written is
-	 * that request's `InvalidValues` at once. Schema validity is not
-	 * required, so a draft saves as typed. Each write replaces the existing
-	 * row; a missing row is `NotFound` and is never recreated. Construction
+	 * Save one editing session's row over the captured row file. Each
+	 * `request(row)` is prepared before it returns: a row that is not valid,
+	 * or that cannot be written, is that request's `InvalidValues` at once and
+	 * is never written, so the session's draft stays the caller's to fix. Each
+	 * write is guarded by the bytes the previous one saved, starting from the
+	 * capture; a change made elsewhere, or a deleted row, is `Conflict`.
+	 * `saved` carries the capture of the bytes now in the file. Construction
 	 * reads, writes, and reports nothing.
 	 */
 	autosave(
-		stem: string,
+		file: FileCapture,
 		options: { onState(state: SaveState<RowSaveError>): void },
 	): Autosave<Row<TFields>, RowSaveError>;
 };
@@ -319,17 +319,13 @@ export function createTable<TFields>(
 			if (captureError !== null) return Err(captureError);
 			const { data: prepared, error: prepareError } = prepare(row);
 			if (prepareError !== null) return Err(prepareError);
-			const { path } = captured;
-			const sha256 = await hashBytes(prepared.bytes);
-			const { error: applyError } = await applyOne(storage, {
-				kind: 'replace',
-				path,
-				bytes: prepared.bytes,
-				sha256,
-				expectedSha256: captured.sha256,
-			});
-			if (applyError !== null) return Err(applyError);
-			return Ok(Object.freeze({ path, sha256, row: prepared.row }));
+			const { data: saved, error: saveError } = await replaceCaptured(
+				storage,
+				captured,
+				prepared.bytes,
+			);
+			if (saveError !== null) return Err(saveError);
+			return Ok(Object.freeze({ ...saved, row: prepared.row }));
 		},
 		async rename(file, nextStem) {
 			const { data: captured, error: captureError } = ownRowCapture(file);
@@ -363,28 +359,15 @@ export function createTable<TFields>(
 				expectedSha256: captured.sha256,
 			});
 		},
-		autosave(stem, { onState }) {
-			const address = rowAddress(stem);
+		autosave(file, { onState }) {
+			const owned = ownRowCapture(file);
 			return createAutosave({
+				file: owned.data ?? file,
 				prepare(row: Row<TFields>) {
-					if (address.error !== null) return Err(address.error);
-					const { data: text, error: refusal } = formatRow(
-						table,
-						row as Parameters<typeof formatRow>[1],
-					);
-					if (refusal !== null)
-						return TableError.InvalidValues({ issues: [refusal] });
-					return Ok({ path: address.data, ...submittedText(text) });
+					if (owned.error !== null) return Err(owned.error);
+					return prepare(row);
 				},
-				async write({ path, bytes }) {
-					// Existing-only and unconditional: the session's latest row wins.
-					return applyOne(storage, {
-						kind: 'replace',
-						path,
-						bytes,
-						sha256: await hashBytes(bytes),
-					});
-				},
+				write: ({ bytes }, over) => replaceCaptured(storage, over, bytes),
 				onState,
 			});
 		},

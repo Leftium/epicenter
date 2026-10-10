@@ -295,8 +295,8 @@ export type RowSaveError =
 	| TableErrorOf<'InvalidValues'>
 	| AutosaveError;
 
-/** Moving a row preserves the file move's failures. */
-export type TableRenameError = FileError | MoveError;
+/** A guarded row move preserves the file move's failures, its landed capture included. */
+export type TableRenameError = FileError | CapturedMoveError;
 
 /** Removing a row preserves the storage operation's failures. */
 export type TableDeleteError = FileError;

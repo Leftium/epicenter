@@ -4,7 +4,8 @@
  *
  * Every removal is guarded by the bytes captured, so a file changed after the
  * person was asked is refused and kept. An open draft of a file waits for its
- * saves first: capturing refuses while its save failed, and removing releases
+ * saves first, even one whose save failed: the person chose to delete the
+ * file, and the dialog says unsaved edits are discarded. Removing releases
  * its session and deletes the file its last save confirmed.
  *
  * Deleting a recording removes its row, its transcripts, and the results made
@@ -78,9 +79,6 @@ export type DeletionContext = {
 const sessionOf = (draft: Draft | undefined) =>
 	draft !== undefined && 'session' in draft ? draft.session : undefined;
 
-const UNSAVED = (path: string) =>
-	`${path} has edits that are not saved. Save or discard them first.`;
-
 /** A recording's title, or its ID when the title is empty. */
 export function recordingTitle(entry: {
 	readonly stem: string;
@@ -93,15 +91,16 @@ export function recordingTitle(entry: {
 	return entry.stem === '' ? entry.path : entry.stem;
 }
 
-/** The file an open draft's last save confirmed, once its saves have landed. */
+/**
+ * The file an open draft's last save confirmed, once its saves have landed.
+ * A save that failed leaves the file as last saved.
+ */
 async function settledAt(
 	drafts: Drafts,
 	path: string,
-): Promise<Result<FileCapture | undefined, string>> {
+): Promise<FileCapture | undefined> {
 	const session = sessionOf(drafts.get(path));
-	if (session === undefined) return Ok(undefined);
-	const settled = await session.settled();
-	return settled.status === 'error' ? Err(UNSAVED(path)) : Ok(settled.file);
+	return session && (await session.settled()).file;
 }
 
 /** The file at `path` as it is now: its open draft's, or a fresh read. */
@@ -109,8 +108,7 @@ async function captureNow(
 	{ folder, drafts }: DeletionContext,
 	path: string,
 ): Promise<Result<FileCapture, string>> {
-	const { data: settled, error } = await settledAt(drafts, path);
-	if (error !== null) return Err(error);
+	const settled = await settledAt(drafts, path);
 	if (settled !== undefined) return Ok(settled);
 	const { data: read, error: readError } = await folder.files.read(path);
 	if (readError !== null)
@@ -181,10 +179,8 @@ export async function captureDeletion(
 		const busy = context.busy(recordingId);
 		if (busy !== undefined) return Err(busy);
 	}
-	if (recordingId !== undefined || transformationId !== undefined) {
-		const { error: unsettled } = await settledAt(drafts, path);
-		if (unsettled !== null) return Err(unsettled);
-	}
+	if (recordingId !== undefined || transformationId !== undefined)
+		await settledAt(drafts, path);
 
 	if (recordingId !== undefined) {
 		const { data: stored, error: readError } =
@@ -209,10 +205,6 @@ export async function captureDeletion(
 			recordingId,
 		);
 		if (resultsError !== null) return Err(resultsError);
-		for (const result of results) {
-			const { error: unsettled } = await settledAt(drafts, result.path);
-			if (unsettled !== null) return Err(unsettled);
-		}
 		return Ok({
 			kind: 'recording',
 			id: recordingId,
@@ -369,6 +361,10 @@ export async function removeDeletion(
 	}
 }
 
+/** A deletion goes on past an open draft whose save failed, and says so. */
+export const UNSAVED_DISCARDED =
+	'Edits here that are not saved are discarded too.';
+
 const count = (n: number, one: string, many: string) =>
 	`${n} ${n === 1 ? one : many}`;
 
@@ -392,7 +388,7 @@ export function describeDeletion(deletion: Deletion): {
 					deletion.audioPath
 						? `Its audio ${deletion.audioPath} is not deleted: it stays in the folder as an ordinary file, and you can delete it from Files. `
 						: ''
-				}Committed versions stay in Git history.`,
+				}${UNSAVED_DISCARDED} Committed versions stay in Git history.`,
 			};
 		}
 		case 'transformation':
@@ -402,7 +398,7 @@ export function describeDeletion(deletion: Deletion): {
 					deletion.results > 0
 						? `Its ${count(deletion.results, 'saved result stays', 'saved results stay')} in transformation_runs or text_runs, each with the prompt it used.`
 						: 'It has no saved results.'
-				} Committed versions stay in Git history.`,
+				} ${UNSAVED_DISCARDED} Committed versions stay in Git history.`,
 			};
 		case 'file': {
 			const { path } = deletion.file;
@@ -421,7 +417,7 @@ export function describeDeletion(deletion: Deletion): {
 					}`;
 			return {
 				title: `Delete ${basename(path)}?`,
-				description: `${what} Committed versions stay in Git history.`,
+				description: `${what} ${UNSAVED_DISCARDED} Committed versions stay in Git history.`,
 			};
 		}
 		case 'folder':

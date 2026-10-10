@@ -50,8 +50,8 @@ export function describeError(
 			return `"${basename(known.path)}" already exists here.`;
 		case 'Conflict':
 			return known.actualSha256 === undefined
-				? 'The file is no longer here. Nothing was changed.'
-				: 'The file changed elsewhere. Nothing was changed. Check it and try again.';
+				? 'The file is no longer here, so nothing was changed.'
+				: 'The file changed elsewhere, so nothing was changed. Check it and try again.';
 		case 'DirectoryNotEmpty':
 			return 'The folder is not empty, so nothing was deleted.';
 		case 'SourceNotRemoved':

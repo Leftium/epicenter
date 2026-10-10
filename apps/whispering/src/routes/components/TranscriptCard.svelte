@@ -14,7 +14,7 @@
 	import { transformationName } from '$lib/post-processing.js';
 	import { copyText, formatTime, lf, openItem } from './file-actions.js';
 	import { Textarea } from '@epicenter/ui/textarea';
-	import SaveBar from './SaveBar.svelte';
+	import SaveBar from '@epicenter/svelte/save-bar';
 	import TransformationOutput from './TransformationOutput.svelte';
 
 	/**
@@ -71,7 +71,14 @@
 			aria-label="Transcript of {formatTime(result.row.fields.createdAt) || result.path}"
 			data-testid="transcript-text"
 		/>
-		<SaveBar {library} session={row} compact />
+		<SaveBar
+			save={row.state}
+			hideWhenSaved
+			onRetry={() => row.retry()}
+			onReloadTheirs={() => library.reloadTheirs(row)}
+			gone={!library.canKeepMine(row)}
+			onKeepMine={library.canKeepMine(row) ? () => library.keepMine(row) : undefined}
+		/>
 	{:else}
 		<p class="max-h-64 overflow-y-auto rounded border p-2 whitespace-pre-wrap" data-testid="transcript-text-readonly">{text}</p>
 	{/if}
@@ -79,7 +86,14 @@
 		<p class="text-xs text-destructive" role="alert">
 			This transcript’s file is being edited as text, so its text cannot be edited here. Open it from Files.
 		</p>
-		<SaveBar {library} session={draft.session} compact />
+		<SaveBar
+			save={draft.session.state}
+			hideWhenSaved
+			onRetry={() => draft.session.retry()}
+			onReloadTheirs={() => library.reloadTheirs(draft.session)}
+			gone={!library.canKeepMine(draft.session)}
+			onKeepMine={library.canKeepMine(draft.session) ? () => library.keepMine(draft.session) : undefined}
+		/>
 	{:else if draft?.kind === 'failed'}
 		<p class="text-xs text-destructive" role="alert">
 			This transcript’s file could not be opened: {draft.message}

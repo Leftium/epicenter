@@ -85,8 +85,13 @@ async function settle(library: Library) {
 const field = <T extends Element>(target: ParentNode, selector: string) =>
 	target.querySelector<T>(selector);
 
-const saveState = (target: ParentNode) =>
-	target.querySelector('[data-save-state]')?.getAttribute('data-save-state');
+/** The save bar's state as the person reads it: a problem, saving, or saved. */
+function saveState(target: ParentNode) {
+	const bar = target.querySelector('[data-testid="save-bar"]');
+	if (bar === null) return undefined;
+	if (bar.querySelector('[role="alert"]') !== null) return 'error';
+	return bar.textContent?.includes('Saving') ? 'saving' : 'saved';
+}
 
 test('typing in a transcript’s view edits the draft of the path it shows, and saves it', async () => {
 	const { library, target, root } = await open({ [A]: transcript('Alpha.\n') });

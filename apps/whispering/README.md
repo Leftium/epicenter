@@ -490,13 +490,16 @@ saves land.
   **Try again** (or **Save again**) saves them; your next edit saves too.
 - Leaving an item whose save failed or conflicted asks "Discard unsaved
   changes?" first. Keeping it keeps the item open.
+- Deleting an item whose save failed or conflicted goes ahead: it deletes the
+  version last saved, and the delete dialog says edits that are not saved are
+  discarded too.
 - A draft that is not a valid row, such as a field with the wrong kind of
   value, is never written; the save line names what to fix.
 - Text typed or pasted into a field that a file cannot hold exactly (a lone
   surrogate) is saved with U+FFFD in its place.
 - The lists are read when the page opens, after this window's own actions and
-  terminal commands, and when you return to the window. Returning also takes
-  a newer version of an open file that has nothing unsaved.
+  terminal commands, and when you return to the window or its tab. Returning
+  also takes a newer version of an open file that has nothing unsaved.
 
 A recording, transcript, or transformation file whose text does not read as a
 row is listed under "Needs repair" with why, and opens as its text with its
@@ -597,27 +600,27 @@ afplay /tmp/whispering-restore/recordings/<recording-id>.wav
 This build edits files through the folder's edit sessions. These promises of
 the earlier build changed:
 
-- **A change made elsewhere is a conflict, not overwritten.** The next save of
+- A change made elsewhere is a conflict, not overwritten. The next save of
   an open recording, transcript, or transformation used to write over another
   program's change unless you chose **Reload from file**. Now it asks
   **Reload theirs** or **Keep mine**.
-- **A file deleted elsewhere can be created again from your version** (Keep
+- A file deleted elsewhere can be created again from your version (Keep
   mine), except a recording. It used to be never created again.
-- **No "Keep both".** A conflicting text file used to offer writing your
+- No "Keep both". A conflicting text file used to offer writing your
   version to `conflicts/<name>-<time>.md`.
-- **No paused autosave.** The debug menu's "Pause autosave" is gone; every
+- No paused autosave. The debug menu's "Pause autosave" is gone; every
   draft saves as you type.
-- **Several drafts are no longer kept per path.** Leaving an item releases its
+- Several drafts are no longer kept per path. Leaving an item releases its
   draft once its saves land; one whose save failed asks before it is
   discarded. Drafts used to stay in the window for every file you had opened.
-- **A row that does not read is repaired as text.** A recording with one bad
+- A row that does not read is repaired as text. A recording with one bad
   field used to stay in the table and keep playing and transcribing; now it is
   listed under "Needs repair" until its text reads.
-- **A lone surrogate is saved as U+FFFD.** It used to be refused with a notice.
-- **No "saved, cannot be shown" notice for a new recording.** Once both files
+- A lone surrogate is saved as U+FFFD. It used to be refused with a notice.
+- No "saved, cannot be shown" notice for a new recording. Once both files
   are confirmed the capture is dropped and the recording opens; the
   "Saved · 1 recording to check" status and its Refresh are gone.
-- **The lists no longer follow change hints.** They used to refresh within a
+- The lists no longer follow change hints. They used to refresh within a
   couple of seconds of any program's change; now they refresh when you return
   to the window, act, or press Check again.
 

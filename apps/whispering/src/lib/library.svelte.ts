@@ -37,6 +37,7 @@ import type {
 } from '@epicenter/folder';
 import { parseRow, rowPath, rowStemOf } from '@epicenter/folder';
 import { ancestorsOf, dirname, joinPath } from '@epicenter/folder/file-browser';
+import { createAdmissions } from '@epicenter/svelte/admissions';
 import type { Reread } from '@epicenter/svelte/edit-session';
 import { customAlphabet } from 'nanoid';
 import { createSubscriber, SvelteSet } from 'svelte/reactivity';
@@ -252,38 +253,15 @@ export function createLibrary(workspace: Workspace) {
 	 * and inspects is all there is. Work accepted before stays accepted.
 	 */
 	let admitting = $state(true);
-	/** Operations admitted and not finished; leaving and closing wait for them. */
-	const operations = new Set<Promise<unknown>>();
+	/** Work admitted and not finished; leaving and closing wait for it. */
+	const admissions = createAdmissions();
+	const { command } = admissions;
 
 	/** Why nothing new starts now, if it does not. */
 	function refused(): string | undefined {
 		if (closing) return CLOSING;
 		if (!admitting) return LEAVING;
 		return undefined;
-	}
-
-	function admitted<T>(work: Promise<T>): Promise<T> {
-		operations.add(work);
-		const done = () => {
-			operations.delete(work);
-		};
-		work.then(done, done);
-		return work;
-	}
-
-	/**
-	 * A library command, counted as running from its call until it settles,
-	 * so leaving and closing wait for all of it, not only its later steps.
-	 */
-	const command =
-		<TArgs extends unknown[], TResult>(
-			work: (...args: TArgs) => Promise<TResult>,
-		) =>
-		(...args: TArgs): Promise<TResult> =>
-			admitted(work(...args));
-
-	async function quiet() {
-		while (operations.size > 0) await Promise.allSettled([...operations]);
 	}
 
 	let entries = $state.raw<RecordingEntry[]>([]);
@@ -360,7 +338,7 @@ export function createLibrary(workspace: Workspace) {
 		settle,
 		deleting,
 		refresh: refreshAll,
-		track: (work) => admitted(work),
+		track: admissions.admit,
 	});
 
 	async function readConnections() {
@@ -380,7 +358,7 @@ export function createLibrary(workspace: Workspace) {
 			},
 			exec: (command, options) =>
 				refused() === undefined
-					? admitted(workspace.terminal.exec(command, options))
+					? admissions.admit(() => workspace.terminal.exec(command, options))
 					: Promise.reject(new Error(LEAVING)),
 		},
 		refreshAll,
@@ -908,7 +886,7 @@ export function createLibrary(workspace: Workspace) {
 		 * whether anything is still held only in this window.
 		 */
 		async prepareToLeave(): Promise<boolean> {
-			await quiet();
+			await admissions.quiet();
 			await Promise.all(drafts.sessions().map((session) => session.settled()));
 			return unsavedWork().length === 0;
 		},
@@ -1260,7 +1238,8 @@ export function createLibrary(workspace: Workspace) {
 		),
 		/**
 		 * Capture what deleting `path` would remove, for the person to confirm.
-		 * Open drafts' saves land first; one whose save failed refuses.
+		 * Open drafts' saves land first. One whose save failed does not refuse:
+		 * the deletion removes what was last saved, and its edits are discarded.
 		 */
 		deletionFor: command(
 			async (path: string): Promise<Result<Deletion, string>> => {
@@ -1305,7 +1284,7 @@ export function createLibrary(workspace: Workspace) {
 			starting?.abort();
 			starting = undefined;
 			active?.cancel();
-			await quiet();
+			await admissions.quiet();
 			await input.saved();
 			await Promise.all(drafts.sessions().map((session) => session.settled()));
 			for (const path of drafts.paths()) drafts.forget(path);

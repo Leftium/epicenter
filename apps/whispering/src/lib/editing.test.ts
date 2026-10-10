@@ -15,7 +15,8 @@
  * - A row whose text is not a valid row opens as text with its issues, saves
  *   as typed, and opens as fields once repaired
  * - A deletion waits for the open draft's saves and deletes what the last one
- *   confirmed: the recording's row and its results; its audio stays
+ *   confirmed: the recording's row and its results; its audio stays. A draft
+ *   whose save failed does not refuse it: its edits are discarded
  * - Leaving a draft whose save failed answers `unsaved` until the person
  *   discards it
  * - Returning to the window adopts a newer version of a draft that holds
@@ -36,6 +37,7 @@ import {
 	type TranscriptionFields,
 	whisperingDefinition,
 } from './definition.js';
+import { describeDeletion } from './deletion.js';
 import type { Library } from './library.svelte.js';
 import { holdCloses } from './opfs-holds.test-support.js';
 import { openTestWorkspace } from './workspace.test-support.js';
@@ -496,17 +498,25 @@ test('a deletion is refused when the file changed after it was confirmed, and th
 	expect(recordingSession(library).draft.fields.title).toBe('Changed');
 });
 
-test('a draft whose save failed refuses the deletion and keeps its input', async () => {
+test('a draft whose save failed does not refuse the deletion: it removes what was last saved and discards the edits', async () => {
 	const { library, failNextWrite } = await open();
 	const session = await record(library);
-	failNextWrite(session.path);
+	const path = session.path;
+	failNextWrite(path);
 	session.edit((row) => {
-		row.fields.title = 'Kept';
+		row.fields.title = 'Not saved';
 	});
-	await session.settled();
-	expect((await library.deletionFor(session.path)).error).toContain(
-		'not saved',
+	expect((await session.settled()).status).toBe('error');
+
+	const deletion = expectOk(await library.deletionFor(path));
+	expect(deletion).toMatchObject({ kind: 'recording', row: { path } });
+	expect(describeDeletion(deletion).description).toContain(
+		'Edits here that are not saved are discarded too.',
 	);
-	expect(session.draft.fields.title).toBe('Kept');
-	expect(await text(library, session.path)).not.toContain('Kept');
+	expect(await library.remove(deletion)).toBeUndefined();
+	expect(session.locked).toBe(true);
+	expect(await text(library, path)).toBeUndefined();
+	expect(library.draftAt(path)).toBeUndefined();
+	expect(library.selection).toBeUndefined();
+	expect(await library.prepareToLeave()).toBe(true);
 });

@@ -25,7 +25,7 @@
 	import { committedState } from '$lib/status.js';
 	import { confirmDelete, copyText, formatTime, lf, openItem, recordingTitle } from './file-actions.js';
 	import { Input } from '@epicenter/ui/input';
-	import SaveBar from './SaveBar.svelte';
+	import SaveBar from '@epicenter/svelte/save-bar';
 	import SettingsForm from './SettingsForm.svelte';
 	import TransformationOutput from './TransformationOutput.svelte';
 
@@ -277,7 +277,13 @@
 	</div>
 
 	{#if draft.kind === 'row' || draft.kind === 'text'}
-		<SaveBar {library} session={draft.session} />
+		<SaveBar
+			save={draft.session.state}
+			onRetry={() => draft.session.retry()}
+			onReloadTheirs={() => library.reloadTheirs(draft.session)}
+			gone={!library.canKeepMine(draft.session)}
+			onKeepMine={library.canKeepMine(draft.session) ? () => library.keepMine(draft.session) : undefined}
+		/>
 	{/if}
 
 	{#if issues}

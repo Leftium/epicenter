@@ -204,7 +204,7 @@ export function createRuns({
 	 * wait for it. Waiting on an endpoint is not counted: a request that does
 	 * not answer must not keep the app from asking to close.
 	 */
-	track: <T>(work: Promise<T>) => Promise<T>;
+	track: <T>(work: () => Promise<T>) => Promise<T>;
 }) {
 	const { folder } = workspace;
 	/** Transcription runs, by recording ID. */
@@ -330,7 +330,7 @@ export function createRuns({
 			return;
 		}
 		if (run.destination === 'transcript') {
-			await track(saveRun(run, answer.text, running));
+			await track(() => saveRun(run, answer.text, running));
 			return;
 		}
 		if (recipes.get(run.id) === running)
@@ -428,7 +428,8 @@ export function createRuns({
 			const run = recipes.get(id);
 			if (run === undefined) return;
 			if (run.state.kind === 'unsaved') {
-				await track(saveRun(run, run.state.text, run));
+				const { text } = run.state;
+				await track(() => saveRun(run, text, run));
 				return;
 			}
 			if (run.state.kind !== 'failed') return;
@@ -440,7 +441,7 @@ export function createRuns({
 			const moved = connectionMoved(run.fields.endpoint);
 			if (moved !== undefined) return refuse(moved);
 			if (run.destination === 'transcript') {
-				const { data: source, error } = await track(
+				const { data: source, error } = await track(() =>
 					transcriptAt(rowPath(TRANSCRIPTIONS, run.fields.transcriptionId)),
 				);
 				if (error !== null) return refuse(`${error} Dismiss this run.`);
@@ -615,7 +616,7 @@ export function createRuns({
 				return;
 			}
 			const at = new Date();
-			await track(
+			await track(() =>
 				saveTranscript(
 					id,
 					{
@@ -642,7 +643,7 @@ export function createRuns({
 			if (run?.kind !== 'unsaved' || run.saving) return;
 			const admitted: TranscriptionRun = { ...run, saving: true };
 			transcriptions.set(id, admitted);
-			await track(saveTranscript(id, run, admitted));
+			await track(() => saveTranscript(id, run, admitted));
 		},
 		/** Drop a transcription run that is not running. A write already begun may still land. */
 		dismissRun(id: string) {
@@ -665,13 +666,13 @@ export function createRuns({
 				return 'This transformation is already running on this transcript. Run it again when it has finished.';
 			applying.add(pair);
 			try {
-				const { data: recipe, error } = await track(
+				const { data: recipe, error } = await track(() =>
 					recipeAt(transformationPath),
 				);
 				if (error !== null) return error;
 				const { resolved } = recipe;
 				if (resolved.kind !== 'ready') return resolved.reason;
-				const { data: source, error: sourceError } = await track(
+				const { data: source, error: sourceError } = await track(() =>
 					transcriptAt(transcriptionPath),
 				);
 				if (sourceError !== null) return sourceError;
@@ -726,7 +727,7 @@ export function createRuns({
 				return 'A result of this transformation on pasted text is waiting. Save or discard it first, so it is not replaced.';
 			applying.add(key);
 			try {
-				const { data: recipe, error } = await track(
+				const { data: recipe, error } = await track(() =>
 					recipeAt(transformationPath),
 				);
 				if (error !== null) return error;

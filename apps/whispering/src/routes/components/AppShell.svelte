@@ -77,6 +77,11 @@
 </script>
 
 <!-- Returning to the app is a refresh boundary for files and Git status. -->
+<svelte:document
+	onvisibilitychange={() => {
+		if (document.visibilityState === 'visible') void library.check();
+	}}
+/>
 <svelte:window
 	onfocus={() => void library.check()}
 	onkeydown={(event) => {

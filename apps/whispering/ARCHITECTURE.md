@@ -522,7 +522,11 @@ recording. Results on pasted text name no recording, so they are neither
 deleted with one nor in the way of deleting one, readable or not.
 
 What a deletion of a recording or transformation path removes is decided by
-its file as read after its draft settles, not by the last listing. A row that reads is deleted as above. A file that
+its file as read after its draft settles, not by the last listing. A draft
+whose save failed or conflicted does not refuse the deletion: the person
+chose to delete the file, and the dialog says unsaved edits are discarded.
+Removing releases the session, waits for it, and deletes what was confirmed,
+or what the session last saved when that changed after the person was asked. A row that reads is deleted as above. A file that
 is there and does not read as a row (bytes that are not text, say) is removed
 alone, conditional on the exact bytes read, and the person is told its
 results are kept: nothing in the file says which results are its own, so
@@ -562,7 +566,12 @@ recreates a file deleted elsewhere, except a recording, whose audio may be
 gone too: for that it offers only Discard. Returning to the window takes a
 newer version of a draft that holds nothing unsaved; otherwise the next save
 reports the change. The lists are read when the page opens, after the app's
-own actions, and on return; a change hint from the folder does not reread.
+own actions, and on return (window focus, or the page becoming visible); a
+change hint from the folder does not reread. The save bar is the shared
+`@epicenter/svelte/save-bar`, and the library counts its commands with
+`createAdmissions` (`@epicenter/svelte/admissions`): each command from its
+call, and a run only while it does folder work, never while it waits on an
+endpoint.
 
 Renaming a file moves an open draft with it once its saves land
 (`session.rename`); a closed file moves as it is now. Recording and

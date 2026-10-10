@@ -19,7 +19,7 @@
 	import { confirmDelete, copyPath, lf, openItem } from './file-actions.js';
 	import FileNameBar from './FileNameBar.svelte';
 	import { Textarea } from '@epicenter/ui/textarea';
-	import SaveBar from './SaveBar.svelte';
+	import SaveBar from '@epicenter/svelte/save-bar';
 
 	let {
 		library,
@@ -99,7 +99,13 @@
 			<Button variant="outline" size="sm" onclick={() => void openItem(library, path)}>Try again</Button>
 		</Empty.Root>
 	{:else if row}
-		<SaveBar {library} session={row} />
+		<SaveBar
+			save={row.state}
+			onRetry={() => row.retry()}
+			onReloadTheirs={() => library.reloadTheirs(row)}
+			gone={!library.canKeepMine(row)}
+			onKeepMine={library.canKeepMine(row) ? () => library.keepMine(row) : undefined}
+		/>
 		<div class="flex min-h-0 flex-1 flex-col gap-2 px-3 py-3 sm:px-4">
 			<p class="text-xs text-muted-foreground">
 				The transcript’s text, the body of its file. Its fields are kept as they are.
@@ -119,7 +125,13 @@
 			/>
 		</div>
 	{:else if text}
-		<SaveBar {library} session={text.session} />
+		<SaveBar
+			save={text.session.state}
+			onRetry={() => text.session.retry()}
+			onReloadTheirs={() => library.reloadTheirs(text.session)}
+			gone={!library.canKeepMine(text.session)}
+			onKeepMine={library.canKeepMine(text.session) ? () => library.keepMine(text.session) : undefined}
+		/>
 		{#if issues}
 			<div class="shrink-0 border-b bg-destructive/5 px-4 py-2 text-xs" role="status" data-testid="needs-repair">
 				<p class="mb-1 flex flex-wrap items-center gap-2 font-medium">

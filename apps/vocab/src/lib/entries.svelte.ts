@@ -80,6 +80,12 @@ export type Opened = { readonly kind: 'loading'; readonly id: string } | Item;
 
 type Session = RowSession<EntryFields> | TextSession;
 
+/**
+ * How a word is shown: opening always asks for it as a word, and a word whose
+ * text is not valid is shown as text, so asking again reads it again.
+ */
+type Key = { readonly id: string; readonly as: 'word' | 'text' };
+
 const CLOSED = 'This page is closing, so nothing was changed.';
 const BUSY =
 	'This word is busy with another change. Try again when it finishes.';
@@ -121,9 +127,14 @@ export function createEntriesState({
 
 	const locked = () => closed;
 
-	const slot = createOpenItem<string, Item, Session>({
-		load,
+	const slot = createOpenItem<Key, Item, Session>({
+		load: ({ id }) => load(id),
 		sessionOf: (item) => (item.kind === 'failed' ? undefined : item.session),
+		keyOf: (item) => ({
+			id: item.id,
+			as: item.kind === 'text' ? 'text' : 'word',
+		}),
+		sameKey: (a, b) => a.id === b.id && a.as === b.as,
 		closed: () => closed,
 	});
 
@@ -131,7 +142,7 @@ export function createEntriesState({
 		const shown = slot.shown;
 		if (shown === undefined) return undefined;
 		return shown.status === 'loading'
-			? { kind: 'loading', id: shown.key }
+			? { kind: 'loading', id: shown.key.id }
 			: shown.item;
 	};
 
@@ -186,17 +197,12 @@ export function createEntriesState({
 	 * else as its exact text. The open word's saves land first and the list is
 	 * read again. Answers `unsaved`, opening nothing, when the open word holds
 	 * a draft it could not save; opening again with `discard` set to the
-	 * answered session lets it go. Opening the word already shown does
-	 * nothing, except that a word open as text is read again, since its text
-	 * may be a valid word now.
+	 * answered session lets it go. Opening the word already shown as a word
+	 * does nothing; a word shown as text is read again, since its text may be
+	 * a valid word now.
 	 */
 	async function open(id: string, { discard }: { discard?: Session } = {}) {
-		const shown = slot.item;
-		if (shown?.kind === 'text' && shown.id === id) {
-			const left = await slot.leave({ discard });
-			if (left.kind !== 'done') return left;
-		}
-		const opening = await slot.open(id, { discard });
+		const opening = await slot.open({ id, as: 'word' }, { discard });
 		if (opening.kind !== 'done') return opening;
 		// A word left, or one that is not listed or no longer opens, lists again.
 		const item = slot.item;

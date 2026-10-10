@@ -51,11 +51,7 @@ import {
 	type RowSession,
 	type TextSession,
 } from '@epicenter/svelte/edit-session';
-import {
-	createOpenItem,
-	type OpenItem,
-	type Opening,
-} from '@epicenter/svelte/open-item';
+import { createOpenItem, type Opening } from '@epicenter/svelte/open-item';
 import { createSubscriber, SvelteSet } from 'svelte/reactivity';
 import { createLogger } from 'wellcrafted/logger';
 import { Err, Ok, type Result } from 'wellcrafted/result';
@@ -99,10 +95,39 @@ type Item =
 export type Opened = Item | { readonly kind: 'loading'; readonly path: string };
 
 /**
- * The open-item key: a path, and how it was asked to open. A rename of the
- * open item moves its key's path, so a reload reads it where it is now.
+ * The open-item key: a path, and how it opens. A key asked without `as`
+ * opens a note as a note when its text reads as one. `reread` marks the key
+ * of an item shown without a session (failed, binary, too large): no open
+ * matches it, so opening it again reads it again.
  */
-type Key = { path: string; readonly as: OpenAs | undefined };
+type Key = {
+	readonly path: string;
+	readonly as: OpenAs | undefined;
+	readonly reread?: true;
+};
+
+/**
+ * The key `item` is shown under now: its session's path, which follows a
+ * rename, and the way it opened, which for a note whose text is not a valid
+ * row is text.
+ */
+function keyOf(item: Item): Key {
+	if (item.kind === 'note' || item.kind === 'text')
+		return { path: item.session.path, as: item.kind };
+	return { path: item.path, as: undefined, reread: true };
+}
+
+/**
+ * Whether opening `key` would show `shown` again. A path asked without `as`
+ * matches however the item opened.
+ */
+function sameKey(shown: Key, key: Key): boolean {
+	return (
+		shown.reread !== true &&
+		shown.path === key.path &&
+		(key.as === undefined || key.as === shown.as)
+	);
+}
 
 /** A listed file the lists cannot show as a row, and why. */
 export type Problem = { readonly path: string; readonly message: string };
@@ -262,26 +287,11 @@ export function createNotes(host: NotesHost) {
 			: undefined;
 	}
 
-	const slot: OpenItem<Key, Item, Session> = createOpenItem<
-		Key,
-		Item,
-		Session
-	>({
+	const slot = createOpenItem<Key, Item, Session>({
 		load,
 		sessionOf,
-		/**
-		 * Whether `key` names the shown item the way it is shown. A path asked
-		 * without `as` matches either way it opened. An item without a session
-		 * (failed, binary, too large) is read again, so Try again reads.
-		 */
-		sameKey(shown, key): boolean {
-			const item: Item | undefined = slot.item;
-			if (item !== undefined && sessionOf(item) === undefined) return false;
-			const kind: string | undefined = item?.kind ?? shown.as;
-			return (
-				shown.path === key.path && (key.as === undefined || key.as === kind)
-			);
-		},
+		keyOf,
+		sameKey,
 		closed: () => closing !== undefined,
 	});
 
@@ -791,13 +801,9 @@ export function createNotes(host: NotesHost) {
 						name: 'Refused',
 						message: 'A note file keeps its .md extension.',
 					});
-				else if (session?.path === path) {
+				else if (session?.path === path)
 					moved = await session.rename((file) => folder.files.move(file, to));
-					// The open item's key follows it, so a reload reads it at its new path.
-					const shown = slot.shown;
-					if (shown?.status === 'open' && slot.session === session)
-						shown.key.path = session.path;
-				} else {
+				else {
 					const { data: file, error } = await captureNow(path);
 					if (error !== null) moved = Err(error);
 					// A close that began during the read stops the move.

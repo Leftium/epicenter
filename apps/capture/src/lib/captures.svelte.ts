@@ -47,7 +47,7 @@ import {
 	type TextSession,
 	textSource,
 } from '@epicenter/svelte/edit-session';
-import { createOpenItem, type OpenItem } from '@epicenter/svelte/open-item';
+import { createOpenItem } from '@epicenter/svelte/open-item';
 import { createSubscriber } from 'svelte/reactivity';
 import { createLogger } from 'wellcrafted/logger';
 import { type CaptureForm, createCaptureForm } from './capture-form.svelte.js';
@@ -333,23 +333,17 @@ export function createCaptures(host: Pick<CaptureHost, 'folder' | 'location'>) {
 	 * The open capture. A thought typed and not added is input outside its
 	 * session, so leaving asks about it as it does about a failed save.
 	 */
-	const slot: OpenItem<Key, Item, RowSession<CaptureFields> | TextSession> =
-		createOpenItem({
-			load,
-			sessionOf: (item: Item) =>
-				item.kind === 'failed' ? undefined : item.session,
-			// A capture asked for as a capture that opened as text is not what its
-			// key says, so asking for it again (Open as capture, once repaired) reads it.
-			sameKey: (a: Key, b: Key) =>
-				a.stem === b.stem &&
-				a.mode === b.mode &&
-				!(
-					slot.shown?.status === 'open' &&
-					slot.shown.key.mode !== modeOf(slot.shown.item)
-				),
-			holds: (item) => item.kind === 'capture' && item.form.unsent,
-			closed: () => closing !== undefined,
-		});
+	const slot = createOpenItem({
+		load,
+		sessionOf: (item: Item) =>
+			item.kind === 'failed' ? undefined : item.session,
+		// A capture asked for as a capture that opened as text is shown as text,
+		// so asking for it as a capture again (once repaired) reads it.
+		keyOf: (item, asked): Key => ({ stem: asked.stem, mode: modeOf(item) }),
+		sameKey: (a: Key, b: Key) => a.stem === b.stem && a.mode === b.mode,
+		holds: (item) => item.kind === 'capture' && item.form.unsent,
+		closed: () => closing !== undefined,
+	});
 
 	/**
 	 * Show `stem` as `mode` edits it. The open capture's saves land first,

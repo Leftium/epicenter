@@ -25,6 +25,7 @@
 		onRetry,
 		onReloadTheirs,
 		onKeepMine,
+		gone: goneOutside = false,
 		hideWhenSaved = false,
 		class: className = '',
 	}: {
@@ -34,6 +35,8 @@
 		onReloadTheirs: () => Promise<string | undefined>;
 		/** Omitted when the file cannot be restored; only Discard is offered then. */
 		onKeepMine?: () => Promise<string | undefined>;
+		/** The app knows the file is gone, though the conflict was over a change. */
+		gone?: boolean;
 		/** Show nothing while every save has landed. */
 		hideWhenSaved?: boolean;
 		class?: string;
@@ -49,7 +52,9 @@
 	}
 
 	const error = $derived(save.status === 'error' ? save.error : undefined);
-	const gone = $derived(error?.name === 'Conflict' && error.actualSha256 === undefined);
+	const gone = $derived(
+		error?.name === 'Conflict' && (goneOutside || error.actualSha256 === undefined),
+	);
 </script>
 
 {#if !(hideWhenSaved && save.status === 'saved')}

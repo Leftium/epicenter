@@ -285,9 +285,10 @@ The page side is `src/lib/platform/departure.svelte.ts`:
   `leaving`, and a `discarded` vote keep it fenced and close the question. A
   lost or refused answer never gives it back; a nudge, Check again, or focus
   while fenced reads the status again. Older statuses are ignored.
-- Settling waits for every action the page admitted (a create, an import, a
-  delete, Keep mine, Reload theirs) and for the open capture's saves.
-  Closing the page waits for the same.
+- Settling waits for every action the page admitted (a create, an import,
+  Keep mine, Reload theirs, and a delete from the saves it waits for through
+  the delete itself) and for the open capture's saves. Closing the page waits
+  for the same.
 
 Which quit paths the host routes through a round, and what it does for a
 window that stays silent, are the host's; see `apps/epicenter`.
@@ -377,6 +378,15 @@ shared edit sessions, and dropped several promises of the version before it:
   JSON-style quoted keys.
 - **Imported captures are written in the same plain YAML form**, and a retry
   counts a file an earlier import wrote in another form as the same capture.
+- **A thought typed and not added on a capture that stops reading as one**
+  (after Reload theirs brings a layout the view cannot show) can no longer be
+  added when the file is repaired. It stays on screen, read-only, to copy,
+  and leaving or Edit as text asks before discarding it. The same holds for a
+  thought edit not saved.
+- **Import reports can no longer be viewed in the app.** The recovery screen
+  prints the paths of the report, the saved export, and the receipt under
+  `recovery/`; on the desktop they are files in the folder, and in the
+  browser build nothing shows them.
 - **A failed save's text is no longer kept for a removed file on the
   timeline.** A capture whose file is gone is not listed once you leave it.
 

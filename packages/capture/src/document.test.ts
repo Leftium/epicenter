@@ -10,8 +10,6 @@
  *   lazy continuation, and tab-indented lines; nothing after the list is one
  * - A "## Thoughts" line inside a fence or an HTML comment is not the heading
  * - Zero headings: the body is the text, and a thought appends the section
- * - Markdown with no frontmatter lines is not a capture: it is refused, and
- *   no operation adds the lines
  * - Two Thoughts headings, prose before the list, or two lists refuse
  *   structured operations and leave the source as it is
  * - Edits replace one span: unknown frontmatter, a byte-order mark, CRLF
@@ -23,27 +21,43 @@ import { expect, test } from 'bun:test';
 import { frameRowText } from '@epicenter/folder';
 import {
 	type CaptureBody,
-	type CaptureDocument,
+	type CaptureBodyReading,
 	captureBody,
 	composeBody,
 	fromTextarea,
 	normalizeThought,
-	parseCapture as parseFile,
+	type Refusal,
 } from './index.js';
 
 type Edit =
 	| { ok: true; source: string }
 	| { ok: false; refusal: { code: string; message: string } };
 
+/** A whole capture file read the way an open capture reads its row's body. */
+type CaptureDocument = Omit<CaptureBodyReading, 'text'> & {
+	readonly source: string;
+	readonly refusal: Refusal | undefined;
+	readonly text: string | undefined;
+};
+
 // Golden file expectations retain their original headers. Only the body goes
 // through the codec; Folder's own tests cover frontmatter serialization.
 function parseCapture(source: string): CaptureDocument {
 	const frame = frameRowText(source);
-	if (frame.kind !== 'frontmatter') return parseFile(source);
+	if (frame.kind !== 'frontmatter')
+		throw new Error('fixture: a capture file has frontmatter');
 	const result = captureBody.decode(source.slice(frame.bodyStart));
-	return result.data
-		? { ...parseFile(source), ...result.data, source }
-		: { ...parseFile(source), refusal: result.error };
+	return result.error === null
+		? { ...result.data, source, refusal: undefined }
+		: {
+				source,
+				refusal: result.error,
+				text: undefined,
+				thoughts: [],
+				newline: frame.newline,
+				hasSection: false,
+				hasOtherContent: false,
+			};
 }
 function write(document: CaptureDocument, value: CaptureBody): Edit {
 	if (document.refusal) return { ok: false, refusal: document.refusal };
@@ -205,21 +219,6 @@ test('with no heading the whole body is the text', () => {
 	});
 });
 
-test('Markdown with no frontmatter lines is not a capture: it reads as no text, and nothing adds the lines', () => {
-	for (const source of [
-		'Just some\nMarkdown\n',
-		'',
-		'a\n\n## Thoughts\n\n- x\n',
-	]) {
-		const document = parseCapture(source);
-		expect(document.refusal?.code).toBe('missing-frontmatter');
-		expect(document.text).toBeUndefined();
-		expect(document.thoughts).toEqual([]);
-		for (const edit of [setText(document, 'new'), addThought(document, 'new')])
-			expect(refusalOf(edit).code).toBe('missing-frontmatter');
-	}
-});
-
 test('blocks after the list and after the next heading are never thoughts', () => {
 	const document = parseCapture(
 		`${HEAD}T\n\n## Thoughts\n\n- one\n\nTrailing paragraph.\n\n## Later\n\n- not a thought\n`,
@@ -264,15 +263,8 @@ test.each([
 	],
 	['two marker styles', 'a\n\n## Thoughts\n\n- x\n* y\n', 'section-shape'],
 	['an ordered list', 'a\n\n## Thoughts\n\n1. x\n', 'section-shape'],
-	[
-		'unclosed frontmatter',
-		'---\ncapturedAt: x\n\ntext\n',
-		'unclosed-frontmatter',
-	],
 ] as const)('%s refuses structured reading and every operation', (_name, body, code) => {
-	// Every case but the unclosed one is a body under complete frontmatter.
-	const source = body.startsWith('---') ? body : `${HEAD}${body}`;
-	const document = parseCapture(source);
+	const document = parseCapture(`${HEAD}${body}`);
 	expect(document.refusal?.code).toBe(code);
 	expect(document.text).toBeUndefined();
 	expect(document.thoughts).toEqual([]);
@@ -521,4 +513,23 @@ test('text with an open fence keeps its section in the file and says it is absor
 	expect(reopened.hasSection).toBe(false);
 	expect(reopened.thoughts).toEqual([]);
 	expect(refusalOf(addThought(reopened, 'mine')).code).toBe('unverified');
+});
+
+test('an item that is indented code keeps its code indentation through a list edit', () => {
+	const document = parseCapture(`${HEAD}T\n\n## Thoughts\n\n-     code()\n      more()\n- b\n`);
+	expect(document.thoughts).toEqual(['    code()\n    more()', 'b']);
+	const next = sourceOf(editThought(document, nth(document, 1), 'c'));
+	expect(next).toBe(`${HEAD}T\n\n## Thoughts\n\n-     code()\n      more()\n- c\n`);
+	expect(parseCapture(next).thoughts).toEqual(['    code()\n    more()', 'c']);
+});
+
+test('deleting the last thought with Markdown after the list is refused with why', () => {
+	const document = parseCapture(`${HEAD}T\n\n## Thoughts\n\n- only\n\nA paragraph.\n`);
+	const refusal = refusalOf(deleteThought(document, nth(document, 0)));
+	expect(refusal.message).toContain('The last thought cannot be deleted');
+	// With nothing after the list, it is deleted.
+	const alone = parseCapture(`${HEAD}T\n\n## Thoughts\n\n- only\n`);
+	expect(sourceOf(deleteThought(alone, nth(alone, 0)))).toBe(
+		`${HEAD}T\n\n## Thoughts\n\n`,
+	);
 });

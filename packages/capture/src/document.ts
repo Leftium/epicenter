@@ -8,15 +8,12 @@
  * Encode accepts one complete desired value and the current body, then verifies
  * that Markdown reads back as intended. Source remains available for repair.
  */
-import { frameRowText } from '@epicenter/folder';
 import MarkdownIt from 'markdown-it';
 import { Err, Ok, type Result } from 'wellcrafted/result';
 
 export type Newline = '\n' | '\r\n';
 
 export type RefusalCode =
-	| 'missing-frontmatter'
-	| 'unclosed-frontmatter'
 	| 'duplicate-heading'
 	| 'heading-form'
 	| 'section-shape'
@@ -43,7 +40,8 @@ type Layout = {
 	readonly items: readonly Span[];
 };
 
-export type CaptureDocument = {
+/** A body as read: its text and thoughts, or why they are not offered. */
+type CaptureDocument = {
 	readonly source: string;
 	/** The line ending new lines are written with. */
 	readonly newline: Newline;
@@ -184,35 +182,9 @@ function rootBlocks(body: string): RootBlock[] {
 	return blocks;
 }
 
-/**
- * Read a capture's text and thoughts from its source. The source must have
- * both frontmatter lines: Markdown without them is not a capture's body, and
- * no operation adds them. Whether the frontmatter between them parses is the
- * captures table's question, answered by `parseRow` from `@epicenter/folder`
- * with the table's definition, which reads the text it is given and does no
- * folder I/O.
- */
-export function parseCapture(source: string): CaptureDocument {
-	const frame = frameRowText(source);
-	if (frame.kind !== 'frontmatter')
-		return refused(
-			source,
-			source.includes('\r\n') ? '\r\n' : '\n',
-			frame.kind === 'unclosed'
-				? 'unclosed-frontmatter'
-				: 'missing-frontmatter',
-			frame.kind === 'unclosed'
-				? 'The frontmatter opening line has no closing --- line.'
-				: 'The file does not start with a --- line opening its frontmatter.',
-		);
-	return parseBody(source, frame.bodyStart, frame.newline);
-}
-
-function parseBody(
-	source: string,
-	bodyStart = 0,
-	newline: Newline = source.includes('\r\n') ? '\r\n' : '\n',
-): CaptureDocument {
+function parseBody(source: string): CaptureDocument {
+	const bodyStart = 0;
+	const newline: Newline = source.includes('\r\n') ? '\r\n' : '\n';
 	const lines = lineTable(source, bodyStart);
 	const blocks = rootBlocks(source.slice(bodyStart));
 	const lineText = (at: number) => {
@@ -302,10 +274,13 @@ function parseBody(
 				const width = char === '\t' ? 4 - ((column + gapColumns) % 4) : 1;
 				gapColumns += width;
 			}
-			// Five or more columns after the marker begin indented code in the item.
+			// Five or more columns after the marker begin indented code in the
+			// item: the content starts one column after the marker, and the rest
+			// of the gap is the code's indentation, kept so it renders as code.
+			const code = content !== '' && gapColumns >= 5;
 			const contentIndent =
-				column + (content === '' || gapColumns >= 5 ? 1 : gapColumns);
-			const body = [content];
+				column + (content === '' || code ? 1 : gapColumns);
+			const body = [code ? `${' '.repeat(gapColumns - 1)}${content}` : content];
 			for (let at = item.first + 1; at <= last; at++) {
 				const line = lineText(at);
 				body.push(line.trim() === '' ? '' : dedent(line, contentIndent));
@@ -420,7 +395,7 @@ function renderItem(
 }
 
 /** One thought written as a root-level bullet item. */
-export function renderThought(text: string, newline: Newline = '\n'): string {
+function renderThought(text: string, newline: Newline = '\n'): string {
 	return renderItem('', '-', normalizeThought(text), newline);
 }
 
@@ -610,17 +585,20 @@ export const captureBody = {
 			text: expectedText,
 			thoughts: desired,
 		});
-		return problem === undefined
-			? Ok(source)
-			: Err({
-					code: 'unverified',
-					message: `This capture would not read back as written. ${problem.message}`,
-				});
+		if (problem === undefined) return Ok(source);
+		// With no list left, what follows the heading would read as the section's start.
+		if (problem.code === 'section-shape' && desired.length === 0)
+			return Err({
+				code: 'section-shape',
+				message:
+					'The last thought cannot be deleted while other Markdown follows it under the Thoughts heading. Edit as text to remove both.',
+			});
+		return Err({
+			code: 'unverified',
+			message: `This capture would not read back as written. ${problem.message}`,
+		});
 	},
 };
-
-/** Capture's fallible, source-preserving body conversion contract. */
-export type CaptureBodyCodec = typeof captureBody;
 
 // ============================================================================
 // New captures

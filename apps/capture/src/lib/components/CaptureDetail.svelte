@@ -151,6 +151,22 @@
 				<Button size="sm" onclick={() => void openItem(captures, stem, 'text')}>Edit as text</Button>
 			</div>
 		</Alert.Root>
+		{#each [
+			{ label: 'Thought not added', text: form.newThought },
+			{ label: 'Thought edit not saved', text: form.editing?.text ?? '' },
+		].filter((pending) => pending.text !== '') as pending (pending.label)}
+			<!-- Typed here and not in the file: kept visible to copy, since the form cannot show it now. -->
+			<Field.Field>
+				<Field.Label>{pending.label}</Field.Label>
+				<Textarea aria-label={pending.label} readonly value={pending.text} rows={rowsFor(pending.text)} />
+				<div>
+					<Button variant="outline" size="sm" onclick={() => copy(pending.text, 'Text')}>Copy text</Button>
+				</div>
+			</Field.Field>
+		{/each}
+		{#if form.unsent}
+			<p class="text-sm text-muted-foreground">Leaving this capture, or editing it as text, asks before discarding this text.</p>
+		{/if}
 	{:else}
 		<div class="flex flex-col gap-8">
 			<Field.Field>

@@ -40,16 +40,22 @@ import {
 import {
 	createRowSession,
 	createTextSession,
+	type Reread,
+	type RowProblem,
 	type RowSession,
 	type TextSession,
 	textSource,
 } from '@epicenter/svelte/edit-session';
 import { createSubscriber } from 'svelte/reactivity';
 import { createLogger } from 'wellcrafted/logger';
+import type { Result } from 'wellcrafted/result';
 import { type CaptureForm, createCaptureForm } from './capture-form.svelte.js';
 import type { CaptureHost } from './platform/types.js';
 
 const log = createLogger('capture');
+
+/** A failure as a session or the folder reports it. */
+type Failure = { readonly name: string; readonly message: string };
 
 export type Captures = ReturnType<typeof createCaptures>;
 
@@ -220,6 +226,14 @@ export function createCaptures(host: Pick<CaptureHost, 'folder' | 'location'>) {
 		while (operations.size > 0) await Promise.allSettled([...operations]);
 	}
 
+	/**
+	 * Whether `item`, its saves ended in `status`, holds what leaving would
+	 * lose: a draft it could not save, or a thought typed and not added.
+	 */
+	function holdsUnsaved(item: Opened | undefined, status: string | undefined) {
+		return status === 'error' || (item?.kind === 'capture' && item.form.unsent);
+	}
+
 	function sessionOf(item: Opened | undefined) {
 		return item?.kind === 'capture' || item?.kind === 'text'
 			? item.session
@@ -293,9 +307,7 @@ export function createCaptures(host: Pick<CaptureHost, 'folder' | 'location'>) {
 		const session = sessionOf(item);
 		if (session === undefined) return true;
 		const settled = await session.settled();
-		const unsent = item?.kind === 'capture' && item.form.unsent;
-		if ((settled.status === 'error' || unsent) && discard !== session)
-			return false;
+		if (holdsUnsaved(item, settled.status) && discard !== session) return false;
 		session.release();
 		return true;
 	}
@@ -401,11 +413,7 @@ export function createCaptures(host: Pick<CaptureHost, 'folder' | 'location'>) {
 	function unsaved() {
 		const item = opened;
 		const status = sessionOf(item)?.state.status;
-		return (
-			status === 'saving' ||
-			status === 'error' ||
-			(item?.kind === 'capture' && item.form.unsent)
-		);
+		return status === 'saving' || holdsUnsaved(item, status);
 	}
 
 	return {
@@ -490,27 +498,22 @@ export function createCaptures(host: Pick<CaptureHost, 'folder' | 'location'>) {
 			const why = refused();
 			if (why !== undefined) return why;
 			const item = opened;
-			if (item?.kind === 'text' && item.session === session) {
-				const { data: found, error } = await admitted(item.session.reloadTheirs());
-				if (error !== null) return describeError(error);
-				if (opened !== item) return undefined;
-				if (found.kind === 'gone') forget();
-				else if (found.kind === 'other') return NOT_TEXT;
-				await refresh();
-				return undefined;
-			}
-			if (item?.kind !== 'capture' || item.session !== session) return undefined;
-			const { data: found, error } = await admitted(item.session.reloadTheirs());
+			if (item === undefined || sessionOf(item) !== session) return undefined;
+			const { data: found, error } = await admitted<
+				Result<Reread<unknown, RowProblem | 'binary'>, Failure>
+			>(session.reloadTheirs());
 			if (error !== null) return describeError(error);
 			if (opened !== item) return undefined;
 			if (found.kind === 'gone') forget();
 			else if (found.kind === 'other') {
-				if (found.detail.name !== 'InvalidRow') return NOT_TEXT;
-				item.session.release();
+				// Only a capture's text that is no longer a valid row can be shown, as text.
+				const { detail } = found;
+				if (detail === 'binary' || detail.name !== 'InvalidRow') return NOT_TEXT;
+				session.release();
 				opened = {
 					kind: 'text',
 					stem: item.stem,
-					session: createTextSession(folder.files, found.detail, { locked }),
+					session: createTextSession(folder.files, detail, { locked }),
 				};
 			}
 			await refresh();
@@ -579,19 +582,25 @@ export function createCaptures(host: Pick<CaptureHost, 'folder' | 'location'>) {
 			if (why !== undefined) return why;
 			const item = opened;
 			if (item === undefined || sessionOf(item) !== session) return undefined;
-			session.release();
-			const { file } = await session.settled();
-			const { error } = await admitted(table.delete(file));
-			if (error === null) {
-				if (opened === item) forget();
-				await refresh();
-				return undefined;
-			}
-			if (opened === item)
-				await open(item.stem, item.kind === 'text' ? 'text' : 'capture', {
-					discard: session,
-				});
-			return describeError(error);
+			// Admitted whole, before its first await, so a departure and close
+			// wait for the saves it waits on and for the delete itself.
+			return admitted(
+				(async () => {
+					session.release();
+					const { file } = await session.settled();
+					const { error } = await table.delete(file);
+					if (error === null) {
+						if (opened === item) forget();
+						await refresh();
+						return undefined;
+					}
+					if (opened === item)
+						await open(item.stem, item.kind === 'text' ? 'text' : 'capture', {
+							discard: session,
+						});
+					return describeError(error);
+				})(),
+			);
 		},
 
 		/** Import a whole export, including its report and receipt, then list again. */
@@ -620,8 +629,7 @@ export function createCaptures(host: Pick<CaptureHost, 'folder' | 'location'>) {
 				const item = opened;
 				const settled = await sessionOf(item)?.settled();
 				return (
-					(settled?.status === 'error' ? 1 : 0) +
-					(item?.kind === 'capture' && item.form.unsent ? 1 : 0) +
+					(holdsUnsaved(item, settled?.status) ? 1 : 0) +
 					(newCapture === '' ? 0 : 1)
 				);
 			},

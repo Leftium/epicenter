@@ -121,6 +121,17 @@ const capturePath = (stem: string) => `${CAPTURES_TABLE}/${stem}.md`;
 const captures = captureDefinition.tables.captures;
 
 /**
+ * Text as UTF-8 can hold it: an unpaired surrogate becomes U+FFFD, as
+ * encoding would. `String.prototype.toWellFormed` is missing from older
+ * desktop webviews.
+ */
+const wellFormed = (text: string) =>
+	text.replace(
+		/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g,
+		'\uFFFD',
+	);
+
+/**
  * A capture file as the captures table writes it. Text a file cannot hold
  * exactly (a lone surrogate) is written as UTF-8 would encode it.
  */
@@ -132,15 +143,15 @@ function compose(
 	// The composer a new capture uses, so imported text with its own Thoughts
 	// heading or an open fence is kept whole and stays source-only.
 	const composed = composeBody(
-		text.toWellFormed(),
-		thoughts.map((thought) => thought.toWellFormed()),
+		wellFormed(text),
+		thoughts.map(wellFormed),
 	);
 	// The date is checked when the file is read, as any capture's is.
-	const wellFormed = Object.fromEntries(
-		Object.entries(fields).map(([key, value]) => [key, value.toWellFormed()]),
+	const formable = Object.fromEntries(
+		Object.entries(fields).map(([key, value]) => [key, wellFormed(value)]),
 	) as CaptureFields;
 	const { data: source, error } = formatRow(captures, {
-		fields: wellFormed,
+		fields: formable,
 		body: composed.body,
 	});
 	// Only strings are formatted, and they are well formed.

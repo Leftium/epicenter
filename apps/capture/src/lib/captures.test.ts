@@ -408,6 +408,36 @@ test('deleting waits for the open capture saves and deletes what it saved last',
 	expect(captures.timeline).toEqual([]);
 });
 
+test('a departure and close wait for a delete that is still waiting on a save', async () => {
+	const harness = await open({ [PATH]: HAND });
+	const { captures } = harness;
+	await captures.open('one', 'capture');
+	const { session, form } = openCapture(captures);
+	const { held, release } = harness.holdNextMarkdownWrite();
+	form.inputText('Saving while deleted');
+	await held;
+	const order: string[] = [];
+	const removing = captures.remove(session).then((problem) => {
+		order.push('deleted');
+		return problem;
+	});
+	captures.departure.fence();
+	const settling = captures.departure.settle().then(() => {
+		order.push('settled');
+	});
+	const closing = captures.close().then(() => {
+		order.push('closed');
+	});
+	await Bun.sleep(5);
+	expect(order).toEqual([]);
+	release();
+	await Promise.all([settling, closing]);
+	// Both waited for the delete itself, not only for the save before it.
+	expect(order[0]).toBe('deleted');
+	expect(await removing).toBeUndefined();
+	expect(await harness.text(PATH)).toBeUndefined();
+});
+
 test('a capture changed elsewhere is not deleted; it opens again as it is now', async () => {
 	const harness = await open({ [PATH]: HAND });
 	const { captures } = harness;
@@ -468,10 +498,28 @@ test('a thought edit whose thought changed meanwhile is refused and keeps its te
 	await captures.check();
 	form.inputEditing('my edit', edit.id);
 	expect(form.commitEditing(edit.id)).toBe(false);
-	expect(form.refusal).toContain('changed since you started');
+	expect(form.refusal).toContain('changed since they were shown');
 	expect(form.editing?.text).toBe('my edit');
 	await session.settled();
 	expect(await harness.text(PATH)).toContain('- changed elsewhere');
+});
+
+test('deleting or moving a thought from a list that changed meanwhile says why', async () => {
+	const harness = await open({ [PATH]: HAND });
+	const { captures } = harness;
+	await captures.open('one', 'capture');
+	const { form } = openCapture(captures);
+	const shown = form.thoughts;
+	await harness.writeElsewhere(
+		PATH,
+		`---\ncapturedAt: ${AT}\n---\n\nText\n\n## Thoughts\n\n- a\n- b\n`,
+	);
+	await captures.check();
+	expect(form.deleteThought(0, shown)).toBe(false);
+	expect(form.refusal).toContain('changed since they were shown');
+	expect(form.swapThoughts(0, 1, shown)).toBe(false);
+	expect(form.refusal).toContain('changed since they were shown');
+	expect(form.thoughts).toEqual(['a', 'b']);
 });
 
 // ============================================================================

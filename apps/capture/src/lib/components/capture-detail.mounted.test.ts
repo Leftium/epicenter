@@ -13,6 +13,8 @@
  *   text on screen over it, and Reload theirs shows theirs in the same view
  * - A capture deleted elsewhere offers Discard, which closes it, and Keep
  *   mine, which puts it back
+ * - A thought typed and not added stays visible to copy when the capture
+ *   reloads to a layout the form cannot show
  * - A file that is not a valid capture shows its issues as text is typed,
  *   and opens as a capture once they are fixed
  * - While Epicenter asks to quit, the text boxes take nothing
@@ -144,6 +146,27 @@ test('a capture deleted elsewhere: Keep mine puts it back from the text on scree
 	await Bun.sleep(5);
 	await settle(harness);
 	expect(await harness.text(PATH)).toBe(saved('Mine'));
+});
+
+test('a thought typed and not added stays visible to copy when Reload theirs brings a layout the form cannot show', async () => {
+	const harness = await setup({ [PATH]: FILE }, 'capture');
+	type(field('new-thought'), 'my pending thought');
+	await harness.writeElsewhere(
+		PATH,
+		`---\ncapturedAt: ${AT}\n---\n\n## Thoughts\n\n## Thoughts\n`,
+	);
+	type(field('capture-text'), 'Mine');
+	await settle(harness);
+	click(button('Reload theirs'));
+	await Bun.sleep(5);
+	await settle(harness);
+	expect(harness.target.textContent).toContain('cannot be edited as text and thoughts');
+	const pending = harness.target.querySelector<HTMLTextAreaElement>(
+		'[aria-label="Thought not added"]',
+	);
+	expect(pending?.value).toBe('my pending thought');
+	expect(pending?.readOnly).toBe(true);
+	expect(harness.captures.unsaved).toBe(true);
 });
 
 test('a file that is not a valid capture shows its issues as typed, and opens as a capture once fixed', async () => {

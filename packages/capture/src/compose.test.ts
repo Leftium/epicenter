@@ -19,17 +19,25 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openFolder } from '@epicenter/folder/bun';
 import { expectOk } from 'wellcrafted/testing';
-import {
-	captureBody,
-	captureDefinition,
-	composeBody,
-	parseCapture,
-} from './index.js';
+import { frameRowText } from '@epicenter/folder';
+import { captureBody, captureDefinition, composeBody } from './index.js';
 import { runLegacyImport } from './legacy/index.js';
 
 const HEAD = '---\ncapturedAt: 2026-01-01T00:00:00.000Z\n---\n';
 const OWN_LIST_THEN_OPEN_FENCE =
 	'Pasted article\n\n## Thoughts\n\n- This belongs to the original article\n\n```\nnever closed';
+
+/** A whole file read again the way an open capture reads its row's body. */
+function reopen(source: string) {
+	const frame = frameRowText(source);
+	if (frame.kind !== 'frontmatter') throw new Error('fixture');
+	const { data, error } = captureBody.decode(source.slice(frame.bodyStart));
+	return {
+		refusal: error ?? undefined,
+		text: data?.text,
+		thoughts: data?.thoughts ?? [],
+	};
+}
 
 const roots: string[] = [];
 afterAll(async () => {
@@ -42,7 +50,7 @@ test('ordinary text is followed by the section and its thoughts', () => {
 		refusal: undefined,
 		absorbed: false,
 	});
-	const reopened = parseCapture(HEAD + composeBody('Text', ['one']).body);
+	const reopened = reopen(HEAD + composeBody('Text', ['one']).body);
 	expect(reopened.text).toBe('Text');
 	expect(reopened.thoughts).toEqual(['one']);
 });
@@ -55,7 +63,7 @@ test('its own Thoughts list then an open fence: marked, refused on reopening, by
 	expect(composed.refusal?.code).toBe('duplicate-heading');
 	expect(composed.absorbed).toBe(true);
 
-	const reopened = parseCapture(HEAD + composed.body);
+	const reopened = reopen(HEAD + composed.body);
 	expect(reopened.refusal?.code).toBe('duplicate-heading');
 	expect(reopened.thoughts).toEqual([]);
 	expect(reopened.text).toBeUndefined();
@@ -65,7 +73,7 @@ test('its own Thoughts list then an open fence: marked, refused on reopening, by
 	);
 	expect(refused.error?.code).toBe('duplicate-heading');
 	// Without the mark, the article's list would have read as thoughts.
-	const unmarked = parseCapture(
+	const unmarked = reopen(
 		`${HEAD}\n${OWN_LIST_THEN_OPEN_FENCE}\n\n## Thoughts\n`,
 	);
 	expect(unmarked.thoughts).toEqual(['This belongs to the original article']);
@@ -111,7 +119,7 @@ test('the legacy import writes the marked file and reports it as source-only', a
 	expect(saved).toBe(
 		`---\ncapturedAt: "2026-01-01T00:00:00.000Z"\nimportedFrom: so.epicenter.capture/captures/c1\n---\n\n## Thoughts\n\n${OWN_LIST_THEN_OPEN_FENCE}\n\n## Thoughts\n\n- app thought\n`,
 	);
-	const reopened = parseCapture(saved);
+	const reopened = reopen(saved);
 	expect(reopened.refusal?.code).toBe('duplicate-heading');
 	expect(reopened.thoughts).toEqual([]);
 	await folder.close();

@@ -93,7 +93,12 @@ captureBody.encode({ ...current, thoughts: [...current.thoughts, input] }, body)
 ```
 
 A changed list uses consistent `-` bullets, two-space continuation indentation,
-and the body's line ending. An unchanged list retains its original bytes.
+and the body's line ending. An item that is indented code (five or more
+columns after its marker) reads as a thought whose first line keeps the
+code's indentation, so it is written back as code. Deleting the last thought
+is refused, with why, while other Markdown follows the list under the
+heading: without a list, that Markdown would read as the start of the
+section. An unchanged list retains its original bytes.
 Encoding preserves surrounding body content and verifies the resulting text and
 thoughts.
 
@@ -101,10 +106,6 @@ Positions go stale when the body changes under them, so an app checks that a
 delayed edit's starting list, or the thought an edit started from, is still
 current before it encodes. The codec needs no thought IDs.
 
-`parseCapture(source)` reads a whole file, frontmatter lines included, the
-same way, and refuses source without both frontmatter lines
-(`missing-frontmatter`, `unclosed-frontmatter`). It does not parse YAML and
-is not used to edit a capture.
 `excerpt(text)` shortens capture text for a list.
 
 `fromTextarea(original, value, newline)` carries a textarea's value (always

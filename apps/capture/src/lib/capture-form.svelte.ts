@@ -33,6 +33,10 @@ export type ThoughtEdit = {
 
 export type CaptureForm = ReturnType<typeof createCaptureForm>;
 
+/** Why a command on a position did nothing: the thoughts changed under it. */
+const CHANGED =
+	'The thoughts changed since they were shown, so nothing was changed.';
+
 export function createCaptureForm(session: RowSession<CaptureFields>) {
 	let newThought = $state('');
 	let editing = $state.raw<ThoughtEdit | undefined>();
@@ -138,8 +142,7 @@ export function createCaptureForm(session: RowSession<CaptureFields>) {
 			const { index, original, text: edited } = editing;
 			const current = thoughts();
 			if (current[index] !== original) {
-				refusal =
-					'This thought changed since you started editing it, so nothing was changed. Copy your text, then cancel.';
+				refusal = `${CHANGED} Your edit is kept here; copy it, then cancel.`;
 				return false;
 			}
 			if (edited.trim() === '') {
@@ -165,7 +168,11 @@ export function createCaptureForm(session: RowSession<CaptureFields>) {
 		},
 		/** Delete the thought at `index` of the list `shown`. */
 		deleteThought(index: number, shown: readonly string[]): boolean {
-			if (shown !== thoughts() || shown[index] === undefined) return false;
+			if (session.locked) return false;
+			if (shown !== thoughts() || shown[index] === undefined) {
+				refusal = CHANGED;
+				return false;
+			}
 			return write({
 				text: text(),
 				thoughts: shown.filter((_, at) => at !== index),
@@ -173,11 +180,19 @@ export function createCaptureForm(session: RowSession<CaptureFields>) {
 		},
 		/** Swap two neighbouring thoughts of the list `shown`. */
 		swapThoughts(from: number, to: number, shown: readonly string[]): boolean {
-			if (shown !== thoughts() || Math.abs(from - to) !== 1) return false;
+			if (session.locked) return false;
 			const next = [...shown];
 			const first = next[from];
 			const second = next[to];
-			if (first === undefined || second === undefined) return false;
+			if (
+				shown !== thoughts() ||
+				Math.abs(from - to) !== 1 ||
+				first === undefined ||
+				second === undefined
+			) {
+				refusal = CHANGED;
+				return false;
+			}
 			next[from] = second;
 			next[to] = first;
 			return write({ text: text(), thoughts: next });

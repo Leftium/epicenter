@@ -113,7 +113,7 @@ describe('native partial moves', () => {
 	);
 
 	test.skipIf(!canDenyWrites)(
-		'a folder move that keeps its source names both paths, marks observations stale, and requests no commit',
+		'a folder move that keeps its source names both paths, marks observations stale, and commits what landed',
 		async () => {
 			const root = await scratch('native-move-folder-');
 			const folder = await openNativeFolder({
@@ -147,8 +147,15 @@ describe('native partial moves', () => {
 				expect(await readFile(join(root, 'open/a.txt'), 'utf8')).toBe('A');
 				const files = folder.git.snapshot.files;
 				expect(files.state === 'observed' && files.stale).toBe(true);
-				expect(folder.git.snapshot.activity.commit).toEqual({ active: false });
-				expect(folder.git.snapshot.lastCommit).toBe(committed);
+				// A commit records both paths as they are; it claims no move.
+				for (
+					let attempt = 0;
+					attempt < 200 && folder.git.snapshot.lastCommit === committed;
+					attempt++
+				)
+					await Bun.sleep(10);
+				expect(folder.git.snapshot.lastCommit?.status).toBe('committed');
+				expect(folder.git.snapshot.lastCommit).not.toBe(committed);
 			} finally {
 				await chmod(join(root, 'locked'), 0o755);
 			}

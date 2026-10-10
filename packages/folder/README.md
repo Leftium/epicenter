@@ -197,7 +197,7 @@ visible, empty, from its creation until its stream closes.
 | What happened | Outcome |
 | --- | --- |
 | A step failed before its stream closed | `Io`. A file the step created is removed again; when its absence cannot be established, `Unconfirmed`. |
-| A stream's close threw | `Unconfirmed`, whatever the path holds afterward: matching bytes do not prove which write put them there. The path is hinted, the history observation turns stale, and no automatic commit is requested. |
+| A stream's close threw | `Unconfirmed`, whatever the path holds afterward: matching bytes do not prove which write put them there. The path is hinted, the history observation turns stale, and an automatic commit records whatever the path holds. |
 | A move landed its destination and could not remove its source | `SourceNotRemoved`. The destination is hinted. |
 
 Saves are ordered by the lock alone, not by when their methods were called.
@@ -886,8 +886,9 @@ empty commit. A commit that fails is reported in
 `git.snapshot.lastCommit` and is not retried; the next save asks again.
 There is no timer and no commit when the folder closes: a request still
 waiting then is dropped, so the last save can stay uncommitted indefinitely.
-Edits made by another program or tab, and saves that stopped partway or whose
-outcome is unknown, ask for nothing. `git.snapshot.files` turns `stale` when
+Edits made by another program or tab ask for nothing. A save that stopped
+partway or whose outcome is unknown asks like any other: a commit records the
+folder's files as they are, never a claim about which save put them there. `git.snapshot.files` turns `stale` when
 a save lands after the last capture, and `git.status()` lists what is
 uncommitted.
 

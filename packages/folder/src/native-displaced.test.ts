@@ -17,7 +17,8 @@
  * - Later steps of the batch are not attempted, and a save queued behind it
  *   checks against the bytes that landed
  * - Through an opened folder the save is `Unconfirmed` carrying that report;
- *   the path is hinted and no automatic commit is requested
+ *   the path is hinted, and the automatic commit records what landed, while
+ *   the displaced entry stays outside history
  *
  * See also:
  * - `native-publication.test.ts` for the checks before the exchange
@@ -302,7 +303,7 @@ test.skipIf(!exchangeSupported)(
 );
 
 test.skipIf(!exchangeSupported)(
-	'through an opened folder the save is Unconfirmed with the report, hinted, and not committed',
+	'through an opened folder the save is Unconfirmed with the report, hinted, and what landed is committed',
 	async () => {
 		const folder = await root('native-displaced-opened-');
 		await writeFile(join(folder, 'note.md'), 'read');
@@ -335,8 +336,13 @@ test.skipIf(!exchangeSupported)(
 			expect(unconfirmed.message).toContain(location);
 			expect(unconfirmed.message).toContain('Inspect');
 			expect(heard).toContain('note.md');
-			await Bun.sleep(50);
-			expect(opened.git.snapshot.lastCommit).toBe(before);
+			// A commit records the folder's files as they are, so the bytes that
+			// landed are committed; the displaced entry is kept under `.git`.
+			for (let i = 0; i < 100 && opened.git.snapshot.lastCommit === before; i++)
+				await Bun.sleep(20);
+			expect(opened.git.snapshot.lastCommit).toMatchObject({
+				status: 'committed',
+			});
 			expect(await readFile(join(folder, 'note.md'), 'utf8')).toBe('mine');
 		} finally {
 			await opened.close();

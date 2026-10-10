@@ -11,6 +11,25 @@ import type { History } from './git/history.js';
 const stepPaths = (step: FileStep | FileChange): string[] =>
 	step.kind === 'move' ? [step.from, step.to] : [step.path];
 
+/**
+ * The paths an application may have changed: every path of a confirmed
+ * batch, the landed steps of a partial one with its failed step when that
+ * outcome is unknown, and every path of an unconfirmed one.
+ */
+function mayHaveChanged(
+	changes: readonly FileChange[],
+	error: Awaited<ReturnType<FolderStorage['apply']>>['error'],
+): string[] {
+	if (error === null) return changes.flatMap(stepPaths);
+	if (error.name === 'Partial')
+		return [
+			...error.applied.flatMap(stepPaths),
+			...(error.error.name === 'Unconfirmed' ? stepPaths(error.failed) : []),
+		];
+	if (error.name === 'Unconfirmed') return changes.flatMap(stepPaths);
+	return [];
+}
+
 /** Browser and Bun record local saves here; the desktop owner records its own. */
 export function withPublication({
 	storage,
@@ -25,26 +44,14 @@ export function withPublication({
 		...storage,
 		async apply(changes) {
 			const result = await storage.apply(changes);
-			const { error: applyError } = result;
-			if (applyError === null && changes.length > 0) {
+			const touched = mayHaveChanged(changes, result.error);
+			if (touched.length > 0) {
 				history.noteEdit();
+				// A commit records the folder's files as they are, never a claim
+				// about which save put them there, so asking is safe even when
+				// nobody knows whether this change landed.
 				history.requestAutomaticCommit();
-				landed(changes.flatMap(stepPaths));
-			} else if (applyError?.name === 'Partial') {
-				history.noteEdit();
-				// An uncertain failed step may have landed too. A hint asks for a
-				// reread; it does not confirm publication or request a commit.
-				landed([
-					...applyError.applied.flatMap(stepPaths),
-					...(applyError.error.name === 'Unconfirmed'
-						? stepPaths(applyError.failed)
-						: []),
-				]);
-			} else if (applyError?.name === 'Unconfirmed') {
-				// The paths may have changed. Say so, but request no commit for an
-				// outcome nobody knows.
-				history.noteEdit();
-				landed(changes.flatMap(stepPaths));
+				landed(touched);
 			}
 			return result;
 		},

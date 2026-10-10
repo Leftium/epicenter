@@ -16,7 +16,7 @@
  * - Across handles: exactly one of two creates wins, and of two replacements
  *   from one capture exactly one wins and the other sees the winner's hash
  * - A write that fails before its close is `Io`; a close that throws is
- *   `Unconfirmed` whatever the path holds after, hinted, with no commit
+ *   `Unconfirmed` whatever the path holds after, hinted, and committed as is
  * - Saves are not ordered by when they were asked for: a save entered first
  *   that lands after a later one stays, across handles
  * - Closing refuses new work; a save already begun returns its real outcome
@@ -442,10 +442,10 @@ describe('outcomes a caller can rely on', () => {
 		expect(opfs.files(ROOT).get('a.md')).toEqual(new Uint8Array());
 	});
 
-	test('a close that throws is Unconfirmed, whatever the path holds after: hinted, and no commit is requested', async () => {
+	test('a close that throws is Unconfirmed, whatever the path holds after: hinted, and committed as it is', async () => {
 		for (const [fault, after] of [
 			['fail', new Uint8Array()],
-			// The bytes did land; matching bytes still prove nothing of the reply.
+			// The bytes did land; the reply still says nothing of it.
 			['lost', encoder.encode('x')],
 		] as const) {
 			const folder = await open({ commitOnEdit: true, hints: true });
@@ -467,12 +467,15 @@ describe('outcomes a caller can rely on', () => {
 			for (let index = 0; index < 50 && heardThere.length === 0; index++)
 				await Bun.sleep(5);
 			expect(heardThere).toContain('a.md');
-			await Bun.sleep(20);
-			expect(folder.git.snapshot.lastCommit).toBe(previousAttempt);
-			expect(
-				folder.git.snapshot.files.state === 'observed' &&
-					!folder.git.snapshot.files.stale,
-			).toBe(false);
+			// A commit records whatever the path holds, so one is asked for even
+			// though nobody knows whether the bytes landed.
+			for (
+				let index = 0;
+				index < 100 && folder.git.snapshot.lastCommit === previousAttempt;
+				index++
+			)
+				await Bun.sleep(10);
+			expect(folder.git.snapshot.lastCommit).not.toBe(previousAttempt);
 			for (const each of opened.splice(0)) await each.close();
 			fresh();
 		}

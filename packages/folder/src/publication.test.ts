@@ -3,7 +3,8 @@
  *
  * Local observers hear confirmed paths and uncertain failed-step paths,
  * never unattempted paths. Accounting preserves the storage receipt and
- * never requests an automatic commit for a partial outcome.
+ * requests one automatic commit for any outcome that may have changed a
+ * path: a commit records the folder's files as they are.
  */
 import { expect, test } from 'bun:test';
 import { expectErr, expectOk } from 'wellcrafted/testing';
@@ -113,7 +114,7 @@ for (const failed of [
 				]),
 			).toBe(receipt);
 			expect(edits).toBe(1);
-			expect(commits).toBe(0);
+			expect(commits).toBe(1);
 			expect(heard).toEqual([
 				'confirmed.md',
 				...(unknown

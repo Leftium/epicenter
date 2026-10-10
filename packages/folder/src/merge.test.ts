@@ -667,7 +667,8 @@ describe('the browser journey', () => {
 		const environment = createTestStorage();
 		let folder = await open(environment);
 		try {
-			expectOk(await folder.kv.create({ theme: 'light', lang: 'en' }));
+			expectOk(await folder.kv.set('theme', 'light'));
+			expectOk(await folder.kv.set('lang', 'en'));
 			expect((await folder.git.commitAndPush()).push.status).toBe('pushed');
 
 			// Another program changes the language and pushes.
@@ -682,7 +683,7 @@ describe('the browser journey', () => {
 			const remoteHead = await git(bare, 'rev-parse', 'main');
 
 			// This folder changes the theme and commits without pushing.
-			expectOk(await folder.kv.update({ theme: 'dark' }));
+			expectOk(await folder.kv.set('theme', 'dark'));
 			const local = await folder.git.commit();
 			if (local.status !== 'committed') throw new Error(local.status);
 			const fetched = expectOk(await folder.git.fetch()).oid;

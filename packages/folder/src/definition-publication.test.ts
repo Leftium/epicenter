@@ -68,7 +68,7 @@ test('opening before downloading an existing browser remote preserves incoming p
 		});
 	const sender = expectOk(await open(false));
 	try {
-		expectOk(await sender.kv.create({ theme: 'remote' }));
+		expectOk(await sender.kv.set('theme', 'remote'));
 		expect((await sender.git.commitAndPush()).push.status).toBe('pushed');
 		for (const automatic of [false, true]) {
 			const receiver = expectOk(await open(automatic));
@@ -125,7 +125,7 @@ for (const adapter of ['browser', 'bun'] as const) {
 					{ stem: 'kept' },
 				),
 			);
-			expectOk(await folder.kv.create({ theme: 'dark' }));
+			expectOk(await folder.kv.set('theme', 'dark'));
 			const row = expectOk(await folder.files.read('notes/kept.md'));
 			const kv = expectOk(await folder.files.read('kv.json'));
 			expectOk(

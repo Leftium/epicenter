@@ -1,112 +1,80 @@
 /**
- * The root `kv.json`: a sparse map of declared values (ADR-0487).
+ * The root `kv.json`: settings as independent keys (ADR-0520).
  *
- * A snapshot is a text capture of the file and how that text reads: the
- * declared values that validated, a parse error when the text is not one
- * JSON object, and an issue for each stored value that does not conform. A
- * key the file lacks is not an issue, and nothing here supplies a default:
- * what a missing key means belongs to the application.
+ * A setting is an intent, not a document. `set('theme', 'dark')` means "the
+ * theme is dark", whatever the file held a moment ago, so a set merges one
+ * key into the current file and re-applies itself when another writer got
+ * there first. Two windows setting different keys both stick, and no one is
+ * asked to resolve anything. A value that must change together with another
+ * belongs in one key: one top-level key is one fact.
  *
- * `create` saves a new file from the supplied values alone and reads
- * nothing. `update` reads the file once, assigns the supplied root keys
- * inside its exact source, and conditionally replaces what it read: a
- * publication race returns Conflict and nothing retries.
+ * Reading is per key. Every declared key whose stored value validates is in
+ * `values`; a stored value that does not conform is left out and reported
+ * as an issue at its line, so one broken setting falls back to the app's
+ * default without hiding the others. Only text that is not a file a folder
+ * can hold (not one strict JSON object, or a key that appears twice at any
+ * depth) is
+ * `InvalidKv`, repaired as text with `files.replace(error, text)`.
  *
- * An update changes only the value of each supplied key. Unknown keys,
- * number spellings, nesting, whitespace, and a byte order mark stay exactly
- * as they were. Source that is not one strict JSON object is refused; repair
- * it as an ordinary file with `files.replace(snapshot, text)`.
+ * `kv.json` text belongs to `kv-merge.ts`: a set writes exactly the format a
+ * Git merge writes, and keeps every key it does not change as its raw text.
  */
 
 import {
-	accepts,
 	type FieldMap,
 	inputIssues,
 	isJsonValue,
 	JSON_BUDGET,
 } from '@epicenter/definition';
-import {
-	type ParseError as JsonSyntaxError,
-	type Node,
-	parseTree,
-} from 'jsonc-parser';
+import { type Node, parseTree } from 'jsonc-parser';
 import { Err, Ok, type Result } from 'wellcrafted/result';
 import type { FolderStorage } from './boundary.js';
 import { hashBytes } from './capture.js';
 import {
-	describe,
+	FileError,
 	type KvReadError,
 	type KvWriteError,
 	TableError,
 } from './errors.js';
-import {
-	type DeepReadonly,
-	type FieldIssue,
-	freezeDeep,
-	freezeIssues,
-	ownSupplied,
-	type ParseError,
-	parseError,
-} from './reading.js';
+import { formatKvMembers, readKvMembers } from './kv-merge.js';
+import type { Issue, Issues } from './row-text.js';
 import { applyOne } from './storage.js';
 
 export const KV_PATH = 'kv.json';
 
 /**
- * How `kv.json` source reads. Text that is not one JSON object has a
- * `parseError`, no values, and no issues. Text that parses has every stored
- * declared value that validated by itself; a stored value that does not
- * conform is left out and reported. A key the source lacks is left out and
- * is not an issue, and an undeclared key stays in the source unreported.
+ * One read of `kv.json`: which bytes were read, every declared value that
+ * validated, and an issue for each stored value that did not. A key the
+ * file lacks is not an issue, and nothing supplies a default: the app
+ * spreads its own defaults under `values`.
  */
 export type KvReading<TValues> = {
-	readonly values: DeepReadonly<Partial<TValues>>;
-	readonly parseError: ParseError | undefined;
-	readonly issues: readonly FieldIssue[];
-};
-
-/** One immutable observation of `kv.json`, or the capture a save left behind. */
-export type KvSnapshot<TValues> = KvReading<TValues> & {
 	readonly path: typeof KV_PATH;
-	/** The exact text of the whole file. */
-	readonly text: string;
 	readonly sha256: string;
+	readonly values: Partial<TValues>;
+	readonly issues: readonly Issue[];
 };
 
 export type FileKv<TValues> = {
+	/** `undefined` only when `kv.json` does not exist. */
+	get(): Promise<Result<KvReading<TValues> | undefined, KvReadError>>;
 	/**
-	 * Interpret `kv.json` text. Synchronous and pure: it reads no file and
-	 * invents no capture, so unsaved text can be inspected.
+	 * Set one key, or remove it with `undefined` so the app's default applies.
+	 * A value that is not declared, does not conform, or cannot be stored is
+	 * `InvalidValues` before anything is read. The file is created when it is
+	 * missing. Sets from one handle apply in the order they were called; a
+	 * write that loses a race re-reads and re-applies itself, and only a race
+	 * lost three times is `Conflict`. Returns the reading of what it wrote.
 	 */
-	inspect(text: string): KvReading<TValues>;
-	/**
-	 * `undefined` only when `kv.json` does not exist. Text that is not a JSON
-	 * object is a snapshot with a `parseError`; a file that cannot be read is
-	 * an error.
-	 */
-	get(): Promise<Result<KvSnapshot<TValues> | undefined, KvReadError>>;
-	/**
-	 * Save a new `kv.json` holding the supplied values. Refused when the file
-	 * exists. The supplied values are copied, never frozen or kept.
-	 */
-	create(
-		values: DeepReadonly<Partial<TValues>>,
-	): Promise<Result<KvSnapshot<TValues>, KvWriteError>>;
-	/**
-	 * Assign the supplied keys in the current file. A missing file is NotFound
-	 * and a publication race is Conflict; nothing retries.
-	 */
-	update(
-		values: DeepReadonly<Partial<TValues>>,
-	): Promise<Result<KvSnapshot<TValues>, KvWriteError>>;
+	set<TKey extends keyof TValues & string>(
+		key: TKey,
+		value: TValues[TKey] | undefined,
+	): Promise<Result<KvReading<TValues>, KvWriteError>>;
 };
 
-const BOM = '﻿';
-const STRICT_JSON = {
-	disallowComments: true,
-	allowTrailingComma: false,
-	allowEmptyContent: false,
-};
+/** Attempts a set makes before its lost race is the caller's `Conflict`. */
+const ATTEMPTS = 3;
+
 const utf8 = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true });
 const encoder = new TextEncoder();
 
@@ -118,71 +86,154 @@ function decode(bytes: Uint8Array): string | undefined {
 	}
 }
 
+/** The 1-based line of a UTF-16 index in text. */
+function lineAt(text: string, index: number): number {
+	let line = 1;
+	for (let i = 0; i < index; i++) if (text.charCodeAt(i) === 0x0a) line++;
+	return line;
+}
+
+const STRICT_JSON = {
+	disallowComments: true,
+	allowTrailingComma: false,
+	allowEmptyContent: false,
+};
+
+/** What a JSON syntax error means to a person repairing the text. */
+const SYNTAX: Record<number, string> = {
+	1: 'an unexpected character',
+	2: 'a number that is not written as JSON',
+	3: 'a key is expected',
+	4: 'a value is expected',
+	5: 'a colon is expected',
+	6: 'a comma is expected',
+	7: 'a closing brace is expected',
+	8: 'a closing bracket is expected',
+	9: 'nothing more is expected after the object',
+	10: 'comments are not allowed',
+	11: 'a comment is not closed',
+	12: 'a string is not closed',
+	13: 'a number is not finished',
+	14: 'a Unicode escape is not valid',
+	15: 'an escape is not valid',
+	16: 'a control character is not allowed in a string',
+};
+
 /**
- * The root object of strict JSON text, or why there is none. Comments and
- * trailing commas do not parse. A root key that appears twice reads as its
- * last value.
+ * Why text that `readKvMembers` refused is not a file a folder can hold, at
+ * its line when there is one. The member reader alone decides validity;
+ * this only explains its refusal.
  */
-function parseObject(
-	json: string,
-): Result<Record<string, unknown>, ParseError> {
-	let value: unknown;
+function refusalOf(text: string): Issues {
+	const offset = text.startsWith('\uFEFF') ? 1 : 0;
+	const errors: Parameters<typeof parseTree>[1] = [];
+	let root: Node | undefined;
 	try {
-		value = JSON.parse(json);
+		root = parseTree(text.slice(offset), errors, STRICT_JSON);
 	} catch (cause) {
-		return Err(parseError('The source is not valid JSON', [describe(cause)]));
+		// Deep nesting the member reader refused must not overflow the stack here.
+		if (!(cause instanceof RangeError)) throw cause;
+		return [{ message: 'kv.json nests deeper than 64 levels' }];
 	}
-	if (typeof value !== 'object' || value === null || Array.isArray(value))
-		return Err(parseError('The source is not a JSON object'));
-	return Ok(value as Record<string, unknown>);
+	const [syntax] = errors;
+	if (syntax !== undefined)
+		return [
+			{
+				message: `kv.json is not valid JSON: ${SYNTAX[syntax.error] ?? 'it does not parse'}`,
+				line: lineAt(text, offset + syntax.offset),
+			},
+		];
+	if (root?.type !== 'object')
+		return [{ message: 'kv.json is not a JSON object', line: 1 }];
+	const duplicate = duplicateKey(root);
+	if (duplicate !== undefined)
+		return [
+			{
+				message: `The key ${JSON.stringify(duplicate.key)} appears twice`,
+				line: lineAt(text, offset + duplicate.offset),
+				field: duplicate.field,
+			},
+		];
+	return [
+		{
+			message:
+				'kv.json holds text a folder cannot store: an unpaired surrogate, or nesting deeper than 64 levels',
+		},
+	];
+}
+
+/** The first key that appears twice in one object, at any depth, and its root key. */
+function duplicateKey(
+	node: Node,
+	field?: string,
+): { key: string; offset: number; field: string } | undefined {
+	if (node.type === 'array')
+		for (const child of node.children ?? []) {
+			const found = duplicateKey(child, field);
+			if (found !== undefined) return found;
+		}
+	if (node.type !== 'object') return undefined;
+	const seen = new Set<string>();
+	for (const property of node.children ?? []) {
+		const [name, value] = property.children ?? [];
+		const key: unknown = name?.value;
+		if (typeof key !== 'string') continue;
+		if (seen.has(key))
+			return { key, offset: property.offset, field: field ?? key };
+		seen.add(key);
+		if (value === undefined) continue;
+		const found = duplicateKey(value, field ?? key);
+		if (found !== undefined) return found;
+	}
+	return undefined;
+}
+
+/** The line of each root key, for issues about its value. */
+function keyLines(text: string): Map<string, number> {
+	const offset = text.startsWith('﻿') ? 1 : 0;
+	const root: Node | undefined = parseTree(text.slice(offset), [], STRICT_JSON);
+	const lines = new Map<string, number>();
+	for (const property of root?.children ?? []) {
+		const key: unknown = property.children?.[0]?.value;
+		if (typeof key === 'string')
+			lines.set(key, lineAt(text, offset + property.offset));
+	}
+	return lines;
 }
 
 /**
- * Interpret `kv.json` source against the definition's prepared `kv` fields.
- * Parsing comes first and fails as a whole. The shared input check then
- * checks each stored declared value by itself; nothing is coerced,
- * defaulted, or repaired.
- *
- * The values are this parse's own, so freezing them at every depth touches
- * nothing a caller holds. They are frozen before a field checks them, so a
- * field's callback cannot make a reading say what its source does not.
+ * Why a JSON value cannot be a setting, whichever way it travels: over the
+ * nesting or width budget, or holding an integer outside the safe range. A
+ * read reports it as an issue and a set refuses it, so a value read from the
+ * file can always be set back.
  */
-function inspectSource<TValues>(
-	schemas: FieldMap,
-	source: string,
-): KvReading<TValues> {
-	const { data: object, error: objectError } = parseObject(
-		source.startsWith(BOM) ? source.slice(BOM.length) : source,
-	);
-	if (objectError !== null)
-		return Object.freeze({
-			values: Object.freeze({}) as DeepReadonly<Partial<TValues>>,
-			parseError: objectError,
-			issues: freezeIssues([]),
-		});
-	const stored: Record<string, unknown> = {};
-	for (const key of Object.keys(schemas))
-		if (Object.hasOwn(object, key)) stored[key] = freezeDeep(object[key]);
-	// Only stored declared keys are checked, so an absent key is never an issue.
-	const issues = inputIssues(schemas, stored, { complete: false });
-	for (const { field } of issues) delete stored[field];
-	return Object.freeze({
-		// Every value is frozen already; only the map that holds them is new.
-		values: Object.freeze(stored) as DeepReadonly<Partial<TValues>>,
-		parseError: undefined,
-		issues: freezeIssues(issues),
-	});
+function storedProblem(key: string, value: unknown): string | undefined {
+	if (!isJsonValue(value))
+		return `${key} is over the kv.json budget: nesting deeper than ${JSON_BUDGET.depth} levels, or an object with more than ${JSON_BUDGET.propertiesPerObject} keys`;
+	if (hasUnsafeInteger(value))
+		return `${key} holds an integer outside the safe range`;
+	return undefined;
 }
 
-/** JSON text of a value, or `undefined` where serializing would drop or replace part of it. */
+/** Whether a parsed JSON value holds an integer outside the safe range. */
+function hasUnsafeInteger(value: unknown): boolean {
+	if (typeof value === 'number')
+		return Number.isInteger(value) && !Number.isSafeInteger(value);
+	if (typeof value !== 'object' || value === null) return false;
+	return Object.values(value).some(hasUnsafeInteger);
+}
+
+/** The JSON text of a supplied value, or `undefined` when JSON would lose part of it. */
 function serialize(value: unknown): string | undefined {
 	try {
-		return JSON.stringify(value, (_key, part: unknown) => {
+		return JSON.stringify(value, function (_key, part: unknown) {
 			if (
-				part === undefined ||
 				typeof part === 'function' ||
 				typeof part === 'symbol' ||
-				(typeof part === 'number' && !Number.isFinite(part))
+				typeof part === 'bigint' ||
+				(typeof part === 'number' && !Number.isFinite(part)) ||
+				// An array has no absent element; an object's absent key is dropped.
+				(part === undefined && Array.isArray(this))
 			)
 				throw new TypeError('not a JSON value');
 			return part;
@@ -192,160 +243,34 @@ function serialize(value: unknown): string | undefined {
 	}
 }
 
-/**
- * Supplied values as JSON text by key. Synchronous, so a caller that changes
- * its object after the call cannot change what is saved. The caller's object
- * is read and never frozen or kept: what is checked and serialized is this
- * module's frozen copy.
- */
-function ownValues(
+/** Every declared value of read members that validated, and an issue for each that did not. */
+function valuesOf<TValues>(
 	schemas: FieldMap,
-	supplied: Readonly<Record<string, unknown>>,
-): Result<Map<string, string>, Extract<TableError, { name: 'InvalidValues' }>> {
-	const owned = new Map<string, string>();
-	// The input check says which keys are undeclared or do not conform, and where.
-	const { values, issues } = ownSupplied(schemas, supplied, {
-		complete: false,
-	});
-	const refused = new Set(issues.map((issue) => issue.field));
-	for (const [key, value] of Object.entries(values)) {
-		if (refused.has(key)) continue;
-		// A value its field accepts is JSON already, so what the bounded guard
-		// refuses here is size, and the issue says so.
-		if (!isJsonValue(value)) {
-			issues.push({
-				field: key,
-				message: `${key} is over the kv.json budget: nesting deeper than ${JSON_BUDGET.depth} levels, or an object with more than ${JSON_BUDGET.propertiesPerObject} keys`,
-			});
-			continue;
-		}
-		const json = serialize(value);
-		// The saved text is what a reader gets back, so it has to conform too.
-		// The key passed the input check above, so it is a declared field.
-		if (
-			json !== undefined &&
-			accepts(schemas[key], freezeDeep(JSON.parse(json)))
-		)
-			owned.set(key, json);
-		else
-			issues.push({
-				field: key,
-				message: `${key} cannot be saved: the value does not read back from JSON as it was supplied`,
-			});
-	}
-	return issues.length === 0 ? Ok(owned) : TableError.InvalidValues({ issues });
-}
-
-/**
- * Assign root keys in exact source. Only the span of each assigned value
- * changes; a key the object lacks is added after its last member.
- *
- * Source that is not one JSON object is `Unparsed`: there is nothing to
- * assign in. Source that parses but cannot take the assignment safely is
- * `UnsupportedSource`.
- */
-function assignKeys(
-	source: string,
-	owned: ReadonlyMap<string, string>,
-): Result<
-	string,
-	Extract<TableError, { name: 'Unparsed' | 'UnsupportedSource' }>
-> {
-	const refuse = (reason: string) =>
-		TableError.UnsupportedSource({ path: KV_PATH, reason });
-	const prefix = source.startsWith(BOM) ? BOM : '';
-	const json = source.slice(prefix.length);
-	const { error: currentError } = parseObject(json);
-	if (currentError !== null)
-		return TableError.Unparsed({ path: KV_PATH, error: currentError });
-
-	// JSON.parse says the text is strict JSON; the syntax tree says where each
-	// member is. Text the two disagree on is not patched.
-	const errors: JsonSyntaxError[] = [];
-	let root: Node | undefined;
-	try {
-		root = parseTree(json, errors, STRICT_JSON);
-	} catch (cause) {
-		return refuse(`kv.json could not be located: ${describe(cause)}`);
-	}
-	if (root?.type !== 'object' || errors.length > 0)
-		return refuse('the members of kv.json could not be located');
-	const members = root.children ?? [];
-
-	// A key spelled with escapes is the same key. JSON.parse reads the last
-	// occurrence, so assigning one of several would not change what is read.
-	const targets = new Map<string, Node>();
-	for (const member of members) {
-		const [name, value] = member.children ?? [];
-		if (name === undefined || value === undefined)
-			return refuse('the members of kv.json could not be located');
-		const key: unknown = name.value;
-		if (typeof key !== 'string' || !owned.has(key)) continue;
-		if (targets.has(key))
-			return refuse(`the key '${key}' appears more than once`);
-		targets.set(key, value);
-	}
-
-	const edits: { offset: number; end: number; text: string }[] = [];
-	const added: [key: string, json: string][] = [];
-	for (const [key, text] of owned) {
-		const target = targets.get(key);
-		if (target === undefined) added.push([key, text]);
-		else
-			edits.push({
-				offset: target.offset,
-				end: target.offset + target.length,
-				text,
-			});
-	}
-	const [lastName, lastValue] = members.at(-1)?.children ?? [];
-	if (added.length > 0) {
-		if (lastName === undefined || lastValue === undefined)
-			edits.push({
-				offset: root.offset + 1,
-				end: root.offset + root.length - 1,
-				text: `\n${added.map(([key, text]) => `  ${JSON.stringify(key)}: ${text}`).join(',\n')}\n`,
-			});
-		else {
-			// New members repeat the whitespace before the last member and the
-			// separator between its key and value.
-			let leadStart = lastName.offset;
-			while (leadStart > 0 && ' \t\r\n'.includes(json.charAt(leadStart - 1)))
-				leadStart -= 1;
-			const lead = json.slice(leadStart, lastName.offset);
-			const separator = json.slice(
-				lastName.offset + lastName.length,
-				lastValue.offset,
+	text: string,
+	members: ReadonlyMap<string, string>,
+): { values: Partial<TValues>; issues: readonly Issue[] } {
+	const lines = keyLines(text);
+	const values: Record<string, unknown> = {};
+	const issues: Issue[] = [];
+	for (const key of Object.keys(schemas)) {
+		const raw = members.get(key);
+		if (raw === undefined) continue;
+		const value: unknown = JSON.parse(raw);
+		const line = lines.get(key);
+		const problem = storedProblem(key, value);
+		const found =
+			problem !== undefined
+				? [{ field: key, message: problem }]
+				: inputIssues(schemas, { [key]: value }, { complete: false });
+		if (found.length === 0) values[key] = value;
+		for (const { message } of found)
+			issues.push(
+				line === undefined
+					? { message, field: key }
+					: { message, line, field: key },
 			);
-			const end = lastValue.offset + lastValue.length;
-			edits.push({
-				offset: end,
-				end,
-				text: added
-					.map(
-						([key, text]) =>
-							`,${lead}${JSON.stringify(key)}${separator}${text}`,
-					)
-					.join(''),
-			});
-		}
 	}
-
-	// The spans are disjoint, so applying the last one first keeps every
-	// earlier offset valid.
-	let patched = json;
-	for (const edit of edits.sort((a, b) => b.offset - a.offset))
-		patched =
-			patched.slice(0, edit.offset) + edit.text + patched.slice(edit.end);
-
-	// Publish only text that reads back as the supplied values.
-	const { data: reread, error: rereadError } = parseObject(patched);
-	if (rereadError !== null)
-		return refuse(`the patched text does not parse: ${rereadError.message}`);
-	for (const [key, text] of owned)
-		if (!Object.hasOwn(reread, key) || JSON.stringify(reread[key]) !== text)
-			return refuse(`the key '${key}' could not be assigned`);
-	return Ok(prefix + patched);
+	return { values: values as Partial<TValues>, issues: Object.freeze(issues) };
 }
 
 /** The `kv.json` handle. `schemas` are the prepared definition's `kv` fields. */
@@ -353,88 +278,158 @@ export function createKv<TValues>(
 	{ storage }: { storage: FolderStorage },
 	schemas: FieldMap,
 ): FileKv<TValues> {
-	const inspect = (source: string) => inspectSource<TValues>(schemas, source);
-
-	/** The snapshot of captured bytes: what was read, or exactly what was submitted. */
-	function snapshotOf(text: string, sha256: string): KvSnapshot<TValues> {
+	/** The reading of text whose members were read. */
+	function readingOf(
+		text: string,
+		sha256: string,
+		members: ReadonlyMap<string, string>,
+	): KvReading<TValues> {
 		return Object.freeze({
 			path: KV_PATH,
 			sha256,
-			text,
-			...inspect(text),
+			...valuesOf<TValues>(schemas, text, members),
 		});
+	}
+
+	/** Read `kv.json` as members, or say why it cannot be. */
+	async function readFile(): Promise<
+		Result<
+			| { text: string; sha256: string; members: ReadonlyMap<string, string> }
+			| undefined,
+			KvReadError
+		>
+	> {
+		const { data: read, error: readError } = await storage.read(KV_PATH);
+		if (readError !== null)
+			return readError.name === 'NotFound' ? Ok(undefined) : Err(readError);
+		const text = decode(read.bytes);
+		if (text === undefined)
+			return TableError.InvalidUtf8({ path: KV_PATH, sha256: read.sha256 });
+		const members = readKvMembers(text);
+		if (members === undefined)
+			return TableError.InvalidKv({
+				path: KV_PATH,
+				sha256: read.sha256,
+				text,
+				issues: refusalOf(text),
+			});
+		return Ok({ text, sha256: read.sha256, members });
 	}
 
 	/**
-	 * Publish once and return the snapshot of the submitted source; nothing is
-	 * read back. The source is well-formed text, built from JSON this module
-	 * serialized and from decoded UTF-8, so it is exactly the text of its bytes.
+	 * One key's change as raw JSON text, or `null` to remove it. Prepared
+	 * synchronously, so a caller that changes its value afterward changes
+	 * nothing that is saved.
 	 */
-	async function publish(
-		source: string,
-		condition: { kind: 'create' } | { kind: 'replace'; expectedSha256: string },
-	): Promise<Result<KvSnapshot<TValues>, KvWriteError>> {
-		const bytes = encoder.encode(source);
-		const sha256 = await hashBytes(bytes);
-		// Interpret before publication; returning the receipt needs no further validation.
-		const receipt = snapshotOf(source, sha256);
-		const { error: applyError } = await applyOne(storage, {
-			...condition,
-			path: KV_PATH,
-			bytes,
-			sha256,
-		});
-		if (applyError !== null) return Err(applyError);
-		return Ok(receipt);
+	function prepare(
+		key: string,
+		value: unknown,
+	): Result<string | null, Extract<TableError, { name: 'InvalidValues' }>> {
+		const refuse = (message: string) =>
+			TableError.InvalidValues({ issues: [{ message, field: key }] });
+		if (!Object.hasOwn(schemas, key)) return refuse(`${key} is not declared`);
+		if (value === undefined) return Ok(null);
+		const json = serialize(value);
+		if (json === undefined)
+			return refuse(`${key} cannot be saved: the value has no exact JSON form`);
+		const copy: unknown = JSON.parse(json);
+		const problem = storedProblem(key, copy);
+		if (problem !== undefined) return refuse(problem);
+		const issues = inputIssues(schemas, { [key]: copy }, { complete: false });
+		if (issues.length > 0) return TableError.InvalidValues({ issues });
+		return Ok(json);
+	}
+
+	/**
+	 * Merge changes into the current file and publish under the read it made;
+	 * re-read and re-apply when another writer got there first.
+	 */
+	async function apply(
+		changes: ReadonlyMap<string, string | null>,
+	): Promise<Result<KvReading<TValues>, KvWriteError>> {
+		let lost: KvWriteError | undefined;
+		for (let attempt = 0; attempt < ATTEMPTS; attempt++) {
+			const { data: current, error: readError } = await readFile();
+			if (readError !== null) return Err(readError);
+			const members = new Map(current?.members);
+			for (const [key, raw] of changes)
+				if (raw === null) members.delete(key);
+				else members.set(key, raw);
+			const text = formatKvMembers(members);
+			const bytes = encoder.encode(text);
+			const sha256 = await hashBytes(bytes);
+			const { error } = await applyOne(
+				storage,
+				current === undefined
+					? { kind: 'create', path: KV_PATH, bytes, sha256 }
+					: {
+							kind: 'replace',
+							path: KV_PATH,
+							bytes,
+							sha256,
+							expectedSha256: current.sha256,
+						},
+			);
+			if (error === null) return Ok(readingOf(text, sha256, members));
+			// Another writer published between this read and this write, or the
+			// reply was lost. A set does not depend on what the file held, so
+			// reading again and re-applying is safe either way.
+			if (
+				error.name !== 'Conflict' &&
+				error.name !== 'Exists' &&
+				error.name !== 'Unconfirmed'
+			)
+				return Err(error);
+			lost = error;
+		}
+		return Err(lost as KvWriteError);
+	}
+
+	/** The batch waiting behind the running one: the latest change per key. */
+	let pending:
+		| {
+				changes: Map<string, string | null>;
+				done: PromiseWithResolvers<Result<KvReading<TValues>, KvWriteError>>;
+		  }
+		| undefined;
+	let running = false;
+
+	/** Apply batches one at a time, in the order their sets were called. */
+	async function drain() {
+		running = true;
+		try {
+			while (pending !== undefined) {
+				const batch = pending;
+				pending = undefined;
+				let result: Result<KvReading<TValues>, KvWriteError>;
+				try {
+					result = await apply(batch.changes);
+				} catch (cause) {
+					// A storage defect settles this batch; later sets still run.
+					result = FileError.Io({ path: KV_PATH, operation: 'set', cause });
+				}
+				batch.done.resolve(result);
+			}
+		} finally {
+			running = false;
+		}
 	}
 
 	return {
-		inspect,
 		async get() {
-			const { data: read, error: readError } = await storage.read(KV_PATH);
-			if (readError !== null)
-				return readError.name === 'NotFound' ? Ok(undefined) : Err(readError);
-			const source = decode(read.bytes);
-			if (source === undefined)
-				return TableError.InvalidUtf8({
-					path: KV_PATH,
-					sha256: read.sha256,
-				});
-			return Ok(snapshotOf(source, read.sha256));
+			const { data: current, error } = await readFile();
+			if (error !== null) return Err(error);
+			if (current === undefined) return Ok(undefined);
+			return Ok(readingOf(current.text, current.sha256, current.members));
 		},
-		async create(values) {
-			const { data: owned, error: valuesError } = ownValues(
-				schemas,
-				values as Record<string, unknown>,
-			);
-			if (valuesError !== null) return Err(valuesError);
-			const object = Object.fromEntries(
-				[...owned].map(([key, json]) => [key, JSON.parse(json)]),
-			);
-			return publish(`${JSON.stringify(object, null, 2)}\n`, {
-				kind: 'create',
-			});
-		},
-		async update(values) {
-			const { data: owned, error: valuesError } = ownValues(
-				schemas,
-				values as Record<string, unknown>,
-			);
-			if (valuesError !== null) return Err(valuesError);
-			const { data: read, error: readError } = await storage.read(KV_PATH);
-			if (readError !== null) return Err(readError);
-			const source = decode(read.bytes);
-			if (source === undefined)
-				return TableError.InvalidUtf8({
-					path: KV_PATH,
-					sha256: read.sha256,
-				});
-			const { data: patched, error: patchError } = assignKeys(source, owned);
-			if (patchError !== null) return Err(patchError);
-			return publish(patched, {
-				kind: 'replace',
-				expectedSha256: read.sha256,
-			});
+		set(key, value) {
+			const { data: change, error } = prepare(key, value);
+			if (error !== null) return Promise.resolve(Err(error));
+			pending ??= { changes: new Map(), done: Promise.withResolvers() };
+			pending.changes.set(key, change as string | null);
+			const { promise } = pending.done;
+			if (!running) void drain();
+			return promise;
 		},
 	};
 }

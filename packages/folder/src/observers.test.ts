@@ -127,7 +127,7 @@ describe.each(['browser', 'directory'])('%s folder observers', (kind) => {
 				body: '',
 			}),
 		);
-		expectOk(await folder.kv.create({ theme: 'dark' }));
+		expectOk(await folder.kv.set('theme', 'dark'));
 		expectOk(await folder.files.create('audio/a.webm', new Uint8Array([1])));
 		expectOk(
 			await folder.tables.notes.create(

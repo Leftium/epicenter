@@ -42,7 +42,7 @@ export type Row<TFields> = {
  * The message stands alone; neither its wording nor the number of issues is
  * a machine contract.
  */
-export type RowIssue = {
+export type Issue = {
 	readonly message: string;
 	/** The 1-based line in the whole text. Absent only for a declared field the text lacks. */
 	readonly line?: number;
@@ -51,7 +51,7 @@ export type RowIssue = {
 };
 
 /** Why text is not a valid row: never empty, in line order. */
-export type RowIssues = readonly [RowIssue, ...RowIssue[]];
+export type Issues = readonly [Issue, ...Issue[]];
 
 /**
  * Read text as a row of a prepared table: parse the complete frontmatter,
@@ -72,7 +72,7 @@ export type RowIssues = readonly [RowIssue, ...RowIssue[]];
 export function parseRow<const TTable extends PreparedFolderTable>(
 	table: TTable,
 	text: string,
-): Result<Row<CreateRowOf<TTable>>, RowIssues> {
+): Result<Row<CreateRowOf<TTable>>, Issues> {
 	const { data: parsed, error: refusal } = parseRowSource(text);
 	if (refusal !== null)
 		return Err(
@@ -111,7 +111,7 @@ export function parseRow<const TTable extends PreparedFolderTable>(
 export function formatRow<const TTable extends PreparedFolderTable>(
 	table: TTable,
 	row: Row<CreateRowOf<TTable>>,
-): Result<string, RowIssue> {
+): Result<string, Issue> {
 	const { data: text, error: refusal } = formatCanonicalDocument(
 		row as unknown as CanonicalDocument,
 		Object.keys(table.fields),
@@ -130,7 +130,7 @@ export function formatRow<const TTable extends PreparedFolderTable>(
 export function writeRow<const TTable extends PreparedFolderTable>(
 	table: TTable,
 	row: Row<CreateRowOf<TTable>>,
-): Result<{ text: string; row: Row<CreateRowOf<TTable>> }, RowIssues> {
+): Result<{ text: string; row: Row<CreateRowOf<TTable>> }, Issues> {
 	const { data: written, error: refusal } = formatRowSource(
 		row as unknown as CanonicalDocument,
 		Object.keys(table.fields),
@@ -151,7 +151,7 @@ export function writeRow<const TTable extends PreparedFolderTable>(
 }
 
 /** Why a row cannot be written, as an issue about its field when it names one. */
-function writeIssue(refusal: CanonicalRefusal): RowIssue {
+function writeIssue(refusal: CanonicalRefusal): Issue {
 	return Object.freeze(
 		refusal.field === undefined
 			? { message: `The row cannot be saved: ${refusal.reason}` }
@@ -165,7 +165,7 @@ function writeIssue(refusal: CanonicalRefusal): RowIssue {
 /** Frozen issues without absent keys, in line order; an issue with no line goes last. */
 function issueList(
 	issues: readonly { message: string; line?: number; field?: string }[],
-): RowIssues {
+): Issues {
 	const located = issues.map(({ message, line, field }) =>
 		Object.freeze({
 			message,
@@ -178,5 +178,5 @@ function issueList(
 			(a.line ?? Number.POSITIVE_INFINITY) -
 			(b.line ?? Number.POSITIVE_INFINITY),
 	);
-	return Object.freeze(located) as unknown as RowIssues;
+	return Object.freeze(located) as unknown as Issues;
 }

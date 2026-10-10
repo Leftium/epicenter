@@ -31,7 +31,7 @@
  * - Independent changes around a competing line merge, and only that line
  *   is marked, as `git merge-file` marks it
  * - Root `kv.json` merges by key; a conflicting key is left as raw markers
- *   that reopen as a parse error
+ *   that reopen as `InvalidKv`
  * - An automatic handle on the same folder that saves while the merge is
  *   published is blocked, writes no Git state, and is not retried when the
  *   merge commit clears the merge state; only a newer save checkpoints
@@ -1416,20 +1416,20 @@ describe('the journey', () => {
 			}
 		});
 
-	test('a conflicting root key is left as raw markers that reopen as a parse error', async () => {
+	test('a conflicting root key is left as raw markers that reopen as InvalidKv', async () => {
 		const root = await scratch('unfinished-kv-');
 		roots.push(root);
 		const { bare, open } = await place('browser', root);
 		let folder = await open();
 		try {
-			expectOk(await folder.kv.create({ theme: 'light' }));
+			expectOk(await folder.kv.set('theme', 'light'));
 			expect((await folder.git.commitAndPush()).push.status).toBe('pushed');
 			const upstream = join(root, 'upstream');
 			await git(root, 'clone', '--quiet', bare, upstream);
 			await writeFile(join(upstream, 'kv.json'), '{\n  "theme": "blue"\n}\n');
 			await git(upstream, 'commit', '--quiet', '-am', 'Blue');
 			await git(upstream, 'push', '--quiet', 'origin', 'main');
-			expectOk(await folder.kv.update({ theme: 'dark' }));
+			expectOk(await folder.kv.set('theme', 'dark'));
 			const local = await folder.git.commit();
 			if (local.status !== 'committed') throw new Error(local.status);
 			expectOk(await folder.git.fetch());
@@ -1449,7 +1449,7 @@ describe('the journey', () => {
 
 			await folder.close();
 			folder = await open();
-			expect(expectOk(await folder.kv.get())?.parseError).toBeDefined();
+			expect(expectErr(await folder.kv.get()).name).toBe('InvalidKv');
 			expect(folder.git.snapshot.merging?.unresolved).toEqual(['kv.json']);
 
 			expectOk(

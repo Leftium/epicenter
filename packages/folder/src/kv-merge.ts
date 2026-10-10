@@ -2,6 +2,10 @@
  * Three-way reconciliation of root KV values, independent of schema and Git.
  * Objects and arrays are atomic merge units. Selected value text survives;
  * root framing and key order are regenerated deterministically.
+ *
+ * This module owns `kv.json` text: `readKvMembers` decides what a valid file
+ * is and `formatKvMembers` writes one, for a merge and for `kv.set` alike, so
+ * a local save and a merge produce the same file.
  */
 import { type Node, parseTree } from 'jsonc-parser';
 
@@ -237,7 +241,7 @@ export function mergeKv({ base, ours, theirs }: KvMergeInput): KvMerge {
 		KvMerge,
 		{ kind: 'conflict' }
 	>['conflicts'][number][] = [];
-	const members: string[] = [];
+	const members: [string, string][] = [];
 	for (const key of keys) {
 		const before = b?.get(key);
 		const left = o?.get(key);
@@ -261,11 +265,42 @@ export function mergeKv({ base, ours, theirs }: KvMergeInput): KvMerge {
 			});
 			continue;
 		}
-		if (selected) members.push(`  ${JSON.stringify(key)}: ${selected.raw}`);
+		if (selected) members.push([key, selected.raw]);
 	}
 	if (conflicts.length !== 0) return { kind: 'conflict', conflicts };
 	return {
 		kind: 'merged',
-		text: members.length === 0 ? '{}\n' : `{\n${members.join(',\n')}\n}\n`,
+		text: formatKvMembers(members),
 	};
+}
+
+/**
+ * The root members of `kv.json` source, each as its exact raw value text, or
+ * `undefined` when the source is not a file a folder can hold: strict JSON,
+ * one object, no duplicate keys or unpaired surrogates, and nesting within 64
+ * containers. A byte order mark is ignored.
+ */
+export function readKvMembers(
+	source: string,
+): ReadonlyMap<string, string> | undefined {
+	const members = read(source);
+	if (members === undefined || members === null) return undefined;
+	return new Map([...members].map(([key, member]) => [key, member.raw]));
+}
+
+/**
+ * The `kv.json` text of root members: keys in Unicode scalar order, two-space
+ * indentation, and each value's raw text as given. Every value must already
+ * be one JSON value a folder can store.
+ */
+export function formatKvMembers(
+	members: Iterable<readonly [string, string]>,
+): string {
+	const sorted = [...members].sort(([left], [right]) =>
+		compareText(left, right),
+	);
+	if (sorted.length === 0) return '{}\n';
+	return `{\n${sorted
+		.map(([key, raw]) => `  ${JSON.stringify(key)}: ${raw}`)
+		.join(',\n')}\n}\n`;
 }

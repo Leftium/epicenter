@@ -9,6 +9,8 @@ directory and asserts every claim against bytes read back with `node:fs`.
 - Result on 2026-10-11, after the row-API clean break (ADR-0515), Bun 1.3.14,
   macOS (APFS): **70 assertions passed, 0 failed**. See "Retired on
   2026-10-11" below.
+- Result later on 2026-10-11, after plain YAML rows (ADR-0519) and KV set
+  (ADR-0522): **67 assertions passed, 0 failed**.
 
 ```sh
 bun packages/folder/evidence/shared-folder-workflow.ts   # exit 0; prints every file state and assertion
@@ -55,7 +57,30 @@ script:
   The table now refuses an unpaired surrogate as `InvalidValues` and writes
   nothing; exact bytes are saved through `files.replace`.
 
-The KV scenarios (5–6c) are unchanged.
+### KV, retired 2026-10-11
+
+The KV clean break (ADR-0520) replaced `kv.create`, `kv.update`, and
+`kv.inspect` with `kv.set(key, value)`, which creates `kv.json` when it is
+missing and always writes the format a Git merge writes: keys sorted,
+two-space indentation, each untouched value kept as its raw text. Text that is
+not one strict JSON object is a `get()` error, `InvalidKv`, not a snapshot.
+These claims were retired with it and their assertions deleted or rewritten:
+
+- retired 2026-10-11: `update` on a missing file is `NotFound`, and a second
+  `create` is `Exists` (5). The first `set` creates the file.
+- retired 2026-10-11: B's update appended one member and reused the agent's
+  indentation, and the agent's spacing around `1.50` survived (6). A set
+  rewrites the file in the merge format; the agent's `1.50` spelling survives,
+  its spacing and tab do not.
+- retired 2026-10-11: a snapshot with `parseError` and the exact source, an
+  `Unparsed` update, and `kv.inspect(text)` reading a repair (6c). `get()` and
+  `set()` are `InvalidKv` carrying the exact text and its issues; the repair
+  is `files.replace(invalidKv, text)` followed by `get()`.
+- retired 2026-10-11: the default merge hiding an unreadable `kv.json` (6c,
+  hazard below). An unreadable file is now an error, not values to merge.
+
+The KV assertions in 5–6c were rerun against `kv.set` on 2026-10-11 and all
+passed.
 
 ## What was observed on 2026-10-02
 
@@ -109,6 +134,9 @@ None is recommended on this evidence. Each is stated with what it would
 delete, the invariant that would replace the current one, and its cost.
 
 ### 1. Let `kv.update` create the file
+
+2026-10-11: taken by the KV clean break (ADR-0520). `kv.set` creates the file
+and re-applies itself when it loses a race.
 
 - **Deletion prize:** `kv.create`, the `NotFound` and `Exists` outcomes of KV
   saves, and the update/create/update sequence in every application that
@@ -191,7 +219,9 @@ the package can fix by itself.
   `done`. Since 2026-10-11 an `InvalidRow` carries text, not fields, so its
   table repair keeps only the fields the repairing application writes: A's
   repair in 7 drops `priority`. A valid row's unknown keys survive a replace (4).
-- **The documented default merge hides an unreadable `kv.json`** (6c). With a
+- retired 2026-10-11: an unreadable `kv.json` is now `InvalidKv` from `get()`,
+  so there are no values to merge over defaults. Historical text:
+  **The documented default merge hides an unreadable `kv.json`** (6c). With a
   trailing comma in the file, `{ ...DEFAULTS, ...snapshot.values }` showed A
   the default theme while its stored theme sat in the source. Telling the two
   apart is the caller's obligation: it has to show `parseError` and `issues`

@@ -13,10 +13,8 @@ import * as root from './index.js';
 import {
 	type CapturedFile,
 	type CreateRowOf,
-	type DeepReadonly,
 	defineFolder,
 	defineTable,
-	type FieldIssue,
 	type FileCapture,
 	type FileError,
 	type FileKv,
@@ -26,21 +24,19 @@ import {
 	type FolderTerminal,
 	field,
 	formatRow,
+	type Issue,
+	type Issues,
 	type KvOf,
 	type KvReadError,
 	type KvReading,
-	type KvSnapshot,
 	type KvWriteError,
 	type MoveError,
 	type OpenFolder,
 	type OpenFolderError,
 	type OpenFolderOptions,
-	type ParseError,
 	type PreparedFolderTable,
 	parseRow,
 	type Row,
-	type RowIssue,
-	type RowIssues,
 	type RowReadError,
 	type StoredRow,
 	type TableCreateError,
@@ -49,7 +45,6 @@ import {
 	type TableListing,
 	type TableRenameError,
 	type TableReplaceError,
-	type TextCapture,
 } from './index.js';
 import * as tauri from './tauri.js';
 
@@ -117,7 +112,7 @@ function readText<const TTable extends PreparedFolderTable>(
 	return parseRow(table, text);
 }
 expectTypeOf(readText(definition.tables.todos, '')).toEqualTypeOf<
-	Result<Row<CreateRowOf<typeof definition.tables.todos>>, RowIssues>
+	Result<Row<CreateRowOf<typeof definition.tables.todos>>, Issues>
 >();
 // @ts-expect-error It refuses a raw declaration as well.
 readText(rawTodos, '');
@@ -128,25 +123,6 @@ expectTypeOf(
 // The mark is a type, not a proof: a spread with replaced fields still
 // compiles, and reading a value through them throws (`definition.test.ts`).
 parseRow({ ...definition.tables.todos, fields: rawTodos.fields }, '');
-
-// Readonly reaches every depth and stops at primitives, so a brand survives.
-expectTypeOf<DeepReadonly<InstantString>>().toEqualTypeOf<InstantString>();
-expectTypeOf<
-	DeepReadonly<InstantString | null>
->().toEqualTypeOf<InstantString | null>();
-expectTypeOf<DeepReadonly<unknown>>().toEqualTypeOf<unknown>();
-expectTypeOf<
-	DeepReadonly<{ a: { b: string[] }[]; pair: [InstantString, number] }>
->().toEqualTypeOf<{
-	readonly a: readonly { readonly b: readonly string[] }[];
-	readonly pair: readonly [InstantString, number];
-}>();
-expectTypeOf<DeepReadonly<Partial<Note>>['at']>().toEqualTypeOf<
-	InstantString | undefined
->();
-expectTypeOf<DeepReadonly<Partial<Note>>['tags']>().toEqualTypeOf<
-	readonly string[] | undefined
->();
 
 async function nestedValues(
 	folder: Folder<typeof nested>,
@@ -188,14 +164,13 @@ async function nestedValues(
 	const { data: kv, error: kvError } = await folder.kv.get();
 	if (kvError !== null || kv === undefined) return;
 	expectTypeOf(kv.values.since).toEqualTypeOf<InstantString | undefined>();
-	expectTypeOf(kv.values.recent).toEqualTypeOf<readonly string[] | undefined>();
-	// @ts-expect-error Stored values cannot be changed in place.
-	kv.values.recent?.push('later');
-	folder.kv.update(kv.values);
-	folder.kv.create(kv.values);
-	folder.kv.update({ recent: ['a'], since: instant, layout: { panes: [1] } });
+	expectTypeOf(kv.values.recent).toEqualTypeOf<string[] | undefined>();
+	// What was read goes back in, one key at a time.
+	folder.kv.set('recent', kv.values.recent);
+	folder.kv.set('since', instant);
+	folder.kv.set('layout', { panes: [1] });
 	// @ts-expect-error An unvalidated string still does not carry the brand.
-	folder.kv.update({ since: '2026-10-01T00:00:00.000Z' });
+	folder.kv.set('since', '2026-10-01T00:00:00.000Z');
 }
 void nestedValues;
 
@@ -213,17 +188,6 @@ const tuples = defineFolder({
 });
 type Span = CreateRowOf<typeof tuples.tables.rows>['span'];
 expectTypeOf<Span>().toEqualTypeOf<[string, ...number[]]>();
-expectTypeOf<DeepReadonly<Span>>().toEqualTypeOf<
-	readonly [string, ...number[]]
->();
-expectTypeOf<DeepReadonly<[string?, ...number[]]>>().toEqualTypeOf<
-	readonly [string?, ...number[]]
->();
-expectTypeOf<
-	DeepReadonly<[{ a: string[] }, ...{ b: number }[]]>
->().toEqualTypeOf<
-	readonly [{ readonly a: readonly string[] }, ...{ readonly b: number }[]]
->();
 
 async function tupleValues(folder: Folder<typeof tuples>) {
 	const { rows } = folder.tables;
@@ -248,16 +212,14 @@ async function tupleValues(folder: Folder<typeof tuples>) {
 	const { data: kv, error: kvError } = await folder.kv.get();
 	if (kvError !== null || kv === undefined) return;
 	expectTypeOf(kv.values.span).toEqualTypeOf<
-		readonly [string, ...number[]] | undefined
+		[string, ...number[]] | undefined
 	>();
-	// @ts-expect-error Stored values cannot be changed in place.
-	kv.values.span?.push(1);
-	folder.kv.update(kv.values);
-	folder.kv.update({ span: ['a', 1] });
+	folder.kv.set('span', kv.values.span);
+	folder.kv.set('span', ['a', 1]);
 	// @ts-expect-error The head is a string.
-	folder.kv.update({ span: [1, 'a'] });
+	folder.kv.set('span', [1, 'a']);
 	// @ts-expect-error The head is required.
-	folder.kv.create({ span: [] });
+	folder.kv.set('span', []);
 }
 void tupleValues;
 
@@ -323,7 +285,7 @@ expectTypeOf(bun.openFolder<typeof definition>).returns.toEqualTypeOf<
 
 async function typedValues(
 	folder: Opened,
-	snapshot: KvSnapshot<KvOf<typeof definition>>,
+	reading: KvReading<KvOf<typeof definition>>,
 	instant: InstantString,
 ) {
 	folder.tables.todos.create({
@@ -351,55 +313,54 @@ async function typedValues(
 	});
 	// @ts-expect-error Only declared tables exist.
 	folder.tables.lists;
-	folder.kv.create({});
-	folder.kv.create({ theme: 'dark' });
+	folder.kv.set('theme', 'dark');
+	// Removing a key lets the app's default apply.
+	folder.kv.set('theme', undefined);
 	// @ts-expect-error Only declared settings exist.
-	folder.kv.create({ language: 'en' });
-	folder.kv.update({ theme: 'dark' });
+	folder.kv.set('language', 'en');
 	// @ts-expect-error Typed settings retain validation.
-	folder.kv.update({ theme: 12 });
-	// @ts-expect-error Only declared settings exist.
-	folder.kv.update({ language: 'en' });
-	// @ts-expect-error An update names values, not a captured baseline.
-	folder.kv.update(snapshot, { theme: 'dark' });
+	folder.kv.set('theme', 12);
+	// @ts-expect-error A set names one key, not a values object.
+	folder.kv.set({ theme: 'dark' });
 	// @ts-expect-error Complete source is saved as an ordinary file.
-	folder.kv.replace(snapshot, '{}');
-	// A snapshot is a text capture of `kv.json`; absence is `undefined`.
-	expectTypeOf(snapshot).toExtend<TextCapture>();
-	// @ts-expect-error A captured observation keeps its version.
-	snapshot.sha256 = 'changed';
-	// @ts-expect-error A captured observation keeps its source.
-	snapshot.source = '{}';
-	expectTypeOf(snapshot.path).toEqualTypeOf<'kv.json'>();
-	// Stored values are sparse and sit apart from the capture's own keys.
-	expectTypeOf(snapshot.values).toEqualTypeOf<{ readonly theme?: string }>();
-	expectTypeOf(snapshot.parseError).toEqualTypeOf<ParseError | undefined>();
-	expectTypeOf(snapshot.issues).toEqualTypeOf<readonly FieldIssue[]>();
-	// @ts-expect-error A snapshot carries no defaults.
-	snapshot.defaults;
-	// @ts-expect-error Values are not flattened beside the capture.
-	snapshot.theme;
+	folder.kv.replace(reading, '{}');
+	// A reading names the bytes it read; absence is `undefined`.
+	// @ts-expect-error A reading keeps its version.
+	reading.sha256 = 'changed';
+	// @ts-expect-error A reading carries no text.
+	reading.text;
+	expectTypeOf(reading.path).toEqualTypeOf<'kv.json'>();
+	// Stored values are sparse and sit apart from the reading's own keys.
+	expectTypeOf(reading.values).toEqualTypeOf<
+		Partial<KvOf<typeof definition>>
+	>();
+	expectTypeOf(reading.values.theme).toEqualTypeOf<string | undefined>();
+	expectTypeOf(reading.issues).toEqualTypeOf<readonly Issue[]>();
+	// @ts-expect-error A reading carries no defaults.
+	reading.defaults;
+	// @ts-expect-error Values are not flattened beside the reading.
+	reading.theme;
 	const observed = await folder.kv.get();
 	if (observed.error === null)
 		expectTypeOf(observed.data).toEqualTypeOf<
-			KvSnapshot<KvOf<typeof definition>> | undefined
+			KvReading<KvOf<typeof definition>> | undefined
 		>();
 	else expectTypeOf(observed.error).toEqualTypeOf<KvReadError>();
-	// The same interpretation of unsaved text is a plain reading, not a Result.
-	expectTypeOf(folder.kv.inspect('{}')).toEqualTypeOf<
-		KvReading<KvOf<typeof definition>>
-	>();
-	expectTypeOf(snapshot).toExtend<KvReading<KvOf<typeof definition>>>();
-	const { error: assignError } = await folder.kv.update({ theme: 'dark' });
-	if (assignError !== null) {
-		expectTypeOf(assignError).toEqualTypeOf<KvWriteError>();
-		// Unparsed current source and an unsafe patch are distinct names.
-		if (assignError.name === 'Unparsed')
-			expectTypeOf(assignError.error).toEqualTypeOf<ParseError>();
-		if (assignError.name === 'UnsupportedSource')
-			expectTypeOf(assignError.reason).toEqualTypeOf<string>();
+	const { data: written, error: setError } = await folder.kv.set(
+		'theme',
+		'dark',
+	);
+	if (setError === null)
+		expectTypeOf(written).toEqualTypeOf<KvReading<KvOf<typeof definition>>>();
+	else {
+		expectTypeOf(setError).toEqualTypeOf<KvWriteError>();
+		// Text that is not one strict JSON object is repaired as text.
+		if (setError.name === 'InvalidKv')
+			expectTypeOf(setError.text).toEqualTypeOf<string>();
+		if (setError.name === 'InvalidValues')
+			expectTypeOf(setError.issues).toEqualTypeOf<readonly Issue[]>();
 	}
-	folder.files.replace(snapshot, '{}');
+	folder.files.replace(reading, '{}');
 
 	// Captures are plain values; a read also carries detached bytes.
 	const { data: file, error: readError } = await folder.files.read('a.md');
@@ -440,10 +401,8 @@ async function typedValues(
 	if (entry.error?.name === 'InvalidRow') {
 		expectTypeOf(entry.error).toExtend<FileCapture>();
 		expectTypeOf(entry.error.text).toEqualTypeOf<string>();
-		expectTypeOf(entry.error.issues).toEqualTypeOf<RowIssues>();
-		expectTypeOf<keyof RowIssue>().toEqualTypeOf<
-			'message' | 'line' | 'field'
-		>();
+		expectTypeOf(entry.error.issues).toEqualTypeOf<Issues>();
+		expectTypeOf<keyof Issue>().toEqualTypeOf<'message' | 'line' | 'field'>();
 		// @ts-expect-error Issues cannot be changed in place.
 		entry.error.issues.push({ message: '' });
 		// A repair is a guarded raw save, or a guarded delete.
@@ -453,14 +412,14 @@ async function typedValues(
 	// One synchronous reader and one writer for saved text and for drafts, on
 	// the definition rather than an open table.
 	expectTypeOf(parseRow(definition.tables.todos, '---\n---\n')).toEqualTypeOf<
-		Result<Row<Fields>, RowIssues>
+		Result<Row<Fields>, Issues>
 	>();
 	expectTypeOf(
 		formatRow(definition.tables.todos, {
 			fields: { title: 'Milk', due: null },
 			body: 'b',
 		}),
-	).toEqualTypeOf<Result<string, RowIssue>>();
+	).toEqualTypeOf<Result<string, Issue>>();
 	// @ts-expect-error Formatting names only declared fields.
 	formatRow(definition.tables.todos, { fields: { titel: 'Milk' }, body: '' });
 	// @ts-expect-error Formatting takes a definition's table, not an open one.
@@ -495,7 +454,7 @@ async function typedValues(
 				Extract<FileError, { name: 'Exists' }>
 			>();
 		if (createError.name === 'InvalidValues')
-			expectTypeOf(createError.issues).toEqualTypeOf<readonly RowIssue[]>();
+			expectTypeOf(createError.issues).toEqualTypeOf<readonly Issue[]>();
 		// @ts-expect-error A table has no naming rule of its own.
 		createError.name === 'InvalidStem';
 		// @ts-expect-error Nor a collision rule.

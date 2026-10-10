@@ -22,7 +22,7 @@ import {
 	field,
 	formatRow,
 	parseRow,
-	type RowIssue,
+	type Issue,
 } from '@epicenter/folder/browser';
 import { expectErr, expectOk } from 'wellcrafted/testing';
 
@@ -42,7 +42,7 @@ const todos = definition.tables.todos;
 
 const lines = (...text: string[]) => text.join('\n');
 
-const issuesOf = (text: string): readonly RowIssue[] =>
+const issuesOf = (text: string): readonly Issue[] =>
 	expectErr(parseRow(todos, text));
 
 test('a valid row has every field, unknown keys included, and its body', () => {

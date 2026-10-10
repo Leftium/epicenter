@@ -14,8 +14,7 @@
 import { defineErrors, type InferErrors } from 'wellcrafted/error';
 import type { AutosaveError } from './autosave.js';
 import type { FileCapture } from './capture.js';
-import type { ParseError } from './reading.js';
-import type { RowIssue, RowIssues } from './row-text.js';
+import type { Issue, Issues } from './row-text.js';
 
 export const FileError = defineErrors({
 	InvalidPath: ({ path, reason }: { path: string; reason: string }) => ({
@@ -196,24 +195,9 @@ export const TableError = defineErrors({
 	 * Supplied values are undeclared, do not conform to their fields, are
 	 * absent from a complete row, or cannot be copied or written to the file.
 	 */
-	InvalidValues: ({ issues }: { issues: readonly RowIssue[] }) => ({
+	InvalidValues: ({ issues }: { issues: readonly Issue[] }) => ({
 		message: `Supplied values do not conform: ${issues.map((issue) => issue.message).join('; ')}`,
 		issues,
-	}),
-	/**
-	 * The current source does not parse, so no structured change was prepared,
-	 * a row's body change included. Replace the complete source instead.
-	 */
-	Unparsed: ({ path, error }: { path: string; error: ParseError }) => ({
-		message: `The source of '${path}' does not parse, so it cannot be updated: ${error.message}`,
-		path,
-		error,
-	}),
-	/** The source parses, but the change cannot be made without altering source it did not name. */
-	UnsupportedSource: ({ path, reason }: { path: string; reason: string }) => ({
-		message: `The source of '${path}' cannot be changed safely: ${reason}`,
-		path,
-		reason,
 	}),
 	/**
 	 * The file was read as text, but it is not a valid row: its frontmatter
@@ -230,9 +214,38 @@ export const TableError = defineErrors({
 		path: string;
 		sha256: string;
 		text: string;
-		issues: RowIssues;
+		issues: Issues;
 	}) => ({
 		message: `'${path}' is not a valid row: ${issues
+			.map((issue) =>
+				issue.line === undefined
+					? issue.message
+					: `line ${issue.line}: ${issue.message}`,
+			)
+			.join('; ')}`,
+		path,
+		sha256,
+		text,
+		issues,
+	}),
+	/**
+	 * `kv.json` was read as text, but it is not a file a folder can hold: not
+	 * one strict JSON object, or a key that appears twice. `text` is exactly
+	 * what was read and `sha256` the hash of its bytes, so a repair can show
+	 * the text and save guarded by them.
+	 */
+	InvalidKv: ({
+		path,
+		sha256,
+		text,
+		issues,
+	}: {
+		path: string;
+		sha256: string;
+		text: string;
+		issues: Issues;
+	}) => ({
+		message: `'${path}' cannot be read as settings: ${issues
 			.map((issue) =>
 				issue.line === undefined
 					? issue.message
@@ -299,17 +312,15 @@ export type TableWriteError =
 	| TableRenameError
 	| TableDeleteError;
 
-/** Acquisition or UTF-8 decoding of kv.json failed. `get` recovers NotFound as Ok(undefined). */
-export type KvReadError = FileError | TableErrorOf<'InvalidUtf8'>;
+/** `kv.json` could not be read, is not UTF-8, or is not a file a folder can hold. */
+export type KvReadError = FileError | TableErrorOf<'InvalidUtf8' | 'InvalidKv'>;
 
 /**
- * Failures from a sparse kv.json write. `Unparsed` is current source that is
- * not one JSON object; `UnsupportedSource` is an object the supplied keys
- * cannot be assigned in safely.
+ * Why a `kv.set` saved nothing: the value cannot be stored, the current file
+ * cannot be read as settings, or publication failed. `Conflict` means the
+ * set lost its race on every attempt.
  */
-export type KvWriteError =
-	| KvReadError
-	| TableErrorOf<'InvalidValues' | 'Unparsed' | 'UnsupportedSource'>;
+export type KvWriteError = KvReadError | TableErrorOf<'InvalidValues'>;
 
 /**
  * Why a folder could not be opened. Every opener returns these; none throws

@@ -107,7 +107,7 @@ export type {
 export type { HttpFetch } from './git/http.js';
 export { commitSubject, escapePath, type PathChange } from './git/messages.js';
 export type { Author, CommitSummary } from './git/objects.js';
-export type { FileKv, KvReading, KvSnapshot } from './kv.js';
+export type { FileKv, KvReading } from './kv.js';
 export { type KvMerge, type KvMergeInput, mergeKv } from './kv-merge.js';
 export { frameRowText, type RowTextFrame } from './markdown.js';
 export type {
@@ -117,13 +117,12 @@ export type {
 	OpfsLocks,
 } from './opfs-store.js';
 export { pathProblem, rowPath, rowStemOf } from './paths.js';
-export type { DeepReadonly, FieldIssue, ParseError } from './reading.js';
 export {
 	formatRow,
 	parseRow,
 	type Row,
-	type RowIssue,
-	type RowIssues,
+	type Issue,
+	type Issues,
 } from './row-text.js';
 export type { FileTable, StoredRow, TableListing } from './table.js';
 export type { FolderTerminal, TerminalResult } from './terminal.js';

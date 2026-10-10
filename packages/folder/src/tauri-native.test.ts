@@ -447,31 +447,26 @@ describe.skipIf(!enabled)('tauri folder against the native owner', () => {
 		await a(() => reopened.close());
 	});
 
-	test('KV creation is exclusive and assignments preserve source through the native owner', async () => {
-		const { folder, other } = await setup({ manual: true });
+	test('a kv set creates kv.json and keeps untouched raw values through the native owner', async () => {
+		const { root, folder, other } = await setup({ manual: true });
 		expect(
 			await a(async () => expectOk(await folder.kv.get())),
 		).toBeUndefined();
-		expect(
-			await a(
-				async () => expectErr(await folder.kv.update({ theme: 'dark' })).name,
-			),
-		).toBe('NotFound');
 		const created = await a(async () =>
-			expectOk(await folder.kv.create({ theme: 'dark' })),
+			expectOk(await folder.kv.set('theme', 'dark')),
 		);
-		expect(
-			await b(
-				async () => expectErr(await other.kv.create({ theme: 'light' })).name,
-			),
-		).toBe('Exists');
+		expect(await readFile(join(root, 'kv.json'), 'utf8')).toBe(
+			'{\n  "theme": "dark"\n}\n',
+		);
 		const source =
 			'{"huge":9007199254740993,"nested":{"overflow":1e400},"theme":"dark"}';
 		await a(async () => expectOk(await folder.files.replace(created, source)));
 		const updated = await b(async () =>
-			expectOk(await other.kv.update({ theme: 'light' })),
+			expectOk(await other.kv.set('theme', 'light')),
 		);
-		expect(updated.text).toBe(source.replace('"dark"', '"light"'));
+		expect(await readFile(join(root, 'kv.json'), 'utf8')).toBe(
+			'{\n  "huge": 9007199254740993,\n  "nested": {"overflow":1e400},\n  "theme": "light"\n}\n',
+		);
 		expect(await a(async () => expectOk(await folder.kv.get()))).toEqual(
 			updated,
 		);

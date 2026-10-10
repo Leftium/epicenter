@@ -420,7 +420,7 @@ server, and desktop builds never load the addon or need a compiler.
 | Member | Contract |
 | --- | --- |
 | `tables.<name>` | Rows at `<name>/<stem>.md`, read through `parseRow` and written through `formatRow`. `get(stem)` returns a `StoredRow` (`path`, `sha256`, and a complete, caller-owned `row`), `InvalidRow` for readable text that is not a valid row, or `undefined` only for absence. `list()` returns one `{ stem, result }` per row file. `create(row, { stem? })` is exclusive. `replace`, `rename`, and `delete` take a capture and are refused as `Conflict` when its bytes are gone. `autosave(capture)` coordinates one editing session's saves. Each changes exactly one Markdown file. See [Reading a row](#reading-a-row), [Saving a row](#saving-a-row), and [Editing a row](#editing-a-row). |
-| `kv` | Root `kv.json`, a sparse map of declared values. A snapshot is a text capture: `path`, exact `text`, and `sha256`, beside the stored `values` that validated, `parseError`, and `issues`. `get()` returns `undefined` only for absence; readable text that is not a JSON object is a snapshot with a `parseError`. `inspect(text)` interprets text without reading anything. `create(values)` saves a new file from the supplied values and refuses with `Exists` when one is there. `update(values)` reads the current text once, assigns the supplied keys, and conditionally publishes without retry; a missing file is `NotFound`. An update changes only the values it assigns: unknown keys, number spellings, and formatting stay exact. See [Reading and saving kv.json](#reading-and-saving-kvjson). |
+| `kv` | Root `kv.json`, independent settings. `get()` returns `{ path, sha256, values, issues }`: every declared value that validated, with each broken one reported at its line, or `InvalidKv` for text that is not one strict JSON object. `set(key, value)` merges one key into the current file, keeps every other key's raw text, creates a missing file, removes a key set to `undefined`, and re-applies itself when another writer got there first. See [Reading and saving kv.json](#reading-and-saving-kvjson). |
 | `files` | Ordinary files at literal paths. See below. |
 | `git` | A status snapshot, `status()`, `commit()`, `commitAndPush()`, `push()`, `fetch()`, `pullFastForward()`, `mergeIncoming({ conflicts? })`, `recoverIncoming()`, and `paths()`, `stage()`, `commitStaged(message)`, `diff()`, `log()`. |
 | `location` | `{ kind: 'opfs', directory }` or `{ kind: 'directory', root }`. For showing to a person. File paths are never joined onto it. |
@@ -548,7 +548,7 @@ missing or does not conform. It carries the exact text, the hash of its
 bytes, and `issues`, located like compiler diagnostics:
 
 ```ts
-type RowIssue = { message: string; line?: number; field?: string };
+type Issue = { message: string; line?: number; field?: string };
 ```
 
 `issues` is never empty. `line` is 1-based over the whole file and absent
@@ -713,62 +713,54 @@ saves.request(text);
 
 ### Reading and saving kv.json
 
-`kv` is one fixed root file holding a sparse map of declared values. It uses
-the same two diagnostics as a row (ADR-0487).
+`kv` is one root file of independent settings (ADR-0522). A setting is an
+intent, not a document: `set('theme', 'dark')` means "the theme is dark",
+whatever the file held a moment ago.
 
 ```ts
-const { data: snapshot, error: readError } = await folder.kv.get();
-if (readError !== null) return showReadFailure(readError); // handle this before any default
-const kv = { ...KV_DEFAULTS, ...(snapshot?.values ?? {}) };
-showDiagnostics(snapshot?.parseError, snapshot?.issues ?? []);
+const { data: settings, error } = await folder.kv.get();
+if (error?.name === 'InvalidKv') return openTextEditor(error); // { path, sha256, text, issues }
+if (error !== null) return showReadFailure(error);
+const kv = { ...KV_DEFAULTS, ...settings?.values }; // settings: { path, sha256, values, issues } | undefined
+
+await folder.kv.set('theme', 'dark'); // returns the reading it wrote
+await folder.kv.set('theme', undefined); // remove the key, so the default applies
 ```
 
-| Outcome | Where it is | What it carries |
-| --- | --- | --- |
-| The file is absent | `get`: `Ok(undefined)`. | Nothing. No capture is invented. |
-| The file could not be read as text | The `Err` of `get`: I/O, a directory at the path, a closed folder, or `InvalidUtf8`. | No text. |
-| The text is not one JSON object | `snapshot.parseError`. | `values` is empty and `issues` is empty. `text` is the whole file. |
-| The text is a JSON object | `snapshot.parseError` is `undefined`. | `values` holds every stored declared value that validated by itself. `issues` has an entry for each stored value that does not conform. |
+Reading is per key. `values` holds every declared key whose stored value
+validated. A stored value that does not conform is left out and reported in
+`issues` at its line, so one hand-broken setting falls back to its default
+without hiding the others. A key the file lacks is not an issue, and an
+undeclared key stays in the file unreported. The folder has no defaults: an
+application spreads its own under `values`.
 
-The format is one strict JSON object, after an optional byte-order mark.
-Comments and trailing commas fail parsing. A root key that appears twice
-reads as its last value, as `JSON.parse` reads it.
+`InvalidKv` is only for text a folder cannot hold: not one strict JSON object
+(comments and trailing commas do not parse), a key that appears twice at any
+depth, an unpaired surrogate, or nesting beyond 64 containers. A value over
+the nesting or width budget is an issue on read, as a set of it is refused. It carries the exact
+text and its hash, so the file is repaired as text, guarded by those bytes.
 
-A declared key the file does not have is left out of `values` and is not an
-issue. An undeclared key stays in the text and is not reported. Values live
-under `values` so a declared key named `text` or `issues` cannot collide
-with the capture. Values and diagnostics are frozen at every depth.
+`set(key, value)` changes one key:
 
-The folder has no defaults. `get`, `inspect`, preparing the definition, and
-opening the folder insert nothing and save nothing. An application applies
-its own defaults where it derives its state, as above: a missing file, a
-missing key, and a stored value that was left out all fall back, and a stored
-`null` does not. The merge is one level deep.
+- A value that is undeclared, does not conform, is over the nesting or width
+  budget, holds an unsafe integer, or has no exact JSON form is
+  `InvalidValues` before anything is read. The value is owned at the call.
+- It reads the current file, merges the key into it, and publishes guarded by
+  that read. Every other key keeps its raw text, so number spellings and
+  unknown keys survive. The text is written in the merge format below, so a
+  local save and a Git merge produce the same file.
+- A missing file is created. `undefined` removes the key.
+- Sets from one handle apply in the order they were called; a later set of a
+  key waiting behind a running one replaces it.
+- When another writer published first, or the reply was lost as
+  `Unconfirmed`, the set re-reads and re-applies itself, so two windows
+  setting different keys both keep their changes. After three attempts it
+  reports the last refusal.
 
-`inspect(text)` is the same reading of text that was not saved:
-`{ values, parseError, issues }`, with no path, hash, or Result.
+One top-level key is one fact. Settings that must change together belong in
+one key with an object value, which is set and merged as a whole.
 
-`create(values)` checks the supplied values and saves a new file without
-reading; an existing file is `Exists`. `update(values)` reads the current
-text once, assigns the supplied root keys, and replaces what it read. Both copy
-the supplied values when they are called, accept readonly values such as a
-snapshot's, and leave the caller's objects as they were. A receipt is the
-snapshot of the submitted text and its hash, with nothing read back. An
-update is not an upsert: it never creates the file.
-
-| Refusal | Error | Wrote anything |
-| --- | --- | --- |
-| A supplied key is undeclared, or its value does not conform, is over the nesting or width budget, or does not read back from JSON as supplied | `InvalidValues`, with `issues` | No |
-| `update` found no file at its read | `NotFound` | No |
-| `update` read text that is not one JSON object | `Unparsed`, with the same parse `error` a read reports | No |
-| `update` read an object it cannot assign in safely: a supplied key appears more than once | `UnsupportedSource` | No |
-| The file changed, or went away, before publication | `Conflict` | No |
-
-A file can therefore read with valid values while one update of it is
-refused. Unknown keys are left exactly as written, repeated ones included.
-Repair the complete text with `files.replace(snapshot, text)`. That returns
-a raw capture; call `kv.inspect` on the text that was submitted to see how it
-reads. `KvReadError` and `KvWriteError` are the two error unions.
+`KvReadError` and `KvWriteError` are the two error unions.
 
 ### Merging kv.json
 
@@ -796,7 +788,8 @@ nesting beyond 64 containers return `kind: 'invalid'` and the first invalid
 output. Callers must decode bytes without replacing invalid UTF-8.
 
 The function does not apply field schemas, write files, or choose a winner for
-competing edits. A browser folder's `git.mergeIncoming()` uses it for root
+competing edits. Its module owns `kv.json` text: `kv.set` writes through the same
+formatter, so a local save and a merge produce the same file. A browser folder's `git.mergeIncoming()` uses it for root
 `kv.json`; see [Merging incoming changes](#merging-incoming-changes).
 
 ### One file per save
@@ -1266,8 +1259,8 @@ opens it, and `testBrowserStorage()` does both in one call.
 ## Limits
 
 A reference field has no integrity: nothing checks its target, and rename
-repairs no references. `kv.update`
-writes each value it assigns as compact JSON. Browser bytes are stored whole.
+repairs no references. `kv.set`
+writes each value it sets as compact JSON. Browser bytes are stored whole.
 A whole-folder checkpoint or status scan reads and hashes the whole folder.
 Version checks on disk are best effort
 against other programs. File bytes cross the desktop bridge as JSON number

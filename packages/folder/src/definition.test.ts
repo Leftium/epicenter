@@ -178,7 +178,7 @@ test('one prepared definition opens two folders that stay apart, and another def
 		),
 	);
 	const made = text(expectOk(await personal.files.read('todos/milk.md')).bytes);
-	expectOk(await personal.kv.create({ theme: 'dark' }));
+	expectOk(await personal.kv.set('theme', 'dark'));
 	expectOk(
 		await work.tables.todos.create(
 			{ fields: { title: 'Report', done: false }, body: '' },
@@ -277,7 +277,7 @@ test('tables named like Object.prototype members, and one table under two names,
 	);
 	expect(refused.name).toBe('InvalidValues');
 
-	expectOk(await folder.kv.create({ valueOf: 'stored' }));
+	expectOk(await folder.kv.set('valueOf', 'stored'));
 	expect(expectOk(await folder.kv.get())?.values).toEqual({
 		valueOf: 'stored',
 	});

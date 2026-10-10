@@ -284,35 +284,29 @@ try {
 		);
 		check(
 			'the canonical save kept the unknown key and the body',
-			after.includes('"estimate": "15m"\n') && after.endsWith(`---\n${BODY}`),
+			after.includes('estimate: "15m"\n') && after.endsWith(`---\n${BODY}`),
 		);
 	}
 
 	// -------------------------------------------------------------------------
-	section('5. kv.json is absent until an application explicitly creates it');
+	section('5. kv.json is absent until an application sets a key');
 	// -------------------------------------------------------------------------
 	{
 		const a = await open(appA);
-		const snapshot = ok(await a.kv.get());
-		const effective = { ...A_KV_DEFAULTS, ...(snapshot?.values ?? {}) };
+		const reading = ok(await a.kv.get());
+		const effective = { ...A_KV_DEFAULTS, ...(reading?.values ?? {}) };
 		check(
 			'get() on a folder with no kv.json is Ok(undefined)',
-			snapshot === undefined,
+			reading === undefined,
 		);
 		check(
 			"A's effective settings are entirely its own defaults",
 			JSON.stringify(effective) === JSON.stringify(A_KV_DEFAULTS),
 			effective,
 		);
-		const missing = refusal(await a.kv.update({ theme: 'dark' }));
-		check(
-			'update() on a missing file is NotFound, not an upsert',
-			missing.name === 'NotFound',
-			missing.name,
-		);
 		await a.close();
 		check(
-			'reading, defaulting, a refused update, and closing left no kv.json',
+			'reading, defaulting, and closing left no kv.json',
 			!disk.exists('kv.json'),
 		);
 
@@ -325,24 +319,19 @@ try {
 	}
 	{
 		const a = await open(appA);
-		const created = ok(await a.kv.create({ theme: 'dark' }));
+		const created = ok(await a.kv.set('theme', 'dark'));
 		const onDisk = await disk.text('kv.json');
 		show('kv.json', onDisk);
 		check(
-			'create() wrote only the supplied key: the file is sparse, defaults are not saved',
-			onDisk === '{\n  "theme": "dark"\n}\n' && created.text === onDisk,
-		);
-		const again = refusal(await a.kv.create({ theme: 'light' }));
-		check(
-			'a second create() is Exists and changes nothing',
-			again.name === 'Exists' && (await disk.text('kv.json')) === onDisk,
-			again.name,
+			'set() created the file with only the supplied key: the file is sparse, defaults are not saved',
+			onDisk === '{\n  "theme": "dark"\n}\n' &&
+				created.sha256 === (await hashBytes(await disk.bytes('kv.json'))),
 		);
 		await a.close();
 	}
 
 	// -------------------------------------------------------------------------
-	section('6. Divergent KV schemas update only their own keys');
+	section('6. Divergent KV schemas set only their own keys');
 	// -------------------------------------------------------------------------
 	// The agent adds a key neither application declares, with a number
 	// spelling and spacing a serializer would not reproduce.
@@ -351,16 +340,15 @@ try {
 	show('kv.json after the agent', AGENT_KV);
 	{
 		const b = await open(appB);
-		const snapshot = ok(await b.kv.get());
+		const reading = ok(await b.kv.get());
 		check(
 			"B reads none of A's keys or the agent's: values is empty, with no issues",
-			snapshot !== undefined &&
-				Object.keys(snapshot.values).length === 0 &&
-				snapshot.issues.length === 0 &&
-				snapshot.parseError === undefined,
-			snapshot?.values,
+			reading !== undefined &&
+				Object.keys(reading.values).length === 0 &&
+				reading.issues.length === 0,
+			reading?.values,
 		);
-		const effective = { ...B_KV_DEFAULTS, ...(snapshot?.values ?? {}) };
+		const effective = { ...B_KV_DEFAULTS, ...(reading?.values ?? {}) };
 		check(
 			"B's effective settings are its own defaults",
 			JSON.stringify(effective) === JSON.stringify(B_KV_DEFAULTS),
@@ -368,48 +356,46 @@ try {
 		);
 
 		const undeclared = refusal(
-			await b.kv.update(
-				// @ts-expect-error `theme` is not a key of B's KV.
-				{ theme: 'light' },
-			),
+			// @ts-expect-error `theme` is not a key of B's KV.
+			await b.kv.set('theme', 'light'),
 		);
 		check(
-			"B cannot assign A's key: InvalidValues, nothing written",
+			"B cannot set A's key: InvalidValues, nothing written",
 			undeclared.name === 'InvalidValues' &&
 				(await disk.text('kv.json')) === AGENT_KV,
 			undeclared.name,
 		);
 
-		ok(await b.kv.update({ density: 'compact' }));
+		ok(await b.kv.set('density', 'compact'));
 		await b.close();
 		const onDisk = await disk.text('kv.json');
-		show("kv.json after B's update", onDisk);
-		const ADDED = ',\n\t"density":   "compact"';
+		show("kv.json after B's set", onDisk);
 		check(
-			"B's update appended one member; A's key and the agent's key are byte-for-byte unchanged",
-			onDisk.replace(ADDED, '') === AGENT_KV && onDisk !== AGENT_KV,
+			"B's set wrote the merge format: keys sorted, two-space indentation, and A's and the agent's values as their own text",
+			onDisk ===
+				'{\n  "agentBudget": 1.50,\n  "density": "compact",\n  "theme": "dark"\n}\n',
 		);
 	}
 	{
 		const a = await open(appA);
 		const before = await disk.text('kv.json');
-		const snapshot = ok(await a.kv.get());
+		const reading = ok(await a.kv.get());
 		check(
 			"A reads only its own stored key; B's density is not in values",
-			JSON.stringify(snapshot?.values) === '{"theme":"dark"}',
-			snapshot?.values,
+			JSON.stringify(reading?.values) === '{"theme":"dark"}',
+			reading?.values,
 		);
-		ok(await a.kv.update({ theme: 'light' }));
+		ok(await a.kv.set('theme', 'light'));
 		await a.close();
 		const after = await disk.text('kv.json');
-		show("kv.json after A's update", after);
+		show("kv.json after A's set", after);
 		check(
-			"A's update changed only the value span of theme",
+			"A's set changed only the value of theme",
 			after === before.replace('"dark"', '"light"') && after !== before,
 		);
 		check(
-			"the agent's number spelling survived both updates",
-			after.includes('"agentBudget":   1.50'),
+			"the agent's number spelling survived both sets",
+			after.includes('"agentBudget": 1.50'),
 		);
 	}
 
@@ -418,21 +404,21 @@ try {
 	// -------------------------------------------------------------------------
 	{
 		const a = await open(appA);
-		ok(await a.kv.update({ pageSize: 50 }));
+		ok(await a.kv.set('pageSize', 50));
 		await a.close();
 		const before = await disk.text('kv.json');
 
 		const b = await open(appB);
-		const snapshot = ok(await b.kv.get());
+		const reading = ok(await b.kv.get());
 		check(
 			"A's number under a key B declares as a string is a field issue for B, and is left out of B's values",
-			snapshot !== undefined &&
-				!('pageSize' in snapshot.values) &&
-				snapshot.issues.length === 1 &&
-				snapshot.issues[0]?.field === 'pageSize',
-			snapshot?.issues,
+			reading !== undefined &&
+				!('pageSize' in reading.values) &&
+				reading.issues.length === 1 &&
+				reading.issues[0]?.field === 'pageSize',
+			reading?.issues,
 		);
-		const effective = { ...B_KV_DEFAULTS, ...(snapshot?.values ?? {}) };
+		const effective = { ...B_KV_DEFAULTS, ...(reading?.values ?? {}) };
 		check(
 			'B falls back to its own default for that key',
 			effective.pageSize === 'all',
@@ -442,9 +428,9 @@ try {
 			'reading it changed nothing on disk',
 			(await disk.text('kv.json')) === before,
 		);
-		note(`B's issue: ${snapshot?.issues[0]?.message}`);
+		note(`B's issue: ${reading?.issues[0]?.message}`);
 
-		ok(await b.kv.update({ pageSize: 'all' }));
+		ok(await b.kv.set('pageSize', 'all'));
 		await b.close();
 		const a2 = await open(appA);
 		const forA = ok(await a2.kv.get());
@@ -469,43 +455,37 @@ try {
 		show('kv.json', BROKEN);
 
 		const a = await open(appA);
-		const snapshot = ok(await a.kv.get());
-		if (snapshot === undefined) throw new Error('A did not find kv.json');
+		const invalid = refusal(await a.kv.get());
+		if (invalid.name !== 'InvalidKv')
+			throw new Error(`Expected InvalidKv, got ${invalid.name}`);
 		check(
-			'get() is a snapshot with a parseError, the exact text, and no values',
-			snapshot.parseError !== undefined &&
-				snapshot.text === BROKEN &&
-				Object.keys(snapshot.values).length === 0,
+			'get() is InvalidKv with the exact text and at least one issue',
+			invalid.text === BROKEN && invalid.issues.length > 0,
+			invalid.issues,
 		);
-		note(`parseError: ${snapshot.parseError?.message}`);
-		const effective = { ...A_KV_DEFAULTS, ...snapshot.values };
+		note(`issue: ${invalid.issues[0]?.message}`);
+		const refused = refusal(await a.kv.set('theme', 'dark'));
 		check(
-			"A's stored theme is unreadable, so the documented merge silently shows the default",
-			effective.theme === A_KV_DEFAULTS.theme && good.includes('"light"'),
-			effective,
-		);
-		const refused = refusal(await a.kv.update({ theme: 'dark' }));
-		check(
-			'update() is refused as Unparsed and writes nothing',
-			refused.name === 'Unparsed' && (await disk.text('kv.json')) === BROKEN,
+			'set() is refused as InvalidKv and writes nothing',
+			refused.name === 'InvalidKv' && (await disk.text('kv.json')) === BROKEN,
 			refused.name,
 		);
 
-		// KV has no replace of its own: repair goes through files, then inspect.
-		const capture = ok(await a.files.replace(snapshot, good));
-		const reading = a.kv.inspect(good);
+		// KV has no replace of its own: repair goes through files, then get.
+		const capture = ok(await a.files.replace(invalid, good));
+		const repaired = ok(await a.kv.get());
 		await a.close();
 		check(
-			'files.replace(snapshot, text) repairs it; the receipt is a bare capture of the bytes on disk',
+			'files.replace(invalidKv, text) repairs it; the receipt is a bare capture of the bytes on disk',
 			(await disk.text('kv.json')) === good &&
 				capture.sha256 === (await hashBytes(await disk.bytes('kv.json'))) &&
 				Object.keys(capture).sort().join() === 'path,sha256',
 			Object.keys(capture),
 		);
 		check(
-			"kv.inspect(text) is the second call that says how the repair reads: A's theme is back",
-			reading.parseError === undefined && reading.values.theme === 'light',
-			reading.values,
+			"get() after the repair reads A's theme again",
+			repaired?.values.theme === 'light',
+			repaired?.values,
 		);
 	}
 
@@ -650,7 +630,7 @@ try {
 		check(
 			"A sees its field missing after B's repair, and restores it with one guarded replace",
 			invalid.issues[0].field === 'done' &&
-				(await disk.text(ROW)).includes('"done": false\n'),
+				(await disk.text(ROW)).includes('done: false\n'),
 			invalid.issues,
 		);
 	}
@@ -735,7 +715,7 @@ try {
 			"redoing the change on the current row keeps the agent's line and lands the title",
 			onDisk === ok(formatRow(appA.tables.todos, merged.row)) &&
 				onDisk.includes('Agent: the shop closes') &&
-				onDisk.includes('"title": "Buy milk and eggs"\n'),
+				onDisk.includes('title: Buy milk and eggs\n'),
 		);
 	}
 
@@ -839,7 +819,7 @@ try {
 				row.path === `todos/${stem}.md` &&
 					row.row.fields.title === `stem=[${stem}]` &&
 					saved.path === row.path &&
-					(await disk.text(`todos/${stem}.md`)).includes('"done": true\n'),
+					(await disk.text(`todos/${stem}.md`)).includes('done: true\n'),
 			);
 		}
 		const files = ok(await a.files.list());

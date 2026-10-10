@@ -1,42 +1,40 @@
 /**
  * KV Tests
  *
- * `folder.kv` reads, creates, and updates the root `kv.json`. These drive the
- * KV methods and the ordinary file methods over one browser storage, so what
- * a method reads and publishes can be counted and held.
+ * `folder.kv` reads and sets the root `kv.json`, one key at a time. These
+ * drive the KV methods over one browser storage whose reads and
+ * publications are counted, and whose next reads can be followed by another
+ * writer.
  *
  * Key behaviors:
- * - `get` returns `undefined` only for a missing file; unreadable bytes are an
- *   error, and readable text that is not a JSON object is a snapshot with a
- *   parse error, no values, and no issues
- * - A stored value that does not conform is an issue; a key the file lacks is
- *   not, and no default stands in for it
- * - `inspect` is the one interpreter: reads, receipts, and drafts agree
- * - Values and diagnostics are frozen at every depth; supplied values are
- *   copied and the caller's objects are left as they were
- * - A key's refinement is shown only a frozen value this module owns: one
- *   that changes it is an issue and changes nothing
- * - `create` validates the supplied keys, reads nothing, and never replaces
- * - `update` reads once, refuses a missing or unpatchable file, and publishes
- *   once against what it read
- * - Supplied values are owned when the method is called
- * - Everything outside an assigned value stays byte for byte
- * - Current source that does not parse is `Unparsed`; an object the keys
- *   cannot be assigned in safely is `UnsupportedSource`; both are repaired
- *   through `files.replace`
+ * - `get` is `undefined` only for a missing file; every declared value that
+ *   validated is in `values`, and a stored value that does not conform is
+ *   left out and reported at its line, so the other keys still read
+ * - Only text that is not one strict JSON object, or has a key twice, is
+ *   `InvalidKv`, with its exact text, hash, and a located issue
+ * - `set` merges one key into the current file, keeps every other key as its
+ *   raw text, writes the Git-merge format, creates a missing file, and
+ *   removes a key set to `undefined`
+ * - A value that is not declared, does not conform, or cannot be stored is
+ *   refused before anything is read, and the value is owned at the call
+ * - Sets from one handle land in the order they were called
+ * - A set that loses a race to another writer re-reads and re-applies itself,
+ *   so both writers' keys stick; a race lost on every attempt is `Conflict`
  *
  * See also:
- * - `browser.test.ts` and `close.test.ts` for history and close around a KV save
+ * - `kv-merge.test.ts` for the Git merge that shares this file format
  */
 import { expect, test } from 'bun:test';
-import { accepts, jsonValue } from '@epicenter/definition';
+import { jsonValue } from '@epicenter/definition';
 import { expectErr, expectOk } from 'wellcrafted/testing';
 import type { FolderStorage } from './boundary.js';
 import { rawBrowserFolder } from './browser-storage.test-support.js';
 import { hashBytes } from './capture.js';
 import { defineFolder, field, type KvOf } from './contract.js';
+import { FileError } from './errors.js';
 import { createFiles } from './files.js';
-import { createKv, type KvSnapshot } from './kv.js';
+import { createKv } from './kv.js';
+import { mergeKv } from './kv-merge.js';
 
 const definition = defineFolder({
 	kv: {
@@ -49,40 +47,20 @@ const definition = defineFolder({
 type Values = KvOf<typeof definition>;
 
 const encoder = new TextEncoder();
-// Keep a byte order mark in what a test reads back.
 const decoder = new TextDecoder('utf-8', { ignoreBOM: true });
-const BOM = '\uFEFF';
-
-/** The interpretation a snapshot carries, without its capture. */
-const readingOf = ({ values, parseError, issues }: KvSnapshot<Values>) => ({
-	values,
-	parseError,
-	issues,
-});
-
-/** Every object and array reachable from a value. */
-function nodesOf(value: unknown, found: object[] = []): object[] {
-	if (typeof value !== 'object' || value === null || found.includes(value))
-		return found;
-	found.push(value);
-	for (const child of Object.values(value)) nodesOf(child, found);
-	return found;
-}
 
 /** KV and file methods over one storage whose reads and publications are counted. */
 async function setup(initial?: string | Uint8Array) {
 	const base = (await rawBrowserFolder({ id: 'kv' })).boundary;
 	const calls = { reads: 0, applies: 0 };
-	/** Set to run once after the next read has its bytes, before the caller sees them. */
-	let afterRead: (() => Promise<void>) | undefined;
+	/** Run after each of the next reads has its bytes, before the caller sees them. */
+	let afterRead: (() => Promise<void>)[] = [];
 	const storage: FolderStorage = {
 		...base,
 		async read(path) {
 			calls.reads += 1;
 			const read = await base.read(path);
-			const after = afterRead;
-			afterRead = undefined;
-			await after?.();
+			await afterRead.shift()?.();
 			return read;
 		},
 		apply(changes) {
@@ -93,637 +71,297 @@ async function setup(initial?: string | Uint8Array) {
 	const files = createFiles({ storage: base });
 	if (initial !== undefined) expectOk(await files.create('kv.json', initial));
 	return {
-		storage,
 		kv: createKv<Values>({ storage }, definition.kv),
 		files,
 		calls,
 		source: async () =>
 			decoder.decode(expectOk(await files.read('kv.json')).bytes),
-		afterNextRead(work: () => Promise<void>) {
+		afterNextReads(...work: (() => Promise<void>)[]) {
 			afterRead = work;
+		},
+		/** Write kv.json as another program would, with no guard. */
+		async elsewhere(text: string) {
+			expectOk(await files.overwrite('kv.json', text));
 		},
 	};
 }
 
-// ============================================================================
-// get
-// ============================================================================
+// -- Reading ------------------------------------------------------------------
 
-test('get returns undefined for a missing file and a failed read as its error', async () => {
-	const { kv } = await setup();
-	expect(expectOk(await kv.get())).toBeUndefined();
+test('get is undefined for a missing file and the stored values for a present one', async () => {
+	expect(expectOk(await (await setup()).kv.get())).toBeUndefined();
 
-	const unreadable = createKv<Values>(
+	const text = '{\n  "theme": "dark",\n  "extra": 1\n}\n';
+	const s = await setup(text);
+	expect(expectOk(await s.kv.get())).toEqual({
+		path: 'kv.json',
+		sha256: await hashBytes(encoder.encode(text)),
+		values: { theme: 'dark' },
+		issues: [],
+	});
+});
+
+test('bytes that are not UTF-8 are InvalidUtf8, not a missing file', async () => {
+	const s = await setup(new Uint8Array([0x7b, 0xff, 0x7d]));
+	expect(expectErr(await s.kv.get()).name).toBe('InvalidUtf8');
+});
+
+test('a stored value that does not conform falls back alone and is reported at its line', async () => {
+	const s = await setup('{\n  "theme": "dark",\n  "size": "big"\n}\n');
+	const reading = expectOk(await s.kv.get());
+	expect(reading?.values).toEqual({ theme: 'dark' });
+	expect(reading?.issues).toMatchObject([{ field: 'size', line: 3 }]);
+});
+
+test('an integer outside the safe range is an issue, not a rounded value', async () => {
+	const s = await setup('{"size": 9007199254740993}');
+	const reading = expectOk(await s.kv.get());
+	expect(reading?.values).toEqual({});
+	expect(reading?.issues).toMatchObject([{ field: 'size', line: 1 }]);
+});
+
+test('text that is not one strict JSON object, or has a key twice, is InvalidKv at its line', async () => {
+	for (const [text, line] of [
+		['{\n  "theme": "dark",\n  // a comment\n}\n', 3],
+		['{\n  "theme": "dark"\n  "size": 1\n}\n', 3],
+		['[1, 2]\n', 1],
+		['{\n  "theme": "a",\n  "theme": "b"\n}\n', 3],
+	] as const) {
+		const s = await setup(text);
+		const error = expectErr(await s.kv.get());
+		expect(error).toMatchObject({
+			name: 'InvalidKv',
+			path: 'kv.json',
+			text,
+			sha256: await hashBytes(encoder.encode(text)),
+		});
+		if (error.name !== 'InvalidKv') continue;
+		expect(error.issues).toHaveLength(1);
+		expect(error.issues[0]?.line).toBe(line);
+	}
+});
+
+// -- Setting ------------------------------------------------------------------
+
+test('set creates a missing file in the merge format and returns what it wrote', async () => {
+	const s = await setup();
+	const reading = expectOk(await s.kv.set('theme', 'dark'));
+	expect(await s.source()).toBe('{\n  "theme": "dark"\n}\n');
+	expect(reading).toEqual({
+		path: 'kv.json',
+		sha256: await hashBytes(encoder.encode('{\n  "theme": "dark"\n}\n')),
+		values: { theme: 'dark' },
+		issues: [],
+	});
+	expect(expectOk(await s.kv.get())).toEqual(reading);
+});
+
+test('set keeps every key it does not change as its raw text, valid or not', async () => {
+	const s = await setup(
+		'﻿{"size": 1.50, "zeta": [1,2], "theme": "light", "layout": {"b": 1, "a": 2}, "big": 9007199254740993}',
+	);
+	expectOk(await s.kv.set('theme', 'dark'));
+	expect(await s.source()).toBe(
+		'{\n  "big": 9007199254740993,\n  "layout": {"b": 1, "a": 2},\n  "size": 1.50,\n  "theme": "dark",\n  "zeta": [1,2]\n}\n',
+	);
+});
+
+test('what set writes is what a merge of that file writes', async () => {
+	const s = await setup('{"zeta": true, "size": 2}');
+	expectOk(await s.kv.set('theme', 'dark'));
+	const text = await s.source();
+	expect(mergeKv({ base: text, ours: text, theirs: text })).toEqual({
+		kind: 'merged',
+		text,
+	});
+});
+
+test('set with undefined removes the key, so the app default applies', async () => {
+	const s = await setup('{"theme": "dark", "size": 2}');
+	const reading = expectOk(await s.kv.set('theme', undefined));
+	expect(await s.source()).toBe('{\n  "size": 2\n}\n');
+	expect(reading.values).toEqual({ size: 2 });
+});
+
+test('a value that cannot be set is refused before anything is read', async () => {
+	const s = await setup('{"theme": "light"}');
+	const cases: [string, unknown][] = [
+		['size', 'not a number'],
+		['size', Number.NaN],
+		['size', Number.MAX_SAFE_INTEGER + 2],
+		['undeclared', 1],
+		['__proto__', { polluted: true }],
+		['layout', [1, undefined]],
+	];
+	for (const [key, value] of cases)
+		expect(
+			expectErr(await s.kv.set(key as 'size', value as number)),
+		).toMatchObject({ name: 'InvalidValues' });
+	expect(s.calls).toEqual({ reads: 0, applies: 0 });
+	expect(await s.source()).toBe('{"theme": "light"}');
+});
+
+test('a value is owned at the call: changing it afterward changes nothing saved', async () => {
+	const s = await setup();
+	const layout = { panes: ['a'] };
+	const pending = s.kv.set('layout', layout);
+	layout.panes.push('b');
+	expectOk(await pending);
+	expect(expectOk(await s.kv.get())?.values.layout).toEqual({ panes: ['a'] });
+	expect(Object.isFrozen(layout)).toBe(false);
+});
+
+test('sets from one handle land in the order they were called', async () => {
+	const s = await setup('{}');
+	const first = s.kv.set('theme', 'a');
+	const second = s.kv.set('theme', 'ab');
+	const third = s.kv.set('theme', 'abc');
+	const size = s.kv.set('size', 3);
+	expectOk(await first);
+	expectOk(await second);
+	expect(expectOk(await third).values).toEqual({ theme: 'abc', size: 3 });
+	expectOk(await size);
+	expect(expectOk(await s.kv.get())?.values).toEqual({
+		theme: 'abc',
+		size: 3,
+	});
+});
+
+test('a set that loses a race re-applies itself, so both writers keep their keys', async () => {
+	const s = await setup('{"theme": "light"}');
+	s.afterNextReads(() => s.elsewhere('{"theme": "light", "size": 9}'));
+	const reading = expectOk(await s.kv.set('theme', 'dark'));
+	expect(reading.values).toEqual({ theme: 'dark', size: 9 });
+	expect(await s.source()).toBe('{\n  "size": 9,\n  "theme": "dark"\n}\n');
+});
+
+test('a race lost on every attempt is Conflict, and the other writer stays', async () => {
+	const s = await setup('{"size": 0}');
+	let n = 0;
+	const write = () => s.elsewhere(`{"size": ${++n}}`);
+	s.afterNextReads(write, write, write);
+	expect(expectErr(await s.kv.set('theme', 'dark')).name).toBe('Conflict');
+	expect(await s.source()).toBe('{"size": 3}');
+});
+
+test('two creators of a missing file both keep their keys', async () => {
+	const s = await setup();
+	s.afterNextReads(async () => {
+		expectOk(await s.files.create('kv.json', '{"size": 4}'));
+	});
+	expect(expectOk(await s.kv.set('theme', 'dark')).values).toEqual({
+		theme: 'dark',
+		size: 4,
+	});
+});
+
+test('set refuses a file that cannot be read as settings, and writes nothing', async () => {
+	const text = '{"theme": "a", // no\n}';
+	const s = await setup(text);
+	expect(expectErr(await s.kv.set('size', 1)).name).toBe('InvalidKv');
+	expect(await s.source()).toBe(text);
+});
+
+test('a refinement is shown a copy: the caller’s value is never frozen or changed', async () => {
+	const refined = defineFolder({
+		kv: {
+			data: {
+				type: 'object',
+				'~refine': [
+					{
+						refine: (value: unknown) => {
+							if (value !== null) (value as { x?: number }).x = 99;
+							return true;
+						},
+						message: 'refused',
+					},
+				],
+			},
+		},
+		tables: {},
+	});
+	const base = (await rawBrowserFolder({ id: 'kv-refined' })).boundary;
+	const kv = createKv<{ data: { x?: number } }>({ storage: base }, refined.kv);
+	const supplied = { x: 1 };
+	const result = await kv.set('data', supplied);
+	expect(supplied).toEqual({ x: 1 });
+	expect(Object.isFrozen(supplied)).toBe(false);
+	// The refinement's attempted write throws on its frozen copy: an issue.
+	expect(expectErr(result).name).toBe('InvalidValues');
+});
+
+test('text nested too deep is InvalidKv, and a set refused by it leaves the handle usable', async () => {
+	const s = await setup(`{"layout": ${'['.repeat(100_000)}`);
+	expect(expectErr(await s.kv.get()).name).toBe('InvalidKv');
+	expect(expectErr(await s.kv.set('theme', 'a')).name).toBe('InvalidKv');
+	await s.elsewhere('{}');
+	expect(expectOk(await s.kv.set('theme', 'b')).values).toEqual({ theme: 'b' });
+});
+
+test('a key that appears twice at any depth is InvalidKv at the repeated key', async () => {
+	const s = await setup('{\n  "layout": {\n    "a": 1,\n    "a": 2\n  }\n}\n');
+	const error = expectErr(await s.kv.get());
+	if (error.name !== 'InvalidKv') throw new Error(error.message);
+	expect(error.issues).toEqual([
+		{ message: 'The key "a" appears twice', line: 4, field: 'layout' },
+	]);
+});
+
+test('a storage defect settles the set that hit it, and later sets still run', async () => {
+	const base = (await rawBrowserFolder({ id: 'kv-defect' })).boundary;
+	let fail = true;
+	const kv = createKv<Values>(
 		{
 			storage: {
-				read: async (path: string) => ({
-					data: null,
-					error: {
-						name: 'Io' as const,
-						message: 'disk refused',
-						path,
-						operation: 'read',
-						cause: undefined,
-					},
-				}),
-			} as unknown as FolderStorage,
+				...base,
+				read(path) {
+					if (fail) {
+						fail = false;
+						throw new Error('broken read');
+					}
+					return base.read(path);
+				},
+			},
 		},
 		definition.kv,
 	);
-	expect(expectErr(await unreadable.get()).name).toBe('Io');
+	expect(expectErr(await kv.set('theme', 'a')).name).toBe('Io');
+	expect(expectOk(await kv.set('theme', 'b')).values).toEqual({ theme: 'b' });
 });
 
-test('get returns invalid UTF-8 as an error, not as a missing file', async () => {
-	const { kv } = await setup(new Uint8Array([0x7b, 0xff, 0x7d]));
-	expect(expectErr(await kv.get()).name).toBe('InvalidUtf8');
-	expect(expectErr(await kv.update({ theme: 'dark' })).name).toBe(
-		'InvalidUtf8',
-	);
-});
-
-test('get returns a text capture with the stored values that validated, and a missing key is not an issue', async () => {
-	// `layout` is declared and absent: it is left out, not reported or defaulted.
-	const source = '{"theme": "dark", "size": "large", "other": [1]}';
-	const { kv } = await setup(source);
-	const snapshot = expectOk(await kv.get());
-	expect(snapshot).toEqual({
-		path: 'kv.json',
-		sha256: await hashBytes(encoder.encode(source)),
-		text: source,
-		values: { theme: 'dark' },
-		parseError: undefined,
-		issues: [{ field: 'size', message: expect.stringContaining('size') }],
-	});
-	// A read and a draft are interpreted by the same function.
-	expect(kv.inspect(source)).toEqual(readingOf(snapshot!));
-	expect(Object.keys(kv.inspect(source)).sort()).toEqual([
-		'issues',
-		'parseError',
-		'values',
-	]);
-});
-
-test.each([
-	['malformed JSON', '{"theme": '],
-	['a comment', '{/* note */ "theme": "light"}'],
-	['a trailing comma', '{"theme": "light",}'],
-	['a JSON array', '["dark"]'],
-	['a JSON string', '"dark"'],
-	['null', 'null'],
-	['an empty file', ''],
-])('get returns %s as a snapshot with a parse error, no values, and no issues', async (_name, source) => {
-	const { kv } = await setup(source);
-	const snapshot = expectOk(await kv.get());
-	expect(snapshot).toEqual({
-		path: 'kv.json',
-		sha256: await hashBytes(encoder.encode(source)),
-		text: source,
-		values: {},
-		parseError: expect.anything(),
-		issues: [],
-	});
-	const [first] = snapshot?.parseError?.diagnostics ?? [];
-	expect(typeof first?.message).toBe('string');
-	expect(kv.inspect(source)).toEqual(readingOf(snapshot!));
-});
-
-test('a stored value is reported where it fails, and a repeated root key reads as its last value', async () => {
-	const { kv } = await setup();
-	const nested = defineFolder({
-		kv: {
-			window: {
-				type: 'object',
-				properties: { width: { type: 'integer' } },
-				required: ['width'],
-			},
-			theme: field.nullable(field.string()),
-		},
-		tables: {},
-	});
-	const typed = createKv<KvOf<typeof nested>>(
-		{ storage: undefined as never },
-		nested.kv,
-	);
-	const reading = typed.inspect('{"window": {"width": 1.5}, "theme": null}');
-	// A stored null is a value; the pointer names the part that does not conform.
-	expect(reading.values).toEqual({ theme: null });
-	expect(reading.issues).toEqual([
-		{ field: 'window', path: '/width', message: expect.any(String) },
-	]);
-
-	// Reading follows JSON.parse, and a byte order mark is not part of the JSON.
-	expect(kv.inspect(`${BOM}{"theme": "a", "th\\u0065me": "b"}`)).toEqual({
-		values: { theme: 'b' },
-		parseError: undefined,
-		issues: [],
-	});
-});
-
-test('a reading is frozen at every depth, and two readings share nothing', async () => {
-	const { kv } = await setup();
-	const source = '{"layout": {"panes": [1, {"deep": [2]}]}, "size": "x"}';
-	for (const reading of [kv.inspect(source), kv.inspect('{"theme": ')]) {
-		const nodes = nodesOf(reading);
-		expect(nodes.length).toBeGreaterThan(3);
-		for (const node of nodes) expect(Object.isFrozen(node)).toBe(true);
-	}
-	const layout = kv.inspect(source).values.layout as { panes: unknown[] };
-	expect(() => layout.panes.push(3)).toThrow(TypeError);
-	expect(kv.inspect(source).values.layout).not.toBe(layout);
-});
-
-/** What `Type.Refine` adds to a schema, written out: this package does not depend on TypeBox. */
-const refined = <TSchema extends object>(
-	schema: TSchema,
-	refine: (value: unknown) => boolean,
-) => ({ ...schema, '~refine': [{ refine, message: 'refused' }] });
-
-const refining = defineFolder({
-	kv: {
-		theme: { type: 'string' },
-		// A refinement may freeze the value it is shown, and only that value.
-		layout: refined({ type: 'object' }, (value) => {
-			Object.freeze(value);
-			return true;
-		}),
-		// Tries to change the value it is shown.
-		mutated: refined({ type: 'object' }, (value) => {
-			if (value !== null) (value as { answer: number }).answer = 99;
-			return true;
-		}),
-		// Throws on one value and admits every other.
-		guard: refined({ type: 'string' }, (value) => {
-			if (value === 'boom') throw new Error('the refinement threw');
-			return true;
-		}),
-	},
-	tables: {},
-});
-
-test('a supplied key named __proto__ is an undeclared key like any other: refused by name, and nothing is saved', async () => {
-	// As parsed JSON carries it: an own key, not the object's prototype.
-	const values = JSON.parse('{"theme": "dark", "__proto__": {"extra": 1}}');
-	const refusedBy = {
-		field: '__proto__',
-		message: '__proto__ is not declared',
-	};
-
-	const empty = await setup();
-	const created = expectErr(await empty.kv.create(values));
-	expect(created.name).toBe('InvalidValues');
-	if (created.name === 'InvalidValues')
-		expect(created.issues).toEqual([refusedBy]);
-	expect(expectOk(await empty.kv.get())).toBeUndefined();
-
-	const before = '{"theme": "light"}';
-	const existing = await setup(before);
-	const updated = expectErr(await existing.kv.update(values));
-	expect(updated.name).toBe('InvalidValues');
-	if (updated.name === 'InvalidValues')
-		expect(updated.issues).toEqual([refusedBy]);
-	expect(await existing.source()).toBe(before);
-	expect(existing.calls.applies).toBe(0);
-});
-
-test('a refinement is shown a frozen copy: the supplied objects stay unfrozen, and one that changes its value is an issue', async () => {
-	const { storage, files, source } = await setup();
-	const kv = createKv<{
-		theme: string;
-		layout: { panes: number[] };
-		mutated: { answer: number };
-	}>({ storage }, refining.kv);
-	const supplied = { layout: { panes: [1] } };
-	const created = expectOk(await kv.create(supplied));
-	for (const node of nodesOf(supplied))
-		expect(Object.isFrozen(node)).toBe(false);
-	supplied.layout.panes.push(2);
-	expect(created.values.layout).toEqual({ panes: [1] });
-
-	// Copying would flatten this into a plain object the field accepts.
-	class Box {
-		panes = [1];
-	}
-	expect(expectErr(await kv.update({ layout: new Box() as never })).name).toBe(
-		'InvalidValues',
-	);
-
-	const change = { theme: 'dark', mutated: { answer: 1 } };
-	const refused = expectErr(await kv.update(change));
-	expect(refused.name).toBe('InvalidValues');
-	if (refused.name === 'InvalidValues')
-		expect(refused.issues.map((issue) => issue.field)).toEqual(['mutated']);
-	expect(change).toEqual({ theme: 'dark', mutated: { answer: 1 } });
-	expect(await source()).toBe(created.text);
-
-	// The same value in a file somebody wrote: it reads with the issue, the
-	// key beside it still reads and updates, and the text stays as written.
-	const written = '{"theme": "light", "mutated": {"answer": 1}}';
-	expectOk(await files.replace(created, written));
-	const read = expectOk(await kv.get())!;
-	expect(read.text).toBe(written);
-	expect(read.values).toEqual({ theme: 'light' });
-	expect(read.issues.map((issue) => issue.field)).toEqual(['mutated']);
-	const updated = expectOk(await kv.update({ theme: 'dark' }));
-	expect(updated.text).toBe(written.replace('light', 'dark'));
-	expect(await source()).toBe(updated.text);
-	expect(updated.issues.map((issue) => issue.field)).toEqual(['mutated']);
-});
-
-test('a value its refinement froze still has every child frozen', async () => {
-	const { storage } = await setup();
-	const kv = createKv<{ layout: { panes: unknown[] } }>(
-		{ storage },
-		refining.kv,
-	);
-	const reading = kv.inspect('{"layout": {"panes": [1, {"deep": [2]}]}}');
-	expect(reading.issues).toEqual([]);
-	const nodes = nodesOf(reading);
-	expect(nodes.length).toBeGreaterThan(5);
-	for (const node of nodes) expect(Object.isFrozen(node)).toBe(true);
-	const panes = reading.values.layout?.panes as unknown[];
-	expect(() => panes.push(3)).toThrow(TypeError);
-});
-
-test('a stored value whose refinement throws is an issue, and another key still updates beside it', async () => {
-	const before = '{"guard": "boom", "theme": "light"}';
-	const { storage, source } = await setup(before);
-	const kv = createKv<{ theme: string; guard: string }>(
-		{ storage },
-		refining.kv,
-	);
-	const read = expectOk(await kv.get())!;
-	expect(read.values).toEqual({ theme: 'light' });
-	expect(read.issues.map((issue) => issue.field)).toEqual(['guard']);
-
-	// The supplied value conforms; the stored one beside it stays as written.
-	const updated = expectOk(await kv.update({ theme: 'dark' }));
-	expect(await source()).toBe('{"guard": "boom", "theme": "dark"}');
-	expect(updated.values).toEqual({ theme: 'dark' });
-	expect(updated.issues.map((issue) => issue.field)).toEqual(['guard']);
-	// The value itself is still refused as input.
-	expect(expectErr(await kv.update({ guard: 'boom' })).name).toBe(
-		'InvalidValues',
-	);
-});
-
-test('a receipt is prepared before publication: an interpreter that fails leaves kv.json as it was', async () => {
-	const before = '{"size": 1, "theme": "light"}';
-	const { storage, calls, source } = await setup(before);
-	// No declared field does this; it stands for a failure nobody planned for.
-	// Supplied values are checked first, so only reading the stored `size` fails.
+test('an Unconfirmed save is read again and re-applied, since a set does not depend on what was there', async () => {
+	const base = (await rawBrowserFolder({ id: 'kv-unconfirmed' })).boundary;
+	let lose = true;
 	const kv = createKv<Values>(
-		{ storage },
-		new Proxy(definition.kv, {
-			get(fields, key, receiver) {
-				if (key === 'size') throw new Error('the interpreter failed');
-				return Reflect.get(fields, key, receiver);
-			},
-		}),
-	);
-	await expect(kv.update({ theme: 'dark' })).rejects.toThrow(
-		'the interpreter failed',
-	);
-	expect(calls).toEqual({ reads: 1, applies: 0 });
-	expect(await source()).toBe(before);
-});
-
-test('declared keys that every object inherits are read only when the file has them', async () => {
-	const inherited = defineFolder({
-		kv: { constructor: field.string(), toString: field.string() },
-		tables: {},
-	});
-	const { storage } = await setup('{"theme": "dark"}');
-	const kv = createKv<Record<string, string>>({ storage }, inherited.kv);
-	const snapshot = expectOk(await kv.get());
-	expect(Object.keys(snapshot?.values ?? {})).toEqual([]);
-	expect(snapshot?.issues).toEqual([]);
-
-	const updated = expectOk(
-		await kv.update({ constructor: 'mine', toString: 'text' }),
-	);
-	expect(updated.text).toBe(
-		'{"theme": "dark","constructor": "mine","toString": "text"}',
-	);
-	expect(Object.entries(updated.values)).toEqual([
-		['constructor', 'mine'],
-		['toString', 'text'],
-	]);
-});
-
-// ============================================================================
-// create
-// ============================================================================
-
-test('create saves only the supplied values as two-space JSON and reads nothing', async () => {
-	const { kv, calls, source } = await setup();
-	const created = expectOk(
-		await kv.create({ theme: 'dark', layout: { panes: [1, 2] } }),
-	);
-	const text =
-		'{\n  "theme": "dark",\n  "layout": {\n    "panes": [\n      1,\n      2\n    ]\n  }\n}\n';
-	expect(created.text).toBe(text);
-	expect(await source()).toBe(text);
-	expect(created.sha256).toBe(await hashBytes(encoder.encode(text)));
-	expect(created.values).toEqual({ theme: 'dark', layout: { panes: [1, 2] } });
-	expect(created).toMatchObject({ parseError: undefined, issues: [] });
-	// The receipt is the reading of the submitted text, with no read made.
-	expect(readingOf(created)).toEqual(kv.inspect(text));
-	expect(calls).toEqual({ reads: 0, applies: 1 });
-	expect(expectOk(await kv.get())).toEqual(created);
-});
-
-test('supplied values are copied: the caller keeps mutable objects, and snapshot values go back in', async () => {
-	const { kv } = await setup();
-	const layout = { panes: [1, 2] };
-	const supplied = { theme: 'dark', layout };
-	const created = expectOk(await kv.create(supplied));
-	expect(Object.isFrozen(supplied)).toBe(false);
-	expect(Object.isFrozen(layout)).toBe(false);
-	expect(Object.isFrozen(layout.panes)).toBe(false);
-	expect(created.values.layout).toEqual(layout);
-	expect(created.values.layout).not.toBe(layout);
-	// The caller's later change does not reach the receipt.
-	layout.panes.push(3);
-	expect(created.values.layout).toEqual({ panes: [1, 2] });
-
-	// Frozen snapshot values are accepted as they are and saved as new copies.
-	const updated = expectOk(await kv.update(created.values));
-	expect(updated.values).toEqual(created.values);
-	expect(updated.values.layout).not.toBe(created.values.layout);
-});
-
-test('create is refused as Exists when another writer made the file first', async () => {
-	const { kv, files, calls, source } = await setup();
-	// The file appears after the caller saw it missing.
-	expect(expectOk(await kv.get())).toBeUndefined();
-	expectOk(await files.create('kv.json', '{"theme": "theirs"}'));
-
-	expect(expectErr(await kv.create({ theme: 'mine' })).name).toBe('Exists');
-	expect(await source()).toBe('{"theme": "theirs"}');
-	expect(calls.applies).toBe(1);
-});
-
-test('a reference and an unannotated schema are kv fields, and an identifier may dangle', async () => {
-	const references = defineFolder({
-		kv: {
-			home: field.nullable(field.reference('pages')),
-			// A native schema with no editor hint.
-			window: {
-				type: 'object',
-				properties: { width: { type: 'integer' } },
-				required: ['width'],
+		{
+			storage: {
+				...base,
+				async apply(changes) {
+					const result = await base.apply(changes);
+					if (!lose) return result;
+					lose = false;
+					return FileError.Unconfirmed({
+						path: 'kv.json',
+						operation: 'publishing',
+						cause: 'the reply was lost',
+					});
+				},
 			},
 		},
-		tables: {},
-	});
-	const kv = createKv<KvOf<typeof references>>(
-		{ storage: (await rawBrowserFolder({ id: 'kv-refs' })).boundary },
-		references.kv,
+		definition.kv,
 	);
-
-	// No `pages` table exists, and nothing looks for the row.
-	const created = expectOk(
-		await kv.create({ home: 'no-such-page', window: { width: 800 } }),
-	);
-	expect(created.values).toEqual({
-		home: 'no-such-page',
-		window: { width: 800 },
-	});
-	expect(created.issues).toEqual([]);
-
-	// The schemas still decide what is saved, and say where a value fails.
-	const empty = expectErr(await kv.update({ home: '' }));
-	if (empty.name !== 'InvalidValues') throw new Error('expected InvalidValues');
-	// One value can fail in several ways; every issue names its field.
-	expect(empty.issues.length).toBeGreaterThan(0);
-	for (const issue of empty.issues) expect(issue.field).toBe('home');
-	expect(expectErr(await kv.update({ window: { width: 1.5 } }))).toMatchObject({
-		name: 'InvalidValues',
-		issues: [{ field: 'window', path: '/width' }],
-	});
-	expect(expectOk(await kv.update({ home: null })).values).toEqual({
-		home: null,
-		window: { width: 800 },
-	});
-});
-
-// ============================================================================
-// update
-// ============================================================================
-
-test('update refuses a missing file as NotFound and creates nothing', async () => {
-	const { kv, files, calls } = await setup();
-	expect(expectErr(await kv.update({ theme: 'dark' })).name).toBe('NotFound');
-	expect(calls).toEqual({ reads: 1, applies: 0 });
-	expect(expectErr(await files.read('kv.json')).name).toBe('NotFound');
-});
-
-test('update reads once, publishes once, and returns the capture of what it submitted', async () => {
-	const { kv, calls, source } = await setup('{"theme": "light"}\n');
-	const updated = expectOk(await kv.update({ theme: 'dark' }));
-	expect(calls).toEqual({ reads: 1, applies: 1 });
-	expect(updated.text).toBe('{"theme": "dark"}\n');
-	expect(updated.sha256).toBe(await hashBytes(encoder.encode(updated.text)));
-	expect(updated.values).toEqual({ theme: 'dark' });
-	expect(await source()).toBe(updated.text);
-});
-
-test('update returns Conflict when the file changes after its one read, and does not retry', async () => {
-	const { kv, files, calls, source, afterNextRead } =
-		await setup('{"theme": "light"}');
-	const theirs = '{"theme": "theirs", "other": true}';
-	afterNextRead(async () => {
-		const current = expectOk(await files.read('kv.json'));
-		expectOk(await files.replace(current, theirs));
-	});
-
-	const conflict = expectErr(await kv.update({ theme: 'mine' }));
-	expect(conflict.name).toBe('Conflict');
-	expect(calls).toEqual({ reads: 1, applies: 1 });
-	expect(await source()).toBe(theirs);
-});
-
-test('a nested value changed while the read is pending does not change what is saved', async () => {
-	const { kv, source, afterNextRead } = await setup('{"theme": "light"}');
-	const layout = { panes: [1, 2], split: { ratio: 0.5 } };
-	const values = { layout, theme: 'dark' };
-	afterNextRead(async () => {
-		layout.panes.push(3);
-		layout.split.ratio = 0.9;
-		values.theme = 'changed';
-	});
-
-	const updated = expectOk(await kv.update(values));
-	expect(updated.values).toEqual({
+	expect(expectOk(await kv.set('theme', 'dark')).values).toEqual({
 		theme: 'dark',
-		layout: { panes: [1, 2], split: { ratio: 0.5 } },
 	});
-	expect(await source()).toBe(
-		'{"theme": "dark","layout": {"panes":[1,2],"split":{"ratio":0.5}}}',
+});
+
+test('a stored value over the budget is an issue on read, as a set of it is refused', async () => {
+	const wide = Object.fromEntries(
+		Array.from({ length: 1_100 }, (_, i) => [`k${i}`, i]),
 	);
-});
-
-test.each([
-	['an undeclared key', { language: 'en' }],
-	['a value of the wrong type', { theme: 12 }],
-	['an undefined value', { theme: undefined }],
-	['Infinity', { size: Number.POSITIVE_INFINITY }],
-	['NaN', { size: Number.NaN }],
-	['a nested non-finite number', { layout: { ratio: Number.NaN } }],
-	['a nested undefined', { layout: { ratio: undefined } }],
-	['a Date', { layout: new Date(0) }],
-	['a function', { layout: { run() {} } }],
-	// biome-ignore lint/suspicious/noSparseArray: a hole serializes as null.
-	['an array hole', { layout: [1, , 3] }],
-])('create and update refuse %s as InvalidValues and write nothing', async (_name, values) => {
-	const { kv, calls, source } = await setup('{"theme": "light"}');
-	const supplied = values as Partial<Values>;
-	expect(expectErr(await kv.update(supplied)).name).toBe('InvalidValues');
-	expect(expectErr(await kv.create(supplied)).name).toBe('InvalidValues');
-	expect(calls).toEqual({ reads: 0, applies: 0 });
-	expect(await source()).toBe('{"theme": "light"}');
-});
-
-test.each([
-	[
-		'an object wider than the budget',
-		Object.fromEntries(
-			Array.from({ length: 1025 }, (_, index) => [`key${index}`, index]),
-		),
-	],
-	['nesting deeper than the budget', [[[[[[[[[[[[[[[[[1]]]]]]]]]]]]]]]]]],
-])('create and update refuse %s by naming the budget, not conformance', async (_name, layout) => {
-	const { kv, calls, source } = await setup('{"theme": "light"}');
-	// The field itself takes the value: it is JSON, and JSON has no size.
-	expect(accepts(definition.kv.layout, layout)).toBe(true);
-
-	const supplied = { layout } as Partial<Values>;
-	for (const refused of [await kv.update(supplied), await kv.create(supplied)])
-		expect(expectErr(refused)).toMatchObject({
-			name: 'InvalidValues',
-			issues: [
-				{
-					field: 'layout',
-					message:
-						'layout is over the kv.json budget: nesting deeper than 16 levels, or an object with more than 1024 keys',
-				},
-			],
-		});
-	expect(calls).toEqual({ reads: 0, applies: 0 });
-	expect(await source()).toBe('{"theme": "light"}');
-});
-
-// ============================================================================
-// What an update leaves alone
-// ============================================================================
-
-test('update keeps a byte order mark, number spellings, nesting, and spacing outside the value it assigns', async () => {
-	const before = `${BOM}{\r\n\t"big" : 9007199254740993,\r\n\t"huge":1e400,\r\n\t"th\\u0065me"  :  "light" ,\r\n\t"nested": { "a" : [ 1,2 , {"b":null} ], "theme": "inner" },\r\n\t"size": 1.50\r\n}\r\n`;
-	const { kv, source } = await setup(before);
-
-	const updated = expectOk(await kv.update({ theme: 'dark' }));
-	const after = before.replace('"light"', '"dark"');
-	expect(updated.text).toBe(after);
-	expect(await source()).toBe(after);
-	expect(updated.text.startsWith(BOM)).toBe(true);
-	expect(updated.values).toEqual({ theme: 'dark', size: 1.5 });
-	expect(updated.issues).toEqual([]);
-});
-
-test('update leaves a declared value it was not given exactly as written, valid or not', async () => {
-	const { kv } = await setup('{"size": "1e2", "theme": "light"}');
-	const updated = expectOk(await kv.update({ theme: 'dark' }));
-	expect(updated.text).toBe('{"size": "1e2", "theme": "dark"}');
-	expect(updated.values).toEqual({ theme: 'dark' });
-	expect(updated.issues.map((issue) => issue.field)).toEqual(['size']);
-});
-
-test('update refuses a supplied key that appears twice as UnsupportedSource, though the file reads', async () => {
-	for (const before of [
-		'{"theme": "a", "theme": "b"}',
-		'{"theme": "a", "th\\u0065me": "b"}',
-	]) {
-		const { kv, calls, source } = await setup(before);
-		// The text parses, so reading it is not the problem: patching it is.
-		expect(expectOk(await kv.get())).toMatchObject({
-			values: { theme: 'b' },
-			parseError: undefined,
-		});
-		const refused = expectErr(await kv.update({ theme: 'dark' }));
-		expect(refused.name).toBe('UnsupportedSource');
-		expect(refused.message).toContain("'theme'");
-		expect(calls.applies).toBe(0);
-		expect(await source()).toBe(before);
-		// A key that appears once is still assignable in the same file.
-		expect(expectOk(await kv.update({ size: 2 })).values).toEqual({
-			theme: 'b',
-			size: 2,
-		});
-	}
-});
-
-test('update keeps unknown keys that appear twice, with their number spellings', async () => {
-	const before =
-		'{"other": 1.0, "theme": "light", "other": {"n": 1e400, "big": 9007199254740993}, "__proto__": {"x": 1}}';
-	const { kv } = await setup(before);
-	const updated = expectOk(await kv.update({ theme: 'dark' }));
-	expect(updated.text).toBe(before.replace('"light"', '"dark"'));
-	// Undeclared keys are never values or issues.
-	expect(updated).toMatchObject({ values: { theme: 'dark' }, issues: [] });
-});
-
-test.each([
-	[
-		'an indented object',
-		'{\n  "other": 1\n}\n',
-		'{\n  "other": 1,\n  "theme": "dark",\n  "size": 2\n}\n',
-	],
-	['a compact object', '{"other":1}', '{"other":1,"theme":"dark","size":2}'],
-	['an empty object', '{ }\n', '{\n  "theme": "dark",\n  "size": 2\n}\n'],
-])('update adds several missing keys to %s as valid JSON', async (_name, before, after) => {
-	const { kv, source } = await setup(before);
-	const updated = expectOk(await kv.update({ theme: 'dark', size: 2 }));
-	expect(updated.text).toBe(after);
-	expect(await source()).toBe(after);
-	expect(JSON.parse(updated.text)).toMatchObject({ theme: 'dark', size: 2 });
-	expect(updated.values).toEqual({ theme: 'dark', size: 2 });
-});
-
-test('update replaces one key and adds another in the same publication', async () => {
-	const { kv, calls } = await setup('{\n  "size": 1\n}\n');
-	const updated = expectOk(await kv.update({ theme: 'dark', size: 22 }));
-	expect(updated.text).toBe('{\n  "size": 22,\n  "theme": "dark"\n}\n');
-	expect(calls.applies).toBe(1);
-});
-
-// ============================================================================
-// Source that cannot be patched
-// ============================================================================
-
-test.each([
-	['malformed JSON', '{"theme": "light"'],
-	['a comment', '{/* note */ "theme": "light"}'],
-	['a trailing comma', '{"theme": "light",}'],
-	['a JSON array', '["light"]'],
-	['an empty file', ''],
-])('update refuses %s as Unparsed with the parse error a read reports, and files.replace repairs it', async (_name, before) => {
-	const { kv, files, calls, source } = await setup(before);
-	const refused = expectErr(await kv.update({ theme: 'dark' }));
-	expect(refused.name).toBe('Unparsed');
-	expect(calls.applies).toBe(0);
-	expect(await source()).toBe(before);
-
-	// The snapshot is the capture a complete replacement is saved against.
-	const snapshot = expectOk(await kv.get());
-	if (snapshot === undefined) throw new Error('kv.json is missing');
-	if (refused.name !== 'Unparsed') throw new Error('expected Unparsed');
-	expect(refused.path).toBe('kv.json');
-	expect(snapshot.parseError).toEqual(refused.error);
-	expectOk(await files.replace(snapshot, '{"theme": "light"}'));
-	expect(expectOk(await kv.update({ theme: 'dark' })).text).toBe(
-		'{"theme": "dark"}',
-	);
-
-	// The capture that was repaired no longer matches the file.
-	expect(expectErr(await files.replace(snapshot, '{}')).name).toBe('Conflict');
+	const s = await setup(JSON.stringify({ theme: 'dark', layout: wide }));
+	const reading = expectOk(await s.kv.get());
+	expect(reading?.values).toEqual({ theme: 'dark' });
+	expect(reading?.issues).toMatchObject([{ field: 'layout' }]);
+	expect(expectErr(await s.kv.set('layout', wide)).name).toBe('InvalidValues');
 });

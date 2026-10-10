@@ -14,7 +14,8 @@
  *   again, Discard closes the word
  * - A file that is not a valid word is named for repair, opens as text,
  *   saves as typed, and reopens as a word once its text is valid
- * - Leaving a word whose save failed answers `unsaved` until it is discarded
+ * - Leaving a word whose save failed answers `unsaved` until the session the
+ *   answer named is discarded; opening the open word again does nothing
  * - Returning adopts a newer version of an open word that holds nothing unsaved
  * - A stage pressed on a closed word is guarded by the version the list read
  * - Deleting the open word waits for its saves and removes what they saved
@@ -112,7 +113,7 @@ function listed(entries: EntriesState, text: string): Entry {
 async function openWord(entries: EntriesState, text: string) {
 	expectOk(await entries.add(text));
 	const entry = listed(entries, text);
-	expect(await entries.open(entry.id)).toBeUndefined();
+	expect((await entries.open(entry.id)).kind).toBe('done');
 	return { entry, session: wordSession(entries) };
 }
 
@@ -438,7 +439,7 @@ test('a file that is not a valid word is named for repair, opens as text, saves 
 		true,
 	);
 
-	expect(await entries.open('broken')).toBeUndefined();
+	expect((await entries.open('broken')).kind).toBe('done');
 	const session = textSession(entries);
 	expect(session.draft).toBe(broken);
 	session.input(broken.replace('mastered', 'usabl'));
@@ -448,7 +449,7 @@ test('a file that is not a valid word is named for repair, opens as text, saves 
 	session.input(broken.replace('mastered', 'usable'));
 	await session.settled();
 
-	expect(await entries.open('broken')).toBeUndefined();
+	expect((await entries.open('broken')).kind).toBe('done');
 	expect(wordSession(entries).draft.fields).toMatchObject({
 		text: 'lucid',
 		stage: 'usable',
@@ -485,12 +486,55 @@ test('opening another word waits for saves, and a failed save answers unsaved un
 	context.failNextWrite(session.path);
 	entries.inputNote(entry.id, 'lost');
 	const other = listed(entries, 'candid');
-	expect(await entries.open(other.id)).toBe('unsaved');
+	expect(await entries.open(other.id)).toEqual({ kind: 'unsaved', session });
 	expect(entries.opened?.id).toBe(entry.id);
-	expect(await entries.open(other.id, { discard: session })).toBeUndefined();
+	expect(await entries.open(other.id, { discard: session })).toEqual({
+		kind: 'done',
+		left: true,
+	});
 	expect(entries.opened?.id).toBe(other.id);
 	expect(session.locked).toBe(true);
 	expect(await context.text(entry.stored.path)).not.toContain('lost');
+});
+
+test('opening the word already open does nothing and keeps its session', async () => {
+	await using context = await setup();
+	const { entries } = context;
+	const { entry, session } = await openWord(entries, 'lucid');
+	context.failNextWrite(session.path);
+	entries.inputNote(entry.id, 'unsaved');
+	await session.settled();
+	// Even with a failed save, opening the shown word asks nothing.
+	expect(await entries.open(entry.id)).toEqual({ kind: 'done', left: false });
+	expect(wordSession(entries)).toBe(session);
+	expect(session.locked).toBe(false);
+});
+
+test('a discard after Reload theirs opened the word as text applies to the session the answer named', async () => {
+	await using context = await setup();
+	const { entries } = context;
+	expectOk(await entries.add('candid'));
+	const { entry, session } = await openWord(entries, 'lucid');
+	const invalid = '---\ntext: [unclosed\n---\n';
+	await context.writeElsewhere(session.path, invalid);
+	entries.inputNote(entry.id, 'mine');
+	await session.settled();
+	expect(await entries.reloadTheirs(session)).toBeUndefined();
+	const text = textSession(entries);
+	context.failNextWrite(text.path);
+	text.input(`${invalid}more`);
+	await text.settled();
+
+	const other = listed(entries, 'candid').id;
+	expect(await entries.open(other)).toEqual({ kind: 'unsaved', session: text });
+	// The session from before the swap discards nothing.
+	expect((await entries.open(other, { discard: session })).kind).toBe(
+		'unsaved',
+	);
+	expect(entries.opened?.id).toBe(entry.id);
+	expect((await entries.open(other, { discard: text })).kind).toBe('done');
+	expect(entries.opened?.id).toBe(other);
+	expect(await context.text(entry.stored.path)).toBe(invalid);
 });
 
 test('returning adopts a newer version of an open word that holds nothing unsaved, and leaves a failed draft as it is', async () => {
@@ -623,7 +667,7 @@ test('the list read after leaving a word lands, even when a word is added meanwh
 	// The relist that leaving starts reads now and answers late.
 	const delivery = Promise.withResolvers<void>();
 	gate.heldListing = delivery.promise;
-	expect(await entries.open(listed(entries, 'candid').id)).toBeUndefined();
+	expect((await entries.open(listed(entries, 'candid').id)).kind).toBe('done');
 	gate.heldListing = undefined;
 	expectOk(await entries.add('subtle'));
 	delivery.resolve();

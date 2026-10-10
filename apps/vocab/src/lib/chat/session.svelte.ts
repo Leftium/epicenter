@@ -9,8 +9,8 @@ import {
 	type OpenAiTurnContext,
 } from '@epicenter/client';
 import { bindAgentConversation } from '@epicenter/svelte';
+import type { Admissions } from '@epicenter/svelte/admissions';
 import { createSubscriber } from 'svelte/reactivity';
-import type { Admit } from '../admissions.js';
 import {
 	tutorPrompt,
 	type UnreadableFile,
@@ -33,7 +33,7 @@ export function createVocabChat({
 	/** The folder whose `messages/` holds every chat's finished messages. */
 	folder: Pick<VocabFolder, 'tables' | 'files'>;
 	/** Counts each message write until it settles, so closing the page waits for it. */
-	admit?: Admit;
+	admit?: Admissions['admit'];
 	chatId: string;
 	focus: readonly { text: string }[];
 	catalog: InferenceCatalog;

@@ -12,7 +12,7 @@
 	import type { AgentMessage } from '@epicenter/agent';
 	import { auth } from '$lib/auth.svelte.js';
 	import { createVocabChat } from '$lib/chat/session.svelte.js';
-	import type { Admit } from '$lib/admissions.js';
+	import type { Admissions } from '@epicenter/svelte/admissions';
 	import type { VocabFolder } from '$lib/data.js';
 	import type { EntriesState } from '$lib/entries.svelte.js';
 	import type { InferenceCatalog } from '@epicenter/app-shell/inference-picker';
@@ -38,7 +38,7 @@
 	}: {
 		chatId: string;
 		folder: Pick<VocabFolder, 'tables' | 'files'>;
-		admit: Admit;
+		admit: Admissions['admit'];
 		catalog: InferenceCatalog;
 		selections: InferenceSelections;
 		entries: EntriesState;

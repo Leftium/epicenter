@@ -11,13 +11,13 @@ import {
 	rowPath,
 	rowStemOf,
 } from '@epicenter/folder';
+import type { Admissions } from '@epicenter/svelte/admissions';
 import {
 	defineErrors,
 	extractErrorMessage,
 	type InferErrors,
 } from 'wellcrafted/error';
 import { Err, Ok, type Result } from 'wellcrafted/result';
-import type { Admit } from '../admissions.js';
 import {
 	type Chat,
 	type ChatMessage,
@@ -136,7 +136,7 @@ export function createChatMessageStore(
 	{ tables, files }: Pick<VocabFolder, 'tables' | 'files'>,
 	chatId: string,
 	/** Counts each write until it settles, so closing the page waits for it. */
-	admit: Admit = (work) => work(),
+	admit: Admissions['admit'] = (work) => work(),
 ): AgentMessageStore & {
 	/** Message files of this chat that cannot be shown or sent to the tutor. */
 	readonly unreadable: UnreadableFile[];

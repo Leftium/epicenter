@@ -6,39 +6,36 @@
  * when the learner returns to the window; the latest read wins. It offers the
  * files that read as words and names the rest, with why, for repair as text.
  *
- * One word is open at a time, in one edit session
- * (`@epicenter/svelte/edit-session`): a valid word is a row session over its
- * note and stage, and a file that is not a valid word is a text session over
- * its exact text. Leaving a word waits for its saves, then releases its
- * session and lists again. A save that failed or conflicted keeps the word
- * open until the learner discards it (`open` answers `unsaved`, and the view
- * asks). Returning to the window takes a newer version of the open word when
- * it holds nothing unsaved.
+ * One word is open at a time, kept by `@epicenter/svelte/open-item` in one
+ * edit session: a valid word is a row session over its note and stage, and a
+ * file that is not a valid word is a text session over its exact text.
+ * Leaving a word waits for its saves, then releases its session and lists
+ * again. A save that failed or conflicted keeps the word open until the
+ * learner discards it (`open` answers `unsaved`, and the view asks).
+ * Returning to the window takes a newer version of the open word when it
+ * holds nothing unsaved. Every change is counted from its call
+ * (`@epicenter/svelte/admissions`), so closing waits for all of them.
  *
  * A new word's file is named by the SHA-256 of its exact text, and creation
  * is exclusive, so two adds of one text reach the same file.
  */
 
 import { InstantString } from '@epicenter/app/field';
-import {
-	type FileCapture,
-	type FolderFiles,
-	hashBytes,
-} from '@epicenter/folder';
+import { type FolderFiles, hashBytes, wellFormed } from '@epicenter/folder';
+import { createAdmissions } from '@epicenter/svelte/admissions';
 import {
 	createRowSession,
 	createTextSession,
 	type RowSession,
 	type TextSession,
-	wellFormed,
 } from '@epicenter/svelte/edit-session';
+import { createOpenItem } from '@epicenter/svelte/open-item';
 import {
 	defineErrors,
 	extractErrorMessage,
 	type InferErrors,
 } from 'wellcrafted/error';
 import { Ok, type Result } from 'wellcrafted/result';
-import { createAdmissions } from './admissions.js';
 import {
 	type Entry,
 	type EntryFields,
@@ -64,9 +61,8 @@ export const EntryError = defineErrors({
 });
 export type EntryError = InferErrors<typeof EntryError>;
 
-/** The one open word: what its card, or its repair, shows. */
-export type Opened =
-	| { readonly kind: 'loading'; readonly id: string }
+/** What the open word's slot holds once loaded. */
+type Item =
 	| {
 			readonly kind: 'word';
 			readonly id: string;
@@ -79,12 +75,14 @@ export type Opened =
 	  }
 	| { readonly kind: 'failed'; readonly id: string; readonly message: string };
 
+/** The one open word: what its card, or its repair, shows. */
+export type Opened = { readonly kind: 'loading'; readonly id: string } | Item;
+
+type Session = RowSession<EntryFields> | TextSession;
+
 const CLOSED = 'This page is closing, so nothing was changed.';
 const BUSY =
 	'This word is busy with another change. Try again when it finishes.';
-/** Why Reload theirs showed nothing: the file is there but is not text. */
-const NOT_TEXT =
-	'This file is no longer text, so it cannot be shown here. Keep mine saves your version over it.';
 
 /** What the learner is told about a failed change. */
 export function describeError(error: {
@@ -93,8 +91,8 @@ export function describeError(error: {
 }): string {
 	if (error.name === 'Conflict')
 		return 'actualSha256' in error && error.actualSha256 === undefined
-			? 'This word’s file is gone, so nothing was changed.'
-			: 'This word changed elsewhere, so nothing was changed. It has been read again.';
+			? 'The file is no longer here, so nothing was changed.'
+			: 'The file changed elsewhere, so nothing was changed. Check it and try again.';
 	return error.message;
 }
 
@@ -108,17 +106,11 @@ export function createEntriesState({
 	let rows = $state.raw<Entry[]>([]);
 	let repairs = $state.raw<UnreadableFile[]>([]);
 	let loadError = $state<string | null>(null);
-	let opened = $state.raw<Opened | undefined>();
 	let closed = false;
 	const admissions = createAdmissions();
-	const { admit } = admissions;
-	const busy = () => admissions.busy;
-	const quiet = () => admissions.quiet();
 	let listSequence = 0;
 	/** Words this page saved while a listing was out, kept over that listing. */
 	const received = new Map<string, Entry>();
-	/** Advanced by every open, so a load that answers late installs nothing. */
-	let openSequence = 0;
 	/** Every saved entry, newest first. */
 	const entries = $derived(
 		rows.toSorted(
@@ -128,8 +120,20 @@ export function createEntriesState({
 	);
 
 	const locked = () => closed;
-	const sessionOf = (item: Opened | undefined) =>
-		item?.kind === 'word' || item?.kind === 'text' ? item.session : undefined;
+
+	const slot = createOpenItem<string, Item, Session>({
+		load,
+		sessionOf: (item) => (item.kind === 'failed' ? undefined : item.session),
+		closed: () => closed,
+	});
+
+	const opened = (): Opened | undefined => {
+		const shown = slot.shown;
+		if (shown === undefined) return undefined;
+		return shown.status === 'loading'
+			? { kind: 'loading', id: shown.key }
+			: shown.item;
+	};
 
 	async function refresh() {
 		if (closed) return;
@@ -159,17 +163,7 @@ export function createEntriesState({
 		rows = [...rows.filter(({ id }) => id !== entry.id), entry];
 	}
 
-	/** Wait for the open word's saves, then release it; false keeps it when a save failed and was not discarded. */
-	async function leave(discard: unknown): Promise<boolean> {
-		const session = sessionOf(opened);
-		if (session === undefined) return true;
-		const settled = await session.settled();
-		if (settled.status === 'error' && discard !== session) return false;
-		session.release();
-		return true;
-	}
-
-	async function load(id: string): Promise<Opened> {
+	async function load(id: string): Promise<Item> {
 		const { data: stored, error } = await table.get(id);
 		if (error?.name === 'InvalidRow')
 			return {
@@ -191,39 +185,35 @@ export function createEntriesState({
 	 * Open the word at `id`: as its note and stage when it is a valid word,
 	 * else as its exact text. The open word's saves land first and the list is
 	 * read again. Answers `unsaved`, opening nothing, when the open word holds
-	 * a draft it could not save; `discard` names the session the learner let go.
+	 * a draft it could not save; opening again with `discard` set to the
+	 * answered session lets it go. Opening the word already shown does
+	 * nothing, except that a word open as text is read again, since its text
+	 * may be a valid word now.
 	 */
-	async function open(id: string, { discard }: { discard?: unknown } = {}) {
-		if (closed) return undefined;
-		const sequence = ++openSequence;
-		const left = opened;
-		if (!(await leave(discard))) return 'unsaved' as const;
-		if (left !== undefined) void refresh();
-		if (sequence !== openSequence || closed) return undefined;
-		opened = { kind: 'loading', id };
-		const item = await load(id);
-		if (sequence !== openSequence || closed) {
-			sessionOf(item)?.release();
-			return undefined;
+	async function open(id: string, { discard }: { discard?: Session } = {}) {
+		const shown = slot.item;
+		if (shown?.kind === 'text' && shown.id === id) {
+			const left = await slot.leave({ discard });
+			if (left.kind !== 'done') return left;
 		}
-		opened = item;
-		// A word that is not listed as one, or no longer opens, is listed again.
-		if (item.kind === 'failed' || !rows.some((entry) => entry.id === id))
+		const opening = await slot.open(id, { discard });
+		if (opening.kind !== 'done') return opening;
+		// A word left, or one that is not listed or no longer opens, lists again.
+		const item = slot.item;
+		if (
+			opening.left ||
+			item?.kind === 'failed' ||
+			!rows.some((entry) => entry.id === id)
+		)
 			void refresh();
-		return undefined;
-	}
-
-	/** Close the open word, if it is `id`, without saving more. */
-	function forget(id: string) {
-		if (opened?.id !== id) return;
-		sessionOf(opened)?.release();
-		openSequence += 1;
-		opened = undefined;
+		return opening;
 	}
 
 	/** The open word's row session, if `id` is open as a word. */
-	const wordSession = (id: string) =>
-		opened?.kind === 'word' && opened.id === id ? opened.session : undefined;
+	const wordSession = (id: string) => {
+		const item = slot.item;
+		return item?.kind === 'word' && item.id === id ? item.session : undefined;
+	};
 
 	async function addWord(
 		text: string,
@@ -273,7 +263,8 @@ export function createEntriesState({
 		entry: Entry,
 		stage: Stage,
 	): Promise<string | undefined> {
-		if (opened?.id === entry.id && opened.kind === 'text')
+		const item = slot.item;
+		if (item?.kind === 'text' && item.id === entry.id)
 			return 'This word is open as text, so change its stage there.';
 		const session = wordSession(entry.id);
 		if (session !== undefined) {
@@ -293,50 +284,42 @@ export function createEntriesState({
 		return error === null ? undefined : describeError(error);
 	}
 
-	async function reloadTheirs(
-		session: RowSession<EntryFields> | TextSession,
-	): Promise<string | undefined> {
-		const item = opened;
-		if (item === undefined || sessionOf(item) !== session) return undefined;
-		const { data: found, error } = await session.reloadTheirs();
-		if (error !== null) return describeError(error);
-		if (opened !== item) return undefined;
-		if (found.kind === 'gone') forget(item.id);
-		else if (found.kind === 'other') {
-			if (found.detail === 'binary' || found.detail.name !== 'InvalidRow')
-				return NOT_TEXT;
-			session.release();
-			opened = {
-				kind: 'text',
-				id: item.id,
-				session: createTextSession(files, found.detail, { locked }),
-			};
-		}
+	async function reloadTheirs(session: Session): Promise<string | undefined> {
+		const reloaded = await slot.reloadTheirs(session);
+		if (reloaded === undefined) return undefined;
 		await refresh();
-		return undefined;
+		return reloaded.error === null ? undefined : describeError(reloaded.error);
+	}
+
+	async function keepMine(session: Session): Promise<string | undefined> {
+		const kept = await slot.keepMine(session);
+		if (kept === undefined) return undefined;
+		await refresh();
+		return kept.error === null ? undefined : describeError(kept.error);
 	}
 
 	async function remove(entry: Entry): Promise<string | undefined> {
-		const session = opened?.id === entry.id ? sessionOf(opened) : undefined;
-		let file: FileCapture = entry.stored;
-		if (session !== undefined) {
-			session.release();
-			file = (await session.settled()).file;
-		}
-		const { error } = await table.delete(file);
-		if (error === null) forget(entry.id);
-		// The file stayed: open it again as it is now, in a new session.
-		else if (session !== undefined && sessionOf(opened) === session)
-			await open(entry.id, { discard: session });
+		const item = slot.item;
+		const session =
+			item !== undefined && item.kind !== 'failed' && item.id === entry.id
+				? item.session
+				: undefined;
+		// The open word: its last saves land, and what they saved is removed.
+		const removed =
+			session === undefined
+				? undefined
+				: await slot.removeOpen(session, (file) => table.delete(file));
+		const { error } = removed ?? (await table.delete(entry.stored));
 		await refresh();
 		return error === null ? undefined : describeError(error);
 	}
 
-	/** Run one of the learner's changes, counted until it settles; refused once closing. */
-	function change(
-		work: () => Promise<string | undefined>,
-	): Promise<string | undefined> {
-		return closed ? Promise.resolve(CLOSED) : admit(work);
+	/** A learner's change: refused once closing, else counted from the call until it settles. */
+	function change<TArgs extends unknown[]>(
+		work: (...args: TArgs) => Promise<string | undefined>,
+	): (...args: TArgs) => Promise<string | undefined> {
+		const admitted = admissions.command(work);
+		return (...args) => (closed ? Promise.resolve(CLOSED) : admitted(...args));
 	}
 
 	return {
@@ -354,12 +337,11 @@ export function createEntriesState({
 		},
 		/** The open word, or `undefined`. */
 		get opened() {
-			return opened;
+			return opened();
 		},
 		/** Whether leaving now could lose something: the open word holds a save running or failed, or a change is under way. */
 		get unsaved() {
-			const status = sessionOf(opened)?.state.status;
-			return status === 'saving' || status === 'error' || busy();
+			return slot.unsaved || admissions.busy;
 		},
 		/** Whether the word at `id` refuses input now: a conflict command runs on it, or the page is closing. */
 		isLocked(id: string) {
@@ -368,7 +350,7 @@ export function createEntriesState({
 		refresh,
 		/** Returning to the window: list again, and take a newer version of the open word when it holds nothing unsaved. */
 		async check() {
-			await Promise.all([refresh(), sessionOf(opened)?.adopt()]);
+			await Promise.all([refresh(), slot.adopt()]);
 		},
 		open,
 		/** The note and stage shown for `entry`: the open draft's when it is open. */
@@ -381,9 +363,7 @@ export function createEntriesState({
 		 * with that exact text is already saved and nothing was written. `note`
 		 * starts empty and `stage` new: both are the learner's to set.
 		 */
-		add(text: string): Promise<Result<'added' | 'present', EntryError>> {
-			return admit(() => addWord(text));
-		},
+		add: admissions.command(addWord),
 		/** Type the open word's note. */
 		inputNote(id: string, note: string) {
 			wordSession(id)?.edit((row) => {
@@ -396,23 +376,16 @@ export function createEntriesState({
 		 * version the list read: one that changed since is refused, and the list
 		 * reads it again. Answers what the learner is told, if anything.
 		 */
-		setStage: (entry: Entry, stage: Stage) =>
-			change(() => setStage(entry, stage)),
+		setStage: change(setStage),
 		/**
 		 * Reload theirs for `session`, the open word's: show the file as it is
-		 * now. A word whose text is no longer valid opens as text; a file that is
-		 * gone closes. Answers what the learner is told, if anything.
+		 * now. A file that is gone closes; one that is no longer a valid word
+		 * opens again as text, or as why it cannot be shown. Answers what the
+		 * learner is told, if anything.
 		 */
-		reloadTheirs: (session: RowSession<EntryFields> | TextSession) =>
-			change(() => reloadTheirs(session)),
+		reloadTheirs: change(reloadTheirs),
 		/** Keep mine for `session`, the open word's: save the draft over the file, or create it again. */
-		keepMine: (session: RowSession<EntryFields> | TextSession) =>
-			change(async () => {
-				if (sessionOf(opened) !== session) return undefined;
-				const { error } = await session.keepMine();
-				await refresh();
-				return error === null ? undefined : describeError(error);
-			}),
+		keepMine: change(keepMine),
 		/**
 		 * Delete `entry`. The open word's session is released first and its last
 		 * saves land, so the delete removes what this page saved last; a closed
@@ -420,17 +393,15 @@ export function createEntriesState({
 		 * since is refused, and an open word then opens again from the file.
 		 * Answers what the learner is told, if anything.
 		 */
-		remove: (entry: Entry) => change(() => remove(entry)),
+		remove: change(remove),
 		/**
 		 * Stop before the page releases its folder: changes already under way
 		 * finish, the open word's saves land, and it is let go.
 		 */
 		async close() {
 			closed = true;
-			await quiet();
-			const session = sessionOf(opened);
-			await session?.settled();
-			session?.release();
+			await admissions.quiet();
+			await slot.close();
 		},
 	};
 }

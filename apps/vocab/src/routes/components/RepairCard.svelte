@@ -10,7 +10,7 @@
 	import { Textarea } from '@epicenter/ui/textarea';
 	import { vocabFolder } from '$lib/data.js';
 	import type { EntriesState } from '$lib/entries.svelte.js';
-	import SaveStatus from './SaveStatus.svelte';
+	import SaveBar from '@epicenter/svelte/save-bar';
 	import { openWord } from './word-actions.js';
 
 	let { entries, id, session }: { entries: EntriesState; id: string; session: TextSession } = $props();
@@ -39,8 +39,9 @@
 	{:else}
 		<Button size="sm" variant="outline" disabled={session.locked} onclick={() => void openWord(entries, id)}>Show note and stage</Button>
 	{/if}
-	<SaveStatus
+	<SaveBar
 		save={session.state}
+		hideWhenSaved
 		onRetry={() => session.retry()}
 		onKeepMine={() => entries.keepMine(session)}
 		onReloadTheirs={() => entries.reloadTheirs(session)}

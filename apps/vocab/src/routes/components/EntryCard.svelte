@@ -13,7 +13,7 @@
 	import { cn } from '@epicenter/ui/utils';
 	import { type Entry, STAGE_LABELS, STAGES } from '$lib/data.js';
 	import type { EntriesState } from '$lib/entries.svelte.js';
-	import SaveStatus from './SaveStatus.svelte';
+	import SaveBar from '@epicenter/svelte/save-bar';
 	import { confirmDelete, openWord } from './word-actions.js';
 
 	let { entry, entries, chosen, canChoose, onToggle }: {
@@ -55,8 +55,10 @@
 		{#each STAGES as option}<Button size="sm" variant={fields.stage === option ? 'default' : 'outline'} aria-pressed={fields.stage === option} disabled={session?.locked} onclick={() => act(() => entries.setStage(entry, option))}>{STAGE_LABELS[option]}</Button>{/each}
 	</div>
 	{#if session}
-		<SaveStatus
+		<SaveBar
 			save={session.state}
+		hideWhenSaved
+		class="mt-2"
 			onRetry={() => session.retry()}
 			onKeepMine={() => entries.keepMine(session)}
 			onReloadTheirs={() => entries.reloadTheirs(session)}

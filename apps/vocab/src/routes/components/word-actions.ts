@@ -14,20 +14,16 @@ import type { EntriesState } from '$lib/entries.svelte.js';
  * open word.
  */
 export async function openWord(entries: EntriesState, id: string) {
-	// The draft the dialog describes: confirming discards this one only.
-	const item = entries.opened;
-	if (item?.id === id && (item.kind === 'word' || item.kind === 'loading'))
-		return;
-	if ((await entries.open(id)) !== 'unsaved') return;
-	const session =
-		item?.kind === 'word' || item?.kind === 'text' ? item.session : undefined;
+	const opening = await entries.open(id);
+	if (opening.kind !== 'unsaved') return;
 	confirmationDialog.open({
 		title: 'Discard unsaved changes?',
 		description:
 			'The open word has changes that could not be saved. Discard them to open another word, or cancel to keep working on them.',
 		confirm: { text: 'Discard', variant: 'destructive' },
 		async onConfirm() {
-			await entries.open(id, { discard: session });
+			// The draft the answer named, whatever is open by now.
+			await entries.open(id, { discard: opening.session });
 		},
 	});
 }

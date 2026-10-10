@@ -9,8 +9,8 @@
  * starts, and when the learner returns to the window; the latest read wins.
  */
 
+import { createAdmissions } from '@epicenter/svelte/admissions';
 import type { Result } from 'wellcrafted/result';
-import { createAdmissions } from '../admissions.js';
 import {
 	type Chat,
 	type FocusItem,
@@ -89,8 +89,7 @@ export function createChatsState({
 		/** Resolve once every chat and message write under way has settled. */
 		close: () => admissions.quiet(),
 		/** Save the focus as a new chat; it is listed once the folder holds it. */
-		start: (focus: readonly FocusItem[]) =>
-			admissions.admit(() => start(focus)),
+		start: admissions.command(start),
 	};
 
 	async function start(

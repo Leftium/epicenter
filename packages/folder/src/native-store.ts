@@ -136,7 +136,15 @@ export function createNativeFileBoundary(root: string): FileBoundary {
 					reason: 'the path passes through a symbolic link',
 				});
 			const last = index === parts.length - 1;
-			if (last) return Ok(stats.isDirectory() ? 'directory' : 'file');
+			if (last) {
+				if (stats.isDirectory()) return Ok('directory');
+				if (stats.isFile()) return Ok('file');
+				// A device, socket, or pipe: reading it could block forever.
+				return FileError.InvalidPath({
+					path,
+					reason: 'the path is not a regular file',
+				});
+			}
 			if (!stats.isDirectory())
 				return FileError.NotADirectory({
 					path: parts.slice(0, index + 1).join('/'),
@@ -518,8 +526,8 @@ export function createNativeFileBoundary(root: string): FileBoundary {
 			const directories: string[] = [];
 			for (const entry of entries) {
 				if (directory === '' && entry.name === '.git') continue;
-				if (entry.isFile()) files.push(entry.name);
-				else if (entry.isDirectory()) directories.push(entry.name);
+				// A link or special entry is listed so a read can refuse it.
+				(entry.isDirectory() ? directories : files).push(entry.name);
 			}
 			return Ok({ files: files.sort(), directories: directories.sort() });
 		} catch (cause) {

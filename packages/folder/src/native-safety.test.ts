@@ -13,6 +13,9 @@
  *   automatic commit
  * - A pull whose files landed while the index was locked returns
  *   `IndexFailed`, keeps HEAD, and never leaves a fresh clean observation
+ * - A table lists every `.md` name it holds: a symbolic link is
+ *   `InvalidPath`, a directory `NotAFile`, a pipe `InvalidPath`, and none is
+ *   followed or opened
  * - Whole-folder commits refuse repositories they would misrepresent
  *   (tracked or untracked symbolic links and executables, normalizing or
  *   filter attributes, `core.autocrlf`, nested Git data) before touching the
@@ -23,6 +26,7 @@
  * - `source-scope.test.ts` for which files are history source
  */
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { spawnSync } from 'node:child_process';
 import {
 	chmod,
 	lstat,
@@ -34,11 +38,11 @@ import {
 } from 'node:fs/promises';
 import { join } from 'node:path';
 import { expectErr, expectOk } from 'wellcrafted/testing';
+import { hashBytes } from './capture.js';
 import { defineFolder, defineTable, field } from './contract.js';
 import { openNativeFolder } from './directory.test-support.js';
 import { GIT_ENV, git, scratch } from './git-http.test-support.js';
 import { createNativeFileBoundary } from './native-store.js';
-import { hashBytes } from './capture.js';
 
 const definition = defineFolder({
 	kv: {},
@@ -164,6 +168,55 @@ describe('native partial moves', () => {
 	);
 });
 
+describe('native listings name what reads refuse', () => {
+	test('a linked, directory, or pipe row is listed with its refusal, never followed', async () => {
+		const root = await scratch('native-list-');
+		const outside = await scratch('native-list-outside-');
+		await mkdir(join(root, 'todos'));
+		await writeFile(
+			join(root, 'todos', 'ok.md'),
+			'---\ntitle: Ok\ndone: false\n---\n',
+		);
+		await writeFile(
+			join(outside, 'secret.md'),
+			'---\ntitle: Secret\ndone: false\n---\n',
+		);
+		await symlink(join(outside, 'secret.md'), join(root, 'todos', 'linked.md'));
+		await mkdir(join(root, 'todos', 'dir.md'));
+		const pipe =
+			spawnSync('mkfifo', [join(root, 'todos', 'pipe.md')]).status === 0;
+
+		const children = expectOk(
+			await createNativeFileBoundary(root).children('todos'),
+		);
+		expect(children.directories).toEqual(['dir.md']);
+		expect(children.files).toEqual([
+			'linked.md',
+			'ok.md',
+			...(pipe ? ['pipe.md'] : []),
+		]);
+
+		const folder = await openNativeFolder({
+			root,
+			definition,
+			git: { author, commitOnEdit: false },
+		});
+		const listed = expectOk(await folder.tables.todos.list());
+		await folder.close();
+		expect(
+			listed.map(({ stem, result }) => [
+				stem,
+				result.error === null ? 'ok' : result.error.name,
+			]),
+		).toEqual([
+			['dir', 'NotAFile'],
+			['linked', 'InvalidPath'],
+			['ok', 'ok'],
+			...(pipe ? [['pipe', 'InvalidPath']] : []),
+		]);
+	});
+});
+
 describe('native pull with a locked index', () => {
 	test('files that landed before the index failed are never reported clean', async () => {
 		const root = await scratch('native-pull-lock-');
@@ -186,7 +239,11 @@ describe('native pull with a locked index', () => {
 		});
 		await writer.files.create('readme.md', 'A\n');
 		await writer.git.commitAndPush();
-		expectOk(await reader.files.remove(expectOk(await reader.files.read('epicenter.json'))));
+		expectOk(
+			await reader.files.remove(
+				expectOk(await reader.files.read('epicenter.json')),
+			),
+		);
 		await reader.git.fetch();
 		expect((await reader.git.pullFastForward()).data?.status).toBe(
 			'fastForwarded',
@@ -243,7 +300,7 @@ describe('native checkpoints refuse what they would misrepresent', () => {
 			git: { author, commitOnEdit: false },
 		});
 		// A plain edit through the folder still saves.
-		expect((await folder.files.overwrite('a.md', 'edited\n')).error).toBeNull();
+		expectOk(await folder.files.overwrite('a.md', 'edited\n'));
 		const outcome = await folder.git.commit();
 		expect(outcome.status).toBe('blocked');
 		if (outcome.status === 'blocked') expect(outcome.reason).toContain(reason);
@@ -254,7 +311,7 @@ describe('native checkpoints refuse what they would misrepresent', () => {
 		await folder.close();
 	}
 
-	test('a tracked symbolic link', async () => {
+	test('committing refuses a tracked symbolic link', async () => {
 		const root = await repository((root) =>
 			symlink('a.md', join(root, 'link.md')),
 		);
@@ -262,7 +319,7 @@ describe('native checkpoints refuse what they would misrepresent', () => {
 		expect((await lstat(join(root, 'link.md'))).isSymbolicLink()).toBe(true);
 	});
 
-	test('a tracked executable file', async () => {
+	test('committing refuses a tracked executable file', async () => {
 		const root = await repository(async (root) => {
 			await writeFile(join(root, 'run.sh'), 'echo hi\n');
 			await chmod(join(root, 'run.sh'), 0o755);
@@ -293,7 +350,7 @@ describe('native checkpoints refuse what they would misrepresent', () => {
 		});
 	});
 
-	test('a filter attribute', async () => {
+	test('committing refuses a filter attribute', async () => {
 		const root = await repository(async (root) => {
 			await writeFile(join(root, '.gitattributes'), '*.bin filter=lfs\n');
 			await writeFile(join(root, 'data.bin'), 'bytes');
@@ -301,21 +358,21 @@ describe('native checkpoints refuse what they would misrepresent', () => {
 		await expectRefused(root, 'data.bin has the Git attribute filter=lfs');
 	});
 
-	test('a normalizing text attribute', async () => {
+	test('committing refuses a normalizing text attribute', async () => {
 		const root = await repository((root) =>
 			writeFile(join(root, '.gitattributes'), '* text=auto\n'),
 		);
 		await expectRefused(root, 'has the Git attribute text=auto');
 	});
 
-	test('core.autocrlf', async () => {
+	test('committing refuses core.autocrlf', async () => {
 		const root = await repository(async () => {});
 		await expectRefused(root, 'core.autocrlf is true', (root) =>
 			git(root, 'config', 'core.autocrlf', 'true').then(() => {}),
 		);
 	});
 
-	test('nested Git data', async () => {
+	test('committing refuses nested Git data', async () => {
 		const root = await repository(async () => {});
 		await expectRefused(root, 'sub/.git is nested Git data', async (root) => {
 			await mkdir(join(root, 'sub', '.git'), { recursive: true });

@@ -211,13 +211,16 @@ export function createTable<TFields>(
 		});
 	}
 
-	/** The filenames directly in the table's directory; none when it does not exist yet. */
+	/**
+	 * Every name directly in the table's directory; none when it does not exist
+	 * yet. A directory named like a row is included so reading reports it.
+	 */
 	async function filenamesOf(): Promise<
 		Result<string[], TableEnumerationError>
 	> {
 		const { data: children, error } = await storage.children(name);
 		if (error !== null) return error.name === 'NotFound' ? Ok([]) : Err(error);
-		return Ok(children.files);
+		return Ok([...children.files, ...children.directories].sort());
 	}
 
 	return {

@@ -61,7 +61,11 @@ export type CapturedFiles = {
 /** Storage used by domain methods; apply includes content-save accounting. */
 export type FolderStorage = {
 	list(): Promise<Result<FileListing, FileError>>;
-	/** Immediate children of a directory: files and subdirectories by name. */
+	/**
+	 * Immediate children of a directory by name: real subdirectories in
+	 * `directories`, every other entry in `files`, including a symbolic link or
+	 * special entry that a read refuses. Nothing present is left out.
+	 */
 	children(
 		directory: string,
 	): Promise<Result<{ files: string[]; directories: string[] }, FileError>>;

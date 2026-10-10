@@ -926,11 +926,11 @@ impl Files {
             if directory.is_empty() && name == ".git" {
                 continue;
             }
-            let kind = entry.file_type().map_err(list)?;
-            if kind.is_file() {
-                children.files.push(name.to_string());
-            } else if kind.is_dir() {
+            // A link or special entry is listed so a read can refuse it.
+            if entry.file_type().map_err(list)?.is_dir() {
                 children.directories.push(name.to_string());
+            } else {
+                children.files.push(name.to_string());
             }
         }
         children.files.sort();

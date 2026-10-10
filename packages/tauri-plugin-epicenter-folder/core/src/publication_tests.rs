@@ -931,3 +931,27 @@ fn a_write_built_on_an_earlier_read_is_refused_once_another_caller_wrote_between
         .unwrap();
     assert_eq!(owner.read("a.md").unwrap().bytes, b"built on theirs");
 }
+
+#[test]
+fn children_lists_links_and_special_entries_that_reads_refuse() {
+    let temp = TempDir::new("children-links");
+    let root = temp.folder("notes");
+    let outside = temp.folder("outside");
+    std::fs::write(outside.join("secret.md"), "secret").unwrap();
+    let owner = open(&root);
+    owner.mkdir("todos/dir.md").unwrap();
+    std::fs::write(root.join("todos/ok.md"), "ok").unwrap();
+    std::os::unix::fs::symlink(outside.join("secret.md"), root.join("todos/linked.md")).unwrap();
+
+    let children = owner.children("todos").unwrap();
+    assert_eq!(children.directories, vec!["dir.md"]);
+    assert_eq!(children.files, vec!["linked.md", "ok.md"]);
+    assert!(matches!(
+        owner.read("todos/linked.md"),
+        Err(FileError::InvalidPath { .. })
+    ));
+    assert!(matches!(
+        owner.read("todos/dir.md"),
+        Err(FileError::NotAFile { .. })
+    ));
+}

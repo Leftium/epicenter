@@ -18,14 +18,10 @@
  * - `granted`, `leaving`, and a `discarded` vote stay fenced and dismiss the
  *   question
  * - Neither choice changes what the page holds: after `ready` and another
- *   page's `cancel`, every draft is back as it was
+ *   page's `cancel`, the open capture and its unsent text are as they were
  */
 import '../svelte-modules.test-support.js';
-import { afterAll, expect, test } from 'bun:test';
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import { captureDefinition } from '@epicenter/capture';
+import { expect, test } from 'bun:test';
 import {
 	DEPARTURE_ANSWER_COMMAND,
 	DEPARTURE_CHANGED_EVENT,
@@ -34,20 +30,16 @@ import {
 	type DepartureStatus,
 	HOST_STOPPED_EVENT,
 } from '@epicenter/epicenter/departure';
-import { openFolder } from '@epicenter/folder/bun';
-import { expectOk } from 'wellcrafted/testing';
+import {
+	openCapture,
+	openCaptures,
+} from '../browser-folder.test-support.js';
 import type {
 	DepartureParticipant,
 	DeparturePort,
 } from './departure.svelte.ts';
 
 const { createDeparture } = await import('./departure.svelte.ts');
-const { createCaptures } = await import('../captures.svelte.ts');
-
-const roots: string[] = [];
-afterAll(async () => {
-	for (const root of roots) await rm(root, { recursive: true, force: true });
-});
 
 type RoundStatus = Extract<DepartureStatus, { round: number }>;
 /** A status before the host numbers it. */
@@ -486,37 +478,21 @@ test('the stopped Bun host is reported to this window', async () => {
 	departure.close();
 });
 
+/** The real store over a real browser folder, with one capture open. */
 async function realPage() {
-	const root = await mkdtemp(join(tmpdir(), 'capture-departure-'));
-	roots.push(root);
-	const folder = expectOk(
-		await openFolder({
-			root,
-			definition: captureDefinition,
-			git: {
-				author: { name: 'Test', email: 'test@localhost' },
-				commitOnEdit: false,
-			},
-		}),
-	);
-	await mkdir(join(root, 'captures'));
-	const file = join(root, 'captures', 'one.md');
-	await writeFile(
-		file,
-		'---\ncapturedAt: 2026-10-01T02:30:00.000Z\n---\n\nA\n\n## Thoughts\n',
-	);
-	const captures = createCaptures({ folder, location: folder.location });
-	await captures.refresh();
-	const draft = captures.open('one');
-	if (!draft) throw new Error('fixture');
-	await draft.ready;
-	return { folder, captures, draft, file };
+	const harness = await openCaptures({
+		'captures/one.md':
+			'---\ncapturedAt: 2026-10-01T02:30:00.000Z\n---\n\nA\n\n## Thoughts\n',
+	});
+	const { captures } = harness;
+	await captures.open('one', 'capture');
+	return { harness, captures, ...openCapture(captures) };
 }
 
-test('a page that answers ready changes nothing it holds; when another page cancels, every draft is back as it was', async () => {
-	const { folder, captures, draft } = await realPage();
-	draft.inputText('Typed: saves on its own');
-	draft.inputNewThought('Held: never added on its own');
+test('a page that answers ready changes nothing it holds; when another page cancels, everything is back as it was', async () => {
+	const { harness, captures, session, form } = await realPage();
+	form.inputText('Typed: saves on its own');
+	form.inputNewThought('Held: never added on its own');
 	captures.inputNewCapture('A new capture, not added');
 	const host = scriptedHost();
 	const departure = createDeparture(host.port);
@@ -527,7 +503,7 @@ test('a page that answers ready changes nothing it holds; when another page canc
 	await flush();
 	// Fenced as the round was read, before the page settled anything.
 	expect(captures.fenced).toBe(true);
-	draft.inputNewThought('refused');
+	form.inputNewThought('refused');
 	await Bun.sleep(20);
 	expect(departure.prompt).toEqual({ intent: 'quit', held: 2 });
 
@@ -535,33 +511,28 @@ test('a page that answers ready changes nothing it holds; when another page canc
 	await flush();
 	expect(host.answers.at(-1)?.answer).toBe('ready');
 	expect(departure.fenced).toBe(true);
-	expect(draft.retired).toBe(false);
-	expect(draft.newThought).toBe('Held: never added on its own');
+	expect(captures.opened?.kind).toBe('capture');
+	expect(form.newThought).toBe('Held: never added on its own');
 	expect(captures.newCapture).toBe('A new capture, not added');
 
 	// Another page chose Keep working: the round ends.
 	host.idle();
 	await flush();
 	expect(captures.fenced).toBe(false);
-	expect(draft.admitted).toBe(true);
-	expect(draft.newThought).toBe('Held: never added on its own');
-	expect(draft.text).toBe('Typed: saves on its own');
-	draft.inputNewThought('Held, and now added');
-	expect(draft.addThought()).toBe(true);
+	expect(session.locked).toBe(false);
+	expect(form.newThought).toBe('Held: never added on its own');
+	expect(form.text).toBe('Typed: saves on its own');
+	form.inputNewThought('Held, and now added');
+	expect(form.addThought()).toBe(true);
 	departure.close();
-	await captures.close();
-	await folder.close();
+	await harness.close();
 });
 
 test('with a failed save, discarding is only a vote: the text and the failure stay', async () => {
-	const { folder, captures, draft, file } = await realPage();
-	draft.inputText('Mine');
-	await draft.settle();
-	await rm(file);
-	draft.inputText('Mine, after the file went');
-	await draft.settle();
-	expect(draft.notice).toMatchObject({ kind: 'failed', missing: true });
-	const mine = draft.source;
+	const { harness, captures, session, form } = await realPage();
+	harness.failNextWrite('captures/one.md');
+	form.inputText('Mine');
+	expect((await session.settled()).status).toBe('error');
 	const host = scriptedHost();
 	const departure = createDeparture(host.port);
 	await departure.ready;
@@ -573,16 +544,17 @@ test('with a failed save, discarding is only a vote: the text and the failure st
 	expect(departure.prompt).toEqual({ intent: 'restart', held: 1 });
 	departure.discard();
 	await flush();
-	expect(draft.source).toBe(mine);
-	expect(draft.notice).toMatchObject({ kind: 'failed', missing: true });
-	expect(await Bun.file(file).exists()).toBe(false);
+	expect(form.text).toBe('Mine');
+	expect(session.state.status).toBe('error');
 
 	host.idle();
 	await flush();
-	expect(draft.source).toBe(mine);
-	expect(draft.notice).toMatchObject({ kind: 'failed', missing: true });
+	expect(form.text).toBe('Mine');
+	expect(session.state.status).toBe('error');
 	expect(captures.fenced).toBe(false);
+	session.retry();
+	expect((await session.settled()).status).toBe('saved');
+	expect(await harness.text('captures/one.md')).toContain('\nMine\n');
 	departure.close();
-	await captures.close();
-	await folder.close();
+	await harness.close();
 });

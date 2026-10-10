@@ -30,49 +30,49 @@ Unknown frontmatter keys are kept.
 
 ## Reading a capture
 
-`parseCapture(source)` reads the source as the capture text and its ordered
-thoughts. markdown-it decides what the blocks are and which lines each owns;
+The captures table reads a file as a row: its `fields` and its Markdown
+`body`. `captureBody.decode(row.body)` reads the body as the capture text and
+its ordered thoughts. markdown-it decides what the blocks are and which lines each owns;
 this package maps those ranges to offsets in the source.
 
 | Part | Rule |
 | --- | --- |
-| Capture text | Everything between the frontmatter and the one root-level `## Thoughts` heading. With no such heading, the whole body. |
+| Capture text | Everything in the body before the one root-level `## Thoughts` heading, less one blank separator line on each side. With no such heading, the whole body. |
 | Thoughts | The items of the one bullet list directly under that heading. An item owns what Markdown gives it: continuation lines, later paragraphs, nested lists, code. |
 | Everything else | Blocks after that list, and everything from the next root-level heading on, are kept and never read as thoughts. `hasOtherContent` says they exist. |
 
 A line reading `## Thoughts` inside a code fence, an HTML block, a block
 quote, or a list item is not the heading.
 
-A document is refused, with `refusal` saying why, when the source is not a
-capture's or its layout is ambiguous. Its text and thoughts are then not
-offered, and the source stays editable as text:
+A body is refused, with the refusal saying why, when its layout is
+ambiguous. Its text and thoughts are then not offered, and the file stays
+editable as text. A file whose frontmatter does not parse, or whose
+`capturedAt` is not valid, is not a row at all: the table reports it as
+`InvalidRow` with its issues, and `parseRow(captureDefinition.tables.captures,
+text)` reads typed text the same way.
 
 | `refusal.code` | Cause |
 | --- | --- |
-| `missing-frontmatter` | The source does not start with a `---` line. Markdown without frontmatter lines is not read as a capture's text, and no operation adds them. |
-| `unclosed-frontmatter` | The opening `---` has no closing line. |
-| `unparsed` | The frontmatter is framed but does not parse. `parseCapture` reads no YAML; a caller that asked the capture table (`inspectRow(captureDefinition.tables.captures, text)`) passes its reason to `unparsedCapture(source, message)`. |
 | `duplicate-heading` | More than one root-level heading reads "Thoughts". |
 | `heading-form` | The Thoughts heading is not `## Thoughts` at the start of a line. |
 | `section-shape` | Something other than a bullet list comes first under the heading, or the section holds a second bullet list. |
 
 ## Changing a capture
 
-The open file has one Folder row editor. Source reads and replaces
-`editor.row.text`. Capture reads `editor.row.body` through `captureBody.decode`
-and submits the encoded body through `editor.set({ ...editor.row, body })`.
-Folder owns frontmatter, validation, the current input, and its save queue.
-Capture owns body interpretation and reconstruction.
+An app holds the open row and saves it; this package owns only the body.
+Decode the row's body, compose the complete desired value, encode it over the
+current body, and save the row with that body. The folder formats the
+frontmatter and keeps keys Capture does not declare.
 
 ```text
-editor.row.body -> decode -> { text, thoughts }
-                              | compose the desired value
-editor.set       <- body <- encode(desired, editor.row.body)
+row.body -> decode -> { text, thoughts }
+                        | compose the desired value
+row.body <- encode(desired, row.body)
 ```
 
 Both codec operations return Wellcrafted Results. Decoding reports ambiguous
 Thoughts layouts. Encoding verifies that the body reads back as the intended
-text and thoughts before returning anything to submit.
+text and thoughts before returning anything to save.
 
 Thoughts are `string[]`, selected by position. Callers compose a complete value:
 
@@ -95,18 +95,17 @@ captureBody.encode({ ...current, thoughts: [...current.thoughts, input] }, body)
 A changed list uses consistent `-` bullets, two-space continuation indentation,
 and the body's line ending. An unchanged list retains its original bytes.
 Encoding preserves surrounding body content and verifies the resulting text and
-thoughts. Folder formats frontmatter canonically for `set`; Source preserves the
-whole typed file through `setText`.
+thoughts.
 
-An editing session holds its starting list and selected index. The draft decodes
-once per observed source generation, and a delayed edit applies only while its
-starting list is still current. Delete confirmation holds the list it showed,
-too. The form also has an edit-instance identity. These checks live in the app,
-so the codec needs no thought IDs or provenance. Refused input stays above the
-view, including when source changes away and back to the same bytes.
+Positions go stale when the body changes under them, so an app checks that a
+delayed edit's starting list, or the thought an edit started from, is still
+current before it encodes. The codec needs no thought IDs.
 
-`parseCapture(source)` remains the whole-file reader for snapshots and legacy
-inspection. It does not participate in the open Capture editor's write path.
+`parseCapture(source)` reads a whole file, frontmatter lines included, the
+same way, and refuses source without both frontmatter lines
+(`missing-frontmatter`, `unclosed-frontmatter`). It does not parse YAML and
+is not used to edit a capture.
+`excerpt(text)` shortens capture text for a list.
 
 `fromTextarea(original, value, newline)` carries a textarea's value (always
 LF) back into source that may use CRLF, rewriting only the changed middle.
@@ -148,7 +147,9 @@ with Yjs text bodies, `entries` from the earlier recursive model, and
 here that stays on `@epicenter/app`, because it describes a Yjs store.
 
 `runLegacyImport` takes the folder's `read`, `create`, and `replace`. Every
-document, the bundle, and the report are saved with `create`, which refuses an
+document is formatted as the captures table writes a row (`formatRow`), so
+an imported file is in the form a save of it would write. Every document,
+the bundle, and the report are saved with `create`, which refuses an
 occupied path. Only the receipt is ever saved with `replace`, and only over
 the exact receipt the import read.
 
@@ -188,8 +189,8 @@ each document the import would write:
 | --- | --- |
 | The receipt names its source | Skipped, even if the file was since edited or deleted. |
 | The destination is absent | Created, then recorded. |
-| The destination holds the same bytes | Recorded. This is an earlier run that wrote the file and stopped before the receipt. |
-| The destination holds other bytes | Reported as `differs`, left alone, and not recorded. |
+| The destination holds the same capture | Recorded. This is an earlier run that wrote the file and stopped before the receipt. The same capture is text that reads as the same row, so a file an earlier version wrote in another frontmatter style counts; text that is not a valid row counts only byte for byte. |
+| The destination holds another capture | Reported as `differs`, left alone, and not recorded. |
 
 Files are written first and the receipt last, so a run that stops partway is
 finished by running it again. A row whose body could not be read is neither
@@ -218,4 +219,5 @@ bun run --cwd packages/capture typecheck
 
 The document tests compare every operation's output with literal expected
 bytes. The legacy tests export from a real in-memory store and import into a
-real directory.
+real directory, including a destination an earlier version wrote in another
+frontmatter style.

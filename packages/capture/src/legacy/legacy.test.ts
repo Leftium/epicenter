@@ -13,8 +13,9 @@
  * - A body that could not be read is reported apart from an empty one, and
  *   is neither imported nor recorded
  * - Retry: a receipted source is skipped even after its file is deleted, an
- *   absent destination is created, an identical one is recorded, and a
- *   differing one is reported and left alone
+ *   absent destination is created, one holding the same capture is recorded
+ *   (in whatever frontmatter style an earlier version wrote), and one
+ *   holding another capture is reported and left alone
  * - A receipt that could not be written leaves a run that a retry completes
  * - Thoughts arriving after their capture was imported become a separate
  *   document; the imported capture is not patched
@@ -28,7 +29,7 @@ import { openMemory } from '@epicenter/app/memory';
 import { openFolder } from '@epicenter/folder/bun';
 import * as Y from '@y/y';
 import { expectErr, expectOk } from 'wellcrafted/testing';
-import { captureDefinition, parseCapture } from '../index.js';
+import { captureBody, captureDefinition } from '../index.js';
 import {
 	exportLegacyBundle,
 	type ImportFiles,
@@ -208,7 +209,7 @@ test('a capture imports as its exact text and its thoughts in position order', a
 	expect(report.documents.map((item) => item.status)).toEqual(['created']);
 	const [file] = await captureFiles();
 	expect(await text(`captures/${file}`)).toBe(
-		'---\ncapturedAt: 2026-01-01T00:00:00.000Z\nimportedFrom: "so.epicenter.capture/captures/c1"\n---\n\n  Dinner\nFriday  \n\n\n## Thoughts\n\n- first\n- second\n  line two\n',
+		'---\ncapturedAt: "2026-01-01T00:00:00.000Z"\nimportedFrom: so.epicenter.capture/captures/c1\n---\n\n  Dinner\nFriday  \n\n\n## Thoughts\n\n- first\n- second\n  line two\n',
 	);
 	expect(report.diagnostics.emptyThoughts).toEqual(['t3']);
 
@@ -216,12 +217,10 @@ test('a capture imports as its exact text and its thoughts in position order', a
 	const listed = expectOk(await folder.tables.captures.list());
 	expect(listed).toHaveLength(1);
 	const entry = expectOk(listed[0]!.result);
-	expect(entry.parseError).toBeUndefined();
-	expect(entry.issues).toEqual([]);
-	expect(String(entry.fields.capturedAt)).toBe('2026-01-01T00:00:00.000Z');
-	const document = parseCapture(entry.text);
-	expect(document.text).toBe('  Dinner\nFriday  \n');
-	expect(document.thoughts).toEqual(['first', 'second\nline two']);
+	expect(String(entry.row.fields.capturedAt)).toBe('2026-01-01T00:00:00.000Z');
+	const body = expectOk(captureBody.decode(entry.row.body));
+	expect(body.text).toBe('  Dinner\nFriday  \n');
+	expect(body.thoughts).toEqual(['first', 'second\nline two']);
 	await folder.close();
 });
 
@@ -252,10 +251,10 @@ test('entries keep their timestamp and parent; orphans get a labelled export dat
 	const entry = files.find((name) => name.includes('-e-')) ?? '';
 	const orphan = files.find((name) => name.includes('-o-')) ?? '';
 	expect(await text(`captures/${entry}`)).toBe(
-		'---\ncapturedAt: 2025-06-01T08:00:00.000Z\nimportedFrom: "so.epicenter.capture/entries/e2"\nlegacyParentId: "e1"\n---\n\nChild entry\n\n## Thoughts\n',
+		'---\ncapturedAt: "2025-06-01T08:00:00.000Z"\nimportedFrom: so.epicenter.capture/entries/e2\nlegacyParentId: e1\n---\n\nChild entry\n\n## Thoughts\n',
 	);
 	expect(await text(`captures/${orphan}`)).toBe(
-		'---\ncapturedAt: 2026-10-01T02:30:00.000Z\ncapturedAtIs: "export time, not when these were written"\nimportedFrom: "so.epicenter.capture/orphans/gone"\n---\n\nRecovered thoughts without their capture.\n\nThe capture they belong to (old ID `gone`) was not in the export, so its text and date are unknown. The date above is when the export was made, not when these were written.\n\nOld thought IDs, in order: o1, o2\n\n## Thoughts\n\n- earlier\n- later\n',
+		'---\ncapturedAt: "2026-10-01T02:30:00.000Z"\ncapturedAtIs: export time, not when these were written\nimportedFrom: so.epicenter.capture/orphans/gone\n---\n\nRecovered thoughts without their capture.\n\nThe capture they belong to (old ID `gone`) was not in the export, so its text and date are unknown. The date above is when the export was made, not when these were written.\n\nOld thought IDs, in order: o1, o2\n\n## Thoughts\n\n- earlier\n- later\n',
 	);
 	await folder.close();
 });
@@ -391,13 +390,13 @@ test('a failed receipt is reported, and the retry records the identical files', 
 	await folder.close();
 });
 
-test('a destination with an added BOM is reported, left alone, and not recorded', async () => {
+test('a destination holding another capture is reported, left alone, and not recorded', async () => {
 	const { folder, text } = await setup();
 	const plan = await planLegacyImport(DINNER, undefined);
 	const document = plan.documents[0];
 	if (document === undefined) throw new Error('fixture');
 	const destination = document.path;
-	const changed = `\uFEFF${document.source}`;
+	const changed = document.source.replace('Dinner', 'Lunch');
 	expectOk(await folder.files.create(destination, changed));
 
 	const report = await runLegacyImport(folder.files, DINNER);
@@ -408,6 +407,36 @@ test('a destination with an added BOM is reported, left alone, and not recorded'
 	expect(expectErr(await folder.files.read(report.receiptPath)).name).toBe(
 		'NotFound',
 	);
+	await folder.close();
+});
+
+test('a destination an earlier version wrote in another frontmatter style is the same capture, and is recorded', async () => {
+	const { folder, text } = await setup();
+	const plan = await planLegacyImport(DINNER, undefined);
+	const document = plan.documents[0];
+	if (document === undefined) throw new Error('fixture');
+	// JSON-style frontmatter and a byte-order mark: other bytes, the same row.
+	const earlier = `\uFEFF${document.source
+		.replace(
+			'capturedAt: "2026-01-01T00:00:00.000Z"',
+			'"capturedAt": "2026-01-01T00:00:00.000Z"',
+		)
+		.replace(
+			'importedFrom: so.epicenter.capture/captures/c1',
+			'"importedFrom": "so.epicenter.capture/captures/c1"',
+		)}`;
+	expect(earlier).not.toBe(document.source);
+	expectOk(await folder.files.create(document.path, earlier));
+
+	const report = await runLegacyImport(folder.files, DINNER);
+	expect(report.documents.map((item) => item.status)).toEqual(['identical']);
+	expect(report.complete).toBe(true);
+	expect(report.receipt.status).toBe('written');
+	// Recorded, and left exactly as it was.
+	expect(await text(document.path)).toBe(earlier);
+	const again = await runLegacyImport(folder.files, DINNER);
+	expect(again.documents).toEqual([]);
+	expect(again.alreadyImported).toEqual([document.identity]);
 	await folder.close();
 });
 

@@ -18,9 +18,6 @@
 	const opening = openCaptureHost().then(async (host) => {
 		const captures = createCaptures(host);
 		departure?.attach(captures.departure);
-		// Listen before the first read, so no change falls between them. The
-		// folder drops the listener when it closes.
-		host.onExternalChange(() => void captures.refresh());
 		await captures.refresh();
 		return { host, captures };
 	});

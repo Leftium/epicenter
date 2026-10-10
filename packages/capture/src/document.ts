@@ -17,8 +17,6 @@ export type Newline = '\n' | '\r\n';
 export type RefusalCode =
 	| 'missing-frontmatter'
 	| 'unclosed-frontmatter'
-	/** The frontmatter is framed but does not parse; the capture table says why. */
-	| 'unparsed'
 	| 'duplicate-heading'
 	| 'heading-form'
 	| 'section-shape'
@@ -187,28 +185,12 @@ function rootBlocks(body: string): RootBlock[] {
 }
 
 /**
- * A document for source the capture table could not parse, with the table's
- * reason. Nothing is read from it: the whole file is edited as Source.
- */
-export function unparsedCapture(
-	source: string,
-	message: string,
-): CaptureDocument {
-	return refused(
-		source,
-		source.includes('\r\n') ? '\r\n' : '\n',
-		'unparsed',
-		message,
-	);
-}
-
-/**
  * Read a capture's text and thoughts from its source. The source must have
  * both frontmatter lines: Markdown without them is not a capture's body, and
  * no operation adds them. Whether the frontmatter between them parses is the
- * captures table's question, answered by `inspectRow` with its definition,
- * which interprets the text it is given and does no folder I/O; a caller that
- * has that answer uses `unparsedCapture` for source that does not.
+ * captures table's question, answered by `parseRow` from `@epicenter/folder`
+ * with the table's definition, which reads the text it is given and does no
+ * folder I/O.
  */
 export function parseCapture(source: string): CaptureDocument {
 	const frame = frameRowText(source);
@@ -696,9 +678,9 @@ export function composeBody(
 		: { body, refusal: undefined, absorbed: true };
 }
 
-/** A short excerpt of the capture text for a list. */
-export function excerpt(document: CaptureDocument, limit = 240): string {
-	const full = (document.text ?? toTextarea(document.source)).trim();
+/** A short excerpt of capture text for a list. */
+export function excerpt(text: string, limit = 240): string {
+	const full = toTextarea(text).trim();
 	if (full.length <= limit) return full;
 	return `${full.slice(0, limit).trimEnd()}…`;
 }

@@ -24,23 +24,9 @@ export const CAPTURE_FOLDER_ID = 'so.epicenter.capture';
 
 /** The folder surface Capture uses. */
 export type CaptureFolder = {
-	readonly tables: {
-		/**
-		 * `edit` acquires the row editor an open capture is typed into, valid
-		 * or not; each of its saves replaces the existing file whole and never
-		 * creates one. `delete` removes only the reviewed version.
-		 */
-		readonly captures: Pick<
-			FileTable<CaptureFields>,
-			'list' | 'get' | 'create' | 'delete' | 'edit'
-		>;
-	};
-	/**
-	 * Exact source at a literal path, for copies, restores, and imports.
-	 * `create` needs the path unoccupied and `replace` needs the file to be the
-	 * one that was read.
-	 */
-	readonly files: Pick<FolderFiles, 'read' | 'create' | 'replace'>;
+	readonly tables: { readonly captures: FileTable<CaptureFields> };
+	/** A capture's exact text for repair, and the legacy import's files. */
+	readonly files: FolderFiles;
 	readonly git: Pick<FolderGit, 'snapshot' | 'subscribe' | 'commit'>;
 };
 
@@ -48,11 +34,6 @@ export type CaptureHost = {
 	readonly folder: CaptureFolder;
 	/** Where the folder says its files are. For showing; never joined onto. */
 	readonly location: FolderLocation;
-	/**
-	 * Runs `listener` when files may have changed outside this page. A hint to
-	 * reread, never file contents. Returns a stop function.
-	 */
-	onExternalChange(listener: () => void): () => void;
 	/**
 	 * Let go of this page's use of the folder after the collection has finished
 	 * its intended saves. Calls that reach storage after this are refused.

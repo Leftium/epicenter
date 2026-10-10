@@ -3,9 +3,9 @@
  * history and no remote. It opens through the browser entry only, which
  * refuses inside the desktop app instead of opening storage there.
  *
- * Another tab of this app writes the same folder. The folder tells each tab
- * which paths the others saved, as a hint to reread; the page also rereads
- * when it regains focus.
+ * Another tab of this app writes the same folder. The page reads the
+ * folder again when the person returns to it; every save is guarded, so a
+ * change another tab made is a conflict, never overwritten.
  */
 import { captureDefinition } from '@epicenter/capture';
 import { openFolder } from '@epicenter/folder/browser';
@@ -31,7 +31,6 @@ export const openCaptureHost: OpenCaptureHost = async () => {
 	return {
 		folder,
 		location: folder.location,
-		onExternalChange: (listener) => folder.onFilesChanged(() => listener()),
 		close: () => folder.close(),
 	};
 };

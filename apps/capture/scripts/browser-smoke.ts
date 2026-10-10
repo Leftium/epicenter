@@ -97,12 +97,26 @@ async function saved(page: Page) {
 	}
 }
 
-/** Read the complete file through Files, then return to its capture. */
+/** The open capture's file, read through Edit as text, then back to the capture. */
 async function source(page: Page) {
-	await page.getByRole('button', { name: 'Open in Files', exact: true }).first().click();
-	const text = await page.getByLabel('File text').inputValue();
+	await page.getByRole('button', { name: 'Edit as text', exact: true }).first().click();
+	const text = await fileText(page).inputValue();
 	await page.getByRole('button', { name: 'Open as capture', exact: true }).click();
+	await page.getByLabel('Capture text').waitFor();
 	return text;
+}
+
+const fileText = (page: Page) => page.getByLabel(/^Contents of captures\//);
+
+/** Open the capture whose timeline entry shows `text`. */
+async function openFromTimeline(page: Page, text: string) {
+	await page
+		.getByLabel('Timeline captures')
+		.getByRole('button')
+		.filter({ hasText: text })
+		.first()
+		.click();
+	await page.getByLabel('Capture text').waitFor();
 }
 
 const thoughts = (page: Page) =>
@@ -143,20 +157,18 @@ try {
 	assert.equal(await first.getByLabel('Capture text').inputValue(), text);
 	// Ctrl+Enter adds it, and the new capture opens ready for a thought.
 	await first.getByLabel('Capture text').press('Control+Enter');
-	await first.getByRole('button', { name: 'Open in Files', exact: true }).waitFor();
+	await first.getByRole('button', { name: 'Edit as text', exact: true }).waitFor();
 	await first.waitForFunction(
 		() => document.activeElement?.id === 'new-thought',
 	);
-	const captureUrl = first.url();
-	// Files shows the file exactly as it was created; a save writes its
-	// frontmatter in the canonical form below.
+	// The file is in the form a save writes: plain YAML frontmatter.
 	const created = await source(first);
 	const at =
-		/^---\ncapturedAt: (\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z)\n---\n\nDinner with Sebastian\nFriday at seven\nBring the invitation\.\n\n## Thoughts\n$/.exec(
+		/^---\ncapturedAt: "(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z)"\n---\n\nDinner with Sebastian\nFriday at seven\nBring the invitation\.\n\n## Thoughts\n$/.exec(
 			created,
 		)?.[1];
 	assert(at, `unexpected created source:\n${created}`);
-	const head = `---\n"capturedAt": "${at}"\n---`;
+	const head = `---\ncapturedAt: "${at}"\n---`;
 
 	// 3. Multiline thoughts: add, edit, reorder, delete. The file is the list.
 	for (const thought of [
@@ -189,13 +201,12 @@ try {
 		`${head}\n\n${text}\n\n## Thoughts\n\n- A question for next time\n- Moving to Singapore\n  A longer thought\n`,
 	);
 
-	// 4. Files edits complete text and stays a file editor after saving,
-	// frontmatter included.
-	await first.getByRole('button', { name: 'Open in Files', exact: true }).click();
-	const edited = `${head.replace(/\n---$/, '\n"unknownKey": "kept"\n---')}\n\n${text}\n\n## Thoughts\n\n- A question for next time\n  - nested point\n- Moving to Singapore\n  A longer thought\n- Typed in source\n\nTrailing note.\n`;
-	await first.getByLabel('File text').fill(edited);
+	// 4. Edit as text saves the complete file as typed, frontmatter included,
+	// and Open as capture goes back.
+	await first.getByRole('button', { name: 'Edit as text', exact: true }).click();
+	const edited = `${head.replace(/\n---$/, '\nunknownKey: kept\n---')}\n\n${text}\n\n## Thoughts\n\n- A question for next time\n  - nested point\n- Moving to Singapore\n  A longer thought\n- Typed in source\n\nTrailing note.\n`;
+	await fileText(first).fill(edited);
 	await saved(first);
-	// Structured editing requires explicit navigation back to the capture.
 	await first.getByRole('button', { name: 'Open as capture', exact: true }).click();
 	await first.getByLabel('Capture text').waitFor();
 	assert.deepEqual(await thoughts(first), [
@@ -203,7 +214,6 @@ try {
 		'Moving to Singapore\nA longer thought',
 		'Typed in source',
 	]);
-	await saved(first);
 
 	if (artifacts)
 		await first.screenshot({
@@ -211,88 +221,76 @@ try {
 			fullPage: true,
 		});
 
-	// 5. Reload: the saved file is what comes back.
+	// 5. Reload: the page returns to the timeline, and the saved file is what
+	// comes back.
 	await first.reload();
-	await first.getByLabel('Thoughts', { exact: true }).waitFor();
+	await openFromTimeline(first, 'Dinner with Sebastian');
 	assert.equal(await source(first), edited);
 
-	// 6. Another page edits the file. An open capture keeps what it opened
-	// with until the person reloads it.
+	// 6. Another page edits the file. The first page's next save asks, and
+	// Reload theirs shows the other page's text.
 	const second = await context.newPage();
 	second.on('pageerror', (error) => errors.push(`second: ${error.message}`));
-	await second.goto(captureUrl);
-	await second.getByLabel('Capture text').waitFor();
+	await second.goto(app);
+	await openFromTimeline(second, 'Dinner with Sebastian');
 	await second.getByLabel('Capture text').fill('Changed in the other window');
 	await saved(second);
-	assert.equal(await first.getByLabel('Capture text').inputValue(), text);
-	const reloadFromFile = async (page: Page) => {
-		await page.getByRole('button', { name: 'More capture actions' }).click();
-		await page.getByRole('menuitem', { name: 'Reload from file' }).click();
-	};
-	await reloadFromFile(first);
+	await first.getByLabel('Capture text').fill('Mine');
+	await first.getByText('This capture changed elsewhere').waitFor();
+	await first.getByRole('button', { name: 'Reload theirs' }).click();
 	await first.waitForFunction(
 		() =>
 			(document.querySelector('#capture-text') as HTMLTextAreaElement)
 				?.value === 'Changed in the other window',
 	);
 
-	// 7. The latest save wins over a change the page never read.
+	// 7. Keep mine saves over a change made elsewhere.
 	await first.getByLabel('Capture text').fill('Saved over it');
 	await saved(first);
-	assert.equal(
-		await second.getByLabel('Capture text').inputValue(),
-		'Changed in the other window',
+	await second.getByLabel('Capture text').fill('Second again');
+	await second.getByText('This capture changed elsewhere').waitFor();
+	await second.getByRole('button', { name: 'Keep mine' }).click();
+	await saved(second);
+	await first.getByRole('button', { name: 'Edit as text', exact: true }).click();
+	assert(
+		(await fileText(first).inputValue()).includes('\n\nSecond again\n\n'),
 	);
-	await reloadFromFile(second);
-	await second.waitForFunction(
-		() =>
-			(document.querySelector('#capture-text') as HTMLTextAreaElement)
-				?.value === 'Saved over it',
-	);
+	await first.getByRole('button', { name: 'Back to timeline' }).click();
+	await first.getByRole('heading', { name: 'Timeline' }).waitFor();
 
-	// 8. Unsent thought text holds a reload back.
+	// 8. Unadded thought text holds a reload back.
 	let asked = 0;
-	first.on('dialog', (dialog) => {
+	second.on('dialog', (dialog) => {
 		asked++;
 		void dialog.dismiss();
 	});
-	await first.getByLabel('Add a thought').fill('typed, not added');
-	await first.reload({ timeout: 5000 }).catch(() => {});
-	assert.equal(asked, 1, 'unsent thought text is protected');
+	await second.getByLabel('Add a thought').fill('typed, not added');
+	await second.reload({ timeout: 5000 }).catch(() => {});
+	assert.equal(asked, 1, 'unadded thought text is protected');
 	assert.equal(
-		await first.getByLabel('Add a thought').inputValue(),
+		await second.getByLabel('Add a thought').inputValue(),
 		'typed, not added',
 	);
-	await first.getByLabel('Add a thought').fill('');
+	await second.getByLabel('Add a thought').fill('');
+	await second.getByRole('button', { name: 'Back to timeline' }).click();
 
-	// 9. Ambiguous Thoughts markup names its repair path and opens in Files.
-	await second.getByRole('button', { name: 'Timeline', exact: true }).click();
+	// 9. Ambiguous Thoughts markup opens as text, with why.
 	await second.getByRole('button', { name: 'New capture' }).click();
-	await second.getByLabel('Capture text').fill('Pasted article\n\n## Thoughts\n\n- belongs to the article');
+	await second
+		.getByLabel('Capture text')
+		.fill('Pasted article\n\n## Thoughts\n\n- belongs to the article');
 	await second.getByRole('button', { name: 'Add capture' }).click();
-	await second.getByRole('alert', { name: 'Needs repair' }).waitFor();
-	await second.reload();
-	await second.getByRole('alert', { name: 'Needs repair' }).waitFor();
-	assert.equal(await second.getByLabel('Capture text').count(), 0);
-	await second.getByRole('button', { name: 'Open in Files', exact: true }).first().click();
-	assert((await second.getByLabel('File text').inputValue()).includes('- belongs to the article\n\n## Thoughts\n'));
-
-	// 10. Deleting reviews the saved file, then removes it.
-	await second.getByRole('button', { name: 'More capture actions' }).click();
-	await second.getByRole('menuitem', { name: 'Delete capture…' }).click();
-	const review = second.getByRole('dialog', {
-		name: 'Permanently delete this capture file?',
-	});
+	await second.getByRole('status', { name: 'Needs repair' }).waitFor();
 	assert(
-		(await review.getByLabel('Saved file').innerText()).includes(
-			'- belongs to the article',
+		(await fileText(second).inputValue()).includes(
+			'- belongs to the article\n\n## Thoughts\n',
 		),
 	);
-	await review
-		.getByRole('button', { name: 'Permanently delete', exact: true })
-		.click();
-	await second.getByRole('heading', { name: 'Files', exact: true }).waitFor();
-	await second.getByRole('button', { name: 'Timeline', exact: true }).click();
+
+	// 10. Deleting asks, then removes the file.
+	await second.getByRole('button', { name: 'Delete…' }).click();
+	await second.getByRole('button', { name: 'Delete', exact: true }).click();
+	await second.getByRole('heading', { name: 'Timeline' }).waitFor();
 	assert.equal(
 		await second.getByLabel('Timeline captures').getByRole('button').count(),
 		1,
@@ -316,10 +314,7 @@ try {
 		.click();
 	await result.getByText('0 files created').waitFor();
 	await result.getByText('6 imported before and left as they are').waitFor();
-	await second.getByRole('button', { name: 'Timeline' }).click();
-	await second.getByRole('button', { name: 'Files', exact: true }).click();
-	assert.equal(await second.getByLabel('Capture files').getByRole('button').count(), 7);
-	await second.getByRole('button', { name: 'Timeline', exact: true }).click();
+	await second.getByRole('button', { name: 'Capture', exact: true }).click();
 	await second
 		.getByLabel('Timeline captures')
 		.getByRole('button')
@@ -343,7 +338,7 @@ try {
 
 	assert.deepEqual(errors, []);
 	console.log(
-		'Capture browser check passed: no sign-in, exact saved Markdown, multiline thoughts added, edited, reordered, and deleted, Files editing, reload persistence, explicit Reload from file and latest-save-wins across two pages, a leave warning for unsent text, an ambiguous capture repaired through Files, reviewed deletion, and an idempotent import from a bundle file.',
+		'Capture browser check passed: no sign-in, exact saved Markdown, multiline thoughts added, edited, reordered, and deleted, Edit as text, reload persistence, the conflict prompt across two pages, a leave warning for unadded text, an ambiguous capture opened as text, deletion, and an idempotent import from a bundle file.',
 	);
 } catch (cause) {
 	console.error(cause);

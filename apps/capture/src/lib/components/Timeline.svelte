@@ -1,27 +1,23 @@
 <script lang="ts">
 	import * as Alert from '@epicenter/ui/alert';
-	import { Badge } from '@epicenter/ui/badge';
 	import { Button } from '@epicenter/ui/button';
 	import * as Empty from '@epicenter/ui/empty';
 	import * as Field from '@epicenter/ui/field';
 	import * as Item from '@epicenter/ui/item';
 	import * as Modal from '@epicenter/ui/modal';
 	import { onDestroy } from 'svelte';
-	import type { CaptureRow, Captures } from '$lib/captures.svelte.js';
 	import { Textarea } from '@epicenter/ui/textarea';
+	import type { Captures } from '$lib/captures.svelte.js';
+	import { openItem } from '$lib/item-actions.js';
 
 	let {
 		captures,
-		onOpen,
-		onRepair,
 		onCreated,
 		onRecover,
 	}: {
 		captures: Captures;
-		onOpen: (stem: string) => void;
-		/** Show a file that does not read as a capture in Files, to repair it. */
-		onRepair: (stem: string) => void;
-		onCreated: (stem: string) => void;
+		/** The new capture is open; the next thing to type is a thought. */
+		onCreated: () => void;
 		onRecover: () => void;
 	} = $props();
 
@@ -49,28 +45,20 @@
 		}
 		creating = true;
 		try {
-			const result = await captures.create();
-			if (!result.ok) {
-				createProblem = `The save could not be confirmed: ${result.message} Your text is still here.`;
+			const problem = await captures.create();
+			if (problem !== undefined) {
+				createProblem = problem;
 				return;
 			}
 			createProblem = '';
 			created = true;
 			dialogOpen = false;
-			onCreated(result.stem);
+			onCreated();
 		} finally {
 			creating = false;
 		}
 	}
 </script>
-
-{#snippet state(row: CaptureRow)}
-	{#if row.attention === 'removed'}<Badge variant="destructive">File removed</Badge>
-	{:else if row.attention === 'failed'}<Badge variant="destructive">Save failed</Badge>
-	{:else if row.attention === 'unconfirmed'}<Badge variant="destructive">Save not confirmed</Badge>
-	{:else if row.attention === 'deletion'}<Badge variant="destructive">Delete not confirmed</Badge>
-	{:else if row.unsettled}<Badge variant="outline">Not saved</Badge>{/if}
-{/snippet}
 
 {#snippet newCaptureButton()}
 	<Button aria-haspopup="dialog" onclick={() => (dialogOpen = true)}>
@@ -81,7 +69,7 @@
 <div class="mb-4 flex min-h-9 items-center justify-between gap-4">
 	<h1 class="text-lg font-semibold tracking-tight">Timeline</h1>
 	<!-- The empty timeline holds this button itself. -->
-	{#if captures.editable.length || !captures.loaded}{@render newCaptureButton()}{/if}
+	{#if captures.timeline.length || !captures.loaded}{@render newCaptureButton()}{/if}
 </div>
 
 <Modal.Root bind:open={dialogOpen}>
@@ -132,10 +120,10 @@
 	</Modal.Content>
 </Modal.Root>
 
-{#if captures.editable.length}
+{#if captures.timeline.length}
 	<Item.Group aria-label="Timeline captures" class="gap-1">
-		{#each captures.editable as row (row.path)}
-			<Item.Button size="sm" class="w-full text-left hover:bg-muted" onclick={() => onOpen(row.stem)}>
+		{#each captures.timeline as row (row.path)}
+			<Item.Button size="sm" class="w-full text-left hover:bg-muted" onclick={() => void openItem(captures, row.stem, 'capture')}>
 				<Item.Content>
 					<Item.Title class={['line-clamp-2 whitespace-pre-line break-words', !row.preview && 'text-muted-foreground']}>{row.preview || 'Empty capture'}</Item.Title>
 					<Item.Description class="text-xs">
@@ -147,7 +135,6 @@
 						{#if row.thoughtCount > 0} · {row.thoughtCount} {row.thoughtCount === 1 ? 'thought' : 'thoughts'}{/if}
 					</Item.Description>
 				</Item.Content>
-				{@render state(row)}
 			</Item.Button>
 		{/each}
 	</Item.Group>
@@ -162,16 +149,15 @@
 {/if}
 
 {#if captures.repairs.length}
-	<!-- Not offered to edit here: each opens in Files, where its text can be repaired. -->
+	<!-- Not offered as captures: each opens as text, where it can be repaired. -->
 	<Alert.Root variant="destructive" aria-label="Files to repair" class="mt-6">
 		<Alert.Title>{captures.repairs.length} {captures.repairs.length === 1 ? 'file does' : 'files do'} not read as a capture</Alert.Title>
-		<Alert.Description>They are not listed above, and nothing in them was changed. Open one in Files to repair it.</Alert.Description>
+		<Alert.Description>They are not listed above, and nothing in them was changed. Edit one as text to repair it.</Alert.Description>
 		<ul class="mt-2 flex flex-col gap-2 text-foreground">
 			{#each captures.repairs as row (row.path)}
 				<li class="flex flex-wrap items-start gap-2">
 					<p class="min-w-0 flex-1 break-words"><code class="break-all">{row.path}</code>: {row.problem}</p>
-					{@render state(row)}
-					<Button size="sm" variant="outline" aria-label="Open {row.path} in Files" onclick={() => onRepair(row.stem)}>Open in Files</Button>
+					<Button size="sm" variant="outline" aria-label="Edit {row.path} as text" onclick={() => void openItem(captures, row.stem, 'text')}>Edit as text</Button>
 				</li>
 			{/each}
 		</ul>

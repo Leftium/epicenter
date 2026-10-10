@@ -2,15 +2,18 @@
 	import * as Alert from '@epicenter/ui/alert';
 	import { Button } from '@epicenter/ui/button';
 	import * as Dialog from '@epicenter/ui/dialog';
+	import * as Empty from '@epicenter/ui/empty';
+	import { Loading } from '@epicenter/ui/loading';
 	import { toast } from '@epicenter/ui/sonner';
-	import { beforeNavigate, goto } from '$app/navigation';
-	import { resolve } from '$app/paths';
-	import { page } from '$app/state';
+	import { beforeNavigate } from '$app/navigation';
 	import type { Captures } from '$lib/captures.svelte.js';
-	import type { Notice } from '$lib/draft.svelte.js';
+	import { backToTimeline, openItem } from '$lib/item-actions.js';
 	import type { Departure } from '$lib/platform/departure.svelte.js';
+	import CaptureDetail from './CaptureDetail.svelte';
+	import Recovery from './Recovery.svelte';
 	import TechnicalDetails from './TechnicalDetails.svelte';
-	import Workspace, { type Place } from './Workspace.svelte';
+	import TextDetail from './TextDetail.svelte';
+	import Timeline from './Timeline.svelte';
 
 	let {
 		captures,
@@ -21,69 +24,25 @@
 		departure: Departure | undefined;
 	} = $props();
 
-	// One route: the timeline, Files, the recovery screen, or one capture as
-	// either workspace edits it. The page and its drafts stay mounted across
-	// all of them, so moving between captures and workspaces never drops
-	// unsaved input.
-	const place = $derived.by((): Place => {
-		const params = page.url.searchParams;
-		// An empty stem (`captures/.md`) is still a capture to open.
-		const capture = params.get('capture');
-		if (capture !== null) return { kind: 'capture', stem: capture };
-		const file = params.get('file');
-		if (file !== null) return { kind: 'file', stem: file };
-		if (params.has('files')) return { kind: 'files' };
-		if (params.has('recover')) return { kind: 'recover' };
-		return { kind: 'timeline' };
-	});
-	const draft = $derived(
-		place.kind === 'capture' || place.kind === 'file' ? captures.draft(place.stem) : undefined,
-	);
-	/** The workspace the place belongs to, for its navigation. */
-	const workspace = $derived(place.kind === 'files' || place.kind === 'file' ? 'files' : 'timeline');
-
-	/** The capture just added from the timeline, so its page starts at Add a thought. */
+	// One page: the timeline, the recovery screen, or the one open capture.
+	const item = $derived(captures.opened);
+	let recovering = $state(false);
+	/** The capture just added from the timeline, so its view starts at Add a thought. */
 	let created = $state<string>();
 
-	function go(target: Place, options: { created?: boolean } = {}) {
-		created = options.created && target.kind === 'capture' ? target.stem : undefined;
-		const query =
-			target.kind === 'capture'
-				? `?capture=${encodeURIComponent(target.stem)}`
-				: target.kind === 'file'
-					? `?file=${encodeURIComponent(target.stem)}`
-					: target.kind === 'files'
-						? '?files'
-						: target.kind === 'recover'
-							? '?recover'
-							: '';
-		void goto(`${resolve('/')}${query}`);
-	}
-
-	// Leaving would lose something: unsaved or unsent input, or any open
-	// capture once the folder is closed and nothing can be saved again.
-	const mustStay = $derived(captures.unsettled > 0 || captures.folderStopped);
+	// Leaving would lose something: unsaved or unadded text, or running work.
+	const mustStay = $derived(captures.unsettled > 0);
 
 	// Drafts live only in this page. A reload, a tab close, or a navigation out
 	// of the app is held back here; quitting the desktop app asks below.
 	beforeNavigate((navigation) => {
-		if (!mustStay) return;
-		if (navigation.willUnload || navigation.to?.route.id !== page.route.id)
-			navigation.cancel();
+		if (mustStay && navigation.willUnload) navigation.cancel();
 	});
 
 	$effect(() => departure?.onHostStopped(() => captures.markServiceStopped()));
 
 	/** Quitting or restarting, in the words the person chose. */
 	const leaving = $derived(departure?.intent === 'restart' ? 'restart' : 'quit');
-
-	// Recovery for a change hint that never arrived.
-	$effect(() => {
-		const timer = setInterval(() => {
-			if (document.visibilityState === 'visible') void captures.refresh();
-		}, 30_000);
-		return () => clearInterval(timer);
-	});
 
 	const commitProblem = $derived.by(() => {
 		const last = captures.git.lastCommit;
@@ -108,29 +67,24 @@
 		}
 	}
 
-	const NOTICE_STATUS = {
-		unconfirmed: 'Save not confirmed',
-		failed: 'Save failed',
-		deletion: 'Delete not confirmed',
-		removed: 'File removed',
-	} satisfies Record<Notice['kind'], string>;
-
 	const status = $derived.by((): { text: string; tone: 'quiet' | 'pending' | 'problem' } => {
 		if (captures.folderStopped) return { text: 'Saving unavailable', tone: 'problem' };
-		if (draft?.saving) return { text: 'Saving…', tone: 'quiet' };
-		if (draft?.notice) return { text: NOTICE_STATUS[draft.notice.kind], tone: 'problem' };
-		if (captures.unsettled > 0)
-			return {
-				text: draft?.unsettled ? 'Not saved yet' : `${captures.unsettled} not saved`,
-				tone: 'pending',
-			};
+		const save = item?.kind === 'capture' || item?.kind === 'text' ? item.session.state : undefined;
+		if (save?.status === 'error') return { text: 'Not saved', tone: 'problem' };
+		if (save?.status === 'saving') return { text: 'Saving…', tone: 'quiet' };
+		if (captures.unsettled > 0) return { text: 'Not saved yet', tone: 'pending' };
 		return { text: 'Saved', tone: 'quiet' };
 	});
 </script>
 
-<!-- Returning to the app is a refresh boundary for files. -->
+<!-- Returning to the app reads the folder again. -->
+<svelte:document
+	onvisibilitychange={() => {
+		if (document.visibilityState === 'visible') void captures.check();
+	}}
+/>
 <svelte:window
-	onfocus={() => void captures.refresh()}
+	onfocus={() => void captures.check()}
 	onbeforeunload={(event) => {
 		if (mustStay) event.preventDefault();
 	}}
@@ -149,21 +103,15 @@
 
 <header class="border-b">
 	<div class="mx-auto flex h-12 max-w-3xl items-center justify-between gap-4 px-4 sm:px-6">
-		<!-- Workspaces: each opens its own list. A capture opened from one is edited the way that one edits it. -->
-		<nav aria-label="Workspaces" class="-ml-2.5 flex items-center gap-1">
-			<Button
-				variant={workspace === 'timeline' ? 'secondary' : 'ghost'}
-				size="sm"
-				aria-current={place.kind === 'timeline' ? 'page' : undefined}
-				onclick={() => go({ kind: 'timeline' })}>Timeline</Button
-			>
-			<Button
-				variant={workspace === 'files' ? 'secondary' : 'ghost'}
-				size="sm"
-				aria-current={place.kind === 'files' ? 'page' : undefined}
-				onclick={() => go({ kind: 'files' })}>Files</Button
-			>
-		</nav>
+		<Button
+			variant="ghost"
+			size="sm"
+			class="-ml-2.5"
+			onclick={() => {
+				recovering = false;
+				void backToTimeline(captures);
+			}}>Capture</Button
+		>
 		<span
 			role="status"
 			class={{
@@ -198,7 +146,7 @@
 	{#if captures.folderStopped}
 		<Alert.Root variant="destructive">
 			<Alert.Title>Epicenter closed this folder</Alert.Title>
-			<Alert.Description>Saving cannot be confirmed from this window. Your text is still here. Open each capture with unsaved text and copy or download it, then restart Epicenter. Reloading or quitting now discards it.</Alert.Description>
+			<Alert.Description>Saving cannot be confirmed from this window. Your text is still here; copy or download it, then restart Epicenter. Reloading or quitting now discards it.</Alert.Description>
 		</Alert.Root>
 	{:else if captures.serviceStopped}
 		<Alert.Root>
@@ -224,7 +172,47 @@
 	{/if}
 
 	<div>
-		<Workspace {captures} {place} {created} {go} />
+		{#if item === undefined}
+			{#if recovering}
+				<Recovery
+					{captures}
+					onOpen={(stem, mode) => {
+						recovering = false;
+						void openItem(captures, stem, mode);
+					}}
+				/>
+			{:else}
+				<Timeline
+					{captures}
+					onCreated={() => (created = captures.opened?.stem)}
+					onRecover={() => (recovering = true)}
+				/>
+			{/if}
+		{:else if item.kind === 'loading'}
+			<Loading label="Opening…" />
+		{:else if item.kind === 'failed'}
+			<Empty.Root role="alert">
+				<Empty.Header>
+					<Empty.Title>This capture could not be opened</Empty.Title>
+					<Empty.Description>Nothing was changed. It may have been removed or renamed outside this window.</Empty.Description>
+				</Empty.Header>
+				<Empty.Content>
+					<div class="flex flex-wrap justify-center gap-2">
+						<Button variant="outline" size="sm" onclick={() => void openItem(captures, item.stem, item.mode)}>Try again</Button>
+						<Button variant="outline" size="sm" onclick={() => void backToTimeline(captures)}>Back to timeline</Button>
+					</div>
+					<TechnicalDetails detail={item.message} />
+				</Empty.Content>
+			</Empty.Root>
+		{:else if item.kind === 'capture'}
+			{#key item}
+				<CaptureDetail {captures} {item} focusNewThought={created === item.stem} />
+			{/key}
+		{:else}
+			{#key item}
+				<TextDetail {captures} {item} />
+			{/key}
+		{/if}
 	</div>
 </main>
 

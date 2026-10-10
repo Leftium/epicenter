@@ -23,15 +23,27 @@
  * - The receipt names its source: skipped, even if the file was since edited
  *   or deleted. Deleting an imported capture does not bring it back.
  * - The destination is absent: created, then recorded.
- * - The destination holds the same bytes (an earlier run wrote the file and
- *   stopped before the receipt): recorded.
- * - The destination holds other bytes: reported, left alone, not recorded.
+ * - The destination holds the same capture (an earlier run wrote the file
+ *   and stopped before the receipt): recorded. A capture is the same when
+ *   its text reads as the same row, so a file an earlier version wrote in
+ *   another frontmatter style still counts.
+ * - The destination holds another capture: reported, left alone, not
+ *   recorded.
  *
  * There are no hidden tombstones. Deleting the receipt makes the next import
  * treat every source as new. `README.md` states these bounds.
  */
-import type { FileCapture, FolderFiles } from '@epicenter/folder';
-import { CAPTURES_TABLE } from '../definition.js';
+import {
+	type FileCapture,
+	type FolderFiles,
+	formatRow,
+	parseRow,
+} from '@epicenter/folder';
+import {
+	CAPTURES_TABLE,
+	type CaptureFields,
+	captureDefinition,
+} from '../definition.js';
 import { composeBody, type Refusal } from '../document.js';
 import {
 	accountTagOf,
@@ -106,25 +118,35 @@ const byOrder = (left: LegacyThought, right: LegacyThought) =>
 
 const capturePath = (stem: string) => `${CAPTURES_TABLE}/${stem}.md`;
 
-/** A plain YAML scalar when it is a datetime, a quoted string otherwise. */
-const yamlInstant = (value: string) =>
-	/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/.test(
-		value,
-	)
-		? value
-		: JSON.stringify(value);
+const captures = captureDefinition.tables.captures;
 
+/**
+ * A capture file as the captures table writes it. Text a file cannot hold
+ * exactly (a lone surrogate) is written as UTF-8 would encode it.
+ */
 function compose(
-	frontmatter: readonly (readonly [string, string])[],
+	fields: Readonly<Record<string, string>>,
 	text: string,
 	thoughts: readonly string[],
 ): { source: string; structured: Refusal | undefined } {
-	const head = frontmatter.map(([key, value]) => `${key}: ${value}\n`).join('');
 	// The composer a new capture uses, so imported text with its own Thoughts
 	// heading or an open fence is kept whole and stays source-only.
-	const composed = composeBody(text, thoughts);
+	const composed = composeBody(
+		text.toWellFormed(),
+		thoughts.map((thought) => thought.toWellFormed()),
+	);
+	// The date is checked when the file is read, as any capture's is.
+	const wellFormed = Object.fromEntries(
+		Object.entries(fields).map(([key, value]) => [key, value.toWellFormed()]),
+	) as CaptureFields;
+	const { data: source, error } = formatRow(captures, {
+		fields: wellFormed,
+		body: composed.body,
+	});
+	// Only strings are formatted, and they are well formed.
+	if (error !== null) throw new Error(error.message);
 	return {
-		source: `---\n${head}---\n${composed.body}`,
+		source,
 		structured:
 			composed.refusal ??
 			(composed.absorbed
@@ -244,8 +266,7 @@ export async function planLegacyImport(
 	const records = receipt?.imports ?? {};
 	const stem = async (kind: string, identity: string) =>
 		`legacy-${accountTag}-${kind}-${(await sha256Hex(identity)).slice(0, 20)}`;
-	const origin = (identity: string) =>
-		JSON.stringify(`${bundle.source.storeId}/${identity}`);
+	const origin = (identity: string) => `${bundle.source.storeId}/${identity}`;
 
 	const documents: PlannedDocument[] = [];
 	const alreadyImported: string[] = [];
@@ -311,11 +332,11 @@ export async function planLegacyImport(
 				await sha256Hex(late.map((thought) => thought.id).join('\n'))
 			).slice(0, 16)}`;
 			const composed = compose(
-				[
-					['capturedAt', yamlInstant(bundle.exportedAt)],
-					['capturedAtIs', '"export time, not when these were written"'],
-					['importedFrom', origin(lateIdentity)],
-				],
+				{
+					capturedAt: bundle.exportedAt,
+					capturedAtIs: 'export time, not when these were written',
+					importedFrom: origin(lateIdentity),
+				},
 				`Thoughts recovered after their capture was imported.\n\nThey belong to the capture imported as \`${existing.path}\` (old ID \`${capture.id}\`). The date above is when the export was made, not when they were written.\n\nOld thought IDs, in order: ${late.map((thought) => thought.id).join(', ')}`,
 				late.map((thought) => thought.text),
 			);
@@ -330,10 +351,10 @@ export async function planLegacyImport(
 			continue;
 		}
 		const composed = compose(
-			[
-				['capturedAt', yamlInstant(capture.capturedAt)],
-				['importedFrom', origin(identity)],
-			],
+			{
+				capturedAt: capture.capturedAt,
+				importedFrom: origin(identity),
+			},
 			capture.text,
 			kept.map((thought) => thought.text),
 		);
@@ -360,11 +381,11 @@ export async function planLegacyImport(
 					await sha256Hex(kept.map((thought) => thought.id).join('\n'))
 				).slice(0, 16)}`;
 		const composed = compose(
-			[
-				['capturedAt', yamlInstant(bundle.exportedAt)],
-				['capturedAtIs', '"export time, not when these were written"'],
-				['importedFrom', origin(identity)],
-			],
+			{
+				capturedAt: bundle.exportedAt,
+				capturedAtIs: 'export time, not when these were written',
+				importedFrom: origin(identity),
+			},
 			`Recovered thoughts without their capture.\n\nThe capture they belong to (old ID \`${captureId}\`) was not in the export, so its text and date are unknown. The date above is when the export was made, not when these were written.\n\nOld thought IDs, in order: ${kept.map((thought) => thought.id).join(', ')}`,
 			kept.map((thought) => thought.text),
 		);
@@ -385,13 +406,11 @@ export async function planLegacyImport(
 		}
 		const identity = `entries/${entry.id}`;
 		const composed = compose(
-			[
-				['capturedAt', yamlInstant(entry.capturedAt)],
-				['importedFrom', origin(identity)],
-				...(entry.parentId === null
-					? []
-					: [['legacyParentId', JSON.stringify(entry.parentId)] as const]),
-			],
+			{
+				capturedAt: entry.capturedAt,
+				importedFrom: origin(identity),
+				...(entry.parentId === null ? {} : { legacyParentId: entry.parentId }),
+			},
 			entry.text,
 			[],
 		);
@@ -443,7 +462,7 @@ export type DocumentOutcome = {
 	readonly structured: Refusal | undefined;
 } & (
 	| { readonly status: 'created' }
-	/** The file was already there with the same bytes. */
+	/** The file was already there, holding the same capture. */
 	| { readonly status: 'identical' }
 	/** Another file is there. It was left alone and nothing was recorded. */
 	| { readonly status: 'differs' }
@@ -476,13 +495,32 @@ export type ImportReport = {
  */
 export type ImportFiles = Pick<FolderFiles, 'read' | 'create' | 'replace'>;
 
-const decoder = new TextDecoder('utf-8', { fatal: true });
+const decoder = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true });
 
-/** Create `path` with `source`, or say what is there instead. Never overwrites. */
+/** Whether two texts are the same file: the same bytes. */
+const sameBytes = (existing: string, source: string) => existing === source;
+
+/**
+ * Whether two texts are the same capture: each reads as the same row, so they
+ * format as the same text. A file an earlier version wrote in another
+ * frontmatter style is the same capture as the one this version would write.
+ * Text that is not a valid row is the same only byte for byte.
+ */
+function sameCapture(existing: string, source: string): boolean {
+	if (existing === source) return true;
+	const { data: row } = parseRow(captures, existing);
+	return row !== null && formatRow(captures, row).data === source;
+}
+
+/**
+ * Create `path` with `source`, or say what is there instead: `identical`
+ * when `same` says the file already holds it. Never overwrites.
+ */
 async function createExclusive(
 	files: ImportFiles,
 	path: string,
 	source: string,
+	same: (existing: string, source: string) => boolean = sameBytes,
 ): Promise<
 	| { status: 'created' | 'identical' | 'differs' }
 	| { status: 'failed'; message: string }
@@ -495,10 +533,13 @@ async function createExclusive(
 		const { data: existing, error: readError } = await files.read(path);
 		if (readError !== null)
 			return { status: 'failed', message: readError.message };
-		return {
-			status:
-				existing.sha256 === (await sha256Hex(source)) ? 'identical' : 'differs',
-		};
+		let text: string;
+		try {
+			text = decoder.decode(existing.bytes);
+		} catch {
+			return { status: 'differs' };
+		}
+		return { status: same(text, source) ? 'identical' : 'differs' };
 	} catch (cause) {
 		return {
 			status: 'failed',
@@ -629,6 +670,7 @@ export async function runLegacyImport(
 			files,
 			document.path,
 			document.source,
+			sameCapture,
 		);
 		documents.push({
 			identity: document.identity,

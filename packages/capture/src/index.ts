@@ -19,5 +19,4 @@ export {
 	type RefusalCode,
 	renderThought,
 	toTextarea,
-	unparsedCapture,
 } from './document.js';

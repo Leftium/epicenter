@@ -109,7 +109,7 @@ test('the legacy import writes the marked file and reports it as source-only', a
 	expect(document?.structured?.code).toBe('duplicate-heading');
 	const saved = await readFile(join(root, document?.path ?? ''), 'utf8');
 	expect(saved).toBe(
-		`---\ncapturedAt: 2026-01-01T00:00:00.000Z\nimportedFrom: "so.epicenter.capture/captures/c1"\n---\n\n## Thoughts\n\n${OWN_LIST_THEN_OPEN_FENCE}\n\n## Thoughts\n\n- app thought\n`,
+		`---\ncapturedAt: "2026-01-01T00:00:00.000Z"\nimportedFrom: so.epicenter.capture/captures/c1\n---\n\n## Thoughts\n\n${OWN_LIST_THEN_OPEN_FENCE}\n\n## Thoughts\n\n- app thought\n`,
 	);
 	const reopened = parseCapture(saved);
 	expect(reopened.refusal?.code).toBe('duplicate-heading');

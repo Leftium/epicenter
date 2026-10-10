@@ -36,7 +36,6 @@ export const openCaptureHost: OpenCaptureHost = async () => {
 	return {
 		folder,
 		location: folder.location,
-		onExternalChange: (listener) => folder.onFilesChanged(() => listener()),
 		close: () => folder.close(),
 	};
 };

@@ -1,86 +1,126 @@
 /**
- * The captures in the folder, the drafts open over them, and everything that
- * writes a file.
+ * The Capture product state over one opened folder.
  *
- * `entries` is the last listing of saved files. A draft exists for each
- * capture that has been opened in this page and is kept until its file is
- * no longer listed and it holds nothing, so moving between captures never
- * drops unsaved input. Each draft keeps the folder's row editor for its file;
- * see `draft.svelte.ts`. A listing never reads an open draft's file into it:
- * an open capture shows its own input until the person reloads it.
+ * The timeline is the last listing of `captures/*.md`. It is read when the
+ * page opens, after each of the app's own actions, and when the person
+ * returns to the window; the latest listing wins. It offers the files that
+ * read as captures and names the rest, with why, for repair as text.
  *
- * The timeline and Files open the same draft for a path, so a file has one
- * publisher here whichever workspace shows it, and a failed save's input is
- * the draft's in both. The timeline offers only rows that read as captures
- * (`editable`) and names the rest, with why (`repairs`); Files lists every
- * capture file (`files`). Validity decides where a row is listed, never
- * whether its draft is kept.
+ * One capture is open at a time, in one edit session
+ * (`@epicenter/svelte/edit-session`): as a capture, a row session whose body
+ * the capture form edits as text and thoughts; or as text, a text session
+ * over the file's exact Markdown, which is how a file that is not a valid
+ * capture is repaired. Leaving waits for the session's saves, then releases
+ * it and lists again. A save that failed or conflicted, or a thought typed
+ * and not added, keeps the capture open until the person discards it (`open`
+ * and `back` answer `unsaved`, and the view asks).
  *
- * A listing can be older than a create, copy, or import this page made while
- * it was running. Those writes move `writes`; a listing that saw it move is
- * discarded and taken again. An open draft's own saves need no such guard:
- * the timeline shows an open capture from its draft, not from the listing.
- *
- * Leaving and closing fence every input and action at once, before anything
- * is awaited, then wait for every action already admitted, each in the one
- * registry they all join, and for each draft's own file work. Leaving can be
- * called off, and then everything is as it was. Reading, copying text out,
- * and downloading stay open: they change nothing.
- *
- * Git is reported beside saving, never as part of it: a file that saved is
- * saved whether or not its commit worked.
+ * Returning to the window takes a newer version of the open capture when its
+ * session holds nothing unsaved. Otherwise the next save reports the change
+ * as a conflict, and the person keeps theirs or reloads.
  */
-
 import {
 	CAPTURES_TABLE,
-	type CaptureDocument,
 	type CaptureFields,
 	captureBody,
-	captureDefinition,
 	composeBody,
 	excerpt,
-	unparsedCapture,
 } from '@epicenter/capture';
 import {
 	type ImportReport,
 	type LegacyBundle,
 	runLegacyImport,
 } from '@epicenter/capture/legacy';
-import { type FileCapture, inspectRow, rowPath } from '@epicenter/folder';
-import { createSubscriber, SvelteMap } from 'svelte/reactivity';
 import {
-	type CaptureEntry,
-	type Current,
-	createDraft,
-	type Draft,
-	type DraftStore,
-	type Notice,
-	UNENCODABLE,
-} from './draft.svelte.js';
+	type RowReadError,
+	rowPath,
+	rowStemOf,
+	type StoredRow,
+} from '@epicenter/folder';
+import {
+	createRowSession,
+	createTextSession,
+	type RowSession,
+	type TextSession,
+	textSource,
+} from '@epicenter/svelte/edit-session';
+import { createSubscriber } from 'svelte/reactivity';
+import { createLogger } from 'wellcrafted/logger';
+import { type CaptureForm, createCaptureForm } from './capture-form.svelte.js';
 import type { CaptureHost } from './platform/types.js';
 
-export type CaptureRow = {
+const log = createLogger('capture');
+
+export type Captures = ReturnType<typeof createCaptures>;
+
+/** How a capture is open: its text and thoughts, or its exact Markdown. */
+export type Mode = 'capture' | 'text';
+
+/** The one open capture: what the detail shows. */
+export type Opened =
+	| { readonly kind: 'loading'; readonly stem: string; readonly mode: Mode }
+	| {
+			readonly kind: 'capture';
+			readonly stem: string;
+			readonly session: RowSession<CaptureFields>;
+			readonly form: CaptureForm;
+	  }
+	| { readonly kind: 'text'; readonly stem: string; readonly session: TextSession }
+	| {
+			readonly kind: 'failed';
+			readonly stem: string;
+			readonly mode: Mode;
+			readonly message: string;
+	  };
+
+/** A capture the timeline lists. */
+export type TimelineRow = {
 	readonly stem: string;
 	readonly path: string;
-	/** `undefined` when the file's `capturedAt` is missing or not a date and time. */
+	/** `undefined` when `capturedAt` is not a date and time this page can read. */
 	readonly capturedAt: Date | undefined;
 	readonly preview: string;
 	readonly thoughtCount: number;
-	/**
-	 * Why the text cannot be edited as a capture, when it cannot: it does not
-	 * read as a row, a field is not valid, or its Thoughts markup is ambiguous.
-	 */
-	readonly problem: string | undefined;
-	/** This page holds input for it that is not saved. */
-	readonly unsettled: boolean;
-	/** Why a draft this page holds is waiting for a choice. */
-	readonly attention: Notice['kind'] | undefined;
 };
 
-const describe = (cause: unknown) =>
-	cause instanceof Error ? cause.message : String(cause);
+/** A capture file the timeline cannot show, and why, for repair as text. */
+export type Repair = {
+	readonly stem: string;
+	readonly path: string;
+	readonly problem: string;
+};
 
-const pathOf = (stem: string) => rowPath(CAPTURES_TABLE, stem);
+/** Why input or an action was refused while Epicenter asks to quit or restart. */
+export const DEPARTING =
+	'Epicenter is asking to quit or restart, so nothing is changed now. Your text is kept.';
+const CLOSING = 'Capture is closing, so nothing was changed.';
+/** Why Reload theirs showed nothing: the file is there but is not text. */
+const NOT_TEXT =
+	'This file is no longer text, so it cannot be shown here. Keep mine saves your version over it.';
+
+/**
+ * Library errors state failures precisely; these are the ones a person acts
+ * on. A lost reply leaves the outcome unknown.
+ */
+export function describeError(error: {
+	readonly name: string;
+	readonly message: string;
+	readonly actualSha256?: string | undefined;
+	readonly issues?: readonly { readonly message: string }[];
+}): string {
+	switch (error.name) {
+		case 'Conflict':
+			return error.actualSha256 === undefined
+				? 'The file is no longer in the folder. Nothing was changed.'
+				: 'The file changed elsewhere. Nothing was changed.';
+		case 'Unconfirmed':
+			return `The change was sent, but nothing confirmed it, so it may or may not have happened. ${error.message}`;
+		case 'InvalidValues':
+			return (error.issues ?? []).map((issue) => issue.message).join(' ');
+		default:
+			return error.message;
+	}
+}
 
 /** A readable, sortable stem: the capture's UTC time and a short random suffix. */
 function newStem(at: Date): string {
@@ -97,345 +137,286 @@ function newStem(at: Date): string {
 	return `${stamp}-${suffix}`;
 }
 
-function timeOf(reading: { readonly fields: Partial<CaptureFields> }) {
-	// Undefined when the text does not parse or its `capturedAt` did not validate.
-	const value = reading.fields.capturedAt;
-	if (value === undefined) return undefined;
+/** The instant of a `capturedAt` value, or `undefined` when it is not one. */
+export function instantOf(value: unknown): Date | undefined {
+	if (typeof value !== 'string') return undefined;
 	const time = new Date(value);
 	return Number.isNaN(time.getTime()) ? undefined : time;
 }
 
-/** Why a reading is not a capture, or undefined when it is. */
-function problemOf(reading: {
-	readonly parseError: { readonly message: string } | undefined;
-	readonly issues: readonly { readonly message: string }[];
-}): string | undefined {
-	if (reading.parseError !== undefined) return reading.parseError.message;
-	// No issues is no problem: joining none would read as an empty one.
-	if (reading.issues.length === 0) return undefined;
-	return reading.issues.map((issue) => issue.message).join('; ');
+/** Newest first by the instant, not the text: offsets differ between files. */
+function newestFirst(left: TimelineRow, right: TimelineRow) {
+	const a = left.capturedAt?.getTime();
+	const b = right.capturedAt?.getTime();
+	if (a !== b) {
+		if (a === undefined) return 1;
+		if (b === undefined) return -1;
+		return b - a;
+	}
+	return left.stem < right.stem ? -1 : left.stem > right.stem ? 1 : 0;
 }
 
-/** Refused: leaving or closing fenced every action. */
-const FENCED = 'Capture is finishing its saves.';
+function byPath(left: { path: string }, right: { path: string }) {
+	return left.path < right.path ? -1 : left.path > right.path ? 1 : 0;
+}
 
-export type Captures = ReturnType<typeof createCaptures>;
+/** Why a listed file has no row to show. */
+function readProblem(error: RowReadError): string {
+	if (error.name === 'InvalidRow')
+		return error.issues.map((issue) => issue.message).join(' ');
+	if (error.name === 'InvalidUtf8') return 'It is not UTF-8 text.';
+	return error.message;
+}
 
 export function createCaptures(host: Pick<CaptureHost, 'folder' | 'location'>) {
 	const { folder } = host;
 	const table = folder.tables.captures;
-	/** How the captures table reads text; it reads no file. */
-	const inspect = (text: string) =>
-		inspectRow(captureDefinition.tables.captures, text);
+	const pathOf = (stem: string) => rowPath(CAPTURES_TABLE, stem);
 
-	let entries = $state.raw<readonly CaptureEntry[]>([]);
-	let unreadable = $state.raw<
-		readonly { readonly path: string; readonly message: string }[]
-	>([]);
+	let timeline = $state.raw<TimelineRow[]>([]);
+	let repairs = $state.raw<Repair[]>([]);
+	/** Capture files that are not text, or could not be read. */
+	let unreadable = $state.raw<{ path: string; message: string }[]>([]);
 	/** Why the folder could not be listed, when it could not. */
 	let listProblem = $state<string | undefined>();
 	let loaded = $state(false);
-	const drafts = new SvelteMap<string, Draft>();
+	let opened = $state.raw<Opened | undefined>();
 	let newCapture = $state('');
 	const trackGit = createSubscriber((update) => folder.git.subscribe(update));
 	/** The Epicenter service that served this page has stopped. */
 	let serviceStopped = $state(false);
-	/** Leaving is deciding: nothing a person does is taken. */
-	let leaving = $state(false);
-	/** Closing began: nothing is taken again. */
+	/** Epicenter asks to quit or restart: no action starts, and the open capture takes no input. */
+	let departing = $state(false);
 	let closing: Promise<void> | undefined;
-	let closed = $state(false);
-	const fenced = () => leaving || closed;
+	let refreshSequence = 0;
+	/** Advanced by every open and close, so a load that answers late installs nothing. */
+	let openSequence = 0;
+	/** Actions admitted and not finished: a departure and `close` wait for them. */
+	const operations = new Set<Promise<unknown>>();
+	let running = $state(0);
 
-	/** Moves when a create, copy, or import starts and when it ends. */
-	let writes = 0;
-	let creating = $state.raw<
-		| Promise<{ ok: true; stem: string } | { ok: false; message: string }>
-		| undefined
-	>();
-	let importing = $state.raw<Promise<ImportReport> | undefined>();
-	let copying = $state.raw<
-		| Promise<{ ok: true; stem: string } | { ok: false; message: string }>
-		| undefined
-	>();
-	/** Every action admitted and not yet settled: leaving and closing wait for all of them. */
-	const admitted = new Set<Promise<void>>();
-	function admit<T>(action: Promise<T>): Promise<T> {
-		const settled = action.then(
-			() => {},
-			() => {},
-		);
-		admitted.add(settled);
-		void settled.then(() => admitted.delete(settled));
-		return action;
-	}
-	/** Wait for every admitted action, including any admitted meanwhile. */
-	async function actions() {
-		while (admitted.size > 0) await Promise.all(admitted);
-	}
-	async function writing<T>(work: () => Promise<T>): Promise<T> {
-		writes++;
-		try {
-			return await work();
-		} finally {
-			writes++;
-		}
+	const locked = () => departing || closing !== undefined;
+
+	/** Why no action starts now, if one does not. */
+	function refused(): string | undefined {
+		if (closing !== undefined) return CLOSING;
+		if (departing) return DEPARTING;
+		return undefined;
 	}
 
-	/**
-	 * Write exact source as the capture at a stem, whose file must be absent.
-	 * Resolves the entry of what was sent: the text of the submitted bytes, how
-	 * the table reads that text, and the path and hash the folder returned.
-	 *
-	 * The text and its reading are settled before anything is published, and
-	 * nothing is read back, so the entry acknowledges this write and is never
-	 * what another program did at the path afterwards. Text with an unpaired
-	 * surrogate is refused before it is encoded, because encoding would
-	 * replace it: this is recovery text, and a copy must be exact.
-	 */
-	async function createExact(stem: string, text: string) {
-		if (!text.isWellFormed())
-			return {
-				data: null,
-				error: { name: 'Unencodable', message: UNENCODABLE },
-			} as const;
-		const reading = inspect(text);
-		const { data: written, error: writtenError } = await writing(() =>
-			folder.files.create(pathOf(stem), text),
-		);
-		if (writtenError !== null)
-			return { data: null, error: writtenError } as const;
-		const { path, sha256 } = written;
-		const entry: CaptureEntry = Object.freeze({
-			path,
-			stem,
-			text,
-			sha256,
-			...reading,
-		});
-		return { data: entry, error: null } as const;
+	/** Count `work` as running until it settles. */
+	function admitted<T>(work: Promise<T>): Promise<T> {
+		operations.add(work);
+		running = operations.size;
+		const done = () => {
+			operations.delete(work);
+			running = operations.size;
+		};
+		work.then(done, done);
+		return work;
 	}
 
-	const storeFor = (stem: string): DraftStore => ({
-		inspect,
-		edit: (signal) => table.edit(stem, { signal }),
-		async read(): Promise<Current> {
-			const { data: found, error } = await table.get(stem);
-			if (error !== null) return { kind: 'unreadable', message: error.message };
-			if (found === undefined) return { kind: 'removed' };
-			return { kind: 'present', entry: found };
-		},
-		async create(source) {
-			const created = await createExact(stem, source);
-			if (created.error === null) noteSaved(created.data);
-			return created;
-		},
-		remove: (reviewed) =>
-			table.delete(reviewed.stem, { expectedSha256: reviewed.sha256 }),
-		fenced,
-	});
-
-	function noteSaved(entry: CaptureEntry) {
-		entries = [...entries.filter((other) => other.path !== entry.path), entry];
+	async function quiet() {
+		while (operations.size > 0) await Promise.allSettled([...operations]);
 	}
 
-	function draftOf(entry: CaptureEntry): Draft {
-		let draft = drafts.get(entry.path);
-		if (draft === undefined) {
-			draft = createDraft(storeFor(entry.stem), {
-				path: entry.path,
-				stem: entry.stem,
-			});
-			drafts.set(entry.path, draft);
-		}
-		return draft;
+	function sessionOf(item: Opened | undefined) {
+		return item?.kind === 'capture' || item?.kind === 'text'
+			? item.session
+			: undefined;
 	}
 
-	/** Forget a draft: its editor is let go, and its admitted saves finish. */
-	function drop(path: string, draft: Draft) {
-		if (drafts.get(path) === draft) drafts.delete(path);
-		draft.retire();
-	}
-
-	let refreshing: Promise<void> | undefined;
-	let again = false;
-
-	async function refreshOnce() {
-		for (let attempt = 0; ; attempt++) {
-			const started = writes;
-			let listed: Awaited<ReturnType<typeof table.list>>;
-			try {
-				listed = await table.list();
-			} catch (cause) {
-				listProblem = describe(cause);
-				return;
-			}
-			// A write of ours overlapped this listing, so it may predate it.
-			if (writes !== started && attempt < 5) continue;
-			const { data: listedEntries, error: listError } = listed;
-			if (listError !== null) {
-				listProblem = listError.message;
-				return;
-			}
-			listProblem = undefined;
-			loaded = true;
-			// A file that was read is a capture to open, whether or not its text
-			// parses. A file that could not be read has no text and is listed apart.
-			entries = listedEntries.flatMap(({ result: { data } }) => data ?? []);
-			unreadable = listedEntries.flatMap(({ path, result: { error } }) =>
-				error ? { path, message: error.message } : [],
-			);
-			// A draft that holds nothing goes when its file is no longer listed,
-			// or when it has no editor: opening it again reads the file afresh.
-			// Open drafts keep their input; nothing here reads into them.
-			const present = new Set(entries.map((entry) => entry.path));
-			for (const [path, draft] of [...drafts])
-				if (
-					draft.opened &&
-					!draft.unsettled &&
-					(draft.refused !== undefined || !present.has(path))
-				)
-					drop(path, draft);
+	/** One listing pass. A pass that a newer one overtook changes nothing. */
+	async function refresh() {
+		if (closing !== undefined) return;
+		const sequence = ++refreshSequence;
+		const { data: listed, error } = await table.list();
+		if (closing !== undefined || sequence !== refreshSequence) return;
+		// Keep the previous listing visible; never show an empty one for a failed read.
+		if (error !== null) {
+			listProblem = error.message;
 			return;
 		}
-	}
-
-	/** Reread the folder. Calls made while one is running share one more pass. */
-	function refresh(): Promise<void> {
-		if (closed) return refreshing ?? Promise.resolve();
-		if (refreshing) {
-			again = true;
-			return refreshing;
-		}
-		refreshing = (async () => {
-			try {
-				do {
-					again = false;
-					await refreshOnce();
-				} while (again);
-			} finally {
-				refreshing = undefined;
+		const rows: TimelineRow[] = [];
+		const repair: Repair[] = [];
+		const others: { path: string; message: string }[] = [];
+		for (const { stem, result } of listed) {
+			const path = pathOf(stem);
+			if (result.error?.name === 'InvalidRow') {
+				repair.push({ stem, path, problem: readProblem(result.error) });
+				continue;
 			}
-		})();
-		return refreshing;
-	}
-
-	/** One parse per distinct file text, for the timeline. */
-	const parsed = new Map<string, CaptureDocument>();
-	function documentOf(entry: CaptureEntry): CaptureDocument {
-		const { text, parseError } = entry;
-		let document = parsed.get(text);
-		if (document === undefined) {
-			if (parsed.size > 2000) parsed.clear();
-			// Text and thoughts are read only from a file that parses as a capture.
-			if (parseError !== undefined)
-				document = unparsedCapture(text, parseError.message);
-			else {
-				const decoded = captureBody.decode(entry.body ?? '');
-				document =
-					decoded.error === null
-						? {
-								...unparsedCapture(entry.body ?? '', ''),
-								...decoded.data,
-								refusal: undefined,
-							}
-						: {
-								...unparsedCapture(entry.body ?? '', decoded.error.message),
-								refusal: decoded.error,
-							};
+			if (result.error !== null) {
+				others.push({ path, message: readProblem(result.error) });
+				continue;
 			}
-			parsed.set(text, document);
-		}
-		return document;
-	}
-
-	const rows = $derived.by((): CaptureRow[] => {
-		const rowOf = (
-			stem: string,
-			path: string,
-			draft: Draft | undefined,
-			entry: CaptureEntry | undefined,
-		): CaptureRow => {
-			// An open capture reads as its draft shows it, saved or not, once its
-			// editor is open; until then, as it was listed.
-			const shown = draft?.loaded ? draft : undefined;
-			const reading = shown?.reading ?? entry ?? inspect('');
-			const document =
-				shown?.document ??
-				(entry ? documentOf(entry) : unparsedCapture('', ''));
-			return {
+			const { row } = result.data;
+			const { data: body, error: refusal } = captureBody.decode(row.body);
+			if (refusal !== null) {
+				repair.push({ stem, path, problem: refusal.message });
+				continue;
+			}
+			rows.push({
 				stem,
 				path,
-				capturedAt: timeOf(reading),
-				preview: excerpt(document),
-				thoughtCount: document.thoughts.length,
-				problem: problemOf(reading) ?? document.refusal?.message,
-				unsettled: draft?.unsettled ?? false,
-				attention: draft?.notice?.kind,
-			};
-		};
-		const list = entries.map((entry) =>
-			rowOf(entry.stem, entry.path, drafts.get(entry.path), entry),
-		);
-		// A draft whose file is no longer listed (removed, or unreadable) still
-		// holds input. It stays on the timeline so it can be reached and resolved.
-		const listed = new Set(entries.map((entry) => entry.path));
-		for (const [path, draft] of drafts)
-			if (!listed.has(path))
-				list.push(rowOf(draft.stem, path, draft, undefined));
-		// Newest first by the instant, not the text: offsets differ between files.
-		return list.sort((left, right) => {
-			const a = left.capturedAt?.getTime();
-			const b = right.capturedAt?.getTime();
-			if (a !== b) {
-				if (a === undefined) return 1;
-				if (b === undefined) return -1;
-				return b - a;
-			}
-			return left.stem < right.stem ? -1 : left.stem > right.stem ? 1 : 0;
-		});
-	});
-	/** What the timeline offers to edit: rows that read as captures. */
-	const editable = $derived(rows.filter((row) => row.problem === undefined));
-	/** What the timeline names for repair in Files instead, each with why. */
-	const repairs = $derived(rows.filter((row) => row.problem !== undefined));
-	/** Every capture file, valid or not, by path: what Files lists. */
-	const files = $derived(
-		[...rows].sort((left, right) =>
-			left.path < right.path ? -1 : left.path > right.path ? 1 : 0,
-		),
-	);
+				capturedAt: instantOf(row.fields.capturedAt),
+				preview: excerpt(body.text),
+				thoughtCount: body.thoughts.length,
+			});
+		}
+		listProblem = undefined;
+		loaded = true;
+		timeline = rows.sort(newestFirst);
+		repairs = repair.sort(byPath);
+		unreadable = others.sort(byPath);
+	}
 
-	const unsettledDrafts = () =>
-		[...drafts.values()].filter((draft) => draft.unsettled);
+	/** The listing, and a newer version of the open capture when it holds nothing unsaved. */
+	async function check() {
+		if (closing !== undefined) return;
+		const item = opened;
+		const adopt =
+			item?.kind === 'capture' && item.form.unsent
+				? undefined
+				: sessionOf(item)?.adopt();
+		await Promise.all([refresh(), adopt]);
+	}
 
 	/**
-	 * Settle what saves on its own: every admitted action, each draft's own
-	 * file work, and every write already accepted. Resolves how many things
-	 * would still be lost.
+	 * Leave the open capture: wait for its saves, then release its session.
+	 * Answers false, leaving it open, when a save failed or conflicted or a
+	 * thought is typed and not added, unless the person chose to discard
+	 * that session's draft.
 	 */
-	async function settleAll(): Promise<number> {
-		await actions();
-		await Promise.all([...drafts.values()].map((draft) => draft.settle()));
-		// A draft's work can finish an action it was part of, such as a delete.
-		await actions();
-		return unsettledDrafts().length + (newCapture === '' ? 0 : 1);
+	async function leave(discard: unknown): Promise<boolean> {
+		const item = opened;
+		const session = sessionOf(item);
+		if (session === undefined) return true;
+		const settled = await session.settled();
+		const unsent = item?.kind === 'capture' && item.form.unsent;
+		if ((settled.status === 'error' || unsent) && discard !== session)
+			return false;
+		session.release();
+		return true;
+	}
+
+	function openRow(stem: string, stored: StoredRow<CaptureFields>): Opened {
+		const session = createRowSession(table, stored, { locked });
+		return { kind: 'capture', stem, session, form: createCaptureForm(session) };
+	}
+
+	/** The file's exact text, as a text session. */
+	async function loadText(stem: string): Promise<Opened> {
+		const { data: found, error } = await textSource(folder.files).reread(
+			pathOf(stem),
+		);
+		if (error !== null)
+			return { kind: 'failed', stem, mode: 'text', message: error.message };
+		if (found.kind === 'gone')
+			return {
+				kind: 'failed',
+				stem,
+				mode: 'text',
+				message: 'This capture is no longer in the folder.',
+			};
+		if (found.kind === 'other')
+			return {
+				kind: 'failed',
+				stem,
+				mode: 'text',
+				message: 'This file is not UTF-8 text, so it cannot be edited here.',
+			};
+		return {
+			kind: 'text',
+			stem,
+			session: createTextSession(
+				folder.files,
+				{ ...found.file, text: found.value },
+				{ locked },
+			),
+		};
+	}
+
+	/**
+	 * Read `stem` the way `mode` opens it. A file that is not a valid capture
+	 * opens as text whichever was asked.
+	 */
+	async function load(stem: string, mode: Mode): Promise<Opened> {
+		if (mode === 'text') return loadText(stem);
+		const { data: stored, error } = await table.get(stem);
+		if (error?.name === 'InvalidRow')
+			return {
+				kind: 'text',
+				stem,
+				session: createTextSession(folder.files, error, { locked }),
+			};
+		if (error !== null)
+			return { kind: 'failed', stem, mode, message: readProblem(error) };
+		if (stored === undefined)
+			return {
+				kind: 'failed',
+				stem,
+				mode,
+				message: 'This capture is no longer in the folder.',
+			};
+		if (captureBody.decode(stored.row.body).error !== null) return loadText(stem);
+		return openRow(stem, stored);
+	}
+
+	/**
+	 * Show `stem` as `mode` edits it. The open capture's saves land first,
+	 * and the timeline is read again. Answers `unsaved`, opening nothing,
+	 * when the open capture holds something it could not save; the view asks
+	 * the person, and `discard` names the session they chose to let go.
+	 */
+	async function open(
+		stem: string,
+		mode: Mode,
+		{ discard }: { discard?: unknown } = {},
+	): Promise<'unsaved' | undefined> {
+		if (closing !== undefined) return undefined;
+		const sequence = ++openSequence;
+		const left = opened;
+		if (!(await leave(discard))) return 'unsaved';
+		if (left !== undefined) void refresh();
+		if (sequence !== openSequence || closing !== undefined) return undefined;
+		opened = { kind: 'loading', stem, mode };
+		const item = await load(stem, mode);
+		if (sequence !== openSequence || closing !== undefined) {
+			sessionOf(item)?.release();
+			return undefined;
+		}
+		opened = item;
+		return undefined;
+	}
+
+	/** Close the open capture without saving more. */
+	function forget() {
+		sessionOf(opened)?.release();
+		openSequence += 1;
+		opened = undefined;
+	}
+
+	/** Whether the open capture has a save running, a draft it could not save, or unsent input. */
+	function unsaved() {
+		const item = opened;
+		const status = sessionOf(item)?.state.status;
+		return (
+			status === 'saving' ||
+			status === 'error' ||
+			(item?.kind === 'capture' && item.form.unsent)
+		);
 	}
 
 	return {
 		location: host.location,
-		/** Every capture this page lists or holds a draft for, newest first, with why it needs repair when it does. */
-		get rows() {
-			return rows;
+		/** Captures that read as one, newest first, as last listed. */
+		get timeline() {
+			return timeline;
 		},
-		get editable() {
-			return editable;
-		},
+		/** Capture files the timeline cannot show, with why; each opens as text. */
 		get repairs() {
 			return repairs;
-		},
-		get files() {
-			return files;
 		},
 		get unreadable() {
 			return unreadable;
@@ -450,10 +431,7 @@ export function createCaptures(host: Pick<CaptureHost, 'folder' | 'location'>) {
 			trackGit();
 			return folder.git.snapshot;
 		},
-		/**
-		 * The folder's owner closed it: nothing saves from this window again.
-		 * The folder reports this itself, on its Git snapshot.
-		 */
+		/** The folder's owner closed it: nothing saves from this window again. */
 		get folderStopped() {
 			trackGit();
 			return folder.git.snapshot.closed;
@@ -465,253 +443,211 @@ export function createCaptures(host: Pick<CaptureHost, 'folder' | 'location'>) {
 		markServiceStopped() {
 			serviceStopped = true;
 		},
-		/** Leaving or closing fenced every input and action. */
+		/** Leaving or closing refuses input and actions. */
 		get fenced() {
-			return fenced();
+			return locked();
+		},
+		/** The open capture, or `undefined`. */
+		get opened() {
+			return opened;
+		},
+		get unsaved() {
+			return unsaved();
+		},
+		/** How many things leaving now could lose: the open capture, the New capture text, running actions. */
+		get unsettled() {
+			return (unsaved() ? 1 : 0) + (newCapture === '' ? 0 : 1) + running;
 		},
 		get newCapture() {
 			return newCapture;
 		},
 		inputNewCapture(value: string) {
-			if (fenced()) return;
-			newCapture = value;
-		},
-		/**
-		 * How many things leaving could interrupt: drafts with unsaved or unsent
-		 * input, the new-capture text, and unfinished actions.
-		 */
-		get unsettled() {
-			return (
-				unsettledDrafts().length +
-				(newCapture === '' ? (creating ? 1 : 0) : 1) +
-				(importing ? 1 : 0) +
-				(copying ? 1 : 0)
-			);
+			if (!locked()) newCapture = value;
 		},
 		refresh,
-
-		/**
-		 * The draft for a capture, opening one over its listed file if needed.
-		 * Its editor opens in the background; `draft.opened` says when it has.
-		 */
-		open(stem: string): Draft | undefined {
-			const path = pathOf(stem);
-			const existing = drafts.get(path);
-			if (existing !== undefined) return existing;
-			if (closed) return undefined;
-			const entry = entries.find((item) => item.path === path);
-			return entry === undefined ? undefined : draftOf(entry);
-		},
-		/** The draft already open for a capture, without opening one. */
-		draft: (stem: string): Draft | undefined => drafts.get(pathOf(stem)),
-		/** Whether the last listing has a saved file for this stem. */
-		has: (stem: string) => entries.some((item) => item.path === pathOf(stem)),
-		/** Why a capture that is not open cannot be read, when the folder said so. */
-		unreadableReason(stem: string): string | undefined {
-			return unreadable.find((item) => item.path === pathOf(stem))?.message;
-		},
-
-		/**
-		 * Save the new-capture text as a file. The text stays in the form when
-		 * the save fails. Resolves the new stem, or the reason.
-		 */
-		async create(): Promise<
-			{ ok: true; stem: string } | { ok: false; message: string }
+		/** Returning to the window. */
+		check,
+		open,
+		/** Leave the open capture for the timeline. Answers `unsaved` as `open` does. */
+		async back({ discard }: { discard?: unknown } = {}): Promise<
+			'unsaved' | undefined
 		> {
-			if (fenced()) return { ok: false, message: FENCED };
-			if (creating) return creating;
-			const started = (async (): Promise<
-				{ ok: true; stem: string } | { ok: false; message: string }
-			> => {
-				const text = newCapture;
-				// Blank text is refused, and stays in the form: only the person clears it.
-				if (text.trim() === '')
-					return { ok: false, message: 'Write something first.' };
-				const now = new Date();
-				const { body } = composeBody(text);
-				try {
+			const sequence = ++openSequence;
+			if (!(await leave(discard))) return 'unsaved';
+			if (sequence === openSequence) opened = undefined;
+			await refresh();
+			return undefined;
+		},
+		/**
+		 * Reload theirs for `session`, the open capture's: show the file as it
+		 * is now. A capture whose text is no longer a valid row opens as text;
+		 * a file that is gone closes. Answers what the person is told, if
+		 * anything.
+		 */
+		async reloadTheirs(
+			session: RowSession<CaptureFields> | TextSession,
+		): Promise<string | undefined> {
+			const why = refused();
+			if (why !== undefined) return why;
+			const item = opened;
+			if (item?.kind === 'text' && item.session === session) {
+				const { data: found, error } = await admitted(item.session.reloadTheirs());
+				if (error !== null) return describeError(error);
+				if (opened !== item) return undefined;
+				if (found.kind === 'gone') forget();
+				else if (found.kind === 'other') return NOT_TEXT;
+				await refresh();
+				return undefined;
+			}
+			if (item?.kind !== 'capture' || item.session !== session) return undefined;
+			const { data: found, error } = await admitted(item.session.reloadTheirs());
+			if (error !== null) return describeError(error);
+			if (opened !== item) return undefined;
+			if (found.kind === 'gone') forget();
+			else if (found.kind === 'other') {
+				if (found.detail.name !== 'InvalidRow') return NOT_TEXT;
+				item.session.release();
+				opened = {
+					kind: 'text',
+					stem: item.stem,
+					session: createTextSession(folder.files, found.detail, { locked }),
+				};
+			}
+			await refresh();
+			return undefined;
+		},
+		/** Keep mine for `session`, the open capture's: save the draft over the file, or create it again. */
+		async keepMine(
+			session: RowSession<CaptureFields> | TextSession,
+		): Promise<string | undefined> {
+			const why = refused();
+			if (why !== undefined) return why;
+			if (sessionOf(opened) !== session) return undefined;
+			const { error } = await admitted(session.keepMine());
+			await refresh();
+			return error === null ? undefined : describeError(error);
+		},
+
+		/**
+		 * Save the New capture text as a new file and open it. The text stays
+		 * in the form when the save fails. Answers what the person is told.
+		 */
+		async create(): Promise<string | undefined> {
+			const why = refused();
+			if (why !== undefined) return why;
+			const text = newCapture;
+			// Blank text is refused and stays in the form: only the person clears it.
+			if (text.trim() === '') return 'Write something first.';
+			const now = new Date();
+			const { body } = composeBody(text);
+			const created = await admitted(
+				(async () => {
 					for (let attempt = 0; ; attempt++) {
-						const { data: created, error: createdError } = await writing(() =>
-							table.create({
-								stem: newStem(now),
+						const result = await table.create(
+							{
 								fields: {
 									capturedAt: now.toISOString() as CaptureFields['capturedAt'],
 								},
 								body,
-							}),
+							},
+							{ stem: newStem(now) },
 						);
-						if (createdError === null) {
-							noteSaved(
-								Object.freeze({ ...created, ...inspect(created.text) }),
-							);
-							if (newCapture === text) newCapture = '';
-							return { ok: true, stem: created.stem };
-						}
 						// Another capture took this name: a new one is tried.
-						const taken = createdError.name === 'Exists';
-						if (!taken || attempt >= 3)
-							return { ok: false, message: createdError.message };
+						if (result.error?.name !== 'Exists' || attempt >= 3) return result;
 					}
-				} catch (cause) {
-					return { ok: false, message: describe(cause) };
-				}
-			})().finally(() => {
-				creating = undefined;
-			});
-			creating = admit(started);
-			return creating;
-		},
-
-		/**
-		 * Save a draft's source as a new capture with an exclusive create, and
-		 * let go of the draft without saving it to its own file. For a draft
-		 * whose save failed or was not confirmed, whose file is gone, or whose
-		 * delete was not confirmed. Its own file is left as it is.
-		 *
-		 * The copy is the file text only: the editor's latest input. Text typed
-		 * but not yet in that text
-		 * (a new thought or a thought being edited)
-		 * would be dropped with the draft, so the copy is refused while any
-		 * exists, and nothing is written. The draft is held while the copy is
-		 * written, so the copy is all of it.
-		 */
-		async saveCopy(
-			draft: Draft,
-		): Promise<{ ok: true; stem: string } | { ok: false; message: string }> {
-			if (fenced()) return { ok: false, message: FENCED };
-			if (copying)
-				return { ok: false, message: 'A copy is already being saved.' };
-			if (draft.hasUnsentInput)
-				return {
-					ok: false,
-					message:
-						'A copy holds the capture file as its text is now. This capture also has a new thought or a thought you are editing that is not in it yet. Save it, or copy it somewhere and clear it, then save the copy.',
-				};
-			const started = (async (): Promise<
-				{ ok: true; stem: string } | { ok: false; message: string }
-			> => {
-				const result = await draft.copying(async (source) => {
-					try {
-						const stem = `${newStem(new Date())}-copy`;
-						const { data: created, error: createdError } = await createExact(
-							stem,
-							source,
-						);
-						if (createdError !== null)
-							return { ok: false, message: createdError.message } as const;
-						// Listed as it was written; the refresh below says what is there now.
-						noteSaved(created);
-						return { ok: true, stem } as const;
-					} catch (cause) {
-						return { ok: false, message: describe(cause) } as const;
-					}
-				});
-				if (result === undefined)
-					return { ok: false, message: 'This capture is busy.' };
-				if (result.ok) {
-					drop(draft.path, draft);
-					void refresh();
-				}
-				return result;
-			})().finally(() => {
-				copying = undefined;
-			});
-			copying = admit(started);
-			return copying;
-		},
-
-		/** Let go of a draft and its input without writing anything. */
-		async discard(draft: Draft): Promise<void> {
-			if (fenced() || !draft.admitted || draft.saving) return;
-			drop(draft.path, draft);
-			await refresh();
-		},
-
-		/**
-		 * Hold the draft, settle it, and read its file as it is now for the
-		 * person to review before deleting it. The review stays on the draft,
-		 * above any view, until it is confirmed or cancelled. Resolves whether
-		 * there is a file to review; the draft says why when there is not.
-		 */
-		reviewDeletion(draft: Draft): Promise<boolean> {
-			if (fenced()) return Promise.resolve(false);
-			return admit(draft.reviewDeletion());
-		},
-		/**
-		 * Delete exactly the file the person reviewed, without reading it again.
-		 * Refused while leaving or closing, and for a draft already let go.
-		 * Once admitted it runs to its answer, wherever the views are; done, the
-		 * draft is let go here. Resolves whether it deleted.
-		 */
-		remove(draft: Draft): Promise<boolean> {
-			if (fenced() || draft.retired) return Promise.resolve(false);
-			const reviewed = draft.deletionReview?.entry;
-			return admit(
-				draft.confirmDeletion().then((deleted) => {
-					if (deleted && reviewed !== undefined) {
-						drop(draft.path, draft);
-						entries = entries.filter((entry) => entry.path !== reviewed.path);
-					}
-					return deleted;
-				}),
+				})(),
 			);
+			if (created.error !== null)
+				return `The capture was not saved: ${describeError(created.error)} Your text is still here.`;
+			if (newCapture === text) newCapture = '';
+			await refresh();
+			const stem = rowStemOf(CAPTURES_TABLE, created.data.path);
+			if (stem !== undefined) await open(stem, 'capture');
+			return undefined;
 		},
 
-		/** Import the whole export, including its report, receipt, and fresh listing. */
-		importLegacy(bundle: LegacyBundle): Promise<ImportReport> {
-			if (fenced()) return Promise.reject(new Error(FENCED));
-			if (importing) return importing;
-			const started = (async () => {
-				const report = await runLegacyImport(
-					{
-						read: (path: string) => folder.files.read(path),
-						create: (path: string, content: string | Uint8Array) =>
-							writing(() => folder.files.create(path, content)),
-						replace: (file: FileCapture, content: string | Uint8Array) =>
-							writing(() => folder.files.replace(file, content)),
-					},
-					bundle,
-				);
+		/**
+		 * Delete the open capture, whose session is `session`. The session is
+		 * released and its last saves land first, so the delete removes what
+		 * this window saved last; a file another program changed since is
+		 * refused, and the capture opens again as it is now.
+		 */
+		async remove(
+			session: RowSession<CaptureFields> | TextSession,
+		): Promise<string | undefined> {
+			const why = refused();
+			if (why !== undefined) return why;
+			const item = opened;
+			if (item === undefined || sessionOf(item) !== session) return undefined;
+			session.release();
+			const { file } = await session.settled();
+			const { error } = await admitted(table.delete(file));
+			if (error === null) {
+				if (opened === item) forget();
 				await refresh();
-				return report;
-			})().finally(() => {
-				importing = undefined;
-			});
-			importing = admit(started);
-			return importing;
+				return undefined;
+			}
+			if (opened === item)
+				await open(item.stem, item.kind === 'text' ? 'text' : 'capture', {
+					discard: session,
+				});
+			return describeError(error);
+		},
+
+		/** Import a whole export, including its report and receipt, then list again. */
+		async importLegacy(bundle: LegacyBundle): Promise<ImportReport> {
+			const why = refused();
+			if (why !== undefined) throw new Error(why);
+			try {
+				return await admitted(runLegacyImport(folder.files, bundle));
+			} finally {
+				await refresh();
+			}
 		},
 		commit: () => folder.git.commit(),
 
 		/**
 		 * The page's part in leaving Epicenter. `fence` runs before anything is
-		 * awaited; `settle` resolves how many things would be lost; `resume`
-		 * gives every draft back as it was.
+		 * awaited; `settle` lets running actions and saves finish and answers
+		 * how many things would be lost; `resume` gives everything back.
 		 */
 		departure: {
 			fence() {
-				leaving = true;
+				departing = true;
 			},
-			settle: settleAll,
+			async settle(): Promise<number> {
+				await quiet();
+				const item = opened;
+				const settled = await sessionOf(item)?.settled();
+				return (
+					(settled?.status === 'error' ? 1 : 0) +
+					(item?.kind === 'capture' && item.form.unsent ? 1 : 0) +
+					(newCapture === '' ? 0 : 1)
+				);
+			},
 			resume() {
-				leaving = false;
+				departing = false;
 			},
 		},
 
 		/**
-		 * Finish intended saves before the page releases its folder: every
-		 * submitted action and every write already accepted. Failed saves are
-		 * not sent again. Then each draft lets go of its editor.
+		 * Let running actions and the open capture's saves finish before the
+		 * page releases its folder. A failed save is not sent again. Every call
+		 * answers the same completion.
 		 */
 		close(): Promise<void> {
-			if (closing) return closing;
-			closed = true;
+			if (closing !== undefined) return closing;
 			closing = (async () => {
-				try {
-					await settleAll();
-					await refreshing;
-				} finally {
-					for (const [path, draft] of [...drafts]) drop(path, draft);
-				}
+				await quiet();
+				const session = sessionOf(opened);
+				const settled = await session?.settled();
+				session?.release();
+				if (settled?.status === 'error')
+					log.warn(
+						new Error(
+							`Closed with a capture that could not be saved: ${settled.file.path}`,
+						),
+					);
 			})();
 			return closing;
 		},

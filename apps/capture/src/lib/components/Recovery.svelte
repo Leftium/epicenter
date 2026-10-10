@@ -9,7 +9,7 @@
 	import { rowStemOf } from '@epicenter/folder';
 	import * as Alert from '@epicenter/ui/alert';
 	import { Button } from '@epicenter/ui/button';
-	import type { Captures } from '$lib/captures.svelte.js';
+	import type { Captures, Mode } from '$lib/captures.svelte.js';
 	import { downloadText } from '$lib/download.js';
 
 	// Captures made before this version live in an account store, not in
@@ -23,7 +23,7 @@
 		onOpen,
 	}: {
 		captures: Captures;
-		onOpen: (stem: string) => void;
+		onOpen: (stem: string, mode: Mode) => void;
 	} = $props();
 
 	let bundle = $state.raw<LegacyBundle | undefined>();
@@ -189,7 +189,7 @@
 			<p class="mt-2 break-words"><code>{document.path}</code>: {document.status === 'failed' ? document.message : 'another file is here'}</p>
 		{/each}
 		{#if report.documents.some((document) => document.structured)}
-			<p class="mt-3">Some imported captures can only be edited in Files, because their original text has Markdown that hides the Thoughts section. All of their text is in the file.</p>
+			<p class="mt-3">Some imported captures can only be edited as text, because their original text has Markdown that hides the Thoughts section. All of their text is in the file.</p>
 		{/if}
 		<p class="mt-3 break-words text-muted-foreground">Report: <code>{report.reportPath}</code>. Export kept at <code>{report.bundlePath}</code>. Record: <code>{report.receiptPath}</code>.</p>
 		{#if report.documents.some((document) => document.status === 'created')}
@@ -198,7 +198,7 @@
 					{@const stem = rowStemOf(CAPTURES_TABLE, document.path)}
 					<li>
 						{#if stem !== undefined}
-							<Button variant="link" size="sm" class="h-auto p-0" onclick={() => onOpen(stem)}>{document.identity}</Button>
+							<Button variant="link" size="sm" class="h-auto p-0" onclick={() => onOpen(stem, document.structured ? 'text' : 'capture')}>{document.identity}</Button>
 						{:else}
 							{document.identity}
 						{/if}

@@ -56,6 +56,7 @@ export type Reloaded = 'shown' | 'closed' | 'reopened';
 export function createOpenItem<TKey, TItem, TSession extends OpenSession>({
 	load,
 	sessionOf,
+	keyOf,
 	sameKey = Object.is,
 	holds = () => false,
 	closed = () => false,
@@ -63,6 +64,13 @@ export function createOpenItem<TKey, TItem, TSession extends OpenSession>({
 	/** Build the item for `key` from a fresh read; the app maps invalid rows, binary files, and failures. */
 	load(key: TKey): Promise<TItem>;
 	sessionOf(item: TItem): TSession | undefined;
+	/**
+	 * The key an item is shown under now, read whenever the slot compares or
+	 * reloads: when `load` opened something other than what was asked (a row
+	 * whose text is not valid, opened as text), or the item moved since (a
+	 * rename keeps its session at a new path). Defaults to the asked key.
+	 */
+	keyOf?(item: TItem, asked: TKey): TKey;
 	sameKey?(a: TKey, b: TKey): boolean;
 	/** Whether the item holds input outside its session that leaving would lose. */
 	holds?(item: TItem): boolean;
@@ -74,6 +82,13 @@ export function createOpenItem<TKey, TItem, TSession extends OpenSession>({
 	let sequence = 0;
 
 	const item = () => (shown?.status === 'open' ? shown.item : undefined);
+	/** The key what is shown is under now. */
+	const keyNow = (): TKey | undefined =>
+		shown === undefined
+			? undefined
+			: shown.status === 'open' && keyOf !== undefined
+				? keyOf(shown.item, shown.key)
+				: shown.key;
 	const current = () => {
 		const it = item();
 		return it === undefined ? undefined : sessionOf(it);
@@ -124,16 +139,21 @@ export function createOpenItem<TKey, TItem, TSession extends OpenSession>({
 
 	async function reload(): Promise<boolean> {
 		const was = shown;
-		if (was === undefined || closed()) return false;
+		const key = keyNow();
+		if (was === undefined || key === undefined || closed()) return false;
 		const mine = ++sequence;
 		if (was.status === 'open') sessionOf(was.item)?.release();
-		return show(was.key, mine);
+		return show(key, mine);
 	}
 
 	return {
-		/** What is shown: loading, or the open item. */
-		get shown() {
-			return shown;
+		/** What is shown: loading, or the open item, under the key it is shown under now. */
+		get shown(): Shown<TKey, TItem> | undefined {
+			const key = keyNow();
+			if (shown === undefined || key === undefined) return undefined;
+			return shown.status === 'open'
+				? { status: 'open', key, item: shown.item }
+				: shown;
 		},
 		get item() {
 			return item();
@@ -154,7 +174,8 @@ export function createOpenItem<TKey, TItem, TSession extends OpenSession>({
 			{ discard }: { discard?: TSession } = {},
 		): Promise<Opening<TSession>> {
 			if (closed()) return { kind: 'superseded' };
-			if (shown !== undefined && sameKey(shown.key, key))
+			const now = keyNow();
+			if (now !== undefined && sameKey(now, key))
 				return { kind: 'done', left: false };
 			const mine = ++sequence;
 			const left = await leave(mine, discard);

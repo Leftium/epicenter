@@ -196,3 +196,44 @@ test('a command counts from its call, before its first await', async () => {
 	await waiting;
 	expect(admissions.busy).toBe(false);
 });
+
+test('an item shown under another key than asked opens again when asked by that key', async () => {
+	const loads: string[] = [];
+	let repaired = false;
+	const open = createOpenItem<string, Item, Session>({
+		async load(key) {
+			loads.push(key);
+			// A row whose text is not valid opens as text until it is repaired.
+			const shownAs = key === 'row' && !repaired ? 'text' : key;
+			return { key: shownAs, session: fakeSession(key) };
+		},
+		sessionOf: (item) => item.session,
+		keyOf: (item) => item.key,
+	});
+	await open.open('row');
+	expect(open.shown?.key).toBe('text');
+	repaired = true;
+	expect(await open.open('row')).toEqual({ kind: 'done', left: true });
+	expect(open.item?.key).toBe('row');
+	expect(loads).toEqual(['row', 'row']);
+});
+
+test('the key follows an item renamed in place, so a reload reads the new path', async () => {
+	const loads: string[] = [];
+	/** Where a rename moved each session's file. */
+	const moved = new Map<Session, string>();
+	const open = createOpenItem<string, Item, Session>({
+		async load(key) {
+			loads.push(key);
+			return { key, session: fakeSession(key) };
+		},
+		sessionOf: (item) => item.session,
+		keyOf: (item) => moved.get(item.session) ?? item.key,
+	});
+	await open.open('old');
+	moved.set(open.session!, 'new');
+	expect(open.shown?.key).toBe('new');
+	expect(await open.open('new')).toEqual({ kind: 'done', left: false });
+	await open.reload();
+	expect(loads).toEqual(['old', 'new']);
+});

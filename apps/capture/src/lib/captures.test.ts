@@ -18,7 +18,9 @@
  * - A file that is not a valid capture opens as text, saves as typed, and
  *   reopens as a capture once repaired
  * - Leaving a capture whose save failed, or with a thought typed and not
- *   added, answers `unsaved` until the person discards it
+ *   added, answers `unsaved` until the person discards that session; opening
+ *   the capture already shown does nothing; a discard after Reload theirs
+ *   reopened it applies to the session answered
  * - Deleting waits for the open capture's saves and deletes what it saved
  *   last; a file changed elsewhere since is not deleted
  * - Returning adopts a newer version of an open capture that holds nothing
@@ -78,7 +80,7 @@ test('creating writes the text and an empty Thoughts section, opens it, and clea
 
 	// Listing and opening again write nothing.
 	const before = counter.mdWrites;
-	await captures.back();
+	await captures.leave();
 	await captures.refresh();
 	await captures.open(captures.timeline[0]!.stem, 'capture');
 	expect(counter.mdWrites).toBe(before);
@@ -308,7 +310,10 @@ test('an invalid row is named for repair, opens as text, saves as typed, and reo
 	session.input(`---\ncapturedAt: ${AT}\n---\n\nRepaired\n\n## Thoughts\n`);
 	await session.settled();
 
-	expect(await captures.open('one', 'capture')).toBeUndefined();
+	expect(await captures.open('one', 'capture')).toEqual({
+		kind: 'done',
+		left: true,
+	});
 	const { form } = openCapture(captures);
 	expect(form.text).toBe('Repaired');
 	await captures.refresh();
@@ -349,15 +354,19 @@ test('leaving waits for saves, and a failed save answers unsaved until it is dis
 	const one = openCapture(captures);
 	harness.failNextWrite(PATH);
 	one.form.inputText('Mine');
-	expect(await captures.open('two', 'capture')).toBe('unsaved');
+	expect(await captures.open('two', 'capture')).toEqual({
+		kind: 'unsaved',
+		session: one.session,
+	});
 	expect(openCapture(captures)).toBe(one);
 	expect(captures.unsaved).toBe(true);
 
 	// A discard names the session it lets go; any other answers unsaved again.
-	expect(await captures.back({ discard: {} })).toBe('unsaved');
+	const other = {} as typeof one.session;
+	expect((await captures.leave({ discard: other })).kind).toBe('unsaved');
 	expect(
 		await captures.open('two', 'capture', { discard: one.session }),
-	).toBeUndefined();
+	).toEqual({ kind: 'done', left: true });
 	expect(openCapture(captures).stem).toBe('two');
 	// The released session takes nothing more.
 	one.form.inputText('Late');
@@ -372,10 +381,60 @@ test('a thought typed and not added keeps the capture open until it is discarded
 	const { session, form } = openCapture(captures);
 	form.inputNewThought('not added');
 	expect(captures.unsettled).toBe(1);
-	expect(await captures.back()).toBe('unsaved');
-	expect(await captures.back({ discard: session })).toBeUndefined();
+	expect((await captures.leave()).kind).toBe('unsaved');
+	expect(await captures.leave({ discard: session })).toEqual({
+		kind: 'done',
+		left: true,
+	});
 	expect(captures.opened).toBeUndefined();
 	expect(await harness.text(PATH)).toBe(HAND);
+});
+
+test('opening the capture already shown does nothing, even when it holds unsaved text', async () => {
+	const harness = await open({ [PATH]: HAND });
+	const { captures, counter } = harness;
+	await captures.open('one', 'capture');
+	const one = openCapture(captures);
+	one.form.inputNewThought('not added');
+	const before = counter.mdWrites;
+	expect(await captures.open('one', 'capture')).toEqual({
+		kind: 'done',
+		left: false,
+	});
+	expect(openCapture(captures)).toBe(one);
+	expect(one.form.newThought).toBe('not added');
+	expect(one.session.locked).toBe(false);
+	expect(counter.mdWrites).toBe(before);
+});
+
+test('a discard after Reload theirs reopened the capture applies to the session answered', async () => {
+	const harness = await open({ [PATH]: HAND });
+	const { captures } = harness;
+	await captures.open('one', 'capture');
+	const row = openCapture(captures);
+	const invalid = '---\ncapturedAt: [unclosed\n---\n';
+	await harness.writeElsewhere(PATH, invalid);
+	row.form.inputText('Mine');
+	await row.session.settled();
+	// The row session cannot show the file now, so it opens again as text.
+	expect(await captures.reloadTheirs(row.session)).toBeUndefined();
+	const text = openText(captures);
+	harness.failNextWrite(PATH);
+	text.input(`${invalid}more\n`);
+	await text.settled();
+
+	const answered = await captures.leave();
+	expect(answered).toEqual({ kind: 'unsaved', session: text });
+	// The session from before the swap discards nothing.
+	expect((await captures.leave({ discard: row.session })).kind).toBe('unsaved');
+	expect(openText(captures)).toBe(text);
+	if (answered.kind !== 'unsaved') throw new Error('expected unsaved');
+	expect(await captures.leave({ discard: answered.session })).toEqual({
+		kind: 'done',
+		left: true,
+	});
+	expect(captures.opened).toBeUndefined();
+	expect(await harness.text(PATH)).toBe(invalid);
 });
 
 test('leaving after an edit saves that edit first', async () => {
@@ -383,7 +442,7 @@ test('leaving after an edit saves that edit first', async () => {
 	const { captures } = harness;
 	await captures.open('one', 'capture');
 	openCapture(captures).form.inputText('Saved on the way out');
-	expect(await captures.back()).toBeUndefined();
+	expect(await captures.leave()).toEqual({ kind: 'done', left: true });
 	expect(await harness.text(PATH)).toContain('\nSaved on the way out\n');
 	expect(captures.timeline[0]?.preview).toBe('Saved on the way out');
 });
@@ -552,6 +611,21 @@ test('a departure refuses input, settles saves, counts what would be lost, and g
 	expect(captures.newCapture).toBe('A new capture, not added');
 	expect(form.addThought()).toBe(true);
 	expect((await session.settled()).status).toBe('saved');
+});
+
+test('a commit is refused while departing or closing, as other actions are', async () => {
+	const { captures } = await open({ [PATH]: HAND });
+	captures.departure.fence();
+	expect(await captures.commit()).toEqual({
+		status: 'blocked',
+		reason: expect.stringContaining('quit or restart'),
+	});
+	captures.departure.resume();
+	void captures.close();
+	expect(await captures.commit()).toEqual({
+		status: 'blocked',
+		reason: expect.stringContaining('closing'),
+	});
 });
 
 test('closing waits for a save already sent and the latest edit after it', async () => {

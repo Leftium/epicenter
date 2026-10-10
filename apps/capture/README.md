@@ -65,8 +65,8 @@ are not UTF-8 text are listed apart and not opened.
   was deleted elsewhere, the choices are **Discard**, which closes the
   capture, and **Keep mine**, which creates the file again from your text.
   Nothing is written until you choose.
-- A save that fails for another reason keeps your text and offers **Try
-  again**. A save whose reply was lost is checked with one read: if your
+- A save that fails for another reason keeps your text, names the failure,
+  and offers **Try again**. A save whose reply was lost is checked with one read: if your
   text is there, it is saved. Otherwise the window says it may or may not be
   in the file and offers **Save again**.
 - A value the file cannot hold is never written; the bar names it, and the
@@ -92,7 +92,8 @@ are not UTF-8 text are listed apart and not opened.
 - **Git is separate.** A file that saved is saved. If the commit that records
   it fails, a "History was not recorded" notice says so and offers the commit
   again, with Git's own message under "Show technical details". It never
-  undoes a save.
+  undoes a save. Committing is refused, like every other action, while
+  Capture closes or Epicenter quits or restarts.
 
 ## Unsaved text is protected
 
@@ -104,7 +105,7 @@ included, until you add it or clear it.
 - Leaving a capture whose save failed or conflicted, or that holds a thought
   typed and not added, asks once: **Discard unsaved changes?** Discard lets
   that capture's text go; Cancel keeps it open. Nothing else is kept when you
-  leave.
+  leave. Opening the capture already shown does nothing and asks nothing.
 - The New capture text stays in its form while you open and leave captures.
 - Reloading, closing the tab, or leaving the app asks first while any of it
   exists. The reload shortcut is refused with a message.
@@ -298,11 +299,11 @@ window that stays silent, are the host's; see `apps/epicenter`.
 | Path | Role |
 | --- | --- |
 | `src/lib/platform/` | The `#platform/folder` seam: `types.ts` is its contract, `folder.browser.ts` opens the OPFS folder, `folder.epicenter-host.ts` attaches to the shell's directory and its departure wire, and `departure.svelte.ts` is the page's side of that wire. `auth.*.ts` is used only by the old-data export. |
-| `src/lib/captures.svelte.ts` | The store: the timeline and its repair list, the one open capture in its edit session (`@epicenter/svelte/edit-session`), leaving and its `unsaved` answer, the conflict commands, create, delete, import, departure, and close. |
+| `src/lib/captures.svelte.ts` | The store: the timeline and its repair list, how a capture loads, the one open capture in the shared open-item slot (`@epicenter/svelte/open-item`) with its edit session, refusals, the conflict commands, create, delete, import, and commit counted by the shared admissions (`@epicenter/svelte/admissions`), departure, and close. |
 | `src/lib/capture-form.svelte.ts` | The capture view's form over an open capture's row session: the body read as text and thoughts, each change encoded over the body and saved, and the new thought and thought edit not saved yet. |
-| `src/lib/item-actions.ts` | Opening, leaving, and deleting with the confirmation each may need. |
+| `src/lib/item-actions.ts` | Opening, leaving, and deleting with the confirmation each may need. A discard names the session the store answered `unsaved` with. |
 | `src/lib/recovery/` | Opens the old account store for an export. Loaded only from the recovery screen. |
-| `src/lib/components/` | `CaptureApp.svelte` shows the timeline, the recovery screen, or the open capture; `CaptureDetail.svelte` and `TextDetail.svelte` are the open capture as text and thoughts or as Markdown, each with `SaveBar.svelte` and its conflict prompt. Each is keyed by the open item. |
+| `src/lib/components/` | `CaptureApp.svelte` shows the timeline, the recovery screen, or the open capture; `CaptureDetail.svelte` and `TextDetail.svelte` are the open capture as text and thoughts or as Markdown, each with the shared save bar (`@epicenter/svelte/save-bar`) and its conflict prompt. Each is keyed by the open item. |
 
 The package exports nothing. No host imports a part of this app.
 
@@ -347,46 +348,54 @@ checked by hand in the Epicenter shell.
 This version is built on `@epicenter/folder`'s guarded autosave and the
 shared edit sessions, and dropped several promises of the version before it:
 
-- **The Files workspace is gone.** There is one timeline. A capture's
+- The Files workspace is gone. There is one timeline. A capture's
   Markdown is edited with Edit as text, and a file that is not a valid
   capture opens that way from the timeline's repair list.
-- **Saves no longer win over changes made elsewhere**, and there is no
+- Saves no longer win over changes made elsewhere, and there is no
   Reload from file. Every save, and every delete, is guarded by the version
   this window last saved or read; a change made elsewhere is a conflict, and
   Reload theirs lives in the conflict prompt.
-- **One capture is open at a time.** Moving between captures no longer keeps
+- One capture is open at a time. Moving between captures no longer keeps
   each capture's unsaved text, unadded thought, or failed save. Leaving one
   that holds any of it asks to discard it. Only the New capture text is kept
   across captures.
-- **A capture has no address of its own.** The page no longer puts the open
+- A capture has no address of its own. The page no longer puts the open
   capture in the URL; reloading returns to the timeline.
-- **Save as a copy is gone**, from every failure. So are Put the file back,
+- Save as a copy is gone, from every failure. So are Put the file back,
   Let it go, Discard my changes, and Check again for a removed file: a file
   deleted elsewhere offers Keep mine, which creates it again, or Discard.
-- **Deleting no longer shows the file for review.** It asks a plain
+- Deleting no longer shows the file for review. It asks a plain
   confirmation and deletes what this window saved last; a file changed
   elsewhere is not deleted, and the capture opens again as it is now.
-- **Unconfirmed-delete choices are gone.** A delete whose reply was lost is
+- Unconfirmed-delete choices are gone. A delete whose reply was lost is
   reported once, and the timeline reads the folder again.
-- **Change reports from the folder no longer reread the timeline**, and the
+- Change reports from the folder no longer reread the timeline, and the
   30-second relisting is gone. The timeline reads the folder on open, after
   your actions, and when the window regains focus or becomes visible.
   Returning also takes a newer version of an open capture that holds nothing
   unsaved.
-- **The first save of a hand-written file rewrites its frontmatter** as plain
+- The first save of a hand-written file rewrites its frontmatter as plain
   YAML. Comments in the frontmatter are lost. The previous standard form was
   JSON-style quoted keys.
-- **Imported captures are written in the same plain YAML form**, and a retry
+- Imported captures are written in the same plain YAML form, and a retry
   counts a file an earlier import wrote in another form as the same capture.
-- **A thought typed and not added on a capture that stops reading as one**
+- A thought typed and not added on a capture that stops reading as one
   (after Reload theirs brings a layout the view cannot show) can no longer be
   added when the file is repaired. It stays on screen, read-only, to copy,
   and leaving or Edit as text asks before discarding it. The same holds for a
   thought edit not saved.
-- **Import reports can no longer be viewed in the app.** The recovery screen
+- Import reports can no longer be viewed in the app. The recovery screen
   prints the paths of the report, the saved export, and the receipt under
   `recovery/`; on the desktop they are files in the folder, and in the
   browser build nothing shows them.
-- **A failed save's text is no longer kept for a removed file on the
-  timeline.** A capture whose file is gone is not listed once you leave it.
-
+- A failed save's text is no longer kept for a removed file on the
+  timeline. A capture whose file is gone is not listed once you leave it.
+- Reload theirs of a file that can no longer be shown the way it is open (a
+  capture file that is now binary, say) no longer keeps your text with Keep
+  mine offered. It lets your text go and opens the file again as it reads
+  now, as a capture, as text, or as could not be opened.
+- The save bar uses the wording every Epicenter app shares: "This changed
+  elsewhere" rather than "This capture changed elsewhere", and a failed save
+  names the failure in the bar instead of under "Show technical details".
+- A commit is refused while Capture closes or Epicenter quits or restarts,
+  and says so, as every other action does.

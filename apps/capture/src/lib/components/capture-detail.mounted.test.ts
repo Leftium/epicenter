@@ -103,7 +103,7 @@ test('a change made elsewhere asks: Keep mine saves the text on screen over it',
 	await harness.writeElsewhere(PATH, `---\ncapturedAt: ${AT}\n---\n\nTheirs\n`);
 	type(field('capture-text'), 'Mine');
 	await settle(harness);
-	expect(harness.target.textContent).toContain('This capture changed elsewhere');
+	expect(harness.target.textContent).toContain('This changed elsewhere');
 	click(button('Keep mine'));
 	await Bun.sleep(5);
 	await settle(harness);

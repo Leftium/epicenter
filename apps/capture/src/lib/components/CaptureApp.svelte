@@ -62,6 +62,9 @@
 			// No answer came back, so the snapshot cannot say what happened.
 			else if (outcome.status === 'unconfirmed')
 				toast.warning('The commit was not confirmed', { description: outcome.error });
+			// Refused while Capture closes or Epicenter quits; the snapshot is unchanged.
+			else if (outcome.status === 'blocked')
+				toast.error('The commit did not start', { description: outcome.reason });
 		} finally {
 			committing = false;
 		}
@@ -198,7 +201,7 @@
 				</Empty.Header>
 				<Empty.Content>
 					<div class="flex flex-wrap justify-center gap-2">
-						<Button variant="outline" size="sm" onclick={() => void openItem(captures, item.stem, item.mode)}>Try again</Button>
+						<Button variant="outline" size="sm" onclick={() => void captures.reload()}>Try again</Button>
 						<Button variant="outline" size="sm" onclick={() => void backToTimeline(captures)}>Back to timeline</Button>
 					</div>
 					<TechnicalDetails detail={item.message} />

@@ -10,10 +10,11 @@
  * (`@epicenter/svelte/edit-session`): as a capture, a row session whose body
  * the capture form edits as text and thoughts; or as text, a text session
  * over the file's exact Markdown, which is how a file that is not a valid
- * capture is repaired. Leaving waits for the session's saves, then releases
- * it and lists again. A save that failed or conflicted, or a thought typed
- * and not added, keeps the capture open until the person discards it (`open`
- * and `back` answer `unsaved`, and the view asks).
+ * capture is repaired. The open-item slot (`@epicenter/svelte/open-item`)
+ * owns leaving: it waits for the session's saves, then releases it, and the
+ * timeline is listed again. A save that failed or conflicted, or a thought
+ * typed and not added, keeps the capture open until the person discards it
+ * (`open` and `leave` answer `unsaved` with the session, and the view asks).
  *
  * Returning to the window takes a newer version of the open capture when its
  * session holds nothing unsaved. Otherwise the next save reports the change
@@ -32,52 +33,60 @@ import {
 	runLegacyImport,
 } from '@epicenter/capture/legacy';
 import {
+	type CommitOutcome,
 	type RowReadError,
 	rowPath,
 	rowStemOf,
 	type StoredRow,
 } from '@epicenter/folder';
+import { createAdmissions } from '@epicenter/svelte/admissions';
 import {
 	createRowSession,
 	createTextSession,
-	type Reread,
-	type RowProblem,
 	type RowSession,
 	type TextSession,
 	textSource,
 } from '@epicenter/svelte/edit-session';
+import { createOpenItem, type OpenItem } from '@epicenter/svelte/open-item';
 import { createSubscriber } from 'svelte/reactivity';
 import { createLogger } from 'wellcrafted/logger';
-import type { Result } from 'wellcrafted/result';
 import { type CaptureForm, createCaptureForm } from './capture-form.svelte.js';
 import type { CaptureHost } from './platform/types.js';
 
 const log = createLogger('capture');
-
-/** A failure as a session or the folder reports it. */
-type Failure = { readonly name: string; readonly message: string };
 
 export type Captures = ReturnType<typeof createCaptures>;
 
 /** How a capture is open: its text and thoughts, or its exact Markdown. */
 export type Mode = 'capture' | 'text';
 
-/** The one open capture: what the detail shows. */
-export type Opened =
-	| { readonly kind: 'loading'; readonly stem: string; readonly mode: Mode }
+/** Which capture is open, and how. */
+type Key = { readonly stem: string; readonly mode: Mode };
+
+/** A capture as its loader built it. */
+type Item =
 	| {
 			readonly kind: 'capture';
 			readonly stem: string;
 			readonly session: RowSession<CaptureFields>;
 			readonly form: CaptureForm;
 	  }
-	| { readonly kind: 'text'; readonly stem: string; readonly session: TextSession }
+	| {
+			readonly kind: 'text';
+			readonly stem: string;
+			readonly session: TextSession;
+	  }
 	| {
 			readonly kind: 'failed';
 			readonly stem: string;
 			readonly mode: Mode;
 			readonly message: string;
 	  };
+
+/** The one open capture: what the detail shows. */
+export type Opened =
+	| { readonly kind: 'loading'; readonly stem: string; readonly mode: Mode }
+	| Item;
 
 /** A capture the timeline lists. */
 export type TimelineRow = {
@@ -100,9 +109,6 @@ export type Repair = {
 export const DEPARTING =
 	'Epicenter is asking to quit or restart, so nothing is changed now. Your text is kept.';
 const CLOSING = 'Capture is closing, so nothing was changed.';
-/** Why Reload theirs showed nothing: the file is there but is not text. */
-const NOT_TEXT =
-	'This file is no longer text, so it cannot be shown here. Keep mine saves your version over it.';
 
 /**
  * Library errors state failures precisely; these are the ones a person acts
@@ -117,8 +123,8 @@ export function describeError(error: {
 	switch (error.name) {
 		case 'Conflict':
 			return error.actualSha256 === undefined
-				? 'The file is no longer in the folder. Nothing was changed.'
-				: 'The file changed elsewhere. Nothing was changed.';
+				? 'The file is no longer here, so nothing was changed.'
+				: 'The file changed elsewhere, so nothing was changed. Check it and try again.';
 		case 'Unconfirmed':
 			return `The change was sent, but nothing confirmed it, so it may or may not have happened. ${error.message}`;
 		case 'InvalidValues':
@@ -186,7 +192,6 @@ export function createCaptures(host: Pick<CaptureHost, 'folder' | 'location'>) {
 	/** Why the folder could not be listed, when it could not. */
 	let listProblem = $state<string | undefined>();
 	let loaded = $state(false);
-	let opened = $state.raw<Opened | undefined>();
 	let newCapture = $state('');
 	const trackGit = createSubscriber((update) => folder.git.subscribe(update));
 	/** The Epicenter service that served this page has stopped. */
@@ -195,11 +200,8 @@ export function createCaptures(host: Pick<CaptureHost, 'folder' | 'location'>) {
 	let departing = $state(false);
 	let closing: Promise<void> | undefined;
 	let refreshSequence = 0;
-	/** Advanced by every open and close, so a load that answers late installs nothing. */
-	let openSequence = 0;
-	/** Actions admitted and not finished: a departure and `close` wait for them. */
-	const operations = new Set<Promise<unknown>>();
-	let running = $state(0);
+	/** Commands admitted and not finished: a departure and `close` wait for them. */
+	const { command, quiet, ...admissions } = createAdmissions();
 
 	const locked = () => departing || closing !== undefined;
 
@@ -208,36 +210,6 @@ export function createCaptures(host: Pick<CaptureHost, 'folder' | 'location'>) {
 		if (closing !== undefined) return CLOSING;
 		if (departing) return DEPARTING;
 		return undefined;
-	}
-
-	/** Count `work` as running until it settles. */
-	function admitted<T>(work: Promise<T>): Promise<T> {
-		operations.add(work);
-		running = operations.size;
-		const done = () => {
-			operations.delete(work);
-			running = operations.size;
-		};
-		work.then(done, done);
-		return work;
-	}
-
-	async function quiet() {
-		while (operations.size > 0) await Promise.allSettled([...operations]);
-	}
-
-	/**
-	 * Whether `item`, its saves ended in `status`, holds what leaving would
-	 * lose: a draft it could not save, or a thought typed and not added.
-	 */
-	function holdsUnsaved(item: Opened | undefined, status: string | undefined) {
-		return status === 'error' || (item?.kind === 'capture' && item.form.unsent);
-	}
-
-	function sessionOf(item: Opened | undefined) {
-		return item?.kind === 'capture' || item?.kind === 'text'
-			? item.session
-			: undefined;
 	}
 
 	/** One listing pass. A pass that a newer one overtook changes nothing. */
@@ -285,40 +257,13 @@ export function createCaptures(host: Pick<CaptureHost, 'folder' | 'location'>) {
 		unreadable = others.sort(byPath);
 	}
 
-	/** The listing, and a newer version of the open capture when it holds nothing unsaved. */
-	async function check() {
-		if (closing !== undefined) return;
-		const item = opened;
-		const adopt =
-			item?.kind === 'capture' && item.form.unsent
-				? undefined
-				: sessionOf(item)?.adopt();
-		await Promise.all([refresh(), adopt]);
-	}
-
-	/**
-	 * Leave the open capture: wait for its saves, then release its session.
-	 * Answers false, leaving it open, when a save failed or conflicted or a
-	 * thought is typed and not added, unless the person chose to discard
-	 * that session's draft.
-	 */
-	async function leave(discard: unknown): Promise<boolean> {
-		const item = opened;
-		const session = sessionOf(item);
-		if (session === undefined) return true;
-		const settled = await session.settled();
-		if (holdsUnsaved(item, settled.status) && discard !== session) return false;
-		session.release();
-		return true;
-	}
-
-	function openRow(stem: string, stored: StoredRow<CaptureFields>): Opened {
+	function openRow(stem: string, stored: StoredRow<CaptureFields>): Item {
 		const session = createRowSession(table, stored, { locked });
 		return { kind: 'capture', stem, session, form: createCaptureForm(session) };
 	}
 
 	/** The file's exact text, as a text session. */
-	async function loadText(stem: string): Promise<Opened> {
+	async function loadText(stem: string): Promise<Item> {
 		const { data: found, error } = await textSource(folder.files).reread(
 			pathOf(stem),
 		);
@@ -353,7 +298,7 @@ export function createCaptures(host: Pick<CaptureHost, 'folder' | 'location'>) {
 	 * Read `stem` the way `mode` opens it. A file that is not a valid capture
 	 * opens as text whichever was asked.
 	 */
-	async function load(stem: string, mode: Mode): Promise<Opened> {
+	async function load({ stem, mode }: Key): Promise<Item> {
 		if (mode === 'text') return loadText(stem);
 		const { data: stored, error } = await table.get(stem);
 		if (error?.name === 'InvalidRow')
@@ -371,49 +316,55 @@ export function createCaptures(host: Pick<CaptureHost, 'folder' | 'location'>) {
 				mode,
 				message: 'This capture is no longer in the folder.',
 			};
-		if (captureBody.decode(stored.row.body).error !== null) return loadText(stem);
+		if (captureBody.decode(stored.row.body).error !== null)
+			return loadText(stem);
 		return openRow(stem, stored);
 	}
+
+	/** How an item shows its file; a failed item, as it was asked. */
+	const modeOf = (item: Item): Mode =>
+		item.kind === 'capture'
+			? 'capture'
+			: item.kind === 'text'
+				? 'text'
+				: item.mode;
+
+	/**
+	 * The open capture. A thought typed and not added is input outside its
+	 * session, so leaving asks about it as it does about a failed save.
+	 */
+	const slot: OpenItem<Key, Item, RowSession<CaptureFields> | TextSession> =
+		createOpenItem({
+			load,
+			sessionOf: (item: Item) =>
+				item.kind === 'failed' ? undefined : item.session,
+			// A capture asked for as a capture that opened as text is not what its
+			// key says, so asking for it again (Open as capture, once repaired) reads it.
+			sameKey: (a: Key, b: Key) =>
+				a.stem === b.stem &&
+				a.mode === b.mode &&
+				!(
+					slot.shown?.status === 'open' &&
+					slot.shown.key.mode !== modeOf(slot.shown.item)
+				),
+			holds: (item) => item.kind === 'capture' && item.form.unsent,
+			closed: () => closing !== undefined,
+		});
 
 	/**
 	 * Show `stem` as `mode` edits it. The open capture's saves land first,
 	 * and the timeline is read again. Answers `unsaved`, opening nothing,
 	 * when the open capture holds something it could not save; the view asks
-	 * the person, and `discard` names the session they chose to let go.
+	 * the person and opens again with `{ discard: session }`.
 	 */
 	async function open(
 		stem: string,
 		mode: Mode,
-		{ discard }: { discard?: unknown } = {},
-	): Promise<'unsaved' | undefined> {
-		if (closing !== undefined) return undefined;
-		const sequence = ++openSequence;
-		const left = opened;
-		if (!(await leave(discard))) return 'unsaved';
-		if (left !== undefined) void refresh();
-		if (sequence !== openSequence || closing !== undefined) return undefined;
-		opened = { kind: 'loading', stem, mode };
-		const item = await load(stem, mode);
-		if (sequence !== openSequence || closing !== undefined) {
-			sessionOf(item)?.release();
-			return undefined;
-		}
-		opened = item;
-		return undefined;
-	}
-
-	/** Close the open capture without saving more. */
-	function forget() {
-		sessionOf(opened)?.release();
-		openSequence += 1;
-		opened = undefined;
-	}
-
-	/** Whether the open capture has a save running, a draft it could not save, or unsent input. */
-	function unsaved() {
-		const item = opened;
-		const status = sessionOf(item)?.state.status;
-		return status === 'saving' || holdsUnsaved(item, status);
+		options?: { discard?: RowSession<CaptureFields> | TextSession },
+	) {
+		const opening = await slot.open({ stem, mode }, options);
+		if (opening.kind === 'done' && opening.left) void refresh();
+		return opening;
 	}
 
 	return {
@@ -456,15 +407,23 @@ export function createCaptures(host: Pick<CaptureHost, 'folder' | 'location'>) {
 			return locked();
 		},
 		/** The open capture, or `undefined`. */
-		get opened() {
-			return opened;
+		get opened(): Opened | undefined {
+			const shown = slot.shown;
+			if (shown?.status === 'loading')
+				return { kind: 'loading', stem: shown.key.stem, mode: shown.key.mode };
+			return shown?.item;
 		},
+		/** The open capture has a save running, a draft it could not save, or a thought not added. */
 		get unsaved() {
-			return unsaved();
+			return slot.unsaved;
 		},
 		/** How many things leaving now could lose: the open capture, the New capture text, running actions. */
 		get unsettled() {
-			return (unsaved() ? 1 : 0) + (newCapture === '' ? 0 : 1) + running;
+			return (
+				(slot.unsaved ? 1 : 0) +
+				(newCapture === '' ? 0 : 1) +
+				(admissions.busy ? 1 : 0)
+			);
 		},
 		get newCapture() {
 			return newCapture;
@@ -473,69 +432,60 @@ export function createCaptures(host: Pick<CaptureHost, 'folder' | 'location'>) {
 			if (!locked()) newCapture = value;
 		},
 		refresh,
-		/** Returning to the window. */
-		check,
+		/** Returning to the window: the listing, and a newer version of the open capture when it holds nothing unsaved. */
+		async check() {
+			if (closing !== undefined) return;
+			await Promise.all([refresh(), slot.adopt()]);
+		},
 		open,
+		/** Read the open capture again as it is now, as it was asked to open: Try again after a failed open. */
+		reload: () => slot.reload(),
 		/** Leave the open capture for the timeline. Answers `unsaved` as `open` does. */
-		async back({ discard }: { discard?: unknown } = {}): Promise<
-			'unsaved' | undefined
-		> {
-			const sequence = ++openSequence;
-			if (!(await leave(discard))) return 'unsaved';
-			if (sequence === openSequence) opened = undefined;
-			await refresh();
-			return undefined;
+		async leave(options?: {
+			discard?: RowSession<CaptureFields> | TextSession;
+		}) {
+			const left = await slot.leave(options);
+			if (left.kind === 'done') await refresh();
+			return left;
 		},
 		/**
 		 * Reload theirs for `session`, the open capture's: show the file as it
-		 * is now. A capture whose text is no longer a valid row opens as text;
-		 * a file that is gone closes. Answers what the person is told, if
-		 * anything.
+		 * is now. A file that is gone closes; one the session can no longer
+		 * show (a capture whose text is no longer a valid row) opens again as
+		 * it reads now. Answers what the person is told, if anything.
 		 */
-		async reloadTheirs(
-			session: RowSession<CaptureFields> | TextSession,
-		): Promise<string | undefined> {
-			const why = refused();
-			if (why !== undefined) return why;
-			const item = opened;
-			if (item === undefined || sessionOf(item) !== session) return undefined;
-			const { data: found, error } = await admitted<
-				Result<Reread<unknown, RowProblem | 'binary'>, Failure>
-			>(session.reloadTheirs());
-			if (error !== null) return describeError(error);
-			if (opened !== item) return undefined;
-			if (found.kind === 'gone') forget();
-			else if (found.kind === 'other') {
-				// Only a capture's text that is no longer a valid row can be shown, as text.
-				const { detail } = found;
-				if (detail === 'binary' || detail.name !== 'InvalidRow') return NOT_TEXT;
-				session.release();
-				opened = {
-					kind: 'text',
-					stem: item.stem,
-					session: createTextSession(folder.files, detail, { locked }),
-				};
-			}
-			await refresh();
-			return undefined;
-		},
+		reloadTheirs: command(
+			async (
+				session: RowSession<CaptureFields> | TextSession,
+			): Promise<string | undefined> => {
+				const why = refused();
+				if (why !== undefined) return why;
+				const reloaded = await slot.reloadTheirs(session);
+				if (reloaded === undefined) return undefined;
+				if (reloaded.error !== null) return describeError(reloaded.error);
+				await refresh();
+				return undefined;
+			},
+		),
 		/** Keep mine for `session`, the open capture's: save the draft over the file, or create it again. */
-		async keepMine(
-			session: RowSession<CaptureFields> | TextSession,
-		): Promise<string | undefined> {
-			const why = refused();
-			if (why !== undefined) return why;
-			if (sessionOf(opened) !== session) return undefined;
-			const { error } = await admitted(session.keepMine());
-			await refresh();
-			return error === null ? undefined : describeError(error);
-		},
+		keepMine: command(
+			async (
+				session: RowSession<CaptureFields> | TextSession,
+			): Promise<string | undefined> => {
+				const why = refused();
+				if (why !== undefined) return why;
+				const kept = await slot.keepMine(session);
+				if (kept === undefined) return undefined;
+				await refresh();
+				return kept.error === null ? undefined : describeError(kept.error);
+			},
+		),
 
 		/**
 		 * Save the New capture text as a new file and open it. The text stays
 		 * in the form when the save fails. Answers what the person is told.
 		 */
-		async create(): Promise<string | undefined> {
+		create: command(async (): Promise<string | undefined> => {
 			const why = refused();
 			if (why !== undefined) return why;
 			const text = newCapture;
@@ -543,23 +493,20 @@ export function createCaptures(host: Pick<CaptureHost, 'folder' | 'location'>) {
 			if (text.trim() === '') return 'Write something first.';
 			const now = new Date();
 			const { body } = composeBody(text);
-			const created = await admitted(
-				(async () => {
-					for (let attempt = 0; ; attempt++) {
-						const result = await table.create(
-							{
-								fields: {
-									capturedAt: now.toISOString() as CaptureFields['capturedAt'],
-								},
-								body,
-							},
-							{ stem: newStem(now) },
-						);
-						// Another capture took this name: a new one is tried.
-						if (result.error?.name !== 'Exists' || attempt >= 3) return result;
-					}
-				})(),
-			);
+			let created: Awaited<ReturnType<typeof table.create>>;
+			for (let attempt = 0; ; attempt++) {
+				created = await table.create(
+					{
+						fields: {
+							capturedAt: now.toISOString() as CaptureFields['capturedAt'],
+						},
+						body,
+					},
+					{ stem: newStem(now) },
+				);
+				// Another capture took this name: a new one is tried.
+				if (created.error?.name !== 'Exists' || attempt >= 3) break;
+			}
 			if (created.error !== null)
 				return `The capture was not saved: ${describeError(created.error)} Your text is still here.`;
 			if (newCapture === text) newCapture = '';
@@ -567,7 +514,7 @@ export function createCaptures(host: Pick<CaptureHost, 'folder' | 'location'>) {
 			const stem = rowStemOf(CAPTURES_TABLE, created.data.path);
 			if (stem !== undefined) await open(stem, 'capture');
 			return undefined;
-		},
+		}),
 
 		/**
 		 * Delete the open capture, whose session is `session`. The session is
@@ -575,45 +522,40 @@ export function createCaptures(host: Pick<CaptureHost, 'folder' | 'location'>) {
 		 * this window saved last; a file another program changed since is
 		 * refused, and the capture opens again as it is now.
 		 */
-		async remove(
-			session: RowSession<CaptureFields> | TextSession,
-		): Promise<string | undefined> {
-			const why = refused();
-			if (why !== undefined) return why;
-			const item = opened;
-			if (item === undefined || sessionOf(item) !== session) return undefined;
-			// Admitted whole, before its first await, so a departure and close
-			// wait for the saves it waits on and for the delete itself.
-			return admitted(
-				(async () => {
-					session.release();
-					const { file } = await session.settled();
-					const { error } = await table.delete(file);
-					if (error === null) {
-						if (opened === item) forget();
-						await refresh();
-						return undefined;
-					}
-					if (opened === item)
-						await open(item.stem, item.kind === 'text' ? 'text' : 'capture', {
-							discard: session,
-						});
-					return describeError(error);
-				})(),
-			);
-		},
+		remove: command(
+			async (
+				session: RowSession<CaptureFields> | TextSession,
+			): Promise<string | undefined> => {
+				const why = refused();
+				if (why !== undefined) return why;
+				const removed = await slot.removeOpen(session, (file) =>
+					table.delete(file),
+				);
+				if (removed === undefined) return undefined;
+				if (removed.error !== null) return describeError(removed.error);
+				await refresh();
+				return undefined;
+			},
+		),
 
 		/** Import a whole export, including its report and receipt, then list again. */
-		async importLegacy(bundle: LegacyBundle): Promise<ImportReport> {
+		importLegacy: command(
+			async (bundle: LegacyBundle): Promise<ImportReport> => {
+				const why = refused();
+				if (why !== undefined) throw new Error(why);
+				try {
+					return await runLegacyImport(folder.files, bundle);
+				} finally {
+					await refresh();
+				}
+			},
+		),
+		/** Commit what is saved. Refused, as other actions are, while closing or departing. */
+		commit: command(async (): Promise<CommitOutcome> => {
 			const why = refused();
-			if (why !== undefined) throw new Error(why);
-			try {
-				return await admitted(runLegacyImport(folder.files, bundle));
-			} finally {
-				await refresh();
-			}
-		},
-		commit: () => folder.git.commit(),
+			if (why !== undefined) return { status: 'blocked', reason: why };
+			return folder.git.commit();
+		}),
 
 		/**
 		 * The page's part in leaving Epicenter. `fence` runs before anything is
@@ -626,12 +568,8 @@ export function createCaptures(host: Pick<CaptureHost, 'folder' | 'location'>) {
 			},
 			async settle(): Promise<number> {
 				await quiet();
-				const item = opened;
-				const settled = await sessionOf(item)?.settled();
-				return (
-					(holdsUnsaved(item, settled?.status) ? 1 : 0) +
-					(newCapture === '' ? 0 : 1)
-				);
+				await slot.session?.settled();
+				return (slot.unsaved ? 1 : 0) + (newCapture === '' ? 0 : 1);
 			},
 			resume() {
 				departing = false;
@@ -647,13 +585,11 @@ export function createCaptures(host: Pick<CaptureHost, 'folder' | 'location'>) {
 			if (closing !== undefined) return closing;
 			closing = (async () => {
 				await quiet();
-				const session = sessionOf(opened);
-				const settled = await session?.settled();
-				session?.release();
-				if (settled?.status === 'error')
+				const unsaved = await slot.close();
+				if (unsaved !== undefined)
 					log.warn(
 						new Error(
-							`Closed with a capture that could not be saved: ${settled.file.path}`,
+							`Closed with a capture that could not be saved: ${unsaved}`,
 						),
 					);
 			})();

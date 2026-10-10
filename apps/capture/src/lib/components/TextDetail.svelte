@@ -16,7 +16,7 @@
 	import type { Captures, Opened } from '$lib/captures.svelte.js';
 	import { copyText } from '$lib/download.js';
 	import { backToTimeline, confirmDelete, openItem } from '$lib/item-actions.js';
-	import SaveBar from './SaveBar.svelte';
+	import SaveBar from '@epicenter/svelte/save-bar';
 
 	let {
 		captures,
@@ -60,6 +60,7 @@
 
 	<SaveBar
 		save={session.state}
+		class="rounded-md border"
 		onRetry={() => session.retry()}
 		onKeepMine={() => captures.keepMine(session)}
 		onReloadTheirs={() => captures.reloadTheirs(session)}

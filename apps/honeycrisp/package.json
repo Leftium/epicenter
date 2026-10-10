@@ -50,6 +50,7 @@
 		"vite": "catalog:"
 	},
 	"dependencies": {
+		"@epicenter/svelte": "workspace:*",
 		"@epicenter/constants": "workspace:*",
 		"@epicenter/definition": "workspace:*",
 		"@epicenter/folder": "workspace:*",

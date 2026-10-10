@@ -27,6 +27,7 @@
 		"test:mounted": "BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun test --isolate --conditions=browser --conditions=svelte src/lib/components"
 	},
 	"dependencies": {
+		"@epicenter/svelte": "workspace:*",
 		"@epicenter/app": "workspace:*",
 		"@epicenter/auth": "workspace:*",
 		"@epicenter/capture": "workspace:*",

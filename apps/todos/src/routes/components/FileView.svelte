@@ -12,9 +12,9 @@
 	import { basename, dirname, withFileNewlines } from '@epicenter/folder/file-browser';
 	import { todosDefinition } from '$lib/definition.js';
 	import type { Opened, Todos } from '$lib/todos.svelte.js';
+	import SaveBar from '@epicenter/svelte/save-bar';
 	import { confirmDelete, copyPath, openItem } from './file-actions.js';
 	import FileNameBar from './FileNameBar.svelte';
-	import SaveBar from './SaveBar.svelte';
 
 	let {
 		todos,
@@ -85,7 +85,7 @@
 			<Empty.Media><TriangleAlertIcon class="size-8 text-muted-foreground" /></Empty.Media>
 			<Empty.Title>Could not open this file</Empty.Title>
 			<Empty.Description>{item.message}</Empty.Description>
-			<Button variant="outline" size="sm" onclick={() => void openItem(todos, path, item.workspace)}>Try again</Button>
+			<Button variant="outline" size="sm" onclick={() => void todos.reload()}>Try again</Button>
 		</Empty.Root>
 	{:else if item.kind === 'text'}
 		{@const session = item.session}

@@ -71,17 +71,16 @@ export async function openItem(
 	path: string,
 	workspace: Workspace,
 ) {
-	// The draft the dialog describes: confirming discards this one only.
-	const item = todos.opened;
-	if ((await todos.open(path, workspace)) !== 'unsaved') return;
-	const session = item?.kind === 'todo' || item?.kind === 'text' ? item.session : undefined;
+	const opening = await todos.open(path, workspace);
+	if (opening.kind !== 'unsaved') return;
 	confirmationDialog.open({
 		title: 'Discard unsaved changes?',
 		description:
 			'The open file has changes that could not be saved. Discard them to open another file, or cancel to keep working on them.',
 		confirm: { text: 'Discard', variant: 'destructive' },
 		async onConfirm() {
-			await todos.open(path, workspace, { discard: session });
+			// The session the open answered: confirming discards that draft only.
+			await todos.open(path, workspace, { discard: opening.session });
 		},
 	});
 }

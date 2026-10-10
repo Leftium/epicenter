@@ -458,7 +458,7 @@ test("a draft that could not save keeps the todo open with its input until it sa
 	await eventually(() => session.state.status === 'error');
 
 	// Opening another item asks first; nothing opens in its place meanwhile.
-	expect(await todos.open(path, 'files')).toBe('unsaved');
+	expect(await todos.open(path, 'files')).toMatchObject({ kind: 'unsaved' });
 	flushSync();
 	expect(selected()).toBe(session);
 	expect(get<HTMLInputElement>(TITLE)).toBe(title);

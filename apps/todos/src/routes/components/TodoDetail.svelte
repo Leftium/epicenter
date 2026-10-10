@@ -9,9 +9,9 @@
 	import type { TodoFields } from '$lib/definition.js';
 	import type { RowSession } from '@epicenter/svelte/edit-session';
 	import type { Todos } from '$lib/todos.svelte.js';
+	import SaveBar from '@epicenter/svelte/save-bar';
 	import { confirmDelete, openItem } from './file-actions.js';
 	import FileNameBar from './FileNameBar.svelte';
-	import SaveBar from './SaveBar.svelte';
 
 	let {
 		todos,

@@ -243,9 +243,10 @@ Where you open a file decides how you edit it. The file browser opens any
 file's complete text, a todo's frontmatter included. The todo list opens a
 todo's title, done, and notes; a todo whose text is not a valid todo opens as
 text with what to fix, and **Open as todo** returns once it reads as one. One
-item is open at a time. Opening another waits for the open one's saves. If a
-save failed or conflicted, Todos asks "Discard unsaved changes?" first:
-Discard lets the edits go, Cancel keeps you on the item.
+item is open at a time. Opening the item already shown does nothing. Opening
+another waits for the open one's saves. If a save failed or conflicted, Todos
+asks "Discard unsaved changes?" first: Discard lets the edits go, Cancel
+keeps you on the item.
 
 ### Editing and conflicts
 
@@ -385,8 +386,10 @@ that still does not parse saves as typed and stays under "Needs repair". A
 todo that parses but has a bad field, such as `done: soon`, is named the same
 way. Once the text reads as a todo, **Open as todo** opens its fields. A todo
 whose text stops reading as a todo while it is open stays as you left it;
-**Reload theirs** opens its text instead. A file that is no longer UTF-8 text
-cannot be shown, and **Keep mine** saves your version over it.
+**Reload theirs** opens its text instead. When the file is no longer UTF-8
+text, **Keep mine** saves your version over it, and **Reload theirs** opens
+it as it is now: file details from Files, or why it cannot open from the
+todo list.
 
 Any file name works for a todo, including a leading dot, a trailing space,
 punctuation, and `todos/.md` itself. Only `.md` in lowercase makes a file a
@@ -401,20 +404,26 @@ todo; `todos/a.MD` is an ordinary file.
 | `src/lib/departure.svelte.ts` | This page's answer when Epicenter asks to quit or restart: listens first, applies statuses in version order, fences the Todos owner, asks it to save, and answers or asks the person. It discards nothing. |
 | `src/lib/platform/` | The `#platform/departure` seam: the host leaf talks to this window over the departure wire and Tauri; the browser leaf has no port. And the `#platform/folder` seam: `types.ts` is its contract and holds `TODOS_FOLDER_ID`, `folder.browser.ts` opens the OPFS folder through `@epicenter/folder/browser`, and `folder.epicenter-host.ts` opens the host's directory through `@epicenter/folder/tauri`. Each returns the folder or the refusal. The mounted page calls it; importing it opens nothing. |
 | `src/lib/files.ts` | File browser rows, and which files open as editable text. |
-| `src/lib/todos.svelte.ts` | Todo and folder listings, the rows named for repair, the one open item and its edit session (`@epicenter/svelte/edit-session`), conflict choices, and file actions. |
+| `src/lib/todos.svelte.ts` | Todo and folder listings, the rows named for repair, the one open item (`@epicenter/svelte/open-item`) and its edit session (`@epicenter/svelte/edit-session`), conflict choices, and file actions, each counted by `@epicenter/svelte/admissions` so close and departure wait for it. |
 | `src/lib/terminal.svelte.ts` | The terminal session that outlives the terminal pane, over the folder's own `folder.terminal()`. |
 | `src/lib/status.ts` | Plain-language status lines and the header summary. |
-| `src/routes/components/` | Header, file browser, list, the detail pane (`Detail`: `TodoDetail` or `FileView`, each with `SaveBar`, the save state and conflict prompt), and terminal. |
+| `src/routes/components/` | Header, file browser, list, the detail pane (`Detail`: `TodoDetail` or `FileView`, each with the shared `SaveBar` from `@epicenter/svelte/save-bar`), and terminal. |
 | `server/git-server.ts` | `git http-backend` over a bare repository, plus the native checkout. |
 | `scripts/dev.ts` | Starts the backend and Vite together. |
 | `scripts/native.ts` | JSON CLI over the native checkout. |
 | `scripts/remote-edit.ts` | Demo fixture: a hand edit with undeclared frontmatter, committed and pushed from the native checkout with ordinary Git. |
 | `scripts/module-graph.ts` | Lists the modules a build of one entry pulls in, resolved with the conditions and aliases `vite.config.ts` declares, for the seam test. |
 
-The owner holds one open item (`todos.opened`): a row session for a todo, a
-text session for a file or a todo whose text is not valid, or what could not
-be opened. `Detail` keys each view by the item, so another item mounts a new
-view. A view edits through its session (`session.edit`, `session.input`),
+The owner holds one open item (`todos.opened`), kept by the shared open-item
+slot: a row session for a todo, a text session for a file or a todo whose
+text is not valid, or what could not be opened. The slot shows each item
+under the key it has now (`keyOf`): its session's path, which follows a
+rename, and how it is edited, where a todo shown as text for repair has its
+own key, so **Open as todo** opens the row. `todos.open` answers `unsaved`
+with the session it means, and the view's "Discard unsaved changes?"
+discards that session. `todos.reload` reads the shown item again, for **Try
+again** on a failed load. `Detail` keys each view by the item, so another item mounts
+a new view. A view edits through its session (`session.edit`, `session.input`),
 reads `session.draft` and `session.state`, and disables its inputs while
 `session.locked`. Leaving an item releases its session, so a control left
 over from it changes nothing.
@@ -447,5 +456,8 @@ several promises of the version before it:
 - Rename and delete no longer refuse while a save failed; a conflict still
   refuses them through the version guard.
 - Typing during a rename is paused instead of saved at the new name.
+- Reload theirs of a file that is no longer text opens it again as it is
+  now, which ends its conflicted session, instead of keeping the session
+  open with a message. Keep mine is offered before you choose.
 - Unconfirmed-delete states are gone: a delete whose reply was lost is
   reported once, and the list reads the folder again.

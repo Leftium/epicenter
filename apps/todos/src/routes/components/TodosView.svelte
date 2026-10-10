@@ -66,7 +66,8 @@
 	}
 </script>
 
-<!-- Returning to the app is a refresh boundary for the listings and Git status; open todos reload only when asked. -->
+<!-- Returning to the app reads the listings, Git status, and a newer version of an open item that holds nothing unsaved. -->
+<svelte:document onvisibilitychange={() => document.visibilityState === 'visible' && void todos.check()} />
 <svelte:window
 	onfocus={() => void todos.check()}
 	onkeydown={(event) => {

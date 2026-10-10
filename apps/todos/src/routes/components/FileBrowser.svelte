@@ -18,7 +18,7 @@
 	import { tick } from 'svelte';
 	import { basename, dirname, joinPath, type TreeRow, visibleRows } from '@epicenter/folder/file-browser';
 	import type { Todos } from '$lib/todos.svelte.js';
-	import { confirmDelete, copyPath } from './file-actions.js';
+	import { confirmDelete, copyPath, openItem } from './file-actions.js';
 
 	let { todos, onOpen }: { todos: Todos; onOpen?: () => void } = $props();
 
@@ -49,7 +49,7 @@
 			else todos.expanded.add(row.path);
 			return;
 		}
-		void todos.open(row.path, 'files');
+		void openItem(todos, row.path, 'files');
 		onOpen?.();
 	}
 

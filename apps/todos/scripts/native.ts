@@ -74,24 +74,20 @@ function print(value: unknown) {
 async function summary() {
 	const { data: listed, error: listedError } = await folder.tables.todos.list();
 	if (listedError) return { error: listedError.message };
-	// One line per row file. A file that was read is a todo even when its text
-	// does not parse; `parseError` then stands where its fields would be.
+	// One line per row file: a todo, or why its text is not one.
 	return {
-		todos: listed.flatMap(({ result: { data, error } }) => {
-			if (error) return [];
-			const { path, stem, parseError, fields, issues } = data;
-			return parseError
-				? { path, stem, parseError }
+		todos: listed.flatMap(({ stem, result: { data, error } }) =>
+			error
+				? []
 				: {
-						path,
+						path: data.path,
 						stem,
-						title: fields.title,
-						done: fields.done,
-						issues: issues.length > 0 ? issues : undefined,
-					};
-		}),
-		unreadable: listed.flatMap(({ path, result: { error } }) =>
-			error ? { path, error: error.message } : [],
+						title: data.row.fields.title,
+						done: data.row.fields.done,
+					},
+		),
+		invalid: listed.flatMap(({ stem, result: { error } }) =>
+			error ? { stem, error: error.message } : [],
 		),
 	};
 }
@@ -118,6 +114,7 @@ try {
 			if (title === '') throw new Error('create needs a title');
 			const created = await folder.tables.todos.create({
 				fields: { title, done: false },
+				body: '',
 			});
 			if (created.error) {
 				exitCode = 1;
@@ -133,18 +130,22 @@ try {
 		case 'complete': {
 			const stem = args[0];
 			if (stem === undefined) throw new Error('complete needs a stem');
-			// Marked done whatever the row holds now; nothing here was reviewed.
-			// The update reads the row itself, and says when it is not there.
+			// Marked done over the row as it is read now, guarded by that read.
+			const { data: current, error: readError } =
+				await folder.tables.todos.get(stem);
+			if (readError || current === undefined) {
+				exitCode = 1;
+				print({ error: readError?.message ?? `No todo named ${stem}` });
+				break;
+			}
 			const { data: updated, error: updatedError } =
-				await folder.tables.todos.update(stem, { fields: { done: true } }, {});
+				await folder.tables.todos.replace(current, {
+					...current.row,
+					fields: { ...current.row.fields, done: true },
+				});
 			if (updatedError) {
 				exitCode = 1;
-				print({
-					error:
-						updatedError.name === 'NotFound'
-							? `No todo named ${stem}`
-							: updatedError.message,
-				});
+				print({ error: updatedError.message });
 				break;
 			}
 			print({

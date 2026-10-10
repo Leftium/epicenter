@@ -70,16 +70,17 @@ test('browser push, native pull and push, then browser fast-forward through the 
 		}),
 	);
 	expectOk(
-		await browser.tables.todos.create({
-			stem: 'milk',
-			fields: { title: 'Buy milk', done: false },
-		}),
+		await browser.tables.todos.create(
+			{ fields: { title: 'Buy milk', done: false }, body: '' },
+			{ stem: 'milk' },
+		),
 	);
 	const first = await browser.git.commitAndPush();
 	expect(first.commit.status).toBe('committed');
 	expect(first.push.status).toBe('pushed');
+	// Opening the folder published its definition.json beside the new row.
 	expect(await run(session.bare, ['git', 'log', '--format=%s', 'main'])).toBe(
-		'Add todos/milk.md',
+		'Update 2 files',
 	);
 
 	// The native checkout pulls from the bare repository with ordinary Git.
@@ -138,7 +139,7 @@ test('browser push, native pull and push, then browser fast-forward through the 
 	expect(pulled.status).toBe('fastForwarded');
 	const entry = expectOk(await browser.tables.todos.get('milk'));
 	if (!entry) throw new Error('Expected milk todo');
-	expect(entry.fields).toEqual({
+	expect(entry.row.fields).toEqual({
 		title: 'Buy oat milk',
 		done: true,
 	});
@@ -147,7 +148,7 @@ test('browser push, native pull and push, then browser fast-forward through the 
 	).toEqual([
 		'Rename the milk todo',
 		'Update todos/milk.md',
-		'Add todos/milk.md',
+		'Update 2 files',
 	]);
 	await browser.close();
 }, 60_000);

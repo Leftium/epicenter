@@ -6,7 +6,7 @@
 import { basename } from '@epicenter/folder/file-browser';
 import { confirmationDialog } from '@epicenter/ui/confirmation-dialog';
 import { toast } from '@epicenter/ui/sonner';
-import type { Deletion, Todos } from '$lib/todos.svelte.js';
+import type { Deletion, Todos, Workspace } from '$lib/todos.svelte.js';
 
 export async function copyPath(path: string) {
 	try {
@@ -19,19 +19,11 @@ export async function copyPath(path: string) {
 
 function describe(deletion: Deletion) {
 	switch (deletion.kind) {
-		case 'todo': {
-			const { entry } = deletion;
-			// A todo whose title did not validate is still named by its file.
-			const validated = entry.fields.title;
-			const title =
-				validated !== undefined && validated.trim() !== ''
-					? validated
-					: basename(entry.path);
+		case 'todo':
 			return {
-				title: `Delete “${title}”?`,
-				description: `This deletes ${entry.path} from the folder. Committed versions stay in Git history.`,
+				title: `Delete “${deletion.title}”?`,
+				description: `This deletes ${deletion.path} from the folder. Committed versions stay in Git history.`,
 			};
-		}
 		case 'file':
 			return {
 				title: `Delete ${basename(deletion.path)}?`,
@@ -66,6 +58,30 @@ export async function confirmDelete(todos: Todos, path: string) {
 				toast.error(`Could not delete ${basename(path)}`, {
 					description: problem,
 				});
+		},
+	});
+}
+
+/**
+ * Open `path`, asking first when the open item holds a draft it could not
+ * save: discarding it lets the open proceed, cancelling keeps the item.
+ */
+export async function openItem(
+	todos: Todos,
+	path: string,
+	workspace: Workspace,
+) {
+	// The draft the dialog describes: confirming discards this one only.
+	const item = todos.opened;
+	if ((await todos.open(path, workspace)) !== 'unsaved') return;
+	const session = item?.kind === 'todo' || item?.kind === 'text' ? item.session : undefined;
+	confirmationDialog.open({
+		title: 'Discard unsaved changes?',
+		description:
+			'The open file has changes that could not be saved. Discard them to open another file, or cancel to keep working on them.',
+		confirm: { text: 'Discard', variant: 'destructive' },
+		async onConfirm() {
+			await todos.open(path, workspace, { discard: session });
 		},
 	});
 }

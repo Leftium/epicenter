@@ -9,28 +9,26 @@
  *
  * Key behaviors:
  * - A pull of changed remote content lands byte for byte, frontmatter the
- *   app does not declare and comments included; an open todo shows it once
- *   reloaded, and a later save keeps the undeclared keys
+ *   app does not declare and comments included; an open todo holding nothing
+ *   unsaved takes it, and a later save keeps the undeclared keys
  * - An interrupted pull is reported and never resumed: status, refreshes,
  *   and reopening only read it. Commits, pulls, and merges wait; editing,
  *   saving, and fetching continue
  * - Recovery runs only when asked. A path in neither state is named, nothing
  *   is written, and the update stays pending until the person makes the file
- *   hold one of its versions; then recovery finishes and the open todo shows
+ *   hold one of its versions; then recovery finishes and the open file shows
  *   the result
- * - Recovery waits for open edits: a failed save stops it before anything
- *   runs, and open todos refuse typing while it runs, then read what the
- *   update wrote. A file still opening when recovery starts installs its
- *   editor first and is held with the rest
- * - Each open todo is fenced before recovery waits for the next one, so
- *   input that failed is kept and never reloaded away
+ * - Recovery waits for the open item's saves: a failed save stops it before
+ *   anything runs, and the open item refuses typing while it runs, then
+ *   shows what the update wrote. A todo still opening when recovery starts
+ *   is refused input the same way
  */
 import './svelte-modules.test-support.js';
 import { afterAll, afterEach, beforeAll, expect, test } from 'bun:test';
 import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { inspectRow, openFolder } from '@epicenter/folder/browser';
-import { Ok } from 'wellcrafted/result';
+import { parseRow } from '@epicenter/folder';
+import { openFolder } from '@epicenter/folder/browser';
 import { expectErr, expectOk } from 'wellcrafted/testing';
 import {
 	browserStorage,
@@ -45,8 +43,17 @@ import {
 import { todosDefinition } from './definition.js';
 import type { TodosFolder } from './platform/types.js';
 import { incomingLine, recoveryLine } from './status.js';
-import type { TodoEditor } from './todo-editor.svelte.js';
+import type { AutosaveError, FileError, RowSaveError, SaveState } from '@epicenter/folder';
+type SessionState = SaveState<RowSaveError | FileError | AutosaveError>;
 import type { Todos } from './todos.svelte.js';
+
+/** The open item's session, whatever kind. */
+function openSession(todos: Todos) {
+	const item = todos.opened;
+	if (item?.kind !== 'todo' && item?.kind !== 'text')
+		throw new Error(`Expected an open session, got ${item?.kind}`);
+	return item.session;
+}
 
 const { createTodos } = await import('./todos.svelte.ts');
 
@@ -77,7 +84,6 @@ afterEach(async () => {
 let count = 0;
 const MILK = 'todos/milk.md';
 const BREAD = 'todos/bread.md';
-const EGGS = 'todos/eggs.md';
 /** The row as another computer rewrote it: a comment, and keys Todos does not declare. */
 const MILK_REMOTE = `---
 # Edited on another computer
@@ -149,10 +155,10 @@ async function openDemo(
 /** The app creates and pushes a milk todo; the native checkout pulls it. */
 async function shareMilk(todos: Todos, session: GitSession) {
 	expectOk(
-		await todos.folder.tables.todos.create({
-			stem: 'milk',
-			fields: { title: 'Buy milk', done: false },
-		}),
+		await todos.folder.tables.todos.create(
+			{ fields: { title: 'Buy milk', done: false }, body: '' },
+			{ stem: 'milk' },
+		),
 	);
 	await todos.refresh();
 	const pushed = await todos.commitAndPush();
@@ -182,32 +188,39 @@ async function text(todos: Todos, path: string) {
 	return read.error ? undefined : new TextDecoder().decode(read.data.bytes);
 }
 
-function todoEditor(todos: Todos) {
-	const item = todos.current?.item;
+function todoSession(todos: Todos) {
+	const item = todos.opened;
 	if (item?.kind !== 'todo')
 		throw new Error(`Expected an open todo, got ${item?.kind}`);
-	return item.editor;
+	return item.session;
 }
 
-/** Wait for a todo's admitted writes. Answers why the latest did not land. */
-async function written(editor: TodoEditor) {
-	await editor.settle();
-	return editor.save.status === 'failed'
-		? editor.save.error.message
-		: undefined;
+function textSession(todos: Todos) {
+	const item = todos.opened;
+	if (item?.kind !== 'text')
+		throw new Error(`Expected an open text file, got ${item?.kind}`);
+	return item.session;
 }
 
-/** The fields view's current row; it shows only for a valid row. */
-function fieldsOf(editor: TodoEditor) {
-	const { row } = editor;
-	if (row.status !== 'valid') throw new Error('The row shows no fields');
-	return row;
+/** Wait for a session's saves. Answers why the latest did not land. */
+async function written(session: { settled(): Promise<SessionState> }) {
+	const settled = await session.settled();
+	return settled.status === 'error' ? settled.error.message : undefined;
 }
 
-/** What the notes control sends: the complete row on screen with `notes`. */
-function typeNotes(editor: TodoEditor, notes: string) {
-	const row = fieldsOf(editor);
-	return editor.set({ ...row, body: notes });
+/** What the notes control does: edit the draft's body, which requests a save. */
+function typeNotes(session: ReturnType<typeof todoSession>, notes: string) {
+	session.edit((row) => {
+		row.body = notes;
+	});
+}
+
+/** A row with the keys the app does not declare in view. */
+type AnyRow = { fields: Record<string, unknown>; body: string };
+
+/** The row `text` reads as, undeclared keys included. */
+function rowOf(text: string): AnyRow {
+	return expectOk(parseRow(todosDefinition.tables.todos, text));
 }
 
 /**
@@ -231,12 +244,12 @@ async function interruptedPull(adapt?: (folder: TodosFolder) => TodosFolder) {
 	return { ...demo, before, pulled };
 }
 
-test('a pull of remote changes keeps undeclared frontmatter byte for byte, an open todo shows it once reloaded, and a save keeps the undeclared keys', async () => {
+test('a pull of remote changes keeps undeclared frontmatter byte for byte, an open todo holding nothing unsaved takes it, and a save keeps the undeclared keys', async () => {
 	const { todos, session } = await openDemo();
 	await shareMilk(todos, session);
 	await todos.open(MILK, 'todos');
-	const editor = todoEditor(todos);
-	expect(fieldsOf(editor).fields.title).toBe('Buy milk');
+	const milk = todoSession(todos);
+	expect(milk.draft.fields.title).toBe('Buy milk');
 	await pushRemoteChanges(session);
 
 	const pulled = expectOk(await todos.pull());
@@ -244,18 +257,16 @@ test('a pull of remote changes keeps undeclared frontmatter byte for byte, an op
 	expect(await text(todos, MILK)).toBe(MILK_REMOTE);
 	expect(await text(todos, BREAD)).toBe(BREAD_REMOTE);
 	expect(
-		todos.entries.map((entry) => [entry.path, entry.fields.title]).sort(),
+		todos.entries.map((entry) => [entry.path, entry.row.fields.title]).sort(),
 	).toEqual([
 		[BREAD, 'Bake bread'],
 		[MILK, 'Buy oat milk'],
 	]);
 
-	// The open todo still shows what it loaded until the person reloads it.
-	expect(fieldsOf(editor).fields.title).toBe('Buy milk');
-	expect(await todos.reload(MILK)).toBeUndefined();
-	expect(editor.row).toMatchObject({
-		status: 'valid',
-		text: MILK_REMOTE,
+	// The open todo held nothing unsaved, so the pull's check took the new
+	// version into the same session.
+	expect(todoSession(todos)).toBe(milk);
+	expect<AnyRow>(milk.draft).toEqual({
 		fields: {
 			title: 'Buy oat milk',
 			done: true,
@@ -264,17 +275,21 @@ test('a pull of remote changes keeps undeclared frontmatter byte for byte, an op
 		},
 		body: 'Two cartons.\n',
 	});
-	expect(editor.isIdle).toBe(true);
+	expect(milk.state.status).toBe('saved');
 	expect(await text(todos, MILK)).toBe(MILK_REMOTE);
 
 	// A save writes the standard form, and the undeclared keys stay.
-	typeNotes(editor, 'Three cartons.\n');
-	expect(await written(editor)).toBeUndefined();
-	const saved = (await text(todos, MILK))!;
-	expect(saved).toContain('"owner": "sam"');
-	expect(saved).toContain('"labels"');
-	expect(saved).toContain('"weekly"');
-	expect(saved).toContain('Three cartons.');
+	typeNotes(milk, 'Three cartons.\n');
+	expect(await written(milk)).toBeUndefined();
+	expect(rowOf((await text(todos, MILK))!)).toEqual({
+		fields: {
+			title: 'Buy oat milk',
+			done: true,
+			owner: 'sam',
+			labels: ['home', 'weekly'],
+		},
+		body: 'Three cartons.\n',
+	});
 	expect(incomingLine(todos.git)).toBeUndefined();
 }, 60_000);
 
@@ -306,7 +321,7 @@ test('the remote-edit demo fixture pushes a hand edit that Pull brings in byte f
 		changedPaths: [MILK],
 	});
 	expect(await text(todos, MILK)).toBe(pushed.source);
-	expect(todos.entries[0]?.fields).toEqual({
+	expect(todos.entries[0]?.row.fields).toMatchObject({
 		title: 'Buy oat milk',
 		done: true,
 	});
@@ -332,10 +347,10 @@ test('an interrupted pull is reported and never resumed: history waits, editing 
 	// Editing, saving, and fetching continue.
 	expectOk(await todos.folder.git.fetch());
 	expect(await todos.create('Call mom')).toBeUndefined();
-	const editor = todoEditor(todos);
-	typeNotes(editor, 'Today.\n');
-	expect(await written(editor)).toBeUndefined();
-	expect(editor.isIdle).toBe(true);
+	const call = todoSession(todos);
+	typeNotes(call, 'Today.\n');
+	expect(await written(call)).toBeUndefined();
+	expect(call.state.status).toBe('saved');
 
 	// Status and refreshes read the record; they resume nothing.
 	await todos.check();
@@ -362,9 +377,9 @@ test('recovery names a path in neither state and writes nothing, keeps the recor
 
 	// Milk is still at its before state; the person edits it to a third one.
 	await todos.open(MILK, 'todos');
-	const editor = todoEditor(todos);
-	typeNotes(editor, 'My own note.\n');
-	expect(await written(editor)).toBeUndefined();
+	const milk = todoSession(todos);
+	typeNotes(milk, 'My own note.\n');
+	expect(await written(milk)).toBeUndefined();
 	const third = (await text(todos, MILK))!;
 
 	const refused = await todos.recoverIncoming();
@@ -378,24 +393,21 @@ test('recovery names a path in neither state and writes nothing, keeps the recor
 	expect(todos.lastRecovery).toMatchObject(refused);
 	expect(todos.git.pendingIncoming).toEqual(pending);
 	expect(await text(todos, MILK)).toBe(third);
-	expect(fieldsOf(editor).body).toBe('My own note.\n');
+	expect(milk.draft.body).toBe('My own note.\n');
 
 	// The person chooses the version from before the update, as text in
-	// Files. The todo editor settles and is let go first.
+	// Files. The todo's session is let go and takes no more input.
 	await todos.open(MILK, 'files');
-	const opened = todos.current?.item;
-	if (opened?.kind !== 'text')
-		throw new Error('Expected Files to open the text');
-	expect(editor.isFenced).toBe(true);
-	const file = opened.editor;
-	expect(file.buffer).toBe(third);
+	const file = textSession(todos);
+	typeNotes(milk, 'after it was let go\n');
+	expect(milk.draft.body).toBe('My own note.\n');
+	expect(file.draft).toBe(third);
 	file.input(before);
-	await file.save();
-	expect(file.isIdle).toBe(true);
+	expect(await written(file)).toBeUndefined();
 	expect(await text(todos, MILK)).toBe(before);
 
-	// Now the update finishes. Files stays a text editor and shows what the
-	// update wrote.
+	// Now the update finishes. Files stays the same text session and, holding
+	// nothing unsaved, shows what the update wrote.
 	const recovered = await todos.recoverIncoming();
 	expect(recovered).toMatchObject({
 		kind: 'ran',
@@ -403,22 +415,22 @@ test('recovery names a path in neither state and writes nothing, keeps the recor
 	});
 	expect(todos.git.pendingIncoming).toBeUndefined();
 	expect(await text(todos, MILK)).toBe(MILK_REMOTE);
-	// The recovery's reread adopts it: the editor was clean.
-	expect(file.buffer).toBe(MILK_REMOTE);
-	expect(todos.current?.item).toMatchObject({ kind: 'text', editor: file });
+	expect(textSession(todos)).toBe(file);
+	expect(file.draft).toBe(MILK_REMOTE);
+	expect(file.state.status).toBe('saved');
 	expect(incomingLine(todos.git)).toBeUndefined();
 
-	// Opened again as a todo, explicitly, it reads the recovered row.
+	// Opened again as a todo, it reads the recovered row in a new session.
 	await todos.open(MILK, 'todos');
-	const reopened = todoEditor(todos);
-	expect(reopened).not.toBe(editor);
-	expect(fieldsOf(reopened).fields.title).toBe('Buy oat milk');
-	expect(reopened.isIdle).toBe(true);
+	const reopened = todoSession(todos);
+	expect(reopened).not.toBe(milk);
+	expect(reopened.draft.fields.title).toBe('Buy oat milk');
+	expect(reopened.state.status).toBe('saved');
 	// History continues.
 	expect((await todos.commitAndPush()).commit.status).not.toBe('blocked');
 }, 60_000);
 
-test('a todo still opening when recovery starts is held with the rest: it refuses typing while the update runs, then shows what the update wrote', async () => {
+test('a todo still opening when recovery starts refuses typing while the update runs, then shows what the update wrote', async () => {
 	const landed = Promise.withResolvers<void>();
 	const reply = Promise.withResolvers<void>();
 	// The folder writes the update, then its reply is held.
@@ -438,12 +450,12 @@ test('a todo still opening when recovery starts is held with the rest: it refuse
 		},
 	}));
 	const table = todos.folder.tables.todos;
-	const edit = table.edit;
-	const opened = Promise.withResolvers<void>();
-	// The row editor opens on the file as it is now; its reply is held.
-	table.edit = async (...args) => {
-		const result = await edit(...args);
-		await opened.promise;
+	const get = table.get;
+	const read = Promise.withResolvers<void>();
+	// The todo opens on the row as it is now; the read's reply is held.
+	table.get = async (...args) => {
+		const result = await get(...args);
+		await read.promise;
 		return result;
 	};
 
@@ -451,20 +463,18 @@ test('a todo still opening when recovery starts is held with the rest: it refuse
 	const recovering = todos.recoverIncoming();
 	await Bun.sleep(20);
 	expect(todos.recovering).toBe(true);
-	opened.resolve();
+	read.resolve();
 	await opening;
-	table.edit = edit;
+	table.get = get;
 	await landed.promise;
 
-	// The editor opened on the row from before the update and was settled
-	// and held: typing into it while the update's reply is held is refused.
-	const editor = todoEditor(todos);
-	expect(editor.isFenced).toBe(true);
-	expect(fieldsOf(editor).fields.title).toBe('Buy milk');
-	expect(typeNotes(editor, 'typed while recovering\n')).toContain(
-		'still in progress',
-	);
-	expect(fieldsOf(editor).body).toBe('');
+	// The todo opened on the row from before the update. Typing into it while
+	// the update's reply is held is refused.
+	const milk = todoSession(todos);
+	expect(milk.draft.fields.title).toBe('Buy milk');
+	typeNotes(milk, 'typed while recovering\n');
+	expect(milk.draft.body).toBe('');
+	expect(milk.state.status).toBe('saved');
 	expect(todos.recovering).toBe(true);
 	expect(await text(todos, MILK)).toBe(MILK_REMOTE);
 
@@ -473,23 +483,20 @@ test('a todo still opening when recovery starts is held with the rest: it refuse
 		kind: 'ran',
 		result: { data: { status: 'completed' } },
 	});
-	// Once the hold lifts, the todo shows what the update wrote, and typing
+	// Once recovery ends, the todo shows what the update wrote, and typing
 	// writes on top of it: the old title from before it is never written back.
-	expect(editor.isFenced).toBe(false);
-	expect(fieldsOf(editor).fields.title).toBe('Buy oat milk');
-	typeNotes(editor, 'typed after recovering\n');
-	expect(await written(editor)).toBeUndefined();
+	expect(milk.draft.fields.title).toBe('Buy oat milk');
+	typeNotes(milk, 'typed after recovering\n');
+	expect(await written(milk)).toBeUndefined();
 	const saved = (await text(todos, MILK))!;
 	expect(saved).not.toBe(before);
-	expect(saved).not.toContain('Buy milk"');
-	expect(inspectRow(todosDefinition.tables.todos, saved)).toMatchObject({
-		fields: { title: 'Buy oat milk', done: true },
+	expect(rowOf(saved)).toMatchObject({
+		fields: { title: 'Buy oat milk', done: true, owner: 'sam' },
 		body: 'typed after recovering\n',
 	});
-	expect(saved).toContain('"owner": "sam"');
 }, 60_000);
 
-test('recovery waits for open edits: a failed save stops it, and typing while it runs is refused, not saved over the update', async () => {
+test('recovery waits for the open todo: a failed save stops it, typing while it waits or runs is refused, and the todo shows the update', async () => {
 	const typing: { during?: () => void } = {};
 	const { todos, before, opfs } = await interruptedPull((folder) => ({
 		...folder,
@@ -498,8 +505,8 @@ test('recovery waits for open edits: a failed save stops it, and typing while it
 			get snapshot() {
 				return folder.git.snapshot;
 			},
-			// Typing arrives once the editors are held, before the update
-			// writes the row they show.
+			// Typing arrives once the open todo is held, before the update
+			// writes the row it shows.
 			recoverIncoming() {
 				typing.during?.();
 				return folder.git.recoverIncoming();
@@ -508,28 +515,35 @@ test('recovery waits for open edits: a failed save stops it, and typing while it
 	}));
 	const pending = todos.git.pendingIncoming;
 	await todos.open(MILK, 'todos');
-	const editor = todoEditor(todos);
+	const milk = todoSession(todos);
 
-	// A save that failed stops recovery before it runs.
+	// A save still running when recovery starts is waited for; it fails, so
+	// recovery stops before it runs. Typing while it waits is refused.
 	opfs.faults.write = (path) => {
 		if (!path.endsWith(`/${MILK}`)) return undefined;
 		opfs.faults.write = undefined;
 		return 'fail';
 	};
-	typeNotes(editor, 'mine\n');
-	expect(await written(editor)).toBeDefined();
-	const unsettled = await todos.recoverIncoming();
+	typeNotes(milk, 'mine\n');
+	expect(milk.state.status).toBe('saving');
+	const waiting = todos.recoverIncoming();
+	typeNotes(milk, 'typed while recovery waits\n');
+	const unsettled = await waiting;
 	expect(unsettled).toEqual({ kind: 'unsettled', paths: [MILK] });
-	expect(fieldsOf(editor).body).toBe('mine\n');
+	expect(milk.state.status).toBe('error');
+	expect(milk.draft.body).toBe('mine\n');
 	expect(recoveryLine(unsettled).detail).toContain(MILK);
 	expect(todos.git.pendingIncoming).toEqual(pending);
 	expect(await text(todos, MILK)).toBe(before);
 
-	// Reload drops the failed input; typing arrives while the update is written.
-	expect(await todos.reload(MILK)).toBeUndefined();
-	expect(await editor.settle()).toBe(true);
+	// Reload theirs drops the failed input; typing arrives while the update
+	// is written.
+	expect(await todos.reloadTheirs(openSession(todos))).toBeUndefined();
+	expect(todoSession(todos)).toBe(milk);
+	expect(milk.draft.body).toBe('');
+	expect(milk.state.status).toBe('saved');
 	expect(await text(todos, MILK)).toBe(before);
-	typing.during = () => typeNotes(editor, 'typed during recovery\n');
+	typing.during = () => typeNotes(milk, 'typed during recovery\n');
 	const recovered = await todos.recoverIncoming();
 	expect(recovered).toMatchObject({
 		kind: 'ran',
@@ -537,117 +551,8 @@ test('recovery waits for open edits: a failed save stops it, and typing while it
 	});
 
 	// The typing was refused, not saved over the row; the todo shows the update.
-	expect(fieldsOf(editor).fields.title).toBe('Buy oat milk');
-	expect(fieldsOf(editor).body).toBe('Two cartons.\n');
-	expect(editor.isIdle).toBe(true);
+	expect(milk.draft.fields.title).toBe('Buy oat milk');
+	expect(milk.draft.body).toBe('Two cartons.\n');
+	expect(milk.state.status).toBe('saved');
 	expect(await text(todos, MILK)).toBe(MILK_REMOTE);
-}, 60_000);
-
-test('recovery fences each todo before it waits for the next: input that failed is kept, and typing while a later todo saves is refused, not reloaded away', async () => {
-	const { todos, before, opfs } = await interruptedPull();
-	const pending = todos.git.pendingIncoming;
-	expectOk(
-		await todos.folder.tables.todos.create({
-			stem: 'eggs',
-			fields: { title: 'Buy eggs', done: false },
-		}),
-	);
-	// The eggs editor's next wait for its writes is held until released.
-	type Gate = {
-		readonly reached: PromiseWithResolvers<void>;
-		readonly release: PromiseWithResolvers<void>;
-	};
-	let gate: Gate | undefined;
-	const holdNextWait = (): Gate => {
-		gate = {
-			reached: Promise.withResolvers<void>(),
-			release: Promise.withResolvers<void>(),
-		};
-		return gate;
-	};
-	const table = todos.folder.tables.todos;
-	const edit = table.edit;
-	table.edit = async (...args) => {
-		const result = await edit(...args);
-		if (result.error !== null || args[0] !== 'eggs') return result;
-		const native = result.data;
-		return Ok({
-			...native,
-			async waitForSaves() {
-				const armed = gate;
-				gate = undefined;
-				if (armed !== undefined) {
-					armed.reached.resolve();
-					await armed.release.promise;
-				}
-				return native.waitForSaves();
-			},
-		});
-	};
-	await todos.open(MILK, 'todos');
-	const milk = todoEditor(todos);
-	await todos.open(EGGS, 'todos');
-	const eggs = todoEditor(todos);
-	table.edit = edit;
-
-	// Milk's save is still running when recovery starts, and fails.
-	opfs.faults.write = (path) => {
-		if (!path.endsWith(`/${MILK}`)) return undefined;
-		opfs.faults.write = undefined;
-		return 'fail';
-	};
-	typeNotes(milk, 'mine\n');
-	let held = holdNextWait();
-	let recovering = todos.recoverIncoming();
-	await held.reached.promise;
-
-	// Milk is fenced before recovery waits for eggs.
-	expect(milk.isFenced).toBe(true);
-	expect(eggs.isFenced).toBe(true);
-	expect(typeNotes(milk, 'typed while eggs saves\n')).toContain(
-		'still in progress',
-	);
-	expect(fieldsOf(milk).body).toBe('mine\n');
-	held.release.resolve();
-	expect(await recovering).toEqual({ kind: 'unsettled', paths: [MILK] });
-	// The failed input stays with its error; nothing was reloaded over it.
-	expect(milk.isFenced).toBe(false);
-	expect(fieldsOf(milk).body).toBe('mine\n');
-	expect(milk.hasProblem).toBe(true);
-	expect(await text(todos, MILK)).toBe(before);
-	expect(todos.git.pendingIncoming).toEqual(pending);
-
-	// Milk is clean now. Typing while recovery waits for eggs is refused, so
-	// no save of it can fail and then be replaced by what the update wrote.
-	expect(await todos.reload(MILK)).toBeUndefined();
-	expect(milk.isIdle).toBe(true);
-	held = holdNextWait();
-	recovering = todos.recoverIncoming();
-	await held.reached.promise;
-	let attempted = false;
-	opfs.faults.write = (path) => {
-		if (!path.endsWith(`/${MILK}`)) return undefined;
-		attempted = true;
-		return 'fail';
-	};
-	expect(milk.isFenced).toBe(true);
-	expect(typeNotes(milk, 'typed while eggs saves\n')).toContain(
-		'still in progress',
-	);
-	expect(fieldsOf(milk).body).toBe('');
-	expect(await written(milk)).toBeUndefined();
-	expect(attempted).toBe(false);
-	opfs.faults.write = undefined;
-	held.release.resolve();
-	expect(await recovering).toMatchObject({
-		kind: 'ran',
-		result: { data: { status: 'completed' } },
-	});
-	expect(milk.isFenced).toBe(false);
-	expect(fieldsOf(milk).fields.title).toBe('Buy oat milk');
-	expect(fieldsOf(milk).body).toBe('Two cartons.\n');
-	expect(milk.isIdle).toBe(true);
-	expect(await text(todos, MILK)).toBe(MILK_REMOTE);
-	expect(eggs.isFenced).toBe(false);
-	expect(fieldsOf(eggs).fields.title).toBe('Buy eggs');
 }, 60_000);

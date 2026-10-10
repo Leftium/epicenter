@@ -7,6 +7,7 @@
 	import { toast } from '@epicenter/ui/sonner';
 	import { onDestroy } from 'svelte';
 	import type { TodoEntry, Todos } from '$lib/todos.svelte.js';
+	import { openItem } from './file-actions.js';
 
 	let { todos, onOpen }: { todos: Todos; onOpen?: () => void } = $props();
 	let adding = $state(false);
@@ -21,8 +22,8 @@
 	});
 
 	function titleOf(entry: TodoEntry) {
-		const title = entry.fields.title;
-		if (typeof title === 'string' && title.trim() !== '') return title;
+		const title = todos.fieldsOf(entry).title;
+		if (title.trim() !== '') return title;
 		// An empty stem (`todos/.md`) is a real address but not a readable label.
 		return entry.stem === '' ? entry.path : entry.stem;
 	}
@@ -62,7 +63,7 @@
 	<ul class="min-h-0 flex-1 overflow-y-auto" aria-label="Todos">
 		{#each todos.entries as entry (entry.path)}
 			{@const selected = todos.current?.workspace === 'todos' && todos.current.path === entry.path}
-			{@const done = entry.fields.done === true}
+			{@const done = todos.fieldsOf(entry).done}
 			<li
 				class="flex items-center gap-2 border-b px-3 py-2 text-sm {selected
 					? 'bg-accent text-accent-foreground'
@@ -77,7 +78,7 @@
 							});
 						}
 					}
-					disabled={typeof entry.fields.done !== 'boolean' || todos.departing}
+					disabled={todos.departing}
 					aria-label="{done ? 'Reopen' : 'Complete'} {titleOf(entry)}"
 				/>
 				<Button
@@ -86,7 +87,7 @@
 					aria-current={selected ? 'true' : undefined}
 					data-todo={entry.path}
 					onclick={() => {
-						void todos.open(entry.path, 'todos');
+						void openItem(todos, entry.path, 'todos');
 						onOpen?.();
 					}}
 				>
@@ -108,7 +109,7 @@
 		<section class="max-h-[40%] shrink-0 overflow-y-auto border-t bg-destructive/5 px-3 py-2 text-xs" aria-label="Needs repair">
 			<p class="flex items-center gap-2 font-medium">
 				<Badge variant="destructive">Needs repair</Badge>
-				{todos.repairs.length === 1 ? 'This file does' : 'These files do'} not read as a todo
+				{todos.repairs.length === 1 ? 'This file does' : 'These files do'} not read as a todo. Repair opens its text.
 			</p>
 			<ul class="mt-1 space-y-1.5">
 				{#each todos.repairs as repair (repair.path)}
@@ -121,11 +122,11 @@
 							size="xs"
 							variant="outline"
 							onclick={() => {
-								void todos.open(repair.path, 'files');
+								void openItem(todos, repair.path, 'todos');
 								onOpen?.();
 							}}
 						>
-							Open in Files
+							Repair
 						</Button>
 					</li>
 				{/each}

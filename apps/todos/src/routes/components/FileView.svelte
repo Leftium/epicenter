@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { Badge } from '@epicenter/ui/badge';
 	import { Button } from '@epicenter/ui/button';
 	import * as Empty from '@epicenter/ui/empty';
 	import { Loading } from '@epicenter/ui/loading';
@@ -7,14 +8,13 @@
 	import CopyIcon from '@lucide/svelte/icons/copy';
 	import FileIcon from '@lucide/svelte/icons/file';
 	import TriangleAlertIcon from '@lucide/svelte/icons/triangle-alert';
-	import { rowStemOf } from '@epicenter/folder';
+	import { parseRow, rowStemOf } from '@epicenter/folder';
 	import { basename, dirname, withFileNewlines } from '@epicenter/folder/file-browser';
-	import type { Retained, Todos } from '$lib/todos.svelte.js';
-	import { confirmDelete, copyPath } from './file-actions.js';
+	import { todosDefinition } from '$lib/definition.js';
+	import type { Opened, Todos } from '$lib/todos.svelte.js';
+	import { confirmDelete, copyPath, openItem } from './file-actions.js';
 	import FileNameBar from './FileNameBar.svelte';
-	import Handoff from './Handoff.svelte';
-	import Lifetime from './Lifetime.svelte';
-	import SaveStatus from './SaveStatus.svelte';
+	import SaveBar from './SaveBar.svelte';
 
 	let {
 		todos,
@@ -24,11 +24,8 @@
 	}: {
 		todos: Todos;
 		path: string;
-		/**
-		 * What the path retains now. The parent keys this view by a text
-		 * editor, so the textarea edits one editor for the view's lifetime.
-		 */
-		item: Retained | undefined;
+		/** The open item at `path`, other than a todo. The parent keys this view by it. */
+		item: Exclude<Opened, { kind: 'todo' }>;
 		/** Shown on narrow screens, where the list and the editor take turns. */
 		onBack?: () => void;
 	} = $props();
@@ -36,6 +33,12 @@
 	const name = $derived(basename(path));
 	const directory = $derived(dirname(path));
 	const isRow = $derived(rowStemOf(todos.folder.tables.todos.name, path) !== undefined);
+	/** Why the text is not a todo yet, read live from what is typed. */
+	const issues = $derived.by(() => {
+		if (!isRow || item.kind !== 'text') return undefined;
+		const { error } = parseRow(todosDefinition.tables.todos, item.session.draft);
+		return error ?? undefined;
+	});
 
 	/** A file shown as details: its extension names the type, then its size. */
 	function details(size: number) {
@@ -59,50 +62,61 @@
 			<h2 class="truncate text-sm font-medium">{name}</h2>
 			<p class="truncate font-mono text-xs text-muted-foreground">{path}</p>
 		</div>
-		{#if isRow && item?.kind !== 'todo'}
-			<!-- Navigation, not a mode: this editor settles and is let go before the todo opens. -->
-			<Lifetime>
-				{#snippet children(live)}
-					<Button size="sm" variant="outline" onclick={() => live() && void todos.open(path, 'todos')}>
-						Open as todo
-					</Button>
-				{/snippet}
-			</Lifetime>
+		{#if isRow && item.kind === 'text'}
+			<Button
+				size="sm"
+				variant="outline"
+				disabled={issues !== undefined}
+				tooltip={issues === undefined ? undefined : 'Fix the text first'}
+				onclick={() => void openItem(todos, path, 'todos')}
+			>
+				Open as todo
+			</Button>
 		{/if}
 		<Button variant="ghost" size="icon-sm" tooltip="Copy path" aria-label="Copy path" onclick={() => void copyPath(path)}>
 			<CopyIcon />
 		</Button>
 	</div>
 
-	{#if item === undefined}
-		<Empty.Root class="flex-1">
-			<Empty.Title>{name} is no longer open</Empty.Title>
-			<Empty.Description>It was removed from the folder, or its edits were discarded.</Empty.Description>
-			<Button variant="outline" size="sm" onclick={() => void todos.open(path, 'files')}>Open again</Button>
-		</Empty.Root>
-	{:else if item.kind === 'loading'}
+	{#if item.kind === 'loading'}
 		<Loading class="flex-1" label="Opening {name}…" />
 	{:else if item.kind === 'failed'}
 		<Empty.Root class="flex-1">
 			<Empty.Media><TriangleAlertIcon class="size-8 text-muted-foreground" /></Empty.Media>
 			<Empty.Title>Could not open this file</Empty.Title>
 			<Empty.Description>{item.message}</Empty.Description>
-			<Button variant="outline" size="sm" onclick={() => void todos.open(path, 'files')}>Try again</Button>
+			<Button variant="outline" size="sm" onclick={() => void openItem(todos, path, item.workspace)}>Try again</Button>
 		</Empty.Root>
-	{:else if item.kind === 'todo'}
-		<Handoff {todos} {path} {item} to="files" />
 	{:else if item.kind === 'text'}
-		{@const editor = item.editor}
-		<SaveStatus {editor} onDiscard={() => void todos.discard(editor.path)} />
+		{@const session = item.session}
+		<SaveBar
+			save={session.state}
+			onRetry={() => session.retry()}
+			onKeepMine={() => todos.keepMine(session)}
+			onReloadTheirs={() => todos.reloadTheirs(session)}
+		/>
+		{#if issues}
+			<div class="shrink-0 border-b bg-destructive/5 px-4 py-2 text-xs" role="status" data-testid="row-issues">
+				<p class="mb-1 flex flex-wrap items-center gap-2 font-medium">
+					<Badge variant="destructive">Needs repair</Badge>
+					This text does not read as a todo yet. Fix it here; it saves as you type.
+				</p>
+				<ul class="space-y-0.5 text-muted-foreground">
+					{#each issues as issue, index (index)}
+						<li>{issue.line === undefined ? '' : `Line ${issue.line}: `}{issue.message}</li>
+					{/each}
+				</ul>
+			</div>
+		{/if}
 		<div class="flex min-h-48 flex-1 flex-col px-3 py-3 sm:px-4">
 			<Textarea
 				class="min-h-0 flex-1 field-sizing-fixed resize-none font-mono text-xs"
 				aria-label="Contents of {name}"
 				spellcheck={false}
-				disabled={editor.isFenced}
+				disabled={session.locked}
 				bind:value={
-					() => editor.buffer.replace(/\r\n?/g, '\n'),
-					(text) => editor.input(withFileNewlines(text, editor.buffer))
+					() => session.draft.replace(/\r\n?/g, '\n'),
+					(text) => session.input(withFileNewlines(text, session.draft))
 				}
 			/>
 		</div>

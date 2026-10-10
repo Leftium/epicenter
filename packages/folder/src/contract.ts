@@ -116,7 +116,12 @@ export type {
 	OpfsFileHandle,
 	OpfsLocks,
 } from './opfs-store.js';
-export { pathProblem, rowPath, rowStemOf } from './paths.js';
+export {
+	DECLARATION_PATH,
+	pathProblem,
+	rowPath,
+	rowStemOf,
+} from './paths.js';
 export {
 	formatRow,
 	parseRow,
@@ -170,7 +175,7 @@ export type BrowserFolderOptions = {
 	 * Whether opening makes a folder where none exists. Default `true`. With
 	 * `false`, a missing or empty directory is `Absent`, decided under the
 	 * same open lock that would create it, and nothing is created: no
-	 * directory, marker, private Git state, or `definition.json`. A folder
+	 * directory, marker, private Git state, or `epicenter.json`. A folder
 	 * already there opens either way. An account app can then offer an
 	 * explicit download or start instead of creating one at startup.
 	 */

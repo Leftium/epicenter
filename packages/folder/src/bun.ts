@@ -44,6 +44,11 @@ export {
 	type GitRun,
 } from './git/native-backend.js';
 export { verifyNativeLayout } from './native-store.js';
+export {
+	type FolderReading,
+	ReadFolderError,
+	readFolder,
+} from './read-folder.js';
 
 export type DirectoryFolderOptions<TDefinition extends FolderDefinition> = {
 	/** An existing directory. A Git repository is initialized there if absent. */

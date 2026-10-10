@@ -73,12 +73,12 @@ test('browser helpers still preparing when close starts are refused without writ
 	expect(folder.git.snapshot.closed).toBe(true);
 	expect(folder.git.snapshot.lastCommit).toMatchObject({
 		status: 'committed',
-		message: 'Add definition.json',
+		message: 'Add epicenter.json',
 	});
 	const reopened = await open();
 	expect(
 		expectOk(await reopened.files.list()).files.map((file) => file.path),
-	).toEqual(['definition.json']);
+	).toEqual(['epicenter.json']);
 	await reopened.close();
 });
 

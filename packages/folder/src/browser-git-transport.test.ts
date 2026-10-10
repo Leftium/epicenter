@@ -49,7 +49,7 @@ test('a folder routes only its Git requests through the injected transport and k
 	const receiver = expectOk(await open());
 	expectOk(
 		await receiver.files.remove(
-			expectOk(await receiver.files.read('definition.json')),
+			expectOk(await receiver.files.read('epicenter.json')),
 		),
 	);
 	try {

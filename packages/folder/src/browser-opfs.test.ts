@@ -117,13 +117,13 @@ describe('one path is one stored file', () => {
 		const listing = expectOk(await folder.files.list());
 		expect(listing.files.map((file) => file.path)).toEqual([
 			'bytes.bin',
-			'definition.json',
 			'empty.txt',
+			'epicenter.json',
 			'notes/a.md',
 		]);
 		expect(listing.directories).toEqual(['drafts', 'drafts/later', 'notes']);
 		expect(expectOk(await folder.files.children(''))).toEqual({
-			files: ['bytes.bin', 'definition.json', 'empty.txt'],
+			files: ['bytes.bin', 'empty.txt', 'epicenter.json'],
 			directories: ['drafts', 'notes'],
 		});
 		expect(expectErr(await folder.files.create('.git/HEAD', 'x')).name).toBe(
@@ -193,7 +193,7 @@ describe('one path is one stored file', () => {
 		// Git sees the change too: stat caches are never trusted.
 		expect(expectOk(await folder.git.paths())).toEqual([
 			{ path: 'a.txt', index: '?', worktree: '?' },
-			{ path: 'definition.json', index: '?', worktree: '?' },
+			{ path: 'epicenter.json', index: '?', worktree: '?' },
 		]);
 	});
 

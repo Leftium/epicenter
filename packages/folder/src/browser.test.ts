@@ -493,7 +493,7 @@ describe('browser folder persistence and history', () => {
 
 		expect(commits.map((commit) => commit.message)).toEqual([
 			'Add todos/kept.md\n',
-			'Add definition.json\n',
+			'Add epicenter.json\n',
 		]);
 		const status = expectOk(await second.git.status());
 
@@ -537,7 +537,7 @@ describe('browser folder persistence and history', () => {
 		expect(conflict.name).toBe('Conflict');
 		expect(folder.git.snapshot.lastCommit).toMatchObject({
 			status: 'committed',
-			message: 'Add definition.json',
+			message: 'Add epicenter.json',
 		});
 		expect(folder.git.snapshot.activity.commit).toEqual({ active: false });
 	});
@@ -774,12 +774,12 @@ describe('browser terminal', () => {
 
 		let status = await terminal.exec('git status');
 		expect(status.stdout).toBe(
-			'## main\n?? definition.json\n?? notes.txt\n?? todos/one.md\n',
+			'## main\n?? epicenter.json\n?? notes.txt\n?? todos/one.md\n',
 		);
 		expect((await terminal.exec('git add notes.txt')).exitCode).toBe(0);
 		status = await terminal.exec('git status');
 		expect(status.stdout).toBe(
-			'## main\n?? definition.json\nA  notes.txt\n?? todos/one.md\n',
+			'## main\n?? epicenter.json\nA  notes.txt\n?? todos/one.md\n',
 		);
 		const committed = await terminal.exec('git commit -m "Add a shell note"');
 		expect(committed.exitCode).toBe(0);
@@ -794,13 +794,13 @@ describe('browser terminal', () => {
 		status = await terminal.exec('git status');
 		expect(status.stderr).toBe('');
 		expect(status.stdout).toBe(
-			'## main\n?? definition.json\n?? todos/one.md\n',
+			'## main\n?? epicenter.json\n?? todos/one.md\n',
 		);
 
 		await terminal.exec('echo "more" >> notes.txt');
 		status = await terminal.exec('git status --short');
 		expect(status.stdout).toBe(
-			'## main\n?? definition.json\n M notes.txt\n?? todos/one.md\n',
+			'## main\n?? epicenter.json\n M notes.txt\n?? todos/one.md\n',
 		);
 		const diff = await terminal.exec('git diff');
 		expect(diff.stdout).toContain('+more');

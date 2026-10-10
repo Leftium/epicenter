@@ -130,7 +130,7 @@ describe('an existing folder', () => {
 		const savedFiles = async () =>
 			(await fingerprint(root)).filter(
 				(line) =>
-					!line.includes('/.git') && !line.includes('/definition.json '),
+					!line.includes('/.git') && !line.includes('/epicenter.json '),
 			);
 		const before = await savedFiles();
 		const folder = await open(root);
@@ -142,9 +142,9 @@ describe('an existing folder', () => {
 		expect(await savedFiles()).toEqual(before);
 		expect(git('rev-parse', 'HEAD^').stdout.trim()).toBe(prior);
 		expect(git('log', '-1', '--format=%s').stdout.trim()).toBe(
-			'Add definition.json',
+			'Add epicenter.json',
 		);
-		expect(await readFile(join(root, 'definition.json'), 'utf8')).toBe(
+		expect(await readFile(join(root, 'epicenter.json'), 'utf8')).toBe(
 			expectOk(exportSchema(honeycrispDefinition)),
 		);
 		expect(await readFile(join(root, 'notes', 'old.md'), 'utf8')).toBe(NOTE);
@@ -168,7 +168,7 @@ describe('an existing folder', () => {
 		expect(
 			(await fingerprint(root)).filter(
 				(line) =>
-					!line.includes('/.git') && !line.includes('/definition.json '),
+					!line.includes('/.git') && !line.includes('/epicenter.json '),
 			),
 		).toEqual(files);
 	});
@@ -195,7 +195,7 @@ describe('an existing folder', () => {
 		).toEqual(kept);
 		// Publication checkpoints the whole existing folder, including its saved data.
 		expect(git('ls-tree', '-r', '--name-only', 'HEAD').stdout.trim()).toBe(
-			'definition.json\nkv.json\nnotes/old.md',
+			'epicenter.json\nkv.json\nnotes/old.md',
 		);
 	});
 });
@@ -217,7 +217,7 @@ describe('a new folder', () => {
 			'setup history',
 		);
 		expect(git('show', 'HEAD:kv.json').stdout).toBe('{}\n');
-		expect(git('show', 'HEAD:definition.json').stdout).toBe(
+		expect(git('show', 'HEAD:epicenter.json').stdout).toBe(
 			expectOk(exportSchema(honeycrispDefinition)),
 		);
 		const head = git('rev-parse', 'HEAD').stdout;

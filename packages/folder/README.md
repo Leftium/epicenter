@@ -60,7 +60,7 @@ Compatible field meanings still matter when those tools write to the same
 dataset.
 
 Each successful browser, Bun, or Tauri acquisition attempts to overwrite root
-`definition.json` before returning. The file describes the opening application's
+`epicenter.json` before returning. The file describes the opening application's
 prepared `title` when present, `kv`, and `tables`, including portable validation
 and editor hints. It contains no dataset identity or runtime resources. The JSON
 uses two-space indentation, declared order, and a trailing newline. Opening
@@ -79,7 +79,7 @@ reopening. It uses `commitOnEdit`: opening awaits the file attempt while
 history settles separately, and identical trees create no additional commit.
 Publication never explicitly commits or pushes. Opening an empty folder before
 pulling an existing remote changes bootstrap behavior: with history disabled,
-the uncommitted `definition.json` blocks incoming updates; with history enabled,
+the uncommitted `epicenter.json` blocks incoming updates; with history enabled,
 its local initial commit creates unrelated history. Get the remote's history
 before the first opening: a browser account folder uses
 [`downloadFolder`](#downloading-a-browser-folder), and a runtime with a clone
@@ -226,9 +226,9 @@ predates it refuses it as a marker naming no address.
 
 `browser.createIfMissing` defaults to `true`. With `false`, opening decides
 under the same open lock and creates nothing where no folder exists: no
-directory, marker, `.git`, or `definition.json`. `Absent` names the
+directory, marker, `.git`, or `epicenter.json`. `Absent` names the
 directory. A folder that exists opens as usual, offline too, and publishes
-its `definition.json`; every refusal above is unchanged. An opener queued
+its `epicenter.json`; every refusal above is unchanged. An opener queued
 behind one that creates sees the folder it made. Nothing remembers an
 `Absent` answer, and nothing polls; each opening decides again.
 
@@ -277,14 +277,14 @@ captured `account` targets its separate directory. A launcher can download a
 fresh Local folder before opening it, using the same protocol as an account
 download. An ordinary Local opening still makes no network request.
 
-Downloading opens no folder, publishes no `definition.json`,
+Downloading opens no folder, publishes no `epicenter.json`,
 and writes no settings. It first records the pending download in the marker
 file, `{ download: { address, remote: { url, branch } } }`, and confirms that
 write before any Git state exists. It then fetches the remote branch into the
 address's `.git`, fast-forwards the unborn local `main` to it through the
 ordinary incoming publication, and replaces the record with the ready marker
 `{ address }` last. `landed.head` is the
-downloaded commit. Opening afterward publishes `definition.json` as an
+downloaded commit. Opening afterward publishes `epicenter.json` as an
 ordinary save over that history, so its commit has the downloaded head as
 parent, or there is none when the bytes match.
 
@@ -293,7 +293,7 @@ stays unborn, `origin` names the remote, and the folder is marked ready with
 no files. No fast-forward checks the folder then, so a folder file the
 download did not write, such as one put beside a pending record, is
 `Incomplete`, named and kept, and the record stays. The first opening
-publishes `definition.json` as the root commit, and the first push creates
+publishes `epicenter.json` as the root commit, and the first push creates
 the branch.
 
 | The directory holds | Download |
@@ -414,6 +414,35 @@ once the build exists. An addon whose source cannot be read or whose build
 cannot be loaded fails the same way with the actual cause, which rebuilding
 may not fix. Nothing compiles at install time or at run time, and browser,
 server, and desktop builds never load the addon or need a compiler.
+
+### Reading a data folder without opening it
+
+```ts
+import { readFolder } from '@epicenter/folder/bun';
+
+const { data: reading, error } = await readFolder('/path/to/a/data/folder');
+if (error !== null) return show(error.message); // NotDataFolder, InvalidDeclaration, or a file error
+reading.definition; // the prepared declaration from epicenter.json
+reading.tables.todos; // exactly what tables.todos.list() returns
+reading.kv; // exactly what kv.get() returns
+```
+
+A data folder is a directory holding `epicenter.json` (ADR-0517), the
+declaration an opener publishes as `DECLARATION_PATH`. `readFolder` reads it,
+prepares it, and reads every declared table and `kv.json` through the same
+tables, settings, and native file boundary an opened folder uses, so a tool
+and an application reach the same verdict on every file. A symbolically
+linked table directory is that table's `InvalidPath`, never followed.
+
+It writes nothing: no Git repository, marker, lock, or declaration, and it
+loads no native addon. It can read a folder an application has open, or one
+nested anywhere in another repository. Each file is read whole, but the
+reading is not a snapshot across files: a save in progress elsewhere can show
+in one table and not yet in another.
+
+It checks files, not the root's Git layout. A folder whose `.git` is a
+`gitdir:` file (a submodule) reads, though `openFolder` refuses it, so a
+successful reading does not mean an application can open the folder.
 
 ## The handle
 

@@ -197,7 +197,7 @@ test('a checkpoint that overlaps a table rename commits the files from before it
 		);
 		expect((await opened.git.commit()).status).toBe('committed');
 		const tree = () => git(folder, 'ls-tree', '-r', '--name-only', 'HEAD');
-		expect(await tree()).toBe('definition.json\ntodos/old.md\ntodos/old.png');
+		expect(await tree()).toBe('epicenter.json\ntodos/old.md\ntodos/old.png');
 		const pause = pauseCaptureBeforeReading(join(folder, 'todos', 'old.md'));
 
 		const committing = opened.git.commit();
@@ -209,11 +209,11 @@ test('a checkpoint that overlaps a table rename commits the files from before it
 			entry.sha256,
 		);
 
-		expect(await tree()).toBe('definition.json\ntodos/old.md\ntodos/old.png');
+		expect(await tree()).toBe('epicenter.json\ntodos/old.md\ntodos/old.png');
 		expect(pause.overlapped).toBe(false);
 		expect((await opened.git.commit()).status).toBe('committed');
 		// Only the row moved; the image beside it stays where it was.
-		expect(await tree()).toBe('definition.json\ntodos/new.md\ntodos/old.png');
+		expect(await tree()).toBe('epicenter.json\ntodos/new.md\ntodos/old.png');
 	} finally {
 		await opened.close();
 	}

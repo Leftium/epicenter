@@ -50,7 +50,7 @@ async function repository() {
 	await git(root, 'init', '--quiet', '--initial-branch=main');
 	await writeFile(join(root, 'a.md'), 'A\n');
 	await writeFile(join(root, 'kept.md'), 'kept\n');
-	await writeFile(join(root, 'definition.json'), expectOk(exportSchema(definition)));
+	await writeFile(join(root, 'epicenter.json'), expectOk(exportSchema(definition)));
 	await git(root, 'add', '--all');
 	await git(root, 'commit', '--quiet', '-m', 'Start');
 	return root;
@@ -99,7 +99,7 @@ test('staged-only additions and deletions do not survive a checkpoint', async ()
 	// The ignored file is not source, and kept.md is unchanged: no new commit.
 	expect(outcome.status).toBe('unchanged');
 	expect(await git(root, 'status', '--porcelain')).toBe('');
-	expect(await git(root, 'ls-files')).toBe('.gitignore\na.md\ndefinition.json\nkept.md');
+	expect(await git(root, 'ls-files')).toBe('.gitignore\na.md\nepicenter.json\nkept.md');
 	await folder.close();
 });
 

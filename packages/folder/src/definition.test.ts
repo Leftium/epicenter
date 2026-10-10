@@ -186,11 +186,11 @@ test('one prepared definition opens two folders that stay apart, and another def
 		),
 	);
 	expect(await paths(personal)).toEqual([
-		'definition.json',
+		'epicenter.json',
 		'kv.json',
 		'todos/milk.md',
 	]);
-	expect(await paths(work)).toEqual(['definition.json', 'todos/report.md']);
+	expect(await paths(work)).toEqual(['epicenter.json', 'todos/report.md']);
 	expect(expectOk(await work.tables.todos.get('milk'))).toBeUndefined();
 	expect(expectOk(await work.kv.get())).toBeUndefined();
 	await personal.close();
@@ -253,7 +253,7 @@ test('tables named like Object.prototype members, and one table under two names,
 	);
 	expect((await paths(folder)).sort()).toEqual([
 		'constructor/a.md',
-		'definition.json',
+		'epicenter.json',
 		'notes/b.md',
 		'toString/b.md',
 	]);

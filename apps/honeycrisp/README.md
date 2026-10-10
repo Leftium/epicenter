@@ -37,7 +37,7 @@ Checks, from `apps/honeycrisp`:
 
 ```text
 ~/Epicenter/local/so.epicenter.honeycrisp/
-├── definition.json
+├── epicenter.json
 ├── kv.json
 ├── notes/
 │   └── <note-id>.md
@@ -54,7 +54,7 @@ HONEYCRISP_ROOT=/tmp/honeycrisp-test bun dev:honeycrisp
 ```
 
 A missing directory gets this layout and a Git repository. Opening publishes
-`definition.json` from Honeycrisp's declaration, replacing any previous
+`epicenter.json` from Honeycrisp's declaration, replacing any previous
 description. Creating default `kv.json` and publishing the definition request
 history asynchronously; an early note edit can join that work. Saved notes and
 settings stay intact. Identical reopening adds no commit once history settles.
@@ -350,7 +350,7 @@ a missing table directory is made, and `kv.json` is written only when a read
 confirmed it is absent, on the condition that it still is. The owner requests
 history asynchronously after that save; an early note edit can join the same
 commit. Existing settings are kept. Folder acquisition separately publishes
-`definition.json` through the same save and automatic-history policy. A
+`epicenter.json` through the same save and automatic-history policy. A
 directory another Epicenter holds is reported as in use and gains no file.
 
 ### Shell commands

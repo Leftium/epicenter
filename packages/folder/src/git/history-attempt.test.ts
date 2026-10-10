@@ -1324,7 +1324,7 @@ test('the subject and count describe the committed tree, not the files on disk',
 				'HEAD',
 			)
 		).split('\n');
-	expect(await changed()).toEqual(['.gitignore', 'a.md', 'b.md', 'definition.json']);
+	expect(await changed()).toEqual(['.gitignore', 'a.md', 'b.md', 'epicenter.json']);
 	expect(first).toMatchObject({
 		status: 'committed',
 		message: 'Update 4 files',

@@ -130,7 +130,7 @@ describe('native folder', () => {
 		});
 		await settled(folder);
 		expect(await git(root, 'log', '--format=%s')).toBe(
-			'Add todos/walk.md\nAdd definition.json',
+			'Add todos/walk.md\nAdd epicenter.json',
 		);
 		expect(await git(root, 'status', '--porcelain')).toBe('');
 
@@ -176,7 +176,7 @@ describe('native folder', () => {
 			await writeFile(join(root, 'external.md'), 'external');
 			expect(folder.git.snapshot.lastCommit).toMatchObject({
 				status: 'committed',
-				message: 'Add definition.json',
+				message: 'Add epicenter.json',
 			});
 			expect(folder.git.snapshot.activity.commit).toEqual({ active: false });
 			expectOk(await folder.files.create('saved.md', 'saved'));
@@ -437,7 +437,7 @@ describe('native folder', () => {
 		expect((await folder.git.paths()).data).toEqual([
 			{ path: 'a.txt', index: 'A', worktree: ' ' },
 			{ path: 'b.txt', index: '?', worktree: '?' },
-			{ path: 'definition.json', index: '?', worktree: '?' },
+			{ path: 'epicenter.json', index: '?', worktree: '?' },
 		]);
 		expectOk(await folder.git.commitStaged('Stage one file'));
 
@@ -596,7 +596,7 @@ describe('browser and native exchange through a real bare repository', () => {
 		expect(browser.git.snapshot.lastPush).toBeUndefined();
 		expect((await browser.git.push()).status).toBe('pushed');
 		expect(await git(bare, 'log', '--format=%s', 'main')).toBe(
-			'Add todos/first.md\nAdd definition.json',
+			'Add todos/first.md\nAdd epicenter.json',
 		);
 
 		const nativeRoot = join(root, 'native');

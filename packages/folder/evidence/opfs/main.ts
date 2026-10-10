@@ -39,6 +39,7 @@
 import { exportSchema } from '@epicenter/definition';
 import type { Result } from 'wellcrafted/result';
 import {
+	DECLARATION_PATH,
 	defineFolder,
 	defineTable,
 	type Folder,
@@ -317,13 +318,13 @@ async function publication(id: string) {
 		async () => {
 			const folder = await open(id);
 			const expected = ok(exportSchema(definition));
-			const stored = decoder.decode(await rawRead(id, 'definition.json'));
+			const stored = decoder.decode(await rawRead(id, DECLARATION_PATH));
 			assert(stored === expected, `stored ${stored}`);
 			assert(
 				ok(await folder.git.log(10)).length === 0,
 				'manual mode committed',
 			);
-			return `definition.json: ${stored}`;
+			return `epicenter.json: ${stored}`;
 		},
 	);
 	await check(
@@ -339,14 +340,14 @@ async function publication(id: string) {
 			const before = await rawRead(id, 'rows/kept.md');
 			ok(
 				await folder.files.overwrite(
-					'definition.json',
+					DECLARATION_PATH,
 					'manual malformed description',
 				),
 			);
 			await folder.close();
 			const reopened = await open(id);
 			assert(
-				decoder.decode(await rawRead(id, 'definition.json')) ===
+				decoder.decode(await rawRead(id, DECLARATION_PATH)) ===
 					ok(exportSchema(definition)),
 				'manual description stayed',
 			);
@@ -357,7 +358,7 @@ async function publication(id: string) {
 			});
 			await open(id, { definition: changed });
 			assert(
-				decoder.decode(await rawRead(id, 'definition.json')) ===
+				decoder.decode(await rawRead(id, DECLARATION_PATH)) ===
 					ok(exportSchema(changed)),
 				'changed declaration was not published',
 			);
@@ -1108,15 +1109,15 @@ async function reloadCheck(stage: string) {
 	window.history.replaceState(null, '', location.pathname);
 	if (id === null) {
 		record(
-			'bytes and definition.json survive a page reload',
+			'bytes and epicenter.json survive a page reload',
 			'note',
 			'not run: this page was not reached from a reload check that wrote a folder. Press "Reload persistence check" to run it.',
 		);
 		return true;
 	}
-	await check('bytes and definition.json survive a page reload', async () => {
+	await check('bytes and epicenter.json survive a page reload', async () => {
 		const persistedDefinition = decoder.decode(
-			await rawRead(id, 'definition.json'),
+			await rawRead(id, DECLARATION_PATH),
 		);
 		assert(
 			persistedDefinition === ok(exportSchema(definition)),
@@ -1124,7 +1125,7 @@ async function reloadCheck(stage: string) {
 		);
 		const folder = await open(id);
 		assert(
-			decoder.decode(await rawRead(id, 'definition.json')) ===
+			decoder.decode(await rawRead(id, DECLARATION_PATH)) ===
 				persistedDefinition,
 			'reopening changed definition bytes',
 		);

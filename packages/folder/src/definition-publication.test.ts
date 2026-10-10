@@ -117,7 +117,7 @@ for (const adapter of ['browser', 'bun'] as const) {
 		let folder = await open(definition);
 		try {
 			expect(
-				decode(expectOk(await folder.files.read('definition.json')).bytes),
+				decode(expectOk(await folder.files.read('epicenter.json')).bytes),
 			).toBe(expectOk(exportSchema(definition)));
 			expectOk(
 				await folder.tables.notes!.create(
@@ -130,14 +130,14 @@ for (const adapter of ['browser', 'bun'] as const) {
 			const kv = expectOk(await folder.files.read('kv.json'));
 			expectOk(
 				await folder.files.overwrite(
-					'definition.json',
+					'epicenter.json',
 					'malformed manual description',
 				),
 			);
 			await folder.close();
 			folder = await open(definition);
 			expect(
-				decode(expectOk(await folder.files.read('definition.json')).bytes),
+				decode(expectOk(await folder.files.read('epicenter.json')).bytes),
 			).toBe(expectOk(exportSchema(definition)));
 			await folder.close();
 			const changed = defineFolder({
@@ -147,7 +147,7 @@ for (const adapter of ['browser', 'bun'] as const) {
 			});
 			folder = await open(changed);
 			expect(
-				decode(expectOk(await folder.files.read('definition.json')).bytes),
+				decode(expectOk(await folder.files.read('epicenter.json')).bytes),
 			).toBe(expectOk(exportSchema(changed)));
 			expect(expectOk(await folder.files.read('notes/kept.md')).bytes).toEqual(
 				row.bytes,
@@ -197,7 +197,7 @@ for (const adapter of ['browser', 'bun'] as const) {
 
 test('Bun publication failure leaves the folder usable and reports the actual destination failure', async () => {
 	const root = await scratch('definition-failure-');
-	await mkdir(join(root, 'definition.json'));
+	await mkdir(join(root, 'epicenter.json'));
 	const folder = expectOk(
 		await openBun({ root, definition, git: { author, commitOnEdit: false } }),
 	);
@@ -207,8 +207,8 @@ test('Bun publication failure leaves the folder usable and reports the actual de
 			events.find((event) => event.source === 'folder/definition')?.data,
 		).toMatchObject({
 			name: 'DefinitionPublicationUnconfirmed',
-			path: 'definition.json',
-			cause: { name: 'NotAFile', path: 'definition.json' },
+			path: 'epicenter.json',
+			cause: { name: 'NotAFile', path: 'epicenter.json' },
 		});
 	} finally {
 		await folder.close();
@@ -222,7 +222,7 @@ test('unsupported export leaves an existing description and the acquired folder 
 		await openBun({ root, definition, git: { author, commitOnEdit: false } }),
 	);
 	expectOk(
-		await initial.files.overwrite('definition.json', 'previous description'),
+		await initial.files.overwrite('epicenter.json', 'previous description'),
 	);
 	await initial.close();
 	const unsupported = defineFolder({
@@ -243,14 +243,14 @@ test('unsupported export leaves an existing description and the acquired folder 
 	);
 	try {
 		expect(
-			decode(expectOk(await folder.files.read('definition.json')).bytes),
+			decode(expectOk(await folder.files.read('epicenter.json')).bytes),
 		).toBe('previous description');
 		expectOk(await folder.files.create('usable.txt', 'usable'));
 		expect(
 			events.find((event) => event.source === 'folder/definition')?.data,
 		).toMatchObject({
 			name: 'DefinitionExportFailed',
-			path: 'definition.json',
+			path: 'epicenter.json',
 			cause: { name: 'Unsupported' },
 		});
 	} finally {

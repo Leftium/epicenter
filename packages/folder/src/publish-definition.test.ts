@@ -22,7 +22,7 @@ test('each attempt overwrites unconditionally and waits for the file outcome', a
 	const files = {
 		overwrite: async (path: string, text: string) => {
 			writes++;
-			expect(path).toBe('definition.json');
+			expect(path).toBe('epicenter.json');
 			expect(text.endsWith('\n')).toBe(true);
 			await done.promise;
 			return Ok(fileCapture(path, '0'.repeat(64)));
@@ -45,7 +45,7 @@ test('a lost write reply preserves Unconfirmed and its actual cause in the diagn
 	const lost = new Error('Lost native reply after sending overwrite');
 	const refusal = FileError.Unconfirmed({
 		operation: 'overwrite',
-		path: 'definition.json',
+		path: 'epicenter.json',
 		cause: lost,
 	});
 	await publishDefinition(definition, { overwrite: async () => refusal });
@@ -55,7 +55,7 @@ test('a lost write reply preserves Unconfirmed and its actual cause in the diagn
 		level: 'error',
 		data: {
 			name: 'DefinitionPublicationUnconfirmed',
-			path: 'definition.json',
+			path: 'epicenter.json',
 			cause: refusal.error,
 		},
 	});
@@ -71,7 +71,7 @@ test('a thrown write retains its cause without claiming whether the save landed'
 	expect(events).toHaveLength(1);
 	expect(events[0]?.data).toMatchObject({
 		name: 'DefinitionPublicationUnconfirmed',
-		path: 'definition.json',
+		path: 'epicenter.json',
 		cause,
 	});
 });

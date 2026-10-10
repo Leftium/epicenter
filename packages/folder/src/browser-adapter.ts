@@ -608,7 +608,7 @@ export type DownloadError = DownloadFolderError | AddressError;
 
 /**
  * Make the folder `id` in the explicit scope from `remote`'s history before
- * anything opens it. No `definition.json` is published; open the
+ * anything opens it. No `epicenter.json` is published; open the
  * folder afterward. The marker records the pending download (address, URL,
  * branch) before any Git state is written and becomes the ready marker last.
  * A destination that is already a folder, holds anything else, or records

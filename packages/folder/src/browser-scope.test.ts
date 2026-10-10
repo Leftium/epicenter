@@ -178,7 +178,7 @@ test('a scoped folder starts with its definition beside a Local folder of the sa
 	});
 	for (const scoped of [development, account]) {
 		expect(expectOk(await scoped.files.list())).toEqual({
-			files: [{ path: 'definition.json', size: 31 }],
+			files: [{ path: 'epicenter.json', size: 31 }],
 			directories: [],
 		});
 		expect(expectOk(await scoped.git.log(10))).toEqual([]);

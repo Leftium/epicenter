@@ -111,3 +111,6 @@ export function rowStemOf(table: string, path: string): string | undefined {
 export function collisionKey(path: string): string {
 	return path.normalize('NFC').toLowerCase();
 }
+
+/** Where an opened folder publishes its declaration (ADR-0517). */
+export const DECLARATION_PATH = 'epicenter.json';

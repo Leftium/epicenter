@@ -3,7 +3,7 @@
 - **Status:** Proposed
 - **Date:** 2026-10-07
 - **Remaining:** a decision and repair for Todos browser remote bootstrap. Real-OPFS run/reload and Honeycrisp browser/native note creation, editing, and reopening passed on 2026-10-08; see [computer-use evidence](../../packages/folder/evidence/definition-publication/computer-use-20261008/README.md). Runtime export, all three opener paths, diagnostics, and history regressions are implemented and checked. This ADR remains Proposed.
-- **Relates:** [ADR-0517](0517-a-data-folder-can-live-inside-any-repository.md) names the declaration file `epicenter.json`; publication writes `definition.json` until the folder package renames it.
+- **Relates:** [ADR-0517](0517-a-data-folder-can-live-inside-any-repository.md) renamed the published file to `epicenter.json` (`DECLARATION_PATH`). Where this record says root `definition.json`, read `epicenter.json`; an old `definition.json` is now an ordinary file.
 
 ## Context
 

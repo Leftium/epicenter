@@ -186,7 +186,7 @@ describe('native pull with a locked index', () => {
 		});
 		await writer.files.create('readme.md', 'A\n');
 		await writer.git.commitAndPush();
-		expectOk(await reader.files.remove(expectOk(await reader.files.read('definition.json'))));
+		expectOk(await reader.files.remove(expectOk(await reader.files.read('epicenter.json'))));
 		await reader.git.fetch();
 		expect((await reader.git.pullFastForward()).data?.status).toBe(
 			'fastForwarded',

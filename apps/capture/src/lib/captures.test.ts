@@ -899,7 +899,7 @@ test('whitespace typed into the new-capture form is refused and still protected'
 	expect(await captures.departure.settle()).toBe(1);
 	expect(
 		expectOk(await folder.files.list()).files.filter(
-			(file) => file.path !== 'definition.json',
+			(file) => file.path !== 'epicenter.json',
 		),
 	).toEqual([]);
 	captures.inputNewCapture('');

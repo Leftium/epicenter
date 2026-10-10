@@ -3,7 +3,7 @@
 - **Status:** Proposed
 - **Date:** 2026-10-11
 - **Relates:** [ADR-0494](0494-file-folders-reserve-epicenter-for-rebuildable-caches.md) (queries build transient projections), [ADR-0488](0488-cloud-folders-use-independent-git-histories.md) (a private repository per synced folder), [ADR-0521](0521-a-data-folder-syncs-with-its-git-origin-through-a-provider.md) (sync with the Git origin), [ADR-0490](0490-the-cli-discovers-folders-and-delegates-history-to-git.md) (discovery lists repositories), [ADR-0508](0508-folder-opening-overwrites-root-definition-json.md) (opening publishes the declaration), [ADR-0510](0510-authored-dataset-locations-are-independent-of-sign-in.md) (stable authored locations)
-- **Unbuilt:** discovering data folders by `epicenter.json`, renaming opener publication from `definition.json` to `epicenter.json`, opener refusal of a root inside another repository, extraction tooling, and opening a submodule-hosted data folder in the native engine.
+- **Unbuilt:** discovering data folders by `epicenter.json` in apps, opener refusal of a root inside another repository, extraction tooling, and opening a submodule-hosted data folder in the native engine.
 
 ## Context
 
@@ -102,11 +102,16 @@ git submodule add <repository-url> plan
 - The CLI's `check` and `query` read `epicenter.json` (ADR-0520); apps do not
   yet. `prepareSchema` accepts what `exportSchema` writes, so a reader needs no
   new format.
-- ADR-0508 publication still writes `definition.json` until the folder package
-  renames it, so an app-opened data folder is not yet discoverable by
-  `epicenter.json`. A hosted data folder that no app opens keeps the
-  `epicenter.json` its authors wrote. Whether opening should read an authored
-  declaration rather than replace it is undecided.
+- Openers publish `epicenter.json` (ADR-0508), so an app-opened data folder
+  is discoverable by it. A `definition.json` left by an older build is an
+  ordinary file the folder no longer reads or writes. A hosted data folder
+  that no app opens keeps the `epicenter.json` its authors wrote; opening
+  replaces it. Whether opening should read an authored declaration rather
+  than replace it is undecided.
+- `readFolder(root)` from `@epicenter/folder/bun` reads a data folder without
+  opening it: the prepared declaration, each table's `list()`, and
+  `kv.get()`, through the opener's native file boundary. It writes nothing,
+  so it reads a folder nested in any repository.
 
 ## Considered alternatives
 

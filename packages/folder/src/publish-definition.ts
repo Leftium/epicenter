@@ -1,19 +1,24 @@
-/** Opening-time discovery publication through the ordinary file boundary. */
+/**
+ * Opening-time discovery publication through the ordinary file boundary
+ * (ADR-0517): the folder's declaration, at `epicenter.json`, as JSON a tool
+ * can read without running anything.
+ */
 import { type DataSchema, exportSchema } from '@epicenter/definition';
 import { defineErrors } from 'wellcrafted/error';
 import { createLogger } from 'wellcrafted/logger';
 import type { FolderFiles } from './files.js';
+import { DECLARATION_PATH } from './paths.js';
 
 const log = createLogger('folder/definition');
 const PublicationError = defineErrors({
 	DefinitionExportFailed: ({ cause }: { cause: unknown }) => ({
-		message: 'Could not export definition.json; no publication attempted.',
-		path: 'definition.json',
+		message: `Could not export ${DECLARATION_PATH}; no publication attempted.`,
+		path: DECLARATION_PATH,
 		cause,
 	}),
 	DefinitionPublicationUnconfirmed: ({ cause }: { cause: unknown }) => ({
-		message: 'Publication of definition.json did not confirm a complete save.',
-		path: 'definition.json',
+		message: `Publication of ${DECLARATION_PATH} did not confirm a complete save.`,
+		path: DECLARATION_PATH,
 		cause,
 	}),
 });
@@ -31,10 +36,7 @@ export async function publishDefinition(
 			);
 			return;
 		}
-		const { error: writeError } = await files.overwrite(
-			'definition.json',
-			text,
-		);
+		const { error: writeError } = await files.overwrite(DECLARATION_PATH, text);
 		if (writeError !== null)
 			log.error(
 				PublicationError.DefinitionPublicationUnconfirmed({

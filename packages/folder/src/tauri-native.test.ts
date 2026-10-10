@@ -405,7 +405,7 @@ const IMAGE = new Uint8Array([1, 2, 3]);
 describe.skipIf(!enabled)('tauri folder against the native owner', () => {
 	test('opening publishes root discovery JSON and identical reopening creates no additional native commit', async () => {
 		const { root, settled } = await setup();
-		expect(await readFile(join(root, 'definition.json'), 'utf8')).toBe(
+		expect(await readFile(join(root, 'epicenter.json'), 'utf8')).toBe(
 			expectOk(exportSchema(definition)),
 		);
 		await settled();
@@ -426,7 +426,7 @@ describe.skipIf(!enabled)('tauri folder against the native owner', () => {
 		const before = await readFile(join(root, 'todos/kept.md'), 'utf8');
 		expectOk(
 			await a(() =>
-				folder.files.overwrite('definition.json', 'manual description'),
+				folder.files.overwrite('epicenter.json', 'manual description'),
 			),
 		);
 		const changed = defineFolder({
@@ -436,7 +436,7 @@ describe.skipIf(!enabled)('tauri folder against the native owner', () => {
 		const reopened = expectOk(
 			await a(() => openFolder({ id: 'notes', definition: changed })),
 		);
-		expect(await readFile(join(root, 'definition.json'), 'utf8')).toBe(
+		expect(await readFile(join(root, 'epicenter.json'), 'utf8')).toBe(
 			expectOk(exportSchema(changed)),
 		);
 		expect(await readFile(join(root, 'todos/kept.md'), 'utf8')).toBe(before);
@@ -522,10 +522,10 @@ describe.skipIf(!enabled)('tauri folder against the native owner', () => {
 		await settled();
 
 		expect(await git(root, 'log', '--format=%s')).toBe(
-			'Add todos/take.md\nAdd todos/take.png\nAdd definition.json',
+			'Add todos/take.md\nAdd todos/take.png\nAdd epicenter.json',
 		);
 		expect(await git(root, 'ls-tree', '-r', '--name-only', 'HEAD')).toBe(
-			'definition.json\ntodos/take.md\ntodos/take.png',
+			'epicenter.json\ntodos/take.md\ntodos/take.png',
 		);
 		expect(statuses.at(-1)).toBe('committed');
 		expect(folder.git.snapshot.commitOnEdit).toBe(true);
@@ -667,7 +667,7 @@ describe.skipIf(!enabled)('tauri folder against the native owner', () => {
 		expectOk(await b(() => other.files.create('from-b.md', 'did not wait')));
 		await settled();
 		expect(await git(root, 'log', '--format=%s')).toBe(
-			'Add from-b.md\nAdd definition.json',
+			'Add from-b.md\nAdd epicenter.json',
 		);
 		const theirs = await b(() =>
 			other.terminal().exec('echo "b ran" > b.md && cat b.md'),
@@ -798,7 +798,7 @@ describe.skipIf(!enabled)('tauri folder against the native owner', () => {
 			expectOk(await b(() => other.files.create('from-b.md', 'did not wait')));
 			await settled();
 			expect(await git(root, 'log', '--format=%s')).toBe(
-				'Add from-b.md\nAdd definition.json',
+				'Add from-b.md\nAdd epicenter.json',
 			);
 			expectOk(await a(() => folder.files.create('from-a.md', 'nor did this')));
 			await settled();
@@ -1068,12 +1068,12 @@ describe.skipIf(!enabled)('tauri folder against the native owner', () => {
 		// carries on.
 		expectOk(await b(() => other.git.paths()));
 		expect(await git(root, 'log', '--format=%s')).toBe(
-			'Add one.md\nAdd definition.json',
+			'Add one.md\nAdd epicenter.json',
 		);
 		expectOk(await b(() => other.files.create('after.md', 'b carries on')));
 		expectOk(await b(() => other.git.paths()));
 		expect(await git(root, 'ls-tree', '-r', '--name-only', 'HEAD')).toBe(
-			'after.md\ndefinition.json\none.md',
+			'after.md\nepicenter.json\none.md',
 		);
 	});
 
@@ -1100,7 +1100,7 @@ describe.skipIf(!enabled)('tauri folder against the native owner', () => {
 		// without the page that saved. Closing committed nothing itself.
 		expectOk(await b(() => other.git.paths()));
 		expect(await git(root, 'log', '--format=%s')).toBe(
-			'Add last.md\nAdd definition.json',
+			'Add last.md\nAdd epicenter.json',
 		);
 
 		expectOk(
@@ -1108,7 +1108,7 @@ describe.skipIf(!enabled)('tauri folder against the native owner', () => {
 		);
 		expectOk(await b(() => other.git.paths()));
 		expect(await git(root, 'ls-tree', '-r', '--name-only', 'HEAD')).toBe(
-			'after.md\ndefinition.json\nlast.md',
+			'after.md\nepicenter.json\nlast.md',
 		);
 		expect(heard.flat()).toEqual(
 			expect.arrayContaining(['last.md', 'after.md']),

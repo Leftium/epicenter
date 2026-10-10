@@ -5,7 +5,7 @@
  * browser's OPFS.
  *
  * Key behaviors:
- * - Opening first publishes `definition.json` as an unrelated root; a
+ * - Opening first publishes `epicenter.json` as an unrelated root; a
  *   download first lands the remote's exact files and history, and opening
  *   then records publication on top of them
  * - A download that fails or stops publishes nothing and is never marked
@@ -67,7 +67,7 @@ const decoder = new TextDecoder();
 
 /** What another app version committed and pushed. */
 const REMOTE_FILES = {
-	'definition.json': '{\n  "kv": {},\n  "tables": {}\n}\n',
+	'epicenter.json': '{\n  "kv": {},\n  "tables": {}\n}\n',
 	'kv.json': '{"language":"Chinese"}\n',
 	'entries/ni-hao.md': '---\nexpression: 你好\n---\nHello.\n',
 	'entries/xie-xie.md': '---\nexpression: 谢谢\n---\nThanks.\n',
@@ -137,7 +137,7 @@ async function seeded(root: string, bare: string) {
 		root,
 		bare,
 		{
-			'definition.json': REMOTE_FILES['definition.json'],
+			'epicenter.json': REMOTE_FILES['epicenter.json'],
 			'kv.json': REMOTE_FILES['kv.json'],
 			'entries/ni-hao.md': REMOTE_FILES['entries/ni-hao.md'],
 		},
@@ -237,12 +237,12 @@ async function directoryOf(storage: TestStorage, httpFetch: HttpFetch) {
 	return (absent as { directory: string }).directory;
 }
 
-test('opening first publishes definition.json as an unrelated root; downloading first opens the remote history', async () => {
+test('opening first publishes epicenter.json as an unrelated root; downloading first opens the remote history', async () => {
 	const { root, bare, httpFetch, requests } = await fixture();
 	const { first, head } = await seeded(root, bare);
 
 	// The defect: another profile opens before getting the remote, and its
-	// published definition.json becomes a root the remote does not share.
+	// published epicenter.json becomes a root the remote does not share.
 	const early = expectOk(await open(createTestStorage(), httpFetch));
 	expect((await early.git.commit()).status).toBe('committed');
 	expect(expectOk(await early.git.fetch()).oid).toBe(head);
@@ -278,9 +278,9 @@ test('opening first publishes definition.json as an unrelated root; downloading 
 	expect(expectOk(await folder.kv.get())?.values.language).toBe('Chinese');
 	// Opening replaced the other version's description; it commits on top.
 	const published = decoder.decode(
-		expectOk(await folder.files.read('definition.json')).bytes,
+		expectOk(await folder.files.read('epicenter.json')).bytes,
 	);
-	expect(published).not.toBe(REMOTE_FILES['definition.json']);
+	expect(published).not.toBe(REMOTE_FILES['epicenter.json']);
 	const committed = await folder.git.commit();
 	expect(committed).toMatchObject({ status: 'committed', parent: head });
 	expect(expectOk(await folder.git.fetch()).oid).toBe(head);
@@ -309,8 +309,8 @@ test('account startup that does not create finds nothing, writes nothing, and op
 	expect(history).toEqual([head, first]);
 	// Opening an existing folder still publishes its description.
 	expect(
-		decoder.decode(expectOk(await folder.files.read('definition.json')).bytes),
-	).not.toBe(REMOTE_FILES['definition.json']);
+		decoder.decode(expectOk(await folder.files.read('epicenter.json')).bytes),
+	).not.toBe(REMOTE_FILES['epicenter.json']);
 });
 
 test('opening without creating refuses a failed download as Unavailable, not Absent', async () => {
@@ -372,8 +372,9 @@ test('an interrupted fast-forward stays pending until downloading again recovers
 	expect(left['.git/epicenter-incoming.json']).toContain(head);
 	expect(left['.git/refs/heads/main']).toBeUndefined();
 	expect(marker(storage, directory)).toBe(receipt(directory));
-	expect(left['definition.json']).toBe(REMOTE_FILES['definition.json']);
 	expect(left['entries/xie-xie.md']).toBeUndefined();
+	// Files land in path order, so the declaration after the failed entry waits too.
+	expect(left['epicenter.json']).toBeUndefined();
 	expect(expectErr(await open(storage, httpFetch)).name).toBe('Unavailable');
 
 	storage.opfs.faults.write = undefined;

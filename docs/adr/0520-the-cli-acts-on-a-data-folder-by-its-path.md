@@ -91,6 +91,10 @@ agents use Git and the host's own tools for cloning, history, and transfer.
   `UPDATE` changed a row, and no statement can create a file.
 - Until the CLI is distributed, a caller outside the monorepo runs
   `scripts/epicenter.ts` from an Epicenter checkout.
+- A declaration's `pattern` can backtrack catastrophically, so `check` or
+  `query` on a repository someone else wrote can stall. When such repositories
+  become a real use, the CLI runs itself as a child process under a wall-clock
+  budget rather than restricting what a declaration may say.
 
 ## Considered alternatives
 

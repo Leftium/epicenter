@@ -24,7 +24,13 @@
 import '../svelte-modules.test-support.js';
 import { afterEach, describe, expect, test } from 'bun:test';
 import { toggleMark } from 'prosemirror-commands';
-import { redo, redoDepth, undo, undoDepth } from 'prosemirror-history';
+import {
+	closeHistory,
+	redo,
+	redoDepth,
+	undo,
+	undoDepth,
+} from 'prosemirror-history';
 import {
 	type Command,
 	EditorState,
@@ -330,16 +336,32 @@ describe('an edit that cannot be written', () => {
 		expect(body()).toBe('# Title\n');
 	});
 
-	test('a lone surrogate is saved as U+FFFD, and the screen shows what was saved', async () => {
-		const { dispatch, body, session, folder, expectNoteHoldsScreen, ...view } =
-			await open('Body.\n');
+	test('a lone surrogate is saved as U+FFFD, and the undo history survives it', async () => {
+		const {
+			dispatch,
+			run,
+			body,
+			session,
+			folder,
+			expectNoteHoldsScreen,
+			...view
+		} = await open('Body.\n');
+		expect(dispatch(view.shown().tr.insertText('x', 1))).toBe(true);
+		// The next edit is its own undo step.
+		expect(dispatch(closeHistory(view.shown().tr))).toBe(true);
 		// Half of an emoji: Markdown can spell it, and a file cannot hold it.
 		expect(dispatch(view.shown().tr.insertText('\uD800', 1))).toBe(true);
-		expect(body()).toBe('\uFFFDBody.\n');
-		expect(view.shown().doc.textContent).toBe('\uFFFDBody.');
+		expect(body()).toBe('\uFFFDxBody.\n');
+		expect(view.shown().doc.textContent).toBe('\uFFFDxBody.');
 		expectNoteHoldsScreen();
 		expect((await session.settled()).status).toBe('saved');
-		expect(folder.text('notes/a.md')).toContain('\uFFFDBody.');
+		expect(folder.text('notes/a.md')).toContain('\uFFFDxBody.');
+		expect(undoDepth(view.shown())).toBe(2);
+		expect(run(undo)).toBe(true);
+		expect(body()).toBe('xBody.\n');
+		expect(run(undo)).toBe(true);
+		expect(body()).toBe('Body.\n');
+		expectNoteHoldsScreen();
 	});
 
 	test('one made while the session takes no input is not displayed, and editing goes on from the same history', async () => {

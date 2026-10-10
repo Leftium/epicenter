@@ -188,8 +188,8 @@ export type NoteBody = Pick<
  * instead and the transaction is dropped, and a body that is no longer rich
  * text takes nothing. Markdown that cannot spell the new document is refused
  * with its reason through `refuse`. Otherwise the new body goes into the
- * draft, which saves it. A lone surrogate a file cannot hold becomes U+FFFD,
- * and the screen shows what saves.
+ * draft, which saves it. A lone surrogate a file cannot hold becomes U+FFFD
+ * within the same transaction, so the undo history keeps it.
  */
 export function stateAfter(
 	state: EditorState,
@@ -207,6 +207,9 @@ export function stateAfter(
 	if (!current.supported) return undefined;
 	const shown = stateShowing(state, current.doc);
 	if (shown !== state) return shown;
+	// A file cannot hold a lone surrogate: the same transaction replaces it
+	// with U+FFFD, so the screen, the draft, and the undo history agree.
+	repairLoneSurrogates(transaction);
 	const next = state.apply(transaction);
 	const { data: encoded, error } = bodyCodec.encode(next.doc, body);
 	if (error !== null) {
@@ -217,7 +220,21 @@ export function stateAfter(
 	// An edit Markdown has no spelling for (a new empty paragraph) gives the
 	// same body back: it is shown, and nothing saves.
 	if (written !== body) note.edit((row) => withBody(row, written));
-	if (written === encoded) return next;
-	const saved = bodyCodec.decode(written);
-	return saved.supported ? stateShowing(next, saved.doc) : undefined;
+	return next;
+}
+
+const LONE_SURROGATE =
+	/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g;
+
+/** Replace each lone surrogate in the document `transaction` makes with U+FFFD, as more steps of it. */
+function repairLoneSurrogates(transaction: Transaction) {
+	const found: number[] = [];
+	transaction.doc.descendants((node, pos) => {
+		if (!node.isText || node.text === undefined) return;
+		for (const match of node.text.matchAll(LONE_SURROGATE))
+			found.push(pos + match.index);
+	});
+	// Last first, so earlier positions stay where they were found.
+	for (const at of found.reverse())
+		transaction.insertText('\uFFFD', at, at + 1);
 }

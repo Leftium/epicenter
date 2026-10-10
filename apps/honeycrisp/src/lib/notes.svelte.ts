@@ -233,6 +233,8 @@ export function createNotes(host: NotesHost) {
 	let fenced = $state(false);
 	/** Set once `close` begins. Nothing opens after it, and the fence stays. */
 	let closing: Promise<void> | undefined;
+	/** Set once the folder is being released: nothing reads it after. */
+	let released = false;
 	/** Actions admitted and not finished; a close waits for them. */
 	const operations = new SvelteSet<Promise<unknown>>();
 
@@ -271,16 +273,20 @@ export function createNotes(host: NotesHost) {
 
 	const terminal = createTerminalSession(host.terminal, check, () => !locked());
 
-	/** One listing pass. A pass that a newer one overtook, or that answers after close began, changes nothing. */
+	/**
+	 * One listing pass. A pass that a newer one overtook, or that answers
+	 * after the folder was released, changes nothing. An action a close is
+	 * waiting for still lists until then.
+	 */
 	async function refresh() {
-		if (closing !== undefined) return;
+		if (released) return;
 		const sequence = ++refreshSequence;
 		const [noteRows, folderRows, files] = await Promise.all([
 			notesTable.list(),
 			foldersTable.list(),
 			folder.files.list(),
 		]);
-		if (closing !== undefined || sequence !== refreshSequence) return;
+		if (released || sequence !== refreshSequence) return;
 		const folderList =
 			folderRows.error === null
 				? split<FolderFields>(FOLDERS, folderRows.data)
@@ -401,6 +407,21 @@ export function createNotes(host: NotesHost) {
 		return undefined;
 	}
 
+	/**
+	 * Show `path` again from a fresh read, in place of the open item, whose
+	 * session the caller already released.
+	 */
+	async function reload(path: string, as: OpenAs) {
+		const sequence = ++openSequence;
+		opened = { kind: 'loading', path };
+		const item = await load(path, as);
+		if (sequence !== openSequence || closing !== undefined) {
+			sessionOf(item)?.release();
+			return;
+		}
+		opened = item;
+	}
+
 	/** Close the open item, if it is at `path`, without saving more. */
 	function forget(path: string) {
 		if (opened !== undefined && pathOf(opened) === path) {
@@ -475,24 +496,66 @@ export function createNotes(host: NotesHost) {
 	 * saves land, so the delete removes what this app saved last; a file
 	 * another program changed since is refused.
 	 */
-	async function removeFile(file: FileCapture): Promise<string | undefined> {
-		const item = opened;
-		const session = sessionOf(item);
-		let capture = file;
-		if (session?.path === file.path) {
-			session.release();
-			capture = (await session.settled()).file;
+	function removeFile(file: FileCapture): Promise<string | undefined> {
+		// Admitted before its first wait, so a close waits for all of it.
+		return admitted(
+			(async () => {
+				const item = opened;
+				const session = sessionOf(item);
+				let capture = file;
+				if (session?.path === file.path) {
+					session.release();
+					capture = (await session.settled()).file;
+				}
+				const { error } = await folder.files.remove(capture);
+				if (error === null) forget(file.path);
+				// The file stayed: show it again as it is now, in a new session.
+				else if (session !== undefined && sessionOf(opened) === session)
+					await reload(file.path, item?.kind === 'text' ? 'text' : 'note');
+				await refresh();
+				return error === null ? undefined : describeError(error);
+			})(),
+		);
+	}
+
+	/** Delete a folder after moving its notes out; see `deleteFolder` below. */
+	async function deleteFolder(entry: FolderEntry): Promise<string | undefined> {
+		const why = refused();
+		if (why !== undefined) return why;
+		if (listError !== undefined)
+			return `The notes could not be listed, so it is not known which are in this folder: ${listError}`;
+		const unknown = [
+			...repairs,
+			...unreadable.filter((problem) => noteIdOf(problem.path) !== undefined),
+		];
+		if (unknown.length > 0)
+			return `Some notes cannot be read well enough to tell which folder they are in (${unknown
+				.slice(0, 3)
+				.map((problem) => basename(problem.path))
+				.join(', ')}). Repair or remove them first.`;
+		const id = entry.stem;
+		const members = () =>
+			notes.filter((note) => fieldsOf(note).folderId === id);
+		for (const note of members()) {
+			const problem = await changeNote(note.path, { folderId: null });
+			if (problem !== undefined)
+				return `A note could not be moved out of the folder: ${problem}`;
 		}
-		const { error } = await admitted(folder.files.remove(capture));
-		if (error === null) forget(file.path);
-		// The file stayed: open it again as it is now, in a new session.
-		else if (session !== undefined && sessionOf(opened) === session)
-			await open(file.path, {
-				as: item?.kind === 'text' ? 'text' : 'note',
-				discard: session,
-			});
+		const settled = await sessionOf(opened)?.settled();
+		if (settled?.status === 'error')
+			return 'The open note could not be saved outside the folder, so the folder was kept.';
 		await refresh();
-		return error === null ? undefined : describeError(error);
+		const remaining = members();
+		if (remaining.length > 0)
+			return `Some notes were put in this folder while it was being deleted (${remaining
+				.slice(0, 3)
+				.map((note) => basename(note.path))
+				.join(', ')}). Delete it again to move them out.`;
+		const listed = folders.find((item) => item.path === entry.path) ?? entry;
+		const problem = await removeFile(listed);
+		if (problem !== undefined) return problem;
+		if (view.folderId === id) view = { ...view, folderId: null };
+		return undefined;
 	}
 
 	return {
@@ -728,43 +791,9 @@ export function createNotes(host: NotesHost) {
 		 * moved out if the delete stops, and another program can still put a
 		 * note in the folder after the last read.
 		 */
-		async deleteFolder(entry: FolderEntry): Promise<string | undefined> {
-			const why = refused();
-			if (why !== undefined) return why;
-			if (listError !== undefined)
-				return `The notes could not be listed, so it is not known which are in this folder: ${listError}`;
-			const unknown = [
-				...repairs,
-				...unreadable.filter((problem) => noteIdOf(problem.path) !== undefined),
-			];
-			if (unknown.length > 0)
-				return `Some notes cannot be read well enough to tell which folder they are in (${unknown
-					.slice(0, 3)
-					.map((problem) => basename(problem.path))
-					.join(', ')}). Repair or remove them first.`;
-			const id = entry.stem;
-			const members = () =>
-				notes.filter((note) => fieldsOf(note).folderId === id);
-			for (const note of members()) {
-				const problem = await changeNote(note.path, { folderId: null });
-				if (problem !== undefined)
-					return `A note could not be moved out of the folder: ${problem}`;
-			}
-			const settled = await sessionOf(opened)?.settled();
-			if (settled?.status === 'error')
-				return 'The open note could not be saved outside the folder, so the folder was kept.';
-			await refresh();
-			const remaining = members();
-			if (remaining.length > 0)
-				return `Some notes were put in this folder while it was being deleted (${remaining
-					.slice(0, 3)
-					.map((note) => basename(note.path))
-					.join(', ')}). Delete it again to move them out.`;
-			const listed = folders.find((item) => item.path === entry.path) ?? entry;
-			const problem = await removeFile(listed);
-			if (problem !== undefined) return problem;
-			if (view.folderId === id) view = { ...view, folderId: null };
-			return undefined;
+		deleteFolder(entry: FolderEntry): Promise<string | undefined> {
+			// Admitted whole before its first wait, so a close waits for all of it.
+			return admitted(deleteFolder(entry));
 		},
 		/**
 		 * Put a committed version of a note in its draft, which saves it: the
@@ -939,6 +968,7 @@ export function createNotes(host: NotesHost) {
 							`Closed with a draft that could not be saved, in ${settled.file.path}`,
 						),
 					);
+				released = true;
 				await host.close();
 			})();
 			return closing;

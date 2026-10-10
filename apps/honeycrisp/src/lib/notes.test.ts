@@ -22,7 +22,9 @@
  * - List actions go into the open note's draft, and are otherwise guarded by
  *   the version the list read
  * - Rename and delete wait for the open note's saves and act on what it
- *   saved last
+ *   saved last; a refused delete shows the file again in a new session
+ * - Close waits for a whole action, such as a folder delete, not only the
+ *   write running when it began
  * - The close fence stops input, and settling counts a draft that could not
  *   save
  */
@@ -431,6 +433,42 @@ test('a delete is refused when the file changed elsewhere after it was confirmed
 	disk.put(B, noteText({ title: 'Changed' }));
 	expect(await notes.remove(deletion)).toContain('changed elsewhere');
 	expect(disk.text(B)).toBe(noteText({ title: 'Changed' }));
+});
+
+test('a refused delete of the open note shows the file again in a new session that saves', async () => {
+	const { notes, disk } = await open();
+	const session = await openNote(notes);
+	const { data: deletion } = await notes.deletionFor(A);
+	if (deletion === null) throw new Error('No deletion');
+	disk.put(A, noteText({ title: 'Changed elsewhere', body: 'Theirs.\n' }));
+	expect(await notes.remove(deletion)).toContain('changed elsewhere');
+	expect(disk.text(A)).toContain('Changed elsewhere');
+	const reopened = noteSession(notes);
+	expect(reopened).not.toBe(session);
+	expect(reopened.draft.fields.title).toBe('Changed elsewhere');
+	reopened.edit((row) => {
+		row.body = 'Mine after all.\n';
+	});
+	expect((await reopened.settled()).status).toBe('saved');
+	expect(disk.text(A)).toContain('Mine after all.\n');
+});
+
+test('close waits for a whole folder delete, not only the write running when it began', async () => {
+	const { notes, disk } = await open();
+	expect(await notes.createFolder('Work')).toBeUndefined();
+	const folder = notes.folders[0];
+	if (folder === undefined) throw new Error('No folder');
+	expect(await notes.patchNote(B, { folderId: folder.stem })).toBeUndefined();
+	disk.hold();
+	const deleting = notes.deleteFolder(folder);
+	await until(() => disk.held().length === 1, 'the note to start moving out');
+	const closing = notes.close();
+	opened.splice(opened.indexOf(notes), 1);
+	disk.release({ all: true });
+	expect(await deleting).toBeUndefined();
+	await closing;
+	expect(disk.text(B)).toContain('folderId: null');
+	expect(disk.text(folder.path)).toBeUndefined();
 });
 
 // ============================================================================

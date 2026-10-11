@@ -61,6 +61,8 @@ async function setup() {
 		/** Set to keep the answer's stream open after its first words. */
 		held: undefined as Promise<void> | undefined,
 		status: 200,
+		/** One per answer stream, settled once the tutor has sent all of it. */
+		answers: [] as Promise<void>[],
 	};
 	const client = new OpenAI({
 		apiKey: 'test',
@@ -86,16 +88,24 @@ async function setup() {
 					})}\n\n`,
 				);
 			const { held } = tutor;
+			const answered = Promise.withResolvers<void>();
+			tutor.answers.push(answered.promise);
 			return new Response(
 				new ReadableStream<Uint8Array>({
 					async start(controller) {
-						if (held) {
-							controller.enqueue(event(null));
-							await held;
+						try {
+							if (held) {
+								controller.enqueue(event(null));
+								await held;
+							}
+							controller.enqueue(event(tutor.finishReason));
+							controller.enqueue(new TextEncoder().encode('data: [DONE]\n\n'));
+							controller.close();
+						} catch {
+							// The client stopped reading: the rest was sent to a cancelled stream.
+						} finally {
+							answered.resolve();
 						}
-						controller.enqueue(event(tutor.finishReason));
-						controller.enqueue(new TextEncoder().encode('data: [DONE]\n\n'));
-						controller.close();
 					},
 				}),
 				{ headers: { 'content-type': 'text/event-stream' } },
@@ -146,14 +156,18 @@ async function setup() {
 
 type Chat = ReturnType<typeof createVocabChat>;
 
+/** Let one event-loop turn pass, so off-thread work can report back. */
+const nextTurn = () => new Promise<void>((resolve) => setImmediate(resolve));
+
+/**
+ * Wait until the chat has nothing in flight.
+ *
+ * The folder hashes files with `crypto.subtle`, which answers from a worker
+ * thread, so how many turns a read or write takes depends on machine load.
+ * There is no turn budget: a chat that never settles fails on the test timeout.
+ */
 async function settle(chat: Chat) {
-	for (
-		let count = 0;
-		count < 400 && (chat.isGenerating || chat.isSaving || chat.isReading);
-		count++
-	) {
-		await Bun.sleep(0);
-	}
+	while (chat.isGenerating || chat.isSaving || chat.isReading) await nextTurn();
 }
 
 /** A mounted chat whose transcript has been read. */
@@ -339,14 +353,12 @@ test('an answer stopped while it is arriving is never saved, even when the rest 
 	const answering = Promise.withResolvers<void>();
 	context.tutor.held = answering.promise;
 	await chat.retry();
-	for (let count = 0; count < 400 && chat.streaming === null; count++)
-		await Bun.sleep(0);
-	expect(chat.streaming).not.toBeNull();
+	while (chat.streaming === null) await nextTurn();
 
 	chat.stop();
 	answering.resolve();
+	await Promise.all(context.tutor.answers);
 	await settle(chat);
-	await Bun.sleep(10);
 	expect(chat.streaming).toBeNull();
 	expect(chat.unsaved).toEqual([]);
 	expect(roles(chat)).toEqual(['assistant', 'user']);
@@ -366,8 +378,9 @@ test('stop while the learner message is being saved keeps the message and preven
 	chat.stop();
 	saving.resolve();
 	await sending;
+	// A turn starts in the same call that lands the message, so a late start
+	// would still be generating here.
 	await settle(chat);
-	await Bun.sleep(10);
 	expect(context.tutor.requests).toBe(0);
 	// The message was admitted before the stop, so it is saved and unanswered.
 	expect(await context.savedRoles()).toEqual(['assistant', 'user']);

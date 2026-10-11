@@ -1,0 +1,120 @@
+# 0514. Folder sync resolves captured attempts
+
+- **Status:** Proposed
+- **Date:** 2026-10-11
+- **Relates:** [ADR-0516](0516-review-choices-live-for-one-captured-attempt.md) (the review that answers an attempt), [ADR-0518](0518-a-row-is-read-through-one-pipeline-and-repaired-as-text.md) (rows read through `parseRow`), [ADR-0519](0519-row-frontmatter-is-yaml-every-common-reader-reads-identically.md) (the one row writer), [ADR-0521](0521-a-data-folder-syncs-with-its-git-origin-through-a-provider.md) (the remote a folder syncs with), [ADR-0522](0522-settings-are-independent-keys-set-one-at-a-time.md) (settings as keys), [ADR-0523](0523-applications-own-drafts-in-edit-sessions-and-leave-one-open-item.md) (open edit sessions)
+- **Unbuilt:** sync in the desktop app's Rust owner (`folder.sync` answers `Unsupported` there), and sync in Vocab, Capture, Honeycrisp, and Whispering.
+
+## Context
+
+`folder.git` exposes each step separately: `commit()`, `fetch()`,
+`pullFastForward()`, `mergeIncoming()`, and `push()`. `mergeIncoming()` merges
+root `kv.json` by key (`mergeKv`) and every other path by Git's line rules.
+A competing change refuses the whole merge (`MergeError.Conflicted`), or, in
+manual history only, leaves conflict markers in the files. Markers in a row
+file make it read as `InvalidRow`, so two devices that changed one todo's
+title leave the person a text repair of the whole file.
+
+Rows are documents now: `parseRow` reads them and `formatRow` writes the one
+standard text (ADR-0518, ADR-0519). Settings are independent keys
+(ADR-0522). A row merge can therefore compare decoded fields instead of
+lines, and a merged row can be written by the same writer as any save.
+
+## Decision
+
+**`folder.sync` synchronizes with the remote through `run()` and
+`resolve(attempt, choices)`, and nothing conflicted is written until the
+choices arrive.**
+
+```ts
+const { data: ran, error } = await folder.sync.run();
+// ran: SyncOutcome ({ kind: 'synced' | 'saved', ... }) or SyncAttempt ({ kind: 'needsChoices', ... })
+const { data: done } = await folder.sync.resolve(ran, choices); // SyncOutcome
+```
+
+`run()` commits saved files, fetches the remote branch, merges it, and pushes
+without force. One-sided and compatible changes merge without choices. The
+merge splits a path both sides changed into units:
+
+| Path | Unit | `kind` | Version holds |
+| --- | --- | --- | --- |
+| root `kv.json` | one root key | `setting` | its JSON value |
+| `<table>/<stem>.md` of a declared table | one frontmatter field | `field` | its JSON value |
+| the same row | the body | `body` | its text |
+| either, when a version is deleted or does not read | the whole file | `file` | its text |
+
+- Rows merge through `parseRow` against their table. For each field, equal
+  values agree and a side unchanged from the base yields; values compare as
+  JSON, so key order and quoting never conflict. The body merges by line.
+  Every merged row is `formatRow` text, the standard form.
+- A row that does not read as a row on any side, or that one side deleted
+  while the other changed it, is one `file` unit. The text the person
+  chooses is written as it is; if it is not a valid row, the table reads it
+  as `InvalidRow` and the app opens it for repair as text (ADR-0518).
+  `kv.json` deleted on one side or not one JSON object is a `file` unit too.
+- Any other conflict (a text file outside a table, a binary file, a file
+  against a directory) is `SyncError.Unreviewable`, listing every conflict.
+  Nothing is written or sent.
+
+A conflict is reported as `SyncAttempt`:
+
+```ts
+type SyncAttempt = { kind: 'needsChoices'; id: string; local: string; incoming: string; conflicts: SyncConflict[] };
+type SyncConflict = {
+	id: string; kind: 'setting' | 'field' | 'body' | 'file'; path: string; key?: string; field?: string;
+	base: SyncVersion; local: SyncVersion; incoming: SyncVersion; // { present: false } | { present: true; value }
+};
+type SyncChoice = { kind: 'take'; side: 'local' | 'incoming' } | { kind: 'replace'; value: unknown } | { kind: 'remove' };
+type SyncChoices = Partial<Record<string, SyncChoice>>; // keyed by conflict id
+```
+
+- `take` selects what the owner captured, so a setting keeps its exact JSON
+  text. Taking an absent side removes the unit. `replace` is a JSON value
+  for `setting` and `field`, and a string for `body` and `file`. `remove`
+  applies to every kind except `body`.
+- `resolve` reads the choices once, before its first await. Every problem is
+  reported at once as `SyncError.InvalidChoices`: an unanswered or unknown
+  conflict, a disallowed operation, or a value the folder refuses. A
+  replacement setting is refused as `kv.set` would refuse it, and a resolved
+  row is refused unless it reads back through `parseRow`. Invalid choices
+  write nothing and keep the attempt current.
+- Valid choices spend the attempt. `resolve` merges the captured commits
+  again, never fetching, with the chosen units, and publishes the two-parent
+  merge through the same incoming publication as `mergeIncoming`.
+- An attempt is current until the next `run()`, a `resolve` that got past
+  validation, or closing. `resolve` refuses an attempt that is not current,
+  a branch that moved, and saved files that changed since, as
+  `SyncError.Stale`, writing nothing.
+- `SyncOutcome` is `synced` only when the push confirmed the merged head and
+  no save landed after the files were captured; otherwise `saved`, with the
+  push's own outcome.
+
+## Consequences
+
+- Applications get one Sync action. Pull, merge, and commit-and-push remain
+  on `folder.git` for advanced use.
+- A row both sides changed is rewritten in the standard form, even when the
+  changes were compatible, as the first save of a hand-edited row already is.
+- Open edit sessions are not told: an idle session adopts the new file when
+  the person returns, and a session with unsaved input meets the existing
+  `Conflict` prompt at its next save (ADR-0523).
+- Merge text conflicts outside tables still need `mergeIncoming` or the
+  terminal.
+- `prepareMerge` takes a path merger and settled paths; `mergeIncoming` passes
+  neither and behaves as before.
+
+## Considered alternatives
+
+- **Source-preserving Markdown merge.** Merged frontmatter by transplanting
+  YAML source, kept comments and quoting, refused aliases and reordering as
+  `Unreviewable`, and took replacements as one-line YAML flow values. It was
+  748 lines beside the one row parser, and it is unnecessary once every row
+  is written by `formatRow`.
+- **Replacement as source text in a grammar per unit.** Callers would encode
+  JSON and YAML by hand; with one writer, a value is enough.
+- **Leave markers in the files, as `mergeIncoming({ conflicts: 'leave' })`.**
+  Writes conflicted candidates into files apps read, and needs manual
+  history.
+- **Fetch again inside `resolve`.** Changes the inputs the person reviewed.
+- **Whole-file choices only.** A person settling one title would discard the
+  other side's independent field changes.

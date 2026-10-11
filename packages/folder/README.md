@@ -422,7 +422,7 @@ and Linux, built before the process runs:
 bun run --filter @epicenter/folder build:addon
 ```
 
-`scripts/build-addon.ts` compiles it with `$CC` (else `cc`) against the
+`packages/folder/scripts/build-addon.ts` compiles it with `$CC` (else `cc`) against the
 `node-api-headers` development dependency into the ignored `addon/build/`;
 it does nothing on other platforms. These package scripts run it first: `test`
 here and in `apps/whispering`, `apps/capture`, `apps/todos`,
@@ -1310,7 +1310,7 @@ dangle.
 | `src/reading.ts` | KV's reading diagnostics: `ParseError`, `FieldIssue`, `DeepReadonly`, and the ownership every checked value has: parsed values frozen and supplied values copied before a field sees them. |
 | `src/opfs-store.ts`, `git/opfs-git.ts`, `git/browser-backend.ts` | OPFS storage, private `.git`, and isomorphic-git. |
 | `src/native-store.ts`, `git/native-*.ts` | The directory entry's files and `git` program. "Native" here means an ordinary directory in Bun, not the desktop shell. |
-| `src/native-exchange.ts`, `addon/exchange.c`, `scripts/build-addon.ts` | The directory entry's atomic exchange for replacements: the Node-API addon, its loader and errno mapping, and the script that builds it. |
+| `src/native-exchange.ts`, `addon/exchange.c`, `packages/folder/scripts/build-addon.ts` | The directory entry's atomic exchange for replacements: the Node-API addon, its loader and errno mapping, and the script that builds it. |
 | `src/native/bindings.gen.ts` | Commands and events generated from the `tauri-plugin-epicenter-folder` crate. Internal. Do not edit. |
 | `evidence/` | Tests that build real bundles and read real import closures; `evidence/opfs`, a page that runs the browser checks in a real browser. |
 

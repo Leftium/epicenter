@@ -192,7 +192,7 @@ The only possible change to the proposed tree is the optional typed refusal desc
 
 1. **Three app platform-selection tests require the deleted `browser-store.ts`.**
    - Files: `apps/todos/src/lib/platform-selection.test.ts:84`, `apps/honeycrisp/src/lib/platform-selection.test.ts:89-91`, `apps/capture/src/lib/platform-selection.test.ts:71-76`.
-   - Each asserts that the browser module graph *contains* `packages/folder/src/browser-store.ts`. At baseline it was pulled in at runtime through `browser-migration.ts`; now it is gone, so these assertions fail.
+   - Each asserts that the browser module graph *contains* `13f7c93559:packages/folder/src/browser-store.ts`. At baseline it was pulled in at runtime through `browser-migration.ts`; now it is gone, so these assertions fail.
    - Fix: require `opfs-store.ts` (and `git/opfs-git.ts`) instead. Mentions of `browser-store` in the "forbidden" regexes are harmless but stale. Rename the tests titled "IndexedDB adapter".
 
 2. **The Todos incoming test still builds fake-IndexedDB test storage.**

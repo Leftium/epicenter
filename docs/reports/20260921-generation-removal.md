@@ -319,7 +319,7 @@ Remaining implementation stragglers:
 | `data/artifact/checkout.ts` | `storeChanged`, live-store rendering in `planPush`, `Confirm`, `sameReading`, partial-result baseline carrying, automatic admission of edited missing rows |
 | `data/definition/content.ts` | Plain-text body rewrite deletes and reinserts the entire sequence |
 | `data/artifact/checkout.test.ts` | Tests pin the old preview, conflict, and partial-result behavior; replace assertions with the new invariant during implementation |
-| `apps/epicenter/src/checkout.ts` and server routes | Folder HTTP transport remains until replica and filesystem ownership are decided |
+| `fc76e84188:apps/epicenter/src/checkout.ts` and server routes | Folder HTTP transport remains until replica and filesystem ownership are decided |
 | `data/README.md` | Current API descriptions remain accurate for shipped code; a direction note links the unbuilt decisions |
 
 Recovery evidence is still required: flush failure before baseline advancement,

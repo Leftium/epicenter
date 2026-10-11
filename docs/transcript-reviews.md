@@ -281,7 +281,8 @@ backlog item is needed for it.
 
 ### Storage transport and documentation reconciliation
 
-`packages/server/src/routes/blobs.ts` uses the portable S3 adapter, and the
+`packages/server/src/routes/authority-blobs.ts` serves hosted blobs from the
+portable S3 adapter in `packages/server/src/s3-blob-store.ts`, and the
 Cloud Worker, self-host Worker, and Bun self-host all mount these live routes.
 Preserve that explicit-hosting deployment inventory during the caller audit.
 An absent R2 binding does not establish absent R2 storage. No new retention or

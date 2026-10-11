@@ -172,8 +172,8 @@ sources and production builds:
 Screenshots: [Vocab words](../../../../apps/vocab/evidence/opfs-clean-break.png),
 [Vocab chat](../../../../apps/vocab/evidence/opfs-clean-break-chat.png),
 [Whispering](../../../../apps/whispering/evidence/opfs-clean-break.png),
-[OPFS demo](clean-break-browser.png), and Zhongwen's
-`docs/evidence/opfs-clean-break.png` in its own repository.
+[OPFS demo](clean-break-browser.png), and Zhongwen's screenshot at
+docs/evidence/opfs-clean-break.png in Zhongwen's own repository.
 
 IndexedDB-unavailable opening is established by the automated throwing-global
 checks and emitted bundle checks, not by these browser observations. Real quota

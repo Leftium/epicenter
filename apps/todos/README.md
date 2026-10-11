@@ -409,10 +409,10 @@ todo; `todos/a.MD` is an ordinary file.
 | `src/lib/status.ts` | Plain-language status lines and the header summary. |
 | `src/routes/components/` | Header, file browser, list, the detail pane (`Detail`: `TodoDetail` or `FileView`, each with the shared `SaveBar` from `@epicenter/svelte/save-bar`), and terminal. |
 | `server/git-server.ts` | `git http-backend` over a bare repository, plus the native checkout. |
-| `scripts/dev.ts` | Starts the backend and Vite together. |
-| `scripts/native.ts` | JSON CLI over the native checkout. |
-| `scripts/remote-edit.ts` | Demo fixture: a hand edit with undeclared frontmatter, committed and pushed from the native checkout with ordinary Git. |
-| `scripts/module-graph.ts` | Lists the modules a build of one entry pulls in, resolved with the conditions and aliases `vite.config.ts` declares, for the seam test. |
+| `apps/todos/scripts/dev.ts` | Starts the backend and Vite together. |
+| `apps/todos/scripts/native.ts` | JSON CLI over the native checkout. |
+| `apps/todos/scripts/remote-edit.ts` | Demo fixture: a hand edit with undeclared frontmatter, committed and pushed from the native checkout with ordinary Git. |
+| `apps/todos/scripts/module-graph.ts` | Lists the modules a build of one entry pulls in, resolved with the conditions and aliases `vite.config.ts` declares, for the seam test. |
 
 The owner holds one open item (`todos.opened`), kept by the shared open-item
 slot: a row session for a todo, a text session for a file or a todo whose

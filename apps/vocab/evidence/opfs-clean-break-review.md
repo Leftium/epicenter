@@ -172,10 +172,10 @@ and acquisition. Todos keeps `platform/` as its seam. No file moved or merged.
 
 Deleted:
 
-- `apps/vocab/src/lib/legacy-import.ts`
-- `apps/vocab/src/lib/legacy-source.ts`
-- `apps/vocab/src/lib/legacy-import.test.ts`
-- `apps/vocab/src/routes/components/LegacyImport.svelte`
+- `13f7c93559:apps/vocab/src/lib/legacy-import.ts`
+- `13f7c93559:apps/vocab/src/lib/legacy-source.ts`
+- `13f7c93559:apps/vocab/src/lib/legacy-import.test.ts`
+- `13f7c93559:apps/vocab/src/routes/components/LegacyImport.svelte`
 - The `LegacyImport` callsite in `VocabShell.svelte`
 - The `children` snippet in `WordsView.svelte`. Its bottom padding moved to
   the scroll container.

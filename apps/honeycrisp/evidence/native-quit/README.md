@@ -142,7 +142,7 @@ locked `specta` git dependency offline, so it built no Rust against Tauri. It
 was also not allowed to run an AppKit program. It did run:
 
 - `rustc` on `late-method-probe.rs`: compiled, not run.
-- `bun build` on `examples/quit/page.js`: parsed.
+- `bun build` on `apps/honeycrisp/src-tauri/examples/quit/page.js`: parsed.
 - The page suites, which this wave did not change: 296 pass, and the mounted
   note view 9 pass.
 

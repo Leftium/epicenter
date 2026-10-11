@@ -1,5 +1,12 @@
 # Whispering simplification: execution and review
 
+<!-- doc-path-check: ignore-file (historical record; paths name files at commit 07f1a16a68) -->
+
+File paths in this report name files as of commit `07f1a16a68`, the change it
+describes. Files marked deleted are at that commit's parent. Commit
+`8bc2aafd03` later replaced the Whispering application they belong to; read
+them with `git show 07f1a16a68:<path>`.
+
 The UI now reads the selected library through `fromData` and device settings
 through `fromKv`. Operations receive their owner explicitly. Whispering stores
 connection/model pairs in device KV, and the shared picker accepts a value and a

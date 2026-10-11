@@ -14,7 +14,7 @@ compatibility wrapper, migration facade, or legacy opener is wanted.
 
 The product sentence is: the page owns opening, openApp returns a ready App, and
 a failed lifetime requires page teardown. ADR-0410 records the decision. The
-execution plan is `specs/20260918T211222-ready-app-page-lifetime.md` while present;
+execution plan is `e9fdcb5530:specs/20260918T211222-ready-app-page-lifetime.md` while present;
 a deleted plan means inspect the ADR, code, and commits for delivered behavior.
 
 Target callsites:
@@ -162,7 +162,7 @@ Read `git diff` rather than rebuilding the work from scratch.
 
 Implemented but unfinished:
 
-- `packages/app/src/open.ts` is now async, awaits admission and readiness,
+- `7462ae966d:packages/app/src/open.ts` is now async, awaits admission and readiness,
   registers resource closers, publishes the frozen handle last, and derives App
   using Awaited. Public ready, canRetryClose, and libraryReplaced are removed.
 - Close caches its promise permanently, aborts usability immediately, attempts

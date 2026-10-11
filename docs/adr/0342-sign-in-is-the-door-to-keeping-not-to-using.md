@@ -128,7 +128,7 @@ owns. A folder is a working copy, not a store, so this adds no kind.
   is the desktop keychain for a credential an install owns, and Local Mail's
   Gmail token is what that is for. Whispering's keys stay in `deviceConfig`
   until the owner vault lands, and the facade in
-  `apps/whispering/src/lib/state/secrets.svelte.ts` is what makes that a
+  `89e555c895:apps/whispering/src/lib/state/secrets.svelte.ts` is what makes that a
   storage swap rather than a rewrite.
 - Nothing in Whispering reads `epicenter.sqlite`, in either mode. It is handed
   over because it costs an allocation and withholding it would fork the handle

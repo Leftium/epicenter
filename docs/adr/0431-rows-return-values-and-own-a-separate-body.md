@@ -93,7 +93,7 @@ field/body notifications, malformed metadata, and deletion. Honeycrisp's codec
 and editor tests cover rich-text serialization and the artifact layer's
 in-place sequence replacement.
 
-The browser regression at `apps/honeycrisp/evidence/editor/browser.ts` mounts
+The browser regression at `92cc504971:apps/honeycrisp/evidence/editor/browser.ts` mounts
 both real editor components and checks typing, undo/redo, parent metadata,
 bound rewrites, peer updates, IndexedDB reopen, and deletion. A raw body node
 can reach its parent and document; this API is not a security sandbox.

@@ -7,7 +7,7 @@
 ## Context
 
 ADR-0456 assigns zero or one same-stem sibling attachment to each Markdown row.
-`packages/app/src/files/table.ts` discovers those files, reports attachment
+`packages/folder/src/table.ts` discovers those files, reports attachment
 ambiguity, and composes row creation, rename, and deletion with media operations.
 Whispering reconstructs the same relationship again when recovering a partial
 recording publication.

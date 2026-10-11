@@ -98,7 +98,7 @@ and browser results describe that earlier source, not the current collapse.
 
 Status: In progress. This records implementation evidence, not acceptance of
 unfinished work. The contract at the time was ADR 0504 and the final flattened
-row union in `specs/20261005T015758-complete-row-editing.md`, both since deleted.
+row union in `3274cb4490:specs/20261005T015758-complete-row-editing.md`, both since deleted.
 
 ## Current acceptance checkpoint
 

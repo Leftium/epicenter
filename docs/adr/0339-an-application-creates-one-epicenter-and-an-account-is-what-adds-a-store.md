@@ -286,7 +286,7 @@ it. That record is
   twice over. It holds the one `createEpicenter` every build calls, the errors,
   the two name mints and their guards, and `EpicenterBindingFactory`, the
   contract every seam leaf annotates against. The runtime subpaths hold a
-  binding each. The Bun host built a third in `apps/epicenter/src/app-binding.ts`,
+  binding each. The Bun host built a third in `d5b166511f:apps/epicenter/src/app-binding.ts`,
   which nothing ever composed and which is now deleted; ADR-0323's background
   half is unbuilt.
 - ADR-0337's folder verbs stay functions over an opened store rather than

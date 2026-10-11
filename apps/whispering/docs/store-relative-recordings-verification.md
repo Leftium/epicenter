@@ -173,7 +173,7 @@ The task changes these boundaries; each commit's file list is the complete manif
   provider, explicit history routes, playback and Finish saving, settings callers.
 - `apps/whispering/src/lib/state/`, `shortcuts/` and `utils/`: Local callers without
   an app-owned store selector; corresponding documentation.
-- `apps/whispering/src/lib/data.ts`, `vite.config.ts`, `scripts/` and documentation:
+- `909a9cf4d9:apps/whispering/src/lib/data.ts`, `vite.config.ts`, `scripts/` and documentation:
   relationship removal, root worker packaging and isolated product verification.
 - `packages/app/`: public identity removal, runtime/type regressions and README.
 - `packages/server/src/middleware/cors.ts`: expose store-download protocol headers

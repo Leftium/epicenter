@@ -31,7 +31,7 @@ disposable folders after each run.
 
 ## Pass two: copy directly into the final array
 
-`packages/definition/src/export.ts` previously copied arrays into temporary
+`55a3f1cad3:packages/definition/src/export.ts` previously copied arrays into temporary
 objects and then reconstructed arrays. It now creates the final array directly.
 Own-key validation, descriptor inspection, cycle refusal, runtime-dependency
 refusal, numeric normalization, and reference/cache fidelity checks remain.

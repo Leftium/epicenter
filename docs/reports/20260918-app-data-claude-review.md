@@ -48,8 +48,8 @@ MEASURED size of that gap:
 | `@epicenter/app/artifact/format` | 4         | none                                           |
 
 - 56 files construct a declaration with `defineApp({`. 41 of them never call `.open(` in that file. 15 do.
-- Production `.open(` call sites: four. `apps/honeycrisp/src/lib/application.ts:21`, `apps/local-mail/ui/src/lib/application.ts:13`,
-  `apps/vocab/src/lib/application.ts:20`, `apps/whispering/src/lib/bootstrap.ts:27` (all `@30eb69b`).
+- Production `.open(` call sites: four. `eb5f42f856:apps/honeycrisp/src/lib/application.ts:21`, `eb5f42f856:apps/local-mail/ui/src/lib/application.ts:13`,
+  `eb5f42f856:apps/vocab/src/lib/application.ts:20`, `eb5f42f856:apps/whispering/src/lib/bootstrap.ts:27` (read at `@30eb69b`; the same lines at `eb5f42f856`).
 - Every one of those four already lives in a module separate from the declaration, loaded by dynamic `import('$lib/application.js')`
   after mount, guarded by a test (`apps/honeycrisp/src/lib/boot-node.test.ts:44-56@30eb69b`). The applications already treat
   declaring and opening as two modules. The package does not.
@@ -172,7 +172,7 @@ lib.dom to the WHOLE program.
 | same, engine sources only (no tests/benches) | 40        | 49            | 0                                             |
 
 Chain (one of six): `src/data/__benchmarks__/checkout.bench.ts -> src/index.ts -> src/platform/browser.ts -> packages/blobs/src/browser.ts:1`.
-Others land on `packages/device/src/browser.ts:1`, `browser-sqlite.ts:1`, `packages/auth/src/browser-auth.ts:1`, and two more.
+Others land on `packages/device/src/browser.ts:1`, `browser-sqlite.ts:1`, `eb5f42f856:packages/auth/src/browser-auth.ts:1`, and two more.
 24 files included by `tsconfig.data.json` import the root.
 
 Consequence: a future `window.` or `document.` inside `src/data/sync/authority.ts` or `store.ts` would pass `bun typecheck`.
@@ -207,7 +207,7 @@ apps/skills/src/lib/state/skills-state.svelte.ts:2            { type Nonconformi
 apps/skills/src/lib/application.ts:13            { type ReplicaData }       '@epicenter/app/store'
 ```
 
-Fix: restore `import type { ... }` in all fifteen. The deleted comment in `packages/chat/src/index.ts` at `@619afff` explained why that
+Fix: restore `import type { ... }` in all fifteen. The deleted comment in `eb5f42f856:packages/chat/src/index.ts` at `@619afff` explained why that
 package kept the two imports apart; the rewrite dropped both the distinction and the explanation.
 ASSUMPTION: Vite/esbuild and Bun honor `verbatimModuleSyntax` from tsconfig the way tsc does. tsc's behavior is documented.
 
@@ -376,7 +376,7 @@ are public by accident. Switch `open.ts` and the six `src/data/store/*.ts` self-
    `tsc --noEmit -p packages/app/tsconfig.data.json`. I predict NO error at the migrated tree, and an error for the same probe under
 <!-- doc-path-check: ignore-next-line -->
    `packages/data/tsconfig.json` at `619afff`. If the migrated tree does error, R1 is wrong and should be dropped.
-2. R2: build `packages/chat/src/index.ts` with `Bun.build({ metafile: true })` and look for `data/store/store.ts` in the inputs.
+2. R2: build `eb5f42f856:packages/chat/src/index.ts` with `Bun.build({ metafile: true })` and look for `data/store/store.ts` in the inputs.
    Repeat after changing line 7 to `import type`.
 3. K1: no action needed beyond reading the measured graph; optional `wrangler`/vitest bundle metafile of the replica entry.
 4. M1 feasibility: `bun test --isolate` in `packages/app` after the mechanical move; `index.test-d.ts` must keep the account-presence overloads.
@@ -386,5 +386,5 @@ are public by accident. Switch `open.ts` and the six `src/data/store/*.ts` self-
 
 - Does any planned consumer need a non-default `runtime`? If not, `/browser`, `/epicenter-host`, Whispering's `#platform/runtime`, and the
   `runtime` override can all go with M1. That is a separate decision (README cites ADR-0391 and ADR-0403) and I did not pursue it.
-- `apps/honeycrisp/src/lib/folder-overview.ts:247` contains literal NUL bytes as a key separator, so `file` and `grep` treat the source as
+- `eb5f42f856:apps/honeycrisp/src/lib/folder-overview.ts:247` contains literal NUL bytes as a key separator, so `file` and `grep` treat the source as
   binary. It is the same at `619afff`. Unrelated to this change; worth an escape sequence someday.

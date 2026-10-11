@@ -11,7 +11,7 @@ ADR-0491 admitted any native `TSchema` as a field, including `Type.Refine`
 and schemas carrying a `~guard` or a codec. A callback does not survive
 JSON, so a field had two forms: the one in memory, and the one
 `epicenter.json` could hold. `exportSchema` in
-`packages/definition/src/export.ts` (329 lines) sat between them. It refused
+`2845f79987:packages/definition/src/export.ts` (329 lines) sat between them. It refused
 functions, guards, symbols, accessors, and unknown formats while writing.
 `readFolder` ran the same exporter over a parsed file to refuse what an
 opener could not have written. `prepare` kept a second mechanism for the
@@ -62,7 +62,7 @@ because every prepared field is already JSON. `formatDeclaration` in
 
 ## Consequences
 
-- Removed: `packages/definition/src/export.ts` and its tests,
+- Removed: `2845f79987:packages/definition/src/export.ts` and its tests,
   `hasSchemaCallbacks`, `isPreparedSchema`, the per-field callback flag, the
   frozen copy of each validated value, and the `DefinitionExportFailed`
   publication error.

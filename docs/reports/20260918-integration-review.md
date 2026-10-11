@@ -111,7 +111,7 @@ Application opens its App
   -> server authority chooses canonical initialization
 ```
 
-But `packages/data/src/store/browser.ts` still exports older helpers such as `resolveGeneration`. Those helpers discover numbered generations and call HTTP routes that the server no longer mounts. Skills and an older durability fixture still contain consumers. Skills currently refuses boot, so this is an unfinished transition, not proof of a regression in a working application.
+But `619afff3c5:packages/data/src/store/browser.ts` still exports older helpers such as `resolveGeneration`. Those helpers discover numbered generations and call HTTP routes that the server no longer mounts. Skills and an older durability fixture still contain consumers. Skills currently refuses boot, so this is an unfinished transition, not proof of a regression in a working application.
 
 The stronger rule is: **an application opens its current library through the App; callers do not select remote history by listing generations.**
 

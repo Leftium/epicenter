@@ -132,7 +132,7 @@ against the code. The constraints below apply to every edit here.
   from `@epicenter/folder/tauri` and names its ID only. Shared code imports
   the folder contract from the bare `@epicenter/folder`, which each build
   aliases to its one adapter entry in `vite.config.ts`; keep
-  `scripts/module-graph.ts` doing the same. Do not add another folder
+  `apps/honeycrisp/scripts/module-graph.ts` doing the same. Do not add another folder
   engine, a Git implementation, or a history scheduler to the desktop page,
   and do not fall back to browser storage when attaching fails.
 - The root, the commit author, and the window allowed to use them are decided

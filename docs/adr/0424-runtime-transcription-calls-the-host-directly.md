@@ -7,7 +7,7 @@
 
 ## Context
 
-The former `packages/app/src/native-ai.ts` accepted SDK requests, parsed multipart
+The former `d288c86eeb:packages/app/src/native-ai.ts` accepted SDK requests, parsed multipart
 audio, invoked Rust, and constructed HTTP responses for the SDK to decode. Two
 native operations, model listing and transcription, imitated a network server.
 The SDK also exposed methods the native implementation could not execute.

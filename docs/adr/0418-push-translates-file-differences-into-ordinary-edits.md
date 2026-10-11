@@ -178,8 +178,9 @@ Preflight is not rollback: interrupted store persistence and baseline advancemen
 require the explicit reconciliation procedure above. No cross-store atomic batch or agent self-confirmation policy
 is introduced.
 
-The current engine is in `packages/app/src/data/artifact/checkout.ts`; its
-filesystem host is in `apps/epicenter/src/checkout.ts`. No application surface
+The engine was in `1e3101d842:packages/app/src/data/artifact/checkout.ts`; its
+filesystem host was in `1e3101d842:apps/epicenter/src/checkout.ts`. Commit
+`5984d2cbde` removed both. No application surface
 currently invokes Pull or Push. Connecting that transport to the running owner
 remains implementation work. Native SQLite persistence and headless replica
 opening are not prerequisites.

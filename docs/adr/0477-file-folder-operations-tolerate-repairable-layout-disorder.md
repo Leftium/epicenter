@@ -11,10 +11,10 @@ layout twice. The desired contract permits partial operations and layouts a
 person or agent can repair.
 
 `table.create`, `table.rename`, and `table.delete` in
-`packages/app/src/files/table.ts` built a `DirectoryCheck` over the table
+`packages/folder/src/table.ts` built a `DirectoryCheck` over the table
 directory's filenames. `preflight` ran it once to refuse early. The same check
 then travelled as a `DirectoryGuard` through `publish(changes, guard)` in
-`packages/app/src/files/folder.ts` to `FileBoundary.apply(changes, guard)`, which
+`6b57c0fffa:packages/app/src/files/folder.ts` to `FileBoundary.apply(changes, guard)`, which
 ran it again where the batch published. The browser adapter ran the guard
 inside its IndexedDB readwrite transaction. The native adapter ran it inside
 its batch queue, which orders that one boundary's batches only: another program

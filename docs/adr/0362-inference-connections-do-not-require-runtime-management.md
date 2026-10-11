@@ -7,17 +7,17 @@
 
 ## Context
 
-`packages/client/src/connection.ts` already provides Ollama and LM Studio
+`eb8c8631f9:packages/client/src/connection.ts` already provides Ollama and LM Studio
 presets alongside generic URL connections. The app-shell inference picker holds
 multiple connections. Whispering also resolves custom completion endpoints in
-`apps/whispering/src/lib/operations/completion-target.ts`.
+`eb8c8631f9:apps/whispering/src/lib/operations/completion-target.ts`.
 
 Native transcription already has host-owned model administration in
 `apps/epicenter/src-tauri/src/transcription/mod.rs`, governed by
 [ADR-0180](0180-epicenter-has-one-host-owned-active-local-transcription-model.md).
 The optional integrations below concern external inference servers; they do not
 turn that existing native capability into an HTTP connection. The native
-transport in `packages/app/src/native-ai.ts` presents it as an OpenAI-wire
+transport in `eb8c8631f9:packages/app/src/native-ai.ts` presents it as an OpenAI-wire
 destination over IPC, with no socket.
 
 Local setup could grow from entering a URL into downloading models or starting

@@ -15,7 +15,7 @@ saved personal or shared material. Honeycrisp can use the same note schema for
 local and synchronized notes. Neither product needs an implicit destination
 chosen by whether someone is signed in.
 
-At proposal time, `packages/app/src/open.ts` opened an App with device and personal
+At proposal time, `afb79fc0d1:packages/app/src/open.ts` opened an App with device and personal
 stores sharing one definition and lifetime. Device storage was account-partitioned.
 `packages/app/src/platform/documents.ts` persists documents in IndexedDB in both
 the browser and desktop WebView. Native SQLite and blob capabilities already

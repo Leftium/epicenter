@@ -10,7 +10,7 @@
 - **Amended by:** [ADR-0338](0338-the-folder-wins-and-a-push-is-one-approval.md) allows body edits through the existing content node; its earlier folder-wins and mandatory-approval proposal is withdrawn.
 - **Amended by:** [ADR-0343](0343-a-preview-is-an-output-and-the-side-that-showed-it-applies-it.md) separates file-change inspection from application; the earlier mandatory confirmation-loop proposal is withdrawn.
 - **Amended by:** [ADR-0394](0394-materialization-contains-documents-and-blob-references.md) at recovery: a saved folder is readable source material, not a historical generation or exact backup; document-only materialization retains the Pull/Push comparison baseline.
-- **Built**, in `packages/app/src/data/artifact/checkout.ts` and `apps/epicenter/src/checkout.ts`: all three verbs, the manifest, and the `AGENTS.md` a pull generates. What is not is named at "What a push refuses" below, and each line there waits on its own record.
+- **Built**, in `1e3101d842:packages/app/src/data/artifact/checkout.ts` and `1e3101d842:apps/epicenter/src/checkout.ts`: all three verbs, the manifest, and the `AGENTS.md` a pull generates. What is not is named at "What a push refuses" below, and each line there waits on its own record.
 
 ## Context
 

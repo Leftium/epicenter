@@ -163,7 +163,7 @@ row now carries the type out; nothing about when it comes into being changed.
   flag; anything later that re-renders a list off that signal fires at typing
   frequency.
 - `@y/prosemirror` binds to a nested type without change: it is typed against
-  `Y.Type` and makes no root assumption. `apps/honeycrisp/src/lib/editor/Editor.svelte`
+  `Y.Type` and makes no root assumption. `db847017ce:apps/honeycrisp/src/lib/editor/Editor.svelte`
   changes by zero lines; its `yxmlfragment` prop name becomes a misnomer.
 
 ## Considered alternatives

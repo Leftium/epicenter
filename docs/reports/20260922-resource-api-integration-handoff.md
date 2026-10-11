@@ -27,9 +27,9 @@ The remaining work is application outcome ownership. Expected failures should st
 Start by tracing these current files and their callers:
 
 - `packages/app/README.md`, `ARCHITECTURE.md`, `src/blobs.ts`, `src/recorder.ts`.
-- `apps/whispering/src/lib/operations/recording.svelte.ts`, `push-to-talk.ts`, `save-audio-recording.ts`, `upload-recording.ts`, `pipeline.ts`, and `transcription-history.ts`.
-- `apps/whispering/src/lib/whispering/recordings.ts` and `resources.ts`.
-- `apps/whispering/src/lib/report/index.ts` and `packages/ui/src/sonner/toast-on-error.ts`.
+- `036cf3d9f1:apps/whispering/src/lib/operations/recording.svelte.ts`, `push-to-talk.ts`, `save-audio-recording.ts`, `upload-recording.ts`, `pipeline.ts`, and `transcription-history.ts`.
+- `036cf3d9f1:apps/whispering/src/lib/whispering/recordings.ts` and `resources.ts`.
+- `036cf3d9f1:apps/whispering/src/lib/report/index.ts` and `packages/ui/src/sonner/toast-on-error.ts`.
 - The actual manual recording controller, upload action, command dispatch, and layout consumers discovered from those entrypoints.
 
 Concrete remaining findings:

@@ -49,7 +49,10 @@ function holdCloses(
 		kind: 'directory',
 		name: directory.name,
 		getDirectoryHandle: async (name, options) =>
-			holdCloses(await directory.getDirectoryHandle(name, options), beforeClose),
+			holdCloses(
+				await directory.getDirectoryHandle(name, options),
+				beforeClose,
+			),
 		getFileHandle: async (name, options) =>
 			holdFile(await directory.getFileHandle(name, options)),
 		removeEntry: (name, options) => directory.removeEntry(name, options),
@@ -118,7 +121,9 @@ export async function openCaptures(files: Record<string, string> = {}) {
 		},
 		/** Another program deletes the file as it is now. */
 		async deleteElsewhere(path: string) {
-			expectOk(await folder.files.remove(expectOk(await folder.files.read(path))));
+			expectOk(
+				await folder.files.remove(expectOk(await folder.files.read(path))),
+			);
 		},
 		/** Hold the next published `.md` write until `release` runs. */
 		holdNextMarkdownWrite() {

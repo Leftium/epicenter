@@ -129,8 +129,12 @@ async function setup() {
 		},
 		text,
 		/** The row the file at `path` reads as, undeclared keys included. */
-		async reading(path: string): Promise<{ fields: Record<string, unknown>; body: string }> {
-			return expectOk(parseRow(todosDefinition.tables.todos, (await text(path))!));
+		async reading(
+			path: string,
+		): Promise<{ fields: Record<string, unknown>; body: string }> {
+			return expectOk(
+				parseRow(todosDefinition.tables.todos, (await text(path))!),
+			);
 		},
 		/** Another writer replaces the file. */
 		async overwrite(path: string, content: string) {
@@ -138,7 +142,9 @@ async function setup() {
 		},
 		/** Another writer deletes the file. */
 		async removeElsewhere(path: string) {
-			expectOk(await folder.files.remove(expectOk(await folder.files.read(path))));
+			expectOk(
+				await folder.files.remove(expectOk(await folder.files.read(path))),
+			);
 		},
 	};
 }
@@ -226,7 +232,10 @@ test("typing saves at once, and each todo gets its own view: A then B then A mou
 	type(notes, 'from A, detached\n');
 	type(get<HTMLInputElement>(TITLE), 'B typed');
 	type(get(NOTES), 'B notes\n');
-	expect(a.draft).toEqual({ fields: { title: 'A typed', done: false }, body: '' });
+	expect(a.draft).toEqual({
+		fields: { title: 'A typed', done: false },
+		body: '',
+	});
 	expect(b.draft).toEqual({
 		fields: { title: 'B typed', done: false },
 		body: 'B notes\n',
@@ -248,8 +257,17 @@ test("typing saves at once, and each todo gets its own view: A then B then A mou
 });
 
 test('another writer\'s change is a conflict on the next edit, and "Reload theirs" shows their version in the same session', async () => {
-	const { todos, target, get, find, selected, shown, text, overwrite, reading } =
-		await setup();
+	const {
+		todos,
+		target,
+		get,
+		find,
+		selected,
+		shown,
+		text,
+		overwrite,
+		reading,
+	} = await setup();
 	await todos.create('Milk');
 	const path = shown();
 	flushSync();
@@ -308,8 +326,17 @@ test('another writer\'s change is a conflict on the next edit, and "Keep mine" s
 });
 
 test('a file deleted elsewhere offers "Discard" and "Keep mine": Keep mine creates it again from the draft, and Discard closes it and writes nothing', async () => {
-	const { todos, target, get, find, selected, shown, text, removeElsewhere, reading } =
-		await setup();
+	const {
+		todos,
+		target,
+		get,
+		find,
+		selected,
+		shown,
+		text,
+		removeElsewhere,
+		reading,
+	} = await setup();
 	await todos.create('Milk');
 	const path = shown();
 	flushSync();
@@ -349,7 +376,7 @@ test('a file deleted elsewhere offers "Discard" and "Keep mine": Keep mine creat
 	expect(await text(path)).toBeUndefined();
 });
 
-test('returning to the window shows another writer\'s change when nothing is unsaved, and keeps a draft that could not save', async () => {
+test("returning to the window shows another writer's change when nothing is unsaved, and keeps a draft that could not save", async () => {
 	const { todos, opfs, target, get, find, selected, shown, text, overwrite } =
 		await setup();
 	await todos.create('Milk');
@@ -379,7 +406,11 @@ test('returning to the window shows another writer\'s change when nothing is uns
 
 	// Try again meets their change: the conflict prompt asks.
 	click(target, 'Try again');
-	await eventually(() => session.state.status === 'error' && find(ALERT)?.textContent?.includes('changed elsewhere') === true);
+	await eventually(
+		() =>
+			session.state.status === 'error' &&
+			find(ALERT)?.textContent?.includes('changed elsewhere') === true,
+	);
 	expect(saveBarButtons(target)).toEqual(['Reload theirs', 'Keep mine']);
 	click(target, 'Reload theirs');
 	await eventually(() => session.state.status === 'saved');
@@ -410,7 +441,9 @@ test('Files opens the complete text and the list opens fields; a malformed todo 
 	flushSync();
 	const bad = selectedText();
 	expect(todos.current).toEqual({ path: 'todos/bad.md', workspace: 'todos' });
-	expect(find('[data-testid="row-issues"]')?.textContent).toContain('Needs repair');
+	expect(find('[data-testid="row-issues"]')?.textContent).toContain(
+		'Needs repair',
+	);
 	expect(find(TITLE)).toBeNull();
 	expect(find(DONE)).toBeNull();
 	const contents = get(CONTENTS);
@@ -419,7 +452,11 @@ test('Files opens the complete text and the list opens fields; a malformed todo 
 
 	// Repaired as text, it saves as typed and offers Open as todo.
 	type(contents, ROW('Fixed'));
-	await eventually(() => bad.state.status === 'saved' && find('[data-testid="row-issues"]') === null);
+	await eventually(
+		() =>
+			bad.state.status === 'saved' &&
+			find('[data-testid="row-issues"]') === null,
+	);
 	expect(await text('todos/bad.md')).toBe(ROW('Fixed'));
 	expect(button(target, 'Open as todo').disabled).toBe(false);
 	await todos.check();
@@ -446,7 +483,8 @@ test('Files opens the complete text and the list opens fields; a malformed todo 
 });
 
 test("a draft that could not save keeps the todo open with its input until it saves; then Files opens its text, and the todo view's detached controls admit nothing", async () => {
-	const { todos, opfs, target, get, find, selected, shown, text } = await setup();
+	const { todos, opfs, target, get, find, selected, shown, text } =
+		await setup();
 	await todos.create('Milk');
 	const path = shown();
 	flushSync();
@@ -477,7 +515,10 @@ test("a draft that could not save keeps the todo open with its input until it sa
 	// The todo view's controls left the document; what reaches them changes nothing.
 	type(title, 'from the departed title');
 	press(done);
-	expect(session.draft).toEqual({ fields: { title: 'Mine', done: false }, body: '' });
+	expect(session.draft).toEqual({
+		fields: { title: 'Mine', done: false },
+		body: '',
+	});
 
 	// The todo opens again in a new session at the same path; the first
 	// view's detached controls reach neither.
@@ -488,8 +529,14 @@ test("a draft that could not save keeps the todo open with its input until it sa
 	type(title, 'from the first view');
 	press(done);
 	await settle();
-	expect(reopened.draft).toEqual({ fields: { title: 'Mine', done: false }, body: '' });
-	expect(session.draft).toEqual({ fields: { title: 'Mine', done: false }, body: '' });
+	expect(reopened.draft).toEqual({
+		fields: { title: 'Mine', done: false },
+		body: '',
+	});
+	expect(session.draft).toEqual({
+		fields: { title: 'Mine', done: false },
+		body: '',
+	});
 	expect(await text(path)).toBe(saved);
 });
 
@@ -505,10 +552,16 @@ test('a title the file cannot hold is not saved and says why, and a valid title 
 	expect(title.value.isWellFormed()).toBe(false);
 	title.dispatchEvent(new window.Event('input', { bubbles: true }));
 	await settle();
-	expect(session.state).toMatchObject({ status: 'error', error: { name: 'InvalidValues' } });
+	expect(session.state).toMatchObject({
+		status: 'error',
+		error: { name: 'InvalidValues' },
+	});
 	expect(find(ALERT)?.textContent).toContain('Not saved');
 	expect(saveBarButtons(target)).toEqual([]);
-	expect(await reading(path)).toEqual({ fields: { title: 'Milk', done: false }, body: '' });
+	expect(await reading(path)).toEqual({
+		fields: { title: 'Milk', done: false },
+		body: '',
+	});
 
 	type(title, 'Oat');
 	expect((await session.settled()).status).toBe('saved');
@@ -550,7 +603,8 @@ test("notes and Files' text show LF, and typing in them keeps the file's CRLF an
 });
 
 test('a view hidden while its todo stays open admits nothing from its detached fields, checkbox, file name bar, or save bar buttons; shown again, the same todo takes input', async () => {
-	const { todos, opfs, target, get, find, selected, shown, reading } = await setup();
+	const { todos, opfs, target, get, find, selected, shown, reading } =
+		await setup();
 	await todos.create('Milk');
 	const path = shown();
 	flushSync();
@@ -576,7 +630,10 @@ test('a view hidden while its todo stays open admits nothing from its detached f
 	type(title, 'from a detached title');
 	type(notes, 'from detached notes\n');
 	press(done);
-	expect(session.draft).toEqual({ fields: { title: 'Mine', done: false }, body: '' });
+	expect(session.draft).toEqual({
+		fields: { title: 'Mine', done: false },
+		body: '',
+	});
 	type(name, 'renamed');
 	form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
 	press(remove);
@@ -584,7 +641,10 @@ test('a view hidden while its todo stays open admits nothing from its detached f
 	await settle();
 	expect(session.state.status).toBe('error');
 	expect(session.draft.fields.title).toBe('Mine');
-	expect(await reading(path)).toEqual({ fields: { title: 'Milk', done: false }, body: '' });
+	expect(await reading(path)).toEqual({
+		fields: { title: 'Milk', done: false },
+		body: '',
+	});
 	expect(todos.current?.path).toBe(path);
 
 	// Negative control: shown again, the same todo takes input and Try again.
@@ -599,7 +659,8 @@ test('a view hidden while its todo stays open admits nothing from its detached f
 });
 
 test('a save bar button left from an earlier view answers nothing for the todo open now', async () => {
-	const { todos, target, get, selected, selectedText, overwrite } = await setup();
+	const { todos, target, get, selected, selectedText, overwrite } =
+		await setup();
 	const path = 'todos/milk.md';
 	expectOk(await todos.folder.files.create(path, ROW('Milk')));
 	await todos.refresh();
@@ -674,7 +735,9 @@ test('list completion while Files shows the same todo changes nothing there; ope
 	press(completion);
 	await eventually(() => completion.getAttribute('aria-checked') === 'true');
 	expect(session.draft.fields.done).toBe(true);
-	expect(get<HTMLButtonElement>(DONE).getAttribute('aria-checked')).toBe('true');
+	expect(get<HTMLButtonElement>(DONE).getAttribute('aria-checked')).toBe(
+		'true',
+	);
 	expect((await session.settled()).status).toBe('saved');
 	expect(await reading(path)).toEqual({
 		fields: { title: 'Milk', done: true, owner: 'keep-me' },

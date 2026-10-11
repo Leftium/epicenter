@@ -22,8 +22,8 @@
  * Neither needs a DOM. The view calls both; tests drive them the same way.
  */
 
-import type { RowSession } from '@epicenter/svelte/edit-session';
 import { wellFormed } from '@epicenter/folder';
+import type { RowSession } from '@epicenter/svelte/edit-session';
 import {
 	baseKeymap,
 	chainCommands,

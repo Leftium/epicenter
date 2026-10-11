@@ -1,62 +1,62 @@
 {
-  "date": "2026-10-05",
-  "checkout": "/Users/braden/Code/worktrees/epicenter/app-schema-derive-export-import",
-  "status": "completed; source cleanup recorded in two focused commits",
-  "scope": "packages/app/src/data/artifact",
-  "sweeps": [
-    "remove orphaned field patch subsystem",
-    "remove redundant import copy and formatting decision",
-    "cumulative caller and invariant review"
-  ],
-  "coordination": {
-    "sources": [
-      "work/row-editing-cutover-20261005.md",
-      "work/row-editor-inline-cleanup/README.md",
-      "work/row-editor-inline-cleanup/round-4/README.md"
-    ],
-    "limit": "No cross-thread connector; Codex UI access refused. Coordination uses work records and checkout status.",
-    "deferred": [
-      "row editor caller integration",
-      "folder merge and native implementation",
-      "reactive store implementation"
-    ]
-  },
-  "files": {
-    "packages/app/src/data/artifact/field-changes.ts": {
-      "beforeSha256": "b736919410ff207299b140874f80cb8aee5d67c9cc2639369e060f44c43b95f1",
-      "afterSha256": null
-    },
-    "packages/app/src/data/artifact/field-changes.test.ts": {
-      "beforeSha256": "f41b393983e58cbed7130f7269746024da78eb0562296173783d0821868df00e",
-      "afterSha256": null
-    },
-    "packages/app/src/data/artifact/frontmatter.ts": {
-      "beforeSha256": "7215c08056155e7c18e1d4c36fe87e959193b9e887e90afd33def619170bba5c",
-      "afterSha256": "84a0529acb48dfb4acef5fc05afd45ae68066891a04e708b73e2d637fdce5bf5"
-    },
-    "packages/app/src/data/artifact/import.ts": {
-      "beforeSha256": "8576264d923bd840473d7af8de082246008313ac5b233f903fea219b75c1901a",
-      "afterSha256": "63ef3834c521f98b2cacc55e127ce802cfb79a1ae90227685397946b22ef0fb0"
-    }
-  },
-  "verification": {
-    "artifactBefore": {
-      "pass": 44,
-      "fail": 0
-    },
-    "artifactAfter": {
-      "pass": 37,
-      "fail": 0
-    },
-    "appTests": {
-      "pass": 624,
-      "fail": 0
-    },
-    "appTypecheck": "passed all seven targets",
-    "biome": "passed",
-    "diffCheck": "passed"
-  },
-  "evidenceDirectory": "/tmp/epicenter-collapse-sweeps-20261005",
-  "review": "/tmp/epicenter-collapse-sweeps-20261005/review.txt",
-  "patch": "/tmp/epicenter-collapse-sweeps-20261005/cleanup.patch"
+	"date": "2026-10-05",
+	"checkout": "/Users/braden/Code/worktrees/epicenter/app-schema-derive-export-import",
+	"status": "completed; source cleanup recorded in two focused commits",
+	"scope": "packages/app/src/data/artifact",
+	"sweeps": [
+		"remove orphaned field patch subsystem",
+		"remove redundant import copy and formatting decision",
+		"cumulative caller and invariant review"
+	],
+	"coordination": {
+		"sources": [
+			"work/row-editing-cutover-20261005.md",
+			"work/row-editor-inline-cleanup/README.md",
+			"work/row-editor-inline-cleanup/round-4/README.md"
+		],
+		"limit": "No cross-thread connector; Codex UI access refused. Coordination uses work records and checkout status.",
+		"deferred": [
+			"row editor caller integration",
+			"folder merge and native implementation",
+			"reactive store implementation"
+		]
+	},
+	"files": {
+		"packages/app/src/data/artifact/field-changes.ts": {
+			"beforeSha256": "b736919410ff207299b140874f80cb8aee5d67c9cc2639369e060f44c43b95f1",
+			"afterSha256": null
+		},
+		"packages/app/src/data/artifact/field-changes.test.ts": {
+			"beforeSha256": "f41b393983e58cbed7130f7269746024da78eb0562296173783d0821868df00e",
+			"afterSha256": null
+		},
+		"packages/app/src/data/artifact/frontmatter.ts": {
+			"beforeSha256": "7215c08056155e7c18e1d4c36fe87e959193b9e887e90afd33def619170bba5c",
+			"afterSha256": "84a0529acb48dfb4acef5fc05afd45ae68066891a04e708b73e2d637fdce5bf5"
+		},
+		"packages/app/src/data/artifact/import.ts": {
+			"beforeSha256": "8576264d923bd840473d7af8de082246008313ac5b233f903fea219b75c1901a",
+			"afterSha256": "63ef3834c521f98b2cacc55e127ce802cfb79a1ae90227685397946b22ef0fb0"
+		}
+	},
+	"verification": {
+		"artifactBefore": {
+			"pass": 44,
+			"fail": 0
+		},
+		"artifactAfter": {
+			"pass": 37,
+			"fail": 0
+		},
+		"appTests": {
+			"pass": 624,
+			"fail": 0
+		},
+		"appTypecheck": "passed all seven targets",
+		"biome": "passed",
+		"diffCheck": "passed"
+	},
+	"evidenceDirectory": "/tmp/epicenter-collapse-sweeps-20261005",
+	"review": "/tmp/epicenter-collapse-sweeps-20261005/review.txt",
+	"patch": "/tmp/epicenter-collapse-sweeps-20261005/cleanup.patch"
 }

@@ -133,7 +133,11 @@ function createSlot<TKey, TItem, TSession extends OpenSession>({
 		const session = sessionOf(was.item);
 		const state = await session?.settled();
 		if (mine !== sequence || shown !== was) return { kind: 'superseded' };
-		if (session !== undefined && holdsUnsaved(was.item, state) && discard !== session)
+		if (
+			session !== undefined &&
+			holdsUnsaved(was.item, state) &&
+			discard !== session
+		)
 			return { kind: 'unsaved', session };
 		session?.release();
 		shown = undefined;
@@ -295,8 +299,7 @@ export function createOpenItems<
 	/** Drop `entry` once it shows nothing and nothing on it runs. */
 	function prune(entry: Entry) {
 		if (entry.running > 0 || entry.slot.shown !== undefined) return;
-		for (const [name, held] of slots)
-			if (held === entry) slots.delete(name);
+		for (const [name, held] of slots) if (held === entry) slots.delete(name);
 	}
 
 	/**
@@ -463,7 +466,9 @@ export function createOpenItems<
 		 * draft could not be saved, which end with the page.
 		 */
 		async close(): Promise<string[]> {
-			const failed = await Promise.all(keys().map((name) => slot(name).close()));
+			const failed = await Promise.all(
+				keys().map((name) => slot(name).close()),
+			);
 			return failed.filter((path) => path !== undefined);
 		},
 	};

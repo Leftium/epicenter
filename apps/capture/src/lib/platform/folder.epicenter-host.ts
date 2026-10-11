@@ -17,9 +17,9 @@
  * window.
  */
 import { captureDefinition } from '@epicenter/capture';
-import { openFolder } from '@epicenter/folder/tauri';
 import { createDeparture } from '@epicenter/epicenter/departure/page';
 import { createWindowDeparturePort } from '@epicenter/epicenter/departure/window';
+import { openFolder } from '@epicenter/folder/tauri';
 import {
 	CAPTURE_FOLDER_ID,
 	type OpenCaptureHost,

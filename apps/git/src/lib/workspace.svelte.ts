@@ -1,9 +1,9 @@
 import {
 	defineFolder,
-	openFolder,
 	type FileCapture,
 	type FileListing,
 	type GitSnapshot,
+	openFolder,
 	type PathStatus,
 } from '@epicenter/folder';
 import { readTextFile, withFileNewlines } from '@epicenter/folder/file-browser';

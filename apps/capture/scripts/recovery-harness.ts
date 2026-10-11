@@ -12,9 +12,9 @@
 import { mkdtemp, readdir, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { openFolder } from '@epicenter/folder/bun';
 import { captureDefinition } from '@epicenter/capture';
 import { readLegacyBundle, runLegacyImport } from '@epicenter/capture/legacy';
+import { openFolder } from '@epicenter/folder/bun';
 
 const [directory, bundlePath] = process.argv.slice(2);
 const root = directory ?? (await mkdtemp(join(tmpdir(), 'capture-recovery-')));

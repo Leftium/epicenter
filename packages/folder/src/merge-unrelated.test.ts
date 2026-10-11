@@ -227,7 +227,12 @@ describe('unrelated histories', () => {
 		const base = await made.commit();
 		const left = await made.commitOf([base], { 'a.md': 'x\n', 'b.md': '1\n' });
 		const right = await made.commitOf([base], { 'a.md': 'x\n', 'c.md': '1\n' });
-		const ours: Tree = { 'a.md': 'x\n', 'b.md': '1\n', 'c.md': '1\n', 'd.md': 'o\n' };
+		const ours: Tree = {
+			'a.md': 'x\n',
+			'b.md': '1\n',
+			'c.md': '1\n',
+			'd.md': 'o\n',
+		};
 		const oursOid = await made.commitOf([left, right], ours);
 		const theirsOid = await made.commitOf([right, left], {
 			'a.md': 'x\n',
@@ -235,7 +240,8 @@ describe('unrelated histories', () => {
 			'c.md': '1\n',
 			'e.md': 't\n',
 		});
-		for (const [path, value] of Object.entries(ours)) await made.write(path, value);
+		for (const [path, value] of Object.entries(ours))
+			await made.write(path, value);
 		expect((await made.backend.casBranch(base, oursOid)).ok).toBe(true);
 		// Resets the index to the moved branch; the files already match it.
 		expect((await made.history.commit()).status).toBe('unchanged');
@@ -262,7 +268,9 @@ describe('conflict versions', () => {
 			'gone.md': 'changed remotely\n',
 		});
 		await made.write('kept.md', 'local\n');
-		expectOk(await made.raw.boundary.apply([{ kind: 'remove', path: 'gone.md' }]));
+		expectOk(
+			await made.raw.boundary.apply([{ kind: 'remove', path: 'gone.md' }]),
+		);
 		await made.commit();
 		await made.track(theirs);
 

@@ -9,6 +9,8 @@
  * The test moves the host itself with `begin`, `set`, and `nudge`, and can
  * hold listener registration or lose answers.
  */
+
+import type { DeparturePort } from './departure-page.svelte.js';
 import {
 	type DepartureAnswerArgs,
 	type DepartureIntent,
@@ -16,7 +18,6 @@ import {
 	type DepartureVote,
 	parseDepartureStatus,
 } from './departure-wire.js';
-import type { DeparturePort } from './departure-page.svelte.js';
 
 export function createFakeHost() {
 	let status: DepartureStatus = { version: 1, generation: 7, phase: 'idle' };

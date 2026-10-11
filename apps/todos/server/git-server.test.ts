@@ -145,10 +145,6 @@ test('browser push, native pull and push, then browser fast-forward through the 
 	});
 	expect(
 		expectOk(await browser.git.log(5)).map((commit) => commit.message.trim()),
-	).toEqual([
-		'Rename the milk todo',
-		'Update todos/milk.md',
-		'Update 2 files',
-	]);
+	).toEqual(['Rename the milk todo', 'Update todos/milk.md', 'Update 2 files']);
 	await browser.close();
 }, 60_000);

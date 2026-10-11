@@ -219,7 +219,10 @@ function parsePairing(
 	)
 		return undefined;
 	return {
-		account: { authorityId: account.authorityId, principalId: account.principalId },
+		account: {
+			authorityId: account.authorityId,
+			principalId: account.principalId,
+		},
 		folderId,
 		revision,
 		status,
@@ -261,7 +264,8 @@ export function createAccountGitRelay({
 	function admit(
 		identity: AccountIdentity,
 	): { account: Account; connector: string } | NativeGitRefusal {
-		if (!account || !connector) return refusal(409, 'signed-out', MESSAGES.signedOut);
+		if (!account || !connector)
+			return refusal(409, 'signed-out', MESSAGES.signedOut);
 		if (!sameAccount(account, identity))
 			return refusal(409, 'account-mismatch', MESSAGES.accountMismatch);
 		if (signal.aborted) return refusal(503, 'retired', MESSAGES.retired);
@@ -284,14 +288,17 @@ export function createAccountGitRelay({
 			if ('error' in admitted) return admitted;
 			let response: Response;
 			try {
-				response = await admitted.account.fetch(`${admitted.connector}/pairings`, {
-					method: 'GET',
-					headers: { accept: 'application/json' },
-					signal: caller ? AbortSignal.any([caller, signal]) : signal,
-					credentials: 'omit',
-					keepalive: false,
-					cache: 'no-store',
-				});
+				response = await admitted.account.fetch(
+					`${admitted.connector}/pairings`,
+					{
+						method: 'GET',
+						headers: { accept: 'application/json' },
+						signal: caller ? AbortSignal.any([caller, signal]) : signal,
+						credentials: 'omit',
+						keepalive: false,
+						cache: 'no-store',
+					},
+				);
 			} catch (cause) {
 				if (signal.aborted) return refusal(503, 'retired', MESSAGES.retired);
 				// A paused Account (reauthentication required) refuses before sending.
@@ -352,7 +359,11 @@ export function createAccountGitRelay({
 			revision: string;
 			service: GitService;
 		}): { id: string; url: string } | NativeGitRefusal {
-			if (!isFolderId(folderId) || !isRevision(revision) || !isGitService(service))
+			if (
+				!isFolderId(folderId) ||
+				!isRevision(revision) ||
+				!isGitService(service)
+			)
 				return refusal(400, 'invalid-request', MESSAGES.invalid);
 			const admitted = admit(identity);
 			if ('error' in admitted) return admitted;
@@ -400,9 +411,14 @@ export function createAccountGitRelay({
 		 * Answer one request Git sent to a relay path. `rest` is everything
 		 * after the token, such as `/repo.git/info/refs`.
 		 */
-		async handle(request: Request, token: string, rest: string): Promise<Response> {
+		async handle(
+			request: Request,
+			token: string,
+			rest: string,
+		): Promise<Response> {
 			const relay = byToken.get(token);
-			if (!relay || !account) return new Response('Not Found\n', { status: 404 });
+			if (!relay || !account)
+				return new Response('Not Found\n', { status: 404 });
 			// Git never sends an Origin; a page does.
 			if (request.headers.get('origin') !== null)
 				return new Response('Forbidden\n', { status: 403 });
@@ -443,10 +459,13 @@ export function createAccountGitRelay({
 				} catch {
 					// Releasing a refused body cannot change the refusal.
 				}
-				return new Response('Epicenter could not complete this Git request.\n', {
-					status: 502,
-					headers: { 'cache-control': 'no-store' },
-				});
+				return new Response(
+					'Epicenter could not complete this Git request.\n',
+					{
+						status: 502,
+						headers: { 'cache-control': 'no-store' },
+					},
+				);
 			};
 			let response: Response;
 			try {

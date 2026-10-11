@@ -64,7 +64,7 @@ export function applicationDataLabel(data: ApplicationData): string | null {
 		case 'available':
 			return 'Available locally';
 		case 'not-downloaded':
-			return "Download data to this device to open the app.";
+			return 'Download data to this device to open the app.';
 		case 'downloading':
 			return "Downloading this app's data from your account.";
 		case 'unclaimed':

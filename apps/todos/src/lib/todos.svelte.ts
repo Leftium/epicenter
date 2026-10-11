@@ -106,7 +106,11 @@ type Item =
 
 /** The open item, or the one loading: what the detail shows. */
 export type Opened =
-	| { readonly kind: 'loading'; readonly path: string; readonly workspace: Workspace }
+	| {
+			readonly kind: 'loading';
+			readonly path: string;
+			readonly workspace: Workspace;
+	  }
 	| Item;
 
 /** What a confirmed deletion removes, captured when the person was asked. */
@@ -213,12 +217,15 @@ function sameKey(a: Key, b: Key) {
 }
 
 function sessionOf(item: Item): Session | undefined {
-	return item.kind === 'todo' || item.kind === 'text' ? item.session : undefined;
+	return item.kind === 'todo' || item.kind === 'text'
+		? item.session
+		: undefined;
 }
 
 /** The key `item` is shown under now: at its session's path, which follows a rename. */
 function keyOf(item: Item, asked: Key): Key {
-	if (item.kind === 'todo') return { path: item.session.path, workspace: 'todos' };
+	if (item.kind === 'todo')
+		return { path: item.session.path, workspace: 'todos' };
 	if (item.kind === 'text')
 		return {
 			path: item.session.path,
@@ -300,7 +307,12 @@ export function createTodos(folder: TodosFolder) {
 			const { data: stored, error } = await table.get(stem);
 			if (error?.name === 'InvalidRow') return openText(error, 'todos');
 			if (error !== null)
-				return { kind: 'failed', path, workspace: 'todos', message: error.message };
+				return {
+					kind: 'failed',
+					path,
+					workspace: 'todos',
+					message: error.message,
+				};
 			if (stored === undefined)
 				return {
 					kind: 'failed',
@@ -332,7 +344,11 @@ export function createTodos(folder: TodosFolder) {
 		if (shown === undefined) return undefined;
 		if (shown.status === 'open') return shown.item;
 		const { path, workspace } = shown.key;
-		return { kind: 'loading', path, workspace: workspace === 'files' ? 'files' : 'todos' };
+		return {
+			kind: 'loading',
+			path,
+			workspace: workspace === 'files' ? 'files' : 'todos',
+		};
 	});
 
 	const shell = folder.terminal();
@@ -637,7 +653,10 @@ export function createTodos(folder: TodosFolder) {
 				const toRow = rowStemOf(table.name, to) !== undefined;
 				const session = slot.session;
 				const isOpen = session?.path === path;
-				if (!toRow && (rowPaths.has(path) || (isOpen && opened?.kind === 'todo')))
+				if (
+					!toRow &&
+					(rowPaths.has(path) || (isOpen && opened?.kind === 'todo'))
+				)
 					return 'A todo file keeps its .md extension.';
 				let moved: Result<unknown, Problem>;
 				if (isOpen) moved = await session.rename((file) => move(file, to));
@@ -760,20 +779,24 @@ export function createTodos(folder: TodosFolder) {
 					}
 				}
 				await refresh();
-				return removed.error === null ? undefined : describeError(removed.error);
+				return removed.error === null
+					? undefined
+					: describeError(removed.error);
 			},
 		),
 		/** Commit current saved files and push. */
-		commitAndPush: admissions.command(async (): Promise<CommitAndPushResult> => {
-			if (closing !== undefined)
-				return { commit: { status: 'closed' }, push: { status: 'closed' } };
-			if (departing)
-				return {
-					commit: { status: 'blocked', reason: DEPARTING },
-					push: { status: 'skipped', reason: DEPARTING },
-				};
-			return folder.git.commitAndPush({ signal: leaving.signal });
-		}),
+		commitAndPush: admissions.command(
+			async (): Promise<CommitAndPushResult> => {
+				if (closing !== undefined)
+					return { commit: { status: 'closed' }, push: { status: 'closed' } };
+				if (departing)
+					return {
+						commit: { status: 'blocked', reason: DEPARTING },
+						push: { status: 'skipped', reason: DEPARTING },
+					};
+				return folder.git.commitAndPush({ signal: leaving.signal });
+			},
+		),
 		/** Fetch the remote's branch; nothing local changes. */
 		fetch: admissions.command(
 			async (): ReturnType<TodosFolder['git']['fetch']> => {

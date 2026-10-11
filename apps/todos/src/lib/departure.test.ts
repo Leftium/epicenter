@@ -22,7 +22,9 @@
  */
 import './svelte-modules.test-support.js';
 import { afterEach, expect, test } from 'bun:test';
+import type { Departure } from '@epicenter/epicenter/departure/page';
 import { openFolder } from '@epicenter/folder/browser';
+import type { RowSession } from '@epicenter/svelte/edit-session';
 import { Ok } from 'wellcrafted/result';
 import { expectErr, expectOk } from 'wellcrafted/testing';
 import {
@@ -30,21 +32,17 @@ import {
 	opfsOf,
 	testLocks,
 } from '../../../../packages/folder/src/browser-storage.test-support.js';
-import { todosDefinition } from './definition.js';
-import type { Departure } from '@epicenter/epicenter/departure/page';
 import { createFakeHost } from '../../../epicenter/src/departure-page.test-support.js';
+import type { TodoFields } from './definition.js';
+import { todosDefinition } from './definition.js';
 import { holdCloses } from './opfs-holds.test-support.js';
 import type { TodosFolder } from './platform/types.js';
-import type { RowSession } from '@epicenter/svelte/edit-session';
-import type { TodoFields } from './definition.js';
 import type { Todos } from './todos.svelte.js';
 
 type TodoSession = RowSession<TodoFields>;
 
 const { createTodos } = await import('./todos.svelte.ts');
-const { createDeparture } = await import(
-	'@epicenter/epicenter/departure/page'
-);
+const { createDeparture } = await import('@epicenter/epicenter/departure/page');
 const { DEPARTING } = await import('./todos.svelte.ts');
 
 let count = 0;
@@ -157,9 +155,7 @@ async function eventually(done: () => boolean) {
 }
 
 /** A started departure with an open owner, idle. */
-async function started(
-	adapt?: (folder: TodosFolder) => TodosFolder,
-) {
+async function started(adapt?: (folder: TodosFolder) => TodosFolder) {
 	const host = createFakeHost();
 	const departure = track(createDeparture(host.port));
 	await departure.start();
@@ -403,7 +399,10 @@ test('while fenced, every action, Git command, terminal command, and editing inp
 		row.fields.done = true;
 	});
 	milk.retry();
-	expect(milk.draft).toEqual({ fields: { title: 'Milk', done: false }, body: '' });
+	expect(milk.draft).toEqual({
+		fields: { title: 'Milk', done: false },
+		body: '',
+	});
 	expect(milk.state.status).toBe('saved');
 	// Actions refuse.
 	todos.newTitle = 'Typed';

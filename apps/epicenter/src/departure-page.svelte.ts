@@ -236,7 +236,10 @@ export function createDeparture(port: DeparturePort) {
 		// The host's recorded vote lags this page's answer, as after a lost
 		// answer or a repeated Quit: send the same answer again, never a
 		// second prompt. A settled choice stays settled for the round.
-		if (decided === 'cancel' || (decided === 'ready' && status.vote !== 'ready'))
+		if (
+			decided === 'cancel' ||
+			(decided === 'ready' && status.vote !== 'ready')
+		)
 			void send(status, decided, recovery);
 		else if (decided === undefined && status.vote === 'none')
 			void send(status, 'asking', recovery);
@@ -267,7 +270,9 @@ export function createDeparture(port: DeparturePort) {
 						status = await port.status();
 					} catch (cause) {
 						// Nothing applies; the next nudge or focus reads again.
-						log.warn(new Error('Reading the departure status failed.', { cause }));
+						log.warn(
+							new Error('Reading the departure status failed.', { cause }),
+						);
 						if (!destroyed) problem = describe(cause);
 						return;
 					}

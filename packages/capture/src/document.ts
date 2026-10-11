@@ -278,8 +278,7 @@ function parseBody(source: string): CaptureDocument {
 			// item: the content starts one column after the marker, and the rest
 			// of the gap is the code's indentation, kept so it renders as code.
 			const code = content !== '' && gapColumns >= 5;
-			const contentIndent =
-				column + (content === '' || code ? 1 : gapColumns);
+			const contentIndent = column + (content === '' || code ? 1 : gapColumns);
 			const body = [code ? `${' '.repeat(gapColumns - 1)}${content}` : content];
 			for (let at = item.first + 1; at <= last; at++) {
 				const line = lineText(at);

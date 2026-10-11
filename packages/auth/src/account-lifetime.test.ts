@@ -281,9 +281,9 @@ test('a browser Account replays a RequestInit stream only after in-flight creden
 test('a streamed body keeps keepalive: false on every send, including the replay', async () => {
 	// Bun's Request has no `keepalive`, so wrapping the stream in a Request
 	// alone would drop the caller's choice before the underlying fetch.
-	expect('keepalive' in new Request('https://account.test/', { keepalive: false })).toBe(
-		typeof Bun === 'undefined',
-	);
+	expect(
+		'keepalive' in new Request('https://account.test/', { keepalive: false }),
+	).toBe(typeof Bun === 'undefined');
 	const sends: { keepalive: unknown; body: string }[] = [];
 	let replaced = false;
 	using context = setup({
@@ -395,8 +395,10 @@ for (const cancellation of ['retirement', 'client abort'] as const) {
 			port: 0,
 			async fetch(request) {
 				const path = new URL(request.url).pathname;
-				if (path === '/api/session') return Response.json({ principalId: 'alice' });
-				if (path === '/auth/sign-out') return new Response(null, { status: 204 });
+				if (path === '/api/session')
+					return Response.json({ principalId: 'alice' });
+				if (path === '/auth/sign-out')
+					return new Response(null, { status: 204 });
 				expect(request.method).toBe('POST');
 				expect(await request.text()).toBe('first pack bytes');
 				received.resolve();
@@ -410,7 +412,10 @@ for (const cancellation of ['retirement', 'client abort'] as const) {
 				baseURL: server.url.origin,
 				fetch,
 				persistedAuthStorage: {
-					initial: { token: 'alice-session', principalId: asPrincipalId('alice') },
+					initial: {
+						token: 'alice-session',
+						principalId: asPrincipalId('alice'),
+					},
 					set() {},
 				},
 				launcher: {
@@ -420,7 +425,8 @@ for (const cancellation of ['retirement', 'client abort'] as const) {
 				},
 			});
 			const captured = auth.getState();
-			if (captured.status === 'signed-out') throw new Error('Expected cached identity');
+			if (captured.status === 'signed-out')
+				throw new Error('Expected cached identity');
 			const sending = captured.account.fetch('/git-receive-pack', {
 				method: 'POST',
 				body: new Blob(['first pack bytes']).stream(),

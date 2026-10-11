@@ -51,7 +51,9 @@ export type RowTable =
 	| typeof TRANSFORMATIONS;
 
 /** One open file, as its view shows it. */
-export type Draft = { readonly kind: 'loading'; readonly path: string } | Loaded;
+export type Draft =
+	| { readonly kind: 'loading'; readonly path: string }
+	| Loaded;
 
 /** What a file opens as once read. */
 type Loaded =
@@ -226,7 +228,9 @@ export function createDrafts(
 		get(path: string): Draft | undefined {
 			const shown = items.slot(path).shown;
 			if (shown === undefined) return undefined;
-			return shown.status === 'loading' ? { kind: 'loading', path } : shown.item;
+			return shown.status === 'loading'
+				? { kind: 'loading', path }
+				: shown.item;
 		},
 		/**
 		 * Show the file at `path`, keeping a draft already open there. A draft

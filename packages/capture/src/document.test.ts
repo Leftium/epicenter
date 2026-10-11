@@ -516,15 +516,21 @@ test('text with an open fence keeps its section in the file and says it is absor
 });
 
 test('an item that is indented code keeps its code indentation through a list edit', () => {
-	const document = parseCapture(`${HEAD}T\n\n## Thoughts\n\n-     code()\n      more()\n- b\n`);
+	const document = parseCapture(
+		`${HEAD}T\n\n## Thoughts\n\n-     code()\n      more()\n- b\n`,
+	);
 	expect(document.thoughts).toEqual(['    code()\n    more()', 'b']);
 	const next = sourceOf(editThought(document, nth(document, 1), 'c'));
-	expect(next).toBe(`${HEAD}T\n\n## Thoughts\n\n-     code()\n      more()\n- c\n`);
+	expect(next).toBe(
+		`${HEAD}T\n\n## Thoughts\n\n-     code()\n      more()\n- c\n`,
+	);
 	expect(parseCapture(next).thoughts).toEqual(['    code()\n    more()', 'c']);
 });
 
 test('deleting the last thought with Markdown after the list is refused with why', () => {
-	const document = parseCapture(`${HEAD}T\n\n## Thoughts\n\n- only\n\nA paragraph.\n`);
+	const document = parseCapture(
+		`${HEAD}T\n\n## Thoughts\n\n- only\n\nA paragraph.\n`,
+	);
 	const refusal = refusalOf(deleteThought(document, nth(document, 0)));
 	expect(refusal.message).toContain('The last thought cannot be deleted');
 	// With nothing after the list, it is deleted.

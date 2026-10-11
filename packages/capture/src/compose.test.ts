@@ -17,9 +17,9 @@ import { afterAll, expect, test } from 'bun:test';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { frameRowText } from '@epicenter/folder';
 import { openFolder } from '@epicenter/folder/bun';
 import { expectOk } from 'wellcrafted/testing';
-import { frameRowText } from '@epicenter/folder';
 import { captureBody, captureDefinition, composeBody } from './index.js';
 import { runLegacyImport } from './legacy/index.js';
 

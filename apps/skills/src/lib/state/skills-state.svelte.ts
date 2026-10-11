@@ -19,9 +19,9 @@ export function createSkillsState({ data }: { data: SkillsData }) {
 	]);
 
 	function readSkillsByName() {
-		return data.tables.skills
-			.rows
-			.toSorted((left, right) => left.name.localeCompare(right.name));
+		return data.tables.skills.rows.toSorted((left, right) =>
+			left.name.localeCompare(right.name),
+		);
 	}
 	const sortedSkills = $derived(readSkillsByName());
 	const selectedSkill = $derived(
@@ -29,8 +29,7 @@ export function createSkillsState({ data }: { data: SkillsData }) {
 	);
 	const selectedReferences = $derived(
 		selectedSkillId
-			? data.tables.skillReferences
-					.rows
+			? data.tables.skillReferences.rows
 					.filter((reference) => reference.skillId === selectedSkillId)
 					.toSorted((left, right) => left.path.localeCompare(right.path))
 			: [],

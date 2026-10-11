@@ -12,15 +12,22 @@ test('each data state has the line Home shows, and a present folder is only avai
 		[{ state: 'available' }, 'Available locally'],
 		[
 			{ state: 'not-downloaded' },
-			"Download data to this device to open the app.",
+			'Download data to this device to open the app.',
 		],
-		[{ state: 'downloading' }, "Downloading this app's data from your account."],
 		[
-			{ state: 'unclaimed', message: 'Move the folder somewhere else, then download.' },
+			{ state: 'downloading' },
+			"Downloading this app's data from your account.",
+		],
+		[
+			{
+				state: 'unclaimed',
+				message: 'Move the folder somewhere else, then download.',
+			},
 			'Move the folder somewhere else, then download.',
 		],
 	];
-	for (const [data, expected] of cases) expect(applicationDataLabel(data)).toBe(expected);
+	for (const [data, expected] of cases)
+		expect(applicationDataLabel(data)).toBe(expected);
 	for (const [data] of cases)
 		expect(applicationDataLabel(data) ?? '').not.toMatch(/downloaded\b/i);
 });

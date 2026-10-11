@@ -1,4 +1,5 @@
 import { startGitServer } from '../server/git-server.js';
+
 const response = await fetch('http://127.0.0.1:5191/session', {
 	signal: AbortSignal.timeout(1000),
 }).catch(() => undefined);

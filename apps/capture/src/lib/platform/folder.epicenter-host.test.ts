@@ -253,8 +253,7 @@ const FORMATTED = SAVED.replace(
 	'capturedAt: 2026-10-01T10:30:00+08:00\n',
 	'capturedAt: "2026-10-01T10:30:00+08:00"\n',
 );
-const withText = (body: string) =>
-	FORMATTED.replace('\nText\n', `\n${body}\n`);
+const withText = (body: string) => FORMATTED.replace('\nText\n', `\n${body}\n`);
 const LOST = 'the webview lost its IPC connection';
 
 async function opened() {
@@ -525,7 +524,8 @@ test('a failed commit is reported beside a saved file, and retried without rewri
 	const { host, captures } = await opened();
 	captures.inputNewCapture('Saved before history');
 	expect(await captures.create()).toBeUndefined();
-	const path = captures.opened?.kind === 'capture' ? captures.opened.session.path : '';
+	const path =
+		captures.opened?.kind === 'capture' ? captures.opened.session.path : '';
 	const saved = text(path);
 
 	emit(SNAPSHOT_CHANGED, {

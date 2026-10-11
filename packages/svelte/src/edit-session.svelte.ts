@@ -53,14 +53,22 @@ type Failure = { readonly name: string; readonly message: string };
 
 /** What reading the file again found. */
 export type Reread<TValue, TOther> =
-	| { readonly kind: 'value'; readonly file: FileCapture; readonly value: TValue }
+	| {
+			readonly kind: 'value';
+			readonly file: FileCapture;
+			readonly value: TValue;
+	  }
 	/** Nothing is at the path. */
 	| { readonly kind: 'gone' }
 	/**
 	 * The file is there but cannot be shown as this session's value, such as
 	 * a row whose text is not valid. Keep mine still saves over it.
 	 */
-	| { readonly kind: 'other'; readonly file: FileCapture; readonly detail: TOther };
+	| {
+			readonly kind: 'other';
+			readonly file: FileCapture;
+			readonly detail: TOther;
+	  };
 
 /** How a session reaches its kind of file. */
 export type EditSource<TValue, TError extends Failure, TOther> = {
@@ -258,11 +266,12 @@ export type EditSession<TValue, TError extends Failure, TOther> = ReturnType<
 // Rows
 // ---------------------------------------------------------------------------
 
-type RowSaveErrorOf<TFields> = Parameters<
-	Parameters<FileTable<TFields>['autosave']>[1]['onState']
->[0] extends SaveState<infer E>
-	? E
-	: never;
+type RowSaveErrorOf<TFields> =
+	Parameters<
+		Parameters<FileTable<TFields>['autosave']>[1]['onState']
+	>[0] extends SaveState<infer E>
+		? E
+		: never;
 
 /** Why a row file cannot be shown as a row: its text is not a valid row, or not text. */
 export type RowProblem = Extract<

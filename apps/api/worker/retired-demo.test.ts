@@ -3,6 +3,7 @@
  * Personal Zhongwen inference goes directly to Google with a device-owned key.
  */
 import { afterAll, expect, mock, spyOn, test } from 'bun:test';
+
 mock.module('cloudflare:workers', () => ({ DurableObject: class {} }));
 const entry = await import('./index.js');
 const realFetch = globalThis.fetch;

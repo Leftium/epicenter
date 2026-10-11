@@ -175,7 +175,11 @@ describe('native folder scope', () => {
 
 		await writer.files.create('.gitignore', '*.log\n');
 		expect((await writer.git.commitAndPush()).push.status).toBe('pushed');
-		expectOk(await reader.files.remove(expectOk(await reader.files.read('epicenter.json'))));
+		expectOk(
+			await reader.files.remove(
+				expectOk(await reader.files.read('epicenter.json')),
+			),
+		);
 		await reader.git.fetch();
 		expect((await reader.git.pullFastForward()).data?.status).toBe(
 			'fastForwarded',

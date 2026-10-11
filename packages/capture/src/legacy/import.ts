@@ -121,7 +121,6 @@ const capturePath = (stem: string) => `${CAPTURES_TABLE}/${stem}.md`;
 
 const captures = captureDefinition.tables.captures;
 
-
 /**
  * A capture file as the captures table writes it. Text a file cannot hold
  * exactly (a lone surrogate) is written as UTF-8 would encode it.
@@ -133,10 +132,7 @@ function compose(
 ): { source: string; structured: Refusal | undefined } {
 	// The composer a new capture uses, so imported text with its own Thoughts
 	// heading or an open fence is kept whole and stays source-only.
-	const composed = composeBody(
-		wellFormed(text),
-		thoughts.map(wellFormed),
-	);
+	const composed = composeBody(wellFormed(text), thoughts.map(wellFormed));
 	// The date is checked when the file is read, as any capture's is.
 	const formable = Object.fromEntries(
 		Object.entries(fields).map(([key, value]) => [key, wellFormed(value)]),

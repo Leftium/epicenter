@@ -123,7 +123,9 @@ async function text(todos: Todos, path: string) {
 
 /** A folder whose Git methods a test replaces. */
 function withGit(
-	git: Partial<Pick<TodosFolder['git'], 'fetch' | 'mergeIncoming' | 'pullFastForward'>>,
+	git: Partial<
+		Pick<TodosFolder['git'], 'fetch' | 'mergeIncoming' | 'pullFastForward'>
+	>,
 ) {
 	return (folder: TodosFolder): TodosFolder => ({
 		...folder,
@@ -409,10 +411,15 @@ test('Reload theirs of a file that is no longer text opens it again as it is now
 
 	// Opened from Files, the same file reloads as file details.
 	expectOk(await todos.folder.files.overwrite(session.path, 'text again'));
-	expect(await todos.open(session.path, 'files')).toMatchObject({ kind: 'done' });
+	expect(await todos.open(session.path, 'files')).toMatchObject({
+		kind: 'done',
+	});
 	const file = textSession(todos);
 	expectOk(
-		await todos.folder.files.overwrite(session.path, new Uint8Array([0xff, 0xfe, 0x00])),
+		await todos.folder.files.overwrite(
+			session.path,
+			new Uint8Array([0xff, 0xfe, 0x00]),
+		),
 	);
 	file.input('mine');
 	await file.settled();
@@ -522,12 +529,13 @@ test('opening another item waits for saves, and a failed save answers unsaved un
 	expect(todos.unsaved).toBe(true);
 
 	// A discard names the draft it lets go; any other answers unsaved again.
-	expect(
-		await todos.open(milk.path, 'todos', { discard: milk }),
-	).toMatchObject({ kind: 'unsaved' });
-	expect(
-		await todos.open(milk.path, 'todos', { discard: bread }),
-	).toEqual({ kind: 'done', left: true });
+	expect(await todos.open(milk.path, 'todos', { discard: milk })).toMatchObject(
+		{ kind: 'unsaved' },
+	);
+	expect(await todos.open(milk.path, 'todos', { discard: bread })).toEqual({
+		kind: 'done',
+		left: true,
+	});
 	expect(todoSession(todos).path).toBe(milk.path);
 	// The released session takes nothing more.
 	bread.edit((row) => {
@@ -557,7 +565,10 @@ test('opening the item already shown does nothing, even when its save failed', a
 		row.fields.title = 'Mine';
 	});
 	await milk.settled();
-	expect(await todos.open(milk.path, 'todos')).toEqual({ kind: 'done', left: false });
+	expect(await todos.open(milk.path, 'todos')).toEqual({
+		kind: 'done',
+		left: false,
+	});
 	expect(todoSession(todos)).toBe(milk);
 	expect(milk.draft.fields.title).toBe('Mine');
 	expect(milk.locked).toBe(false);
@@ -605,7 +616,10 @@ test('a renamed open todo keeps its place: opening it at its new path does nothi
 	await session.settled();
 	expect(await todos.reloadTheirs(session)).toBeUndefined();
 	expect(textSession(todos).path).toBe('todos/renamed.md');
-	expect(todos.current).toEqual({ path: 'todos/renamed.md', workspace: 'todos' });
+	expect(todos.current).toEqual({
+		path: 'todos/renamed.md',
+		workspace: 'todos',
+	});
 });
 
 // ============================================================================
@@ -679,7 +693,11 @@ test('a toggle on a closed todo replaces it, guarded by the version the list rea
 
 	// The listed version is stale now: the toggle refuses and writes nothing.
 	const stale = entry;
-	await writeElsewhere(todos, milk.path, '---\ntitle: Theirs\ndone: false\n---\n');
+	await writeElsewhere(
+		todos,
+		milk.path,
+		'---\ntitle: Theirs\ndone: false\n---\n',
+	);
 	expect(await todos.toggle(stale)).toContain('changed elsewhere');
 	expect(await text(todos, milk.path)).toContain('title: Theirs');
 });
@@ -716,9 +734,9 @@ test('renaming an open todo moves only its Markdown file after its saves land; i
 	await session.settled();
 	expect(await text(todos, 'todos/renamed.md')).toContain('after');
 	expect(await text(todos, `${stem}.md`)).toBeUndefined();
-	expect(
-		expectOk(await todos.folder.files.read(`${stem}.png`)).bytes,
-	).toEqual(PNG);
+	expect(expectOk(await todos.folder.files.read(`${stem}.png`)).bytes).toEqual(
+		PNG,
+	);
 });
 
 test('renaming an open todo whose save failed moves what was saved and saves the draft at the new path', async () => {
@@ -737,7 +755,11 @@ test('renaming an open todo whose save failed moves what was saved and saves the
 test('a rename of a conflicted todo is refused by the guard, and the draft stays', async () => {
 	const { todos } = await open();
 	const session = await addTodo(todos, 'Milk');
-	await writeElsewhere(todos, session.path, '---\ntitle: Theirs\ndone: false\n---\n');
+	await writeElsewhere(
+		todos,
+		session.path,
+		'---\ntitle: Theirs\ndone: false\n---\n',
+	);
 	session.edit((row) => {
 		row.fields.title = 'Mine';
 	});
@@ -763,9 +785,9 @@ test('deleting the open todo waits for its saves, removes only its Markdown file
 	expect(await text(todos, session.path)).toBeUndefined();
 	expect(todos.opened).toBeUndefined();
 	expect(todos.entries).toEqual([]);
-	expect(
-		expectOk(await todos.folder.files.read(`${stem}.png`)).bytes,
-	).toEqual(PNG);
+	expect(expectOk(await todos.folder.files.read(`${stem}.png`)).bytes).toEqual(
+		PNG,
+	);
 });
 
 test('edits made while the delete dialog is open are saved before the delete, which then removes the file', async () => {
@@ -784,7 +806,11 @@ test('a refused delete of the open todo reopens it as it is now, and it saves ag
 	const { todos } = await open();
 	const session = await addTodo(todos, 'Milk');
 	const deletion = expectOk(await todos.deletionFor(session.path));
-	await writeElsewhere(todos, session.path, '---\ntitle: Theirs\ndone: false\n---\n');
+	await writeElsewhere(
+		todos,
+		session.path,
+		'---\ntitle: Theirs\ndone: false\n---\n',
+	);
 	expect(await todos.remove(deletion)).toContain('changed elsewhere');
 	const reopened = todoSession(todos);
 	expect(reopened).not.toBe(session);
@@ -845,7 +871,11 @@ test('a refused delete after renaming the open todo reopens it at its new path',
 	const session = await addTodo(todos, 'Milk');
 	expect(await todos.rename(session.path, 'renamed.md')).toBeUndefined();
 	const deletion = expectOk(await todos.deletionFor('todos/renamed.md'));
-	await writeElsewhere(todos, 'todos/renamed.md', '---\ntitle: Theirs\ndone: false\n---\n');
+	await writeElsewhere(
+		todos,
+		'todos/renamed.md',
+		'---\ntitle: Theirs\ndone: false\n---\n',
+	);
 	expect(await todos.remove(deletion)).toContain('changed elsewhere');
 	const reopened = todoSession(todos);
 	expect(reopened).not.toBe(session);
@@ -855,10 +885,20 @@ test('a refused delete after renaming the open todo reopens it at its new path',
 
 test('Try again reads an item that failed to load again', async () => {
 	const { todos } = await open();
-	expect(await todos.open('todos/gone.md', 'todos')).toMatchObject({ kind: 'done' });
+	expect(await todos.open('todos/gone.md', 'todos')).toMatchObject({
+		kind: 'done',
+	});
 	expect(todos.opened?.kind).toBe('failed');
-	expect(await todos.open('todos/gone.md', 'todos')).toEqual({ kind: 'done', left: false });
-	expectOk(await todos.folder.files.create('todos/gone.md', '---\ntitle: Back\ndone: false\n---\n'));
+	expect(await todos.open('todos/gone.md', 'todos')).toEqual({
+		kind: 'done',
+		left: false,
+	});
+	expectOk(
+		await todos.folder.files.create(
+			'todos/gone.md',
+			'---\ntitle: Back\ndone: false\n---\n',
+		),
+	);
 	await todos.reload();
 	expect(todoSession(todos).draft.fields.title).toBe('Back');
 });
@@ -916,7 +956,9 @@ test('calls after close began change nothing', async () => {
 	expect(await todos.create('Late')).toBe(
 		'Todos is closing, so nothing was changed.',
 	);
-	expect(await todos.open('todos/x.md', 'todos')).toEqual({ kind: 'superseded' });
+	expect(await todos.open('todos/x.md', 'todos')).toEqual({
+		kind: 'superseded',
+	});
 	expect(todos.opened).toBeUndefined();
 });
 

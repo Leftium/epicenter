@@ -32,7 +32,9 @@ export async function capturedIndexMatchesHead(
 					if (path !== indexPath)
 						return access.fs.promises.readFile(path, ...args);
 					if (bytes === undefined)
-						throw Object.assign(new Error(`ENOENT: ${path}`), { code: 'ENOENT' });
+						throw Object.assign(new Error(`ENOENT: ${path}`), {
+							code: 'ENOENT',
+						});
 					return bytes.slice();
 				},
 			},
@@ -45,7 +47,10 @@ export async function capturedIndexMatchesHead(
 		trees: [git.TREE({ ref: head }), git.STAGE()],
 		async map(path, [tree, stage]) {
 			if (path === '.') return;
-			const [treeType, stageType] = await Promise.all([tree?.type(), stage?.type()]);
+			const [treeType, stageType] = await Promise.all([
+				tree?.type(),
+				stage?.type(),
+			]);
 			if (treeType !== stageType) matches = false;
 			if (treeType !== 'blob' || stageType !== 'blob') return;
 			if ((await tree?.oid()) !== (await stage?.oid())) matches = false;

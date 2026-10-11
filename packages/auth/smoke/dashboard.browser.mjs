@@ -220,8 +220,7 @@ try {
 		requireBearerPrincipal(resolveRequestSessionPrincipal),
 	);
 	app.get('/api/billing/overview', (c) => {
-		if (balanceUnavailable)
-			return c.text('Balance fixture unavailable', 503);
+		if (balanceUnavailable) return c.text('Balance fixture unavailable', 503);
 		return c.json({
 			planDisplayName: 'Free',
 			trial: null,

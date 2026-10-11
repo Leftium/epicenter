@@ -73,7 +73,9 @@ describe('#platform/folder', () => {
 			modules.filter(
 				(path) =>
 					/epicenter\/src\//.test(path) &&
-					!/epicenter\/src\/departure-(wire|window|page\.svelte)\.ts$/.test(path),
+					!/epicenter\/src\/departure-(wire|window|page\.svelte)\.ts$/.test(
+						path,
+					),
 			),
 		).toEqual([]);
 	});

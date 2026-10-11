@@ -565,8 +565,7 @@ test('a transfer resolves the repository by id with the scoped token, not a list
 	const withScoped = github.requests
 		.slice(before)
 		.filter(
-			(r) =>
-				r.headers.get('authorization') === `Bearer ${grant.accessToken}`,
+			(r) => r.headers.get('authorization') === `Bearer ${grant.accessToken}`,
 		);
 	expect(withScoped.map((r) => r.url)).toEqual([REPOSITORY_URL]);
 });
@@ -586,9 +585,9 @@ test('a scoped token that still lists the installation reaches only its reposito
 	]);
 	// Actual access is the paired repository only.
 	expect((await get(REPOSITORY_URL)).status).toBe(200);
-	expect(
-		(await get('https://api.github.com/repositories/9004')).status,
-	).toBe(404);
+	expect((await get('https://api.github.com/repositories/9004')).status).toBe(
+		404,
+	);
 	const refs = (name: string) =>
 		get(
 			`https://github.com/alice/${name}.git/info/refs?service=git-upload-pack`,

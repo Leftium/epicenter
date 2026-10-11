@@ -99,9 +99,14 @@ async function saved(page: Page) {
 
 /** The open capture's file, read through Edit as text, then back to the capture. */
 async function source(page: Page) {
-	await page.getByRole('button', { name: 'Edit as text', exact: true }).first().click();
+	await page
+		.getByRole('button', { name: 'Edit as text', exact: true })
+		.first()
+		.click();
 	const text = await fileText(page).inputValue();
-	await page.getByRole('button', { name: 'Open as capture', exact: true }).click();
+	await page
+		.getByRole('button', { name: 'Open as capture', exact: true })
+		.click();
 	await page.getByLabel('Capture text').waitFor();
 	return text;
 }
@@ -157,7 +162,9 @@ try {
 	assert.equal(await first.getByLabel('Capture text').inputValue(), text);
 	// Ctrl+Enter adds it, and the new capture opens ready for a thought.
 	await first.getByLabel('Capture text').press('Control+Enter');
-	await first.getByRole('button', { name: 'Edit as text', exact: true }).waitFor();
+	await first
+		.getByRole('button', { name: 'Edit as text', exact: true })
+		.waitFor();
 	await first.waitForFunction(
 		() => document.activeElement?.id === 'new-thought',
 	);
@@ -203,11 +210,15 @@ try {
 
 	// 4. Edit as text saves the complete file as typed, frontmatter included,
 	// and Open as capture goes back.
-	await first.getByRole('button', { name: 'Edit as text', exact: true }).click();
+	await first
+		.getByRole('button', { name: 'Edit as text', exact: true })
+		.click();
 	const edited = `${head.replace(/\n---$/, '\nunknownKey: kept\n---')}\n\n${text}\n\n## Thoughts\n\n- A question for next time\n  - nested point\n- Moving to Singapore\n  A longer thought\n- Typed in source\n\nTrailing note.\n`;
 	await fileText(first).fill(edited);
 	await saved(first);
-	await first.getByRole('button', { name: 'Open as capture', exact: true }).click();
+	await first
+		.getByRole('button', { name: 'Open as capture', exact: true })
+		.click();
 	await first.getByLabel('Capture text').waitFor();
 	assert.deepEqual(await thoughts(first), [
 		'A question for next time\n- nested point',
@@ -251,10 +262,10 @@ try {
 	await second.getByText('This capture changed elsewhere').waitFor();
 	await second.getByRole('button', { name: 'Keep mine' }).click();
 	await saved(second);
-	await first.getByRole('button', { name: 'Edit as text', exact: true }).click();
-	assert(
-		(await fileText(first).inputValue()).includes('\n\nSecond again\n\n'),
-	);
+	await first
+		.getByRole('button', { name: 'Edit as text', exact: true })
+		.click();
+	assert((await fileText(first).inputValue()).includes('\n\nSecond again\n\n'));
 	await first.getByRole('button', { name: 'Back to timeline' }).click();
 	await first.getByRole('heading', { name: 'Timeline' }).waitFor();
 

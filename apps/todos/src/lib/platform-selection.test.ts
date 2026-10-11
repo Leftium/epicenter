@@ -71,11 +71,13 @@ describe('#platform/folder', () => {
 		).toBe(true);
 		for (const published of ['departure-wire.ts', 'departure-window.ts'])
 			expect(
-				modules.some((path) => path.endsWith(`apps/epicenter/src/${published}`)),
+				modules.some((path) =>
+					path.endsWith(`apps/epicenter/src/${published}`),
+				),
 			).toBe(true);
-		expect(modules.some((path) => /@tauri-apps\/api\/.*webviewWindow/.test(path))).toBe(
-			true,
-		);
+		expect(
+			modules.some((path) => /@tauri-apps\/api\/.*webviewWindow/.test(path)),
+		).toBe(true);
 		expect(
 			modules.filter(
 				(path) =>

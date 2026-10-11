@@ -490,9 +490,7 @@ export function createFakeGitHub(clock: { now(): number }) {
 				page === 1
 					? [...installation.repositoryIds]
 							.map((id) => repositories.get(id))
-							.filter(
-								(r): r is FakeRepository => !!r && canSee(caller.user, r),
-							)
+							.filter((r): r is FakeRepository => !!r && canSee(caller.user, r))
 					: [];
 			return Response.json({
 				total_count: list.length,

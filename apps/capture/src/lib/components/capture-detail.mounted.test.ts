@@ -160,7 +160,9 @@ test('a thought typed and not added stays visible to copy when Reload theirs bri
 	click(button('Reload theirs'));
 	await Bun.sleep(5);
 	await settle(harness);
-	expect(harness.target.textContent).toContain('cannot be edited as text and thoughts');
+	expect(harness.target.textContent).toContain(
+		'cannot be edited as text and thoughts',
+	);
 	const pending = harness.target.querySelector<HTMLTextAreaElement>(
 		'[aria-label="Thought not added"]',
 	);

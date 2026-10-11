@@ -1,57 +1,57 @@
 {
-  "origin": "http://127.0.0.1:5297",
-  "profileRoot": "/var/folders/qx/9462vg517cvdtpjr4tt32_200000gn/T/zhongwen-app-sync-V3YSfs",
-  "steps": [
-    "Actual app saved expression and note while offline; OPFS bytes confirmed",
-    "Saved note survived browser profile reopen",
-    "Explicit app Sync completed",
-    "Second actual app browser profile bootstrapped from remote"
-  ],
-  "requests": [
-    {
-      "method": "GET",
-      "path": "/sync"
-    },
-    {
-      "method": "GET",
-      "path": "/__zhongwen/git/info/refs"
-    },
-    {
-      "method": "POST",
-      "path": "/__zhongwen/git/git-upload-pack"
-    },
-    {
-      "method": "GET",
-      "path": "/sync"
-    },
-    {
-      "method": "GET",
-      "path": "/__zhongwen/git/info/refs"
-    },
-    {
-      "method": "POST",
-      "path": "/__zhongwen/git/git-upload-pack"
-    },
-    {
-      "method": "GET",
-      "path": "/__zhongwen/git/info/refs"
-    },
-    {
-      "method": "POST",
-      "path": "/__zhongwen/git/git-receive-pack"
-    },
-    {
-      "method": "GET",
-      "path": "/sync"
-    },
-    {
-      "method": "GET",
-      "path": "/__zhongwen/git/info/refs"
-    },
-    {
-      "method": "POST",
-      "path": "/__zhongwen/git/git-upload-pack"
-    }
-  ],
-  "errors": []
+	"origin": "http://127.0.0.1:5297",
+	"profileRoot": "/var/folders/qx/9462vg517cvdtpjr4tt32_200000gn/T/zhongwen-app-sync-V3YSfs",
+	"steps": [
+		"Actual app saved expression and note while offline; OPFS bytes confirmed",
+		"Saved note survived browser profile reopen",
+		"Explicit app Sync completed",
+		"Second actual app browser profile bootstrapped from remote"
+	],
+	"requests": [
+		{
+			"method": "GET",
+			"path": "/sync"
+		},
+		{
+			"method": "GET",
+			"path": "/__zhongwen/git/info/refs"
+		},
+		{
+			"method": "POST",
+			"path": "/__zhongwen/git/git-upload-pack"
+		},
+		{
+			"method": "GET",
+			"path": "/sync"
+		},
+		{
+			"method": "GET",
+			"path": "/__zhongwen/git/info/refs"
+		},
+		{
+			"method": "POST",
+			"path": "/__zhongwen/git/git-upload-pack"
+		},
+		{
+			"method": "GET",
+			"path": "/__zhongwen/git/info/refs"
+		},
+		{
+			"method": "POST",
+			"path": "/__zhongwen/git/git-receive-pack"
+		},
+		{
+			"method": "GET",
+			"path": "/sync"
+		},
+		{
+			"method": "GET",
+			"path": "/__zhongwen/git/info/refs"
+		},
+		{
+			"method": "POST",
+			"path": "/__zhongwen/git/git-upload-pack"
+		}
+	],
+	"errors": []
 }

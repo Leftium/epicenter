@@ -29,8 +29,12 @@ export function createWindowDeparturePort(): DeparturePort {
 				for (const stop of stops.splice(0)) stop();
 			};
 			try {
-				stops.push(await window.listen(DEPARTURE_CHANGED_EVENT, () => changed()));
-				stops.push(await window.listen(HOST_STOPPED_EVENT, () => hostStopped()));
+				stops.push(
+					await window.listen(DEPARTURE_CHANGED_EVENT, () => changed()),
+				);
+				stops.push(
+					await window.listen(HOST_STOPPED_EVENT, () => hostStopped()),
+				);
 				stops.push(
 					await window.onFocusChanged(({ payload: isFocused }) => {
 						if (isFocused) focused();

@@ -73,7 +73,10 @@ import {
 	type HomeServerOptions,
 	type HomeSessionResponse,
 } from './server.ts';
-import { type ReadyFrame, SIDECAR_PROTOCOL_VERSION } from './sidecar-runtime.ts';
+import {
+	type ReadyFrame,
+	SIDECAR_PROTOCOL_VERSION,
+} from './sidecar-runtime.ts';
 import {
 	type EpicenterStaticAssets,
 	loadStaticAssets,

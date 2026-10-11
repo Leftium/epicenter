@@ -13,12 +13,12 @@ import {
 	type GitService,
 	NATIVE_GIT_ROUTE,
 } from './account-git-relay.ts';
+import { COMPILED_APPLICATIONS } from './applications.ts';
 import { createDesktopAuthAuthority } from './desktop-auth-authority.ts';
 import { createHomeHost } from './host.ts';
 import { createHomeServer } from './server.ts';
-import { writeAppsDist } from './test-apps-dist.ts';
 import { loadStaticAssets } from './static-assets.ts';
-import { COMPILED_APPLICATIONS } from './applications.ts';
+import { writeAppsDist } from './test-apps-dist.ts';
 
 const API = 'https://api.epicenter.so';
 const ORIGIN = 'http://127.0.0.1:49152';
@@ -101,20 +101,31 @@ function relayRequest(
 	url: string,
 	init: RequestInit & { headers?: Record<string, string> } = {},
 ) {
-	return new Request(url, { ...init, headers: { host: HOST, ...init.headers } });
+	return new Request(url, {
+		...init,
+		headers: { host: HOST, ...init.headers },
+	});
 }
 
 function split(url: string) {
 	const path = new URL(url).pathname;
 	const [token] = path.slice(GIT_RELAY_ROUTE.length + 1).split('/');
-	return { token: token!, rest: path.slice(GIT_RELAY_ROUTE.length + 1 + token!.length) };
+	return {
+		token: token!,
+		rest: path.slice(GIT_RELAY_ROUTE.length + 1 + token!.length),
+	};
 }
 
 function start(
 	relay: ReturnType<typeof signedIn>['relay'],
 	service: GitService = 'git-upload-pack',
 ) {
-	const started = relay.start({ account: ALICE, folderId: FOLDER, revision: REVISION, service });
+	const started = relay.start({
+		account: ALICE,
+		folderId: FOLDER,
+		revision: REVISION,
+		service,
+	});
 	if ('error' in started) throw new Error(started.message);
 	return started;
 }
@@ -162,10 +173,16 @@ test('starting refuses signed out, another account, a malformed request, and a d
 
 	const { auth, relay } = signedIn(() => new Response('unused'));
 	expect(
-		relay.start({ ...request, account: { ...ALICE, principalId: 'mallory' } as AccountIdentity }),
+		relay.start({
+			...request,
+			account: { ...ALICE, principalId: 'mallory' } as AccountIdentity,
+		}),
 	).toMatchObject({ error: 'account-mismatch' });
 	expect(
-		relay.start({ ...request, account: { ...ALICE, authorityId: 'other' } as AccountIdentity }),
+		relay.start({
+			...request,
+			account: { ...ALICE, authorityId: 'other' } as AccountIdentity,
+		}),
 	).toMatchObject({ error: 'account-mismatch' });
 	for (const invalid of [
 		{ folderId: '../escape' },
@@ -174,7 +191,9 @@ test('starting refuses signed out, another account, a malformed request, and a d
 		{ revision: `${REVISION}/x` },
 		{ service: 'git-upload-archive' },
 	])
-		expect(relay.start({ ...request, ...invalid } as typeof request)).toMatchObject({
+		expect(
+			relay.start({ ...request, ...invalid } as typeof request),
+		).toMatchObject({
 			error: 'invalid-request',
 		});
 	expect(relay.size).toBe(0);
@@ -260,7 +279,9 @@ test('a streamed RPC body keeps keepalive: false through the Account and reaches
 	expect(response.status).toBe(200);
 	expect(await response.text()).toBe('pack');
 	expect(sent).toHaveLength(1);
-	expect(sent[0]!.url).toBe(`${CONNECTOR}/git/${FOLDER}/${REVISION}/git-receive-pack`);
+	expect(sent[0]!.url).toBe(
+		`${CONNECTOR}/git/${FOLDER}/${REVISION}/git-receive-pack`,
+	);
 	expect(sent[0]!.body).toBe('0000PACK-bytes');
 	// The Account wrapped the stream in a Request; the option still reached fetch.
 	expect(sent[0]!.init?.keepalive).toBe(false);
@@ -271,14 +292,26 @@ test('a streamed RPC body keeps keepalive: false through the Account and reaches
 test('only the relay service, method, path, and content type are forwarded', async () => {
 	const { auth, relay, sent } = signedIn(() => new Response('unexpected'));
 	const started = start(relay);
-	const ask = (path: string, init: RequestInit & { headers?: Record<string, string> } = {}) => {
+	const ask = (
+		path: string,
+		init: RequestInit & { headers?: Record<string, string> } = {},
+	) => {
 		const { token, rest } = split(`${started.url}${path.split('?')[0]}`);
-		return relay.handle(relayRequest(`${started.url}${path}`, init), token, rest);
+		return relay.handle(
+			relayRequest(`${started.url}${path}`, init),
+			token,
+			rest,
+		);
 	};
 	expect((await ask('/info/refs?service=git-receive-pack')).status).toBe(403);
 	expect((await ask('/info/refs')).status).toBe(403);
-	expect((await ask('/info/refs?service=git-upload-pack&x=1')).status).toBe(403);
-	expect((await ask('/info/refs?service=git-upload-pack', { method: 'POST' })).status).toBe(405);
+	expect((await ask('/info/refs?service=git-upload-pack&x=1')).status).toBe(
+		403,
+	);
+	expect(
+		(await ask('/info/refs?service=git-upload-pack', { method: 'POST' }))
+			.status,
+	).toBe(405);
 	expect((await ask('/git-receive-pack', { method: 'POST' })).status).toBe(403);
 	expect((await ask('/git-upload-pack')).status).toBe(405);
 	expect(
@@ -301,7 +334,13 @@ test('only the relay service, method, path, and content type are forwarded', asy
 		).status,
 	).toBe(403);
 	expect(
-		(await relay.handle(relayRequest(`${ORIGIN}/x`), 'f'.repeat(64), '/repo.git/info/refs')).status,
+		(
+			await relay.handle(
+				relayRequest(`${ORIGIN}/x`),
+				'f'.repeat(64),
+				'/repo.git/info/refs',
+			)
+		).status,
 	).toBe(404);
 	expect(sent).toHaveLength(0);
 	auth[Symbol.dispose]();
@@ -310,7 +349,10 @@ test('only the relay service, method, path, and content type are forwarded', asy
 test('redirects, session refusals, and connector refusals reach Git as a plain 502, once, and are kept for retirement', async () => {
 	for (const [answer, failure] of [
 		[
-			new Response(null, { status: 307, headers: { location: 'https://evil.test/' } }),
+			new Response(null, {
+				status: 307,
+				headers: { location: 'https://evil.test/' },
+			}),
 			{ reason: 'redirect', status: 307 },
 		],
 		[
@@ -323,14 +365,20 @@ test('redirects, session refusals, and connector refusals reach Git as a plain 5
 		[
 			Response.json(
 				{ error: 'scoped_token_rejected' },
-				{ status: 403, headers: { 'x-epicenter-git-error': 'scoped_token_rejected' } },
+				{
+					status: 403,
+					headers: { 'x-epicenter-git-error': 'scoped_token_rejected' },
+				},
 			),
 			{ reason: 'connector', status: 403, code: 'scoped_token_rejected' },
 		],
 		[
 			Response.json(
 				{ error: 'pairing_superseded' },
-				{ status: 409, headers: { 'x-epicenter-git-error': 'pairing_superseded' } },
+				{
+					status: 409,
+					headers: { 'x-epicenter-git-error': 'pairing_superseded' },
+				},
 			),
 			{ reason: 'connector', status: 409, code: 'pairing_superseded' },
 		],
@@ -349,7 +397,9 @@ test('redirects, session refusals, and connector refusals reach Git as a plain 5
 		expect(response.headers.get('www-authenticate')).toBeNull();
 		// No retry here; a post-admission 403 is final for this request. The
 		// Account's own replay needs a replaced credential, which this is not.
-		expect(sent.filter((request) => request.url.includes('/git/'))).toHaveLength(1);
+		expect(
+			sent.filter((request) => request.url.includes('/git/')),
+		).toHaveLength(1);
 		expect(relay.retire(started.id)).toEqual({ retired: true, failure });
 		auth[Symbol.dispose]();
 	}
@@ -361,7 +411,9 @@ test('retiring aborts the in-flight upstream request and closes the path; retiri
 		(sent) =>
 			new Promise<Response>((_, reject) => {
 				entered.resolve(sent.signal!);
-				sent.signal!.addEventListener('abort', () => reject(sent.signal!.reason));
+				sent.signal!.addEventListener('abort', () =>
+					reject(sent.signal!.reason),
+				);
 			}),
 	);
 	const started = start(relay);
@@ -402,7 +454,11 @@ test('disposing the Account retires every relay at once, mid-response', async ()
 						);
 					},
 				}),
-				{ headers: { 'content-type': 'application/x-git-upload-pack-advertisement' } },
+				{
+					headers: {
+						'content-type': 'application/x-git-upload-pack-advertisement',
+					},
+				},
 			),
 	);
 	const one = start(relay);
@@ -435,7 +491,10 @@ test('pairing discovery reads one folder through the boot Account and refuses wh
 	const { auth, relay, sent } = signedIn(() => answer.clone());
 	expect(await relay.pairing(ALICE, FOLDER)).toEqual({
 		pairing: {
-			account: { authorityId: 'epicenter-api', principalId: 'alice' } as AccountIdentity,
+			account: {
+				authorityId: 'epicenter-api',
+				principalId: 'alice',
+			} as AccountIdentity,
 			folderId: FOLDER,
 			revision: REVISION,
 			repository: pairing.repository,
@@ -447,14 +506,24 @@ test('pairing discovery reads one folder through the boot Account and refuses wh
 	expect(sent[0]!.headers.authorization).toBe('Bearer alice-token');
 
 	const cases: [Response, object][] = [
-		[Response.json({ pairings: [] }), { error: 'pairing-not-found', status: 404 }],
 		[
-			Response.json({ pairings: [{ ...pairing, status: 'github_authorization_required' }] }),
+			Response.json({ pairings: [] }),
+			{ error: 'pairing-not-found', status: 404 },
+		],
+		[
+			Response.json({
+				pairings: [{ ...pairing, status: 'github_authorization_required' }],
+			}),
 			{ error: 'not-ready', code: 'github_authorization_required' },
 		],
 		[
 			Response.json({
-				pairings: [{ ...pairing, remote: { ...pairing.remote, url: 'https://evil.test/a/b.git' } }],
+				pairings: [
+					{
+						...pairing,
+						remote: { ...pairing.remote, url: 'https://evil.test/a/b.git' },
+					},
+				],
 			}),
 			{ error: 'invalid-pairing' },
 		],
@@ -465,18 +534,27 @@ test('pairing discovery reads one folder through the boot Account and refuses wh
 		[
 			Response.json(
 				{ error: 'github_authorization_required' },
-				{ status: 403, headers: { 'x-epicenter-git-error': 'github_authorization_required' } },
+				{
+					status: 403,
+					headers: { 'x-epicenter-git-error': 'github_authorization_required' },
+				},
 			),
 			{ error: 'not-ready', code: 'github_authorization_required' },
 		],
 		[
 			Response.json(
 				{ error: 'upstream_unavailable' },
-				{ status: 503, headers: { 'x-epicenter-git-error': 'upstream_unavailable' } },
+				{
+					status: 503,
+					headers: { 'x-epicenter-git-error': 'upstream_unavailable' },
+				},
 			),
 			{ error: 'connector', code: 'upstream_unavailable' },
 		],
-		[new Response(null, { status: 302, headers: { location: '/' } }), { error: 'unavailable' }],
+		[
+			new Response(null, { status: 302, headers: { location: '/' } }),
+			{ error: 'unavailable' },
+		],
 		[new Response('not json'), { error: 'invalid-pairing' }],
 		// The Epicenter session itself, last: the Account pauses after it.
 		[new Response(null, { status: 401 }), { error: 'session', status: 401 }],
@@ -489,22 +567,41 @@ test('pairing discovery reads one folder through the boot Account and refuses wh
 		// A person is told something plain, never who the principal is.
 		expect('message' in result && result.message).not.toContain('alice');
 	}
-	expect(await relay.pairing({ ...ALICE, principalId: 'bob' } as AccountIdentity, FOLDER)).toMatchObject({
+	expect(
+		await relay.pairing(
+			{ ...ALICE, principalId: 'bob' } as AccountIdentity,
+			FOLDER,
+		),
+	).toMatchObject({
 		error: 'account-mismatch',
 	});
-	expect(await relay.pairing(ALICE, '../x')).toMatchObject({ error: 'invalid-request' });
+	expect(await relay.pairing(ALICE, '../x')).toMatchObject({
+		error: 'invalid-request',
+	});
 	auth[Symbol.dispose]();
 });
 
 test('the host serves native controls only to the launch token without an Origin or cookie, and relay paths to Git', async () => {
-	await using host = await createHomeHost({ model: 'test', engine: async function* () {} });
+	await using host = await createHomeHost({
+		model: 'test',
+		engine: async function* () {},
+	});
 	const page = '<!doctype html><html><head></head><body></body></html>';
-	const directory = writeAppsDist({ homePage: page, applicationPage: () => page });
-	const staticAssets = await loadStaticAssets(directory, COMPILED_APPLICATIONS, []);
+	const directory = writeAppsDist({
+		homePage: page,
+		applicationPage: () => page,
+	});
+	const staticAssets = await loadStaticAssets(
+		directory,
+		COMPILED_APPLICATIONS,
+		[],
+	);
 	const { auth, relay, sent } = signedIn(
 		() =>
 			new Response('ad', {
-				headers: { 'content-type': 'application/x-git-upload-pack-advertisement' },
+				headers: {
+					'content-type': 'application/x-git-upload-pack-advertisement',
+				},
 			}),
 	);
 	const { app } = createHomeServer({
@@ -518,7 +615,11 @@ test('the host serves native controls only to the launch token without an Origin
 		desktopAuth: auth,
 		gitRelay: relay,
 	});
-	const control = (path: string, body: unknown, headers: Record<string, string> = {}) =>
+	const control = (
+		path: string,
+		body: unknown,
+		headers: Record<string, string> = {},
+	) =>
 		app.request(`${ORIGIN}${NATIVE_GIT_ROUTE}${path}`, {
 			method: 'POST',
 			headers: {
@@ -535,28 +636,52 @@ test('the host serves native controls only to the launch token without an Origin
 		revision: REVISION,
 		service: 'git-upload-pack',
 	};
-	expect((await control('/relays', startBody, { authorization: 'Bearer nope' })).status).toBe(401);
-	expect((await control('/relays', startBody, { authorization: '' })).status).toBe(401);
-	expect((await control('/relays', startBody, { origin: ORIGIN })).status).toBe(403);
-	expect((await control('/relays', startBody, { cookie: 'epicenter_session=x' })).status).toBe(403);
-	expect((await control('/relays', startBody, { host: 'localhost:49152' })).status).toBe(421);
-	expect((await control('/relays', { ...startBody, extra: true })).status).toBe(400);
 	expect(
-		(await control('/relays', { ...startBody, account: { ...ALICE, token: 'x' } })).status,
+		(await control('/relays', startBody, { authorization: 'Bearer nope' }))
+			.status,
+	).toBe(401);
+	expect(
+		(await control('/relays', startBody, { authorization: '' })).status,
+	).toBe(401);
+	expect((await control('/relays', startBody, { origin: ORIGIN })).status).toBe(
+		403,
+	);
+	expect(
+		(await control('/relays', startBody, { cookie: 'epicenter_session=x' }))
+			.status,
+	).toBe(403);
+	expect(
+		(await control('/relays', startBody, { host: 'localhost:49152' })).status,
+	).toBe(421);
+	expect((await control('/relays', { ...startBody, extra: true })).status).toBe(
+		400,
+	);
+	expect(
+		(
+			await control('/relays', {
+				...startBody,
+				account: { ...ALICE, token: 'x' },
+			})
+		).status,
 	).toBe(400);
 	expect(relay.size).toBe(0);
 
 	const started = await control('/relays', startBody);
 	expect(started.status).toBe(200);
 	expect(started.headers.get('cache-control')).toBe('no-store');
-	const { relay: handle } = (await started.json()) as { relay: { id: string; url: string } };
+	const { relay: handle } = (await started.json()) as {
+		relay: { id: string; url: string };
+	};
 	expect(handle.url.startsWith(`${ORIGIN}${GIT_RELAY_ROUTE}/`)).toBe(true);
 	expect(handle.url).not.toContain('launch');
 
 	// Git reaches the relay on the same listener with no launch token.
-	const advertised = await app.request(`${handle.url}/info/refs?service=git-upload-pack`, {
-		headers: { host: HOST, 'git-protocol': 'version=2' },
-	});
+	const advertised = await app.request(
+		`${handle.url}/info/refs?service=git-upload-pack`,
+		{
+			headers: { host: HOST, 'git-protocol': 'version=2' },
+		},
+	);
 	expect(advertised.status).toBe(200);
 	expect(await advertised.text()).toBe('ad');
 	expect(sent.at(-1)!.headers.authorization).toBe('Bearer alice-token');
@@ -570,10 +695,15 @@ test('the host serves native controls only to the launch token without an Origin
 			})
 		).status,
 	).toBe(404);
-	expect(await (await control(`/relays/${handle.id}/retire`, {})).json()).toEqual({
+	expect(
+		await (await control(`/relays/${handle.id}/retire`, {})).json(),
+	).toEqual({
 		retired: false,
 	});
-	const refused = await control('/relays', { ...startBody, account: { ...ALICE, principalId: 'bob' } });
+	const refused = await control('/relays', {
+		...startBody,
+		account: { ...ALICE, principalId: 'bob' },
+	});
 	expect(refused.status).toBe(409);
 	expect(await refused.json()).toMatchObject({ error: 'account-mismatch' });
 	auth[Symbol.dispose]();

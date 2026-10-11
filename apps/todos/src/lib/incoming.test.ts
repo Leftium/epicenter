@@ -27,6 +27,12 @@ import './svelte-modules.test-support.js';
 import { afterAll, afterEach, beforeAll, expect, test } from 'bun:test';
 import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import type {
+	AutosaveError,
+	FileError,
+	RowSaveError,
+	SaveState,
+} from '@epicenter/folder';
 import { parseRow } from '@epicenter/folder';
 import { openFolder } from '@epicenter/folder/browser';
 import { expectErr, expectOk } from 'wellcrafted/testing';
@@ -43,8 +49,9 @@ import {
 import { todosDefinition } from './definition.js';
 import type { TodosFolder } from './platform/types.js';
 import { incomingLine, recoveryLine } from './status.js';
-import type { AutosaveError, FileError, RowSaveError, SaveState } from '@epicenter/folder';
+
 type SessionState = SaveState<RowSaveError | FileError | AutosaveError>;
+
 import type { Todos } from './todos.svelte.js';
 
 /** The open item's session, whatever kind. */

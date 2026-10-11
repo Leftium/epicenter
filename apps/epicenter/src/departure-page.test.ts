@@ -471,7 +471,7 @@ test('a page holding something answers asking, settles, and answers ready when n
 	expect(owner.fenced).toBe(true);
 });
 
-test('what is left after settling is the person\'s choice; Keep working cancels the round and gives the owner back', async () => {
+test("what is left after settling is the person's choice; Keep working cancels the round and gives the owner back", async () => {
 	const { host, departure, owner } = await prompted(2);
 	expect(departure.notice).toEqual({
 		stage: 'choose',
@@ -551,7 +551,10 @@ test('a newer round that arrives while the person chooses is handled from the st
 	expect(departure.notice).toEqual({ stage: 'saving', intent: 'restart' });
 	owner.settled(1);
 	await settle();
-	expect(departure.notice).toMatchObject({ stage: 'choose', intent: 'restart' });
+	expect(departure.notice).toMatchObject({
+		stage: 'choose',
+		intent: 'restart',
+	});
 	// Never given back between the rounds.
 	expect(owner.events).toEqual(['fence', 'settle', 'settle']);
 	expect(host.answers.map((answer) => [answer.round, answer.answer])).toEqual([
@@ -607,7 +610,9 @@ test('granted, leaving, and a discarded vote stay fenced and dismiss the prompt;
 		const reads = host.calls.filter((call) => call === 'status').length;
 		host.focus();
 		await settle();
-		expect(host.calls.filter((call) => call === 'status').length).toBe(reads + 1);
+		expect(host.calls.filter((call) => call === 'status').length).toBe(
+			reads + 1,
+		);
 		expect(answersOf(host)).toEqual(['asking']);
 		expect(owner.events).toEqual(['fence', 'settle']);
 	}

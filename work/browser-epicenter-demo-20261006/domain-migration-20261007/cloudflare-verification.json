@@ -1,64 +1,64 @@
 {
-  "newDomain": {
-    "id": "6d8b1d3b09093acb4de40858e26d7a520e9f6082",
-    "zone_id": "e603c7412ebc3b838860b9925d52af41",
-    "zone_name": "bradenwong.com",
-    "hostname": "zhongwen.bradenwong.com",
-    "service": "zhongwen",
-    "environment": "production",
-    "cert_id": "6ab7b3a5-4729-4797-8283-34cc42c63a9c",
-    "previews_enabled": false,
-    "enabled": true
-  },
-  "oldDomain": "zhongwen.epicenter.so",
-  "oldDomainAttached": false,
-  "oldWorkerEntrypoints": {
-    "enabled": false,
-    "previews_enabled": false
-  },
-  "oldWorkerRetained": true,
-  "otherOldAccountDomainBindings": [
-    {
-      "hostname": "proxy.epicenter.so",
-      "service": "posthog-reverse-proxy"
-    },
-    {
-      "hostname": "opensidian.com",
-      "service": "opensidian"
-    },
-    {
-      "hostname": "opensidian.epicenter.so",
-      "service": "opensidian"
-    },
-    {
-      "hostname": "honeycrisp.epicenter.so",
-      "service": "honeycrisp"
-    },
-    {
-      "hostname": "theark.so",
-      "service": "theark"
-    },
-    {
-      "hostname": "whispering.epicenter.so",
-      "service": "whispering"
-    },
-    {
-      "hostname": "api.epicenter.so",
-      "service": "api"
-    }
-  ],
-  "apiNamespaces": [
-    {
-      "name": "DEMO_GENERATION_BUDGET",
-      "namespaceId": "7170b885d36b47029bc74eecdedbbf5a"
-    },
-    {
-      "name": "GENERATIONS_LEDGER",
-      "namespaceId": "c314f26fa32840c7a994602757d0bc0f"
-    },
-    {
-      "name": "STORE_AUTHORITY",
-      "namespaceId": "8928d4c933ff48adb4a0de3c5d37d763"
-    }
-  ]
+	"newDomain": {
+		"id": "6d8b1d3b09093acb4de40858e26d7a520e9f6082",
+		"zone_id": "e603c7412ebc3b838860b9925d52af41",
+		"zone_name": "bradenwong.com",
+		"hostname": "zhongwen.bradenwong.com",
+		"service": "zhongwen",
+		"environment": "production",
+		"cert_id": "6ab7b3a5-4729-4797-8283-34cc42c63a9c",
+		"previews_enabled": false,
+		"enabled": true
+	},
+	"oldDomain": "zhongwen.epicenter.so",
+	"oldDomainAttached": false,
+	"oldWorkerEntrypoints": {
+		"enabled": false,
+		"previews_enabled": false
+	},
+	"oldWorkerRetained": true,
+	"otherOldAccountDomainBindings": [
+		{
+			"hostname": "proxy.epicenter.so",
+			"service": "posthog-reverse-proxy"
+		},
+		{
+			"hostname": "opensidian.com",
+			"service": "opensidian"
+		},
+		{
+			"hostname": "opensidian.epicenter.so",
+			"service": "opensidian"
+		},
+		{
+			"hostname": "honeycrisp.epicenter.so",
+			"service": "honeycrisp"
+		},
+		{
+			"hostname": "theark.so",
+			"service": "theark"
+		},
+		{
+			"hostname": "whispering.epicenter.so",
+			"service": "whispering"
+		},
+		{
+			"hostname": "api.epicenter.so",
+			"service": "api"
+		}
+	],
+	"apiNamespaces": [
+		{
+			"name": "DEMO_GENERATION_BUDGET",
+			"namespaceId": "7170b885d36b47029bc74eecdedbbf5a"
+		},
+		{
+			"name": "GENERATIONS_LEDGER",
+			"namespaceId": "c314f26fa32840c7a994602757d0bc0f"
+		},
+		{
+			"name": "STORE_AUTHORITY",
+			"namespaceId": "8928d4c933ff48adb4a0de3c5d37d763"
+		}
+	]
 }

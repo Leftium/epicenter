@@ -1,46 +1,46 @@
 {
-  "date": "2026-10-05",
-  "scope": "App shared definition forwarding",
-  "status": "completed; source cleanup recorded in a focused commit",
-  "files": {
-    "packages/app/src/index.ts": {
-      "beforeSha256": "40cd3b220b5df2b49bffbfcdadef8761b545bb406c36a50da9d081f33d272a9b",
-      "afterSha256": "252c05792e6be2c7c6adde45b0dbaedc81b433dcfe93030626cdfe3d6082a72e"
-    },
-    "packages/app/src/data/definition/index.ts": {
-      "beforeSha256": "078792b59ca23732a687bf6e6f3b4f076032b5c098914a525095e9c2d029234c",
-      "afterSha256": "229970652cdc315809f9f977f12cb9b92ade22c993dc0316ab80785cf3ca1271"
-    },
-    "packages/app/src/data/definition/json.ts": {
-      "beforeSha256": "a49fa6fe6069b1ca71a614983ebc277faf7fd84204099de9cd27a1a4213b5751",
-      "afterSha256": null
-    },
-    "packages/app/evidence/data/raw-document.ts": {
-      "beforeSha256": "9a770bcec5e46d37d18b633dee94eaf02b423a77439c1df4312e355859b00a9a",
-      "afterSha256": "1c601f1406904392e43a71711a553e051c0d117574c477e4600caa1ec59af1bf"
-    },
-    "packages/app/src/data/artifact/frontmatter.ts": {
-      "beforeSha256": "84a0529acb48dfb4acef5fc05afd45ae68066891a04e708b73e2d637fdce5bf5",
-      "afterSha256": "2e85d7c6b1848077d9138d59d05a6f4bc8d828880467e4c953af0cdd448dc54e"
-    },
-    "scripts/epicenter.ts": {
-      "beforeSha256": "e068a6f74f5395e61e5a4534b228acdddc46de6371687f0bd1754bb3608c2c32",
-      "afterSha256": "21cbee3797bce739799028796b461e0fbf8a60ba8a89e3e2e31e98aff8425c99"
-    },
-    "packages/app/src/data/definition/define.ts": {
-      "beforeSha256": "e031adac31355001b3adfd209e35f01c2bd803c43d01bf8d16062f84b6cb1915",
-      "afterSha256": "a35f08b6c999b2453b87934994b469e9c233f19d0406833f94ed4cd9d2154efc"
-    }
-  },
-  "review": "/tmp/epicenter-collapse-json-20261005/review.txt",
-  "patch": "/tmp/epicenter-collapse-json-20261005/cleanup.patch",
-  "verification": {
-    "appTests": 630,
-    "cliValidationTests": 35,
-    "appTypecheck": "seven targets passed",
-    "scriptsTypecheck": "passed",
-    "publicExportIdentity": "passed from App package",
-    "biome": "passed"
-  },
-  "coordination": "CLI import hunk isolated from active implementation; unrelated staged work preserved."
+	"date": "2026-10-05",
+	"scope": "App shared definition forwarding",
+	"status": "completed; source cleanup recorded in a focused commit",
+	"files": {
+		"packages/app/src/index.ts": {
+			"beforeSha256": "40cd3b220b5df2b49bffbfcdadef8761b545bb406c36a50da9d081f33d272a9b",
+			"afterSha256": "252c05792e6be2c7c6adde45b0dbaedc81b433dcfe93030626cdfe3d6082a72e"
+		},
+		"packages/app/src/data/definition/index.ts": {
+			"beforeSha256": "078792b59ca23732a687bf6e6f3b4f076032b5c098914a525095e9c2d029234c",
+			"afterSha256": "229970652cdc315809f9f977f12cb9b92ade22c993dc0316ab80785cf3ca1271"
+		},
+		"packages/app/src/data/definition/json.ts": {
+			"beforeSha256": "a49fa6fe6069b1ca71a614983ebc277faf7fd84204099de9cd27a1a4213b5751",
+			"afterSha256": null
+		},
+		"packages/app/evidence/data/raw-document.ts": {
+			"beforeSha256": "9a770bcec5e46d37d18b633dee94eaf02b423a77439c1df4312e355859b00a9a",
+			"afterSha256": "1c601f1406904392e43a71711a553e051c0d117574c477e4600caa1ec59af1bf"
+		},
+		"packages/app/src/data/artifact/frontmatter.ts": {
+			"beforeSha256": "84a0529acb48dfb4acef5fc05afd45ae68066891a04e708b73e2d637fdce5bf5",
+			"afterSha256": "2e85d7c6b1848077d9138d59d05a6f4bc8d828880467e4c953af0cdd448dc54e"
+		},
+		"scripts/epicenter.ts": {
+			"beforeSha256": "e068a6f74f5395e61e5a4534b228acdddc46de6371687f0bd1754bb3608c2c32",
+			"afterSha256": "21cbee3797bce739799028796b461e0fbf8a60ba8a89e3e2e31e98aff8425c99"
+		},
+		"packages/app/src/data/definition/define.ts": {
+			"beforeSha256": "e031adac31355001b3adfd209e35f01c2bd803c43d01bf8d16062f84b6cb1915",
+			"afterSha256": "a35f08b6c999b2453b87934994b469e9c233f19d0406833f94ed4cd9d2154efc"
+		}
+	},
+	"review": "/tmp/epicenter-collapse-json-20261005/review.txt",
+	"patch": "/tmp/epicenter-collapse-json-20261005/cleanup.patch",
+	"verification": {
+		"appTests": 630,
+		"cliValidationTests": 35,
+		"appTypecheck": "seven targets passed",
+		"scriptsTypecheck": "passed",
+		"publicExportIdentity": "passed from App package",
+		"biome": "passed"
+	},
+	"coordination": "CLI import hunk isolated from active implementation; unrelated staged work preserved."
 }

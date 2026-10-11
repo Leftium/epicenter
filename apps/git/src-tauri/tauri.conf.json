@@ -27,24 +27,17 @@
 			}
 		],
 		"security": {
-			"capabilities": [
-				"main"
-			],
+			"capabilities": ["main"],
 			"csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' ipc: http://ipc.localhost; object-src 'none'; base-uri 'self'; frame-ancestors 'none'"
 		}
 	},
 	"bundle": {
 		"active": true,
-		"targets": [
-			"app"
-		],
+		"targets": ["app"],
 		"category": "Productivity",
 		"publisher": "Epicenter",
 		"copyright": "Copyright \u00a9 2026 Epicenter",
 		"shortDescription": "A file editor and Git synchronization testbed",
-		"icon": [
-			"icons/icon.png",
-			"icons/icon.icns"
-		]
+		"icon": ["icons/icon.png", "icons/icon.icns"]
 	}
 }

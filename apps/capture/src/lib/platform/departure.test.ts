@@ -17,14 +17,9 @@ import '../svelte-modules.test-support.js';
 import { expect, test } from 'bun:test';
 import type { Departure } from '@epicenter/epicenter/departure/page';
 import { createFakeHost } from '../../../../epicenter/src/departure-page.test-support.js';
-import {
-	openCapture,
-	openCaptures,
-} from '../browser-folder.test-support.js';
+import { openCapture, openCaptures } from '../browser-folder.test-support.js';
 
-const { createDeparture } = await import(
-	'@epicenter/epicenter/departure/page'
-);
+const { createDeparture } = await import('@epicenter/epicenter/departure/page');
 
 /** Let reads, answers, saves, and settles run. */
 async function settle() {

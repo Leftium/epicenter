@@ -348,7 +348,8 @@ test('a discard after Reload theirs reopened the item applies to the session the
 	text.input('---\ntitle: [still broken\n---\nMine.\n');
 	expect((await text.settled()).status).toBe('error');
 	const opening = await notes.open(B);
-	if (opening.kind !== 'unsaved') throw new Error(`Expected unsaved, got ${opening.kind}`);
+	if (opening.kind !== 'unsaved')
+		throw new Error(`Expected unsaved, got ${opening.kind}`);
 	expect(opening.session).toBe(text);
 	// The session from before the swap discards nothing.
 	expect((await notes.open(B, { discard: before })).kind).toBe('unsaved');

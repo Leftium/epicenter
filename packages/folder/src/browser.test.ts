@@ -793,9 +793,7 @@ describe('browser terminal', () => {
 		});
 		status = await terminal.exec('git status');
 		expect(status.stderr).toBe('');
-		expect(status.stdout).toBe(
-			'## main\n?? epicenter.json\n?? todos/one.md\n',
-		);
+		expect(status.stdout).toBe('## main\n?? epicenter.json\n?? todos/one.md\n');
 
 		await terminal.exec('echo "more" >> notes.txt');
 		status = await terminal.exec('git status --short');

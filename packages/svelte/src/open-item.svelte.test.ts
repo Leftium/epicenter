@@ -278,10 +278,12 @@ test('keyed slots open and leave independently', async () => {
 	await items.slot('right').open('b');
 	const a = items.slot('left').session!;
 	expect(items.keys().sort()).toEqual(['left', 'right']);
-	expect(items.sessions().map((session) => session.path).sort()).toEqual([
-		'a',
-		'b',
-	]);
+	expect(
+		items
+			.sessions()
+			.map((session) => session.path)
+			.sort(),
+	).toEqual(['a', 'b']);
 
 	// Opening in one slot leaves only that slot's item.
 	await items.slot('right').open('c');

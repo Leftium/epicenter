@@ -20,16 +20,14 @@ import { afterEach, expect, test } from 'bun:test';
 import { openFolder } from '@epicenter/folder/browser';
 import { expectOk } from 'wellcrafted/testing';
 import { testBrowserStorage } from '../../../../../packages/folder/src/browser-storage.test-support.js';
-import { todosDefinition } from '../../lib/definition.js';
 import { createFakeHost } from '../../../../epicenter/src/departure-page.test-support.js';
+import { todosDefinition } from '../../lib/definition.js';
 import { click } from '../../lib/svelte-dom.test-support.js';
 import type { Todos } from '../../lib/todos.svelte.js';
 
 const { flushSync, mount, unmount } = await import('svelte');
 const { createTodos } = await import('../../lib/todos.svelte.ts');
-const { createDeparture } = await import(
-	'@epicenter/epicenter/departure/page'
-);
+const { createDeparture } = await import('@epicenter/epicenter/departure/page');
 const { default: DepartureNotice } = await import('./DepartureNotice.svelte');
 
 let count = 0;
@@ -84,7 +82,9 @@ test('a restart lists what would be lost, and Keep working cancels it and gives 
 	expect(target.textContent).toContain(
 		'Epicenter is restarting for an account change',
 	);
-	expect(target.textContent).toContain('the title of a new todo you have not added');
+	expect(target.textContent).toContain(
+		'the title of a new todo you have not added',
+	);
 	expect(target.textContent).toContain('Restart anyway');
 
 	click(target, 'Keep working');

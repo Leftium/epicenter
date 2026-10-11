@@ -34,8 +34,8 @@ import {
 	resolveNativeRoot,
 	verifyNativeLayout,
 } from './native-store.js';
-import { withPublication } from './storage.js';
 import { publishDefinition } from './publish-definition.js';
+import { withPublication } from './storage.js';
 
 export * from './contract.js';
 export {

@@ -118,10 +118,7 @@ async function reopen(sqlite: ReturnType<typeof createBunSqliteAdapter>) {
 }
 
 function titles(db: Awaited<ReturnType<typeof openFailable>>['db']): string[] {
-	return db.tables.notes
-		.rows
-		.map((row) => row.title as string)
-		.sort();
+	return db.tables.notes.rows.map((row) => row.title as string).sort();
 }
 
 describe('acceptance is live, durability is a visible debt', () => {

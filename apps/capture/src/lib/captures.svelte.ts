@@ -20,7 +20,7 @@
  * session holds nothing unsaved. Otherwise the next save reports the change
  * as a conflict, and the person keeps theirs or reloads.
  */
-import type { DepartureParticipant } from '@epicenter/epicenter/departure/page';
+
 import {
 	CAPTURES_TABLE,
 	type CaptureFields,
@@ -33,6 +33,7 @@ import {
 	type LegacyBundle,
 	runLegacyImport,
 } from '@epicenter/capture/legacy';
+import type { DepartureParticipant } from '@epicenter/epicenter/departure/page';
 import {
 	type CommitOutcome,
 	type RowReadError,

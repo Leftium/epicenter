@@ -35,8 +35,8 @@ import { STORE_SYNC_ROUTE } from '@epicenter/sync';
 import type { Server } from 'bun';
 import { type Context, Hono, type Next } from 'hono';
 import { createBunWebSocket, getBunServer } from 'hono/bun';
-import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import { getCookie, setCookie } from 'hono/cookie';
+import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import { createLogger } from 'wellcrafted/logger';
 import {
 	type AccountGitRelay,

@@ -491,7 +491,11 @@ export function createNotes(host: NotesHost) {
 					: await folder.files.remove(file);
 			const error = removed?.error ?? null;
 			// An item shown without a session (binary, too large) closes with its file.
-			if (error === null && opened !== undefined && pathOf(opened) === file.path)
+			if (
+				error === null &&
+				opened !== undefined &&
+				pathOf(opened) === file.path
+			)
 				slot.forget();
 			await refresh();
 			return error === null ? undefined : describeError(error);
@@ -915,7 +919,9 @@ export function createNotes(host: NotesHost) {
 				const unsaved = await slot.close();
 				if (unsaved !== undefined)
 					log.warn(
-						new Error(`Closed with a draft that could not be saved, in ${unsaved}`),
+						new Error(
+							`Closed with a draft that could not be saved, in ${unsaved}`,
+						),
 					);
 				released = true;
 				await host.close();

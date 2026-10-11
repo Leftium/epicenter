@@ -8,13 +8,13 @@
  */
 
 import type { CaptureFields } from '@epicenter/capture';
+import type { Departure } from '@epicenter/epicenter/departure/page';
 import type {
 	FileTable,
 	FolderFiles,
 	FolderGit,
 	FolderLocation,
 } from '@epicenter/folder';
-import type { Departure } from '@epicenter/epicenter/departure/page';
 
 /**
  * The folder both leaves open. The browser names its scoped OPFS directory after

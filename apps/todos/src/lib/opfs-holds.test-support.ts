@@ -35,7 +35,10 @@ export function holdCloses(
 		kind: 'directory',
 		name: directory.name,
 		getDirectoryHandle: async (name, options) =>
-			holdCloses(await directory.getDirectoryHandle(name, options), beforeClose),
+			holdCloses(
+				await directory.getDirectoryHandle(name, options),
+				beforeClose,
+			),
 		getFileHandle: async (name, options) =>
 			holdFile(await directory.getFileHandle(name, options)),
 		removeEntry: (name, options) => directory.removeEntry(name, options),

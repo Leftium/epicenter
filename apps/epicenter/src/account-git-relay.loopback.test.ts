@@ -13,12 +13,12 @@ import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { epicenterCloud } from '@epicenter/auth';
-import { COMPILED_APPLICATIONS } from './applications.ts';
 import {
 	type AccountGitRelay,
 	createAccountGitRelay,
 	NATIVE_GIT_ROUTE,
 } from './account-git-relay.ts';
+import { COMPILED_APPLICATIONS } from './applications.ts';
 import {
 	createDesktopAuthAuthority,
 	type DesktopAuthAuthority,
@@ -35,7 +35,12 @@ const CANONICAL = 'https://github.com/alice/zhongwen.git';
 const LAUNCH = 'launch-token-for-this-generation';
 const ALICE = { authorityId: 'epicenter-api', principalId: 'alice' };
 
-type Seen = { method: string; path: string; authorization: string | null; headers: string[] };
+type Seen = {
+	method: string;
+	path: string;
+	authorization: string | null;
+	headers: string[];
+};
 
 let scratch: string;
 let connector: ReturnType<typeof Bun.serve>;
@@ -76,7 +81,10 @@ async function git(cwd: string, args: string[], localSetup = false) {
 
 /** The connector's Git routes over `git http-backend`, for the paired revision only. */
 async function serveGit(request: Request, rest: string, search: string) {
-	const body = request.method === 'POST' ? new Uint8Array(await request.arrayBuffer()) : undefined;
+	const body =
+		request.method === 'POST'
+			? new Uint8Array(await request.arrayBuffer())
+			: undefined;
 	const child = Bun.spawn(['git', 'http-backend'], {
 		env: {
 			PATH: process.env.PATH ?? '/usr/bin:/bin',
@@ -99,7 +107,10 @@ async function serveGit(request: Request, rest: string, search: string) {
 		stdout: 'pipe',
 		stderr: 'pipe',
 	});
-	const [out, code] = await Promise.all([new Response(child.stdout).arrayBuffer(), child.exited]);
+	const [out, code] = await Promise.all([
+		new Response(child.stdout).arrayBuffer(),
+		child.exited,
+	]);
 	if (code !== 0) return new Response('backend failed', { status: 500 });
 	const bytes = Buffer.from(out);
 	const split = bytes.indexOf('\r\n\r\n');
@@ -116,7 +127,10 @@ async function serveGit(request: Request, rest: string, search: string) {
 }
 
 function refuse(code: string, status: number) {
-	return Response.json({ error: code }, { status, headers: { 'x-epicenter-git-error': code } });
+	return Response.json(
+		{ error: code },
+		{ status, headers: { 'x-epicenter-git-error': code } },
+	);
 }
 
 beforeAll(async () => {
@@ -130,7 +144,9 @@ beforeAll(async () => {
 	await Bun.write(join(author, 'deck.md'), '你好');
 	await git(author, ['add', 'deck.md']);
 	await git(author, ['commit', '--quiet', '-m', 'from the browser']);
-	expect(await git(author, ['push', '--quiet', bare, 'main'], true)).toMatchObject({ code: 0 });
+	expect(
+		await git(author, ['push', '--quiet', bare, 'main'], true),
+	).toMatchObject({ code: 0 });
 
 	connector = Bun.serve({
 		hostname: '127.0.0.1',
@@ -145,7 +161,8 @@ beforeAll(async () => {
 			});
 			if (request.headers.get('authorization') !== 'Bearer alice-token')
 				return new Response(null, { status: 401 });
-			if (url.pathname === '/api/session') return Response.json({ principalId: 'alice' });
+			if (url.pathname === '/api/session')
+				return Response.json({ principalId: 'alice' });
 			if (url.pathname === '/api/git/github/pairings')
 				return Response.json({
 					pairings: [
@@ -153,14 +170,19 @@ beforeAll(async () => {
 							folderId: FOLDER,
 							revision: REVISION,
 							status: 'ready',
-							repository: { id: 9001, installationId: 7001, fullName: 'alice/zhongwen' },
+							repository: {
+								id: 9001,
+								installationId: 7001,
+								fullName: 'alice/zhongwen',
+							},
 							remote: { url: CANONICAL, branch: 'main' },
 						},
 					],
 				});
-			const git = /^\/api\/git\/github\/git\/([^/]+)\/([^/]+)\/(info\/refs|git-upload-pack|git-receive-pack)$/.exec(
-				url.pathname,
-			);
+			const git =
+				/^\/api\/git\/github\/git\/([^/]+)\/([^/]+)\/(info\/refs|git-upload-pack|git-receive-pack)$/.exec(
+					url.pathname,
+				);
 			if (!git) return refuse('invalid_request', 404);
 			if (git[1] !== FOLDER) return refuse('pairing_not_found', 404);
 			if (git[2] !== REVISION) return refuse('pairing_superseded', 409);
@@ -171,7 +193,10 @@ beforeAll(async () => {
 	auth = createDesktopAuthAuthority({
 		server: epicenterCloud(api),
 		accountManagement: true,
-		authCell: JSON.stringify({ origin: api, auth: { token: 'alice-token', principalId: 'alice' } }),
+		authCell: JSON.stringify({
+			origin: api,
+			auth: { token: 'alice-token', principalId: 'alice' },
+		}),
 		nativeAuthPort: {
 			completed: new Promise(() => undefined),
 			async storeAuth() {},
@@ -185,11 +210,19 @@ beforeAll(async () => {
 		},
 	});
 	// Reserve a port before composing the exact Host guard.
-	const probe = Bun.serve({ hostname: '127.0.0.1', port: 0, fetch: () => new Response() });
+	const probe = Bun.serve({
+		hostname: '127.0.0.1',
+		port: 0,
+		fetch: () => new Response(),
+	});
 	const port = probe.port;
 	await probe.stop(true);
 	origin = `http://127.0.0.1:${port}`;
-	relay = createAccountGitRelay({ account: auth.account, origin, signal: auth.signal });
+	relay = createAccountGitRelay({
+		account: auth.account,
+		origin,
+		signal: auth.signal,
+	});
 	host = await createHomeHost({ model: 'test', engine: async function* () {} });
 	const page = '<!doctype html><html><head></head><body></body></html>';
 	const { app, websocket } = createHomeServer({
@@ -207,7 +240,12 @@ beforeAll(async () => {
 		desktopAuth: auth,
 		gitRelay: relay,
 	});
-	home = Bun.serve({ hostname: '127.0.0.1', port, fetch: app.fetch, websocket });
+	home = Bun.serve({
+		hostname: '127.0.0.1',
+		port,
+		fetch: app.fetch,
+		websocket,
+	});
 });
 
 afterAll(async () => {
@@ -219,30 +257,60 @@ afterAll(async () => {
 });
 
 /** A native control call, as Rust sends it: the launch token, no Origin, no cookie. */
-function control(path: string, body: unknown, headers: Record<string, string> = {}) {
+function control(
+	path: string,
+	body: unknown,
+	headers: Record<string, string> = {},
+) {
 	return fetch(`${origin}${NATIVE_GIT_ROUTE}${path}`, {
 		method: 'POST',
-		headers: { authorization: `Bearer ${LAUNCH}`, 'content-type': 'application/json', ...headers },
+		headers: {
+			authorization: `Bearer ${LAUNCH}`,
+			'content-type': 'application/json',
+			...headers,
+		},
 		body: JSON.stringify(body),
 	});
 }
 
 async function start(service: string, revision = REVISION) {
-	const response = await control('/relays', { account: ALICE, folderId: FOLDER, revision, service });
+	const response = await control('/relays', {
+		account: ALICE,
+		folderId: FOLDER,
+		revision,
+		service,
+	});
 	expect(response.status).toBe(200);
-	return ((await response.json()) as { relay: { id: string; url: string } }).relay;
+	return ((await response.json()) as { relay: { id: string; url: string } })
+		.relay;
 }
 
 test('native controls on the real listener admit only the launch token, without an Origin or cookie', async () => {
-	const body = { account: ALICE, folderId: FOLDER, revision: REVISION, service: 'git-upload-pack' };
-	expect((await control('/relays', body, { authorization: 'Bearer wrong' })).status).toBe(401);
+	const body = {
+		account: ALICE,
+		folderId: FOLDER,
+		revision: REVISION,
+		service: 'git-upload-pack',
+	};
+	expect(
+		(await control('/relays', body, { authorization: 'Bearer wrong' })).status,
+	).toBe(401);
 	expect((await control('/relays', body, { origin })).status).toBe(403);
-	expect((await control('/relays', body, { cookie: 'epicenter_session=x' })).status).toBe(403);
+	expect(
+		(await control('/relays', body, { cookie: 'epicenter_session=x' })).status,
+	).toBe(403);
 	expect(relay.size).toBe(0);
 	// The pairing read is the source of the immutable repository ID a download records.
-	const paired = await control('/pairing', { account: ALICE, folderId: FOLDER });
+	const paired = await control('/pairing', {
+		account: ALICE,
+		folderId: FOLDER,
+	});
 	expect(await paired.json()).toMatchObject({
-		pairing: { revision: REVISION, repository: { id: 9001 }, remote: { url: CANONICAL, branch: 'main' } },
+		pairing: {
+			revision: REVISION,
+			repository: { id: 9001 },
+			remote: { url: CANONICAL, branch: 'main' },
+		},
 	});
 });
 
@@ -261,19 +329,26 @@ test('real Git downloads through one upload-pack relay; the launch token never g
 		'+refs/heads/main:refs/remotes/origin/main',
 	]);
 	expect(fetched).toMatchObject({ code: 0 });
-	expect((await git(clone, ['log', '-1', '--format=%s', 'refs/remotes/origin/main'])).stdout.trim()).toBe(
-		'from the browser',
+	expect(
+		(
+			await git(clone, ['log', '-1', '--format=%s', 'refs/remotes/origin/main'])
+		).stdout.trim(),
+	).toBe('from the browser');
+	const gitRequests = seen.filter((request) =>
+		request.path.includes('/api/git/github/git/'),
 	);
-	const gitRequests = seen.filter((request) => request.path.includes('/api/git/github/git/'));
 	expect(gitRequests.length).toBeGreaterThan(0);
 	for (const request of gitRequests) {
 		expect(request.path).toContain(`/git/${FOLDER}/${REVISION}/`);
 		expect(request.path).not.toContain('receive-pack');
 		expect(request.authorization).toBe('Bearer alice-token');
 	}
-	for (const request of seen) expect(JSON.stringify(request)).not.toContain(LAUNCH);
+	for (const request of seen)
+		expect(JSON.stringify(request)).not.toContain(LAUNCH);
 
-	expect(await (await control(`/relays/${handle.id}/retire`, {})).json()).toEqual({ retired: true });
+	expect(
+		await (await control(`/relays/${handle.id}/retire`, {})).json(),
+	).toEqual({ retired: true });
 	const after = await git(clone, ['ls-remote', handle.url]);
 	expect(after.code).not.toBe(0);
 });
@@ -283,23 +358,47 @@ test('an upload-pack relay cannot push, and a receive-pack relay pushes exactly 
 	mkdirSync(work);
 	await git(work, ['init', '--quiet', '--initial-branch=main']);
 	const upload = await start('git-upload-pack');
-	await git(work, ['fetch', '--quiet', upload.url, '+refs/heads/main:refs/remotes/origin/main']);
+	await git(work, [
+		'fetch',
+		'--quiet',
+		upload.url,
+		'+refs/heads/main:refs/remotes/origin/main',
+	]);
 	await git(work, ['reset', '--quiet', '--hard', 'refs/remotes/origin/main']);
 	await Bun.write(join(work, 'native.md'), 'edited in the installed app');
 	await git(work, ['add', 'native.md']);
 	await git(work, ['commit', '--quiet', '-m', 'from the installed app']);
 
 	seen.length = 0;
-	const refused = await git(work, ['push', '--porcelain', upload.url, 'main:refs/heads/main']);
+	const refused = await git(work, [
+		'push',
+		'--porcelain',
+		upload.url,
+		'main:refs/heads/main',
+	]);
 	expect(refused.code).not.toBe(0);
-	expect(seen.some((request) => request.path.includes('receive-pack'))).toBe(false);
+	expect(seen.some((request) => request.path.includes('receive-pack'))).toBe(
+		false,
+	);
 	await control(`/relays/${upload.id}/retire`, {});
 
 	const receive = await start('git-receive-pack');
-	const pushed = await git(work, ['push', '--porcelain', receive.url, 'main:refs/heads/main']);
+	const pushed = await git(work, [
+		'push',
+		'--porcelain',
+		receive.url,
+		'main:refs/heads/main',
+	]);
 	expect(pushed.code).toBe(0);
-	expect(await (await control(`/relays/${receive.id}/retire`, {})).json()).toEqual({ retired: true });
-	const head = await git(join(scratch, 'github', 'repo.git'), ['log', '-1', '--format=%s', 'main']);
+	expect(
+		await (await control(`/relays/${receive.id}/retire`, {})).json(),
+	).toEqual({ retired: true });
+	const head = await git(join(scratch, 'github', 'repo.git'), [
+		'log',
+		'-1',
+		'--format=%s',
+		'main',
+	]);
 	expect(head.stdout.trim()).toBe('from the installed app');
 });
 
@@ -307,8 +406,12 @@ test('a replaced revision reaches nothing, and retiring reports the connector co
 	const handle = await start('git-upload-pack', REPLACED);
 	const listing = await git(scratch, ['ls-remote', handle.url]);
 	expect(listing.code).not.toBe(0);
-	expect(`${listing.stdout}${listing.stderr}`).not.toMatch(/username|password/i);
-	expect(await (await control(`/relays/${handle.id}/retire`, {})).json()).toEqual({
+	expect(`${listing.stdout}${listing.stderr}`).not.toMatch(
+		/username|password/i,
+	);
+	expect(
+		await (await control(`/relays/${handle.id}/retire`, {})).json(),
+	).toEqual({
 		retired: true,
 		failure: { reason: 'connector', status: 409, code: 'pairing_superseded' },
 	});

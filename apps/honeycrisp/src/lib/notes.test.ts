@@ -242,21 +242,22 @@ test('Reload theirs of a note made invalid elsewhere opens its text for repair',
 	expect(textSession(notes).draft).toBe('---\ntitle: [broken\n---\nTheirs.\n');
 });
 
-test('returning to the window lists again and leaves an open note as it is', async () => {
+test('returning to the window lists again and an idle open note takes the newer file', async () => {
 	const { notes, disk } = await open();
 	const session = await openNote(notes);
+	const generation = session.generation;
 	disk.put(A, noteText({ title: 'Theirs' }));
 	disk.put('notes/c.md', noteText({ title: 'Gamma' }));
 	await notes.check();
 	expect(notes.notes.some((note) => note.path === 'notes/c.md')).toBe(true);
-	// Conflict-only: the draft stays, and the next save reports the change.
 	expect(noteSession(notes)).toBe(session);
-	expect(session.draft.fields.title).toBe('Alpha');
+	expect(session.draft.fields.title).toBe('Theirs');
+	// The rich-text editor remounts on the new generation.
+	expect(session.generation).toBe(generation + 1);
 	session.edit((row) => {
 		row.body = 'Mine.\n';
 	});
-	const settled = await session.settled();
-	expect(settled.status === 'error' && settled.error.name).toBe('Conflict');
+	expect((await session.settled()).status).toBe('saved');
 });
 
 // ============================================================================

@@ -361,7 +361,11 @@ export function createNotes(host: NotesHost) {
 	/** The listings and Git status: the person's "Check again", and returning to the window. */
 	async function check() {
 		if (closing !== undefined) return;
-		await Promise.all([refresh(), folder.git.status().catch(() => undefined)]);
+		await Promise.all([
+			refresh(),
+			folder.git.status().catch(() => undefined),
+			slot.adopt(),
+		]);
 	}
 
 	function openNote(stored: StoredRow<NoteFields>): Item {

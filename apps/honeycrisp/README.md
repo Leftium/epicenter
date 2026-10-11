@@ -147,7 +147,7 @@ is overwritten without your say.
 
 | What happened | What Honeycrisp does |
 | --- | --- |
-| Another program changed the file | Nothing happens until your next save. That save stops with **This changed elsewhere**: **Reload theirs** shows their version in place of your edits, and **Keep mine** saves your edits over it. If their version no longer reads the way the item opened (a note whose text is not a valid note, or a file that is no longer text), Reload theirs opens it again as what it is now. Nothing is written until you choose. Returning to the window reads the lists again but never replaces an open note's text, so its undo history stays. |
+| Another program changed the file | Nothing happens until your next save. That save stops with **This changed elsewhere**: **Reload theirs** shows their version in place of your edits, and **Keep mine** saves your edits over it. If their version no longer reads the way the item opened (a note whose text is not a valid note, or a file that is no longer text), Reload theirs opens it again as what it is now. Nothing is written until you choose. Returning to the window, or running a terminal command, reads the lists again; an open note that holds nothing unsaved takes the newer file, and its undo history starts over. |
 | Another program deleted the file | Your next save stops with **This was deleted elsewhere**: **Discard** closes the note, and **Keep mine** creates the file again from your edits. |
 | You typed while a save was running | The newer typing saves next. |
 | A value is not valid for a note | It is not written; the bar names what to fix, and the next valid edit saves. |
@@ -347,7 +347,8 @@ and `src-tauri/src/tests.rs` runs the same two through the folder plugin.
 | --- | --- | --- |
 | A save that fails: your text stays editable, with **Try again** | `chmod a-w notes`, then edit a note | `chmod u+w notes`, then **Try again** |
 | A commit that fails while the file stays saved | `touch .git/refs/heads/main.lock`, then edit a note | `rm .git/refs/heads/main.lock`, then **Commit saved files** |
-| A change made elsewhere: the conflict prompt | With a note open, edit `notes/<id>.md` in the terminal, then type in the note | **Reload theirs** or **Keep mine** |
+| An outside edit reaches an idle note | With a note open and saved, edit `notes/<id>.md` in the terminal | The note shows the new text |
+| A change made elsewhere: the conflict prompt | Open the folder in two windows, type in a note in one, and change the same note in the other before the first window regains focus | **Reload theirs** or **Keep mine** |
 | A note file deleted under you: nothing writes it back until you choose | With a note open, `rm notes/<id>.md`, then type in it | **Keep mine**, or **Discard** |
 
 What cannot be produced by hand in the running app is a save held open or
@@ -433,3 +434,4 @@ edit sessions, and dropped several promises of the version before it:
   their version and opens the file again as what it is now (its text for
   repair, or why it cannot be opened), so Keep mine is no longer offered
   afterwards.
+- Returning to the window, or a terminal command, now takes a newer file into an open note that holds nothing unsaved, so a pull in the terminal is not met as a conflict. Its rich-text undo history starts over when that happens.

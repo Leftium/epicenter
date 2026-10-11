@@ -49,9 +49,9 @@ against the code. The constraints below apply to every edit here.
   There is no structured partial-row repair.
 - The page reads the folder when it opens, after its own actions and
   terminal commands, and on focus or visibility. Do not follow
-  `folder.onFilesChanged` hints, and never call `session.adopt()` or the
-  open-item slot's `adopt`: an open note's draft is replaced only by Reload
-  theirs, which protects its rich-text undo history.
+  `folder.onFilesChanged` hints. Reading on return adopts a newer file into
+  an open note only while it holds nothing unsaved (the slot's `adopt`);
+  that remounts the rich-text editor, so its undo history restarts.
 - A destructive action that must find every related file refuses when any
   file's relation did not read (`deleteFolder`).
 

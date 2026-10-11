@@ -60,19 +60,40 @@ Compatible field meanings still matter when those tools write to the same
 dataset.
 
 Each successful browser, Bun, or Tauri acquisition attempts to overwrite root
-`epicenter.json` before returning. The file describes the opening application's
-prepared `title` when present, `kv`, and `tables`, including portable validation
-and editor hints. It contains no dataset identity or runtime resources. The JSON
-uses two-space indentation, declared order, and a trailing newline. Opening
-uses the application declaration; it never reads this file as configuration.
+`epicenter.json` before returning, with `formatDeclaration(definition)`. Each
+table is one JSON Schema object, `{ type: 'object', properties, required }`,
+whose properties are the table's fields as the prepared definition holds them;
+`kv` is `{ type: 'object', properties }`, since every setting may be unset:
+
+```json
+{
+  "title": "Vault",
+  "kv": { "type": "object", "properties": { "theme": { "enum": ["light", "dark"], "x-field": { "kind": "select" } } } },
+  "tables": {
+    "pages": {
+      "type": "object",
+      "properties": {
+        "title": { "type": "string", "x-field": { "kind": "string" } },
+        "queuedAt": { "type": "string", "format": "date", "x-field": { "kind": "date" } }
+      },
+      "required": ["title"]
+    }
+  }
+}
+```
+
+`required` is the one optionality marker in the file, and `field.optional` is
+the one in code. The file contains no dataset identity, runtime resources, or
+TypeBox `~` keys. The JSON uses two-space indentation, declared order, and a
+trailing newline. Opening uses the application declaration; it never reads
+this file as configuration.
 
 Publication replaces manual descriptions and descriptions from another app
-version. It migrates no saved rows or settings. Unsupported export or a failed
-write is logged through `wellcrafted/logger`, with the destination and actual
-failure, while the folder remains usable. A failed attempt can leave discovery
-missing, stale, or uncertain. For example, adding a runtime refinement can leave
-an earlier version's description in place because that refinement cannot be
-exported faithfully. See [portable export](../definition/README.md#what-survives-json).
+version. It migrates no saved rows or settings. A prepared definition is
+plain JSON, so formatting cannot fail; a failed write is logged through
+`wellcrafted/logger`, with the destination and actual failure, while the
+folder remains usable. A failed attempt can leave discovery missing, stale, or
+uncertain.
 
 Publication always writes through `files.overwrite`, including on unchanged
 reopening. It uses `commitOnEdit`: opening awaits the file attempt while
@@ -434,10 +455,14 @@ tables, settings, and native file boundary an opened folder uses, so a tool
 and an application reach the same verdict on every file. A symbolically
 linked table directory is that table's `InvalidPath`, never followed.
 
-The declaration must be one an opener could have published. A top-level key
-other than `title`, `kv`, `tables`, or `$schema` (which only helps an editor
-offer completion), or anything `exportSchema` refuses, such as an unknown
-`format`, is `InvalidDeclaration`.
+`parseDeclaration(text)` reads the file's grammar and nothing else: a
+top-level `$schema` (which only helps an editor offer completion), `title`,
+`kv`, and `tables`, each table `{ type: 'object', properties, required? }`
+with every `required` name declared, and `kv` without `required`. A table
+without `required` has only optional fields. Any other key, a visible `~` key
+on a field, or a field preparation refuses, such as one with an unknown
+`format`, is `InvalidDeclaration`. The older `{ fields }` shape is refused;
+there is no migration.
 
 It writes nothing: no Git repository, marker, lock, or declaration, and it
 loads no native addon. It can read a folder an application has open, or one

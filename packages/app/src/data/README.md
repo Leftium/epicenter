@@ -391,13 +391,16 @@ different data.
 
 Three rules bite immediately:
 
-1. **There are no optional fields.** A field has to be one type through the CRDT
-   attribute, the exported frontmatter value, and the row alike.
-   `field.nullable(inner)`
-   accepts stored JSON `null`, but a missing field remains nonconforming.
+1. **Absence is declared.** A field has to be one type through the CRDT
+   attribute, the exported frontmatter value, and the row alike. A missing
+   row field is nonconforming unless it is `field.optional(inner)`;
+   `field.nullable(inner)` accepts stored JSON `null`, which is a value, not
+   absence. Every KV field may be unset, so `kv.nonconforming` lists only
+   stored values that do not conform.
 2. **Definitions do not own defaults.** Initialization and recovery values live
    in application code. A native `default` annotation in a schema is admitted
-   and inert: nothing applies it, and a missing field is still nonconforming.
+   and inert: nothing applies it, and a missing required field is still
+   nonconforming.
 3. **No transforming fields.** Date, instant, and datetime fields preserve
    their string representation, so values round-trip through storage and SQL.
 

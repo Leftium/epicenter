@@ -28,18 +28,48 @@ it. It claims nothing else: other files and directories beside it are ordinary
 files. A Git repository may contain any number of data folders at any depth.
 A directory declared as a table must not contain its own `epicenter.json`.
 
-**`epicenter.json` is JSON and is only read.** Its format is what
-`exportSchema` writes: optional `title`, `kv`, and `tables` with portable
-field schemas. No tool executes a file to learn a data folder's declaration,
-because a data folder may arrive in any cloned repository. The filename alone
-marks a data folder, the way `package.json` marks a package.
+**`epicenter.json` is JSON and is only read.** No tool executes a file to
+learn a data folder's declaration, because a data folder may arrive in any
+cloned repository. The filename alone marks a data folder, the way
+`package.json` marks a package.
 
-A reader refuses an `epicenter.json` that `exportSchema` could not have
-written after preparation, such as one naming an unknown `format`, and one
-with a top-level key other than `title`, `kv`, `tables`, or `$schema`.
-`$schema` is allowed for editor completion and never interpreted. Readers do
-not check the schema language itself: a misspelled keyword such as `minimun`
-is ignored, as JSON Schema ignores any unknown keyword.
+**Each table and `kv` is a JSON Schema object.** A tool that knows JSON Schema
+can check a row against its table without knowing Epicenter.
+
+```json
+{
+  "title": "Plan",
+  "kv": { "type": "object", "properties": { "theme": { "enum": ["light", "dark"] } } },
+  "tables": {
+    "posts": {
+      "type": "object",
+      "properties": {
+        "title": { "type": "string" },
+        "queuedAt": { "type": "string", "format": "date" }
+      },
+      "required": ["title"]
+    }
+  }
+}
+```
+
+- Top level: optional `$schema` and `title`, then `kv` and `tables`.
+  `$schema` is for editor completion and never interpreted.
+- A table: `"type": "object"`, `properties`, and optional `required`. Each
+  property is one field as ADR-0525 defines it. `required` names each
+  required field once, and a table without it has only optional fields
+  (ADR-0526).
+- `kv`: `"type": "object"` and `properties`, with no `required`, because
+  every setting may be unset.
+
+`formatDeclaration` and `parseDeclaration` in
+`packages/folder/src/declaration.ts` are the only code that writes or reads
+this shape. `parseDeclaration` refuses an unknown key at the top level or in
+a table or `kv` object, a `required` entry that names no property, and a
+visible `~` key in a field. `prepareSchema` then refuses what ADR-0525
+refuses, such as a `format` outside TypeBox's stock set. Readers do not check
+the schema language itself: a misspelled keyword such as `minimun` is
+ignored, as JSON Schema ignores any unknown keyword.
 
 ```text
 vault/                            host repository
@@ -107,8 +137,11 @@ git submodule add <repository-url> plan
   whole-folder commits once it contains a submodule. Extract only from hosts
   that people and agents commit with ordinary Git.
 - The CLI's `check` and `query` read `epicenter.json` (ADR-0520); apps do not
-  yet. `prepareSchema` accepts what `exportSchema` writes, so a reader needs no
-  new format.
+  yet. What `formatDeclaration` writes reads back through `parseDeclaration`
+  and `prepareSchema` as the same definition.
+- A declaration in the earlier shape, where a table was
+  `{ "fields": { ... } }`, is refused. There is no migration; opening an app
+  on the folder rewrites the file in the current shape.
 - The key set and the portable formats are closed, so a reader refuses a
   declaration from a newer writer that adds either. Adding one is a reader
   change first.

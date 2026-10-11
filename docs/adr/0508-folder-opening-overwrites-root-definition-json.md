@@ -2,7 +2,7 @@
 
 - **Status:** Proposed
 - **Date:** 2026-10-07
-- **Remaining:** a decision and repair for Todos browser remote bootstrap. Real-OPFS run/reload and Honeycrisp browser/native note creation, editing, and reopening passed on 2026-10-08; see [computer-use evidence](../../packages/folder/evidence/definition-publication/computer-use-20261008/README.md). Runtime export, all three opener paths, diagnostics, and history regressions are implemented and checked. This ADR remains Proposed.
+- **Remaining:** a decision and repair for Todos browser remote bootstrap. Real-OPFS run/reload and Honeycrisp browser/native note creation, editing, and reopening passed on 2026-10-08; see [computer-use evidence](../../packages/folder/evidence/definition-publication/computer-use-20261008/README.md). Declaration formatting, all three opener paths, diagnostics, and history regressions are implemented and checked. This ADR remains Proposed.
 - **Relates:** [ADR-0517](0517-a-data-folder-can-live-inside-any-repository.md) renamed the published file to `epicenter.json` (`DECLARATION_PATH`). Where this record says root `definition.json`, read `epicenter.json`; an old `definition.json` is now an ordinary file.
 
 ## Context
@@ -38,8 +38,9 @@ dataset/
 ```
 
 **Application declarations remain authoritative for application behavior.**
-The saved JSON contains the prepared definition's `title` when present, `kv`,
-and `tables`, including portable validation keywords and editor hints. It adds
+The saved JSON is what `formatDeclaration` writes: the prepared definition's
+`title` when present, `kv`, and `tables`, in the shape ADR-0517 defines,
+including validation keywords and editor hints. It adds
 no dataset ID or credentials. Use deterministic JSON formatting with two-space
 indentation, declared property order, and a trailing newline; do not add timestamps
 or other opening-dependent values. Opening does
@@ -49,13 +50,13 @@ description. The file describes the last successful publication, not every
 possible interpretation of the dataset.
 
 **Publication is best effort and reports failures without refusing an otherwise
-usable folder.** Unsupported export or failed publication is reported through
+usable folder.** A failed publication is reported through
 `wellcrafted/logger` with `definition.json` as the destination.
-An export that cannot faithfully preserve runtime validation callbacks makes
-no write; plain JSON serialization must not silently drop those constraints.
-Report an uncertain write as uncertain. Do not roll back a landed save, retry
-in a loop, or claim the previous file is current after a failed attempt. A
-subsequent opening makes a new attempt.
+`formatDeclaration` cannot fail: every prepared field is already JSON
+(ADR-0525), so no constraint is lost in serialization. Report an
+uncertain write as uncertain. Do not roll back a landed save, retry in a loop,
+or claim the previous file is current after a failed attempt. A subsequent
+opening makes a new attempt.
 
 **Definition publication uses the existing automatic-history policy.**
 Do not call `git.commit()` or `commitAndPush()` from the publication step.

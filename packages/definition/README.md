@@ -2,26 +2,21 @@
 
 The declaration vocabulary every Epicenter storage reads: the field helpers,
 table and KV declarations, the durable name grammars, the preparation that
-checks a declaration and owns its schemas, and the reads over a prepared
+checks a declaration and owns its schemas, and the one read over a prepared
 definition.
 
 It is inert. Importing it acquires nothing, and it knows no storage. Its only
 dependencies are `typebox` and `wellcrafted`.
 
 ```ts
-import {
-  accepts,
-  conformance,
-  defineTable,
-  field,
-  prepareData,
-} from '@epicenter/definition';
+import { check, defineTable, field, prepareData } from '@epicenter/definition';
 import { Type } from 'typebox';
 
 const todos = defineTable({
   fields: {
     title: field.string(),
     due: field.nullable(field.instant()),
+    note: field.optional(field.string()),
     estimate: Type.Object({ hours: Type.Number() }),
   },
 });
@@ -32,8 +27,8 @@ const { data: definition } = prepareData({
   tables: { todos },
 });
 
-accepts(definition.kv.theme, 'dark');                  // true
-conformance(definition.tables.todos.fields, stored);   // { conforming, issues }
+check(definition.tables.todos.fields, stored, 'read');  // { conforming, issues }
+check(definition.kv, { theme: 'dark' }, 'patch');        // no issues
 ```
 
 ## One shape, declared and prepared
@@ -50,13 +45,17 @@ compiled representation: no field wrapper, no table object with methods, no
 What preparation adds is ownership and a validator:
 
 - It checks the id, the title, the table and field names, each body
-  conversion, and that TypeBox can compile every schema.
-- Each field becomes a frozen snapshot of the declared schema, `x-field` hint
+  conversion, that every schema is plain JSON (see
+  [A field is plain JSON](#a-field-is-plain-json)), and that TypeBox can
+  compile it.
+- Each field becomes the declared schema's JSON, deeply frozen, `x-field` hint
   included. `kv`, `tables`, and each `fields` are frozen records with no
   prototype, so a table or field named `constructor` or `toString` is an
   ordinary entry and a name the definition lacks reads as `undefined`.
-- TypeBox's compiled validator for each snapshot is held privately beside it.
-  The three reads below look it up by the snapshot's identity.
+- Every KV field becomes optional: an unset setting means the application's
+  default.
+- TypeBox's compiled validator for each field is held privately beside it.
+  `check` looks it up by the field's identity.
 
 `prepareData` is memoized on the declaration object and on the definition it
 returns, so preparing a prepared definition returns it. `defineStore` and
@@ -69,17 +68,11 @@ the ID: it requires none and refuses one. The two preparations keep separate
 memos, so neither returns the other's result, and a store definition is never
 accepted as a schema.
 
-The reads take a prepared field or a prepared field record:
-
-| Read | What it answers |
-| --- | --- |
-| `accepts(schema, value)` | Whether one value is JSON and the field's check admits it. `undefined` in place of a schema, which is what a name the definition does not declare reads as, accepts nothing. |
-| `conformance(fields, payload)` | A stored payload read through the fields: the ones that validated, and the issues of the ones that did not. |
-| `inputIssues(fields, values, { complete })` | The issues of values supplied for a write: an undeclared key, a value that does not conform, and, for a complete row, an absent field. |
-
-A schema that was never prepared has no validator. Handing one to any of the
-three throws: it is a programmer error, not a value that failed. Nothing is
-compiled lazily, and the answer is never a silent `false`.
+The one read is `check(fields, values, mode)`; see
+[Checking values](#checking-values). A schema that was never prepared has no
+validator. Handing one to `check` throws: it is a programmer error, not a
+value that failed. Nothing is compiled lazily, and the answer is never a
+silent `false`.
 
 ## Who uses it
 
@@ -89,7 +82,7 @@ compiled lazily, and the answer is never a silent `false`.
 | `@epicenter/folder` | `defineFolder`, which prepares a `DataSchema` and refuses a body conversion, because a folder's row body is the file's Markdown text. The opener names the folder. |
 
 Both get the same `defineTable` brand, the same `RowOf`, `CreateRowOf`, and
-`KvOf` lenses, and the same reads over the same prepared fields. Neither
+`KvOf` lenses, and the same `check` over the same prepared fields. Neither
 copies a validator.
 
 ## Why this name
@@ -103,7 +96,7 @@ else:
 src/field/        the field.* helpers, the editor hint, and fieldEditorOf (./field)
 src/declaration   FieldMap, TableDeclaration, DataSchema, DataDefinition, row lenses
 src/define        defineTable and the declared-table brand
-src/prepare       prepareData, prepareSchema, accepts, conformance, inputIssues
+src/prepare       prepareData, prepareSchema, check, isOptional
 src/addresses     data ID, table name, and row ID grammars
 src/json          JsonValue and its guards
 ```
@@ -113,10 +106,12 @@ what it is more exactly than `schema`, `data`, or `core` would.
 
 ## A field is one native schema
 
-A field is any native TypeBox schema. `Static<>` reads it, and TypeBox's
-`Compile` decides whether a value conforms. A bare `Type.Object(...)`,
-`Type.Enum(...)`, `Type.Any()`, or `Type.Refine(...)` is a field, in
-`defineTable` and in `kv`, with the exact `Static<>` TypeBox gives it.
+A field is any native TypeBox schema that is plain JSON. `Static<>` reads it,
+and TypeBox's `Compile` decides whether a value conforms. A bare
+`Type.Object(...)`, `Type.Enum(...)`, or `Type.Any()` is a field, in
+`defineTable` and in `kv`, with the exact `Static<>` TypeBox gives it. A
+`Type.Refine(...)` or codec is refused: its callback cannot be written to a
+file.
 
 The `field.*` helpers are wrappers for the common cases. Each returns a native
 schema and sets one enumerable keyword on it, `x-field`, which says which
@@ -139,6 +134,7 @@ field.reference('pages');
 | `tags` | `Type.Array(Type.String())` | `tags` |
 | `json(schema)` | a copy of `schema` | `json` |
 | `nullable(schema)` | `Type.Union([schema, Type.Null()])` | none of its own |
+| `optional(schema)` | `Type.Optional(schema)` | `schema`'s |
 
 Helpers take the options their types list (`title` and `description`
 everywhere; length, range, and list bounds where they apply) and throw on any
@@ -151,7 +147,15 @@ fills or changes a value, so a missing declared field is still an issue, a
 missing required property still fails, and no payload is initialized or
 recovered from a default. An application that wants one applies it itself.
 
-`field.json` and `field.nullable` take any native schema. `field.json(inner)`
+`field.optional(inner)` is a field a row may leave out. `RowOf` and
+`CreateRowOf` read it as `name?:`, a declaration file lists it outside
+`required`, and an absent optional field is not an issue; a present one is
+checked against `inner`. Absent and `null` stay distinct:
+`field.optional(field.nullable(inner))` allows both. Optionality is
+outermost, so `field.nullable` and `field.json` refuse an optional inner. Every
+KV field is optional already, so `KvOf` is `Partial`.
+
+`field.json` and `field.nullable` take any required native schema. `field.json(inner)`
 adds no validation: it is `inner` with the JSON editor chosen, which matters
 when `inner` carries a hint for another editor. `field.nullable(inner)` is the
 native union, and `inner` keeps its hint as a member.
@@ -170,8 +174,8 @@ const { status } = definition.kv;
 
 fieldEditorOf(status);
 // { kind: 'select', options: ['draft', 'published'] }
-accepts(status, null);
-// true: this field is field.nullable(field.select([...]))
+check({ status }, { status: null }, 'patch').issues;
+// []: this field is field.nullable(field.select([...]))
 ```
 
 | Part | Where it comes from |
@@ -181,18 +185,15 @@ accepts(status, null);
 | `target` | The hint, for a reference, when it is a usable table name. |
 
 `options` is the declared list. The check never admits a value outside it,
-but another keyword or a native refinement on the same schema can refuse one
-of them, and nothing filters the list by running those.
+but another keyword on the same schema can refuse one of them, and nothing
+filters the list by running the check.
 
-`fieldEditorOf` reads keywords and nothing else. It keeps no state, runs no
-validator, and calls no callback, so it works on any schema, prepared or not,
-and it says nothing about `null`. Whether a field admits `null` is a question
-for its check, asked where the answer is used: `accepts(schema, null)` on the
-prepared field. It is not read off the keywords, because they do not decide
-it. `Type.Any()` names no `null` and admits one. A refinement over a union
-with `null` can refuse it, and one that throws on `null` does not admit it.
-Preparing a definition validates no value, so it runs no callback to find
-out.
+`fieldEditorOf` reads keywords and nothing else. It keeps no state and runs no
+validator, so it works on any schema, prepared or not, and it says nothing
+about `null`. Whether a field admits `null` is a question for its check, asked
+where the answer is used. It is not read off the keywords, because they do not
+decide it: `Type.Any()` names no `null` and admits one, and `not: { type:
+'null' }` beside a union with `null` refuses it.
 
 A field gets the JSON editor when:
 
@@ -228,167 +229,67 @@ union is not read through.
 The prepared snapshot is frozen, so an editor read from a prepared field
 describes the schema its validator checks.
 
-### What survives JSON
+### A field is plain JSON
 
-Helpers add portable keywords and editor hints, without introducing a
-refinement callback or codec. Their JSON preserves those keywords and hints,
-including the distinction between a select and an unannotated enum. Native
-schemas need additional checks: ordinary `JSON.stringify` drops hidden
-keywords and callbacks. Constraints supplied as native callbacks remain local.
+A prepared field is the declared schema's JSON, deeply frozen. What is
+checked in memory is exactly what a declaration file holds, so a definition in
+code and the same definition read from `epicenter.json` validate alike.
+Preparation refuses, with the table, field, and path named:
 
-A native `Type.Refine` works wherever a schema is declared, including over a
-helper (`Type.Refine(field.string(), ...)`), and runs locally. Its callback is
-a function, so it is not in the schema's JSON form. The same holds for a
-codec. A declaration that uses either cannot be serialized faithfully. A codec
-is carried and never run: the reads call TypeBox's `Check` and `Errors`, which
-do not decode or encode, so no value is transformed here.
-`exportSchema(prepared)` returns a Result containing discovery JSON: optional
-`title`, `kv`, and `tables`, with two-space indentation and a trailing newline.
-It accepts only the prepared result of `prepareSchema` or `prepareData` and
-omits dataset identity. It preserves declared order, editor hints, and portable
-hidden data properties, including TypeBox's inert markers. Hidden members in
-validation maps are refused because making them enumerable changes TypeBox's
-checks. Export also refuses schemas whose compiled reference sharing changes
-when hidden keywords become enumerable. Each field remains a standalone
-TypeBox 1.x schema: references resolve within that field, and
-TypeBox's named recursive references keep their native dialect. The root
-object describes a definition; it is not itself one JSON Schema document.
-Native TypeBox extensions such as `type: 'bigint'` are outside the standard JSON
-Schema type vocabulary. Export preserves the native dialect rather than
-converting it into another validator's dialect.
+- a function anywhere, which is how a `Type.Refine`, a `~guard`, or a codec is
+  held, including under one of TypeBox's hidden keywords;
+- an accessor, a symbol key, a hidden keyword that is not TypeBox's own, a
+  visible `~` keyword in a schema, and anything other than plain objects and
+  dense arrays;
+- a value JSON would rewrite: a non-finite number, and `undefined` in an
+  array or as a `const`;
+- a schema that contains itself; one shared by two properties is fine;
+- a `format` outside TypeBox's stock portable set, or one whose handler an
+  application replaced. TypeBox passes every value for a format it does not
+  know, so a misspelled format would check nothing. Only `format` at a schema
+  position counts: inside `default`, `const`, `enum`, `examples`, or an
+  `x-field` hint it is data, and a property named `format` is a field.
 
-Fidelity is checked against TypeBox 1.1.23 under the same evaluation mode.
-TypeBox's compiled and interpreted validators can already disagree on
-scope-dependent references. Export preserves each mode's checks; it does not
-make readers using different modes or library versions agree.
+TypeBox's hidden `~` keywords are dropped, except that an optional field keeps
+`~optional`, hidden as TypeBox keeps it; `isOptional` reads it. A misspelled
+keyword such as `maxLenght` is inert, as JSON Schema treats any unknown
+keyword, and an unresolvable `$ref` fails every value where it is read.
 
-Export refuses the whole definition when JSON cannot preserve it: refinements,
-codecs, guards, body conversions, RegExp patterns, or other non-JSON values.
-Formats require TypeBox's stock registered handler; custom or replaced handlers
-are runtime validation dependencies. The descriptor walk invokes no callbacks
-or `toJSON`. It conservatively refuses guard keys and unsupported format strings
-even inside annotations, rather than guessing which objects are schema nodes.
-Export is checked on every call because guards and the format registry can
-change after preparation. There is no importer for other JSON Schema dialects.
-
-A spread (`{ ...field.string() }`) keeps the enumerable keywords and drops any
-hidden refinement an author added. The result is a valid native schema and is
-prepared as written.
+A body conversion is not a field. It stays in code, carried by reference on the
+prepared table, and a storage that cannot keep one refuses it.
 
 ### Every field holds JSON
 
 A schema can be structural about what it admits: `Type.Any()` admits a
-`Date`, `undefined`, `NaN`, a class instance, and a cycle. None of those
-survives being stored. So every read asks whether a value is JSON before the
-field's schema runs, for every field, in `accepts`, `conformance`, and
-`inputIssues`. A value that is not JSON fails with `must be a JSON value`, and
-the schema's validator is not called. That order matters for a recursive
-schema (`Type.Cyclic`), which follows a cyclic value until the stack overflows.
-
-This is a property of the reads over a prepared field, not of the schema. A
-helper schema checked directly with TypeBox's `Compile` admits what its
-keywords admit.
+`Date`, `NaN`, a class instance, and a cycle. None of those survives being
+stored. So `check` asks whether a value is JSON before the field's schema
+runs. A value that is not JSON fails with `must be a JSON value`, and the
+schema's validator is not called. That order matters for a recursive schema
+(`Type.Cyclic`), which follows a cyclic value until the stack overflows.
+`undefined` at the top level is absence, not a value; inside a value it is not
+JSON.
 
 Being JSON has no size: `isJsonSafe` sets no depth or width limit, and a value
 reachable by two paths is fine. The 16-level, 1024-key budget is `isJsonValue`
 and `isJsonObject`, which the storages that want it apply themselves. A value
 that is JSON and fails its schema gets TypeBox's own errors, at their own
-paths. If a native refinement or recursive validator throws, that field
-fails its check and reports `schema validation threw`. Valid sibling fields
-stay readable.
-
-### Validation only reads
-
-No read changes the value it is given. TypeBox's keyword
-validation is read-only by itself. A native callback is not: `Type.Refine` and a
-`~guard` hand the value to the author's function, which could write to it. So a
-field whose schema holds a function or a `~guard` validates a private, deeply
-frozen copy of the value, and the caller's value is neither written nor
-frozen:
-
-```ts
-const meta = Type.Refine(Type.Object({ touched: Type.Optional(Type.Boolean()) }), (value) => {
-  value.touched = true; // refused: the argument is frozen
-  return true;
-});
-```
-
-A refused write throws in strict code, which is every module. The field then
-fails with `schema validation threw`, like any other throwing callback. A
-conforming value in `conformance` is always the caller's own object.
-
-The copy holds arrays and plain objects: each object's prototype (plain or
-null), its own enumerable keys including one named `__proto__`, and shared
-nodes, which stay shared. It is made without recursion, so depth has no limit.
-A cycle, or a class instance that is not an array, is refused as not JSON
-before any callback runs. An array subclass passes `Array.isArray`, as it does
-in `isJsonSafe`, and its copy is a plain array. A schema of keywords alone,
-which is every unrefined helper, makes no copy.
-
-The supported values are stored JSON content: array elements and own
-enumerable string-keyed data properties. A non-enumerable, accessor, or
-inherited property is outside that, and the two kinds of field read it
-differently. A keyword-only schema reads the caller's value, so
-`Type.Object({ hidden: Type.Number() })` admits an object whose `hidden` is
-non-enumerable. The same schema under `Type.Refine` reads the copy, which has
-no `hidden`, and refuses it. This is a limit of the copy, stated and not
-enforced: nothing rejects or normalizes such a value.
-
-This protects the argument a callback is given, and nothing else. A callback
-is a deterministic predicate over content. Preparation calls none. A read may
-invoke them more than once, and asking `accepts(schema, null)` invokes them
-with `null`; timing and call count are not guaranteed. State it closes over, state a guard
-object keeps, side effects, and answers that change between calls are the
-author's to get right. A callback sees a copy, so one that compares object
-identity is asking something a stored JSON value cannot answer. It is not a
-sandbox.
+paths. If a recursive validator throws, that field reports `schema validation
+threw`, and valid sibling fields stay readable. No check changes the value it
+is given.
 
 ### Who owns a declared schema
 
 A helper copies its arguments: changing an options object, an option list, or
 a wrapped schema after the call changes nothing, and nothing the caller passed
-in is frozen. A schema the caller froze is copied the same way, hint replaced
-and hidden refinements kept: `field.json(Object.freeze(field.select([...])))`
-works, and so does declaring a frozen schema.
+in is frozen. An author who edits a schema before preparation owns that edit,
+and the editor follows the schema.
 
-Helpers return native schema objects. Copies retain the input's property
-descriptors, including read-only properties. An author who edits a schema before preparation
-owns that edit, and the editor follows the schema: push a value onto a
-select's `enum` and both the check and the options include it.
-
-`prepareData` takes ownership. For each field it takes one snapshot with
-TypeBox's own clone, freezes the snapshot's plain objects and arrays, compiles
-a validator for it, and puts the snapshot in the definition it returns.
-`defineStore` and `defineFolder` prepare at the declaration and return that
-definition. A field's name is its key in `kv` or in its table's `fields`.
-Editing the declared schema afterwards changes nothing a prepared definition
-reads, with the exception below.
-
-A validator belongs to a snapshot, never to the author's schema. Every field
-of every preparation gets its own snapshot, so one declared schema used in two
-definitions, or under two names, is prepared twice: edit it between two
-`defineStore` calls and the first store keeps the checks it was defined with
-while the second reads the edit. The author's own schema object is not a
-prepared field, and the reads refuse it.
-
-The snapshot holds own string-keyed data properties, hidden ones included,
-which is every native constraint. A function is kept by reference and left
-unfrozen. So is any node with a `~guard` key, whole: TypeBox's clone returns
-that node itself, with the guard and every keyword beside it, whether it is the
-field's root or nested. That node is still the author's object, it is not
-frozen, and an edit to it after preparation is not held off. A field whose
-root has a `~guard` is therefore the author's own object in the prepared
-definition too, and it reads through the validator of the latest definition
-that prepared it. Symbol keys, accessors, class instances, and whatever a
-callback or guard closes over are not covered either.
-
-A body conversion is carried by reference, unread and unfrozen.
-
-A field that is not a plain schema object, and a schema TypeBox cannot
-compile, are refused with the table and field named. A string or a number in a
-field map is also a type error. Whether a field admits `null` is not such a
-gate: a refinement that throws when given `null` is prepared like any other,
-and a stored `null` fails where it is read.
+`prepareData` takes ownership. Every field of every preparation gets its own
+frozen copy and validator, so one declared schema used in two definitions, or
+under two names, is prepared twice: edit it between two `defineStore` calls
+and the first store keeps the checks it was defined with while the second
+reads the edit. The author's own schema object is not a prepared field, and
+`check` refuses it.
 
 ### References
 
@@ -399,44 +300,47 @@ the JSON editor. No storage checks that the table or the row exists, and no
 storage rewrites a reference when a row is renamed or deleted. A stored
 identifier may dangle.
 
-## Field conformance
+## Checking values
 
-A table's prepared fields check each declared field by itself, for a read and
-for a write:
+`check(fields, values, mode)` checks values against prepared fields, one field
+at a time, so a field that fails never takes a valid one with it:
 
 ```ts
 const { fields } = definition.tables.todos;
 
-conformance(fields, stored);                        // { conforming, issues }
-inputIssues(fields, supplied, { complete: true });  // issues with values to write
+check(fields, stored, 'read');      // a stored row
+check(fields, supplied, 'input');   // a whole row to write
+check(definition.kv, { theme }, 'patch'); // some fields to write
+// { conforming, issues }
 ```
 
-`conformance` returns the declared fields that validated beside the issues of
-the ones that did not: a field that fails does not take a valid one with it,
-and a key the table does not declare is neither. Every declared field must be
-present. `inputIssues` checks values a caller supplies for a write: an
-undeclared key, a value that does not conform, and, for a complete row, a
-declared field that is absent. A key supplied as `undefined` is a value that
-is not JSON, which is a different issue from a key that is absent.
+| Mode | Undeclared key | Absent required field |
+| --- | --- | --- |
+| `read` | ignored | issue |
+| `input` | issue | issue |
+| `patch` | issue | no issue |
 
-Which of these a storage runs on a write is that storage's rule. App checks
-names and that a value is JSON when it writes, and reads through
-`conformance`. Folder checks supplied values with `inputIssues` before it
-writes a file.
+An absent optional field is never an issue, and a top-level key holding
+`undefined` is absent. `conforming` holds each present field whose value is
+JSON and passes its own validator, as the caller's own values.
 
-An issue is `{ field, path?, message }`. One private diagnostic over a field's
-validator feeds both, so `conformance` and `inputIssues` report a failing
-value the same way, and both report nothing exactly when `accepts` says yes.
-So they agree for nullable values, a reference's nonempty value, and a value
-that is not JSON. There is no public per-field diagnostics function and no
-second table of validators. TypeBox's compiled `Check` is the
+Each field has its own compiled validator. One `Type.Object` over the whole
+row would be checked once, but TypeBox stops reporting at 8 errors, so a bad
+field late in a row would read as valid, and a missing key inside a nested
+object would be blamed on a top-level field of the same name.
+
+Which mode a storage runs is that storage's rule. App checks names and that a
+value is JSON when it writes, and reads through `read`. Folder reads a row file
+with `read`, and checks a setting with `patch` before it writes `kv.json`.
+
+An issue is `{ field, path?, message }`. TypeBox's compiled `Check` is the
 authority: a value it refuses is an issue even when its error report is empty.
-`path` is a JSON pointer inside the field's value, such as `/1` for the
-second item of a list. It is present only when the validator named a location
-that can be walked in the value; TypeBox joins object keys into its path
-unescaped, so a path through a key containing `/` or `~` is reported against
-the whole field. TypeBox's own error types are not exported. Messages and the
-number of issues are for people, not for code to match on.
+`path` is a JSON pointer inside the field's value, such as `/1` for the second
+item of a list. It is present only when the validator named a location that
+can be walked in the value; TypeBox joins object keys into its path unescaped,
+so a path through a key containing `/` or `~` is reported against the whole
+field. Messages and the number of issues are for people, not for code to match
+on.
 
 ## The body conversion
 
@@ -460,6 +364,6 @@ A storage that keeps no live body refuses a definition that declares one.
 ## Commands
 
 ```sh
-bun test          # field helpers, name grammars, preparation and reads
+bun test          # field helpers, name grammars, preparation and check
 bun run typecheck
 ```

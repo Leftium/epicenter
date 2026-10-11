@@ -765,3 +765,5 @@ When you add an ADR, add its row here.
 | [0521](0521-a-data-folder-syncs-with-its-git-origin-through-a-provider.md) | A data folder syncs with its Git origin through a provider | Proposed (provider interface, repository-addressed GitHub transfers, listing by epicenter.json, and Artifacts provider unbuilt) |
 | [0522](0522-settings-are-independent-keys-set-one-at-a-time.md) | Settings are independent keys set one at a time | Proposed (application adoption and amending 0487 and 0499 unbuilt) |
 | [0523](0523-applications-own-drafts-in-edit-sessions-and-leave-one-open-item.md) | Applications own drafts in edit sessions and leave one open item | Proposed (keyed slot for several open items unbuilt) |
+| [0525](0525-a-field-is-plain-json-schema.md) | A field is plain JSON Schema | Proposed |
+| [0526](0526-a-field-is-required-unless-declared-optional.md) | A field is required unless declared optional | Proposed |

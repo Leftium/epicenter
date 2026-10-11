@@ -1,5 +1,9 @@
 # Definition publication verification
 
+These records predate the rename to `epicenter.json` and the object-schema
+file shape (ADR-0525, ADR-0526); the saved files keep the `{ fields }` shape
+of their day.
+
 The [2026-10-08 computer-use run](computer-use-20261008/README.md) completes real
 OPFS and Honeycrisp browser/native note acceptance and records two verified
 collapses. Todos remote bootstrap remains unresolved. The records below describe

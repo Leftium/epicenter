@@ -40,7 +40,8 @@ formatRow(definition.tables.x, row): Result<string, RowIssue>;
   no exact JSON form, and a schema failure share it, because the caller does
   the same thing for each: open a text editor. There is no partial row.
 - Issues are compiler-style: `{ message, line?, field? }`, never empty, with a
-  1-based line over the whole file, absent only for a missing declared field.
+  1-based line over the whole file, absent only for a missing required field.
+  A missing optional field is not an issue (ADR-0526).
 - `create` is the one unconditional write. `replace`, `rename`, and `delete`
   take a capture `{ path, sha256 }`, so every other write names the bytes it
   replaces and is `Conflict` when they are gone. A stored row, an `InvalidRow`,
@@ -89,6 +90,5 @@ save.
 
 `packages/folder/src/row-text.test.ts` and `table.test.ts` cover every failure
 category with its line, never-empty issues, unknown keys kept, mutable and
-independent values, validation callbacks shown a frozen copy, the listing
-pipeline, canonical writes reading back, synchronous capture, refusal before
-storage, and stale and missing captures as `Conflict`.
+independent values, the listing pipeline, canonical writes reading back,
+synchronous capture, refusal before storage, and stale and missing captures as `Conflict`.

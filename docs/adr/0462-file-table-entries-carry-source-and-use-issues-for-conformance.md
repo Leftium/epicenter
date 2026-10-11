@@ -176,12 +176,10 @@ The exported `DeepReadonly` preserves branded primitives, unknown values,
 fixed and variadic tuples, and recursive JSON types. Its tested implementation
 lives in `reading.ts`; consumers do not duplicate the recursive type.
 
-Folder freezes its own parsed JSON values before schema callbacks run. Typed
-commands copy supplied JSON values and freeze the copies before validation,
-without freezing caller-owned objects. A callback that attempts mutation yields
-a field issue on read or `InvalidValues` on a typed command. Non-JSON values,
-including YAML binary, date, set, and map tags, are rejected before callbacks
-run. A declared non-JSON value produces a field issue while valid siblings and
+A field holds no callback (ADR-0525), so validation never writes to a value.
+Typed commands copy supplied JSON values before validation, without freezing
+caller-owned objects. Non-JSON values, including YAML binary, date, set, and
+map tags, are rejected before validation. A declared non-JSON value produces a field issue while valid siblings and
 the body remain usable. Undeclared tagged values stay in the text unreported.
 
 Literal stems are addresses, not diagnostics. Append exactly `.md` to one

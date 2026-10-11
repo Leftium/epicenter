@@ -16,7 +16,7 @@
 			"prompt": "Run a collapse pass over packages/workspace and tell me which indirection can go.",
 			"anchors": ["collapse pass"],
 			"expect": "collapse-pass",
-			"forbid": ["post-implementation-review", "refactoring"],
+			"forbid": ["post-implementation-review"],
 			"why": "Named phrase with a single owner. If the hub answers this, the hub's description is too broad."
 		},
 		{
@@ -32,7 +32,7 @@
 		{
 			"id": "review-simplify-this",
 			"cluster": "review",
-			"prompt": "Take a look at packages/data and simplify this. There is a lot of indirection nobody needs.",
+			"prompt": "Take a look at packages/app and simplify this. There is a lot of indirection nobody needs.",
 			"anchors": ["simplify this"],
 			"expect": "collapse-pass",
 			"forbid": ["control-flow"],
@@ -149,6 +149,33 @@
 			"expect": "agent-goal",
 			"forbid": ["handoff", "consult-claude"],
 			"why": "A goal line is a third artifact next to the handoff prompt and the launched session."
+		},
+		{
+			"id": "review-another-refactoring-pass",
+			"cluster": "review",
+			"prompt": "Another refactoring pass on the importer. Follow related callers for fresh opportunities.",
+			"anchors": ["refactoring pass"],
+			"expect": "collapse-pass",
+			"forbid": ["control-flow"],
+			"why": "A repeated broad pass owns exploration; methods are references, not a competing entrypoint."
+		},
+		{
+			"id": "review-collapse-plan",
+			"cluster": "review",
+			"prompt": "Plan a collapse pass on these files, only these files. Do not edit yet.",
+			"anchors": ["collapse pass"],
+			"expect": "collapse-pass",
+			"forbid": [],
+			"why": "The simplification capability owns plans too; selection alone does not verify action or scope limits."
+		},
+		{
+			"id": "review-code-clean-up",
+			"cluster": "review",
+			"prompt": "Can you clean up this module a bit before we ship it?",
+			"anchors": ["clean up"],
+			"expect": "collapse-pass",
+			"forbid": [],
+			"why": "Code cleanup starts with the simplification capability. Everyday cleanup remains outside its scope."
 		}
 	]
 }

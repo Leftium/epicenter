@@ -1,9 +1,13 @@
+#[cfg(feature = "runtime-evidence")]
+pub mod runtime_evidence;
+
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs::{self, File, OpenOptions};
-use std::io::{BufRead, BufReader, Write};
+use std::io::{BufRead, BufReader, Read, Write};
 use std::path::PathBuf;
 use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::{mpsc, Mutex};
+use std::sync::{mpsc, Arc, Mutex, OnceLock};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -21,6 +25,7 @@ use tauri_plugin_dialog::{
     DialogExt, MessageDialogButtons, MessageDialogKind, MessageDialogResult,
 };
 use tauri_plugin_opener::OpenerExt;
+use tauri_plugin_epicenter_folder::{Author as FolderAuthor, FolderConfig, FolderExt, ScopeConfig};
 use tauri_specta::Event as _;
 
 /// The command list, shared with `build.rs` through `include!`. Only the tests
@@ -29,13 +34,19 @@ use tauri_specta::Event as _;
 mod command_names;
 
 pub mod app_data;
+mod departure;
+mod device_owner;
+mod installed_apps;
+mod sqlite;
 
 pub mod audio;
 use audio::encode_recording_for_upload;
 
+pub mod blobs;
 pub mod recorder;
 use recorder::commands::{
-    cancel_recording, cancel_recording_owned_by, current_recording, enumerate_recording_devices,
+    cancel_recording, cancel_recording_owned_by, close_recording_session, current_recording,
+    enumerate_recording_devices, recording_document_generation, register_recording_session, resolve_recording_start,
     start_recording, stop_recording,
 };
 use recorder::recorder::Recorder;
@@ -43,8 +54,9 @@ use recorder::recorder::Recorder;
 pub mod transcription;
 use transcription::{
     delete_model, download_model, get_active_model, get_local_transcription_readiness,
-    get_unload_policy, list_models, prewarm_model, set_active_model, set_unload_policy,
-    transcribe_recording, LocalTranscriptionSettings, ModelCache,
+    get_unload_policy, list_inference_models, list_models, prewarm_model, set_active_model,
+    set_unload_policy, transcribe_audio_bytes, transcribe_recording, LocalTranscriptionSettings,
+    ModelCache,
 };
 
 pub mod command;
@@ -57,7 +69,7 @@ pub mod download;
 use download::{cancel_download, DownloadManager};
 
 mod delivery;
-use delivery::{simulate_copy_keystroke, simulate_enter_keystroke, write_text};
+use delivery::{simulate_enter_keystroke, write_text};
 
 mod keyring_storage;
 use keyring_storage::{
@@ -84,34 +96,46 @@ pub mod overlay;
 #[cfg(target_os = "macos")]
 pub mod clipboard;
 
-/// Reserved label prefix for derived-catalog app windows (ADR-0153). One
-/// capability glob (`app-*`) grants every such window the first trusted-app
-/// authority slice, so no host-internal window label may ever start with it.
+/// Reserved label prefix for installed app windows (ADR-0153). One capability
+/// glob (`app-*`) grants every such window the first trusted-app authority
+/// slice and the Folder plugin's commands, so no host-internal window label may
+/// ever start with it. Which folder a window reaches is the plugin's per-label
+/// registration, not the glob.
 const APP_WINDOW_PREFIX: &str = "app-";
 #[cfg(any(not(debug_assertions), test))]
 const PRODUCTION_PORT: u16 = 39_130;
 #[cfg(any(debug_assertions, test))]
 const DEVELOPMENT_PORT: u16 = 39_131;
-const PROTOCOL_VERSION: u8 = 2;
+const PROTOCOL_VERSION: u8 = 10;
 const HOSTED_AUTH_ORIGIN: &str = "https://api.epicenter.so";
 const READY_TIMEOUT: Duration = Duration::from_secs(15);
-const SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(3);
+/// How long Bun gets to shut down after its stdin closes before it is killed.
+///
+/// Longer than Bun's own ten-second shutdown grace (`SHUTDOWN_GRACE_MS` in
+/// `src/sidecar-runtime.ts`), so Bun's owners finish what they admitted, such
+/// as a Capture save and its commit, and Bun exits by itself. The kill is the
+/// bound for a host that hangs anyway: work still running then is lost.
+const SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(12);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum BuiltInApp {
     Home,
     Whispering,
     Honeycrisp,
+    Capture,
     Mail,
+    Todos,
     Books,
 }
 
 impl BuiltInApp {
-    const ALL: [Self; 5] = [
+    const ALL: [Self; 7] = [
         Self::Home,
         Self::Whispering,
         Self::Honeycrisp,
+        Self::Capture,
         Self::Mail,
+        Self::Todos,
         Self::Books,
     ];
 
@@ -121,10 +145,14 @@ impl BuiltInApp {
     /// ones Home offers. Home is absent because you are already looking at it,
     /// not because it is above the others (ADR-0209). Books is a
     /// release-bundled placeholder document with nothing behind it to open.
+    /// Honeycrisp now ships its own desktop shell, outside this host.
     /// All stay reserved IDs the catalog refuses to admit, so "not launchable"
     /// never means "free for someone else to claim".
     const fn is_launchable(self) -> bool {
-        matches!(self, Self::Whispering | Self::Honeycrisp | Self::Mail)
+        matches!(
+            self,
+            Self::Whispering | Self::Capture | Self::Mail | Self::Todos
+        )
     }
 
     const fn id(self) -> &'static str {
@@ -132,7 +160,9 @@ impl BuiltInApp {
             Self::Home => "home",
             Self::Whispering => "whispering",
             Self::Honeycrisp => "honeycrisp",
+            Self::Capture => "capture",
             Self::Mail => "mail",
+            Self::Todos => "todos",
             Self::Books => "books",
         }
     }
@@ -142,7 +172,9 @@ impl BuiltInApp {
             Self::Home => "/apps/home/",
             Self::Whispering => "/apps/whispering/",
             Self::Honeycrisp => "/apps/honeycrisp/",
+            Self::Capture => "/apps/capture/",
             Self::Mail => "/apps/mail/",
+            Self::Todos => "/apps/todos/",
             Self::Books => "/apps/books/",
         }
     }
@@ -152,7 +184,9 @@ impl BuiltInApp {
             Self::Home => "Epicenter: Home",
             Self::Whispering => "Epicenter: Whispering",
             Self::Honeycrisp => "Epicenter: Honeycrisp",
+            Self::Capture => "Epicenter: Capture",
             Self::Mail => "Epicenter: Mail",
+            Self::Todos => "Epicenter: Todos",
             Self::Books => "Epicenter: Books",
         }
     }
@@ -172,6 +206,10 @@ struct BootFrame<'a> {
     token: &'a str,
     port: u16,
     auth_cell: Option<&'a str>,
+    auth_server: AuthServer,
+    account_management: bool,
+    #[serde(flatten)]
+    paths: &'a app_data::DesktopPaths,
 }
 
 #[derive(Debug, Deserialize, PartialEq, Eq)]
@@ -180,11 +218,35 @@ struct ReadyFrame {
     r#type: String,
     protocol_version: u8,
     port: u16,
+    /// The installed applications this Bun generation discovered and serves.
+    /// `read_ready_frame` refuses the whole frame when one is invalid.
+    installed_app_ids: Vec<String>,
+    /// The credential-free Account this Bun generation booted with, or `null`
+    /// when it booted signed out. Required: `deserialize_with` stops serde
+    /// from reading an absent field as `null`, which would capture Local.
+    #[serde(deserialize_with = "Option::deserialize")]
+    boot_account: Option<device_owner::AccountIdentity>,
 }
 
-#[derive(Debug, Deserialize, PartialEq, Eq)]
+/// What one ready frame established about its Bun generation.
+#[derive(Debug, PartialEq, Eq)]
+struct Readiness {
+    installed_app_ids: BTreeSet<String>,
+    boot_account: Option<device_owner::AccountIdentity>,
+}
+
+#[derive(Debug, Deserialize, PartialEq)]
 #[serde(tag = "type", rename_all = "kebab-case", deny_unknown_fields)]
-enum BunToRustAuthFrame {
+enum BunToRustNativeFrame {
+    Sqlite {
+        #[serde(rename = "requestId")]
+        request_id: String,
+        request: sqlite::Request,
+    },
+    SqliteCancel {
+        #[serde(rename = "requestId")]
+        request_id: String,
+    },
     StoreAuth {
         #[serde(rename = "requestId")]
         request_id: String,
@@ -196,36 +258,56 @@ enum BunToRustAuthFrame {
         url: String,
     },
     PutAppSecret {
+        account: Option<device_owner::AccountIdentity>,
         #[serde(rename = "requestId")]
         request_id: String,
         #[serde(rename = "appId")]
         app_id: String,
-        #[serde(rename = "accountId")]
-        account_id: String,
+        label: String,
         value: String,
     },
     GetAppSecret {
+        account: Option<device_owner::AccountIdentity>,
         #[serde(rename = "requestId")]
         request_id: String,
         #[serde(rename = "appId")]
         app_id: String,
-        #[serde(rename = "accountId")]
-        account_id: String,
+        label: String,
     },
     DeleteAppSecret {
+        account: Option<device_owner::AccountIdentity>,
         #[serde(rename = "requestId")]
         request_id: String,
         #[serde(rename = "appId")]
         app_id: String,
-        #[serde(rename = "accountId")]
-        account_id: String,
+        label: String,
     },
-    Relaunch {},
+    /// Ask to restart for an account change. Rust answers with exactly one
+    /// `native-result` once the departure round grants or refuses it.
+    PrepareRelaunch {
+        #[serde(rename = "requestId")]
+        request_id: String,
+    },
+    /// Withdraw a preparation still collecting. A grant ignores it.
+    PrepareCancel {
+        #[serde(rename = "requestId")]
+        request_id: String,
+    },
+    /// Release a grant without restarting.
+    RelaunchAbort {
+        #[serde(rename = "requestId")]
+        request_id: String,
+    },
+    /// Finish a grant by restarting the process.
+    Relaunch {
+        #[serde(rename = "requestId")]
+        request_id: String,
+    },
 }
 
 #[derive(Debug, Serialize)]
 #[serde(tag = "type", rename_all = "kebab-case")]
-enum RustToBunAuthFrame<'a> {
+enum RustToBunNativeFrame<'a> {
     NativeResult {
         #[serde(rename = "requestId")]
         request_id: &'a str,
@@ -243,7 +325,7 @@ enum RustToBunAuthFrame<'a> {
         status: &'static str,
         value: Option<&'a str>,
     },
-    OauthCallback {
+    AuthCallback {
         url: &'a str,
     },
 }
@@ -251,16 +333,42 @@ enum RustToBunAuthFrame<'a> {
 struct ManagedChild {
     generation: u64,
     child: Child,
-    stdin: Option<ChildStdin>,
+    stdin: Option<mpsc::SyncSender<String>>,
+    sqlite: sqlite::Worker,
+    writer: Option<thread::JoinHandle<()>>,
+}
+
+/// The Bun generation windows are admitted for: its launch token and the
+/// installed applications its ready frame named.
+struct ActiveHost {
+    token: String,
+    installed_app_ids: BTreeSet<String>,
 }
 
 struct HostState {
     port: std::result::Result<u16, String>,
     next_generation: AtomicU64,
     process: Mutex<Option<ManagedChild>>,
-    active_token: Mutex<Option<String>>,
+    /// One lock for the token and the membership, so a launch never pairs one
+    /// generation's token with another generation's installed applications.
+    active: Mutex<Option<ActiveHost>>,
+    /// Installed applications whose Folder scope is registered. This outlives
+    /// every Bun generation because the plugin keeps a scope for the native
+    /// process and refuses to register one twice.
+    installed_folders: Mutex<BTreeSet<String>>,
+    /// Whose folders installed apps open for this native process: the Account
+    /// the first ready Bun generation booted with, or Local (`Some(None)`).
+    /// Unset until that frame arrives. Replacing the account restarts the
+    /// whole native process, so a Bun recovery that names another owner is
+    /// refused (`capture_folder_owner`); otherwise a Folder scope registered
+    /// for one owner would keep serving that owner's directory to the next.
+    folder_owner: OnceLock<Option<device_owner::AccountIdentity>>,
+    /// Installed apps whose account data is downloading, each with the flag
+    /// that cancels it. One download per app at a time in this process; the
+    /// destination's lock keeps other processes out.
+    downloads: Mutex<BTreeMap<String, Download>>,
     pending_apps: Mutex<Vec<BuiltInApp>>,
-    pending_oauth_callback: Mutex<Option<String>>,
+    pending_auth_callback: Mutex<Option<String>>,
     /// A section of Home an application asked the shell to open, held until Home
     /// is able to claim it. Only the latest survives: two recovery nudges in a
     /// row should land the user somewhere once, not queue a backlog.
@@ -275,9 +383,12 @@ impl HostState {
             port: port.map_err(|error| format!("{error:#}")),
             next_generation: AtomicU64::new(1),
             process: Mutex::new(None),
-            active_token: Mutex::new(None),
+            active: Mutex::new(None),
+            installed_folders: Mutex::new(BTreeSet::new()),
+            folder_owner: OnceLock::new(),
+            downloads: Mutex::new(BTreeMap::new()),
             pending_apps: Mutex::new(Vec::new()),
-            pending_oauth_callback: Mutex::new(None),
+            pending_auth_callback: Mutex::new(None),
             pending_home_section: Mutex::new(None),
             shutting_down: AtomicBool::new(false),
             starting: AtomicBool::new(false),
@@ -316,48 +427,159 @@ impl HostState {
             .take()
     }
 
-    fn queue_oauth_callback(&self, url: String) {
+    fn queue_auth_callback(&self, url: String) {
         *self
-            .pending_oauth_callback
+            .pending_auth_callback
             .lock()
-            .expect("pending OAuth callback lock poisoned") = Some(url);
+            .expect("pending auth callback lock poisoned") = Some(url);
     }
 
-    fn take_oauth_callback(&self) -> Option<String> {
-        self.pending_oauth_callback
+    fn take_auth_callback(&self) -> Option<String> {
+        self.pending_auth_callback
             .lock()
-            .expect("pending OAuth callback lock poisoned")
+            .expect("pending auth callback lock poisoned")
             .take()
     }
 
-    fn activate(&self, token: &str) {
-        *self
-            .active_token
-            .lock()
-            .expect("active token lock poisoned") = Some(token.to_string());
+    /// Capture the first ready generation's boot Account as the folder owner
+    /// for this native process, or refuse a later generation that booted with
+    /// another one. The same owner may come back in any number of recoveries.
+    fn capture_folder_owner(&self, boot_account: Option<device_owner::AccountIdentity>) -> Result<()> {
+        if *self.folder_owner.get_or_init(|| boot_account.clone()) != boot_account {
+            bail!(OWNER_CHANGED);
+        }
+        Ok(())
     }
 
+    fn activate(&self, token: &str, installed_app_ids: BTreeSet<String>) {
+        *self.active.lock().expect("active host lock poisoned") = Some(ActiveHost {
+            token: token.to_string(),
+            installed_app_ids,
+        });
+        self.cancel_downloads_outside(Some(token));
+    }
+
+    /// The generation is gone: so is every download it started, whose relay
+    /// went with it.
     fn deactivate(&self) {
-        *self
-            .active_token
-            .lock()
-            .expect("active token lock poisoned") = None;
+        *self.active.lock().expect("active host lock poisoned") = None;
+        self.cancel_downloads_outside(None);
     }
 
     fn active_token(&self) -> Option<String> {
-        self.active_token
+        self.active
             .lock()
-            .expect("active token lock poisoned")
-            .clone()
+            .expect("active host lock poisoned")
+            .as_ref()
+            .map(|active| active.token.clone())
     }
 
     fn token_is_active(&self, token: &str) -> bool {
-        self.active_token
+        self.active
             .lock()
-            .expect("active token lock poisoned")
-            .as_deref()
-            == Some(token)
+            .expect("active host lock poisoned")
+            .as_ref()
+            .is_some_and(|active| active.token == token)
     }
+
+    /// Whether `id` is an installed application of the generation `token`
+    /// belongs to, read under one lock.
+    fn admits_installed(&self, token: &str, id: &str) -> bool {
+        self.active
+            .lock()
+            .expect("active host lock poisoned")
+            .as_ref()
+            .is_some_and(|active| active.token == token && active.installed_app_ids.contains(id))
+    }
+
+    /// Whether the active generation lists `id` as installed.
+    fn lists_installed(&self, id: &str) -> std::result::Result<(), String> {
+        let token = self
+            .active_token()
+            .ok_or_else(|| "the Epicenter host is not ready".to_string())?;
+        if !self.admits_installed(&token, id) {
+            return Err(format!("{id} is not an installed application"));
+        }
+        Ok(())
+    }
+
+    /// Start tracking a download of `id` for the active generation, and
+    /// return its cancel flag. The generation's token is held with the flag,
+    /// so the download is cancelled when that generation stops being active.
+    fn begin_download(&self, id: &str) -> std::result::Result<Arc<AtomicBool>, String> {
+        let mut downloads = self.downloads.lock().expect("download lock poisoned");
+        if self.shutting_down.load(Ordering::Acquire) {
+            return Err("Epicenter is quitting.".to_string());
+        }
+        if downloads.contains_key(id) {
+            return Err("This app's data is already downloading.".to_string());
+        }
+        let token = self
+            .active_token()
+            .ok_or_else(|| "the Epicenter host is not ready".to_string())?;
+        let cancel = Arc::new(AtomicBool::new(false));
+        downloads.insert(
+            id.to_string(),
+            Download {
+                token,
+                cancel: Arc::clone(&cancel),
+            },
+        );
+        Ok(cancel)
+    }
+
+    fn end_download(&self, id: &str) {
+        self.downloads.lock().expect("download lock poisoned").remove(id);
+    }
+
+    fn download_running(&self, id: &str) -> bool {
+        self.downloads.lock().expect("download lock poisoned").contains_key(id)
+    }
+
+    /// Ask a running download of `id` to stop. Whether one was running.
+    fn cancel_download(&self, id: &str) -> bool {
+        match self.downloads.lock().expect("download lock poisoned").get(id) {
+            Some(download) => {
+                download.cancel.store(true, Ordering::SeqCst);
+                true
+            }
+            None => false,
+        }
+    }
+
+    fn cancel_downloads(&self) {
+        self.cancel_downloads_outside(None);
+    }
+
+    /// Cancel every download not started by the generation `token` names.
+    /// Taken after the active lock is released, never inside it.
+    fn cancel_downloads_outside(&self, token: Option<&str>) {
+        for download in self.downloads.lock().expect("download lock poisoned").values() {
+            if Some(download.token.as_str()) != token {
+                download.cancel.store(true, Ordering::SeqCst);
+            }
+        }
+    }
+}
+
+/// One running download: the generation that started it, and its cancel flag.
+struct Download {
+    token: String,
+    cancel: Arc<AtomicBool>,
+}
+
+/// The active Bun generation's control address, read again each time it is
+/// asked: a hosted transfer that starts after a Bun recovery uses the new
+/// generation, and one already running keeps the generation that started it.
+fn current_generation<R: Runtime>(app: &AppHandle<R>) -> installed_apps::CurrentGeneration {
+    let app = app.clone();
+    Arc::new(move || {
+        let state = app.state::<HostState>();
+        Some(installed_apps::Generation {
+            port: state.port().ok()?,
+            token: state.active_token()?,
+        })
+    })
 }
 
 struct LaunchedHost {
@@ -365,6 +587,7 @@ struct LaunchedHost {
     stdin: ChildStdin,
     stdout: BufReader<ChildStdout>,
     token: String,
+    installed_app_ids: BTreeSet<String>,
 }
 
 enum FailureChoice {
@@ -381,13 +604,18 @@ fn make_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
         .commands(tauri_specta::collect_commands![
             write_text,
             simulate_enter_keystroke,
-            simulate_copy_keystroke,
             enumerate_recording_devices,
             start_recording,
             stop_recording,
             cancel_recording,
+            recording_document_generation,
+            register_recording_session,
             current_recording,
+            resolve_recording_start,
+            close_recording_session,
             transcribe_recording,
+            transcribe_audio_bytes,
+            list_inference_models,
             prewarm_model,
             open_accessibility_settings,
             request_accessibility_permission,
@@ -418,7 +646,7 @@ fn make_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             HomeSectionPending,
             recorder::ended::RecordingEndedEvent,
         ])
-        .error_handling(tauri_specta::ErrorHandlingMode::Result)
+        .error_handling(tauri_specta::ErrorHandlingMode::DataError)
 }
 
 #[cfg(test)]
@@ -504,14 +732,16 @@ fn take_pending_home_section(app: DesktopAppHandle) -> Option<HomeSection> {
 /// that is a distinction a person makes, so it is resolved here from the ID
 /// rather than by the caller (ADR-0189).
 ///
-/// `Admitted` says how the window is built, not that the ID is admitted. Rust
-/// keeps no catalog: the immutable generation and its membership are Bun's
-/// alone (ADR-0179), and nothing here can or should re-derive them.
+/// `Admitted` says how the window would be built, not that the ID is admitted.
+/// Membership is decided on the main thread against the installed IDs the
+/// active Bun generation named in its ready frame (ADR-0179); Rust never reads
+/// the catalog from disk.
 enum Application {
     /// A compiled application with its own stable window label and enumerated
     /// capabilities.
     Compiled(BuiltInApp),
-    /// Anything else: opened in an `app-` window pointed at `/apps/<id>/`.
+    /// Anything else: an installed application's `app-` window pointed at
+    /// `/apps/<id>/`, opened only for a member of the active generation.
     Admitted(String),
 }
 
@@ -532,16 +762,17 @@ enum Application {
 ///
 /// # Who decides an ID is real
 ///
-/// Not this function. Rust validates the ID's *shape* and resolves it against
-/// its own compiled app table; it never asks whether a folder was admitted,
-/// because the catalog is one immutable generation owned by Bun (ADR-0179) and
-/// a second copy in Rust would be a second answer. What keeps a made-up ID from
-/// arriving is that Home only offers IDs from the authenticated list Bun serves.
+/// Bun, once per generation. It discovers the installed releases at boot,
+/// serves exactly those, and names their IDs in its ready frame; Rust holds
+/// that list beside the generation's launch token and never reads the catalog
+/// itself (ADR-0179). This function validates the ID's *shape* and resolves it
+/// against the compiled app table; the main thread then opens an `app-` window
+/// only for an ID the active generation named.
 ///
-/// An ID that shape-checks but names no member still cannot reach anything: it
-/// opens an `app-` window at `/apps/<id>/`, which is a URL Rust derived itself
-/// (the frontend never supplies one), and Bun answers it 404. That is a
-/// contained dead end, not a privilege.
+/// That check matters because an installed app's window is a grant, not only
+/// a page: it gets a native Folder registered for its label under
+/// `<folderDir>/local/<id>`. An ID that shape-checks but names no member opens
+/// nothing and registers nothing, even though Home only offers listed IDs.
 ///
 /// # Why it waits
 ///
@@ -570,7 +801,105 @@ fn launch_application(
     };
     let port = state.port().map_err(|error| format!("{error:#}"))?;
 
-    launch_on_main_thread(&app, application, port, &token).map_err(|error| format!("{error:#}"))
+    launch_on_main_thread(&app, application, port, &token, true).map_err(|error| format!("{error:#}"))
+}
+
+/// Where one application's data stands on this device, as Home's Apps pane
+/// shows it beside the launch action. Read from the folder itself each time;
+/// nothing records that a download happened.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(tag = "state", rename_all = "kebab-case")]
+enum ApplicationData {
+    /// A compiled application, which owns its own data.
+    Compiled,
+    /// Signed out: an installed app opens its Local folder.
+    Local,
+    /// The account's dataset is a repository here; launching opens it.
+    Available,
+    /// The account's dataset is not here yet: download it first.
+    NotDownloaded,
+    /// Something that is not a repository is at the dataset's path. It is
+    /// neither opened nor downloaded over; `message` says how to repair it.
+    Unclaimed { message: String },
+    /// A download is running.
+    Downloading,
+}
+
+/// Read where one listed application's data stands. Creates and opens
+/// nothing, so Home can offer Download without the app's folder opening.
+#[tauri::command(async)]
+fn application_data(
+    app: DesktopAppHandle,
+    state: State<'_, HostState>,
+    app_id: String,
+) -> std::result::Result<ApplicationData, String> {
+    let Some(application) = parse_application_id(&app_id) else {
+        return Err(format!("{app_id} is not an application Home offers"));
+    };
+    let Application::Admitted(id) = application else {
+        return Ok(ApplicationData::Compiled);
+    };
+    state.lists_installed(&id)?;
+    if state.download_running(&id) {
+        return Ok(ApplicationData::Downloading);
+    }
+    let owner = state
+        .folder_owner
+        .get()
+        .ok_or_else(|| "the Epicenter host is not ready".to_string())?;
+    let paths = app.state::<app_data::DesktopPaths>();
+    match installed_apps::installed_data(&paths.folder_dir, owner.as_ref(), &id) {
+        Ok(installed_apps::InstalledData::Local) => Ok(ApplicationData::Local),
+        Ok(installed_apps::InstalledData::Available) => Ok(ApplicationData::Available),
+        Ok(installed_apps::InstalledData::NotDownloaded) => Ok(ApplicationData::NotDownloaded),
+        Ok(installed_apps::InstalledData::Unclaimed { message }) => {
+            Ok(ApplicationData::Unclaimed { message })
+        }
+        Err(error) => Err(format!("{error:#}")),
+    }
+}
+
+/// Download the signed-in account's data for one installed application,
+/// before that app opens it for the first time. Home's explicit verb; nothing
+/// downloads on launch, sign-in, or listing.
+///
+/// The folder is the dataset named exactly by the app's ID, under the Account
+/// this native process captured. Its repository is the one the account's
+/// pairing names now; that selection is recorded in the folder and never
+/// replaced by later discovery. Anything already at the destination is
+/// refused and left as it is. Resolves once the folder is in place and its
+/// transfer retired; the caller then launches the app as usual.
+#[tauri::command(async)]
+fn download_application(
+    app: DesktopAppHandle,
+    state: State<'_, HostState>,
+    app_id: String,
+) -> std::result::Result<(), String> {
+    let Some(Application::Admitted(id)) = parse_application_id(&app_id) else {
+        return Err(format!("{app_id} has no data to download"));
+    };
+    state.lists_installed(&id)?;
+    let Some(Some(account)) = state.folder_owner.get() else {
+        return Err("Sign in to Epicenter to download this app's data.".to_string());
+    };
+    let cancel = state.begin_download(&id)?;
+    let paths = app.state::<app_data::DesktopPaths>();
+    let downloaded = installed_apps::download_dataset(
+        &paths.folder_dir,
+        account,
+        &id,
+        &current_generation(&app),
+        &cancel,
+    );
+    state.end_download(&id);
+    downloaded.map(|_| ()).map_err(|error| format!("{error:#}"))
+}
+
+/// Stop a running download of one application's data before it is put in
+/// place. Whether one was running.
+#[tauri::command]
+fn cancel_application_download(state: State<'_, HostState>, app_id: String) -> bool {
+    state.cancel_download(&app_id)
 }
 
 /// Create or reveal the window on the main thread and report what happened.
@@ -584,25 +913,22 @@ fn launch_on_main_thread(
     application: Application,
     port: u16,
     token: &str,
+    reveal: bool,
 ) -> Result<()> {
     let (sender, receiver) = mpsc::sync_channel(1);
     let window_app = app.clone();
     let token = token.to_string();
     app.run_on_main_thread(move || {
-        let result = if window_app.state::<HostState>().token_is_active(&token) {
-            match application {
-                Application::Compiled(built_in) => {
-                    ensure_window(&window_app, built_in, port, &token, true)
+        let result = match application {
+            Application::Compiled(built_in) => {
+                if window_app.state::<HostState>().token_is_active(&token) {
+                    ensure_window(&window_app, built_in, port, &token, reveal)
+                } else {
+                    Err(anyhow!(HOST_RESTARTED))
                 }
-                Application::Admitted(id) => ensure_app_window(&window_app, &id, port, &token),
             }
-        } else {
-            // The host restarted between the click and the main thread reaching
-            // this: every window from the old generation is being torn down, so
-            // opening one now would create a window against a dead token.
-            Err(anyhow!(
-                "the Epicenter host restarted before the window opened"
-            ))
+            Application::Admitted(id) => admit_installed_app(&window_app, &token, &id)
+                .and_then(|label| ensure_app_window(&window_app, &id, &label, port, &token)),
         };
         let _ = sender.send(result);
     })
@@ -623,7 +949,8 @@ fn launch_on_main_thread(
 /// side constrains them: an ID names a directory, and `.` or `..` would name one
 /// outside it.
 ///
-/// This is a shape check, not a membership check. A reserved built-in app Home
+/// This is a shape check; `admit_installed_app` checks membership on the main
+/// thread before an `Admitted` window or folder exists. A reserved built-in app Home
 /// does not offer (Home itself, a placeholder) and an ID with characters no ID
 /// may contain are the same refusal, because Home offers neither.
 fn parse_application_id(id: &str) -> Option<Application> {
@@ -663,9 +990,67 @@ fn app_window_label(id: &str) -> String {
     format!("{APP_WINDOW_PREFIX}{}", id.replace('.', "_"))
 }
 
-fn ensure_app_window(app: &DesktopAppHandle, id: &str, port: u16, token: &str) -> Result<()> {
+/// The host restarted between a launch and the main thread reaching it: every
+/// window from the old generation is being torn down, so opening one now would
+/// create a window against a dead token.
+const HOST_RESTARTED: &str = "the Epicenter host restarted before the window opened";
+
+/// A Bun recovery booted with another account than the one this native process
+/// captured. Only a full restart opens the other account's folders.
+const OWNER_CHANGED: &str =
+    "the Epicenter host restarted signed in to a different account; quit and reopen Epicenter";
+
+/// Admit one launch of an installed application on the main thread, and return
+/// the label of the window it may open.
+///
+/// The active generation must be the one `token` came from, and it must have
+/// named `id` in its ready frame; both are read under one lock before anything
+/// is created. The launch that creates the window first prepares the folder
+/// the captured owner holds under the root native startup captured,
+/// `<folderDir>/local/<id>` or `<folderDir>/accounts/<account-key>/<id>`, and
+/// registers it as the Folder scope `id` for exactly this label, so the page
+/// names a scope and never a path. A refusal there, including an account
+/// dataset that has not been downloaded, opens no window. A window that
+/// already exists was registered when it was created and is revealed as it is,
+/// with whatever its page holds.
+fn admit_installed_app<R: Runtime>(app: &AppHandle<R>, token: &str, id: &str) -> Result<String> {
+    let state = app.state::<HostState>();
+    if !state.admits_installed(token, id) {
+        if state.token_is_active(token) {
+            bail!("{id} is not an installed application");
+        }
+        bail!(HOST_RESTARTED);
+    }
     let label = app_window_label(id);
-    if let Some(window) = app.get_webview_window(&label) {
+    if app.get_webview_window(&label).is_none() {
+        // Captured before any generation is activated, so an admitted launch
+        // always finds it.
+        let owner = state
+            .folder_owner
+            .get()
+            .context("no Bun generation has named the folder owner")?;
+        let paths = app.state::<app_data::DesktopPaths>();
+        installed_apps::ensure_folder(
+            app,
+            &state.installed_folders,
+            &paths.folder_dir,
+            owner.as_ref(),
+            current_generation(app),
+            id,
+            &label,
+        )?;
+    }
+    Ok(label)
+}
+
+fn ensure_app_window(
+    app: &DesktopAppHandle,
+    id: &str,
+    label: &str,
+    port: u16,
+    token: &str,
+) -> Result<()> {
+    if let Some(window) = app.get_webview_window(label) {
         focus(window);
         return Ok(());
     }
@@ -673,15 +1058,31 @@ fn ensure_app_window(app: &DesktopAppHandle, id: &str, port: u16, token: &str) -
     let origin = origin(port);
     let url: tauri::Url = format!("{origin}/apps/{id}/").parse()?;
     let initialization_script = initialization_script(&origin, token)?;
-    let window = WebviewWindowBuilder::new(app, &label, WebviewUrl::External(url))
+    let account_opener = app.clone();
+    let builder = WebviewWindowBuilder::new(app, label, WebviewUrl::External(url));
+    #[cfg(feature = "runtime-evidence")]
+    let builder = runtime_evidence::isolate_webview(builder);
+    let window = builder
         .title(format!("Epicenter: {id}"))
         .inner_size(1100.0, 760.0)
         .min_inner_size(680.0, 480.0)
         .initialization_script(initialization_script)
         .on_navigation(move |url| is_allowed_navigation(url, port))
-        .on_new_window(|_, _| NewWindowResponse::Deny)
+        .on_new_window(move |url, _| open_account_website(&account_opener, &url))
         .build()
         .with_context(|| format!("create the {id} app WebView"))?;
+
+    // Closing hides the window, as it does Capture and Todos, so a draft its
+    // page has not saved survives an ordinary close. A host restart still
+    // destroys it in `invalidate_windows`, because its page holds the dead
+    // host's token.
+    let close_window = window.clone();
+    window.on_window_event(move |event| {
+        if let WindowEvent::CloseRequested { api, .. } = event {
+            api.prevent_close();
+            let _ = close_window.hide();
+        }
+    });
     release_host_resources_on_destroy(&window);
     focus(window);
     Ok(())
@@ -689,31 +1090,44 @@ fn ensure_app_window(app: &DesktopAppHandle, id: &str, port: u16, token: &str) -
 
 /// Release the host resources a window owns once it is destroyed.
 ///
-/// Only destruction, never hide or navigation: a hidden window still owns its
-/// recording (push-to-talk from the tray depends on that), and reload keeps the
-/// same label, which is exactly why `current_recording` exists. A destroyed
-/// window can no longer stop or cancel anything, so its recording would hold
-/// the one host recorder until the process exits.
+/// A hidden window keeps capture. Destruction releases its document; the
+/// builder's page-load hook also releases it before a replacement page loads.
 ///
-/// Built-in windows are hidden rather than destroyed when the user closes them,
-/// so this fires for them only on a host restart teardown. App windows have no
-/// close interception and are destroyed on close, which is the live path.
+/// Built-in and installed app windows are hidden rather than destroyed when the
+/// user closes them, so this fires for them on a host restart teardown, and
+/// for any window the host destroys directly.
 fn release_host_resources_on_destroy(window: &WebviewWindow<Wry>) {
     let app = window.app_handle().clone();
     let label = window.label().to_string();
     window.on_window_event(move |event| {
         if matches!(event, WindowEvent::Destroyed) {
             cancel_recording_owned_by(&app, &label);
+            departure::page_replaced(&app, &label);
         }
     });
+}
+
+/// A new document is starting in this webview: whatever the previous one held
+/// is gone. Runs before the new document can make an IPC call, so its first
+/// departure read already carries its own generation.
+fn page_started(app: &DesktopAppHandle, label: &str) {
+    cancel_recording_owned_by(app, label);
+    departure::page_replaced(app, label);
 }
 
 pub fn run() {
     let port = configured_port();
     let specta_builder = make_specta_builder();
     let specta_handler = tauri_specta::Builder::invoke_handler(&specta_builder);
-    let native_handler = tauri::generate_handler![encode_recording_for_upload, launch_application]
-        as fn(tauri::ipc::Invoke<tauri::Wry>) -> bool;
+    let native_handler = tauri::generate_handler![
+        encode_recording_for_upload,
+        launch_application,
+        application_data,
+        download_application,
+        cancel_application_download,
+        departure::departure_status,
+        departure::departure_answer
+    ] as fn(tauri::ipc::Invoke<tauri::Wry>) -> bool;
     let log_plugin = tauri_plugin_log::Builder::new()
         .level(log::LevelFilter::Info)
         .level_for("epicenter::transcription", log::LevelFilter::Debug)
@@ -728,11 +1142,17 @@ pub fn run() {
         .build();
 
     let builder = tauri::Builder::default()
+        .on_page_load(|webview, payload| {
+            if payload.event() == tauri::webview::PageLoadEvent::Started {
+                page_started(webview.app_handle(), webview.label());
+            }
+        })
         // This must remain the first plugin: later plugins and setup must only run
         // in the process that owns the application instance.
         .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
             open_forwarded_deep_links(app, &args);
         }))
+        .plugin(tauri_plugin_epicenter_folder::init())
         .plugin(log_plugin)
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_deep_link::init())
@@ -744,18 +1164,28 @@ pub fn run() {
         .plugin(tauri_plugin_os::init())
         .plugin(tauri_plugin_autostart::Builder::new().build())
         .manage(HostState::new(port))
+        .manage(departure::Departure::default())
         .manage(GlobalShortcutRegistry::default())
         .manage(Mutex::new(Recorder::new()))
         .manage(DownloadManager::default());
 
     #[cfg(target_os = "macos")]
-    let builder = builder.plugin(tauri_nspanel::init());
+    let builder = builder
+        .plugin(tauri_nspanel::init())
+        .menu(departure::menu)
+        .on_menu_event(|app, event| handle_menu_event(app, event.id().as_ref()));
 
     builder
         .invoke_handler(move |invoke| {
             if matches!(
                 invoke.message.command(),
-                "encode_recording_for_upload" | "launch_application"
+                "encode_recording_for_upload"
+                    | "launch_application"
+                    | "application_data"
+                    | "download_application"
+                    | "cancel_application_download"
+                    | "departure_status"
+                    | "departure_answer"
             ) {
                 native_handler(invoke)
             } else {
@@ -763,16 +1193,35 @@ pub fn run() {
             }
         })
         .setup(move |app| {
+            departure::bind_main_thread(app.handle());
+            // Before any window exists: every AppKit quit asks the round.
+            #[cfg(target_os = "macos")]
+            departure::install_terminate_guard(app.handle()).map_err(anyhow::Error::msg)?;
             specta_builder.mount_events(app);
 
-            // A recording that was still capturing when a previous launch died
-            // left a partial WAV in the recorder's private staging. It is not a
-            // blob and never will be one, so it is deleted here and nothing
-            // else happens: no promotion, no repair, no notice. Owned by the
-            // recorder rather than by blob-store startup because `.staging/rust`
-            // is the recorder's alone (`packages/blobs` stages its own uploads
-            // under `.staging/bun` and cleans them per operation).
-            crate::recorder::blob::delete_stale_staging(app.handle());
+            let desktop_paths = app_data::DesktopPaths::resolve(app.handle())?;
+            let mut todos_folder = FolderConfig::new(
+                desktop_paths.folder_dir.join("so.epicenter.todos"),
+                FolderAuthor { name: "Todos".into(), email: "todos@localhost".into() },
+            );
+            todos_folder.use_repository_author = true;
+            todos_folder.use_repository_origin = true;
+            app.folders().register(ScopeConfig {
+                scope: "so.epicenter.todos".into(),
+                folder: todos_folder,
+                windows: vec!["todos".into()],
+            }).map_err(anyhow::Error::msg)?;
+            let mut capture_folder = FolderConfig::new(
+                desktop_paths.folder_dir.join("so.epicenter.capture"),
+                FolderAuthor { name: "Capture".into(), email: "capture@localhost".into() },
+            );
+            capture_folder.use_repository_author = true;
+            app.folders().register(ScopeConfig {
+                scope: "so.epicenter.capture".into(),
+                folder: capture_folder,
+                windows: vec!["capture".into()],
+            }).map_err(anyhow::Error::msg)?;
+            app.manage(desktop_paths);
 
             // The active local model and the unload policy are device-local host
             // state (ADR-0180), so they live beside the app's own config rather
@@ -801,8 +1250,8 @@ pub fn run() {
             let mut opened_window = false;
             if let Some(urls) = current {
                 for url in &urls {
-                    if let Some(callback) = parse_oauth_callback(url) {
-                        queue_or_send_oauth_callback(app.handle(), callback);
+                    if let Some(callback) = parse_auth_callback(url) {
+                        queue_or_send_auth_callback(app.handle(), callback);
                     }
                     if let Some(built_in) = parse_app_deep_link(url) {
                         request_window(app.handle(), built_in);
@@ -820,6 +1269,9 @@ pub fn run() {
         .expect("failed to build Epicenter")
         .run(|app, event| match event {
             RunEvent::Reopen { .. } => request_window(app, BuiltInApp::Home),
+            RunEvent::ExitRequested { api, code, .. } if prevents_exit(app, code) => {
+                api.prevent_exit();
+            }
             RunEvent::Exit => shutdown_host(app),
             _ => {}
         });
@@ -831,8 +1283,8 @@ fn open_forwarded_deep_links(app: &DesktopAppHandle, arguments: &[String]) {
         let Ok(url) = tauri::Url::parse(argument) else {
             continue;
         };
-        if let Some(callback) = parse_oauth_callback(&url) {
-            queue_or_send_oauth_callback(app, callback);
+        if let Some(callback) = parse_auth_callback(&url) {
+            queue_or_send_auth_callback(app, callback);
         }
     }
     if built_ins.is_empty() {
@@ -862,8 +1314,8 @@ fn apps_from_arguments(arguments: &[String]) -> Vec<BuiltInApp> {
 
 fn open_deep_links(app: &DesktopAppHandle, urls: &[tauri::Url]) {
     for url in urls {
-        if let Some(callback) = parse_oauth_callback(url) {
-            queue_or_send_oauth_callback(app, callback);
+        if let Some(callback) = parse_auth_callback(url) {
+            queue_or_send_auth_callback(app, callback);
         }
         if let Some(built_in) = parse_app_deep_link(url) {
             request_window(app, built_in);
@@ -871,7 +1323,7 @@ fn open_deep_links(app: &DesktopAppHandle, urls: &[tauri::Url]) {
     }
 }
 
-fn parse_oauth_callback(url: &tauri::Url) -> Option<String> {
+fn parse_auth_callback(url: &tauri::Url) -> Option<String> {
     if url.scheme() != "epicenter"
         || url.host_str() != Some("auth")
         || url.path() != "/callback"
@@ -887,7 +1339,7 @@ fn parse_oauth_callback(url: &tauri::Url) -> Option<String> {
     Some(url.to_string())
 }
 
-fn queue_or_send_oauth_callback(app: &DesktopAppHandle, url: String) {
+fn queue_or_send_auth_callback(app: &DesktopAppHandle, url: String) {
     let state = app.state::<HostState>();
     let generation = state
         .process
@@ -896,16 +1348,16 @@ fn queue_or_send_oauth_callback(app: &DesktopAppHandle, url: String) {
         .as_ref()
         .map(|process| process.generation);
     let Some(generation) = generation else {
-        state.queue_oauth_callback(url);
+        state.queue_auth_callback(url);
         return;
     };
-    if let Err(error) = send_auth_frame(
+    if let Err(error) = send_native_frame(
         &state,
         generation,
-        &RustToBunAuthFrame::OauthCallback { url: &url },
+        &RustToBunNativeFrame::AuthCallback { url: &url },
     ) {
-        state.queue_oauth_callback(url);
-        append_parent_log(app, &format!("deliver OAuth callback: {error:#}"));
+        state.queue_auth_callback(url);
+        append_parent_log(app, &format!("deliver auth callback: {error:#}"));
     }
 }
 
@@ -940,6 +1392,29 @@ fn request_window(app: &DesktopAppHandle, built_in: BuiltInApp) {
     });
     if let Err(error) = schedule {
         append_parent_log(app, &format!("schedule {} window: {error}", built_in.id()));
+    }
+}
+
+/// Whether to prevent this exit request, which the departure round decides.
+///
+/// A restart is requested only after the round granted it
+/// (`BunToRustNativeFrame::Relaunch`), and Tauri ignores `prevent_exit` for
+/// one anyway, so it passes straight to Exit. Every other request, whether
+/// `app.exit`, the tray, or an AppKit `terminate:` the quit guard turned into
+/// one, asks the round.
+fn prevents_exit(app: &DesktopAppHandle, code: Option<i32>) -> bool {
+    code != Some(tauri::RESTART_EXIT_CODE) && departure::request_quit(app, code.unwrap_or(0))
+}
+
+/// The Window menu's Capture and Todos items open or reveal their windows
+/// through `request_window`, so a departure round can refuse them. Quit is
+/// AppKit's own item, which the quit guard routes.
+#[cfg(target_os = "macos")]
+fn handle_menu_event(app: &DesktopAppHandle, id: &str) {
+    match departure::window_menu_participant(id) {
+        Some(departure::Participant::Capture) => request_window(app, BuiltInApp::Capture),
+        Some(departure::Participant::Todos) => request_window(app, BuiltInApp::Todos),
+        None => {}
     }
 }
 
@@ -1028,6 +1503,7 @@ fn start_once(app: &DesktopAppHandle) -> Result<()> {
         stdin,
         stdout,
         token,
+        installed_app_ids,
     } = launched;
 
     {
@@ -1037,23 +1513,46 @@ fn start_once(app: &DesktopAppHandle) -> Result<()> {
             stop_starting_child(child, stdin);
             bail!("a Bun host is already managed by Epicenter");
         }
+        let (sender, receiver) = mpsc::sync_channel::<String>(64);
+        let failed = Arc::new(AtomicBool::new(false));
+        let writer_failed = failed.clone();
+        let writer = thread::spawn(move || {
+            let mut stdin = stdin;
+            for line in receiver {
+                if writeln!(stdin, "{line}")
+                    .and_then(|()| stdin.flush())
+                    .is_err()
+                {
+                    writer_failed.store(true, Ordering::Release);
+                    break;
+                }
+            }
+        });
+        let sqlite = sqlite::Worker::new(
+            app.state::<app_data::DesktopPaths>().data_dir.clone(),
+            generation,
+            sender.clone(),
+            failed,
+        );
         *process = Some(ManagedChild {
             generation,
             child,
-            stdin: Some(stdin),
+            stdin: Some(sender),
+            sqlite,
+            writer: Some(writer),
         });
     }
 
-    if let Some(callback) = state.take_oauth_callback() {
-        send_auth_frame(
+    if let Some(callback) = state.take_auth_callback() {
+        send_native_frame(
             &state,
             generation,
-            &RustToBunAuthFrame::OauthCallback { url: &callback },
+            &RustToBunNativeFrame::AuthCallback { url: &callback },
         )
-        .context("deliver the queued OAuth callback")?;
+        .context("deliver the queued auth callback")?;
     }
 
-    state.activate(&token);
+    state.activate(&token, installed_app_ids);
     let mut built_ins = state.take_pending_apps();
     if built_ins.is_empty() {
         built_ins.push(BuiltInApp::Home);
@@ -1074,12 +1573,7 @@ fn start_once(app: &DesktopAppHandle) -> Result<()> {
 fn launch_host(app: &DesktopAppHandle, port: u16) -> Result<LaunchedHost> {
     let log = open_log_file(app)?;
 
-    // The Bun host resolves the Epicenter data root itself, from the one
-    // TypeScript function that owns that path (ADR-0201). Do not pass one from
-    // here: a Rust-computed root leaves the desktop and every CLI as two
-    // implementations of a directory they have to agree on exactly, and it
-    // swallows the ambient `EPICENTER_DATA_DIR` that the host and the
-    // recorder's `crate::app_data` both honour.
+    // The native startup owns paths; the sidecar receives them in its boot frame.
     let mut command = host_command(app)?;
     command
         .env("EPICENTER_APPS_DIST", apps_dist(app)?)
@@ -1093,8 +1587,14 @@ fn launch_host(app: &DesktopAppHandle, port: u16) -> Result<LaunchedHost> {
     let mut stdin = child.stdin.take().context("capture Bun stdin")?;
     let stdout = child.stdout.take().context("capture Bun stdout")?;
     let token = launch_token()?;
-    let auth_cell = read_auth_cell().context("read the desktop auth cell")?;
-    let frame = boot_frame_json(&token, port, auth_cell.as_deref())?;
+    let auth_cell =
+        read_auth_cell(&app.config().identifier).context("read the desktop auth cell")?;
+    let frame = boot_frame_json(
+        &token,
+        port,
+        auth_cell.as_deref(),
+        &app.state::<app_data::DesktopPaths>(),
+    )?;
 
     if let Err(error) = writeln!(stdin, "{frame}").and_then(|()| stdin.flush()) {
         stop_starting_child(child, stdin);
@@ -1112,7 +1612,7 @@ fn launch_host(app: &DesktopAppHandle, port: u16) -> Result<LaunchedHost> {
         Ok(value) => value,
         Err(mpsc::RecvTimeoutError::Timeout) => {
             stop_starting_child(child, stdin);
-            bail!("Bun did not emit its v2 ready frame within 15 seconds");
+            bail!("Bun did not emit its versioned ready frame within 15 seconds");
         }
         Err(mpsc::RecvTimeoutError::Disconnected) => {
             stop_starting_child(child, stdin);
@@ -1120,16 +1620,26 @@ fn launch_host(app: &DesktopAppHandle, port: u16) -> Result<LaunchedHost> {
         }
     };
 
-    if let Err(error) = ready {
-        stop_starting_child(child, stdin);
-        return Err(error);
-    }
+    // The owner is checked before the caller wires any transport to this
+    // generation or opens a window for it.
+    let installed_app_ids = match ready.and_then(|readiness| {
+        app.state::<HostState>()
+            .capture_folder_owner(readiness.boot_account)?;
+        Ok(readiness.installed_app_ids)
+    }) {
+        Ok(installed_app_ids) => installed_app_ids,
+        Err(error) => {
+            stop_starting_child(child, stdin);
+            return Err(error);
+        }
+    };
 
     Ok(LaunchedHost {
         child,
         stdin,
         stdout,
         token,
+        installed_app_ids,
     })
 }
 
@@ -1197,14 +1707,17 @@ fn monitor_host(app: DesktopAppHandle, generation: u64, mut stdout: BufReader<Ch
     let (stdout_sender, stdout_receiver) = mpsc::sync_channel(1);
     thread::spawn(move || loop {
         let mut line = String::new();
-        let event = match stdout.read_line(&mut line) {
+        let event = match (&mut stdout)
+            .take((sqlite::MAX_FRAME_BYTES + 1) as u64)
+            .read_line(&mut line)
+        {
             Ok(0) => Err("Bun closed stdout after readiness".to_string()),
-            Ok(_) if !line.ends_with('\n') => {
-                Err("Bun closed stdout during an auth frame".to_string())
+            Ok(_) if line.len() > sqlite::MAX_FRAME_BYTES || !line.ends_with('\n') => {
+                Err("Bun closed stdout during an native frame".to_string())
             }
             Ok(_) => {
-                serde_json::from_str::<BunToRustAuthFrame>(line.trim_end_matches(['\r', '\n']))
-                    .map_err(|error| format!("Bun emitted an invalid auth frame: {error}"))
+                serde_json::from_str::<BunToRustNativeFrame>(line.trim_end_matches(['\r', '\n']))
+                    .map_err(|error| format!("Bun emitted an invalid native frame: {error}"))
             }
             Err(error) => Err(format!("failed to monitor Bun stdout: {error}")),
         };
@@ -1226,11 +1739,11 @@ fn monitor_host(app: DesktopAppHandle, generation: u64, mut stdout: BufReader<Ch
         if let Ok(event) = stdout_receiver.recv_timeout(Duration::from_millis(150)) {
             match event {
                 Ok(frame) => {
-                    if let Err(error) = handle_auth_frame(&app, generation, frame) {
+                    if let Err(error) = handle_native_frame(&app, generation, frame) {
                         fail_generation(
                             &app,
                             generation,
-                            format!("handle Bun auth frame: {error:#}"),
+                            format!("handle Bun native frame: {error:#}"),
                         );
                         return;
                     }
@@ -1250,6 +1763,10 @@ fn monitor_host(app: DesktopAppHandle, generation: u64, mut stdout: BufReader<Ch
             };
             if process.generation != generation {
                 return;
+            }
+            if process.sqlite.failed.load(Ordering::Acquire) {
+                // A failed/bounded response pipe is terminal; never strand a request.
+                let _ = process.child.kill();
             }
             process.child.try_wait()
         };
@@ -1276,50 +1793,99 @@ fn monitor_host(app: DesktopAppHandle, generation: u64, mut stdout: BufReader<Ch
     });
 }
 
-fn handle_auth_frame(
+fn handle_native_frame(
     app: &DesktopAppHandle,
     generation: u64,
-    frame: BunToRustAuthFrame,
+    frame: BunToRustNativeFrame,
 ) -> Result<()> {
+    {
+        let state = app.state::<HostState>();
+        if state.shutting_down.load(Ordering::Acquire) {
+            bail!("Native frame arrived after host shutdown began");
+        }
+        let process = state.process.lock().expect("host state lock poisoned");
+        if !process
+            .as_ref()
+            .is_some_and(|process| process.generation == generation)
+        {
+            bail!("Native frame belongs to a retired Bun generation");
+        }
+    }
+    // Dispatch without the process lock: restart delivers Exit, whose cleanup
+    // takes this lock before waiting for the Bun child.
     match frame {
-        BunToRustAuthFrame::StoreAuth {
+        BunToRustNativeFrame::Sqlite {
+            request_id,
+            request,
+        } => {
+            let state = app.state::<HostState>();
+            let process = state.process.lock().expect("host state lock poisoned");
+            let process = process
+                .as_ref()
+                .filter(|process| process.generation == generation)
+                .context("SQLite generation retired")?;
+            process
+                .sqlite
+                .submit(request_id, request)
+                .map_err(|error| anyhow!(error))
+        }
+        BunToRustNativeFrame::SqliteCancel { request_id } => {
+            let state = app.state::<HostState>();
+            let process = state.process.lock().expect("host state lock poisoned");
+            let process = process
+                .as_ref()
+                .filter(|process| process.generation == generation)
+                .context("SQLite generation retired")?;
+            process.sqlite.cancel(&request_id);
+            Ok(())
+        }
+        BunToRustNativeFrame::StoreAuth {
             request_id,
             serialized,
         } => {
-            let result = write_auth_cell(serialized);
+            let result = write_auth_cell(&app.config().identifier, serialized);
             send_native_result(app, generation, &request_id, result)
         }
-        BunToRustAuthFrame::OpenAuthUrl { request_id, url } => {
-            let result = validate_hosted_auth_url(&url).and_then(|()| {
+        BunToRustNativeFrame::OpenAuthUrl { request_id, url } => {
+            let result = configured_auth_server().and_then(|server| {
+                validate_auth_url(&url, &server.server)?;
                 app.opener()
                     .open_url(url, None::<String>)
                     .map_err(Into::into)
             });
             send_native_result(app, generation, &request_id, result)
         }
-        BunToRustAuthFrame::PutAppSecret {
+        BunToRustNativeFrame::PutAppSecret {
+            account,
             request_id,
             app_id,
-            account_id,
+            label,
             value,
         } => {
-            let result = write_app_secret(&app_id, &account_id, &value);
+            let result = write_app_secret(
+                &app.config().identifier,
+                &app_id,
+                &label,
+                &value,
+                account.as_ref(),
+            );
             send_native_result(app, generation, &request_id, result)
         }
-        BunToRustAuthFrame::GetAppSecret {
+        BunToRustNativeFrame::GetAppSecret {
+            account,
             request_id,
             app_id,
-            account_id,
+            label,
         } => {
             if request_id.is_empty() {
                 bail!("native requestId must be non-empty");
             }
             let state = app.state::<HostState>();
-            match read_app_secret(&app_id, &account_id) {
-                Ok(value) => send_auth_frame(
+            match read_app_secret(&app.config().identifier, &app_id, &label, account.as_ref()) {
+                Ok(value) => send_native_frame(
                     &state,
                     generation,
-                    &RustToBunAuthFrame::NativeValue {
+                    &RustToBunNativeFrame::NativeValue {
                         request_id: &request_id,
                         status: "ok",
                         value: value.as_deref(),
@@ -1327,10 +1893,10 @@ fn handle_auth_frame(
                 ),
                 Err(error) => {
                     let message = error.to_string();
-                    send_auth_frame(
+                    send_native_frame(
                         &state,
                         generation,
-                        &RustToBunAuthFrame::NativeResult {
+                        &RustToBunNativeFrame::NativeResult {
                             request_id: &request_id,
                             status: "error",
                             message: Some(&message),
@@ -1339,15 +1905,53 @@ fn handle_auth_frame(
                 }
             }
         }
-        BunToRustAuthFrame::DeleteAppSecret {
+        BunToRustNativeFrame::DeleteAppSecret {
+            account,
             request_id,
             app_id,
-            account_id,
+            label,
         } => {
-            let result = delete_app_secret(&app_id, &account_id);
+            let result =
+                delete_app_secret(&app.config().identifier, &app_id, &label, account.as_ref());
             send_native_result(app, generation, &request_id, result)
         }
-        BunToRustAuthFrame::Relaunch {} => app.restart(),
+        BunToRustNativeFrame::PrepareRelaunch { request_id } => {
+            if request_id.is_empty() {
+                bail!("native requestId must be non-empty");
+            }
+            departure::prepare_restart(app, generation, request_id);
+            Ok(())
+        }
+        // These frames arrive on the Bun reader thread. The departure round is
+        // the main thread's, so each is carried there in arrival order.
+        BunToRustNativeFrame::PrepareCancel { request_id } => {
+            departure::prepare_cancel(app, generation, request_id);
+            Ok(())
+        }
+        BunToRustNativeFrame::RelaunchAbort { request_id } => {
+            departure::relaunch_abort(app, generation, request_id);
+            Ok(())
+        }
+        // `request_restart` delivers ExitRequested and Exit from any thread, so
+        // the Folder plugin drains admitted writes and `shutdown_host` stops
+        // Bun before the new process starts. `restart` skips both when called
+        // on the main thread. Only a grant this generation holds restarts.
+        BunToRustNativeFrame::Relaunch { request_id } => {
+            departure::relaunch(app, generation, request_id);
+            Ok(())
+        }
+    }
+}
+
+/// The one terminal answer to a `prepare-relaunch` request.
+fn reply_relaunch_preparation(
+    app: &DesktopAppHandle,
+    generation: u64,
+    request_id: &str,
+    result: std::result::Result<(), String>,
+) {
+    if let Err(error) = send_native_result(app, generation, request_id, result) {
+        append_parent_log(app, &format!("answer relaunch preparation: {error:#}"));
     }
 }
 
@@ -1362,10 +1966,10 @@ fn send_native_result<E: std::fmt::Display>(
     }
     let state = app.state::<HostState>();
     match result {
-        Ok(()) => send_auth_frame(
+        Ok(()) => send_native_frame(
             &state,
             generation,
-            &RustToBunAuthFrame::NativeResult {
+            &RustToBunNativeFrame::NativeResult {
                 request_id,
                 status: "ok",
                 message: None,
@@ -1373,10 +1977,10 @@ fn send_native_result<E: std::fmt::Display>(
         ),
         Err(error) => {
             let message = error.to_string();
-            send_auth_frame(
+            send_native_frame(
                 &state,
                 generation,
-                &RustToBunAuthFrame::NativeResult {
+                &RustToBunNativeFrame::NativeResult {
                     request_id,
                     status: "error",
                     message: Some(&message),
@@ -1386,12 +1990,12 @@ fn send_native_result<E: std::fmt::Display>(
     }
 }
 
-fn send_auth_frame(
+fn send_native_frame(
     state: &HostState,
     generation: u64,
-    frame: &RustToBunAuthFrame<'_>,
+    frame: &RustToBunNativeFrame<'_>,
 ) -> Result<()> {
-    let line = serde_json::to_string(frame).context("serialize the native auth frame")?;
+    let line = serde_json::to_string(frame).context("serialize the native native frame")?;
     let mut process = state.process.lock().expect("host state lock poisoned");
     let process = process
         .as_mut()
@@ -1401,23 +2005,112 @@ fn send_auth_frame(
         .stdin
         .as_mut()
         .context("the target Bun generation has no command pipe")?;
-    writeln!(stdin, "{line}").and_then(|()| stdin.flush())?;
+    if line.len() > sqlite::MAX_FRAME_BYTES {
+        bail!("Native response exceeds frame limit");
+    }
+    stdin
+        .try_send(line)
+        .context("native response queue is full or closed")?;
     Ok(())
 }
 
-fn validate_hosted_auth_url(value: &str) -> Result<()> {
-    let url = tauri::Url::parse(value).context("parse the hosted authorization URL")?;
-    if url.scheme() != "https"
-        || url.host_str() != Some("api.epicenter.so")
-        || url.port().is_some()
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AuthServer {
+    #[serde(rename = "baseURL")]
+    base_url: String,
+    authority_id: String,
+}
+
+struct AuthConfiguration {
+    server: AuthServer,
+    account_management: bool,
+}
+
+fn configured_auth_server() -> Result<AuthConfiguration> {
+    #[cfg(debug_assertions)]
+    let development_origin = std::env::var("EPICENTER_API_URL").ok();
+    #[cfg(not(debug_assertions))]
+    let development_origin: Option<String> = None;
+    auth_server(
+        option_env!("EPICENTER_SERVER_ORIGIN"),
+        development_origin.as_deref(),
+    )
+}
+
+fn auth_server(self_hosted: Option<&str>, development: Option<&str>) -> Result<AuthConfiguration> {
+    let origin = self_hosted.or(development).unwrap_or(HOSTED_AUTH_ORIGIN);
+    let url = tauri::Url::parse(origin).context("parse the configured authentication origin")?;
+    if !matches!(url.scheme(), "http" | "https")
+        || !url.username().is_empty()
+        || url.password().is_some()
+        || url.path() != "/"
+        || url.query().is_some()
+        || url.fragment().is_some()
+    {
+        bail!("The configured authentication server must be an HTTP or HTTPS origin");
+    }
+    if self_hosted.is_none()
+        && development.is_some()
+        && (url.scheme() != "http"
+            || !matches!(url.host_str(), Some("localhost" | "127.0.0.1" | "[::1]")))
+    {
+        bail!("EPICENTER_API_URL must be an HTTP loopback origin in development");
+    }
+    let base_url = url.origin().ascii_serialization();
+    let authority_id = if self_hosted.is_some() {
+        let hex: String = base_url
+            .as_bytes()
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect();
+        format!("instance-{hex}")
+    } else {
+        "epicenter-api".to_owned()
+    };
+    Ok(AuthConfiguration {
+        server: AuthServer {
+            base_url,
+            authority_id,
+        },
+        account_management: self_hosted.is_none(),
+    })
+}
+
+fn validate_auth_url(value: &str, server: &AuthServer) -> Result<()> {
+    let url = tauri::Url::parse(value).context("parse the authorization URL")?;
+    if url.origin().ascii_serialization() != server.base_url
         || !url.username().is_empty()
         || url.password().is_some()
         || url.fragment().is_some()
-        || !url.path().starts_with("/auth/")
+        || url.path() != "/sign-in"
     {
-        bail!("authorization URL must stay under {HOSTED_AUTH_ORIGIN}/auth/");
+        bail!("authorization URL must be {}/sign-in", server.base_url);
     }
     Ok(())
+}
+
+/// Ordinary new-tab account links leave the desktop app's work in place.
+/// The host opens only the hosted account destinations in the system browser.
+fn is_hosted_account_url(url: &tauri::Url, config: &AuthConfiguration) -> bool {
+    config.account_management
+        && url.origin().ascii_serialization() == config.server.base_url
+        && url.username().is_empty()
+        && url.password().is_none()
+        && url.fragment().is_none()
+        && matches!(
+            url.path(),
+            "/dashboard" | "/dashboard/usage" | "/dashboard/account"
+        )
+}
+
+fn open_account_website(app: &DesktopAppHandle, url: &tauri::Url) -> NewWindowResponse<Wry> {
+    if configured_auth_server().is_ok_and(|server| is_hosted_account_url(url, &server)) {
+        if let Err(error) = app.opener().open_url(url.as_str(), None::<String>) {
+            append_parent_log(app, &format!("could not open the account website: {error}"));
+        }
+    }
+    NewWindowResponse::Deny
 }
 
 fn fail_generation(app: &DesktopAppHandle, generation: u64, message: String) {
@@ -1430,6 +2123,7 @@ fn fail_generation(app: &DesktopAppHandle, generation: u64, message: String) {
     };
     state.deactivate();
     stop_child(child);
+    departure::retire_sidecar(app, generation);
     invalidate_windows(app);
     request_start(app.clone(), Some(message));
 }
@@ -1453,22 +2147,28 @@ fn stop_starting_child(mut child: Child, stdin: ChildStdin) {
 }
 
 fn stop_child(mut process: ManagedChild) {
+    process.sqlite.stop();
     drop(process.stdin.take());
     let deadline = Instant::now() + SHUTDOWN_TIMEOUT;
     loop {
         match process.child.try_wait() {
-            Ok(Some(_)) => return,
+            Ok(Some(_)) => break,
             Ok(None) if Instant::now() < deadline => thread::sleep(Duration::from_millis(25)),
             Ok(None) | Err(_) => break,
         }
     }
     let _ = process.child.kill();
     let _ = process.child.wait();
+    if let Some(writer) = process.writer.take() {
+        let _ = writer.join();
+    }
 }
 
 fn shutdown_host(app: &DesktopAppHandle) {
     let state = app.state::<HostState>();
     state.shutting_down.store(true, Ordering::Release);
+    // A download stops before publication; its relay is retired before Git is.
+    state.cancel_downloads();
     state.deactivate();
     let process = state
         .process
@@ -1496,9 +2196,18 @@ fn create_windows_on_main_thread(
 
             ensure_window(&app, BuiltInApp::Whispering, port, &token, false)?;
 
-            built_ins
-                .into_iter()
-                .try_for_each(|built_in| ensure_window(&app, built_in, port, &token, true))
+            built_ins.into_iter().try_for_each(|built_in| {
+                // A queued Capture or Todos waits out a departure rather than
+                // failing the whole host start.
+                if !departure::admits(&app, built_in.id()) {
+                    append_parent_log(
+                        &app,
+                        &format!("deferred {} while Epicenter is leaving", built_in.id()),
+                    );
+                    return Ok(());
+                }
+                ensure_window(&app, built_in, port, &token, true)
+            })
         })();
         let _ = sender.send(result);
     })?;
@@ -1522,6 +2231,10 @@ fn create_recording_overlay(app: &DesktopAppHandle, port: u16, token: &str) -> R
 /// `src-tauri/capabilities/` selects on. One built-in app has one window here;
 /// an app owning a second window (Whispering's recording overlay) creates it
 /// separately, under its own label.
+///
+/// Every launch, tray, deep-link, and reopen path reaches Capture and Todos
+/// through here, so this is where a departure round refuses to create one or
+/// to reveal one it has hidden.
 fn ensure_window(
     app: &DesktopAppHandle,
     built_in: BuiltInApp,
@@ -1529,7 +2242,14 @@ fn ensure_window(
     token: &str,
     reveal: bool,
 ) -> Result<()> {
-    if let Some(window) = app.get_webview_window(built_in.id()) {
+    let existing = app.get_webview_window(built_in.id());
+    if (existing.is_none() || reveal) && !departure::admits(app, built_in.id()) {
+        bail!(
+            "{} is waiting for Epicenter to finish quitting or restarting",
+            built_in.title()
+        );
+    }
+    if let Some(window) = existing {
         if reveal {
             focus(window);
         }
@@ -1539,6 +2259,7 @@ fn ensure_window(
     let origin = origin(port);
     let url: tauri::Url = format!("{origin}{}", built_in.path()).parse()?;
     let initialization_script = initialization_script(&origin, token)?;
+    let account_opener = app.clone();
     let window = WebviewWindowBuilder::new(app, built_in.id(), WebviewUrl::External(url))
         .title(built_in.title())
         .inner_size(1100.0, 760.0)
@@ -1546,9 +2267,10 @@ fn ensure_window(
         .visible(reveal)
         .initialization_script(initialization_script)
         .on_navigation(move |url| is_allowed_navigation(url, port))
-        .on_new_window(|_, _| NewWindowResponse::Deny)
+        .on_new_window(move |url, _| open_account_website(&account_opener, &url))
         .build()
         .with_context(|| format!("create the {} WebView", built_in.title()))?;
+    departure::adopt_window(&window);
 
     let close_window = window.clone();
     window.on_window_event(move |event| {
@@ -1576,13 +2298,21 @@ fn invalidate_windows(app: &DesktopAppHandle) {
     let _ = app.clone().run_on_main_thread(move || {
         for built_in in BuiltInApp::ALL {
             if let Some(window) = app.get_webview_window(built_in.id()) {
+                // Capture and Todos keep their pages and native folders, with
+                // any unsaved text, after the host that served them stops.
+                if let Some(participant) = departure::Participant::from_label(built_in.id()) {
+                    departure::host_stopped(&app, participant, &window);
+                    continue;
+                }
                 if window.destroy().is_err() {
                     let _ = window.hide();
                 }
             }
         }
-        // Derived-catalog app windows carry the dead host's launch token in
-        // their initialization script, so a restart must tear them down too.
+        // Installed app windows carry the dead host's launch token in their
+        // initialization script, and the next generation may not name them, so
+        // a restart tears them down too. Their Folder scopes stay registered:
+        // only a window the next generation admits reaches one again.
         for (label, window) in app.webview_windows() {
             if label.starts_with(APP_WINDOW_PREFIX) && window.destroy().is_err() {
                 let _ = window.hide();
@@ -1679,32 +2409,46 @@ fn launch_token() -> Result<String> {
     Ok(URL_SAFE_NO_PAD.encode(bytes))
 }
 
-fn boot_frame_json(token: &str, port: u16, auth_cell: Option<&str>) -> Result<String> {
+fn boot_frame_json(
+    token: &str,
+    port: u16,
+    auth_cell: Option<&str>,
+    paths: &app_data::DesktopPaths,
+) -> Result<String> {
+    let config = configured_auth_server()?;
     serde_json::to_string(&BootFrame {
         r#type: "boot",
         protocol_version: PROTOCOL_VERSION,
         token,
         port,
         auth_cell,
+        auth_server: config.server,
+        account_management: config.account_management,
+        paths,
     })
     .context("serialize the Bun boot frame")
 }
 
-fn read_ready_frame(reader: &mut impl BufRead, expected_port: u16) -> Result<()> {
+/// Read Bun's one ready frame and return the installed application IDs and
+/// the boot Account it named. Any ID that cannot name a managed folder,
+/// repeats, or names a compiled application's Folder scope refuses the whole
+/// frame, so the generation never starts with a partial reading of its
+/// membership. So does a boot Account that cannot name an account directory.
+fn read_ready_frame(reader: &mut impl BufRead, expected_port: u16) -> Result<Readiness> {
     let mut line = String::new();
     let count = reader
         .read_line(&mut line)
         .context("read the Bun readiness frame")?;
     if count == 0 {
-        bail!("Bun exited without emitting its v2 ready frame");
+        bail!("Bun exited without emitting its versioned ready frame");
     }
     if !line.ends_with('\n') {
-        bail!("Bun closed stdout before completing its v2 ready frame");
+        bail!("Bun closed stdout before completing its versioned ready frame");
     }
 
     let line = line.trim_end_matches(['\r', '\n']);
-    let frame: ReadyFrame =
-        serde_json::from_str(line).context("Bun stdout was not one strict v2 ready frame")?;
+    let frame: ReadyFrame = serde_json::from_str(line)
+        .context("Bun stdout was not one strict versioned ready frame")?;
     if frame.r#type != "ready" {
         bail!("Bun emitted a frame other than ready");
     }
@@ -1722,7 +2466,17 @@ fn read_ready_frame(reader: &mut impl BufRead, expected_port: u16) -> Result<()>
             expected_port
         );
     }
-    Ok(())
+    let installed_app_ids = installed_apps::validate_installed_ids(frame.installed_app_ids)
+        .context("Bun named an installed application Epicenter cannot admit")?;
+    if let Some(account) = &frame.boot_account {
+        device_owner::account_key(account)
+            .map_err(|error| anyhow!(error))
+            .context("Bun named a boot account Epicenter cannot hold folders for")?;
+    }
+    Ok(Readiness {
+        installed_app_ids: installed_app_ids.into_iter().collect(),
+        boot_account: frame.boot_account,
+    })
 }
 
 fn initialization_script(origin: &str, token: &str) -> Result<String> {
@@ -1805,27 +2559,374 @@ mod tests {
     }
 
     #[test]
+    fn development_sign_in_opens_only_the_configured_local_issuer() {
+        let server = auth_server(None, Some("http://localhost:8787")).unwrap();
+        validate_auth_url("http://localhost:8787/sign-in?state=state", &server.server).unwrap();
+        for url in [
+            "https://api.epicenter.so/sign-in",
+            "http://localhost:8788/sign-in",
+            "http://127.0.0.1:8787/sign-in",
+            "http://localhost:8787/other",
+            "http://user@localhost:8787/sign-in",
+            "http://localhost:8787/sign-in#fragment",
+        ] {
+            assert!(validate_auth_url(url, &server.server).is_err());
+        }
+        assert!(validate_auth_url(
+            "http://localhost:8787/sign-in",
+            &auth_server(None, None).unwrap().server
+        )
+        .is_err());
+        assert!(auth_server(None, Some("https://evil.test")).is_err());
+    }
+
+    #[test]
     fn production_port_is_stable() {
         assert_eq!(PRODUCTION_PORT, 39_130);
     }
 
     #[test]
-    fn parses_only_the_expected_v2_ready_frame() {
+    fn native_dashboard_policy_is_independent_of_server_identity() {
+        let mut config = auth_server(Some("https://self.example"), None).unwrap();
+        let identity = config.server.authority_id.clone();
+        let dashboard = "https://self.example/dashboard".parse().unwrap();
+        assert!(!is_hosted_account_url(&dashboard, &config));
+        config.account_management = true;
+        assert!(is_hosted_account_url(&dashboard, &config));
+        validate_auth_url("https://self.example/sign-in", &config.server).unwrap();
+        assert_eq!(config.server.authority_id, identity);
+    }
+
+    #[test]
+    fn fixed_self_hosted_origin_owns_identity_and_browser_allowlist() {
+        let server = auth_server(
+            Some("https://SELF.example:443/"),
+            Some("http://localhost:8787"),
+        )
+        .unwrap();
+        assert_eq!(server.server.base_url, "https://self.example");
+        assert_eq!(
+            server.server.authority_id,
+            "instance-68747470733a2f2f73656c662e6578616d706c65"
+        );
+        assert!(!server.account_management);
+        validate_auth_url("https://self.example/sign-in?state=pending", &server.server).unwrap();
+        for url in [
+            "https://api.epicenter.so/sign-in",
+            "https://self.example.evil.test/sign-in",
+            "https://self.example:444/sign-in",
+            "https://self.example/dashboard",
+            "https://user@self.example/sign-in",
+            "https://self.example/sign-in#fragment",
+        ] {
+            assert!(validate_auth_url(url, &server.server).is_err());
+        }
+        assert!(!is_hosted_account_url(
+            &"https://self.example/dashboard".parse().unwrap(),
+            &server
+        ));
+        for origin in [
+            "ftp://self.example",
+            "https://self.example/path",
+            "https://user@self.example",
+            "https://self.example?query",
+            "https://self.example#fragment",
+            "",
+        ] {
+            assert!(auth_server(Some(origin), None).is_err());
+        }
+    }
+
+    fn ready_line(version: u8, port: u16, installed: &str) -> String {
+        ready_line_for(version, port, installed, "null")
+    }
+
+    fn ready_line_for(version: u8, port: u16, installed: &str, boot_account: &str) -> String {
+        format!(
+            "{{\"type\":\"ready\",\"protocolVersion\":{version},\"port\":{port},\"installedAppIds\":{installed},\"bootAccount\":{boot_account}}}\n"
+        )
+    }
+
+    fn identity(authority_id: &str, principal_id: &str) -> device_owner::AccountIdentity {
+        device_owner::AccountIdentity {
+            authority_id: authority_id.into(),
+            principal_id: principal_id.into(),
+        }
+    }
+
+    #[test]
+    fn parses_only_the_expected_v10_ready_frame_and_its_installed_apps() {
+        assert_eq!(
+            read_ready_frame(
+                &mut Cursor::new(ready_line(10, PRODUCTION_PORT, "[]")),
+                PRODUCTION_PORT,
+            )
+            .unwrap(),
+            Readiness {
+                installed_app_ids: BTreeSet::new(),
+                boot_account: None,
+            }
+        );
+        assert_eq!(
+            read_ready_frame(
+                &mut Cursor::new(ready_line(
+                    10,
+                    PRODUCTION_PORT,
+                    "[\"com.example.notes\",\"com.bradenwong.zhongwen\"]"
+                )),
+                PRODUCTION_PORT,
+            )
+            .unwrap()
+            .installed_app_ids,
+            BTreeSet::from([
+                "com.bradenwong.zhongwen".to_string(),
+                "com.example.notes".to_string(),
+            ])
+        );
+
+        let longest = format!("\"a.{}\"", "b".repeat(126));
+        let too_long = format!("[\"a.{}\"]", "b".repeat(127));
         read_ready_frame(
-            &mut Cursor::new(b"{\"type\":\"ready\",\"protocolVersion\":2,\"port\":39130}\n"),
+            &mut Cursor::new(ready_line(10, PRODUCTION_PORT, &format!("[{longest}]"))),
             PRODUCTION_PORT,
         )
         .unwrap();
-
         for invalid in [
-            "preamble\n",
-            "{\"type\":\"ready\",\"protocolVersion\":1,\"port\":39130}\n",
-            "{\"type\":\"ready\",\"protocolVersion\":2,\"port\":39131}\n",
-            "{\"type\":\"ready\",\"protocolVersion\":2,\"port\":39130,\"extra\":true}\n",
-            "{\"type\":\"ready\",\"protocolVersion\":2,\"port\":39130}",
+            "preamble\n".to_string(),
+            // Earlier protocols, which named no installed applications or no
+            // boot Account.
+            "{\"type\":\"ready\",\"protocolVersion\":8,\"port\":39130}\n".to_string(),
+            ready_line(8, PRODUCTION_PORT, "[]"),
+            "{\"type\":\"ready\",\"protocolVersion\":9,\"port\":39130,\"installedAppIds\":[]}\n".to_string(),
+            ready_line(9, PRODUCTION_PORT, "[]"),
+            "{\"type\":\"ready\",\"protocolVersion\":10,\"port\":39130,\"bootAccount\":null}\n".to_string(),
+            ready_line(10, 39_131, "[]"),
+            "{\"type\":\"ready\",\"protocolVersion\":10,\"port\":39130,\"installedAppIds\":[],\"bootAccount\":null,\"extra\":true}\n".to_string(),
+            ready_line(10, PRODUCTION_PORT, "[]").trim_end().to_string(),
+            ready_line(10, PRODUCTION_PORT, "\"com.example.notes\""),
+            ready_line(10, PRODUCTION_PORT, "[null]"),
+            // One bad ID refuses the frame, not just that ID.
+            ready_line(10, PRODUCTION_PORT, "[\"com.example.notes\",\"zhongwen\"]"),
+            ready_line(10, PRODUCTION_PORT, "[\"com.example.notes\",\"../escape\"]"),
+            ready_line(10, PRODUCTION_PORT, "[\"com.example.notes\",\"com.example.notes\"]"),
+            ready_line(10, PRODUCTION_PORT, "[\"con.example\"]"),
+            ready_line(10, PRODUCTION_PORT, &too_long),
+            // The compiled applications' Folder scopes are not installable.
+            ready_line(10, PRODUCTION_PORT, "[\"so.epicenter.todos\"]"),
+            ready_line(10, PRODUCTION_PORT, "[\"so.epicenter.capture\"]"),
         ] {
-            assert!(read_ready_frame(&mut Cursor::new(invalid), PRODUCTION_PORT).is_err());
+            assert!(
+                read_ready_frame(&mut Cursor::new(invalid.as_bytes()), PRODUCTION_PORT).is_err(),
+                "{invalid:?}"
+            );
         }
+    }
+
+    #[test]
+    fn a_ready_frame_names_exactly_one_valid_credential_free_boot_account() {
+        assert_eq!(
+            read_ready_frame(
+                &mut Cursor::new(ready_line_for(
+                    10,
+                    PRODUCTION_PORT,
+                    "[]",
+                    r#"{"authorityId":"epicenter-api","principalId":"user-123"}"#
+                )),
+                PRODUCTION_PORT,
+            )
+            .unwrap()
+            .boot_account,
+            Some(identity("epicenter-api", "user-123"))
+        );
+        // Exact bytes: nothing is trimmed or normalized on the way in.
+        assert_eq!(
+            read_ready_frame(
+                &mut Cursor::new(ready_line_for(
+                    10,
+                    PRODUCTION_PORT,
+                    "[]",
+                    r#"{"authorityId":" A","principalId":"é"}"#
+                )),
+                PRODUCTION_PORT,
+            )
+            .unwrap()
+            .boot_account,
+            Some(identity(" A", "e\u{301}"))
+        );
+
+        let missing_owner =
+            "{\"type\":\"ready\",\"protocolVersion\":10,\"port\":39130,\"installedAppIds\":[]}\n";
+        assert!(
+            read_ready_frame(&mut Cursor::new(missing_owner), PRODUCTION_PORT).is_err(),
+            "an absent bootAccount must not read as Local"
+        );
+        for boot_account in [
+            // Not an identity.
+            "false",
+            "\"epicenter-api\"",
+            "[]",
+            "{}",
+            r#"{"authorityId":"epicenter-api"}"#,
+            r#"{"principalId":"user-123"}"#,
+            r#"{"authorityId":"epicenter-api","principalId":null}"#,
+            r#"{"authorityId":7,"principalId":"user-123"}"#,
+            // Anything beyond the identity, a credential above all, is refused.
+            r#"{"authorityId":"epicenter-api","principalId":"user-123","token":"secret"}"#,
+            r#"{"authorityId":"epicenter-api","principalId":"user-123","baseURL":"https://api.epicenter.so"}"#,
+            // An identity no account directory can be derived from.
+            r#"{"authorityId":"","principalId":"user-123"}"#,
+            r#"{"authorityId":"epicenter-api","principalId":""}"#,
+            r#"{"authorityId":"epicenter-api\n","principalId":"user-123"}"#,
+            r#"{"authorityId":"epicenter-api","principalId":"user\u0085"}"#,
+            r#"{"authorityId":"\ud800","principalId":"user-123"}"#,
+            r#"{"authorityId":"epicenter-api","principalId":"\udfff"}"#,
+        ] {
+            let line = ready_line_for(10, PRODUCTION_PORT, "[]", boot_account);
+            assert!(
+                read_ready_frame(&mut Cursor::new(line.as_bytes()), PRODUCTION_PORT).is_err(),
+                "{boot_account}"
+            );
+        }
+    }
+
+    #[test]
+    fn the_first_ready_owner_holds_for_the_native_process() {
+        let account = Some(identity("epicenter-api", "user-123"));
+        let other = Some(identity("epicenter-api", "user-456"));
+        let other_authority = Some(identity("instance-6869", "user-123"));
+
+        // Uncaptured until the first ready frame, then Local is captured,
+        // which is not the same as uncaptured.
+        let state = HostState::new(Ok(PRODUCTION_PORT));
+        assert_eq!(state.folder_owner.get(), None);
+        state.capture_folder_owner(None).unwrap();
+        assert_eq!(state.folder_owner.get(), Some(&None));
+        // A Bun recovery that signed in refuses, and Local stays captured.
+        assert_eq!(
+            state.capture_folder_owner(account.clone()).unwrap_err().to_string(),
+            OWNER_CHANGED
+        );
+        assert_eq!(state.folder_owner.get(), Some(&None));
+        // The same owner recovers any number of times.
+        state.capture_folder_owner(None).unwrap();
+        state.capture_folder_owner(None).unwrap();
+
+        // An account captured first refuses Local and every other account.
+        let state = HostState::new(Ok(PRODUCTION_PORT));
+        state.capture_folder_owner(account.clone()).unwrap();
+        for refused in [None, other, other_authority] {
+            assert_eq!(
+                state.capture_folder_owner(refused).unwrap_err().to_string(),
+                OWNER_CHANGED
+            );
+        }
+        state.capture_folder_owner(account.clone()).unwrap();
+        assert_eq!(state.folder_owner.get(), Some(&account));
+        // Capturing activates nothing: the refused generation never served.
+        assert_eq!(state.active_token(), None);
+    }
+
+    /// Home reads these exact shapes (`ui/runtime.ts`, `ApplicationData`).
+    #[test]
+    fn application_data_reaches_home_as_one_tagged_state() {
+        for (data, expected) in [
+            (ApplicationData::Compiled, serde_json::json!({ "state": "compiled" })),
+            (ApplicationData::Local, serde_json::json!({ "state": "local" })),
+            (ApplicationData::Available, serde_json::json!({ "state": "available" })),
+            (
+                ApplicationData::NotDownloaded,
+                serde_json::json!({ "state": "not-downloaded" }),
+            ),
+            (
+                ApplicationData::Unclaimed {
+                    message: "move it aside".into(),
+                },
+                serde_json::json!({ "state": "unclaimed", "message": "move it aside" }),
+            ),
+            (ApplicationData::Downloading, serde_json::json!({ "state": "downloading" })),
+        ] {
+            assert_eq!(serde_json::to_value(&data).unwrap(), expected);
+        }
+    }
+
+    #[test]
+    fn a_download_runs_once_per_app_and_quitting_cancels_every_one() {
+        let state = HostState::new(Ok(PRODUCTION_PORT));
+        let id = "com.bradenwong.zhongwen";
+        assert!(!state.cancel_download(id));
+        // Only a running generation can start one.
+        assert!(state.begin_download(id).is_err());
+        state.activate("first", BTreeSet::new());
+        let first = state.begin_download(id).unwrap();
+        assert!(state.download_running(id));
+        assert_eq!(
+            state.begin_download(id).unwrap_err(),
+            "This app's data is already downloading."
+        );
+        let other = state.begin_download("com.example.notes").unwrap();
+        assert!(state.cancel_download(id));
+        assert!(first.load(Ordering::SeqCst));
+        assert!(!other.load(Ordering::SeqCst));
+        state.end_download(id);
+        assert!(!state.download_running(id));
+        // Quitting stops what is running and refuses anything new.
+        state.shutting_down.store(true, Ordering::Release);
+        state.cancel_downloads();
+        assert!(other.load(Ordering::SeqCst));
+        assert!(state.begin_download(id).is_err());
+    }
+
+    /// A download belongs to the generation that started it: its relay ends
+    /// with that generation, so the download is cancelled when the generation
+    /// is deactivated (a Bun exit before recovery) or replaced, and never runs
+    /// on into the next one. A new download after recovery starts as usual.
+    #[test]
+    fn a_generation_that_ends_cancels_the_downloads_it_started() {
+        let state = HostState::new(Ok(PRODUCTION_PORT));
+        state.activate("first", BTreeSet::new());
+        let id = "com.bradenwong.zhongwen";
+        let started = state.begin_download(id).unwrap();
+        // The same generation re-announced keeps it.
+        state.activate("first", BTreeSet::new());
+        assert!(!started.load(Ordering::SeqCst));
+        state.deactivate();
+        assert!(started.load(Ordering::SeqCst), "cancelled with its generation");
+        // Its own completion still clears it, and nothing new starts until a
+        // generation is active again.
+        state.end_download(id);
+        assert!(state.begin_download(id).is_err());
+        state.activate("second", BTreeSet::new());
+        let retried = state.begin_download(id).unwrap();
+        assert!(!retried.load(Ordering::SeqCst), "a retry after recovery runs");
+        state.end_download(id);
+
+        // A generation replaced without a deactivation cancels too.
+        let older = state.begin_download(id).unwrap();
+        state.activate("third", BTreeSet::new());
+        assert!(older.load(Ordering::SeqCst));
+    }
+
+    #[test]
+    fn hosted_transfers_resolve_the_active_generation_each_time() {
+        let app = tauri::test::mock_builder()
+            .manage(HostState::new(Ok(PRODUCTION_PORT)))
+            .build(tauri::test::mock_context(tauri::test::noop_assets()))
+            .unwrap();
+        let current = current_generation(app.handle());
+        assert_eq!(current(), None);
+        let state = app.handle().state::<HostState>();
+        state.activate("first", BTreeSet::new());
+        assert_eq!(
+            current(),
+            Some(installed_apps::Generation {
+                port: PRODUCTION_PORT,
+                token: "first".into()
+            })
+        );
+        state.activate("second", BTreeSet::new());
+        assert_eq!(current().unwrap().token, "second");
+        state.deactivate();
+        assert_eq!(current(), None);
     }
 
     #[test]
@@ -1863,7 +2964,9 @@ mod tests {
                 ("home", "/apps/home/", "Epicenter: Home"),
                 ("whispering", "/apps/whispering/", "Epicenter: Whispering"),
                 ("honeycrisp", "/apps/honeycrisp/", "Epicenter: Honeycrisp"),
+                ("capture", "/apps/capture/", "Epicenter: Capture"),
                 ("mail", "/apps/mail/", "Epicenter: Mail"),
+                ("todos", "/apps/todos/", "Epicenter: Todos"),
                 ("books", "/apps/books/", "Epicenter: Books"),
             ]
         );
@@ -1880,7 +2983,10 @@ mod tests {
             .filter(|window| window.is_launchable())
             .map(BuiltInApp::id)
             .collect();
-        assert_eq!(launchable, ["whispering", "honeycrisp", "mail"]);
+        assert_eq!(
+            launchable,
+            ["whispering", "capture", "mail", "todos"]
+        );
     }
 
     #[test]
@@ -1889,21 +2995,26 @@ mod tests {
             parse_application_id("whispering"),
             Some(Application::Compiled(BuiltInApp::Whispering))
         ));
+        // Honeycrisp ships its own shell; its old host id stays reserved.
+        assert!(parse_application_id("honeycrisp").is_none());
         assert!(matches!(
-            parse_application_id("honeycrisp"),
-            Some(Application::Compiled(BuiltInApp::Honeycrisp))
+            parse_application_id("capture"),
+            Some(Application::Compiled(BuiltInApp::Capture))
         ));
         assert!(matches!(
             parse_application_id("mail"),
             Some(Application::Compiled(BuiltInApp::Mail))
         ));
+        assert!(matches!(
+            parse_application_id("todos"),
+            Some(Application::Compiled(BuiltInApp::Todos))
+        ));
 
         // Every well-formed non-reserved ID resolves to the app-window path,
-        // including ones no generation ever admitted. That is the ownership
-        // boundary, not an oversight: the catalog is Bun's (ADR-0179), Home
-        // only offers IDs from the list Bun served it, and an ID that names no
-        // member opens a window Bun answers with 404. Re-deriving membership
-        // here would be a second catalog with a second answer.
+        // including ones no generation ever admitted. This is the shape check
+        // only: the main thread then opens a window, and registers a Folder,
+        // only for an ID the active generation named in its ready frame
+        // (`admit_installed_app`).
         for accepted in [
             "hello-http",
             "a",
@@ -2111,6 +3222,10 @@ mod tests {
             include_str!("../capabilities/trusted-whispering-native-production.json"),
             include_str!("../capabilities/trusted-app-windows-development.json"),
             include_str!("../capabilities/trusted-app-windows-production.json"),
+            include_str!("../capabilities/departure-development.json"),
+            include_str!("../capabilities/departure-production.json"),
+            include_str!("../capabilities/home-launch-application-development.json"),
+            include_str!("../capabilities/home-launch-application-production.json"),
         ] {
             let capability: serde_json::Value = serde_json::from_str(encoded).unwrap();
             for permission in capability["permissions"].as_array().unwrap() {
@@ -2142,7 +3257,15 @@ mod tests {
     /// (raw bytes) or are host-owned rather than part of the app contract.
     #[test]
     fn generated_bindings_cover_every_declared_command() {
-        const HANDWRITTEN: &[&str] = &["encode_recording_for_upload", "launch_application"];
+        const HANDWRITTEN: &[&str] = &[
+            "encode_recording_for_upload",
+            "launch_application",
+            "application_data",
+            "download_application",
+            "cancel_application_download",
+            "departure_status",
+            "departure_answer",
+        ];
         for bindings in [
             include_str!("../../../whispering/src/lib/tauri/bindings.gen.ts"),
             include_str!("../../src/ui/bindings.gen.ts"),
@@ -2259,7 +3382,13 @@ mod tests {
         "stop_recording",
         "cancel_recording",
         "current_recording",
+        "resolve_recording_start",
+        "recording_document_generation",
+    "register_recording_session",
+        "close_recording_session",
         "transcribe_recording",
+        "transcribe_audio_bytes",
+        "list_inference_models",
         "prewarm_model",
         "get_local_transcription_readiness",
     ];
@@ -2380,6 +3509,16 @@ mod tests {
                 include_str!("../tauri.conf.json"),
                 "mail-gmail-authorization-production",
             ),
+            (include_str!("../tauri.dev.conf.json"), "departure-development"),
+            (include_str!("../tauri.conf.json"), "departure-production"),
+            (
+                include_str!("../tauri.dev.conf.json"),
+                "installed-app-folder-development",
+            ),
+            (
+                include_str!("../tauri.conf.json"),
+                "installed-app-folder-production",
+            ),
         ] {
             let config: serde_json::Value = serde_json::from_str(encoded).unwrap();
             let selected = config["app"]["security"]["capabilities"]
@@ -2424,8 +3563,86 @@ mod tests {
                 serde_json::json!(["home"]),
                 "the launch verb belongs to the Home window alone"
             );
-            let permissions = capability["permissions"].as_array().unwrap();
-            assert!(permissions.contains(&serde_json::json!("allow-launch-application")));
+            assert_eq!(
+                capability["permissions"],
+                serde_json::json!([
+                    "allow-launch-application",
+                    "allow-application-data",
+                    "allow-download-application",
+                    "allow-cancel-application-download"
+                ]),
+                "Home's Apps pane launches, and downloads an installed app's data first"
+            );
+        }
+    }
+
+    /// The departure round asks Capture and Todos, and nobody else, so only
+    /// their windows may read it or answer it. The commands identify the
+    /// caller by its window, so this grant is the whole of who can take part.
+    #[test]
+    fn only_capture_and_todos_take_part_in_departure() {
+        for encoded in [
+            include_str!("../capabilities/departure-development.json"),
+            include_str!("../capabilities/departure-production.json"),
+        ] {
+            let capability: serde_json::Value = serde_json::from_str(encoded).unwrap();
+            assert_eq!(capability["windows"], serde_json::json!(["capture", "todos"]));
+            assert_eq!(
+                capability["permissions"],
+                serde_json::json!([
+                    "core:event:allow-listen",
+                    "core:event:allow-unlisten",
+                    "allow-departure-status",
+                    "allow-departure-answer"
+                ])
+            );
+        }
+        for encoded in [
+            include_str!("../capabilities/trusted-app-windows-development.json"),
+            include_str!("../capabilities/trusted-app-windows-production.json"),
+            include_str!("../capabilities/trusted-whispering-native-development.json"),
+            include_str!("../capabilities/trusted-whispering-native-production.json"),
+            include_str!("../capabilities/home-model-administration-development.json"),
+            include_str!("../capabilities/home-model-administration-production.json"),
+            include_str!("../capabilities/home-launch-application-development.json"),
+            include_str!("../capabilities/home-launch-application-production.json"),
+            include_str!("../capabilities/capture-folder-development.json"),
+            include_str!("../capabilities/capture-folder-production.json"),
+            include_str!("../capabilities/todos-folder-development.json"),
+            include_str!("../capabilities/todos-folder-production.json"),
+            include_str!("../capabilities/installed-app-folder-development.json"),
+            include_str!("../capabilities/installed-app-folder-production.json"),
+        ] {
+            assert!(
+                !encoded.contains("departure"),
+                "the departure commands belong to the departure capability alone"
+            );
+        }
+        let windows: Vec<&str> = departure::Participant::ALL
+            .into_iter()
+            .map(departure::Participant::label)
+            .collect();
+        assert_eq!(windows, ["capture", "todos"]);
+        assert_eq!(
+            [BuiltInApp::Capture.id(), BuiltInApp::Todos.id()],
+            ["capture", "todos"]
+        );
+    }
+
+    /// Participant windows hold no `core:window` grant, so a page cannot show
+    /// itself; every reveal runs through native code that asks the round.
+    #[test]
+    fn participant_windows_cannot_show_themselves() {
+        for encoded in [
+            include_str!("../capabilities/departure-development.json"),
+            include_str!("../capabilities/departure-production.json"),
+            include_str!("../capabilities/capture-folder-development.json"),
+            include_str!("../capabilities/capture-folder-production.json"),
+            include_str!("../capabilities/todos-folder-development.json"),
+            include_str!("../capabilities/todos-folder-production.json"),
+        ] {
+            assert!(!encoded.contains("core:window"), "{encoded}");
+            assert!(!encoded.contains("core:webview"), "{encoded}");
         }
     }
 
@@ -2487,13 +3704,469 @@ mod tests {
         }
     }
 
+    /// Installed app windows call the Folder plugin through its one preset,
+    /// on the same loopback origin as the shared app slice. The grant only
+    /// lets a window call the plugin; which folder it reaches is the scope
+    /// registered for its exact label, proved through invoke below.
+    #[test]
+    fn installed_app_windows_reach_the_folder_plugin_through_its_preset() {
+        for (encoded, shared) in [
+            (
+                include_str!("../capabilities/installed-app-folder-development.json"),
+                include_str!("../capabilities/trusted-app-windows-development.json"),
+            ),
+            (
+                include_str!("../capabilities/installed-app-folder-production.json"),
+                include_str!("../capabilities/trusted-app-windows-production.json"),
+            ),
+        ] {
+            let capability: serde_json::Value = serde_json::from_str(encoded).unwrap();
+            let shared: serde_json::Value = serde_json::from_str(shared).unwrap();
+            assert_eq!(capability["windows"], serde_json::json!(["app-*"]));
+            assert_eq!(capability["local"], serde_json::json!(false));
+            assert_eq!(capability["remote"], shared["remote"]);
+            assert_eq!(
+                capability["permissions"],
+                serde_json::json!(["epicenter-folder:default"])
+            );
+        }
+        // Whispering shares the app slice and has no installed folder.
+        for encoded in APP_WINDOW_CAPABILITIES {
+            assert!(!encoded.contains("epicenter-folder"));
+        }
+    }
+
+    struct TestDirectory(PathBuf);
+
+    impl Drop for TestDirectory {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.0);
+        }
+    }
+
+    fn test_directory(label: &str) -> TestDirectory {
+        let path =
+            std::env::temp_dir().join(format!("epicenter-lib-{label}-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&path);
+        fs::create_dir_all(&path).unwrap();
+        TestDirectory(fs::canonicalize(path).unwrap())
+    }
+
+    fn git(directory: &std::path::Path, args: &[&str]) -> String {
+        let output = Command::new("git")
+            .args(args)
+            .current_dir(directory)
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        String::from_utf8_lossy(&output.stdout).trim().to_string()
+    }
+
+    fn folder_invoke(
+        window: &WebviewWindow<tauri::test::MockRuntime>,
+        command: &str,
+        args: serde_json::Value,
+    ) -> std::result::Result<serde_json::Value, serde_json::Value> {
+        tauri::test::get_ipc_response(
+            window,
+            tauri::webview::InvokeRequest {
+                cmd: format!("plugin:epicenter-folder|{command}"),
+                callback: tauri::ipc::CallbackFn(0),
+                error: tauri::ipc::CallbackFn(1),
+                url: "tauri://localhost".parse().unwrap(),
+                body: tauri::ipc::InvokeBody::Json(args),
+                headers: Default::default(),
+                invoke_key: tauri::test::INVOKE_KEY.to_string(),
+            },
+        )
+        .map(|body| body.deserialize::<serde_json::Value>().unwrap())
+    }
+
+    fn attach_folder(
+        window: &WebviewWindow<tauri::test::MockRuntime>,
+        scope: &str,
+    ) -> std::result::Result<serde_json::Value, serde_json::Value> {
+        folder_invoke(
+            window,
+            "attach",
+            serde_json::json!({ "scope": scope, "protocol": tauri_plugin_epicenter_folder::PROTOCOL }),
+        )
+    }
+
+    /// An installed app's launch, through the admission the main thread runs
+    /// and the Folder plugin's real invoke path on the mock runtime. The
+    /// repository is disposable and prepared the way a person's would be: its
+    /// own author and an `origin`, here a local bare repository, so no
+    /// credential is involved.
+    #[test]
+    fn an_installed_launch_opens_its_folder_only_for_the_active_generation() {
+        // No person's Git configuration, helpers, or credentials take part.
+        std::env::set_var("GIT_CONFIG_GLOBAL", "/dev/null");
+        std::env::set_var("GIT_CONFIG_NOSYSTEM", "1");
+        let directory = test_directory("installed-launch");
+        let folder_dir = directory.0.join("Epicenter Dev");
+        let id = "com.bradenwong.zhongwen";
+        let unknown = "com.example.unknown";
+        let label = app_window_label(id);
+        let root = folder_dir.join("local").join(id);
+
+        let origin = directory.0.join("origin.git");
+        fs::create_dir_all(&origin).unwrap();
+        git(
+            &origin,
+            &["init", "--quiet", "--bare", "--initial-branch=main"],
+        );
+        fs::create_dir_all(&root).unwrap();
+        git(&root, &["init", "--quiet", "--initial-branch=main"]);
+        git(&root, &["config", "user.name", "Zhongwen Learner"]);
+        git(&root, &["config", "user.email", "learner@example.com"]);
+        git(
+            &root,
+            &["remote", "add", "origin", &origin.display().to_string()],
+        );
+
+        let mut context = tauri::test::mock_context(tauri::test::noop_assets());
+        for command in tauri_plugin_epicenter_folder::COMMANDS {
+            context.runtime_authority_mut().__allow_command(
+                format!("plugin:epicenter-folder|{command}"),
+                tauri::utils::acl::ExecutionContext::Local,
+            );
+        }
+        let app = tauri::test::mock_builder()
+            .plugin(tauri_plugin_epicenter_folder::init())
+            .manage(HostState::new(Ok(PRODUCTION_PORT)))
+            .manage(app_data::DesktopPaths {
+                data_dir: directory.0.join("data"),
+                folder_dir: folder_dir.clone(),
+            })
+            .build(context)
+            .unwrap();
+        let handle = app.handle();
+        let state = handle.state::<HostState>();
+        let window = |label: &str| {
+            WebviewWindowBuilder::new(&app, label, Default::default())
+                .build()
+                .unwrap()
+        };
+        let refusal = |token: &str, id: &str| {
+            admit_installed_app(handle, token, id)
+                .unwrap_err()
+                .to_string()
+        };
+
+        // Before any generation is ready, nothing is admitted.
+        assert_eq!(refusal("first", id), HOST_RESTARTED);
+
+        // The first ready generation booted signed out: installed apps open
+        // their Local folders for this whole native process.
+        state.capture_folder_owner(None).unwrap();
+        state.activate("first", BTreeSet::from([id.to_string()]));
+        // An ID that has the right shape but was never installed opens no
+        // window, creates no folder, and registers no scope.
+        assert_eq!(
+            refusal("first", unknown),
+            format!("{unknown} is not an installed application")
+        );
+        assert!(!folder_dir.join("local").join(unknown).exists());
+        assert_eq!(
+            attach_folder(&window(&app_window_label(unknown)), unknown).unwrap_err()["name"],
+            "UnknownScope"
+        );
+        // A token from another generation is refused even for a member.
+        assert_eq!(refusal("zero", id), HOST_RESTARTED);
+        assert!(state.installed_folders.lock().unwrap().is_empty());
+
+        assert_eq!(admit_installed_app(handle, "first", id).unwrap(), label);
+        assert_eq!(
+            state
+                .installed_folders
+                .lock()
+                .unwrap()
+                .iter()
+                .collect::<Vec<_>>(),
+            [id]
+        );
+
+        // A restart retires the token. The next generation that names the
+        // app admits it again without registering the scope a second time,
+        // which the plugin would refuse.
+        state.deactivate();
+        assert_eq!(refusal("first", id), HOST_RESTARTED);
+        state.activate("second", BTreeSet::from([id.to_string()]));
+        assert_eq!(admit_installed_app(handle, "second", id).unwrap(), label);
+        // A generation that no longer names it does not admit it.
+        state.activate("third", BTreeSet::new());
+        assert_eq!(
+            refusal("third", id),
+            format!("{id} is not an installed application")
+        );
+        state.activate("fourth", BTreeSet::from([id.to_string()]));
+        assert_eq!(admit_installed_app(handle, "fourth", id).unwrap(), label);
+
+        // The window Rust labels for the app reaches exactly its folder.
+        let zhongwen = window(&label);
+        let attached = attach_folder(&zhongwen, id).unwrap();
+        assert_eq!(attached["root"], root.display().to_string());
+        assert_eq!(
+            attached["snapshot"]["remote"],
+            serde_json::json!({ "url": origin.display().to_string(), "branch": "main" })
+        );
+        // Another app's window, and a compiled app's, are refused by the
+        // plugin's per-label registration, whatever the capability grants.
+        for other in [
+            window(&app_window_label("com.example.notes")),
+            window("todos"),
+        ] {
+            assert_eq!(
+                attach_folder(&other, id).unwrap_err()["name"],
+                "WindowNotPermitted"
+            );
+        }
+
+        let session = attached["session"].as_u64().unwrap();
+        folder_invoke(
+            &zhongwen,
+            "apply",
+            serde_json::json!({
+                "session": session,
+                "changes": [{ "kind": "create", "path": "decks/hsk1.md", "bytes": "你好".as_bytes() }],
+            }),
+        )
+        .unwrap();
+        let read = folder_invoke(
+            &zhongwen,
+            "read",
+            serde_json::json!({ "session": session, "path": "decks/hsk1.md" }),
+        )
+        .unwrap();
+        assert_eq!(read["bytes"], serde_json::json!("你好".as_bytes()));
+        assert_eq!(
+            fs::read_to_string(root.join("decks/hsk1.md")).unwrap(),
+            "你好"
+        );
+
+        // The save is committed by the repository's own author, and a push
+        // goes to the repository's own origin. An explicit commit waits for
+        // the automatic one the save asked for, so the history is settled.
+        folder_invoke(
+            &zhongwen,
+            "commit",
+            serde_json::json!({ "session": session }),
+        )
+        .unwrap();
+        assert_eq!(
+            git(&root, &["log", "-1", "--format=%an <%ae>"]),
+            "Zhongwen Learner <learner@example.com>"
+        );
+        let request = folder_invoke(
+            &zhongwen,
+            "open_request",
+            serde_json::json!({ "session": session }),
+        )
+        .unwrap();
+        let pushed = folder_invoke(
+            &zhongwen,
+            "push",
+            serde_json::json!({ "session": session, "request": request }),
+        )
+        .unwrap();
+        assert_eq!(pushed["status"], "pushed", "{pushed}");
+        assert_eq!(
+            git(&origin, &["rev-parse", "main"]),
+            git(&root, &["rev-parse", "HEAD"])
+        );
+
+        handle.folders().shutdown();
+    }
+
+    /// Every entry below `root`, so a test can show what a step wrote.
+    fn tree(root: &std::path::Path) -> Vec<(PathBuf, Vec<u8>)> {
+        let mut entries = Vec::new();
+        let mut stack = vec![root.to_path_buf()];
+        while let Some(directory) = stack.pop() {
+            for entry in fs::read_dir(&directory).unwrap() {
+                let path = entry.unwrap().path();
+                if fs::symlink_metadata(&path).unwrap().is_dir() {
+                    stack.push(path.clone());
+                    entries.push((path, Vec::new()));
+                } else {
+                    let bytes = fs::read(&path).unwrap();
+                    entries.push((path, bytes));
+                }
+            }
+        }
+        entries.sort();
+        entries
+    }
+
+    fn installed_test_app(
+        directory: &std::path::Path,
+    ) -> tauri::App<tauri::test::MockRuntime> {
+        let mut context = tauri::test::mock_context(tauri::test::noop_assets());
+        for command in tauri_plugin_epicenter_folder::COMMANDS {
+            context.runtime_authority_mut().__allow_command(
+                format!("plugin:epicenter-folder|{command}"),
+                tauri::utils::acl::ExecutionContext::Local,
+            );
+        }
+        tauri::test::mock_builder()
+            .plugin(tauri_plugin_epicenter_folder::init())
+            .manage(HostState::new(Ok(PRODUCTION_PORT)))
+            .manage(app_data::DesktopPaths {
+                data_dir: directory.join("data"),
+                folder_dir: directory.join("Epicenter"),
+            })
+            .build(context)
+            .unwrap()
+    }
+
+    /// A process whose first ready generation booted with an Account opens
+    /// that account's dataset through the real Folder invoke path, under the
+    /// same scope ID, and never reads or writes the Local folder beside it.
+    #[test]
+    fn an_account_launch_opens_only_the_account_dataset() {
+        std::env::set_var("GIT_CONFIG_GLOBAL", "/dev/null");
+        std::env::set_var("GIT_CONFIG_NOSYSTEM", "1");
+        let directory = test_directory("account-launch");
+        let folder_dir = directory.0.join("Epicenter");
+        let id = "com.bradenwong.zhongwen";
+        let label = app_window_label(id);
+        let account = identity("epicenter-api", "user-123");
+        // `account-key.test.ts`'s golden vector for this identity.
+        let dataset = folder_dir
+            .join("accounts")
+            .join("b7efec8b3e072ff278fe2e331ce495dee36882be0ad2981c4e0196aeecbc1fc7")
+            .join(id);
+
+        let local = folder_dir.join("local").join(id);
+        fs::create_dir_all(&local).unwrap();
+        fs::write(local.join("local.md"), "Local").unwrap();
+        let local_before = tree(&folder_dir.join("local"));
+        // An explicit download left this dataset here; launching never does.
+        fs::create_dir_all(&dataset).unwrap();
+        git(&dataset, &["init", "--quiet", "--initial-branch=main"]);
+        git(&dataset, &["config", "user.name", "Zhongwen Learner"]);
+        git(&dataset, &["config", "user.email", "learner@example.com"]);
+        fs::write(dataset.join("account.md"), "Account").unwrap();
+
+        let app = installed_test_app(&directory.0);
+        let handle = app.handle();
+        let state = handle.state::<HostState>();
+        state.capture_folder_owner(Some(account.clone())).unwrap();
+        state.activate("first", BTreeSet::from([id.to_string()]));
+        // A Bun recovery under another account, or signed out, never serves.
+        assert!(state.capture_folder_owner(None).is_err());
+        assert!(state
+            .capture_folder_owner(Some(identity("epicenter-api", "user-456")))
+            .is_err());
+        // The same account recovers with a new token and membership.
+        state.capture_folder_owner(Some(account)).unwrap();
+        state.activate(
+            "second",
+            BTreeSet::from([id.to_string(), "com.example.notes".to_string()]),
+        );
+        assert_eq!(admit_installed_app(handle, "second", id).unwrap(), label);
+
+        let zhongwen = WebviewWindowBuilder::new(&app, &label, Default::default())
+            .build()
+            .unwrap();
+        let attached = attach_folder(&zhongwen, id).unwrap();
+        assert_eq!(attached["root"], dataset.display().to_string());
+        let session = attached["session"].as_u64().unwrap();
+        let read = folder_invoke(
+            &zhongwen,
+            "read",
+            serde_json::json!({ "session": session, "path": "account.md" }),
+        )
+        .unwrap();
+        assert_eq!(read["bytes"], serde_json::json!("Account".as_bytes()));
+        assert_eq!(
+            folder_invoke(
+                &zhongwen,
+                "read",
+                serde_json::json!({ "session": session, "path": "local.md" }),
+            )
+            .unwrap_err()["name"],
+            "NotFound"
+        );
+        folder_invoke(
+            &zhongwen,
+            "apply",
+            serde_json::json!({
+                "session": session,
+                "changes": [{ "kind": "create", "path": "decks/hsk1.md", "bytes": "你好".as_bytes() }],
+            }),
+        )
+        .unwrap();
+        assert_eq!(
+            fs::read_to_string(dataset.join("decks/hsk1.md")).unwrap(),
+            "你好"
+        );
+        folder_invoke(
+            &zhongwen,
+            "commit",
+            serde_json::json!({ "session": session }),
+        )
+        .unwrap();
+        assert_eq!(tree(&folder_dir.join("local")), local_before);
+
+        handle.folders().shutdown();
+    }
+
+    /// An account dataset that was never downloaded refuses the launch with a
+    /// request to download it, and the launch writes nothing anywhere.
+    #[test]
+    fn an_account_launch_without_its_dataset_creates_nothing() {
+        let directory = test_directory("account-launch-missing");
+        let folder_dir = directory.0.join("Epicenter");
+        let id = "com.bradenwong.zhongwen";
+        let local = folder_dir.join("local").join(id);
+        fs::create_dir_all(&local).unwrap();
+        fs::write(local.join("local.md"), "Local").unwrap();
+        let before = tree(&directory.0);
+
+        let app = installed_test_app(&directory.0);
+        let handle = app.handle();
+        let state = handle.state::<HostState>();
+        state
+            .capture_folder_owner(Some(identity("epicenter-api", "user-123")))
+            .unwrap();
+        state.activate("first", BTreeSet::from([id.to_string()]));
+
+        let refusal = admit_installed_app(handle, "first", id).unwrap_err();
+        assert!(
+            format!("{refusal:#}").contains(&format!(
+                "Download it explicitly before opening {id}"
+            )),
+            "{refusal:#}"
+        );
+        assert_eq!(tree(&directory.0), before);
+        assert!(state.installed_folders.lock().unwrap().is_empty());
+        // No scope was registered, so a window under the label reaches nothing.
+        let window = WebviewWindowBuilder::new(&app, app_window_label(id), Default::default())
+            .build()
+            .unwrap();
+        assert_eq!(
+            attach_folder(&window, id).unwrap_err()["name"],
+            "UnknownScope"
+        );
+        assert_eq!(tree(&directory.0), before);
+        handle.folders().shutdown();
+    }
+
     #[test]
     fn deep_links_accept_only_the_closed_built_in_app_table() {
         for (url, expected) in [
             ("epicenter://app/home", BuiltInApp::Home),
             ("epicenter://app/whispering", BuiltInApp::Whispering),
             ("epicenter://app/honeycrisp", BuiltInApp::Honeycrisp),
+            ("epicenter://app/capture", BuiltInApp::Capture),
             ("epicenter://app/mail", BuiltInApp::Mail),
+            ("epicenter://app/todos", BuiltInApp::Todos),
             ("epicenter://app/books", BuiltInApp::Books),
         ] {
             assert_eq!(parse_app_deep_link(&url.parse().unwrap()), Some(expected));
@@ -2518,13 +4191,13 @@ mod tests {
     }
 
     #[test]
-    fn oauth_deep_links_accept_only_the_exact_callback_route() {
+    fn auth_deep_links_accept_only_the_exact_callback_route() {
         for url in [
             "epicenter://auth/callback?code=code&state=state",
             "epicenter://auth/callback?error=access_denied&state=state",
         ] {
             assert_eq!(
-                parse_oauth_callback(&url.parse().unwrap()),
+                parse_auth_callback(&url.parse().unwrap()),
                 Some(url.to_string())
             );
         }
@@ -2537,49 +4210,143 @@ mod tests {
             "epicenter://user@auth/callback?code=code",
             "https://api.epicenter.so/auth/callback?code=code",
         ] {
-            assert_eq!(parse_oauth_callback(&denied.parse().unwrap()), None);
+            assert_eq!(parse_auth_callback(&denied.parse().unwrap()), None);
+        }
+    }
+
+    #[test]
+    fn system_browser_accepts_only_hosted_account_destinations() {
+        for allowed in [
+            "https://api.epicenter.so/dashboard?expectedPrincipal=alice",
+            "https://api.epicenter.so/dashboard/usage?expectedPrincipal=alice",
+            "https://api.epicenter.so/dashboard/account",
+        ] {
+            assert!(is_hosted_account_url(
+                &allowed.parse().unwrap(),
+                &auth_server(None, None).unwrap()
+            ));
+        }
+        for denied in [
+            "http://api.epicenter.so/dashboard",
+            "https://api.epicenter.so.evil.test/dashboard",
+            "https://api.epicenter.so:444/dashboard",
+            "https://user@api.epicenter.so/dashboard",
+            "https://api.epicenter.so/dashboard#fragment",
+            "https://api.epicenter.so/dashboard/other",
+            "https://api.epicenter.so/dashboard/usage/extra",
+            "https://api.epicenter.so/sign-in",
+            "https://api.epicenter.so/auth/sign-out",
+            "file:///dashboard",
+        ] {
+            assert!(!is_hosted_account_url(
+                &denied.parse().unwrap(),
+                &auth_server(None, None).unwrap()
+            ));
         }
     }
 
     #[test]
     fn system_browser_accepts_only_hosted_auth_urls() {
         for allowed in [
-            "https://api.epicenter.so/auth/oauth2/authorize?client_id=desktop",
-            "https://api.epicenter.so/auth/sign-in",
+            "https://api.epicenter.so/sign-in?callback=epicenter%3A%2F%2Fauth%2Fcallback&state=state&challenge=challenge",
+            "https://api.epicenter.so/sign-in?reauth=1",
         ] {
-            validate_hosted_auth_url(allowed).unwrap();
+            validate_auth_url(allowed, &auth_server(None, None).unwrap().server).unwrap();
         }
         for denied in [
-            "http://api.epicenter.so/auth/sign-in",
-            "https://api.epicenter.so.evil.test/auth/sign-in",
+            "http://api.epicenter.so/sign-in",
+            "https://api.epicenter.so.evil.test/sign-in",
             "https://api.epicenter.so/not-auth",
-            "https://user@api.epicenter.so/auth/sign-in",
-            "https://api.epicenter.so/auth/sign-in#fragment",
+            "https://api.epicenter.so/sign-in/extra",
+            "https://api.epicenter.so/auth/sign-in",
+            "https://user@api.epicenter.so/sign-in",
+            "https://api.epicenter.so/sign-in#fragment",
+            "https://api.epicenter.so:444/sign-in",
         ] {
-            assert!(validate_hosted_auth_url(denied).is_err());
+            assert!(validate_auth_url(denied, &auth_server(None, None).unwrap().server).is_err());
         }
     }
 
     #[test]
     fn bun_auth_frames_are_closed_and_exact() {
         assert_eq!(
-            serde_json::from_str::<BunToRustAuthFrame>(
+            serde_json::to_value(RustToBunNativeFrame::AuthCallback {
+                url: "epicenter://auth/callback?code=code&state=state",
+            })
+            .unwrap(),
+            serde_json::json!({
+                "type": "auth-callback",
+                "url": "epicenter://auth/callback?code=code&state=state",
+            })
+        );
+        assert_eq!(
+            serde_json::from_str::<BunToRustNativeFrame>(
                 "{\"type\":\"store-auth\",\"requestId\":\"one\",\"serialized\":null}"
             )
             .unwrap(),
-            BunToRustAuthFrame::StoreAuth {
+            BunToRustNativeFrame::StoreAuth {
                 request_id: "one".to_string(),
                 serialized: None,
             }
         );
-        assert!(serde_json::from_str::<BunToRustAuthFrame>(
+        assert!(serde_json::from_str::<BunToRustNativeFrame>(
             "{\"type\":\"execute\",\"command\":\"shell\"}"
         )
         .is_err());
-        assert!(serde_json::from_str::<BunToRustAuthFrame>(
+        assert!(serde_json::from_str::<BunToRustNativeFrame>(
             "{\"type\":\"relaunch\",\"extra\":true}"
         )
         .is_err());
+    }
+
+    /// The relaunch frames name the preparation they belong to and nothing
+    /// else. The old bare `relaunch` is gone rather than kept beside them.
+    #[test]
+    fn relaunch_frames_carry_exactly_their_request() {
+        for (encoded, expected) in [
+            (
+                "{\"type\":\"prepare-relaunch\",\"requestId\":\"one\"}",
+                BunToRustNativeFrame::PrepareRelaunch {
+                    request_id: "one".into(),
+                },
+            ),
+            (
+                "{\"type\":\"prepare-cancel\",\"requestId\":\"one\"}",
+                BunToRustNativeFrame::PrepareCancel {
+                    request_id: "one".into(),
+                },
+            ),
+            (
+                "{\"type\":\"relaunch-abort\",\"requestId\":\"one\"}",
+                BunToRustNativeFrame::RelaunchAbort {
+                    request_id: "one".into(),
+                },
+            ),
+            (
+                "{\"type\":\"relaunch\",\"requestId\":\"one\"}",
+                BunToRustNativeFrame::Relaunch {
+                    request_id: "one".into(),
+                },
+            ),
+        ] {
+            assert_eq!(
+                serde_json::from_str::<BunToRustNativeFrame>(encoded).unwrap(),
+                expected
+            );
+        }
+        for invalid in [
+            "{\"type\":\"relaunch\"}",
+            "{\"type\":\"prepare-relaunch\"}",
+            "{\"type\":\"prepare-relaunch\",\"requestId\":\"one\",\"label\":\"capture\"}",
+            "{\"type\":\"prepare-cancel\",\"requestId\":1}",
+            "{\"type\":\"relaunch-abort\",\"request_id\":\"one\"}",
+            "{\"type\":\"departure-answer\",\"requestId\":\"one\"}",
+        ] {
+            assert!(
+                serde_json::from_str::<BunToRustNativeFrame>(invalid).is_err(),
+                "{invalid}"
+            );
+        }
     }
 
     #[test]
@@ -2599,16 +4366,25 @@ mod tests {
     }
 
     #[test]
-    fn boot_frame_is_strict_v2_and_carries_the_opaque_auth_cell() {
-        let token = URL_SAFE_NO_PAD.encode([7_u8; 32]);
-        let json = boot_frame_json(&token, PRODUCTION_PORT, Some("opaque")).unwrap();
+    fn boot_frame_carries_the_native_directories_and_auth_cell() {
+        let paths = app_data::DesktopPaths {
+            data_dir: std::env::temp_dir().join("so.epicenter.dev"),
+            folder_dir: std::env::temp_dir().join("Epicenter Dev"),
+        };
+        let json = boot_frame_json("safe_token", PRODUCTION_PORT, Some("opaque"), &paths).unwrap();
+        let frame: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert!(frame["authServer"]["baseURL"].is_string());
+        assert!(frame["authServer"].get("baseUrl").is_none());
         assert_eq!(
-            json,
-            format!(
-                "{{\"type\":\"boot\",\"protocolVersion\":2,\"token\":\"{token}\",\"port\":39130,\"authCell\":\"opaque\"}}"
-            )
+            frame,
+            serde_json::json!({
+                "type": "boot", "protocolVersion": 10, "token": "safe_token",
+                "port": PRODUCTION_PORT, "authCell": "opaque",
+                "authServer": configured_auth_server().unwrap().server,
+                "accountManagement": configured_auth_server().unwrap().account_management,
+                "dataDir": paths.data_dir, "folderDir": paths.folder_dir,
+            })
         );
-        assert!(!token.contains('='));
     }
 
     #[test]

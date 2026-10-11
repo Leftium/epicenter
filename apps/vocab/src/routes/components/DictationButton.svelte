@@ -1,16 +1,20 @@
 <script lang="ts">
+	import { createDictation } from '$lib/chat/dictation.svelte.js';
 	import { Button } from '@epicenter/ui/button';
 	import { toast } from '@epicenter/ui/sonner';
 	import { Spinner } from '@epicenter/ui/spinner';
 	import CircleStopIcon from '@lucide/svelte/icons/circle-stop';
 	import MicIcon from '@lucide/svelte/icons/mic';
 	import { extractErrorMessage } from 'wellcrafted/error';
-	import { dictation } from '$lib/state/dictation.svelte';
+	import { onDestroy } from 'svelte';
+	import type { InferenceCatalog } from '@epicenter/app-shell/inference-picker';
 
 	let {
+		catalog,
 		onTranscript,
 		disabled = false,
 	}: {
+		catalog: InferenceCatalog;
 		/** Called with the recognized text once a spoken phrase transcribes. */
 		onTranscript: (text: string) => void;
 		/**
@@ -19,6 +23,13 @@
 		 */
 		disabled?: boolean;
 	} = $props();
+	const dictation = createDictation(async () => {
+		await catalog.ready;
+		return catalog.ai.account?.client ?? null;
+	});
+	onDestroy(() => {
+		void dictation.close().catch((cause) => toast.error('Could not stop dictation', { description: extractErrorMessage(cause) }));
+	});
 
 	// Thin state-machine router: the listen/transcribe work lives in the
 	// dictation state; here we only toggle the session and route each phrase's
@@ -27,7 +38,7 @@
 	async function toggle() {
 		if (dictation.status !== 'idle') {
 			const { error: stopError } = await dictation.stop();
-			if (stopError) {
+			if (stopError !== null) {
 				toast.error('Could not stop dictation', {
 					description: extractErrorMessage(stopError),
 				});
@@ -37,7 +48,7 @@
 
 		const { error: startError } = await dictation.start({
 			onTranscript: ({ data: text, error: transcribeError }) => {
-				if (transcribeError) {
+				if (transcribeError !== null) {
 					toast.error('Could not transcribe that', {
 						description: extractErrorMessage(transcribeError),
 					});
@@ -46,7 +57,7 @@
 				if (text) onTranscript(text);
 			},
 		});
-		if (startError) {
+		if (startError !== null) {
 			toast.error('Could not start dictation', {
 				description: extractErrorMessage(startError),
 			});

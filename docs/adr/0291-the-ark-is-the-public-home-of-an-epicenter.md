@@ -32,7 +32,7 @@ separate decisions.
 
 - Epicenter and The Ark form one private-to-public continuum rather than two
   competing identities.
-- `theark.so/<person>` and a personal domain such as `bradenwong.com` may be
+- `theark.so/@<handle>` and a personal domain such as `bradenwong.com` may be
   different entrances to the same public place; neither entrance creates a
   second canonical work.
 - The public unit is a living authored idea with optional text, audio, and

@@ -177,7 +177,10 @@ above illustrates the target; it is not a measured result or an answer key.
 | Standalone request for Claude's opinion | Consults Claude without automatically launching a Codex reviewer. |
 | Explicit Codex-only adversarial review | Honors the restriction and does not enlist Claude. |
 | Reviewers agree without evidence of a shared blind spot | Coordinator verifies and reconciles findings; agreement alone does not trigger a third review. |
-| Reviews share a consequential unsupported premise | Coordinator names the suspected assumption before commissioning another focused reviewer or fresh pair. |
+| Opportunity for a different organizing idea without a known defect | Coordinator can commission a fresh exploration, names what it could improve, and compares concrete use, guarantees, deletion prizes, and introduced complexity. |
+| Reviews share a consequential unsupported premise | Coordinator commissions a focused challenge or fresh exploration and verifies the deciding claims; it can challenge its own synthesis. |
+| Reviewer drifts into local cleanup | Coordinator redirects a completed-turn follow-up toward the ownership, lifetime, representation, or interaction that makes the machinery necessary, without prescribing a verdict. |
+| New evidence changes an execution assignment | Delegate-claude sends a fresh brief in the same idle clone with the full assignment, changed evidence, and acceptance criteria, retains useful partial work, and keeps one writer per clone. |
 
 For runtime acceptance, separately verify current uncommitted reads, context on
 resume, denied outside reads, absent write/shell/agent/MCP tools, and unchanged

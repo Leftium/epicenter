@@ -1,81 +1,31 @@
 # Svelte Component And UI Patterns
 
-Detailed Svelte guidance for shadcn-svelte imports, props, self-contained components, view branching, repetitive markup, referential stability, loading states, prop-first derivation, and template gotchas.
+Detailed Svelte guidance for component props, self-contained components, view branching, repetitive markup, referential stability, loading states, prop-first derivation, and template gotchas.
 
 # Styling
 
 For general CSS and Tailwind guidelines, see the `styling` skill.
 
-# shadcn-svelte Best Practices
+# UI component boundary
 
-## Component Organization
+Apps use `@epicenter/ui` subpaths. Components and extras are vendored in
+`packages/ui/src`; this repo does not use shadcn-svelte's app-local
+`$lib/components/ui` layout or a `components.json` in the UI package. Read the
+[UI package guide](../../../../packages/ui/README.md) for imports, component
+selection, Vega styling, and the update workflow. Do not run an unpinned
+`shadcn-svelte add` or `jsrepo add` into the live package: generated files need
+review against the local overlay, imports, and component contracts.
 
-- Use the CLI: `bun x shadcn-svelte@latest add [component]`
-- Each component in its own folder under `$lib/components/ui/` with an `index.ts` export
-- Follow kebab-case for folder names (e.g., `dialog/`, `toggle-group/`)
-- Group related sub-components in the same folder
+For a changed component's current API or composition, check its local source
+and the [shadcn-svelte docs](https://shadcn-svelte.com/docs/components) or
+[shadcn-svelte-extras docs](https://www.shadcn-svelte-extras.com/docs). The
+[upstream shadcn-svelte skill](https://github.com/huntabyte/shadcn-svelte/tree/main/skills/shadcn-svelte)
+is useful for discovery, but its CLI and alias instructions assume a standard
+shadcn-svelte project.
 
-## Import Patterns
-
-**Namespace imports** (preferred for multi-part components):
-
-```typescript
-import * as Dialog from '$lib/components/ui/dialog';
-import * as ToggleGroup from '$lib/components/ui/toggle-group';
-```
-
-**Named imports** (for single components):
-
-```typescript
-import { Button } from '$lib/components/ui/button';
-import { Input } from '$lib/components/ui/input';
-```
-
-**Lucide icons** (prefer individual icon paths in this repo):
-
-```typescript
-// Good: individual icon paths keep dev imports narrow
-import Database from '@lucide/svelte/icons/database';
-import MinusIcon from '@lucide/svelte/icons/minus';
-import MoreVerticalIcon from '@lucide/svelte/icons/more-vertical';
-
-// Avoid adding new barrel imports in changed files
-import { Database, MinusIcon, MoreVerticalIcon } from '@lucide/svelte';
-```
-
-The path uses kebab-case (e.g., `more-vertical`, `minimize-2`), and you can name the import whatever you want (typically PascalCase with optional Icon suffix). If you are already editing a file with `@lucide/svelte` barrel imports, convert the touched icons to per-icon paths when it stays local to the change.
-
-## Styling and Customization
-
-- Always use the `cn()` utility from `$lib/utils` for combining Tailwind classes
-- Modify component code directly rather than overriding styles with complex CSS
-- Use `tailwind-variants` for component variant systems
-- Follow the `background`/`foreground` convention for colors
-- Leverage CSS variables for theme consistency
-
-## Component Usage Patterns
-
-Use proper component composition following shadcn-svelte patterns:
-
-```svelte
-<Dialog.Root bind:open={isOpen}>
-	<Dialog.Trigger>
-		<Button>Open</Button>
-	</Dialog.Trigger>
-	<Dialog.Content>
-		<Dialog.Header>
-			<Dialog.Title>Title</Dialog.Title>
-		</Dialog.Header>
-	</Dialog.Content>
-</Dialog.Root>
-```
-
-## Custom Components
-
-- When extending shadcn components, create wrapper components that maintain the design system
-- Add JSDoc comments for complex component props
-- Ensure custom components follow the same organizational patterns
-- Consider semantic appropriateness (e.g., use section headers instead of cards for page sections)
+Import Lucide icons from individual paths such as
+`@lucide/svelte/icons/database`; convert touched barrel imports when local to
+the change.
 
 # DOM Attachments
 
@@ -151,6 +101,92 @@ Bits UI or local `@epicenter/ui` components. Avoid making rich domain objects
 bindable just so a child can edit their fields. Domain actions such as archive,
 delete, select, save, or rename should usually be callback props or mutations,
 not two-way bound booleans.
+
+## Function bindings for transformed values
+
+For a controlled input wrapper, expose a `$bindable` value and use Svelte's
+[`bind:value={get, set}`](https://svelte.dev/docs/svelte/bind#Function-bindings)
+when the caller must transform reads or writes. Paired `read`/`write` or
+`getValue`/`setValue` props recreate that protocol. Trace their callers and replace
+them when they only control the same value. Keep commands as callback props.
+
+```svelte
+<Textarea
+	bind:value={
+		() => draft.text,
+		draft.inputText
+	}
+/>
+```
+
+Keep reads connected to the current owner: use `editor.row.body` and
+`editor.row.fields` directly in the getter and synchronous setter rather than
+introducing a forwarding `const row = editor.row`. Read at the event so a
+replacement preserves the other fields as they exist then. Keep a snapshot only
+when one consistent read is necessary, such as across `await`, or repeated reads
+have side effects; name that reason. A render-narrowed valid row can make a getter total; its setter still reads
+the current owner. A snapshot captured when the component mounts can overwrite
+later edits.
+
+When the transformation has substantial format rules, keep its read and
+write-back operations together in the format's codec or module. Give the write
+operation the current source when it must preserve unrelated spans, newline
+style, or other source information. A projection and a source-preserving update
+are not necessarily total inverses. Show the problem when a structured edit
+cannot represent what was typed. Decide whether the app retains that refused
+input for repair or restores the accepted row with a visible notice. Do not turn
+those rules into binding infrastructure or remove draft, identity, eligibility,
+or destroyed-control guards just because the syntax becomes shorter. Use `encode`/`decode` for a complete structured value when the encoder also
+takes current source as preservation context. Name a genuinely partial operation
+after the region it changes. A generic signature pairs types; tests establish whether the operations reverse
+each other and which source information survives.
+
+## File editor views
+
+Use [ADR-0523](../../../../docs/adr/0523-applications-own-drafts-in-edit-sessions-and-leave-one-open-item.md)
+for draft ownership and [the input patterns](input-ownership.md) for the
+choice between immediate editing and explicit submission.
+
+A product list opens structured controls. An invalid file shows its reason and
+opens as text, as below; repairing text does not switch a mounted editor's
+interpretation. Do not add per-record Source/Fields tabs, raw mode, or automatic
+Source fallback.
+
+The app owns each open file's draft in an edit session from
+`@epicenter/svelte/edit-session`: `createRowSession` for a valid row,
+`createTextSession` for text. Read `session.draft` and `session.state`; change
+the draft only through `session.edit((row) => { row.fields.title = input; })`
+or `session.input(text)`, which save at once. Do not mirror the draft, fields,
+validity, or save state into component runes, and preserve file newlines. Add a
+codec when controls represent the body differently, such as text and thoughts.
+
+Keep the open item in `@epicenter/svelte/open-item` and key the detail by the
+item, so another item mounts another view. A row whose text is not valid opens
+as text with its issues, and opens as a row again once repaired. Disable
+inputs while `session.locked`. Leaving an item settles and releases its
+session; a failed save answers `unsaved` and the view asks before discarding
+that session. Show the save state and conflict prompt with
+`@epicenter/svelte/save-bar`. A rich widget keeps its document, selection, and
+history; saves never assign the draft, and only a read that replaces it
+(`session.generation`) remounts the widget. An unfinished Add, Send, or Save
+form owns a separate explicit-submission draft.
+
+Tabs may select actual workspaces or workflows. Shared `Tabs.Content` owns panel
+mounting, so do not repeat `tab === value` inside each panel. A disabled trigger
+does not establish valid fields for a later event. Use forceMount only for a
+named retained lifetime.
+
+Shared `Textarea` and `Input` retire destroyed value bindings. Use their binding
+API instead of app-local forwarding wrappers or paired get/set props. Native
+controls and delayed commands retain their own lifetime and current-data checks.
+Inline components that only forward bindings; keep substantial UI, resources,
+format rules and real editing lifetimes.
+
+For a hunt, trace `createRowSession`, `createTextSession`, and `createOpenItem`
+callers. Classify state by its actual owner before removing it. Use the
+[search recipes](input-ownership.md#search-recipes), then verify repair
+navigation, the conflict prompt, failed-save discard, and that a released
+session changes nothing.
 
 ## Inline Simple Props Types
 
@@ -424,19 +460,26 @@ For more complex repeated patterns (e.g., toolbar buttons with tooltips), use `{
 
 ### When NOT to Extract
 
-- **2 or fewer** repetitions: extraction adds indirection without meaningful savings.
+- **Cheap local repetition**: Keep markup inline when a snippet adds navigation without explaining the structure or avoiding substantial repetition.
 - **Structurally similar but semantically different**: if the elements serve different purposes and might diverge, keep them separate.
 
-# Single-Use Functions And Aliases: Inline Or Document
+# Single-Use Functions And Aliases
 
-If a `function`, `$derived`, or `const` (including a one-off class string) is defined in the script tag and used **only once** in the template, inline it at the call site. This covers event handlers, callbacks, derived aliases, and one-off class strings.
+Keep source reads and actions visible beside their controls. Inline a binding
+when it merely forwards a call, aliases a property, or stores a one-off class
+string. Ask whether inlining loses an explanation or necessary behavior, or just
+removes a jump. Keep a name that explains a substantial operation, owns a
+meaningful interaction boundary, or captures a non-obvious decision. A named
+operation can return a Result to the handler that presents its outcome, even
+when that handler is its only caller. See
+[error-handling](../../error-handling/SKILL.md) for Result composition and consumption.
 
 ## Why Inline?
 
 Single-use extracted bindings add indirection: the reader jumps between the script definition and the template to understand what happens on click/keydown/render. Inlining keeps cause and effect together at the point where the action happens.
 
 ```svelte
-<!-- BAD: Extracted single-use function with no JSDoc or semantic value -->
+<!-- BAD: Extracted single-use function that only forwards a call -->
 <script>
 	function handleShare() {
 		share.mutate({ id });
@@ -468,7 +511,14 @@ A single-use `const` class string is the same smell: scanning it inline beats ch
 <div class="grid gap-3 rounded-md border bg-background px-3 py-3">...</div>
 ```
 
-This also applies to longer handlers. If the logic is linear (guard clauses + branches, not deeply nested), inline it even if it's 10 to 15 lines:
+A handler does not need a name just because it contains several statements or
+a guard. Keep lifetime, mode, and write-permission checks beside the control
+when that makes the permitted action clearer. Move the logic into a named
+operation when sequencing or distinct failure decisions would overwhelm the
+event wiring. Preserve method receivers when removing wrappers: inline
+`() => owner.act()` rather than passing `owner.act` if the method needs `this`.
+
+Event-specific logic can remain inline when its steps are easier to understand beside the element:
 
 ```svelte
 <!-- GOOD: Inlined keyboard shortcut handler -->
@@ -487,12 +537,12 @@ This also applies to longer handlers. If the logic is linear (guard clauses + br
 }} />
 ```
 
-## The Exception: A Justifying Comment Plus A Semantic Name
+## When A Name Earns Its Place
 
-Keep a single-use binding extracted **only** when both conditions are met:
-
-1. It has **JSDoc or a comment** explaining why it exists as a named unit.
-2. The name provides a **clear semantic meaning** that makes the template more readable than the inlined version would be.
+Keep a single-use binding when its name explains work beyond an already clear
+forwarded call, or when the function owns sequencing or a failure decision that
+the event wiring should not carry. Add a comment when the decision itself needs
+an explanation; a comment is not required merely to justify the function.
 
 ```svelte
 <script lang="ts">
@@ -509,13 +559,20 @@ Keep a single-use binding extracted **only** when both conditions are met:
 <div onkeydown={navigateWithArrowKeys} tabindex="-1">
 ```
 
-A documented state-to-class map earns the same exception: when the name parks a non-obvious decision (why a cell rings amber, why digits right-align), keeping it beats burying that rationale inside a `class={[...]}` array.
+A documented state-to-class map can also earn its name when it parks a non-obvious decision (why a cell rings amber, why digits right-align) that would be buried inside a `class={[...]}` array.
 
-Without a justifying comment and a meaningful name, inline it: the indirection is not earning its keep.
+Inline bindings that merely forward values or calls; their indirection does not earn its place.
 
 ## Multi-Use Bindings
 
-Bindings used **2 or more times** should always stay extracted: this rule only applies to single-use bindings.
+Reuse is evidence, not an exemption from the inlining test. Repeated shallow
+reads such as `editor.row` can stay direct so ownership remains visible at every
+use. Keep extraction when it centralizes a shared rule, avoids substantial
+repetition, provides necessary caching, or gives non-obvious work a useful name.
+Two uses alone do not establish any of those benefits. See
+[refactoring methods](../../collapse-pass/references/refactoring-methods.md#keep-source-and-action-visible) for the
+general test, and [lifecycle and reactivity](lifecycle-and-reactivity.md#shallow-template-aliases-inline-direct-reads)
+for reactive reads and operation-local snapshots.
 
 # Referential Stability for Reactive Data Sources
 

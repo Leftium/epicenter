@@ -20,96 +20,172 @@ This package is part of the Epicenter monorepo and is used internally. To use it
 
 ## Available Utilities
 
+### `edit-session` (`@epicenter/svelte/edit-session`)
+
+Edit sessions over `@epicenter/folder` files: the app owns the draft and the
+folder's guarded autosave writes it. `createRowSession(table, stored)` edits a
+valid row; `createTextSession(files, opened)` edits a file's text and keeps
+input well formed with `wellFormed` from `@epicenter/folder`. Both are `createEditSession` over a source
+(`rowSource`, `textSource`) that says how to save, read again, and recreate.
+
+```ts
+const session = createRowSession(folder.tables.todos, stored, { locked });
+session.edit((row) => {
+	row.fields.title = 'Oat milk';
+}); // saves at once; only the latest request waits
+session.state; // saving | saved | error, each with `file`, the last confirmed capture
+await session.keepMine(); // after Conflict: save the draft over theirs, or recreate it
+await session.reloadTheirs(); // after Conflict: show theirs in place of the draft
+await session.rename((file) => folder.tables.todos.rename(file, 'next'));
+session.release(); // the person left: no input, and a running command starts nothing more
+```
+
+A save never assigns the draft. `keepMine`, `reloadTheirs`, and `rename` run
+one at a time with input locked (`session.locked`), and `settled()` waits for
+them. `adopt()` takes a newer version of the file only while the session is
+saved and idle. `generation` advances whenever a read replaces the draft, for
+views such as a rich text editor that must remount then. Which item is open,
+leaving, and what a person is told stay with the app.
+
+### `open-item` (`@epicenter/svelte/open-item`)
+
+The one item a page has open. `createOpenItem({ load, sessionOf, holds, closed })`
+keeps what `load` built for a key and owns how it is left: opening another key
+waits for the open session's saves and releases it, or answers
+`{ kind: 'unsaved', session }` so the app can ask and open again with
+`{ discard: session }`. Opening the shown key does nothing, and a load that
+answers after a newer open is released. `keepMine` and `reloadTheirs` act
+only on the session given while it is open; Reload theirs closes a gone file
+and reopens one that cannot be shown through `load`. `removeOpen(session, remove)`
+releases, waits for the saves, and removes what the last one confirmed. What an
+item is, listings, refusals, and wording stay with the app.
+
+`createOpenItems(options)` keeps a slot per key, for a page with several
+items open at once. `slot(key)` has the same commands as `createOpenItem`,
+which is one such slot; `keys()`, `sessions()`, `holding(session)`,
+`keepMine(session)`, `reloadTheirs(session)`, `adopt()`, and `close()` act
+across slots, and `move(from, to)` follows a renamed file. A slot exists while
+it shows something or a command on it runs, so a late load is always released
+by the slot it started in.
+
+```ts
+const drafts = createOpenItems<string, { path: string; as: 'row' | 'text' }, Draft, Session>({
+	load,
+	sessionOf,
+	sameKey: (a, b) => a.path === b.path && a.as === b.as,
+});
+const opened = await drafts.slot(path).open({ path, as: 'row' });
+if (opened.kind === 'unsaved') ask(opened.session); // then open again with { discard }
+```
+
+### `admissions` (`@epicenter/svelte/admissions`)
+
+`createAdmissions()` counts the work a page started so closing can wait for
+it. `command(fn)` wraps a whole method so each call counts from the call,
+before its first await; `admit(fn)` counts one piece; `quiet()` waits for all
+of it; `busy` is reactive.
+
+### `SaveBar` (`@epicenter/svelte/save-bar`)
+
+The save state and conflict prompt for one edit session: Reload theirs or
+Keep mine for a change made elsewhere, Discard or Keep mine for a file deleted
+elsewhere (Discard only without `onKeepMine`), Try again or Save again for
+other failures, and what to fix for a value a row cannot hold.
+
+### `SyncReview` (`@epicenter/svelte/sync-review`)
+
+The modal review for one `folder.sync` attempt that needs choices
+(ADR-0514, ADR-0516). It shows each conflicting setting, field, body, or
+whole file with the two captured versions and a result, and holds that
+attempt's `SyncChoices` only while it is shown. `Use this` takes a side
+exactly; typing replaces, as text for text values and as JSON, once it
+parses, for any other value; `Leave out` removes. Apply calls
+`onApply(attempt, choices)` only when every conflict has a choice. Cancel
+calls `onCancel`.
+
+```svelte
+{#if syncs.attempt}
+	{#key syncs.attempt.id}
+		<SyncReview
+			attempt={syncs.attempt}
+			{pending}
+			problems={syncs.problems}
+			onCancel={() => syncs.cancel()}
+			onApply={(attempt, choices) => syncs.apply(attempt, choices)}
+		/>
+	{/key}
+{/if}
+```
+
+Show it in place of the page while the attempt waits, keyed on
+`attempt.id`. Pass the `problems` of an `InvalidChoices` refusal back in;
+each shows beside its row until the person changes that row's choice. The
+sides read "This device" and "Remote" unless `labels` says otherwise.
+
+### `createSyncController` (`@epicenter/svelte/sync`)
+
+The page's state around `folder.sync`: `syncing` while a run or an Apply is
+in flight, the `attempt` whose review shows, `locked` from the start of a
+run until that attempt ends, and the `problems` of the last refused Apply.
+`run()` and `apply(attempt, choices)` call the folder between the page's
+`beforeSync` and `afterSync`; `refused` stops either before it starts, and
+no run starts while an attempt waits. `cancel()` discards the attempt;
+nothing carries to the next one.
+
+```ts
+const syncs = createSyncController({
+	folder,
+	beforeSync: async () => openItem.session?.settled(), // the checkpoint holds the open item's saves
+	afterSync: () => readEverythingAgain(),
+	refused: () => (quitting ? 'Quitting' : undefined),
+});
+const locked = () => syncs.locked || quitting; // the open item takes no input during a review
+await syncs.run(); // conflicts keep syncs.attempt
+await syncs.apply(attempt, choices); // refused choices stay as syncs.problems; anything else ends the attempt
+syncs.cancel(); // or discard it
+```
+
+`describeSync(result, describePush?)` from `@epicenter/svelte/sync-line`
+words a result for a toast or a status line. It is a plain module, so status
+helpers import it without loading runes. The rest of what a person is told
+stays with the page.
+
 ### `fromData`
 
-Adapts one opened `@epicenter/data` handle into Svelte reactivity, mirroring
+Adapts one opened `@epicenter/app/store` handle into Svelte reactivity, mirroring
 the declaration: `tables.<name>`, `kv`, and `persistence`, with the same verbs
-and the same types. Reads are reactive; writes pass through unchanged.
+and the same types. Other handle members keep their descriptors and identities.
+Reads are reactive; writes pass through unchanged. Repeated calls with the same
+raw store return the same wrapper, so route components can remount over one
+open store.
 
-A table is HELD as a `SvelteMap` projection keyed by row id, seeded when
-`fromData` is called and patched with the row ids each commit names, because
-building a row out of CRDT structs costs about two microseconds and rebuilding
-ten thousand of them per keystroke does not. `kv` and `persistence` stay
-read-through: ten keys and one enum are not worth holding.
+Each read registers a Svelte dependency and calls the native method. The adapter
+holds no row values or diagnostics, so a read sees the same transaction writes,
+validation, and closed-store rejection as the native read (ADR-0500). One
+subscription per table wakes its readers on each table commit; it attaches on
+the first reactive reader and detaches after the last. Body text edits are not
+table commits: listen to them with the table's `watch`.
 
-Nothing is disposed by hand. The projection and its subscription live as long
-as the document they mirror, deliberately: one detached from its source stays
-alive and stops being true.
+Inputs must be plain-object handles with closure-bound methods. A class
+instance is rejected, because its prototype methods would not survive wrapping.
 
 ```ts
 const app = fromData(data);
 const active = $derived(app.tables.notes.rows.filter((n) => !n.deletedAt));
-const note = app.tables.notes.get(id);   // wakes only when THAT row moves
+const note = app.tables.notes.get(id);   // wakes on any notes commit
 app.persistence.get() === 'blocked';     // this device stopped saving
 ```
 
-### `fromEpicenter`
+### `fromKv`
 
-Mirrors one `@epicenter/app` handle's data session into a rune, on one member,
-`state`: `closed`, `opening`, `ready` (carrying the data), and `failed`
-(carrying the error and the erase). One property rather than a `status` beside
-a `data`, because TypeScript narrows a union and cannot correlate two
-properties: flat, `data` would be optional at every read. The store is a field
-on the `ready` variant, so a read before it is open does not compile.
-
-The core session owns the state machine; this subscribes to it and runs
-`fromData` once, when a store first becomes readable. There is no second
-lifecycle here and no second answer to what the session is doing.
-
-Constructing it acquires nothing: it reads one state and subscribes, so it
-belongs at module scope, which is one call site by construction. What acquires
-is `open`, which comes across untouched and an application calls from its root
-after authentication is ready.
-
-Signed-out is not a state here. It never was a fact about the session: it was a
-latched read of `account.state` that this wrapper performed because reading
-`data` would otherwise open into `Unaddressable`. With opening explicit, an
-application that has not authenticated has not called `open`, and the session is
-`closed`, which is exactly true. The gate belongs to the application, which is
-where the auth client already is.
-
-`eraseReplica` rides on `failed` and nowhere else. Erasing takes the same claim
-an open takes, so erasing an open store is refused by the store; a failed open
-released its claim before it returned.
-
-`close` and `onStateChange` do not come across. The close stays with the module
-local that built the handle, which is the one place a hot reload can reach and
-no route can; the raw subscription is consumed here rather than offered as a
-second way to watch what the rune already reports.
-
-The handle is taken structurally, the way `fromData` takes opened data, so this
-package does not depend on `@epicenter/app`.
+Adapts KV reads without wrapping a store's tables. Use it when a view needs
+device settings while displaying another store. Repeated calls reuse the same
+wrapper, including calls through `fromData`. Writes pass through unchanged.
 
 ```ts
-// apps/<app>/src/lib/epicenter.svelte.ts, one file for every build
-import { createEpicenter } from '@epicenter/app';
-import { fromEpicenter } from '@epicenter/svelte';
-import { binding } from '#platform/binding';
-
-export const notes = fromEpicenter(
-	createEpicenter({ appId, definition, account: auth, binding }),
-);
-```
-
-```svelte
-<script>
-  // The application root, once auth is ready.
-  if (auth.state.status !== 'signed-out') void notes.open();
-</script>
-
-{#if auth.state.status === 'signed-out'}
-  <SignInGate />
-{:else if notes.state.status === 'ready'}
-  <Notes data={notes.state.data} />
-{:else if notes.state.status === 'failed'}
-  <BootFailure
-    error={notes.state.error}
-    erase={notes.state.eraseReplica}
-    retry={() => void notes.open()}
-  />
-{:else}
-  <Loading />
-{/if}
+const preferences = fromKv(local.kv);
+preferences.get('showDetails');
+preferences.update({ showDetails: true });
 ```
 
 ### `fromSubscription`

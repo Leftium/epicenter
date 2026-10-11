@@ -13,6 +13,8 @@ export {
 } from './local-tool-catalog.js';
 export {
 	type AgentMessageStore,
+	AgentMessageStoreError,
+	ConversationAdmissionError,
 	type ConversationError,
 	type ConversationHandle,
 	type ConversationOptions,

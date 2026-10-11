@@ -72,16 +72,16 @@ export function createLocalToolCatalog(
 					: await (action as unknown as (input: unknown) => unknown)(
 							call.input,
 						);
-			const result: LocalActionResult = isResult(returned)
+			const { data, error }: LocalActionResult = isResult(returned)
 				? (returned as LocalActionResult)
 				: { data: returned, error: null };
-			if (result.error !== null) {
+			if (error !== null) {
 				return {
-					content: extractErrorMessage(result.error),
+					content: extractErrorMessage(error),
 					isError: true,
 				};
 			}
-			const details = (result.data ?? null) as JsonValue;
+			const details = (data ?? null) as JsonValue;
 			return {
 				content:
 					typeof details === 'string' ? details : JSON.stringify(details),

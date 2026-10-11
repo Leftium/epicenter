@@ -104,6 +104,29 @@ atomically) so a concurrent external edit to a _different_ field is preserved, n
 clobbered. Writes to one file are **serialized** (`serializeWrite`) so two quick
 edits to the same file cannot interleave their read-modify-write and drop one.
 
+## Body edits: the table keeps what you typed
+
+The grid's store is a projection of disk, so it cannot also hold body text that
+has not reached disk: a save's late echo would overwrite newer typing, and a
+failed save would have nowhere to keep its text. Each live table therefore owns
+one accepted body per edited file (`table.bodyEditor(fileName)`):
+
+- Every CodeMirror change replaces the accepted body at once and saves it. One
+  write runs per file; text typed meanwhile waits, and only the newest is
+  written next. No blur or teardown save exists.
+- The store still changes only on a landed write or a watcher batch. Neither
+  replaces accepted text; "Discard my text" returns to the last observed file version.
+- A body write reads the freshest bytes and keeps their frontmatter. It refuses
+  a missing file (no recreation) and unparseable frontmatter (bytes untouched),
+  and the reason shows beside the kept text with Try again and Discard.
+- The row dialog closes when its row is removed or becomes unparseable. Retained text that differs from disk or failed publication stays listed above the grid, readable and retryable.
+
+Accepted text lives as long as the table: closing the dialog or switching
+tables keeps it. Closing the vault, a folder leaving the vault, or quitting the
+app drops it. Writes to a file that is deleted between the fresh read and the
+atomic write can still recreate it; preventing that needs a native
+write-if-exists command.
+
 ## Querying the mirror
 
 The mirror is read-only from the app's side: one Rust command, `query_mirror`, opens

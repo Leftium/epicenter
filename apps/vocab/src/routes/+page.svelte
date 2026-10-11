@@ -1,60 +1,46 @@
 <script lang="ts">
 	import { Button } from '@epicenter/ui/button';
+	import * as Empty from '@epicenter/ui/empty';
 	import { Loading } from '@epicenter/ui/loading';
-	import { extractErrorMessage } from 'wellcrafted/error';
-	import { authClient } from '$lib/platform/auth';
-	import { epicenter } from '$lib/epicenter.svelte.js';
+	import { onDestroy } from 'svelte';
+	import { createChatsState } from '$lib/chat/chats.svelte.js';
+	import { createEntriesState } from '$lib/entries.svelte.js';
+	import { openVocabFolder } from '$lib/folder.js';
 	import VocabShell from './components/VocabShell.svelte';
 
-	// **This is where the store is opened, and the call is explicit**
-	// (ADR-0344). It replaces the `{#await}` over an open the layout started
-	// during its own initialisation: opening is a verb now, so the states are
-	// read off `epicenter.state` and a failure is retried by opening again
-	// rather than by reloading the document.
-	//
-	// Signed-out is read once, here, rather than tracked, and `authClient` is
-	// what makes that structural: the raw client has no Svelte subscriber on it,
-	// so this read cannot start tracking. A page lifetime is one
-	// auth generation (ADR-0088): the layout's `reloadOnAuthChange` replaces the
-	// document on every transition that invalidates this page. An account is
-	// required, so a signed-out person has nothing to open and is asked to sign
-	// in rather than handed a local pool that could never be synced.
-	const signedOut = authClient.state.status === 'signed-out';
+	// The mounted page opens the folder; importing modules opens nothing. There
+	// is no sign-in on this path: words and chats are in this browser's folder
+	// whether or not an account is signed in.
+	const opening = openVocabFolder().then(async (folder) => {
+		const entries = createEntriesState({ table: folder.tables.entries, files: folder.files });
+		const chats = createChatsState(folder);
+		// Read now; the shell reads again after its own actions and when the
+		// learner returns to the window.
+		await Promise.all([entries.refresh(), chats.refresh()]);
+		return { folder, entries, chats };
+	});
 
-	if (!signedOut) void epicenter.open();
+	onDestroy(() => {
+		// Changes under way and the open word's saves land before the folder closes.
+		void opening
+			.then(async ({ folder, entries, chats }) => {
+				await Promise.all([entries.close(), chats.close()]);
+				await folder.close();
+			})
+			.catch(() => {});
+	});
 </script>
 
-{#if epicenter.state.status === 'ready'}
-	<VocabShell data={epicenter.state.data} />
-{:else if signedOut || epicenter.state.status === 'failed'}
-	<div
-		class="flex h-dvh flex-col items-center justify-center gap-4 p-8 text-center"
-	>
-		<h1 class="text-lg font-semibold">
-			{signedOut ? 'Sign in to open Vocab' : 'Vocab could not start'}
-		</h1>
-		{#if epicenter.state.status === 'failed'}
-			<p class="text-muted-foreground max-w-md text-sm">
-				<!-- `extractErrorMessage`, not `String(error)`: a tagged error is a
-				     plain object with a `message`, so stringifying one renders
-				     "[object Object]" and hides the only useful thing it carries. -->
-				{extractErrorMessage(epicenter.state.error)}
-			</p>
-		{/if}
-		<div class="flex gap-2">
-			{#if signedOut}
-				<Button onclick={() => void authClient.startSignIn()}>Sign in</Button>
-			{:else}
-				<!-- Opening again, not reloading. The failure is not memoized, so the
-				     session opens from where it is (ADR-0344). -->
-				<Button onclick={() => void epicenter.open()}>Try again</Button>
-				<Button variant="outline" onclick={() => authClient.signOut()}>
-					Sign out
-				</Button>
-			{/if}
-		</div>
-	</div>
-{:else}
-	<!-- `closed` and `opening` are one screen. -->
-	<Loading class="h-dvh" />
-{/if}
+{#await opening}
+	<Loading class="h-dvh" label="Opening your words…" />
+{:then vocab}
+	<VocabShell {vocab} />
+{:catch error}
+	<Empty.Root class="h-dvh">
+		<Empty.Header>
+			<Empty.Title>Could not open Vocab's folder</Empty.Title>
+			<Empty.Description role="alert">{error instanceof Error ? error.message : String(error)}</Empty.Description>
+		</Empty.Header>
+		<Empty.Content><Button variant="outline" size="sm" onclick={() => location.reload()}>Try again</Button></Empty.Content>
+	</Empty.Root>
+{/await}

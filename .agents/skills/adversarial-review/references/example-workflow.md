@@ -14,10 +14,10 @@ viable options.
 
 ## Independent review
 
-Codex sends one fresh Astra reviewer and one read-only Opus reviewer the outcome,
+Codex sends one fresh GPT-6.1 Sol reviewer and one read-only Opus reviewer the outcome,
 explicit requirements, existing implementation, and actual callers. It withholds
 the proposed rebinding design and its rationale until both have proposed their
-own simplest viable shape. The reviewers have complementary starting questions
+own strongest greenfield shape. The reviewers have complementary starting questions
 but both must search for the deletion prize and test the guarantees. After their
 independent first answers, Codex shares the proposal with each and asks for a
 challenge against it.
@@ -27,10 +27,31 @@ no single workspace owner. One proposes a keyed workspace boundary. The other
 asks whether pending edits belong to that boundary or survive its disposal.
 Codex inspects the current code rather than assigning that check to the user.
 
+The keyed boundary is promising, but a fresh perspective could reconsider the
+need to switch a single mutable workspace at all. Codex commissions another
+reviewer to explore independently opened workspace sessions. No known defect is
+required to justify that exploration. This reviewer receives raw callers and
+the initial proposals; its pass is an informed challenge, not blind discovery.
+
+The reviewer proposes independently owned sessions, each with its own resources.
+Codex steers the next completed turn toward the deciding uncertainty:
+
+> Your proposal changes ownership rather than rebinding it. Trace two open
+> sessions, an edit pending in the inactive session, and closing that session.
+> Show whether pending edits survive and where resource costs move. Challenge
+> the keyed-boundary recommendation if this shape better serves the outcome.
+
+In this hypothetical case, the callers need one active workspace and gain no
+useful behavior from retaining sessions. Codex rejects the alternative because
+it introduces concurrent resource management without earning that complexity.
+The keyed boundary remains the strongest supported design, with a concrete
+deletion prize and an unresolved persistence claim to verify. Another case could
+favor sessions despite introducing a new abstraction.
+
 ## What the user receives
 
 The coordinating agent checks the findings against the code and gives one
-recommendation. The user does not have to reconstruct it from two reports.
+recommendation. The user does not have to reconstruct it from separate reports.
 
 > **1. Replace the workspace boundary (recommended)**
 >
@@ -90,5 +111,5 @@ recommend keeping the markers. Codex verifies the finding and reports:
 > promises an offline device can reconnect normally.
 
 Agreement is not proof. The coordinator still verifies the deciding claims,
-and a further reviewer needs a named unresolved assumption rather than a wish
-for consensus.
+and further review needs a worthwhile opportunity to improve the design or its
+justification rather than a wish for consensus. A known blind spot is not required.

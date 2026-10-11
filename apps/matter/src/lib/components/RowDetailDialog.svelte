@@ -8,6 +8,8 @@
 	import { Switch } from '@epicenter/ui/switch';
 	import type { RowConformance } from '@epicenter/matter-core';
 	import { editorPreferences } from '$lib/editor/editor-preferences.svelte';
+	import type { BodyEditor } from '$lib/table.svelte';
+	import BodyStatus from './BodyStatus.svelte';
 	import MarkdownBodyEditor from './MarkdownBodyEditor.svelte';
 	import ModeledCell from './ModeledCell.svelte';
 
@@ -15,12 +17,12 @@
 		open = $bindable(false),
 		conformance,
 		onSaveField,
-		onSaveBody,
+		bodyEditor,
 	}: {
 		open?: boolean;
 		conformance: RowConformance;
 		onSaveField: (fileName: string, key: string, value: unknown) => void;
-		onSaveBody: (fileName: string, body: string) => void;
+		bodyEditor: (fileName: string) => BodyEditor;
 	} = $props();
 
 	const row = $derived(conformance.row);
@@ -152,13 +154,17 @@
 						</div>
 					</div>
 					{#key row.fileName}
-						<!-- Keep teardown saves pointed at this keyed editor instance's row. -->
-						{@const fileName = row.fileName}
+						<!-- One widget per file: its document, selection, and history never
+						     carry to another row, and its changes reach only this file. -->
+						{@const editor = bodyEditor(row.fileName)}
 						<MarkdownBodyEditor
-							body={row.body}
+							bind:body={
+								() => editor.body ?? row.body,
+								(body) => editor.set(body)
+							}
 							vimEnabled={editorPreferences.vimEnabled}
-							onCommit={(body) => onSaveBody(fileName, body)}
 						/>
+						<BodyStatus {editor} />
 					{/key}
 				</section>
 			</div>

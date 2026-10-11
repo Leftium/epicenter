@@ -1,6 +1,6 @@
 ---
 name: query-layer
-description: 'Query boundaries with TanStack Query and Wellcrafted Results. Use when editing createQuery, createMutation, resultQueryOptions, resultMutationOptions, defineQuery, defineMutation, defineKeys, shared cache identity, mutation lifecycle, or service-to-TanStack adapters.'
+description: 'Use when editing TanStack Query integration: createQuery, createMutation, resultQueryOptions, resultMutationOptions, defineQuery, defineMutation, defineKeys, shared cache identity, mutation lifecycle, or service-to-TanStack adapters.'
 metadata:
   author: epicenter
   version: '3.0'
@@ -62,6 +62,10 @@ Mutations expose `.options` and are callable. They do not expose `.execute()`.
 
 ## Canonical Whispering Query Module Shape
 
+The Whispering query modules these examples came from were removed when
+Whispering became a standalone file-folder app with no query layer. The shape
+is still the convention for a `$lib/queries` module in an app that has one.
+
 For Whispering-style `$lib/queries` modules, keep source-of-truth declarations close to the work they describe. Factories receive the session-owned runtime explicitly:
 
 ```typescript
@@ -97,7 +101,7 @@ Rules:
 
 Use `$lib/queries` as the shared TanStack observation surface. It may wrap a direct service/state call, or a `$lib/operations` entry point when UI needs shared mutation identity: multiple consumers, cache invalidation, optimistic updates, `useIsMutating`, or a named mutation key over that operation.
 
-Keep orchestration in `$lib/operations`: delivery, reporting, sounds, analytics, clipboard writes, and multi-step workflows. Do not promote a one-component operation into `$lib/queries` merely to observe local pending state. The `svelte` skill owns the component's choice between local `createMutation` and direct `await`.
+Keep orchestration in `$lib/operations`: delivery, sounds, analytics, clipboard writes, and multi-step workflows. A reusable operation returns its outcome; a terminal interaction controller may also report it. Do not promote a one-component operation into `$lib/queries` merely to observe local pending state. The `svelte` skill owns the component's choice between local `createMutation` and direct `await`.
 
 ## Dependency Direction
 
@@ -211,6 +215,5 @@ Load these on demand based on what you're working on:
 - If working with **runtime dependency injection and service selection**, read [references/runtime-dependency-injection.md](references/runtime-dependency-injection.md)
 - If working with **cache management, query definitions, RPC namespace, or notify coordination**, read [references/advanced-query-patterns.md](references/advanced-query-patterns.md)
 
-- See `apps/whispering/src/lib/queries/README.md` for detailed architecture
 - See the `services-layer` skill for how services are implemented
 - See the `error-handling` skill for trySync/tryAsync patterns and toast-on-error conventions

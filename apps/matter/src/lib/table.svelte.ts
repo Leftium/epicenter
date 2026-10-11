@@ -13,12 +13,16 @@
  * Lifecycle: opening a table IS observing it, so the watcher starts at
  * construction. `whenReady` resolves once it is armed (the seed scan has run, so
  * the store holds the folder's current contents) and rejects if it cannot be, which
- * the UI gates on with `{#await}`. `dispose()` stops the OS watch. The keyed route
+ * the UI gates on with `{#await}`. `dispose()` stops the OS watch and retires body controls. The keyed route
  * component (`/vault/[id]`) owns one table's lifetime, constructing it on mount and
  * disposing it on destroy, so no module singleton or standing effect drives the
  * watcher; the set of open vaults is just a persisted list (`open-vaults.svelte.ts`).
  * A Vault that composes many tables (one per child folder) is the next layer up;
  * see the vault-as-relational-unit spec.
+ *
+ * The table also owns body input a person has typed ({@link BodyEditor}): the store
+ * above stays a projection of disk, and accepted body text lives beside it for the
+ * table's lifetime, so closing the row dialog or switching tables keeps it.
  *
  * Desktop-only: it talks to Tauri directly (no platform seam). Develop with
  * `bun run tauri dev`.
@@ -32,6 +36,7 @@ import {
 	loadContract,
 	MatterReadError,
 	parseEntry,
+	parseMarkdown,
 	type Row,
 	type TableRead,
 	type UnreadableFile,
@@ -39,11 +44,59 @@ import {
 import { Channel, invoke } from '@tauri-apps/api/core';
 import { SvelteMap } from 'svelte/reactivity';
 import { extractErrorMessage } from 'wellcrafted/error';
-import { Err, type Result, tryAsync } from 'wellcrafted/result';
+import { Err, Ok, type Result, tryAsync, trySync } from 'wellcrafted/result';
 // One file's observable state, pushed by `watch_folder` (content / removed /
 // unreadable). Generated from the Rust `FileDelta` enum by ts-rs, so the IPC payload
 // has one source of truth; regenerate with `cargo test` in `src-tauri`.
 import type { FileDelta } from './bindings/FileDelta';
+
+/** Why a write did not reach disk, in words a person can act on. */
+type WriteFailure = { message: string };
+
+/**
+ * Where one file's accepted body stands against the file. `changed` means the
+ * accepted body differs from the observed file version; Discard returns to the observed file version.
+ */
+export type BodyStatus =
+	| { kind: 'saved' }
+	| { kind: 'saving'; reason?: string }
+	| { kind: 'failed'; reason: string }
+	| { kind: 'changed' };
+
+/**
+ * One file's body as an editor: the accepted body and the commands over it.
+ * `set` accepts a complete replacement at once and saves it; the table keeps
+ * the accepted body until `discard`, whatever the file or its watcher echoes do.
+ */
+export type BodyEditor = {
+	readonly fileName: string;
+	/** Accepted input, else the file's body; undefined when there is neither. */
+	readonly body: string | undefined;
+	readonly status: BodyStatus;
+	set(body: string): void;
+	/** Save the accepted body again after a failure. */
+	retry(): void;
+	/** Discard accepted input and show the last observed file body. Ignored while saving. */
+	discard(): void;
+};
+
+const writeFailed = (cause: unknown) =>
+	Err({ message: extractErrorMessage(cause) });
+
+/**
+ * The body write for the freshest bytes. `editBody` hands back unparseable text
+ * unchanged, which would pass for a landed save, so the parse is checked here;
+ * a missing file stays missing rather than being recreated.
+ */
+function replaceBody(
+	raw: string | null,
+	body: string,
+): Result<string, WriteFailure> {
+	if (raw === null) return Err({ message: 'The file no longer exists' });
+	const { error } = parseMarkdown(raw);
+	if (error) return Err({ message: error.message });
+	return Ok(editBody(raw, body));
+}
 
 /**
  * Open `path` as a live table. Synchronous and IO-free: the store starts empty
@@ -64,8 +117,8 @@ export function createTable(path: string, onChange: () => void) {
 	// two maps.
 	const files = new SvelteMap<string, Result<Row, UnreadableFile['error']>>();
 	let contractText = $state<string | undefined>(undefined);
-	// Set when the LAST save could not reach disk. A save never mutates the store
-	// (that is the watcher's job); this is the only state a write touches.
+	// Set when the LAST field save could not reach disk. Body saves report through
+	// their own editor (`bodyEditor`), which also keeps the text that failed.
 	let writeError = $state<string | undefined>(undefined);
 	// Memoized: Schema.Compile runs only when matter.json changes, not on every
 	// .md change. A single-file change reclassifies against these cached columns.
@@ -124,11 +177,11 @@ export function createTable(path: string, onChange: () => void) {
 	 * Different files still write in parallel; the per-file chain is pruned when it
 	 * drains, so the map does not grow with the folder.
 	 */
-	const writeTails = new Map<string, Promise<void>>();
-	function serializeWrite(
+	const writeTails = new Map<string, Promise<unknown>>();
+	function serializeWrite<T>(
 		fileName: string,
-		run: () => Promise<void>,
-	): Promise<void> {
+		run: () => Promise<T>,
+	): Promise<T> {
 		const tail = (writeTails.get(fileName) ?? Promise.resolve()).then(run);
 		const settled = tail.catch(() => {});
 		writeTails.set(fileName, settled);
@@ -149,32 +202,30 @@ export function createTable(path: string, onChange: () => void) {
 	 *
 	 * Reading at write time (rather than caching raw text in the store) keeps the
 	 * edit faithful to the current bytes and keeps the store a parsed read-model with
-	 * no second copy to drift. A failed write leaves the map untouched (we apply only
-	 * on success) and surfaces in `writeError`.
+	 * no second copy to drift. `edit` receives `null` for a missing file and may
+	 * refuse; a refused or failed write leaves the map untouched (we apply only on
+	 * success) and returns why.
 	 */
 	function write(
 		fileName: string,
-		edit: (raw: string) => string,
-	): Promise<void> {
+		edit: (raw: string | null) => Result<string, WriteFailure>,
+	): Promise<Result<undefined, WriteFailure>> {
 		return serializeWrite(fileName, async () => {
-			const { data: next, error: failure } = await tryAsync({
-				try: async () => {
-					const raw = await invoke<string | null>('read_entry', {
-						path,
-						fileName,
-					});
-					const text = edit(raw ?? '');
-					await invoke('write_entry', { path, fileName, content: text });
-					return text;
-				},
-				catch: (cause) => Err({ message: extractErrorMessage(cause) }),
+			const read = await tryAsync({
+				try: () => invoke<string | null>('read_entry', { path, fileName }),
+				catch: writeFailed,
 			});
-			if (failure) {
-				writeError = failure.message;
-				return;
-			}
-			writeError = undefined;
-			applyDeltas([{ kind: 'content', fileName, text: next }]);
+			if (read.error) return read;
+			const edited = edit(read.data);
+			if (edited.error) return edited;
+			const written = await tryAsync({
+				try: () =>
+					invoke('write_entry', { path, fileName, content: edited.data }),
+				catch: writeFailed,
+			});
+			if (written.error) return written;
+			applyDeltas([{ kind: 'content', fileName, text: edited.data }]);
+			return Ok(undefined);
 		});
 	}
 
@@ -183,20 +234,137 @@ export function createTable(path: string, onChange: () => void) {
 	 * transform ({@link editField}) is applied to the FRESH bytes on disk, not the
 	 * in-memory projection, so a concurrent external edit to another field is read,
 	 * not clobbered. Writes to one file are serialized, so two quick edits cannot
-	 * interleave their read-modify-write and drop one of the changes.
+	 * interleave their read-modify-write and drop one of the changes. A failure
+	 * surfaces in `writeError` until the next field save lands.
 	 */
-	function saveField(
+	async function saveField(
 		fileName: string,
 		key: string,
 		value: unknown,
 	): Promise<void> {
-		return write(fileName, (raw) => editField(raw, key, value));
+		const { error } = await write(fileName, (raw) =>
+			trySync({
+				try: () => editField(raw ?? '', key, value),
+				catch: writeFailed,
+			}),
+		);
+		writeError = error?.message;
 	}
 
-	/** Replace a file's body, keeping its frontmatter values intact. */
-	function saveBody(fileName: string, body: string): Promise<void> {
-		return write(fileName, (raw) => editBody(raw, body));
+	/** The file's body on disk, or undefined when it is not a readable row. */
+	function diskBody(fileName: string): string | undefined {
+		return files.get(fileName)?.data?.body;
 	}
+
+	/**
+	 * Body input this table accepted, per file, kept until Discard drops it. Only a
+	 * landed write or a watcher batch changes `files`, and neither replaces an
+	 * entry here: an earlier save, or its late echo, cannot overwrite newer typing,
+	 * and a failed save keeps its text. Lives as long as the table, so a closed
+	 * dialog or a switch to another table keeps it; closing the vault does not.
+	 */
+	const acceptedBodies = new SvelteMap<string, AcceptedBody>();
+	type AcceptedBody = ReturnType<typeof acceptBody>;
+
+	/** Accept `initial` for `fileName` and start saving it. */
+	function acceptBody(fileName: string, initial: string) {
+		let body = $state(initial);
+		let saving = $state(false);
+		let failure = $state<string>();
+
+		/**
+		 * Write until the file holds the latest accepted body. One write runs at a
+		 * time; input accepted during it waits, and only the newest is written next.
+		 * The written body is read when the write reads the file, not when it queued.
+		 */
+		async function save(): Promise<void> {
+			saving = true;
+			let written: string;
+			try {
+				do {
+					written = body;
+					const { error } = await write(fileName, (raw) => {
+						written = body;
+						return replaceBody(raw, written);
+					});
+					failure = error?.message;
+				} while (!disposed && body !== written);
+			} finally {
+				// A throw past `write` must not leave the body stuck as saving, which
+				// would ignore every later input, Try again, and Discard.
+				saving = false;
+			}
+		}
+		void save();
+
+		return {
+			get body() {
+				return body;
+			},
+			get saving() {
+				return saving;
+			},
+			get failure() {
+				return failure;
+			},
+			set(next: string): void {
+				if (next === body) return;
+				body = next;
+				if (!saving) void save();
+			},
+			retry(): void {
+				if (!saving) void save();
+			},
+		};
+	}
+
+	/** The editor for one file's body. Holds no state itself; the table does. */
+	function bodyEditor(fileName: string): BodyEditor {
+		return {
+			fileName,
+			get body() {
+				return acceptedBodies.get(fileName)?.body ?? diskBody(fileName);
+			},
+			get status(): BodyStatus {
+				const accepted = acceptedBodies.get(fileName);
+				if (!accepted) return { kind: 'saved' };
+				if (accepted.saving)
+					return { kind: 'saving', reason: accepted.failure };
+				if (accepted.failure !== undefined)
+					return { kind: 'failed', reason: accepted.failure };
+				return accepted.body === diskBody(fileName)
+					? { kind: 'saved' }
+					: { kind: 'changed' };
+			},
+			set(body: string): void {
+				if (disposed) return;
+				const accepted = acceptedBodies.get(fileName);
+				if (accepted) accepted.set(body);
+				else if (body !== diskBody(fileName))
+					acceptedBodies.set(fileName, acceptBody(fileName, body));
+			},
+			retry(): void {
+				if (disposed) return;
+				acceptedBodies.get(fileName)?.retry();
+			},
+			discard(): void {
+				if (disposed || acceptedBodies.get(fileName)?.saving) return;
+				acceptedBodies.delete(fileName);
+			},
+		};
+	}
+
+	/** Retained bodies that differ from disk or failed publication, by file name. */
+	const unsavedBodies = $derived(
+		[...acceptedBodies]
+			.filter(
+				([fileName, accepted]) =>
+					accepted.failure !== undefined ||
+					(!accepted.saving && accepted.body !== diskBody(fileName)),
+			)
+			.map(([fileName]) => bodyEditor(fileName))
+			.sort((a, b) => a.fileName.localeCompare(b.fileName)),
+	);
 
 	// Opening a vault IS observing it: arm the OS watcher now. `watch_folder` seeds the store
 	// with the folder's current contents, then streams a batch per change, all through
@@ -224,7 +392,7 @@ export function createTable(path: string, onChange: () => void) {
 		folderName,
 		path,
 		saveField,
-		saveBody,
+		bodyEditor,
 		dispose,
 		/** Resolves once the OS watcher is armed (the folder is being observed), with the
 		 *  seed contents already applied; rejects if it could not be armed. */
@@ -233,9 +401,13 @@ export function createTable(path: string, onChange: () => void) {
 		get read(): TableRead {
 			return read;
 		},
-		/** Set if the most recent save could not reach disk. */
+		/** Set if the most recent field save could not reach disk. */
 		get writeError(): string | undefined {
 			return writeError;
+		},
+		/** Retained bodies needing attention, including files no dialog can open. */
+		get unsavedBodies(): BodyEditor[] {
+			return unsavedBodies;
 		},
 	};
 }
@@ -244,12 +416,12 @@ export type TableHandle = ReturnType<typeof createTable>;
 
 /**
  * The slice of a {@link TableHandle} the grid renders from: the folder name, the
- * classified read, and the two save commands. This is the narrow dependency boundary
+ * classified read, field saves, and body editors. This is the narrow dependency boundary
  * `TableGrid` depends on, NOT the full table handle, so the grid cannot reach the
  * watcher lifecycle (`whenReady` / `dispose` / `path`) it has no business touching,
  * and a `Pick` of the live handle satisfies it for free.
  */
 export type TableView = Pick<
 	TableHandle,
-	'folderName' | 'read' | 'saveField' | 'saveBody'
+	'folderName' | 'read' | 'saveField' | 'bodyEditor'
 >;

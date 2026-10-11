@@ -6,6 +6,8 @@
 - **Amended by:** [ADR-0258](0258-row-documents-are-opened-through-their-owning-table.md) at the opened data document surface.
 - **Amended by:** [ADR-0269](0269-the-browser-is-the-runtime-so-the-file-opener-the-history-shelf-and-the-sql-projection-are-deleted.md) at `data.definition`, which is deleted. It existed for one reader, `createSqliteProjection({ data, sqlite })`, and that record deleted the projection. The rest of the vocabulary stands: `data`, `data.store`, `kv`, and `await using` are unchanged.
 - **Amended by:** [ADR-0266](0266-definedata-compiles-once-and-holds-behaviors-beside-a-json-field-core.md) at "the data definition uses closed JSON field descriptors" and `parseData`'s content-hash memo; the field descriptors stay closed JSON and behaviors ride alongside.
+- **Amended by:** [ADR-0491](0491-field-helpers-build-native-typebox-schemas-with-ui-metadata.md) at the refusal of inert JSON Schema `default` annotations. Initialization and recovery remain application-owned.
+
 ## Context
 
 The store and its declaration have crossed several historical package and noun

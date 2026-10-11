@@ -1,33 +1,45 @@
+import { fileURLToPath } from 'node:url';
 import { APPS } from '@epicenter/constants/apps';
 import { workspaceAppViteConfig } from '@epicenter/vite-config';
 import { defaultClientConditions, defineConfig, mergeConfig } from 'vite';
 
-const isEpicenterHost = process.env.EPICENTER_HOST === '1';
+/** The desktop page: bundled into the shell, reaching the directory it owns. */
+const isDesktop = process.env.HONEYCRISP_DESKTOP === '1';
 
-// No COOP/COEP headers anywhere: the store's durable record is IndexedDB
-// (ADR-0280), so nothing here needs cross-origin isolation. Production static
-// hosting and the Tauri WebView serve the same header-free pages as dev.
 export default defineConfig(
-	mergeConfig(
-		// Honeycrisp is the app where "runs in a Tauri WebView" and "the desktop
-		// Epicenter host owns my data" come apart: its standalone bundle is the
-		// first and not the second, so exactly one of the two conditions is ever
-		// active here. Whispering declares both, because for it both are true of
-		// the same build (ADR-0190).
-		workspaceAppViteConfig(APPS.HONEYCRISP, { tauri: !isEpicenterHost }),
-		{
-			worker: { format: 'es' },
-			build: { target: 'esnext' },
-			resolve: {
-				// Build-time platform DI over the `#platform/*` subpaths in
-				// package.json "imports". The spread is load-bearing: custom
-				// conditions REPLACE Vite's defaults. A host-only file imported by
-				// shared code is unresolvable in the other builds, so a seam
-				// mistake fails at build time rather than at user runtime.
-				...(isEpicenterHost && {
-					conditions: ['epicenter-host', ...defaultClientConditions],
-				}),
-			},
+	mergeConfig(workspaceAppViteConfig(APPS.HONEYCRISP), {
+		resolve: {
+			// Build-time selection over `#platform/notes-host` in package.json
+			// "imports". The spread is load-bearing: custom conditions REPLACE
+			// Vite's defaults.
+			...(isDesktop && {
+				conditions: ['tauri', ...defaultClientConditions],
+			}),
+			alias: [
+				// Shared code imports the folder contract from the bare specifier.
+				// Each build resolves that exact specifier to its one adapter, so
+				// the desktop page carries no browser storage or Git, and the
+				// browser page no desktop adapter. Subpaths are left alone.
+				{
+					find: /^@epicenter\/folder$/,
+					replacement: isDesktop
+						? '@epicenter/folder/tauri'
+						: '@epicenter/folder/browser',
+				},
+				// isomorphic-git and its SHA-1 dependency expect Node's Buffer.
+				{
+					find: /^buffer$/,
+					replacement: fileURLToPath(import.meta.resolve('buffer/')),
+				},
+				// just-bash's browser bundle imports gzip helpers the terminal never enables.
+				{
+					find: /^node:zlib$/,
+					replacement: fileURLToPath(
+						new URL('./src/lib/shims/zlib.ts', import.meta.url),
+					),
+				},
+			],
 		},
-	),
+		optimizeDeps: { include: ['buffer'] },
+	}),
 );

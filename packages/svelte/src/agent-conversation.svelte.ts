@@ -39,9 +39,19 @@ export function bindAgentConversation(handle: ConversationHandle) {
 		get error() {
 			return render.error;
 		},
+		get unsaved() {
+			return render.unsaved;
+		},
+		get isSaving() {
+			return render.isSaving;
+		},
+		get saveError() {
+			return render.saveError;
+		},
 		send: (content: string) => handle.send(content),
 		stop: () => handle.stop(),
 		retry: () => handle.retry(),
+		save: () => handle.save(),
 		[Symbol.dispose]() {
 			unsubscribe();
 			handle[Symbol.dispose]();

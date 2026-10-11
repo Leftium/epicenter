@@ -95,7 +95,7 @@ test('passes allowlisted mirrors, comments, tests, and excluded dirs', () => {
 	}
 });
 
-test('flags the oauth callback family', () => {
+test('former OAuth grant callback paths are outside the API path gate', () => {
 	const dir = makeRepo();
 	try {
 		write(
@@ -104,8 +104,10 @@ test('flags the oauth callback family', () => {
 			"window.location.href = '/auth/oauth2/google';\n",
 		);
 		const { status, output } = runCheck(dir);
-		expect(status).toBe(1);
-		expect(output).toContain('apps/web/src/login.ts:1:');
+		// The hosted session migration removed this route family and its
+		// constants ownership; the gate only owns current API paths.
+		expect(status).toBe(0);
+		expect(output).toContain('no hardcoded API path literals');
 	} finally {
 		rmSync(dir, { recursive: true, force: true });
 	}

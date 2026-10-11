@@ -1,3 +1,8 @@
+/**
+ * Markdown live preview tests.
+ * Real CodeMirror syntax trees hide inactive inline markers while preserving
+ * syntax on selected lines, multi-line constructs, and unsupported constructs.
+ */
 import { describe, expect, test } from 'bun:test';
 import { markdown } from '@codemirror/lang-markdown';
 import { EditorSelection, EditorState } from '@codemirror/state';

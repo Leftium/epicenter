@@ -140,11 +140,11 @@ describe('bodyHtml', () => {
 	test('malformed base64 body.data returns null, does not throw', () => {
 		const msg = message({
 			parts: [
-				// A lone continuation byte is not valid UTF-8; decoding must be caught.
+				// Invalid base64 characters make atob throw; the reader returns null.
 				{ mimeType: 'text/html', body: { data: '@@@not base64@@@' } },
 			],
 		});
-		expect(() => bodyHtml(msg)).not.toThrow();
+		expect(bodyHtml(msg)).toBeNull();
 	});
 
 	test('a message with no payload returns null for both bodies', () => {

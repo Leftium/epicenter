@@ -1,4 +1,13 @@
+/**
+ * QuickBooks synchronization over the real client, token manager, and SQLite.
+ *
+ * Key behaviors:
+ * - Full pulls and batched CDC preserve source JSON, soft deletes, and cursors
+ * - New entities backfill independently and repair leaves the cursor unchanged
+ * - Throttling retries, unauthorized requests refresh, and abort stops the loop
+ */
 import { expect, test } from 'bun:test';
+import { expectOk } from 'wellcrafted/testing';
 import { parseInterval } from '../src/cli.ts';
 import type { AppConfig } from '../src/config.ts';
 import { booksDbFile, openBooksDb } from '../src/db.ts';
@@ -40,11 +49,13 @@ function setup(configOver: Partial<AppConfig> = {}) {
 		...configOver,
 	});
 	const store = createMemoryTokenStore();
-	const token = tokenSetFromGrant(sampleGrant, {
-		realmId: server.realmId,
-		environment: 'sandbox',
-		now: clock,
-	}).data as TokenSet;
+	const token = expectOk(
+		tokenSetFromGrant(sampleGrant, {
+			realmId: server.realmId,
+			environment: 'sandbox',
+			now: clock,
+		}),
+	);
 	const tokens = createTokenManager({ config, store, token, now });
 	const client = createQbClient({ config, realmId: server.realmId, tokens });
 	const tmp = tempDir();
@@ -305,9 +316,9 @@ test('a 401 triggers a transparent refresh, retries, and persists the new token'
 	const client = createQbClient({ config, realmId: server.realmId, tokens });
 	server.put('Invoice', makeInvoice('1'));
 
-	const { data, error } = await client.queryAll('Invoice');
-	expect(error).toBeNull();
-	expect(data?.length).toBe(1);
+	const data = expectOk(await client.queryAll('Invoice'));
+
+	expect(data.length).toBe(1);
 	expect(server.hits.token).toBe(1); // exactly one refresh
 	expect(tokens.current().accessToken).not.toBe('stale-access');
 

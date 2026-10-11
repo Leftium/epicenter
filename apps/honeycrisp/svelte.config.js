@@ -1,25 +1,19 @@
-// Every host consumes static SPA assets. The browser and standalone desktop
-// builds stay at `build/`; Epicenter's build writes into its packaged asset
-// tree and serves the SPA below its stable loopback route.
+// Every build is a static SPA. The browser build writes `build/`. The desktop
+// build writes `build-desktop/`, which the desktop shell bundles.
 import staticAdapter from '@sveltejs/adapter-static';
 import { vitePreprocess } from '@sveltejs/vite-plugin-svelte';
 
-const isEpicenterHost = process.env.EPICENTER_HOST === '1';
+const isDesktop = process.env.HONEYCRISP_DESKTOP === '1';
+const output = isDesktop ? 'build-desktop' : 'build';
 
 /** @type {import('@sveltejs/kit').Config} */
 const config = {
 	kit: {
 		adapter: staticAdapter({
-			...(isEpicenterHost && {
-				pages: '../epicenter/dist/honeycrisp',
-				assets: '../epicenter/dist/honeycrisp',
-			}),
+			pages: output,
+			assets: output,
 			fallback: 'index.html',
 		}),
-		...(isEpicenterHost && { paths: { base: '/apps/honeycrisp' } }),
-		alias: {
-			$routes: './src/routes',
-		},
 	},
 	preprocess: vitePreprocess(),
 };

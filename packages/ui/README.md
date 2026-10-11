@@ -78,6 +78,32 @@ provider creates a separate hover group.
 Use Button or Link’s `tooltip` prop for a simple label. Compose `Tooltip.Root`,
 `Tooltip.Trigger`, and `Tooltip.Content` for other triggers or richer content.
 
+### Editor control and panel lifetimes
+
+`Textarea` and `Input` expose `bind:value`, including function bindings for values
+read from an editor. Once a component is destroyed, its native value binding
+stops reading the caller and stops writing, even if something still holds its DOM
+element and dispatches input on it. The last displayed value is retained only for
+that retired control. Other event handlers, file bindings, and controls own their
+separate eligibility rules.
+
+Default editor composition needs no tabs: render structured controls for valid
+rows and a text editor for invalid rows. Bind to current editor values and submit
+complete replacements. Add tabs when the app offers a choice among views of valid
+input.
+
+`Tabs.Content` unmounts inactive children by default, including custom `child`
+snippets. Do not repeat the selected-tab condition inside every panel. Keep editor
+input, refused input, and unfinished forms above disposable panels. Use
+`forceMount` when an inactive panel intentionally owns state that must survive:
+Epicenter's main app panes preserve the chat draft and session that way. The
+retained panel stays hidden and its controls remain alive.
+
+A structured panel still renders only while the current row is valid. Its setters
+check current row and application eligibility because input may arrive before
+Svelte removes a leaving control. The common ownership pattern is recorded in
+[ADR-0523](../../docs/adr/0523-applications-own-drafts-in-edit-sessions-and-leave-one-open-item.md).
+
 ### Loading and empty states
 
 Use `Loading` for a page or panel loading state with an optional caption:
@@ -94,7 +120,7 @@ for known content shapes rather than rebuilding them in an app.
 
 The [upstream baseline and customization register](upstream/README.md) records
 saved registry responses and intentional differences. The source ownership
-decision is in [ADR-0453](../../docs/adr/0453-epicenter-ui-tracks-distributed-shadcn-svelte-components-with-explicit-deltas.md).
+decision is in [ADR-0455](../../docs/adr/0455-epicenter-ui-tracks-distributed-shadcn-svelte-components-with-explicit-deltas.md).
 
 1. Fetch the distributed component for the chosen style and save its exact
    registry response. Extras use their separate registry.

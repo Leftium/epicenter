@@ -2,11 +2,11 @@
 
 - **Status:** Accepted
 - **Amended at the layout by [ADR-0337](0337-the-folder-is-a-working-copy-and-pull-and-push-are-the-whole-cycle.md).** The folder is `~/Epicenter/<data-id>/` with no segment under it, because the `local`/`account` pair this record moved went with the device store (ADR-0336) and there is one store per data id to render. What survives is this record's reasoning about why two renderers must never share one swept directory, which ADR-0337's single working copy makes moot rather than answers. What this record decided about the data id being the key stands.
-- **Built:** the folder claim, in `apps/epicenter/src/checkout.ts`, which takes a lock per folder so two writers cannot interleave. Nothing else here shipped.
+- **Built:** the folder claim, in `1e3101d842:apps/epicenter/src/checkout.ts`, which takes a lock per folder so two writers cannot interleave. Nothing else here shipped.
 - **Date:** 2026-08-31
 - **Amends:** [ADR-0271](0271-a-workspace-mirrors-continuously-to-the-epicenter-folder-one-way.md) at the layout block and at the closed set of places. The one-way rule, the complete pass, and the manifest are unchanged and are what force everything below.
 - **Amends:** [ADR-0314](0314-an-app-is-one-directory-and-installation-is-a-rename.md) at its line saying the human folder is untouched, which was written before this.
-- **Relates:** [ADR-0207](0207-rows-render-continuously-to-markdown-and-frontmatter-is-the-only-way-back.md) (the folder a person and an agent both read), [ADR-0216](0216-a-name-addressed-location-is-the-only-safe-place-for-a-write-two-devices-both-make.md) and `packages/data/src/store/claims.ts` (the refusal this borrows), [ADR-0303](0303-an-application-opens-epicenter-data-and-app-owned-sqlite-through-one-scoped-client.md) and [ADR-0313](0313-a-data-definition-ships-as-typescript-and-a-host-that-needs-one-imports-it.md) (a data id and an app id are not required to be equal)
+- **Relates:** [ADR-0207](0207-rows-render-continuously-to-markdown-and-frontmatter-is-the-only-way-back.md) (the folder a person and an agent both read), [ADR-0216](0216-a-name-addressed-location-is-the-only-safe-place-for-a-write-two-devices-both-make.md) and `8223c96542:packages/data/src/store/claims.ts` (the refusal this borrows), [ADR-0303](0303-an-application-opens-epicenter-data-and-app-owned-sqlite-through-one-scoped-client.md) and [ADR-0313](0313-a-data-definition-ships-as-typescript-and-a-host-that-needs-one-imports-it.md) (a data id and an app id are not required to be equal)
 
 ## Context
 
@@ -18,7 +18,7 @@ wrong.
 
 **The place segment cannot be removed.** A pass carries a manifest and the
 host deletes every rendered file the manifest does not name
-(`apps/epicenter/src/checkout.ts`). Two renderers sharing one directory therefore
+(`1e3101d842:apps/epicenter/src/checkout.ts`). Two renderers sharing one directory therefore
 delete each other's files on every pass, silently, in the folder ADR-0271
 describes as the copy that outlives a reclamation. Honeycrisp opens a device
 store and an account replica for one data id today, so this is the shipping

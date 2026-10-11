@@ -1,3 +1,11 @@
+/**
+ * QuickBooks credential persistence and connected-company selection tests.
+ *
+ * Key behaviors:
+ * - Credentials round-trip in a 0600 file and malformed entries stay absent
+ * - Company selection refuses ambiguity and respects explicit offline overrides
+ * - Credential paths follow the application root or an explicit file override
+ */
 import { describe, expect, test } from 'bun:test';
 import {
 	mkdtempSync,
@@ -8,6 +16,7 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { expectErr, expectOk } from 'wellcrafted/testing';
 import { loadConfig } from './config.ts';
 import { credentialsFilePath } from './paths.ts';
 import {
@@ -102,26 +111,26 @@ describe('resolveRealm', () => {
 	}
 
 	test('uses the sole connected company', async () => {
-		const { data, error } = await resolveRealm(
-			{ realmOverride: null },
-			storeWith(['realm-1']),
+		const data = expectOk(
+			await resolveRealm({ realmOverride: null }, storeWith(['realm-1'])),
 		);
-		expect(error).toBeNull();
+
 		expect(data).toBe('realm-1');
 	});
 
 	test('asks for --realm when more than one is connected', async () => {
-		const { error } = await resolveRealm(
-			{ realmOverride: null },
-			storeWith(['realm-1', 'realm-2']),
+		const error = expectErr(
+			await resolveRealm(
+				{ realmOverride: null },
+				storeWith(['realm-1', 'realm-2']),
+			),
 		);
 		expect(error).toContain('--realm');
 	});
 
 	test('says to run auth when none is connected', async () => {
-		const { error } = await resolveRealm(
-			{ realmOverride: null },
-			storeWith([]),
+		const error = expectErr(
+			await resolveRealm({ realmOverride: null }, storeWith([])),
 		);
 		expect(error).toContain('local-books auth');
 	});
@@ -129,11 +138,10 @@ describe('resolveRealm', () => {
 	test('takes an override at its word, so a mirror without a token stays readable', async () => {
 		// `demo` builds a company that never authenticates, and the read verbs work
 		// without a token, so an override is not checked against the store.
-		const { data, error } = await resolveRealm(
-			{ realmOverride: 'realm-9' },
-			storeWith([]),
+		const data = expectOk(
+			await resolveRealm({ realmOverride: 'realm-9' }, storeWith([])),
 		);
-		expect(error).toBeNull();
+
 		expect(data).toBe('realm-9');
 	});
 });

@@ -13,6 +13,7 @@
 
 import { expect, test } from 'bun:test';
 import { AutumnError, ConnectionError } from 'autumn-js';
+import { expectErr } from 'wellcrafted/testing';
 import { isProviderError, mapAutumnError, tryAutumn } from './autumn.js';
 
 const FIXED_MESSAGE = 'Billing is temporarily unavailable. Please try again.';
@@ -27,7 +28,9 @@ function makeAutumnError(message: string, status: number): AutumnError {
 }
 
 test('an AutumnError maps to the fixed opaque message, not the provider wording', () => {
-	const { error } = mapAutumnError(makeAutumnError('Autumn API error', 500));
+	const error = expectErr(
+		mapAutumnError(makeAutumnError('Autumn API error', 500)),
+	);
 	expect(error).toMatchObject({
 		name: 'ProviderRequestFailed',
 		message: FIXED_MESSAGE,
@@ -35,16 +38,18 @@ test('an AutumnError maps to the fixed opaque message, not the provider wording'
 });
 
 test('an HTTPClientError maps to the fixed opaque message, fail closed', () => {
-	const { error } = mapAutumnError(
-		new ConnectionError('Unable to make request'),
+	const error = expectErr(
+		mapAutumnError(new ConnectionError('Unable to make request')),
 	);
 	expect(error.message).toBe(FIXED_MESSAGE);
 });
 
 test('tryAutumn maps provider failures into BillingError', async () => {
-	const { error } = await tryAutumn(async () => {
-		throw new ConnectionError('Unable to make request');
-	});
+	const error = expectErr(
+		await tryAutumn(async () => {
+			throw new ConnectionError('Unable to make request');
+		}),
+	);
 
 	expect(error).toMatchObject({
 		name: 'ProviderRequestFailed',

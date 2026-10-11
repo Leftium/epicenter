@@ -1,26 +1,27 @@
+/**
+ * SQLite projection tests.
+ * Schemas and tuples preserve field order, storage classes, missing and invalid
+ * cells. Real SQLite verifies full-text indexing, index retirement, and joins.
+ */
 import { Database } from 'bun:sqlite';
-import { describe, expect, test } from 'bun:test';
-import { existsSync } from 'node:fs';
-import { dirname, resolve } from 'node:path';
+import { afterEach, describe, expect, test } from 'bun:test';
+import { resolve } from 'node:path';
 import { expectOk } from 'wellcrafted/testing';
-import { loadPath } from '../load/fs';
-import { classifyRows } from './conformance';
-import { validateContract } from './contract';
-import type { Row } from './parse';
-import { projectToSqlite } from './sqlite';
+import { loadPath } from '../load/fs.js';
+import { classifyRows } from './conformance.js';
+import { validateContract } from './contract.js';
+import type { Row } from './parse.js';
+import { projectToSqlite } from './sqlite.js';
 
-/** Resolve the bundled example vault by walking up from this file until it appears, so the path holds
- *  wherever in the repo this test lives, not at a fixed offset from `import.meta.dir`. */
-function findExampleVault(): string {
-	let dir = import.meta.dir;
-	for (;;) {
-		const candidate = resolve(dir, 'examples/matter/content-vault');
-		if (existsSync(candidate)) return candidate;
-		const parent = dirname(dir);
-		if (parent === dir)
-			throw new Error('examples/matter/content-vault not found');
-		dir = parent;
-	}
+const connections: Database[] = [];
+afterEach(() => {
+	for (const db of connections.splice(0)) db.close();
+});
+
+function setup() {
+	const db = new Database(':memory:');
+	connections.push(db);
+	return { db };
 }
 
 function contract(
@@ -127,38 +128,27 @@ describe('insert template (one ? per column, bound positionally)', () => {
 });
 
 describe('rows (every readable row, serialized by conformance state)', () => {
-	const conformance = classifyRows(m.fields, [valid, incomplete]);
-	const proj = projectToSqlite('posts', m, conformance);
-
-	test('valid AND incomplete rows both project, in folder order', () => {
-		expect(proj.rows).toHaveLength(2);
-		expect(proj.rows.map((r) => r[0])).toEqual(['post-1', 'post-2']);
-	});
-
-	test('an OK cell is serialized to its storage class, and the body rides along', () => {
-		const [stem, title, status, count, score, live, tags, url, extra, body] =
-			proj.rows[0]!;
-		expect(stem).toBe('post-1');
-		expect(title).toBe('Hello');
-		expect(status).toBe('draft');
-		expect(count).toBe(3); // INTEGER stays a number
-		expect(score).toBe(4.5); // REAL stays a number
-		expect(live).toBe(1); // boolean -> 0/1
-		expect(tags).toBe('["a","b"]'); // array -> JSON TEXT
-		expect(url).toBe('https://x.com');
-		expect(extra).toBe('{"extraKey":"kept"}'); // untyped keys -> _extra JSON
-		expect(body).toBe(''); // the markdown body, projected verbatim (empty here)
-	});
-
-	test('a missing required cell binds NULL (the draft is still a row)', () => {
-		const [stem, title, status, count, , , tags, url, extra] = proj.rows[1]!;
-		expect(stem).toBe('post-2');
-		expect(title).toBe('Partial');
-		expect(status).toBeNull();
-		expect(count).toBeNull();
-		expect(tags).toBeNull();
-		expect(url).toBeNull();
-		expect(extra).toBe('{}'); // no untyped keys
+	test('projects valid and incomplete rows in folder order with positional storage values', () => {
+		const projection = projectToSqlite(
+			'posts',
+			m,
+			classifyRows(m.fields, [valid, incomplete]),
+		);
+		expect(projection.rows).toEqual([
+			[
+				'post-1',
+				'Hello',
+				'draft',
+				3,
+				4.5,
+				1,
+				'["a","b"]',
+				'https://x.com',
+				'{"extraKey":"kept"}',
+				'',
+			],
+			['post-2', 'Partial', null, null, null, null, null, null, '{}', ''],
+		]);
 	});
 
 	test('a MISSING_OPTIONAL cell binds NULL while the row stays valid', () => {
@@ -229,7 +219,7 @@ describe('FTS5 block (emitted when the contract is searchable)', () => {
 	});
 
 	test('losing searchability drops the stale index, so no old word matches a new row (bun:sqlite)', () => {
-		const db = new Database(':memory:');
+		const { db } = setup();
 
 		// First projection: searchable, with a distinctive body word.
 		const searchable = projectToSqlite(
@@ -289,7 +279,7 @@ describe('FTS5 block (emitted when the contract is searchable)', () => {
 			m,
 			classifyRows(m.fields, [withBody]),
 		);
-		const db = new Database(':memory:');
+		const { db } = setup();
 		db.exec(schema);
 		const stmt = db.prepare(insert);
 		for (const row of rows) stmt.run(...row);
@@ -314,13 +304,16 @@ describe('projects a vault into one db whose tables JOIN', () => {
 	// JOIN falls out of real table names with no new code. This drives the real projector over the
 	// bundled content-vault and runs its SQL through bun:sqlite (the same engine the Tauri command
 	// uses), so the success criterion is proven end to end, not asserted on the SQL strings alone.
-	const exampleVault = findExampleVault();
+	const exampleVault = resolve(
+		import.meta.dir,
+		'../../../../examples/matter/content-vault',
+	);
 
 	test('adaptations JOIN pages on the reference column returns the resolved rows', async () => {
 		// Load the fixture and project every typed table into one in-memory db, exactly as the Vault
 		// fills its shared .matter db (each folder -> a table named for the folder).
 		const tables = await loadPath(exampleVault);
-		const db = new Database(':memory:');
+		const { db } = setup();
 		for (const table of tables) {
 			if (table.status !== 'readable' || table.read.view.mode !== 'typed')
 				continue;

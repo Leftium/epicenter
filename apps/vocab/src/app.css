@@ -1,11 +1,8 @@
 @import "@epicenter/ui/app.css";
 
-ruby {
-	ruby-position: over;
-}
-
-rt {
-	font-size: 0.6em;
-	color: var(--muted-foreground);
-	font-weight: 400;
+/* Finished Markdown and arriving text use the same reading size. */
+.vocab-reply {
+	font-size: 1rem;
+	line-height: 1.75;
+	overflow-wrap: anywhere;
 }

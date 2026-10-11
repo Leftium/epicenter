@@ -1,11 +1,9 @@
 /**
  * Doc-hygiene gate tests.
  *
- * The gate's smell #2 (orphaned / stale Proposed ADR) never fires on the real
- * repo, because every ADR so far was born Accepted. That makes it the part most
- * likely to rot unnoticed: ~40% of the script, zero live exercise. These tests
- * drive the script end-to-end against throwaway git repos so both smells, and
- * the Proposed-ADR forward guard in particular, stay honest.
+ * Throwaway Git repositories exercise terminal spec statuses and the
+ * Proposed-ADR dependency guard. An old proposal remains valid on its own;
+ * another ADR reasoning from it or a missing Unbuilt line fails the gate.
  *
  * The script reads everything relative to its process cwd (`git ls-files`,
  * `git log`, relative `readFileSync`), so spawning it with `cwd` set to a

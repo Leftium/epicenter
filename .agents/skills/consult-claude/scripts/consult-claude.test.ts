@@ -185,11 +185,9 @@ test('rejects empty briefs, malformed session IDs, and obsolete laboratory optio
 		['--effort', ' '],
 		['--unknown'],
 	]) {
-		expect(fixture.launch(args).status).not.toBe(0);
+		expect(fixture.launch(args).status).toBe(1);
 	}
-	expect(fixture.launch(['--model', 'claude-opus-5-5'], '  ').status).not.toBe(
-		0,
-	);
+	expect(fixture.launch(['--model', 'claude-opus-5-5'], '  ').status).toBe(1);
 });
 
 test('delegation verifies source provenance and lets only the sandbox approve Bash', () => {
@@ -348,8 +346,9 @@ test('refuses execution in the live checkout, nested repositories, shared worktr
 	using fixture = setup();
 	const nested = join(fixture.source, '..nested');
 	expect(spawnSync('git', ['init', '-q', nested]).status).toBe(0);
-	const unrelated = join(fixture.root, 'not-a-repo');
-	mkdirSync(unrelated);
+	const unrelated = realpathSync(
+		mkdtempSync(join(tmpdir(), 'consult-no-repo-')),
+	);
 	const git = (args: string[]) =>
 		spawnSync('git', args, { cwd: fixture.source });
 	writeFileSync(join(fixture.source, 'seed.txt'), 'seed');
@@ -370,26 +369,32 @@ test('refuses execution in the live checkout, nested repositories, shared worktr
 	expect(spawnSync('git', ['init', '-q', fixture.root]).status).toBe(0);
 	const shared = join(fixture.root, 'shared');
 	expect(git(['worktree', 'add', '--detach', shared]).status).toBe(0);
-	for (const workspace of [
-		fixture.source,
-		fixture.root,
-		nested,
-		unrelated,
-		shared,
-	]) {
+	for (const workspace of [fixture.source, fixture.root, nested, shared]) {
 		const result = fixture.launch([
 			'--mode',
 			'delegate',
 			'--workspace',
 			workspace,
 		]);
-		expect(result.status).not.toBe(0);
+		expect(result.status).toBe(1);
 		expect(result.stdout).toBe('');
+	}
+	try {
+		const result = fixture.launch([
+			'--mode',
+			'delegate',
+			'--workspace',
+			unrelated,
+		]);
+		expect(result.status).toBe(1);
+		expect(result.stderr).toContain('Delegate workspace must be a Git clone.');
+	} finally {
+		rmSync(unrelated, { recursive: true, force: true });
 	}
 	for (const args of [
 		['--mode', 'delegate'],
 		['--mode', 'other'],
 		['--workspace', shared],
 	])
-		expect(fixture.launch(args).status).not.toBe(0);
+		expect(fixture.launch(args).status).toBe(1);
 });

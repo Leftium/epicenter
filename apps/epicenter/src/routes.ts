@@ -1,5 +1,5 @@
 /**
- * Bun-owned routes on the one trusted Epicenter origin.
+ * Bun-owned routes on the one trusted Device origin.
  *
  * The built-in route table is deliberately closed and compiled. Rust can mirror
  * the IDs and paths without discovering or loading an application registry, and
@@ -9,9 +9,6 @@
  * SPA reaches domain code.
  */
 
-import { APP_STORAGE_PATH } from '@epicenter/app/protocol';
-import { LOCAL_BLOB_PATH } from '@epicenter/blobs/webview';
-import { CHECKOUT_PATH } from '@epicenter/data/artifact/checkout';
 import {
 	CALLBACK_PATH as MAIL_CALLBACK_PATH,
 	PENDING_CALLBACK_PATH as MAIL_PENDING_CALLBACK_PATH,
@@ -38,7 +35,9 @@ export const BUILT_IN_ROUTES = {
 	home: builtInRoute('home', 'Home'),
 	whispering: builtInRoute('whispering', 'Whispering'),
 	honeycrisp: builtInRoute('honeycrisp', 'Honeycrisp'),
+	capture: builtInRoute('capture', 'Capture'),
 	mail: builtInRoute('mail', 'Mail'),
+	todos: builtInRoute('todos', 'Todos'),
 	books: builtInRoute('books', 'Books'),
 } as const;
 
@@ -46,42 +45,22 @@ export type BuiltInRouteId = keyof typeof BUILT_IN_ROUTES;
 
 export const BOOTSTRAP_ROUTE = route('/_epicenter/bootstrap');
 export const ACCOUNT_SIGN_IN_ROUTE = route('/_epicenter/account/sign-in');
+export const SIGN_IN_CALLBACK_ROUTE = route('/_epicenter/sign-in/callback');
+export const ACCOUNT_CANCEL_CONNECTION_ROUTE = route(
+	'/_epicenter/account/cancel-connection',
+);
 export const ACCOUNT_SIGN_OUT_ROUTE = route('/_epicenter/account/sign-out');
-export const ACCOUNT_PROFILE_ROUTE = route('/_epicenter/account/profile');
 export const HOME_ROUTE = BUILT_IN_ROUTES.home;
 export const WHISPERING_ROUTE = BUILT_IN_ROUTES.whispering;
 export const HONEYCRISP_ROUTE = BUILT_IN_ROUTES.honeycrisp;
+export const CAPTURE_ROUTE = BUILT_IN_ROUTES.capture;
 export const MAIL_ROUTE = BUILT_IN_ROUTES.mail;
+export const TODOS_ROUTE = BUILT_IN_ROUTES.todos;
 export const BOOKS_ROUTE = BUILT_IN_ROUTES.books;
 /** What Home lists as launchable (ADR-0189). */
 export const APPLICATIONS_ROUTE = route('/api/apps');
 export const SESSION_ROUTE = route('/api/home/session');
 export const SESSION_STREAM_ROUTE = route('/api/home/session/stream');
-export const LOCAL_BLOB_ROUTE = {
-	pattern: `${LOCAL_BLOB_PATH}/:blobId`,
-} as const;
-/**
- * One database's working copy in `~/Epicenter` (ADR-0337).
- *
- * `PUT` replaces the folder with the checkout in the body; `GET` hands back
- * what the folder holds. Both carry their files in an NDJSON body, so there is
- * no per-file path to route, capture, or validate. That is what the earlier
- * per-file design cost, and it cost it silently: Hono routes a bare `*` but
- * captures nothing under it, so every write arrived with an empty path.
- *
- * The `folder` segment this route used to carry named `local` or `account`,
- * and went with the device store: there is one store per data id (ADR-0336),
- * so there is one folder.
- *
- * The host takes the data id from the caller and does not verify that the
- * caller owns it, which is the trust model rather than a gap in it: a deployed
- * app is a trusted app (ADR-0334), and ADR-0118 decided that every SPA on this
- * origin is fully trusted. Do not add a per-app credential to close this. The
- * thing that would change it is an origin per app, so that the socket answers
- * who is asking and the id leaves the URL entirely.
- */
-export const CHECKOUT_ROUTE = route(`${CHECKOUT_PATH}/:dataId`);
-export const APP_STORAGE_ROUTE = route(APP_STORAGE_PATH);
 /**
  * Where Google returns a person after Local Mail's consent screen.
  *
@@ -101,13 +80,3 @@ export const MAIL_CALLBACK_ROUTE = route(
 );
 /** Where the Mail window collects the callback the host is holding. */
 export const MAIL_PENDING_CALLBACK_ROUTE = route(MAIL_PENDING_CALLBACK_PATH);
-/**
- * Host-owned remote copy operations for one local blob. The id is the only
- * input: no route accepts a destination URL, transfer header, or body, so the
- * host's own deployment authority is the only reachable target.
- */
-export const LOCAL_BLOB_REMOTE_ROUTES = {
-	upload: { pattern: `${LOCAL_BLOB_PATH}/:blobId/upload` },
-	download: { pattern: `${LOCAL_BLOB_PATH}/:blobId/download` },
-	purge: { pattern: `${LOCAL_BLOB_PATH}/:blobId/purge` },
-} as const;

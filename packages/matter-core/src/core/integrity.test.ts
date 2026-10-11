@@ -20,8 +20,8 @@ import {
 	type RowAssessment,
 	type TableInput,
 	type VaultIntegrity,
-} from './integrity';
-import { MatterReadError, readTable } from './table';
+} from './integrity.js';
+import { MatterReadError, readTable } from './table.js';
 
 type Entries = Parameters<typeof readTable>[0];
 
@@ -65,20 +65,6 @@ function cellOf(row: RowAssessment, fieldName: string): AssessedCell {
 }
 
 describe('assess: cell states', () => {
-	test('a present, valid non-reference value is ok', () => {
-		const v = assess([
-			loaded('pages', pagesModel, [
-				{ fileName: 'p1.md', content: '---\ntitle: Hello\n---' },
-			]),
-		]);
-
-		expect(cellOf(typed(v, 'pages').rows[0]!, 'title')).toEqual({
-			field: expect.objectContaining({ name: 'title' }),
-			state: 'ok',
-			value: 'Hello',
-		});
-	});
-
 	test('an absent required cell is missing-required', () => {
 		const v = assess([
 			loaded('pages', pagesModel, [{ fileName: 'p1.md', content: '---\n---' }]),
@@ -86,18 +72,6 @@ describe('assess: cell states', () => {
 
 		expect(cellOf(typed(v, 'pages').rows[0]!, 'title').state).toBe(
 			'missing-required',
-		);
-	});
-
-	test('an absent optional cell is missing-optional', () => {
-		const v = assess([
-			loaded('pages', pagesModel, [
-				{ fileName: 'p1.md', content: '---\ntitle: Hello\n---' },
-			]),
-		]);
-
-		expect(cellOf(typed(v, 'pages').rows[0]!, 'subtitle').state).toBe(
-			'missing-optional',
 		);
 	});
 
@@ -248,30 +222,38 @@ describe('assess: cell states', () => {
 });
 
 describe('assess: table states', () => {
-	test('a folder with a usable contract is typed, carrying its rows and contract', () => {
-		const v = assess([
-			loaded('pages', pagesModel, [
-				{ fileName: 'p1.md', content: '---\ntitle: Hello\n---' },
-			]),
-		]);
-
-		const pages = typed(v, 'pages');
-		expect(pages.rows).toHaveLength(1);
-		expect(pages.contract.fields.map((f) => f.name)).toEqual([
-			'title',
-			'subtitle',
-		]);
-	});
-
-	test('a typed row surfaces frontmatter keys outside the contract as extras', () => {
+	test('a typed table carries its contract, assessed cells, and extra values', () => {
 		const v = assess([
 			loaded('pages', pagesModel, [
 				{ fileName: 'p1.md', content: '---\ntitle: Hello\nstray: kept\n---' },
 			]),
 		]);
 
-		expect(typed(v, 'pages').rows[0]!.extras).toEqual([
-			{ key: 'stray', value: 'kept' },
+		const pages = typed(v, 'pages');
+		expect(pages.contract.fields.map((field) => field.name)).toEqual([
+			'title',
+			'subtitle',
+		]);
+		expect(pages.rows).toEqual([
+			{
+				row: {
+					fileName: 'p1.md',
+					frontmatter: { title: 'Hello', stray: 'kept' },
+					body: '',
+				},
+				cells: [
+					{
+						field: expect.objectContaining({ name: 'title' }),
+						state: 'ok',
+						value: 'Hello',
+					},
+					{
+						field: expect.objectContaining({ name: 'subtitle' }),
+						state: 'missing-optional',
+					},
+				],
+				extras: [{ key: 'stray', value: 'kept' }],
+			},
 		]);
 	});
 

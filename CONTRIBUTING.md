@@ -39,11 +39,11 @@ Epicenter is a monorepo containing multiple applications. The main application r
 3. **Start development from the repository root**
 
    ```bash
-   # Run the hosted Whispering browser app and local API
+   # Run the Whispering desktop app (needs Rust)
    bun dev:whispering
 
-   # Or run Whispering inside the Epicenter desktop host
-   bun dev:epicenter
+   # Or run its page alone in a browser tab
+   bun dev:whispering:ui
    ```
 
 That's it! You're ready to start contributing.
@@ -72,7 +72,7 @@ Currently, **Whispering** (`apps/whispering`) is the most mature application and
 
 ### Working without Infisical access
 
-Most of the repo does not need Infisical. Whispering, the Tab Manager extension, and every shared package (`@epicenter/data`, `@epicenter/ui`, and the rest) build and run from a fresh clone with nothing more than `bun install`.
+Most of the repo does not need Infisical. Whispering, the Tab Manager extension, and every shared package (`@epicenter/app/store`, `@epicenter/ui`, and the rest) build and run from a fresh clone with nothing more than `bun install`.
 
 The only app that requires Infisical is `apps/api` (the hosted hub). Running it (`bun run dev:api` from the repo root, or `bun run dev` from `apps/api/`) needs real API keys and the auth secret, so the dev script refuses to start without an `infisical login`.
 
@@ -221,8 +221,8 @@ git push && git push --tags
 
 Apps deploy separately from npm packages:
 
-- **Whispering (browser)**: Merge to `main`. `deploy.cloudflare.yml` builds and deploys the static SPA.
-- **Epicenter (desktop)**: Epicenter owns native packaging for Whispering and every other trusted desktop app. There is no standalone Whispering desktop release workflow.
+- **Whispering (desktop)**: A standalone Tauri app. `bun build:whispering` produces a local bundle; there is no release workflow for it yet.
+- **Epicenter (desktop)**: Epicenter owns native packaging for the trusted desktop apps it hosts.
 - **Other web apps (Cloudflare Workers)**: Merge to `main`. `deploy.cloudflare.yml` deploys automatically.
 
 See [`.github/workflows/README.md`](.github/workflows/README.md) for the full workflow reference.

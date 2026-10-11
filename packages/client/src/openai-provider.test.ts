@@ -12,8 +12,11 @@
  */
 
 import { describe, expect, test } from 'bun:test';
-import type { AgentEngineRequest, EngineChunk } from './agent-engine.js';
-import { resolveConnection } from './connection.js';
+import type {
+	AgentEngineRequest,
+	EngineChunk,
+} from '@epicenter/agent-protocol';
+import OpenAI from 'openai';
 import { createOpenAiAgentEngine } from './openai-provider.js';
 
 /** Build an OpenAI SSE response: one `data:` frame per chunk, then `[DONE]`. */
@@ -72,8 +75,12 @@ describe('createOpenAiAgentEngine', () => {
 		);
 		const engine = createOpenAiAgentEngine({
 			data: () => ({
-				fetch,
-				baseURL: GATEWAY,
+				client: new OpenAI({
+					fetch,
+					baseURL: GATEWAY,
+					apiKey: 'test',
+					logLevel: 'off',
+				}),
 				model: 'gpt-5.5',
 				systemPrompts: ['be brief'],
 			}),
@@ -163,8 +170,11 @@ describe('createOpenAiAgentEngine', () => {
 		}) as unknown as typeof globalThis.fetch;
 		const engine = createOpenAiAgentEngine({
 			data: () => ({
-				fetch: recordingFetch,
-				baseURL: 'https://example.test/v1/',
+				client: new OpenAI({
+					fetch: recordingFetch,
+					baseURL: 'https://example.test/v1/',
+					apiKey: 'test',
+				}),
 				model: 'gpt-5.5',
 				systemPrompts: [],
 			}),
@@ -182,40 +192,21 @@ describe('createOpenAiAgentEngine', () => {
 	});
 
 	test('streams text deltas in order', async () => {
-		const { fetch } = capturingFetch(
-			openAiSse([
-				{ choices: [{ delta: { content: 'Hello' }, finish_reason: null }] },
-				{ choices: [{ delta: { content: ', world' }, finish_reason: null }] },
-				{ choices: [{ delta: {}, finish_reason: 'stop' }] },
-				{ usage: { total_tokens: 5 }, choices: [] },
-			]),
-		);
-		const engine = createOpenAiAgentEngine({
-			data: () => ({
-				fetch,
-				baseURL: GATEWAY,
-				model: 'gpt-5.5',
-				systemPrompts: [],
-			}),
-		});
-
-		const chunks = await drain(
-			engine(
-				{ messages: [{ role: 'user', content: 'hi' }], tools: [] },
-				new AbortController().signal,
-			),
-		);
-		expect(
-			chunks
-				.filter((c) => c.type === 'text-delta')
-				.map((c) => (c as { delta: string }).delta)
-				.join(''),
-		).toBe('Hello, world');
+		const chunks = await drainFrames([
+			{ choices: [{ delta: { content: 'Hello' }, finish_reason: null }] },
+			{ choices: [{ delta: { content: ', world' }, finish_reason: null }] },
+			{ choices: [{ delta: {}, finish_reason: 'stop' }] },
+			{ usage: { total_tokens: 5 }, choices: [] },
+		]);
+		expect(chunks).toEqual([
+			{ type: 'text-delta', delta: 'Hello' },
+			{ type: 'text-delta', delta: ', world' },
+		]);
 	});
 
 	test('reduces an OpenAI tool call from index-correlated fragmented deltas', async () => {
-		const { fetch } = capturingFetch(
-			openAiSse([
+		const ends = toolCalls(
+			await drainFrames([
 				{
 					choices: [
 						{
@@ -255,23 +246,6 @@ describe('createOpenAiAgentEngine', () => {
 				},
 				{ choices: [{ delta: {}, finish_reason: 'tool_calls' }] },
 			]),
-		);
-		const engine = createOpenAiAgentEngine({
-			data: () => ({
-				fetch,
-				baseURL: GATEWAY,
-				model: 'gpt-5.5',
-				systemPrompts: [],
-			}),
-		});
-
-		const ends = toolCalls(
-			await drain(
-				engine(
-					{ messages: [{ role: 'user', content: 'go' }], tools: [] },
-					new AbortController().signal,
-				),
-			),
 		);
 		expect(ends).toHaveLength(1);
 		expect(ends[0]).toMatchObject({
@@ -331,8 +305,12 @@ describe('createOpenAiAgentEngine', () => {
 		);
 		const engine = createOpenAiAgentEngine({
 			data: () => ({
-				fetch,
-				baseURL: GATEWAY,
+				client: new OpenAI({
+					fetch,
+					baseURL: GATEWAY,
+					apiKey: 'test',
+					logLevel: 'off',
+				}),
 				model: 'gemini-3.5-flash',
 				systemPrompts: [],
 			}),
@@ -364,8 +342,12 @@ describe('createOpenAiAgentEngine', () => {
 		const { fetch } = capturingFetch(errorResponse);
 		const engine = createOpenAiAgentEngine({
 			data: () => ({
-				fetch,
-				baseURL: GATEWAY,
+				client: new OpenAI({
+					fetch,
+					baseURL: GATEWAY,
+					apiKey: 'test',
+					logLevel: 'off',
+				}),
 				model: 'gpt-5.5',
 				systemPrompts: [],
 			}),
@@ -384,13 +366,7 @@ describe('createOpenAiAgentEngine', () => {
 		expect(error?.code).toBe('InsufficientCredits');
 	});
 
-	// End-to-end custom backend: the resolver + engine reach a custom URL with the
-	// user's key. The hosted (Epicenter) bearer is structurally unreachable here:
-	// `resolveConnection` takes only the connection data and never an Epicenter fetch,
-	// so a custom turn cannot carry the session (ADR-0053/0060). This is the
-	// non-interactive stand-in for "switch tab-manager to a local Ollama"; the live
-	// extension test is the remaining manual check.
-	test('drives a custom backend through the resolver: custom URL, user key as Bearer', async () => {
+	test('uses the supplied SDK client destination and explicit bearer', async () => {
 		const realFetch = globalThis.fetch;
 		const calls: Array<{ url: string; authorization: string | null }> = [];
 		globalThis.fetch = (async (
@@ -408,8 +384,8 @@ describe('createOpenAiAgentEngine', () => {
 		try {
 			const engine = createOpenAiAgentEngine({
 				data: () => ({
-					...resolveConnection({
-						baseUrl: 'http://localhost:11434/v1',
+					client: new OpenAI({
+						baseURL: 'http://localhost:11434/v1',
 						apiKey: 'sk-user',
 					}),
 					model: 'qwen2.5:3b',
@@ -431,5 +407,228 @@ describe('createOpenAiAgentEngine', () => {
 		} finally {
 			globalThis.fetch = realFetch;
 		}
+	});
+});
+
+// SDK framing and failed-stream admission
+
+test('SDK decodes CRLF and multiline SSE data and stops at DONE', async () => {
+	const response = new Response(
+		[
+			'data: {"choices": [\r\n',
+			'data: {"delta": {"content": "hello"}, "finish_reason": "stop"}]}\r\n\r\n',
+			'data: [DONE]\r\n\r\n',
+			'data: {"choices":[{"delta":{"content":"ignored"}}]}\r\n\r\n',
+		].join(''),
+		{ headers: { 'content-type': 'text/event-stream' } },
+	);
+	const { fetch } = capturingFetch(response);
+	const client = new OpenAI({ fetch, baseURL: GATEWAY, apiKey: 'test' });
+	const engine = createOpenAiAgentEngine({
+		data: () => ({ client, model: 'model', systemPrompts: [] }),
+	});
+	expect(
+		await drain(
+			engine({ messages: [], tools: [] }, new AbortController().signal),
+		),
+	).toEqual([{ type: 'text-delta', delta: 'hello' }]);
+});
+
+test('an SSE API error preserves its code and discards pending tool calls', async () => {
+	const { fetch } = capturingFetch(
+		openAiSse([
+			{
+				choices: [
+					{
+						delta: {
+							tool_calls: [
+								{
+									index: 0,
+									id: 'call',
+									function: { name: 'write', arguments: '{}' },
+								},
+							],
+						},
+					},
+				],
+			},
+			{ error: { message: 'Retired', code: 'AccountRetired' } },
+		]),
+	);
+	const client = new OpenAI({ fetch, baseURL: GATEWAY, apiKey: 'test' });
+	const engine = createOpenAiAgentEngine({
+		data: () => ({ client, model: 'model', systemPrompts: [] }),
+	});
+	expect(
+		await drain(
+			engine({ messages: [], tools: [] }, new AbortController().signal),
+		),
+	).toEqual([
+		{ type: 'run-error', message: 'Retired', code: 'AccountRetired' },
+	]);
+});
+
+test('malformed SSE JSON fails the run and discards pending tool calls', async () => {
+	const { fetch } = capturingFetch(
+		new Response('data: malformed\n\n', {
+			headers: { 'content-type': 'text/event-stream' },
+		}),
+	);
+	const client = new OpenAI({
+		fetch,
+		baseURL: GATEWAY,
+		apiKey: 'test',
+		logLevel: 'off',
+	});
+	const engine = createOpenAiAgentEngine({
+		data: () => ({ client, model: 'model', systemPrompts: [] }),
+	});
+	const chunks = await drain(
+		engine({ messages: [], tools: [] }, new AbortController().signal),
+	);
+	expect(chunks).toEqual([
+		{
+			type: 'run-error',
+			message: 'Error reading response: malformed server-sent event JSON.',
+			code: 'stream-error',
+		},
+	]);
+});
+
+test('abort after a text delta cancels the body and emits no pending tools', async () => {
+	let cancelled = false;
+	const body = new ReadableStream<Uint8Array>({
+		start(controller) {
+			controller.enqueue(
+				new TextEncoder().encode(
+					`data: ${JSON.stringify({ choices: [{ delta: { content: 'before', tool_calls: [{ index: 0, id: 'call', function: { name: 'write', arguments: '{}' } }] } }] })}\n\n`,
+				),
+			);
+		},
+		cancel() {
+			cancelled = true;
+		},
+	});
+	const { fetch } = capturingFetch(
+		new Response(body, { headers: { 'content-type': 'text/event-stream' } }),
+	);
+	const client = new OpenAI({ fetch, baseURL: GATEWAY, apiKey: 'test' });
+	const engine = createOpenAiAgentEngine({
+		data: () => ({ client, model: 'model', systemPrompts: [] }),
+	});
+	const controller = new AbortController();
+	const chunks: EngineChunk[] = [];
+	for await (const chunk of engine(
+		{ messages: [], tools: [] },
+		controller.signal,
+	)) {
+		chunks.push(chunk);
+		controller.abort();
+	}
+	expect(chunks).toEqual([{ type: 'text-delta', delta: 'before' }]);
+	expect(cancelled).toBe(true);
+});
+
+// Finish reasons: only a finished answer is a successful stream
+
+async function drainFrames(frames: object[]) {
+	const { fetch } = capturingFetch(openAiSse(frames));
+	const client = new OpenAI({ fetch, baseURL: GATEWAY, apiKey: 'test' });
+	const engine = createOpenAiAgentEngine({
+		data: () => ({ client, model: 'model', systemPrompts: [] }),
+	});
+	return drain(
+		engine({ messages: [], tools: [] }, new AbortController().signal),
+	);
+}
+
+const writeCall = {
+	tool_calls: [
+		{ index: 0, id: 'call', function: { name: 'write', arguments: '{}' } },
+	],
+};
+
+test('an answer cut off at the output limit fails the run after its text', async () => {
+	expect(
+		await drainFrames([
+			{ choices: [{ delta: { content: 'cut off' }, finish_reason: 'length' }] },
+		]),
+	).toEqual([
+		{ type: 'text-delta', delta: 'cut off' },
+		{
+			type: 'run-error',
+			message: 'The model reached its output limit before finishing.',
+			code: 'length',
+		},
+	]);
+});
+
+test('a filtered answer fails the run', async () => {
+	const chunks = await drainFrames([
+		{ choices: [{ delta: { content: 'partial' }, finish_reason: null }] },
+		{ choices: [{ delta: {}, finish_reason: 'content_filter' }] },
+	]);
+	expect(chunks.at(-1)).toMatchObject({
+		type: 'run-error',
+		code: 'content_filter',
+	});
+});
+
+test('a stream that ends without a finish reason fails the run, even after a usage frame', async () => {
+	const chunks = await drainFrames([
+		{ choices: [{ delta: { content: 'half' }, finish_reason: null }] },
+		{ usage: { total_tokens: 5 }, choices: [] },
+	]);
+	expect(chunks).toEqual([
+		{ type: 'text-delta', delta: 'half' },
+		{
+			type: 'run-error',
+			message: 'The model stream ended before the answer finished.',
+			code: 'incomplete-stream',
+		},
+	]);
+});
+
+test('a usage frame after the finish does not undo it', async () => {
+	expect(
+		await drainFrames([
+			{ choices: [{ delta: { content: 'done' }, finish_reason: null }] },
+			{ choices: [{ delta: {}, finish_reason: 'stop' }] },
+			{ usage: { total_tokens: 5 }, choices: [] },
+		]),
+	).toEqual([{ type: 'text-delta', delta: 'done' }]);
+});
+
+test('tool calls cut off at the output limit or left unfinished never run', async () => {
+	for (const finish_reason of ['length', 'content_filter', null]) {
+		const chunks = await drainFrames([
+			{ choices: [{ delta: writeCall, finish_reason }] },
+		]);
+		expect(toolCalls(chunks)).toEqual([]);
+		expect(chunks.map((chunk) => chunk.type)).toEqual(['run-error']);
+	}
+});
+
+test('a tool_calls finish with no call fails the run', async () => {
+	expect(
+		await drainFrames([
+			{ choices: [{ delta: {}, finish_reason: 'tool_calls' }] },
+		]),
+	).toEqual([
+		{
+			type: 'run-error',
+			message: 'The model announced tool calls and sent none.',
+			code: 'incomplete-stream',
+		},
+	]);
+});
+
+test('a finish reason outside the SDK vocabulary fails the run', async () => {
+	const chunks = await drainFrames([
+		{ choices: [{ delta: { content: 'text' }, finish_reason: 'recitation' }] },
+	]);
+	expect(chunks.at(-1)).toMatchObject({
+		type: 'run-error',
+		code: 'incomplete-stream',
 	});
 });

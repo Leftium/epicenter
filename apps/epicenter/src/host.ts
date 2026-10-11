@@ -24,6 +24,7 @@ import {
 	resolveApprovedToolCall,
 	type ToolCatalog,
 } from '@epicenter/agent';
+import { Ok } from 'wellcrafted/result';
 import {
 	createLocalSourceCatalog,
 	type LocalSourceCatalogOptions,
@@ -311,8 +312,12 @@ export async function createHomeHost(
 
 	async function applyCommand(command: HomeClientCommand): Promise<boolean> {
 		switch (command.type) {
-			case 'send':
-				return conversation.send(command.content);
+			case 'send': {
+				// Settles once the session store holds the message; the model turn
+				// runs on in the background, so later commands are not queued behind it.
+				const { error } = await conversation.send(command.content);
+				return error === null;
+			}
 			case 'stop':
 				conversation.stop();
 				sessionApproval.cancelAll();
@@ -398,15 +403,17 @@ export async function createHomeHost(
  * The agent loop wants somewhere to put a finished message and something to
  * hear when one lands. It used to be live row content in a store the host owned;
  * the host owns no application data now (ADR-0226), so the transcript lives as
- * long as the session that produced it and no longer.
+ * long as the session that produced it and no longer. A write is confirmed the
+ * moment the map holds it: memory is all this store ever promises.
  */
 function createSessionMessageStore(): ConversationOptions['store'] {
 	const messages = new Map<string, AgentMessage>();
 	const listeners = new Set<() => void>();
 	return {
-		set(key, value) {
+		async set(key, value) {
 			messages.set(key, value);
 			for (const listener of listeners) listener();
+			return Ok(undefined);
 		},
 		*entries() {
 			for (const [key, val] of messages) yield { key, val };

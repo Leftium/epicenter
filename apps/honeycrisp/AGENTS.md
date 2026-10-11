@@ -1,189 +1,176 @@
 # Honeycrisp App
 
-Local-first notes SPA. Folders and notes are rows in one Yjs document, and each
-note's body is the node on its note row inside that same document
-(ADR-0295, ADR-0309). The one application running on the store today, so it is also the
-reference for how an app is built.
+File-authoritative Markdown notes. Read [the README](README.md) for how the
+page, the desktop shell, and the folder plugin fit together, and verify it
+against the code. The constraints below apply to every edit here.
 
-Design authority: [ADR-0339](../../docs/adr/0339-an-application-creates-one-epicenter-and-an-account-is-what-adds-a-store.md) (an application creates one epicenter, and an account is what adds a store), [ADR-0226](../../docs/adr/0226-a-host-serves-bundles-and-brokers-credentials-it-owns-no-application-data.md) (a host serves bundles and brokers credentials and owns no application data), [ADR-0225](../../docs/adr/0225-a-store-authority-is-one-durable-object-per-principal-and-application-and-being-signed-in-is-the-sharing-model.md) (one authority per principal and application; being signed in is the sharing model), [ADR-0295](../../docs/adr/0295-a-database-is-one-yjs-document-and-a-row-holds-its-rich-content.md) (a database is one Yjs document and a row holds its rich content), [ADR-0292](../../docs/adr/0292-a-database-opens-an-exact-generation-cache-first-and-bootstraps-account-misses.md) (a database opens an exact generation cache-first), [ADR-0336](../../docs/adr/0336-an-authority-mints-every-generation-so-every-store-has-an-account.md) (an authority mints every generation, so every store has an account), [ADR-0324](../../docs/adr/0324-a-database-address-is-its-data-id-and-generation-and-the-definition-declares-its-authority.md) (the address is the application, the data id, and the generation), [ADR-0256](../../docs/adr/0256-automatic-folding-is-the-current-maintenance-path-and-manual-workspace-compaction-is-deferred.md) (automatic folding is current; manual workspace compaction is deferred).
+## The files are the data
 
-## One handle, one URL, and the generation is nobody's to choose
+- The notes directory's current files are the saved data, and `<root>/.git`
+  is ordinary Git. Do not add a second store beside them: no browser-storage copy
+  on the desktop, no mirrored checkout, no import step, no cache that can
+  disagree with a file.
+- Do not add Yjs, a CRDT, an account, or sync to this app. Nothing in
+  `src/` or `src-tauri/` may import `@y/*`, `yjs`, `@epicenter/auth`, or
+  `@epicenter/sync`. `src/lib/platform-selection.test.ts` checks the
+  bundles. The `smoke/account-popover` fixture belongs to `packages/auth`'s
+  smoke test; it is why `@epicenter/auth` and `@epicenter/app-shell` remain
+  dev dependencies, and it is not part of this app.
+- Do not add a migration, a legacy reader, or a compatibility path for the
+  earlier Yjs-backed Honeycrisp. There are no users to carry forward.
+- Opening or listing a note must not write its file. Only an edit writes.
+- Opening an initialized folder changes no saved file, commit, or ref,
+  even when its repository has no commit yet. Only missing layout/defaults
+  are initialized. Do not request a commit because a folder has no head.
+- The shell writes nothing inside the notes directory. A missing layout is
+  created by the page through the attached folder, after the owner holds the
+  lock, in `src/lib/platform/first-open.ts`: look first, write `kv.json`
+  only when a read confirmed it absent and only if it is still absent, and
+  never retry an outcome that is unknown. Table directories come from the
+  declaration; do not list them a second time in Rust.
+- One item is open at a time, in one edit session from
+  `@epicenter/svelte/edit-session`: a note in a row session, any other text
+  (a file, a note opened as its file, a note whose text is not a valid row)
+  in a text session. Its title, folder, pin, rich-text, and Source controls
+  all change that session's draft through `session.edit`. Do not add another
+  save engine, a retained editor per path, or a second draft beside the
+  session's.
+- Every write is guarded by bytes this page read or saved: the session's
+  autosave, `replace` on the row a list read, and `move`/`remove` on a
+  capture. A change made elsewhere is the conflict prompt (Reload theirs /
+  Keep mine), never overwritten silently. `create` is the only unguarded
+  write and refuses an occupied path.
+- A field command on a row that is not open (pin, trash, restore, folder
+  assignment, folder name) is a guarded `replace` of the row the list read,
+  then a re-list. On the open note it is an edit to its draft. On a note
+  open as text it is refused.
+- A note whose text does not read as one is listed for repair and opens as
+  text, with its issues read live from the text on screen (`parseRow`).
+  There is no structured partial-row repair.
+- The page reads the folder when it opens, after its own actions and
+  terminal commands, and on focus or visibility. Do not follow
+  `folder.onFilesChanged` hints. Reading on return adopts a newer file into
+  an open note only while it holds nothing unsaved (the slot's `adopt`);
+  that remounts the rich-text editor, so its undo history restarts.
+- A destructive action that must find every related file refuses when any
+  file's relation did not read (`deleteFolder`).
 
-`$lib/epicenter.svelte.ts` is where this application's notes come from
-(ADR-0339). There is one of it, for every build:
+## Editor ownership
 
-```ts
-import { epicenter } from '$lib/epicenter.svelte.js';
-```
+- The session owns the draft; a save never assigns it. ProseMirror's
+  `EditorState` owns the rich-text document, cursor, and undo history.
+- Every ProseMirror transaction that changes the document goes through
+  `stateAfter`: current-body reconciliation, checked Markdown serialization,
+  then `session.edit` with the body made `wellFormed`, before it is shown.
+  Refuse it while `session.locked`. Do not refuse an edit only because a file
+  cannot hold it (a lone surrogate): sanitize it, or ProseMirror and the
+  draft diverge.
+- Do not weaken `checkNoteDoc` to let an edit through. If Markdown cannot
+  spell it, the edit is refused. If it should be spellable, fix the
+  serializer and add the case to `markdown.test.ts`; the property tests in
+  `markdown.fuzz.test.ts` must keep passing with zero refusals for typing
+  and for whole-word formatting.
+- Adding a node or mark to `editor/schema.ts` requires its Markdown in both
+  directions and tests for both. Source the schema cannot hold is refused by
+  `inspectNoteBody`, not dropped.
+- The rich-text view's lifetime depends on one boolean (`editable`), its
+  element, and the session's `generation` (a read replaced the draft). Do not
+  make its mount effect read anything that changes on a keystroke; that
+  recreates the view and erases undo history.
+- Leaving an item waits for `settled()`, then releases its session. A draft
+  whose save failed or conflicted is let go only when the person confirms
+  the discard for that session. Rename and delete act on
+  `settled().file`; delete releases the session first.
+- Views disable their inputs with `session.locked`, and a released session
+  takes no input, so a control that outlives its view changes nothing.
 
-`#platform/binding` holds the only thing that varies, which is who owns the
-SQLite files and the keychain. Honeycrisp uses neither, and still takes the
-owner its platform actually has.
+## Closing
 
-`definition` and `account` arrive together in that one file, which IS the store: an authority
-mints every generation (ADR-0336), so there is no accountless notebook.
-**Nothing opens at construction, and opening is a verb.** `routes/+page.svelte`
-calls `epicenter.open()` once, after reading auth, so a signed-out person
-meeting the gate pays no Web Lock, no IndexedDB, and no round trip, and
-`/auth/callback` renders under the same layout without opening anything.
-Calling `open` again while it is opening joins the one attempt; calling it
-after a failure retries, which is what the gate's Try again button is.
+- Once the page holds its folder, every native close needs that page's
+  answer to that request. Nothing else approves one: not a draft count, not
+  a timeout, not a page that stopped answering, not the shell itself. Do not
+  add a native prompt that discards on the page's behalf.
+- The page registers with the shell before it opens the folder, listens
+  before it says the folder is open, and says so before the notes exist.
+  `openGuarded` in `src/lib/platform/shell.tauri.ts` keeps that order; do not
+  open the desktop folder around it.
+- An approval names its page generation and its request. Keep both checks in
+  `src-tauri/src/close.rs`, and keep **Keep editing** an explicit decline.
+- Input is fenced before drafts are counted and stays fenced while the
+  approval is on its way. `notes.fenceInput()` is the one switch: sessions
+  lock, notes actions and the terminal refuse to run,
+  and `NotesView` is `inert`. A new way to change a file must check it, and
+  a control in a menu, popover, or dialog must also be `disabled`, because
+  those render outside the inert root. Do not unmount the editors to fence
+  them: that loses undo history.
+- Release the fence only for **Keep editing** and for the two gate refusals
+  listed in `APPROVAL_NOT_TAKEN` in `shell.tauri.ts`. Those are the texts of
+  `Refusal::StalePage` and `Refusal::NoSuchRequest` in `close.rs`; change
+  them together. "the app is already closing", any other text, and any other
+  failure keep the fence.
+- Route every way out through the gate: the window's close request, the run
+  loop's exit request, and the macOS Quit menu item, which stays custom
+  because the predefined one cannot be prevented.
+- A macOS system quit (Dock, logout, Apple Event) is AppKit's `terminate:`,
+  which Tao's delegate does not answer. `src-tauri/src/quit.rs` adds only
+  `applicationShouldTerminate:` to Tao's existing delegate class during
+  setup. It always cancels and calls `app.exit(0)`, so the gate decides.
+  Do not let it return anything but cancel, keep state, take a lock, or
+  replace the delegate. If the delegate class changes or already answers the
+  question, the app must fail to start; do not make it skip the guard.
+- After any Tauri, Tao, or macOS upgrade, rerun `bun run test:quit` and
+  `evidence/native-quit/late-method-probe.rs`, and record the results in
+  `evidence/native-quit/README.md`. The startup checks cannot see whether
+  AppKit still asks a method added after the delegate was set.
 
-```text
-epicenter/v4/so.epicenter.honeycrisp/so.epicenter.honeycrisp/<n>
-```
+## The boundary
 
-The first segment after the version is the OPENING application and the second
-is the data id (ADR-0324). They are the same string here and nothing writes the
-first one down: the constructor states the opening application explicitly.
-An application that opened another's data would state its different id, and
-would then hold two stores, which ADR-0339 refuses until something needs it.
+- The page reaches its folder only through `#platform/notes-host`. Do not
+  detect the platform at runtime, and do not import a Node or Bun module
+  under `src/`.
+- The desktop folder is the shell's: the page opens it with `openFolder`
+  from `@epicenter/folder/tauri` and names its ID only. Shared code imports
+  the folder contract from the bare `@epicenter/folder`, which each build
+  aliases to its one adapter entry in `vite.config.ts`; keep
+  `apps/honeycrisp/scripts/module-graph.ts` doing the same. Do not add another folder
+  engine, a Git implementation, or a history scheduler to the desktop page,
+  and do not fall back to browser storage when attaching fails.
+- The root, the commit author, and the window allowed to use them are decided
+  in `src-tauri`. No command accepts a root or a working directory from the
+  page.
+- History stays in the directory. Register the folder with no remote, and do
+  not enable `use_repository_origin`. Use `use_repository_author` to read
+  identity under the owner lock.
+- The notes window loads the bundled page's exact origin only. Keep the port
+  and credentials checks in `is_app_page`.
+- A shell command exists in three places that change together:
+  `src-tauri/src/command_names.rs`, the handler list in `lib.rs`, and
+  `src-tauri/capabilities/main.json`. `src-tauri/src/tests.rs` checks them
+  against each other. Update the README's command table with them.
+- The desktop terminal is the shell's own `/bin/sh`, an outside writer. Do
+  not replace it with `folder.terminal()`, which is the browser leaf's
+  emulated shell; do not route it through the folder's publication, and do
+  not make it request a commit.
+- A path from the page is checked with the folder owner's `path_problem`
+  before `git` sees it, and a commit must be a hexadecimal id. Keep both
+  checks in `history.rs`.
+- Do not describe the native conditional save as atomic. It compares, then
+  replaces; another program can write in between.
+- Do not add fault injection to the shell or wrap the folder's writes to
+  simulate failures. The README lists how to produce a real failure in a
+  disposable directory; never test against the default one. Tests fault the
+  folder's storage stand-in, never a wrapper around a session.
+- A commit failure is a Git fact. Do not turn one into a save error, and do
+  not make a save wait for a commit.
+- `bun run test` must not need Rust. Tests that need the shell live in
+  `src-tauri` and `native-tests/` and run with `bun run test:native`. The
+  quit harness, `src-tauri/examples/quit`, opens a window and needs a macOS
+  login session, so it runs only on its own (`bun run test:quit`). It quits
+  its own process in a fresh directory. Never point it at the default folder,
+  and never quit another app to test.
 
-**The generation is not in the URL and there is no picker.** `open` takes the
-newest copy this device holds, else the account's newest, else mints, and
-nothing stores the choice. It creates one only when the account's list comes
-back EMPTY, which is a first run: a device that could not SEE what the account
-has must not invent a history for it. `/account` and `/account/[generation]`
-are gone; the notes are at `/`.
+## Words a person reads
 
-Opening is cache-first and never waits on a socket. A device holding a copy is
-usable offline; one that holds none fetches the generation whole before
-returning, so a fresh account never renders empty while its state is arriving.
-
-That file exports ONE name, `epicenter`, which is `fromEpicenter` composed over
-the handle. Its lifecycle member is `state`: `closed | opening | ready |
-failed`, with the store on `ready` and the error and the erase on `failed`.
-Signed-out is NOT one of them and is not this package's to answer: the route
-reads `auth.state` once and renders the gate, which is why the session's
-`closed` means one thing. Constructing the wrapper reads one state and
-subscribes and acquires nothing, so importing the leaf opens nothing.
-
-`state.data` is the whole of what `StoreShell` receives. It carries no `open`,
-`close`, `erase`, or disposal: those belong to the session that took the lock,
-the socket, and the listener together (ADR-0340), and the close stays private
-to `$lib/epicenter.svelte.ts` where the hot reload can reach it.
-
-`createHoneycrisp` turns that one opened store into the reactive application
-object the UI consumes. It adapts the document into Svelte-reactive named
-tables with `fromData`, layers Honeycrisp's domain operations, search, and URL
-navigation on top, and exposes no database identity or fallback. Components
-reach it through `getHoneycrisp()`; raw stores never cross that boundary. The
-sidebar's status line reads `data.sync.status()` off the store itself
-(ADR-0340).
-
-A permanent credential refusal costs sync, not the notes: the store opened
-from local state before a socket was attempted, and the sidebar's status line
-goes quiet.
-
-## The folder is a working copy, and a person fills it
-
-`~/Epicenter/so.epicenter.honeycrisp/` holds these notes as files, and nothing
-puts them there by itself (ADR-0337). `PullToFolder.svelte` is the button; the
-verb is `pull` from `src/lib/folder.ts`, which is the library's verb with this
-application's definition supplied. It needs nothing else, because the store
-states its own address and that is what the manifest records (ADR-0340).
-
-A pull shows every edit in the folder it is about to write over and takes one
-approval. Confirming the list IS the discard (ADR-0341); there is no second
-gesture. It also refuses
-where there is no folder at all, which is every ordinary browser tab: a page
-has no filesystem, and the copy says so rather than offering a retry.
-
-A pull also writes an `AGENTS.md` at the folder root, generated from the
-compiled definition (ADR-0330): the tables, their fields, and which edits come
-back. Every pull replaces it, and it says so on its first line, so a person
-keeping notes to themselves keeps them under another name.
-
-`SendFolderEdits.svelte` is the other direction: `diff` shows what a push would
-do, and `push` applies it and writes back the files it touched. **The folder
-wins, and a push is one
-approval** (ADR-0338). Nothing is asked per item and nothing is validated on the
-way in: a value goes in whatever it says, a body replaces the note's text, a new
-file becomes a note, and a deleted file deletes one. To change any of it, cancel,
-edit the file, and push again.
-
-The dialog is the overview, ranked by what is still reachable afterwards, and it
-renders as one block of plain text so a person can paste it to the agent that
-made the mess. Two buttons, and Enter reaches Push all.
-
-A push writes rows this release cannot read, on purpose, from a text editor.
-`NoteList.svelte` is where they show up, beside the readable notes rather than
-only in the empty state.
-
-Deleting a file deletes the note, for good, without passing through Recently
-Deleted. Trashing a note through the folder is the other gesture: set
-`deletedAt` in the frontmatter, which is an ordinary value edit. No table
-declares a trash field and none should.
-
-A file an agent wrote becomes a note and **is renamed**, because a note's id is
-minted rather than chosen. That is in the overview before a person approves it,
-and in the `AGENTS.md` a pull writes, so an agent knows to re-read the folder
-after a push.
-
-One thing is not a plan at all: a folder nothing ever wrote. `diff` reports it
-as a state rather than failing, `push` refuses it, and `pull` writes over it
-after showing the paths once for the folder rather than once per file.
-
-## Three builds, one store shape
-
-| Build | Command |
-|---|---|
-| Web | `bun run build` |
-| Standalone desktop | `bun run tauri build` |
-| Epicenter-hosted | `bun run build:epicenter` |
-
-**They differ in nothing that concerns data.** Every build opens the same
-client-owned store through the same handle and owns it; the desktop host serves
-the bundle and brokers the credential and owns none of it (ADR-0226). What
-`#platform/binding` selects is the runtime the handle's SQLite and secrets are
-built over, which Honeycrisp uses neither of.
-There used to be a platform seam where the hosted build reached the host's
-shared `epicenter.sqlite3`, and ADR-0226 refused it.
-
-What remains behind `#platform/*` is auth and instance only: how a build gets a
-bearer, not where its data lives. `src/lib/platform-selection.test.ts` reads the
-declarations and names a broken seam. `typecheck` runs all three conditions;
-only the default one is checked by an editor.
-
-## Don'ts
-
-- Do not hand a component `epicenter`, or a lifecycle verb off it, when it only
-  needs the notes. `StoreShell` takes `data={epicenter.state.data}`.
-- Do not render a store error to a person as the message. `src/lib/boot-failure.ts`
-  picks the sentence someone reads; the library's own wording goes underneath as
-  detail, so a bug report keeps it and a wrong arm stays visible. Give a new
-  failure a `name` before giving it an arm, and only add an arm when the repair
-  is specific enough to be worth saying.
-- Do not put `workspace`, `replica`, `authority`, `document`, or `sync cursor`
-  in anything a person reads. They are the right words in this file and in
-  `packages/data`, and the wrong ones in a tooltip.
-- Do not detect the host at runtime. The build already answered.
-- Do not migrate, import, or delete data belonging to another build. The
-  standalone bundle and the hosted build are two stores on one machine, and
-  nothing moves between them. Two devices converge by signing into the same
-  account, not by copying a file.
-- Do not reintroduce a second notebook. There is one store, because an
-  authority mints every generation (ADR-0336); a signed-out person meets the
-  sign-in gate rather than an empty local notebook, and `bootFailure`
-  writes one set of sentences rather than choosing between two.
-- Do not soften a boot failure into one message. A generation that is missing
-  and one that is unreachable say which, because a retry fixes the second and
-  never the first (`boot-failure.ts`).
-- Do not put the generation back in the URL, and do not add a picker. Nobody
-  chose that number and no link carries it. When importing a replica ships, an
-  import ends in a document reload and a device holding an older number is told
-  a newer one exists (ADR-0281); neither is a route parameter.
-- Do not add a `#platform/*` seam for data. `#platform/binding` selects the
-  RUNTIME the handle is built over, which is a keychain and a Bun-owned file;
-  every build opens its own store either way, and a seam over the data is the
-  thing ADR-0226 refused.
-- Do not compose the handle inside a platform leaf. The seam holds the binding
-  and nothing built from it, so the application's one `epicenter` is defined
-  once rather than once per build (ADR-0339).
-- Do not write a note's `title` or `updatedAt` from anywhere but
-	  `notes.openContent`'s subscription. The store writes no derived fields and no
-	  timestamps (ADR-0297), so those are Honeycrisp's, hung on the content node's
-	  own edit signal and coalesced. A second writer would fight it.
-- Do not leave `openContent`'s `close` uncalled. Nothing is loaded any more, so
-  there is no document to leak; what leaks is the derivation subscription, and
-  two of them on one note write the row twice per keystroke.
+Say note, folder, file, draft, saved, and commit. Do not put `entry`,
+`buffer`, `scope`, `shell`, `baseline`, or `canonical` in anything a person
+reads; those are the right words in code and the wrong ones in a status line.

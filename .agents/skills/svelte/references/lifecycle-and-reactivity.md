@@ -200,10 +200,18 @@ The same rule applies to block-local `{@const}` passthroughs:
 Keep the alias when it owns real work:
 
 - Computed predicates or values: `const isSelected = $derived(selectedId === item.id)`.
-- Values used by script logic, effects, or other derived values.
+- A named computation or selection shared by script logic, effects, or other derived values; those consumers can also read shallow properties directly.
 - Expensive or noisy computations that should run once per block.
+- A change filter for downstream effects: `$derived` skips downstream updates when its value remains referentially identical, even if the source notifies more broadly. Check effect behavior before replacing a derived read with a direct getter read. See [Svelte update propagation](https://svelte.dev/docs/svelte/$derived#Update-propagation).
 - Dynamic component binding: `{@const Icon = item.icon}` before `<Icon />`.
 - Discriminated union payloads inside an `{#each}` branch when the alias improves narrowing and readability: `{@const bookmark = item.bookmark}`.
+
+Repeating a shallow read does not require an alias. Prefer `editor.row` at each
+use when seeing the owner helps the reader. Do not replace a reactive alias with
+a component-level `const row = editor.row`: that captures an initial value.
+An operation-local snapshot can earn its place when it keeps narrowing and a
+read-modify-write operation coherent. Capture it when the handler runs, and
+re-read or check the operation's validity after an `await` before writing.
 
 Searches:
 
@@ -211,6 +219,47 @@ Searches:
 rg -n '\$derived\([^)]*\.[A-Za-z_$][A-Za-z0-9_$]*\)' --glob '*.svelte'
 rg -n '\{@const\s+[A-Za-z_$][A-Za-z0-9_$]*\s*=\s*[^}\n]+\.[A-Za-z_$][A-Za-z0-9_$]*\s*\}' --glob '*.svelte'
 ```
+
+# Stable adapters and reactive reads
+
+Separate the adapter's identity from the values it exposes. For a read-through
+adapter whose getters participate in Svelte reactivity, construct it once when
+the source owner is fixed for the component instance:
+
+```svelte
+<!-- Parent: a new open item recreates the child. -->
+{#key item}
+	<RowView session={item.session} />
+{/key}
+```
+
+```svelte
+<!-- RowView.svelte -->
+<script lang="ts">
+	let { session } = $props();
+</script>
+
+<p>{session.draft.fields.title}</p>
+```
+
+The session's getters are reactive, so changes to the draft or save state need
+no reconstruction. If the owner can be replaced while this component stays
+mounted, key the component on the owner, or derive from the prop. For an
+adapter that owns a disposable resource, use an explicit lifecycle boundary
+instead; `$derived` does not supply cleanup.
+
+Confirm owner stability at the caller before removing the wrapper. A keyed
+child can establish that stability when the key tracks the owner identity.
+The caller now owns that guarantee; removing its key can leave the child stale.
+Use `untrack` for this intentional initial prop capture to avoid Svelte's
+[state_referenced_locally warning](https://svelte.dev/docs/svelte/compiler-warnings#state_referenced_locally). It documents the capture, not a substitute
+for the caller's lifetime guarantee. Prefer deriving from the prop when the
+component must remain correct independently of its caller's mount policy.
+Svelte executes component initialization once, and a `{#key}` block recreates
+its contents when the key changes. See the official
+[`$derived`](https://svelte.dev/docs/svelte/$derived),
+[`$props`](https://svelte.dev/docs/svelte/$props), and
+[`{#key}`](https://svelte.dev/docs/svelte/key) documentation.
 
 # `$derived` Value Mapping: Use `satisfies Record`, Not Ternaries
 
@@ -303,7 +352,7 @@ arrived from another device alike. Text typed inside a row's content node is
 not a table commit; `watch(node, listener)` is its signal.
 
 ```typescript
-// Root of the surface: adapt the chosen document once, then layer app state.
+// Adapt the supplied store; repeated calls reuse its projection.
 const app = fromData(data);
 const table = app.tables.notes;
 
@@ -322,9 +371,11 @@ return {
 
 There is no `refresh`, no generation counter, no `await` on a read, and no
 `Symbol.dispose`. A table is HELD: `fromData` seeds a `SvelteMap` projection
-keyed by row id when it is called, patches it with the ids each commit names,
+keyed by row id on the first call for a raw store, patches it with the ids each commit names,
 and never tears it down, so the projection and its subscription die with the
-document. That is not ref-counting, and the difference matters: a projection
+document. Repeated calls with the same raw store return that same projection
+without adding subscriptions. The cache keys by object identity, so another
+opened store receives its own projection. That is not ref-counting, and the difference matters: a projection
 detached from its source stays alive and stops being true. `kv` and
 `persistence` are read-through on `createSubscriber` instead, because ten keys
 and one enum are not worth holding.

@@ -58,7 +58,6 @@ Load only the skills that match the touched surface:
 collapse-pass            continuous deletion of unearned indirection
 rethink                  public API, package boundary, config, lifecycle, naming, ownership, greenfield, or clean-break decision
 asymmetric-wins          refuse a feature to collapse a disproportionate code family
-refactoring              caller counts, inlining, dead exports, stale imports, straggler sweep
 code-audit               recurring repo smells and grep-based checks
 one-sentence-test        new abstraction, wrapper, option, endpoint, command, or module
 testing                  test files or changed behavior that needs coverage
@@ -66,6 +65,9 @@ typescript               type organization, inference, runtime schema, type test
 svelte                   Svelte components, stores, runes, query usage, UI state
 yjs                      CRDT documents, shared types, transactions, conflict behavior
 ```
+
+Read the [refactoring methods](../collapse-pass/references/refactoring-methods.md)
+for caller evidence, inlining, and straggler cleanup without starting a hunt.
 
 ## Independent review
 
@@ -147,6 +149,11 @@ Mentally inline every helper, wrapper, component, prop bundle, adapter, file,
 factory, compartment, and extracted function back into its call sites, then keep
 a layer only when it earns its place.
 
+For local bindings, apply
+[the source-and-action test](../collapse-pass/references/refactoring-methods.md#keep-source-and-action-visible).
+Inspect repeated shallow aliases and forwarding handlers as well as single-use
+helpers; caller count alone does not justify a boundary.
+
 For the inspection method and criteria for keeping a boundary, use
 [rethink's mental-inlining reference](../rethink/references/radical-options.md#mental-inlining).
 The ownership check below applies the same test to runtime, durable, and
@@ -165,13 +172,13 @@ Which props exist only because of a stale file split?
 Which calls need `untrack`, and would moving ownership remove that need?
 ```
 
-Count callers for every new or changed helper, component, factory, wrapper, and
-export. A one-caller boundary is guilty until it proves it owns one of these:
+Inspect callers for every new or changed helper, component, factory, wrapper,
+and export. Keep a boundary when it explains necessary work or owns one of these:
 
 ```txt
 a lifecycle that must be isolated from parent rerenders
 an unsafe parse, network, storage, or external-library boundary
-a repeated domain operation with several real callers
+a shared domain rule or non-obvious operation
 a public contract that downstream code imports
 a long imperative block whose helper name explains the phase
 ```
@@ -200,8 +207,8 @@ near-identical sibling files or types (judge: cheap independence or latent coupl
 ```
 
 If a smell is repo-recurring, use `code-audit` for the relevant grep pattern. If
-the smell came from the refactor itself, use `refactoring` for the straggler
-sweep.
+the smell came from the refactor itself, use the [refactoring methods](../collapse-pass/references/refactoring-methods.md#post-refactor-straggler-sweep)
+for the straggler sweep.
 
 ## Invariant Audit
 

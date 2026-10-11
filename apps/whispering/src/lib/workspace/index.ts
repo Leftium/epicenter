@@ -1,229 +1,94 @@
-import { field } from '@epicenter/data/definition';
-import { APP_ID } from '../app-id';
 /**
- * Whispering's inert data definition.
+ * Opens the workspace this page was given.
  *
- * Pure JSON: closed field descriptors and nothing that knows about
- * storage, sync or documents (ADR-0213). Runtimes own all of that.
+ * Where the page runs decides which storage it has: inside a desktop app the
+ * folder is the shell's, and in a browser tab it is this browser's own. That
+ * is asked of the runtime, not inferred from the host's token. The desktop
+ * workspace also needs the Whispering host, whose token the standalone shell
+ * injects before the page runs. A desktop app that injected none is not
+ * Whispering's shell, and the page says so and opens nothing.
  *
- * Three things about this file are decisions rather than transcription of the
- * old contract, and each is load-bearing.
- *
- * **Settings live in `kv`, not in a table.** They used to be one row at the
- * chosen id `'settings'`. A chosen row id is a nested container addressed by
- * the operation that created it, so two devices both writing settings on their
- * own boot path create two containers and map LWW discards one along with every
- * value in it. KV lives at a name-addressed root, where independent minting
- * converges (ADR-0216).
- *
- * **Transcripts stay in the row.** They are machine-produced, replaced
- * wholesale, and rendered in the recordings list, so nothing about them wants
- * per-character merging. That is the opposite of Honeycrisp's call for a node
- * (ADR-0207) and it is deliberate: a note is written by a person a character at
- * a time, a transcript arrives finished.
- *
- * **There are no optional fields.** A field has to be one type through the CRDT
- * attribute, the projection column and the row alike, and "absent" is not a SQL
- * type. What would have been optional is nullable with a `= null` default,
- * which a read applies and a write never stores.
+ * The desktop workspace and its Tauri adapter are loaded only when the page is
+ * inside a desktop app, so a browser tab never loads them.
  */
+import { isTauri } from '@tauri-apps/api/core';
+import type { Result } from 'wellcrafted/result';
+import { answerCloseWithNothingOpen, quitWhenAsked } from './closing.js';
+import { type Workspace, WorkspaceError } from './types.js';
 
-import type { DeclaredData } from '@epicenter/data';
-import {
-	defineData,
-	defineTable,
-	type KvOf,
-	plainText,
-	type RowOf,
-} from '@epicenter/data/definition';
+export type {
+	CloseDecision,
+	InjectionState,
+	WhisperingFolder,
+	Workspace,
+	WorkspaceError,
+} from './types.js';
 
-/** Runtime-minted structural row ids. */
-export type RecordingId = string;
-export type RecipeId = string;
-
-const recordingsTable = defineTable({
-	/**
-	 * Opaque local and remote identity for this recording's immutable audio.
-	 *
-	 * The pattern survives; the `BlobId` brand does not, because `RowOf` yields
-	 * the field's own type and a brand is a TypeScript fiction the CRDT never
-	 * saw. Re-brand with `parseBlobId` where a row meets the blob store.
-	 */
-	audioBlobId: field.string({ pattern: '^blob_[a-z0-9]{21}$' }),
-	/** Set only after an explicit replica upload succeeds. */
-	uploadedAt: field.nullable(field.instant()),
-	title: field.string(),
-	recordedAt: field.instant(),
-	recordedAtZone: field.string(),
-	transcript: field.string(),
-	polishedTranscript: field.nullable(field.string()),
-	duration: field.nullable(field.number()),
-	/**
-	 * The transcription outcome, flattened into three columns.
-	 *
-	 * It was one nullable discriminated union, and a workspace cannot express an
-	 * inline object: `'{ status: ... }'` does not parse, and `'object|null'`
-	 * parses but validates nothing and makes the whole outcome one LWW value.
-	 * Three columns keep every field checked and let a failure's message merge
-	 * independently of its timestamp.
-	 */
-	transcriptionStatus: field.string(),
-	transcriptionCompletedAt: field.nullable(field.instant()),
-	transcriptionError: field.nullable(field.string()),
-	content: plainText(),
-});
-
-const recipesTable = defineTable({
-	/**
-	 * No `sourceId`. It existed because the old store let an application choose
-	 * a row id and a recipe needed a portable one; the store now refuses chosen
-	 * ids by construction (ADR-0206), so a user recipe's identity IS its minted
-	 * row id. Built-in recipes keep their `builtin:` ids and remain non-rows.
-	 */
-	name: field.string(),
-	instructions: field.string(),
-	icon: field.nullable(field.string()),
-	content: plainText(),
-});
+declare global {
+	interface Window {
+		/** Set by the Whispering desktop shell before the page runs. */
+		__WHISPERING_BRIDGE__?: { readonly token: string };
+	}
+}
 
 /**
- * A shortcut, as two fields.
- *
- * Same gap as the transcription outcome: a `{ modifiers, keys }` object has no
- * string expression. There is no lossless label codec in `utils/key-binding.ts`
- * either (`keyBindingToLabel` and `keyBindingToAccelerator` are one-way), so a
- * canonical single-string encoding would have to be invented and tested. Two
- * arrays need neither.
- *
- * Nullable rather than optional, because missing remains a conformance error and
- * initialization belongs to the application. Every array field uses this same law.
+ * Called from a mounted component; importing this module opens nothing. A
+ * refusal is returned as it is. Inside a desktop app browser storage is never
+ * opened, whatever is missing or refused.
  */
-const shortcut = {
-	modifiers: field.nullable(
-		field.multiSelect(['ctrl', 'alt', 'shift', 'meta', 'fn']),
-	),
-	keys: field.nullable(field.tags()),
-} as const;
-
-const settingsKv = {
-	soundManualStart: field.boolean(),
-	soundManualStop: field.boolean(),
-	soundManualCancel: field.boolean(),
-	soundVadStart: field.boolean(),
-	soundVadCapture: field.boolean(),
-	soundVadStop: field.boolean(),
-	soundTranscriptionComplete: field.boolean(),
-	soundRecipeComplete: field.boolean(),
-
-	outputTranscriptionClipboard: field.boolean(),
-	outputTranscriptionCursor: field.boolean(),
-	outputTranscriptionEnter: field.boolean(),
-	outputRecipeClipboard: field.boolean(),
-	outputRecipeCursor: field.boolean(),
-	outputRecipeEnter: field.boolean(),
-
-	recordingTrigger: field.select(['vad', 'manual']),
-	recordingPausePlayback: field.boolean(),
-	recordingAutoUpload: field.boolean(),
-
-	transcriptionService: field.select([
-		'epicenter',
-		'OpenAI',
-		'Groq',
-		'ElevenLabs',
-		'Deepgram',
-		'Mistral',
-		'local',
-		'speaches',
-	]),
-	transcriptionOpenaiModel: field.string(),
-	transcriptionGroqModel: field.string(),
-	transcriptionElevenlabsModel: field.string(),
-	transcriptionDeepgramModel: field.string(),
-	transcriptionMistralModel: field.string(),
-	/**
-	 * A plain string, not a union of the 58 supported languages.
-	 *
-	 * A hand-written union here would drift from `constants/languages.ts`, and
-	 * drift means the declaration refusing a write the UI offered. The app validates
-	 * against the const; the three SMALL selects above are spelled out because
-	 * a two-to-eight-member union is worth checking at the storage boundary.
-	 */
-	transcriptionLanguage: field.string(),
-	transcriptionPrompt: field.string(),
-
-	completionProvider: field.select([
-		'OpenAI',
-		'Groq',
-		'Anthropic',
-		'Google',
-		'OpenRouter',
-		'Custom',
-	]),
-	completionModel: field.string(),
-
-	dictionary: field.nullable(field.tags()),
-	polishEnabled: field.boolean(),
-	polishInstructions: field.string(),
-	analyticsEnabled: field.boolean(),
-
-	shortcutPushToTalkModifiers: shortcut.modifiers,
-	shortcutPushToTalkKeys: shortcut.keys,
-	shortcutToggleManualRecordingModifiers: shortcut.modifiers,
-	shortcutToggleManualRecordingKeys: field.nullable(field.tags()),
-	shortcutCancelRecordingModifiers: shortcut.modifiers,
-	shortcutCancelRecordingKeys: field.nullable(field.tags()),
-	shortcutToggleVadRecordingModifiers: shortcut.modifiers,
-	shortcutToggleVadRecordingKeys: field.nullable(field.tags()),
-	shortcutOpenRecipePickerModifiers: shortcut.modifiers,
-	shortcutOpenRecipePickerKeys: field.nullable(field.tags()),
-	shortcutRunRecipeOnClipboardModifiers: shortcut.modifiers,
-	shortcutRunRecipeOnClipboardKeys: field.nullable(field.tags()),
-	shortcutOpenSettingsModifiers: shortcut.modifiers,
-	shortcutOpenSettingsKeys: field.nullable(field.tags()),
-} as const;
-
-export const whisperingDefinition = defineData({
-	id: APP_ID,
-	title: 'Whispering',
-	kv: settingsKv,
-	tables: {
-		recordings: recordingsTable,
-		recipes: recipesTable,
-	},
-});
-
-/** The typed view of one store through Whispering's workspace. */
-export type WhisperingData = DeclaredData<typeof whisperingDefinition>;
-
-export type Recording = RowOf<typeof recordingsTable>;
-/** The recipe values the picker and editor read. */
-export type Recipe = Pick<
-	RowOf<typeof recipesTable>,
-	'id' | 'name' | 'instructions' | 'icon'
->;
-/**
- * The settings values an application composes after a read.
- *
- * Through `KvOf` rather than `typeof settingsKv`, which was the DECLARATION
- * (a record of descriptors) wearing the name of the values.
- */
-export type WhisperingSettingValues = KvOf<typeof whisperingDefinition>;
+export async function openWorkspace(): Promise<
+	Result<Workspace, WorkspaceError>
+> {
+	if (!isTauri()) {
+		const { openBrowserWorkspace } = await import('./browser.js');
+		return openBrowserWorkspace();
+	}
+	const bridge = window.__WHISPERING_BRIDGE__;
+	if (bridge === undefined) return WorkspaceError.HostMissing();
+	const { openDesktopWorkspace } = await import('./desktop.js');
+	return openDesktopWorkspace({ origin: location.origin, token: bridge.token });
+}
 
 /**
- * Default shortcuts, applied by the app rather than declared in the definition.
+ * After opening has failed and nothing is open: let the person close the
+ * window. Whispering's shell holds every close until the page answers, and a
+ * page with no session has nothing else that would answer. Returns the
+ * function that stops answering, which must be called before anything is
+ * opened again.
  *
- * The definition does not own initialization, so `keys` uses null for "no shortcut
- * configured" and the app applies shipped shortcuts separately.
- * These are release-local product policy anyway, which is where they were
- * before (`definition.ts`), and they are the only part of that file worth
- * keeping.
+ * Only for a failed opening. Never call this while an opening is under way or
+ * a session exists: it answers `proceed` without looking at anything, which
+ * is right only when there is nothing to look at.
+ *
+ * In a browser tab the browser owns leaving, and a desktop app that injected
+ * no host token is not Whispering's shell and asks no such question, so in
+ * both this does nothing.
  */
-export const DEFAULT_SHORTCUT_KEYS = {
-	toggleManualRecording: ['space'],
-	cancelRecording: ['keyC'],
-	toggleVadRecording: ['keyV'],
-	openRecipePicker: ['keyT'],
-	runRecipeOnClipboard: ['keyR'],
-	openSettings: ['comma'],
-} as const;
+export function answerCloseAfterFailedOpening(): () => void {
+	const connection = shellConnection();
+	if (connection === undefined) return () => {};
+	return answerCloseWithNothingOpen(connection);
+}
+
+/**
+ * The person's own quit for a window whose opening failed, whatever the
+ * failure: one press, one answer, and nothing heard or answered before or
+ * after it. Undefined where no shell asks a close question: a browser tab, or
+ * a desktop app that injected no host token. It needs only the host's bridge,
+ * so it works when the desktop workspace itself failed to load.
+ */
+export function quitAfterFailedOpening():
+	| (() => Promise<string | undefined>)
+	| undefined {
+	const connection = shellConnection();
+	if (connection === undefined) return undefined;
+	return () => quitWhenAsked(connection);
+}
+
+/** How to reach Whispering's host, when the page is inside Whispering's own shell. */
+function shellConnection() {
+	if (!isTauri()) return undefined;
+	const bridge = window.__WHISPERING_BRIDGE__;
+	if (bridge === undefined) return undefined;
+	return { origin: location.origin, token: bridge.token };
+}

@@ -31,6 +31,11 @@ Distinguish explicit requirements, observed behavior, and hypotheses. If the
 contract is unresolved, assign its discovery rather than assuming a fix.
 Check the deciding claims against sources; do not redo the whole investigation.
 
+An exploration can advance a decision by discovering a better destination or an
+unknown blind spot; it need not resolve a question already identified. Name the
+opportunity the assignment could explore. Claude may propose worthwhile
+follow-up investigations, but Codex decides which to commission.
+
 ## Make the design legible
 
 Supply the desired outcome, genuine constraints, representative callsites, and
@@ -103,15 +108,20 @@ EVIDENCE
 ```
 
 Resume a completed consultation for the same assignment in the same checkout.
-State source changes and new evidence in the follow-up. The launcher reapplies
-read-only tools but does not verify the native session's assignment or original
-workspace; verify that identity before resuming. Use a fresh session for an
-independent review or a materially different frame. See `delegate-claude` for
-reviewing a worker's result. Resuming retains context and does not restore
-independence.
-The launcher reapplies the access boundary on every turn. If the shell tool
-yields a running process, keep monitoring it and provide progress updates.
-There is no interactive attach step.
+Supply changed source, new evidence, and the next question explicitly. The
+launcher reapplies read-only tools but does not verify the native session's
+assignment or original workspace; verify that identity before resuming. Use a
+fresh session for independent exploration, an independent review, or a
+materially different frame. See `delegate-claude` for reviewing a worker's
+result. Resuming retains context: a challenge to another proposal or Codex's
+synthesis is an informed follow-up, not blind discovery.
+
+The launcher sends one fixed brief per turn, reapplies the access boundary on
+every turn, and provides no mid-turn instruction channel or interactive attach.
+Steer at completed-turn boundaries using
+[adversarial-review](../adversarial-review/SKILL.md)'s coordination guidance for
+design investigations. If the shell tool yields a running process, monitor it
+and keep the user informed.
 
 A new consultation requires `--model`. On resume the launcher supplies no model
 or effort default: Claude Code restores the session's model, while command-line

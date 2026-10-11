@@ -1,20 +1,29 @@
+import type { AuthServer } from '@epicenter/auth';
+import type { AccountIdentity } from '@epicenter/principal';
+import type { NativeSqliteRequest } from './device.js';
 /**
  * The private Rust-to-Bun startup protocol and the Bun sidecar lifecycle.
  * Rust resolves the runtime mode and port, then keeps stdin open as its parent
  * lifetime signal. Bun validates that input but never resolves a port itself.
  */
 
+import { isAbsolute } from 'node:path';
 import { extractErrorMessage } from 'wellcrafted/error';
 
 /**
  * How long the whole shutdown may take before this process leaves anyway.
  *
  * Under Rust's fifteen-second readiness timeout, so a host that gives up here
- * is restarted rather than declared unreachable.
+ * is restarted rather than declared unreachable. Rust waits longer than this
+ * before it kills the process (`SHUTDOWN_TIMEOUT` in `src-tauri/src/lib.rs`),
+ * so owners that drain admitted work, such as the Todos folder finishing a
+ * save and its commit, get this whole window rather than Rust's.
  */
 const SHUTDOWN_GRACE_MS = 10_000;
+const MAX_NATIVE_FRAME_BYTES = 8 * 1024 * 1024;
+const MAX_NATIVE_PENDING = 64;
 
-export const SIDECAR_PROTOCOL_VERSION = 2;
+export const SIDECAR_PROTOCOL_VERSION = 10;
 export const PRODUCTION_PORT = 39_130;
 
 export type SidecarRuntimeMode = 'production' | 'development';
@@ -25,12 +34,32 @@ export type BootFrame = {
 	token: string;
 	port: number;
 	authCell: string | null;
+	authServer: AuthServer;
+	accountManagement: boolean;
+	dataDir: string;
+	folderDir: string;
 };
 
+/**
+ * Readiness, and the installed applications this generation serves.
+ *
+ * `installedAppIds` is the membership Rust admits `app-` windows and folder
+ * scopes for. Bun discovers it once at boot; Rust never reads the catalog from
+ * disk, and refuses the frame when an ID breaks the managed folder-name rules
+ * or repeats.
+ *
+ * `bootAccount` is the Account this generation booted with, `null` when it
+ * booted signed out, as exactly `authorityId` and `principalId`; no credential
+ * crosses here. Rust captures the first one it reads as the owner of every
+ * installed app's folder for the native process, and refuses a later
+ * generation that names another.
+ */
 export type ReadyFrame = {
 	type: 'ready';
 	protocolVersion: typeof SIDECAR_PROTOCOL_VERSION;
 	port: number;
+	installedAppIds: string[];
+	bootAccount: AccountIdentity | null;
 };
 
 type SidecarServer = {
@@ -53,7 +82,7 @@ export type ParentPipe = {
 	cancel(): Promise<void>;
 };
 
-export type NativePort = ReturnType<typeof createNativeAuthPort>;
+export type NativePort = ReturnType<typeof createNativePort>;
 
 /**
  * The slice of the native port the desktop auth authority uses.
@@ -64,18 +93,38 @@ export type NativePort = ReturnType<typeof createNativeAuthPort>;
  */
 export type NativeAuthPort = Pick<
 	NativePort,
-	'completed' | 'storeAuth' | 'openAuthUrl' | 'relaunch' | 'onOAuthCallback'
+	| 'completed'
+	| 'storeAuth'
+	| 'openAuthUrl'
+	| 'prepareRelaunch'
+	| 'onAuthCallback'
 >;
 
+/**
+ * Native permission to restart, held after every Capture and Todos page agreed
+ * to leave. Exactly one of its methods takes effect. Only Bun holds it: the
+ * browser can neither finish nor abort a grant.
+ */
+export type RelaunchGrant = {
+	/** Restart now. Throws when the request cannot reach Rust. */
+	relaunch(): void;
+	/** Give the grant back without restarting, so the pages resume. */
+	abort(): void;
+};
+
 const BOOT_FRAME_KEYS = [
+	'accountManagement',
 	'authCell',
+	'authServer',
+	'dataDir',
+	'folderDir',
 	'port',
 	'protocolVersion',
 	'token',
 	'type',
 ];
 const BASE64URL = /^[A-Za-z0-9_-]+$/;
-const OAUTH_CALLBACK = 'epicenter://auth/callback';
+const AUTH_CALLBACK = 'epicenter://auth/callback';
 
 /**
  * Parse the one explicit runtime-mode argument supplied by the Rust parent.
@@ -126,7 +175,7 @@ export function parseBootFrame(
 		keys.some((key, index) => key !== BOOT_FRAME_KEYS[index])
 	) {
 		throw new Error(
-			'The boot frame must contain exactly type, protocolVersion, token, port, and authCell.',
+			'The boot frame must contain exactly type, protocolVersion, token, port, authCell, authServer, accountManagement, dataDir, and folderDir.',
 		);
 	}
 
@@ -159,14 +208,77 @@ export function parseBootFrame(
 		throw new Error('The boot auth cell must be a string or null.');
 	}
 
+	const authServer = frame.authServer;
+	if (
+		typeof authServer !== 'object' ||
+		authServer === null ||
+		Array.isArray(authServer)
+	) {
+		throw new Error('The boot authServer must be a server descriptor.');
+	}
+	const descriptor = authServer as Record<string, unknown>;
+	if (
+		Object.keys(descriptor).sort().join(',') !== 'authorityId,baseURL' ||
+		typeof descriptor.baseURL !== 'string' ||
+		typeof descriptor.authorityId !== 'string' ||
+		descriptor.authorityId.length === 0
+	) {
+		throw new Error(
+			'The boot authServer must contain exactly baseURL and a non-empty authorityId.',
+		);
+	}
+	const origin = URL.parse(descriptor.baseURL);
+	if (
+		!origin ||
+		!['http:', 'https:'].includes(origin.protocol) ||
+		origin.origin !== descriptor.baseURL ||
+		origin.username ||
+		origin.password
+	) {
+		throw new Error(
+			'The boot authServer baseURL must be an HTTP or HTTPS origin.',
+		);
+	}
+
+	if (typeof frame.accountManagement !== 'boolean') {
+		throw new Error('The boot accountManagement must be a boolean.');
+	}
+
+	for (const key of ['dataDir', 'folderDir'] as const) {
+		const directory = frame[key];
+		if (
+			typeof directory !== 'string' ||
+			!isAbsolute(directory) ||
+			directory.includes('\0')
+		) {
+			throw new Error(`The boot ${key} must be an absolute filesystem path.`);
+		}
+	}
 	return frame as BootFrame;
 }
 
-export function createReadyFrame(port: number): ReadyFrame {
+/**
+ * Build the ready frame. `bootAccount` is projected to its two identity
+ * fields, so passing a live Account never puts its fetch or anything else it
+ * carries on the pipe.
+ */
+export function createReadyFrame(
+	port: number,
+	installedAppIds: readonly string[],
+	bootAccount: AccountIdentity | null,
+): ReadyFrame {
 	return {
 		type: 'ready',
 		protocolVersion: SIDECAR_PROTOCOL_VERSION,
 		port,
+		installedAppIds: [...installedAppIds],
+		bootAccount:
+			bootAccount === null
+				? null
+				: {
+						authorityId: bootAccount.authorityId,
+						principalId: bootAccount.principalId,
+					},
 	};
 }
 
@@ -192,6 +304,8 @@ export function watchParentPipe(
 				const { value, done } = await reader.read();
 				if (value) {
 					buffer += decoder.decode(value, { stream: true });
+					if (buffer.length > MAX_NATIVE_FRAME_BYTES)
+						throw new Error('Native frame exceeds limit.');
 				}
 
 				let newline = buffer.indexOf('\n');
@@ -250,13 +364,13 @@ export function watchParentPipe(
  * Bind the fixed native operations to the versioned Rust pipe.
  *
  * The port names no keyring entry and invokes no arbitrary native command. It
- * carries the desktop auth cell, an authorization URL to open, a relaunch, and
- * one labeled application secret. The secret operations send an application id
+ * carries the desktop auth cell, an authorization URL to open, a prepared
+ * relaunch, and one labeled application secret. The secret operations send an application id
  * and an account id, both validated before they reach here; Rust composes the
  * service and account strings it stores under, so what crosses this pipe stays
  * a pair of labels rather than an address in the credential store (ADR-0310).
  */
-export function createNativeAuthPort(
+export function createNativePort(
 	{ parentPipe }: { parentPipe: ParentPipe },
 	{
 		writeLine = (line) => process.stdout.write(`${line}\n`),
@@ -268,43 +382,194 @@ export function createNativeAuthPort(
 ) {
 	const pending = new Map<
 		string,
-		{ resolve(value: string | null): void; reject(error: Error): void }
+		{
+			type: 'sqlite-result' | 'native-result';
+			resolve(value: unknown): void;
+			reject(error: Error): void;
+		}
 	>();
+	const reader = parentPipe.frames.getReader();
 	const callbackListeners = new Set<(url: string) => void>();
 	let queuedCallback: string | null = null;
+	let failure: Error | undefined;
+	function fail(error: Error) {
+		if (failure) return;
+		failure = error;
+		for (const request of pending.values()) request.reject(failure);
+		pending.clear();
+		// Wake the sole reader so supervision observes terminal write failure too.
+		void reader.cancel().catch(() => undefined);
+	}
 
 	function send(frame: unknown) {
-		writeLine(JSON.stringify(frame));
+		if (failure) throw failure;
+		const line = JSON.stringify(frame);
+		// Native framing counts the newline appended by writeLine.
+		if (Buffer.byteLength(line) + 1 > MAX_NATIVE_FRAME_BYTES)
+			throw new Error('Native frame exceeds limit.');
+		try {
+			writeLine(line);
+		} catch (cause) {
+			fail(cause instanceof Error ? cause : new Error(String(cause)));
+			throw failure;
+		}
 	}
 
 	function request(
 		frame:
+			| { type: 'sqlite'; request: NativeSqliteRequest }
 			| { type: 'store-auth'; serialized: string | null }
 			| { type: 'open-auth-url'; url: string }
 			| {
 					type: 'put-app-secret';
+					account?: AccountIdentity;
 					appId: string;
-					accountId: string;
+					label: string;
 					value: string;
 			  }
-			| { type: 'get-app-secret'; appId: string; accountId: string }
-			| { type: 'delete-app-secret'; appId: string; accountId: string },
-	): Promise<string | null> {
+			| {
+					type: 'get-app-secret';
+					account?: AccountIdentity;
+					appId: string;
+					label: string;
+			  }
+			| {
+					type: 'delete-app-secret';
+					account?: AccountIdentity;
+					appId: string;
+					label: string;
+			  },
+		signal?: AbortSignal,
+	): Promise<unknown> {
+		if (signal?.aborted)
+			return Promise.reject(new Error('SQLite query canceled.'));
+		if (failure) return Promise.reject(failure);
+		if (pending.size >= MAX_NATIVE_PENDING)
+			return Promise.reject(new Error('Native request queue is full.'));
 		const requestId = createRequestId();
-		return new Promise<string | null>((resolve, reject) => {
-			pending.set(requestId, { resolve, reject });
+		if (!requestId || requestId.length > 128 || pending.has(requestId))
+			return Promise.reject(
+				new Error('Invalid or duplicate native request id.'),
+			);
+		return new Promise<unknown>((resolve, reject) => {
+			const abort = () => {
+				try {
+					send({ type: 'sqlite-cancel', requestId });
+				} catch (cause) {
+					fail(cause instanceof Error ? cause : new Error(String(cause)));
+				}
+			};
+			pending.set(requestId, {
+				type: frame.type === 'sqlite' ? 'sqlite-result' : 'native-result',
+				resolve(value) {
+					signal?.removeEventListener('abort', abort);
+					resolve(value);
+				},
+				reject(error) {
+					signal?.removeEventListener('abort', abort);
+					reject(error);
+				},
+			});
+			signal?.addEventListener('abort', abort, { once: true });
 			try {
 				send({ ...frame, requestId });
 			} catch (cause) {
+				pending
+					.get(requestId)
+					?.reject(cause instanceof Error ? cause : new Error(String(cause)));
 				pending.delete(requestId);
-				reject(cause instanceof Error ? cause : new Error(String(cause)));
 			}
 		});
 	}
 
+	/**
+	 * Ask Rust to settle every Capture and Todos page before a restart.
+	 *
+	 * Settles once, on Rust's one terminal answer for this request: a grant, or
+	 * the reason there is none. Aborting `signal` withdraws a preparation that
+	 * is still collecting. The request stays pending until Rust answers it, so
+	 * that answer is never an unknown request, and a grant that crossed the
+	 * withdrawal is given back before anyone can act on it. This is not the
+	 * SQLite cancellation: a withdrawn preparation is not an interrupted query.
+	 */
+	function prepareRelaunch(signal?: AbortSignal): Promise<RelaunchGrant> {
+		if (signal?.aborted)
+			return Promise.reject(new Error('Relaunch preparation was cancelled.'));
+		if (failure) return Promise.reject(failure);
+		if (pending.size >= MAX_NATIVE_PENDING)
+			return Promise.reject(new Error('Native request queue is full.'));
+		const requestId = createRequestId();
+		if (!requestId || requestId.length > 128 || pending.has(requestId))
+			return Promise.reject(
+				new Error('Invalid or duplicate native request id.'),
+			);
+		return new Promise<RelaunchGrant>((resolve, reject) => {
+			const withdraw = () => {
+				try {
+					send({ type: 'prepare-cancel', requestId });
+				} catch (cause) {
+					fail(cause instanceof Error ? cause : new Error(String(cause)));
+				}
+			};
+			pending.set(requestId, {
+				type: 'native-result',
+				resolve() {
+					signal?.removeEventListener('abort', withdraw);
+					if (signal?.aborted) {
+						giveBack(requestId);
+						reject(new Error('Relaunch preparation was cancelled.'));
+						return;
+					}
+					resolve(createGrant(requestId));
+				},
+				reject(error) {
+					signal?.removeEventListener('abort', withdraw);
+					reject(error);
+				},
+			});
+			signal?.addEventListener('abort', withdraw, { once: true });
+			try {
+				send({ type: 'prepare-relaunch', requestId });
+			} catch (cause) {
+				pending
+					.get(requestId)
+					?.reject(cause instanceof Error ? cause : new Error(String(cause)));
+				pending.delete(requestId);
+			}
+		});
+	}
+
+	/**
+	 * Release a grant. A pipe too broken to carry this is ending, and Rust
+	 * releases every grant of a generation it retires.
+	 */
+	function giveBack(requestId: string) {
+		try {
+			send({ type: 'relaunch-abort', requestId });
+		} catch (cause) {
+			fail(cause instanceof Error ? cause : new Error(String(cause)));
+		}
+	}
+
+	function createGrant(requestId: string): RelaunchGrant {
+		let used = false;
+		return {
+			relaunch() {
+				if (used) throw new Error('This relaunch grant was already used.');
+				used = true;
+				send({ type: 'relaunch', requestId });
+			},
+			abort() {
+				if (used) return;
+				used = true;
+				giveBack(requestId);
+			},
+		};
+	}
+
 	function accept(line: string) {
 		const frame = parseNativeFrame(line);
-		if (frame.type === 'oauth-callback') {
+		if (frame.type === 'auth-callback') {
 			if (callbackListeners.size === 0) queuedCallback = frame.url;
 			else for (const listener of callbackListeners) listener(frame.url);
 			return;
@@ -316,48 +581,75 @@ export function createNativeAuthPort(
 				`Rust returned unknown native request ${frame.requestId}.`,
 			);
 		}
+		if (request.type !== frame.type)
+			throw new Error('Native response does not match request.');
 		pending.delete(frame.requestId);
-		if (frame.status === 'ok') request.resolve(frame.value ?? null);
+		if (frame.status === 'ok')
+			request.resolve(
+				frame.type === 'sqlite-result' ? frame.data : (frame.value ?? null),
+			);
 		else request.reject(new Error(frame.message));
 	}
 
 	const completed = (async () => {
-		const reader = parentPipe.frames.getReader();
 		try {
 			while (true) {
 				const { value, done } = await reader.read();
 				if (done) return;
 				accept(value);
 			}
+		} catch (cause) {
+			fail(cause instanceof Error ? cause : new Error(String(cause)));
+			throw cause;
 		} finally {
-			for (const request of pending.values()) {
-				request.reject(new Error('The native auth port closed.'));
-			}
-			pending.clear();
+			fail(new Error('The native port closed.'));
+			reader.releaseLock();
 		}
 	})();
 
 	return {
 		completed,
+		sqlite(message: NativeSqliteRequest, signal?: AbortSignal) {
+			return request({ type: 'sqlite', request: message }, signal);
+		},
 		async storeAuth(serialized: string | null) {
 			await request({ type: 'store-auth', serialized });
 		},
 		async openAuthUrl(url: string) {
 			await request({ type: 'open-auth-url', url });
 		},
-		async putAppSecret(appId: string, accountId: string, value: string) {
-			await request({ type: 'put-app-secret', appId, accountId, value });
+		async putAppSecret(
+			appId: string,
+			label: string,
+			value: string,
+			account?: AccountIdentity,
+		) {
+			await request({ type: 'put-app-secret', appId, label, value, account });
 		},
-		getAppSecret(appId: string, accountId: string) {
-			return request({ type: 'get-app-secret', appId, accountId });
+		async getAppSecret(
+			appId: string,
+			label: string,
+			account?: AccountIdentity,
+		) {
+			const value = await request({
+				type: 'get-app-secret',
+				account,
+				appId,
+				label,
+			});
+			if (value !== null && typeof value !== 'string')
+				throw new Error('Invalid native secret value.');
+			return value;
 		},
-		async deleteAppSecret(appId: string, accountId: string) {
-			await request({ type: 'delete-app-secret', appId, accountId });
+		async deleteAppSecret(
+			appId: string,
+			label: string,
+			account?: AccountIdentity,
+		) {
+			await request({ type: 'delete-app-secret', appId, label, account });
 		},
-		relaunch() {
-			send({ type: 'relaunch' });
-		},
-		onOAuthCallback(listener: (url: string) => void) {
+		prepareRelaunch,
+		onAuthCallback(listener: (url: string) => void) {
 			callbackListeners.add(listener);
 			if (queuedCallback !== null) {
 				const callback = queuedCallback;
@@ -370,6 +662,13 @@ export function createNativeAuthPort(
 }
 
 type NativeFrame =
+	| { type: 'sqlite-result'; requestId: string; status: 'ok'; data: unknown }
+	| {
+			type: 'sqlite-result';
+			requestId: string;
+			status: 'error';
+			message: string;
+	  }
 	| {
 			type: 'native-result';
 			requestId: string;
@@ -383,24 +682,40 @@ type NativeFrame =
 			message: string;
 			value?: undefined;
 	  }
-	| { type: 'oauth-callback'; url: string };
+	| { type: 'auth-callback'; url: string };
 
 function parseNativeFrame(line: string): NativeFrame {
 	let value: unknown;
 	try {
 		value = JSON.parse(line);
 	} catch {
-		throw new Error('The native auth frame must be valid JSON.');
+		throw new Error('The native frame must be valid JSON.');
 	}
 	if (typeof value !== 'object' || value === null || Array.isArray(value)) {
-		throw new Error('The native auth frame must be a JSON object.');
+		throw new Error('The native frame must be a JSON object.');
 	}
 	const frame = value as Record<string, unknown>;
-	if (frame.type === 'oauth-callback') {
+	if (frame.type === 'auth-callback') {
 		assertExactKeys(frame, ['type', 'url']);
-		if (typeof frame.url !== 'string' || !isOAuthCallback(frame.url)) {
-			throw new Error('Rust sent an invalid OAuth callback URL.');
+		if (typeof frame.url !== 'string' || !isAuthCallback(frame.url)) {
+			throw new Error('Rust sent an invalid auth callback URL.');
 		}
+		return frame as NativeFrame;
+	}
+	if (frame.type === 'sqlite-result') {
+		assertExactKeys(
+			frame,
+			frame.status === 'ok'
+				? ['data', 'requestId', 'status', 'type']
+				: ['message', 'requestId', 'status', 'type'],
+		);
+		if (
+			typeof frame.requestId !== 'string' ||
+			frame.requestId === '' ||
+			(frame.status !== 'ok' && frame.status !== 'error') ||
+			(frame.status === 'error' && typeof frame.message !== 'string')
+		)
+			throw new Error('Invalid native SQLite frame.');
 		return frame as NativeFrame;
 	}
 	if (frame.type === 'native-result') {
@@ -432,7 +747,7 @@ function parseNativeFrame(line: string): NativeFrame {
 		}
 		return frame as NativeFrame;
 	}
-	throw new Error(`Unknown native auth frame: ${String(frame.type)}.`);
+	throw new Error(`Unknown native frame: ${String(frame.type)}.`);
 }
 
 function assertExactKeys(value: Record<string, unknown>, expected: string[]) {
@@ -445,11 +760,11 @@ function assertExactKeys(value: Record<string, unknown>, expected: string[]) {
 	}
 }
 
-function isOAuthCallback(value: string): boolean {
+function isAuthCallback(value: string): boolean {
 	try {
 		const url = new URL(value);
 		return (
-			`${url.protocol}//${url.host}${url.pathname}` === OAUTH_CALLBACK &&
+			`${url.protocol}//${url.host}${url.pathname}` === AUTH_CALLBACK &&
 			(url.searchParams.has('code') || url.searchParams.has('error')) &&
 			url.username === '' &&
 			url.password === '' &&
@@ -515,7 +830,14 @@ export async function superviseSidecar({
 			exit(1);
 		}, graceMs);
 		try {
-			await server.stop(true);
+			// Force-stop releases the listener and sockets immediately. Bun 1.3.1
+			// through 1.3.14 can leave its promise pending after server-initiated
+			// WebSocket close, so waiting here would skip every owner's disposal.
+			void Promise.resolve(server.stop(true)).catch((error: unknown) => {
+				report(
+					`Epicenter host: force-stop failed: ${extractErrorMessage(error)}`,
+				);
+			});
 		} finally {
 			try {
 				await host[Symbol.asyncDispose]();

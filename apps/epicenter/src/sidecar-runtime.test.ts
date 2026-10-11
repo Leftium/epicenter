@@ -12,8 +12,11 @@
 
 import { describe, expect, test } from 'bun:test';
 import { EventEmitter } from 'node:events';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { asPrincipalId } from '@epicenter/principal';
 import {
-	createNativeAuthPort,
+	createNativePort,
 	createReadyFrame,
 	type ParentPipe,
 	PRODUCTION_PORT,
@@ -22,9 +25,17 @@ import {
 	SIDECAR_PROTOCOL_VERSION,
 	superviseSidecar,
 	watchParentPipe,
-} from './sidecar-runtime.ts';
+} from './sidecar-runtime.js';
 
 const TOKEN = 'valid_base64url-token';
+const CLOUD_SERVER = {
+	baseURL: 'https://api.epicenter.so',
+	authorityId: 'epicenter-api',
+};
+const SELF_HOSTED_SERVER = {
+	baseURL: 'https://self.example',
+	authorityId: 'instance-68747470733a2f2f73656c662e6578616d706c65',
+};
 
 function bootFrame(overrides: Record<string, unknown> = {}): string {
 	return JSON.stringify({
@@ -33,6 +44,10 @@ function bootFrame(overrides: Record<string, unknown> = {}): string {
 		token: TOKEN,
 		port: PRODUCTION_PORT,
 		authCell: null,
+		authServer: CLOUD_SERVER,
+		accountManagement: true,
+		dataDir: join(tmpdir(), 'so.epicenter.dev'),
+		folderDir: join(tmpdir(), 'Epicenter Dev'),
 		...overrides,
 	});
 }
@@ -113,6 +128,67 @@ describe('runtime mode', () => {
 });
 
 describe('boot protocol', () => {
+	test('invalid server descriptors cannot enter the sidecar', () => {
+		for (const authServer of [
+			null,
+			[],
+			{},
+			{ ...SELF_HOSTED_SERVER, authorityId: '' },
+			{ ...SELF_HOSTED_SERVER, extra: true },
+		]) {
+			expect(() =>
+				parseBootFrame(bootFrame({ authServer }), 'production'),
+			).toThrow('authServer');
+		}
+		for (const baseURL of [
+			'file:///tmp',
+			'https://user@self.example',
+			'https://self.example/path',
+			'https://self.example?query',
+			'https://self.example#fragment',
+		]) {
+			expect(() =>
+				parseBootFrame(
+					bootFrame({
+						authServer: {
+							...SELF_HOSTED_SERVER,
+							baseURL,
+						},
+					}),
+					'production',
+				),
+			).toThrow('authServer');
+		}
+	});
+
+	test('boot preserves Cloud and self-hosted descriptors under either account management setting', () => {
+		for (const authServer of [
+			CLOUD_SERVER,
+			SELF_HOSTED_SERVER,
+			{
+				baseURL: 'https://other.example',
+				authorityId: 'explicit-native-identity',
+			},
+		]) {
+			for (const accountManagement of [false, true]) {
+				const frame = parseBootFrame(
+					bootFrame({ authServer, accountManagement }),
+					'production',
+				);
+				expect(frame.authServer).toEqual(authServer);
+				expect(frame.accountManagement).toBe(accountManagement);
+			}
+		}
+	});
+
+	test('account management must be an explicit boolean', () => {
+		for (const accountManagement of [undefined, null, 1, 'true']) {
+			expect(() =>
+				parseBootFrame(bootFrame({ accountManagement }), 'production'),
+			).toThrow();
+		}
+	});
+
 	test('malformed JSON and non-object frames are rejected', () => {
 		expect(() => parseBootFrame('{', 'production')).toThrow('valid JSON');
 		expect(() => parseBootFrame('[]', 'production')).toThrow('JSON object');
@@ -126,6 +202,8 @@ describe('boot protocol', () => {
 					protocolVersion: SIDECAR_PROTOCOL_VERSION,
 					token: TOKEN,
 					authCell: null,
+					authServer: CLOUD_SERVER,
+					accountManagement: true,
 				}),
 				'production',
 			),
@@ -137,8 +215,23 @@ describe('boot protocol', () => {
 
 	test('unknown protocol versions are rejected', () => {
 		expect(() =>
-			parseBootFrame(bootFrame({ protocolVersion: 3 }), 'production'),
-		).toThrow('Unsupported boot protocol version: 3');
+			parseBootFrame(bootFrame({ protocolVersion: 99 }), 'production'),
+		).toThrow('Unsupported boot protocol version: 99');
+	});
+
+	test('native directories are required, absolute, and preserved exactly', () => {
+		for (const key of ['dataDir', 'folderDir']) {
+			for (const value of [null, 123, '', 'relative/directory', '/bad\0path']) {
+				expect(() =>
+					parseBootFrame(bootFrame({ [key]: value }), 'development'),
+				).toThrow('absolute filesystem path');
+			}
+		}
+		const dataDir = join(tmpdir(), 'custom data');
+		const folderDir = join(tmpdir(), 'custom checkout');
+		expect(
+			parseBootFrame(bootFrame({ dataDir, folderDir }), 'development'),
+		).toMatchObject({ dataDir, folderDir });
 	});
 
 	test('invalid token types and non-base64url tokens are rejected', () => {
@@ -176,11 +269,44 @@ describe('boot protocol', () => {
 	});
 
 	test('ready frames contain exactly the versioned readiness contract', () => {
-		expect(createReadyFrame(PRODUCTION_PORT)).toEqual({
+		expect(createReadyFrame(PRODUCTION_PORT, [], null)).toEqual({
 			type: 'ready',
-			protocolVersion: 2,
+			protocolVersion: 10,
 			port: PRODUCTION_PORT,
+			installedAppIds: [],
+			bootAccount: null,
 		});
+		// Signed out is an explicit null on the wire, never an absent field.
+		expect(
+			JSON.parse(JSON.stringify(createReadyFrame(PRODUCTION_PORT, [], null))),
+		).toHaveProperty('bootAccount', null);
+	});
+
+	test('ready frames name the boot Account by its identity alone', () => {
+		const account = {
+			authorityId: 'epicenter-api',
+			principalId: asPrincipalId('user-123'),
+			baseURL: 'https://api.epicenter.so',
+			token: 'never on the pipe',
+			fetch: () => {
+				throw new Error('never called');
+			},
+		};
+		const line = JSON.stringify(createReadyFrame(PRODUCTION_PORT, [], account));
+		expect(JSON.parse(line).bootAccount).toEqual({
+			authorityId: 'epicenter-api',
+			principalId: 'user-123',
+		});
+		expect(line).not.toContain('never on the pipe');
+		expect(line).not.toContain('baseURL');
+	});
+
+	test('ready frames name the installed applications in discovery order', () => {
+		const ids = ['com.example.notes', 'so.epicenter.zhongwen'];
+		const frame = createReadyFrame(PRODUCTION_PORT, ids, null);
+		expect(frame.installedAppIds).toEqual(ids);
+		// A copy: the frame does not alias the caller's list.
+		expect(frame.installedAppIds).not.toBe(ids);
 	});
 
 	test('auth cell accepts only an opaque string or null', () => {
@@ -230,7 +356,7 @@ describe('parent pipe', () => {
 });
 
 describe('native auth port', () => {
-	test('correlates fixed native requests and forwards one queued OAuth callback', async () => {
+	test('correlates fixed native requests and forwards one queued auth callback', async () => {
 		let controller!: ReadableStreamDefaultController<string>;
 		const parentPipe: ParentPipe = {
 			bootLine: Promise.resolve(bootFrame()),
@@ -243,7 +369,7 @@ describe('native auth port', () => {
 			async cancel() {},
 		};
 		const writes: string[] = [];
-		const native = createNativeAuthPort(
+		const native = createNativePort(
 			{ parentPipe },
 			{
 				createRequestId: () => 'request-1',
@@ -268,13 +394,13 @@ describe('native auth port', () => {
 
 		controller.enqueue(
 			JSON.stringify({
-				type: 'oauth-callback',
+				type: 'auth-callback',
 				url: 'epicenter://auth/callback?code=code&state=state',
 			}),
 		);
 		await Promise.resolve();
 		const callbacks: string[] = [];
-		native.onOAuthCallback((url) => callbacks.push(url));
+		native.onAuthCallback((url) => callbacks.push(url));
 		expect(callbacks).toEqual([
 			'epicenter://auth/callback?code=code&state=state',
 		]);
@@ -294,7 +420,7 @@ describe('native auth port', () => {
 			closed: new Promise(() => undefined),
 			async cancel() {},
 		};
-		const native = createNativeAuthPort(
+		const native = createNativePort(
 			{ parentPipe },
 			{ createRequestId: () => 'request-2', writeLine() {} },
 		);
@@ -324,13 +450,196 @@ describe('native auth port', () => {
 			closed: new Promise(() => undefined),
 			async cancel() {},
 		};
-		const native = createNativeAuthPort({ parentPipe }, { writeLine() {} });
+		const native = createNativePort({ parentPipe }, { writeLine() {} });
 		controller.enqueue(JSON.stringify({ type: 'execute', command: 'shell' }));
-		await expect(native.completed).rejects.toThrow('Unknown native auth frame');
+		await expect(native.completed).rejects.toThrow('Unknown native frame');
+	});
+});
+
+describe('relaunch preparation', () => {
+	function scripted() {
+		let controller!: ReadableStreamDefaultController<string>;
+		const parentPipe: ParentPipe = {
+			bootLine: Promise.resolve(bootFrame()),
+			frames: new ReadableStream<string>({
+				start(next) {
+					controller = next;
+				},
+			}),
+			closed: new Promise(() => undefined),
+			async cancel() {},
+		};
+		const writes: Array<Record<string, unknown>> = [];
+		let next = 0;
+		const native = createNativePort(
+			{ parentPipe },
+			{
+				writeLine: (line) => writes.push(JSON.parse(line)),
+				createRequestId: () => `prepare-${++next}`,
+			},
+		);
+		return {
+			native,
+			writes,
+			reply(requestId: string, status: 'ok' | 'error' = 'ok') {
+				controller.enqueue(
+					JSON.stringify(
+						status === 'ok'
+							? { type: 'native-result', requestId, status }
+							: {
+									type: 'native-result',
+									requestId,
+									status,
+									message: 'kept open',
+								},
+					),
+				);
+			},
+			close() {
+				controller.close();
+			},
+		};
+	}
+
+	test('a grant finishes once with its own request id', async () => {
+		const port = scripted();
+		const preparing = port.native.prepareRelaunch();
+		expect(port.writes).toEqual([
+			{ type: 'prepare-relaunch', requestId: 'prepare-1' },
+		]);
+		port.reply('prepare-1');
+		const grant = await preparing;
+		grant.relaunch();
+		expect(port.writes.at(-1)).toEqual({
+			type: 'relaunch',
+			requestId: 'prepare-1',
+		});
+		expect(() => grant.relaunch()).toThrow('already used');
+		grant.abort();
+		expect(port.writes).toHaveLength(2);
+		port.close();
+		await port.native.completed;
+	});
+
+	test("a refusal rejects with Rust's reason and sends nothing more", async () => {
+		const port = scripted();
+		const preparing = port.native.prepareRelaunch();
+		port.reply('prepare-1', 'error');
+		await expect(preparing).rejects.toThrow('kept open');
+		expect(port.writes).toHaveLength(1);
+		port.close();
+		await port.native.completed;
+	});
+
+	test('withdrawing sends prepare-cancel and waits for the one terminal answer', async () => {
+		const port = scripted();
+		const abort = new AbortController();
+		let settled = false;
+		const preparing = port.native.prepareRelaunch(abort.signal).finally(() => {
+			settled = true;
+		});
+		void preparing.catch(() => undefined);
+		abort.abort();
+		expect(port.writes.at(-1)).toEqual({
+			type: 'prepare-cancel',
+			requestId: 'prepare-1',
+		});
+		expect(port.writes.some((frame) => frame.type === 'sqlite-cancel')).toBe(
+			false,
+		);
+		await Bun.sleep(0);
+		// The entry stays until Rust answers, so the answer is never unknown.
+		expect(settled).toBe(false);
+		port.reply('prepare-1', 'error');
+		await expect(preparing).rejects.toThrow('kept open');
+		port.close();
+		await port.native.completed;
+	});
+
+	test('a grant that crossed the withdrawal is given back before anyone sees it', async () => {
+		const port = scripted();
+		const abort = new AbortController();
+		const preparing = port.native.prepareRelaunch(abort.signal);
+		abort.abort();
+		// Rust granted before it read the cancel, and ignores the late cancel.
+		port.reply('prepare-1');
+		await expect(preparing).rejects.toThrow('cancelled');
+		expect(port.writes).toEqual([
+			{ type: 'prepare-relaunch', requestId: 'prepare-1' },
+			{ type: 'prepare-cancel', requestId: 'prepare-1' },
+			{ type: 'relaunch-abort', requestId: 'prepare-1' },
+		]);
+		port.close();
+		await port.native.completed;
+	});
+
+	test('aborting a held grant releases it once and forbids relaunching it', async () => {
+		const port = scripted();
+		const preparing = port.native.prepareRelaunch();
+		port.reply('prepare-1');
+		const grant = await preparing;
+		grant.abort();
+		grant.abort();
+		expect(port.writes.slice(1)).toEqual([
+			{ type: 'relaunch-abort', requestId: 'prepare-1' },
+		]);
+		expect(() => grant.relaunch()).toThrow('already used');
+		port.close();
+		await port.native.completed;
+	});
+
+	test('a signal aborted before asking sends nothing', async () => {
+		const port = scripted();
+		const abort = new AbortController();
+		abort.abort();
+		await expect(port.native.prepareRelaunch(abort.signal)).rejects.toThrow(
+			'cancelled',
+		);
+		expect(port.writes).toEqual([]);
+		port.close();
+		await port.native.completed;
+	});
+
+	test('a second answer for a settled preparation fails the protocol', async () => {
+		const port = scripted();
+		const preparing = port.native.prepareRelaunch();
+		port.reply('prepare-1');
+		await preparing;
+		port.reply('prepare-1');
+		await expect(port.native.completed).rejects.toThrow(
+			'unknown native request',
+		);
+	});
+
+	test('a pipe that closes while collecting rejects the preparation', async () => {
+		const port = scripted();
+		const preparing = port.native.prepareRelaunch();
+		port.close();
+		await expect(preparing).rejects.toThrow('closed');
+		await port.native.completed;
 	});
 });
 
 describe('shutdown', () => {
+	test('a pending Bun force-stop promise does not prevent owner disposal', async () => {
+		const { events, host, parentClosed, parentPipe, report, signals } = setup();
+		const supervised = superviseSidecar({
+			server: {
+				stop() {
+					events.push('server.stop:true');
+					return new Promise<void>(() => {});
+				},
+			},
+			host,
+			parentPipe,
+			report,
+			signals,
+		});
+		parentClosed.resolve();
+		await supervised;
+		expect(events).toEqual(['server.stop:true', 'host.dispose', 'pipe.cancel']);
+	});
+
 	test('SIGTERM stops the server, disposes the host, and releases stdin in order', async () => {
 		const {
 			events,
@@ -452,4 +761,150 @@ describe('shutdown', () => {
 			'Epicenter host: shutting down after the native protocol failing: invalid native frame.',
 		]);
 	});
+});
+
+test('one native reader settles SQL and auth and rejects calls after pipe closure', async () => {
+	let controller!: ReadableStreamDefaultController<string>;
+	const parentPipe: ParentPipe = {
+		bootLine: Promise.resolve(bootFrame()),
+		frames: new ReadableStream({
+			start(value) {
+				controller = value;
+			},
+		}),
+		closed: new Promise(() => undefined),
+		async cancel() {},
+	};
+	const writes: string[] = [];
+	let next = 0;
+	const native = createNativePort(
+		{ parentPipe },
+		{
+			writeLine: (line) => writes.push(line),
+			createRequestId: () => String(++next),
+		},
+	);
+	const query = native.sqlite({
+		kind: 'all',
+		connection: 'generation:1',
+		statement: { sql: 'SELECT 1', parameters: [] },
+	});
+	const auth = native.storeAuth(null);
+	controller.enqueue(
+		JSON.stringify({ type: 'native-result', requestId: '2', status: 'ok' }),
+	);
+	controller.enqueue(
+		JSON.stringify({
+			type: 'sqlite-result',
+			requestId: '1',
+			status: 'ok',
+			data: [{ value: 1 }],
+		}),
+	);
+	expect(await query).toEqual([{ value: 1 }]);
+	await auth;
+	const pending = native.sqlite({ kind: 'close', connection: 'generation:1' });
+	controller.close();
+	await expect(pending).rejects.toThrow('closed');
+	await native.completed;
+	await expect(
+		native.sqlite({ kind: 'close', connection: 'generation:1' }),
+	).rejects.toThrow('closed');
+	await expect(native.storeAuth(null)).rejects.toThrow('closed');
+	expect(writes.length).toBe(3);
+});
+
+test('native cancellation sends a separate frame before the blocked query settles', async () => {
+	let controller!: ReadableStreamDefaultController<string>;
+	const parentPipe: ParentPipe = {
+		bootLine: Promise.resolve(bootFrame()),
+		frames: new ReadableStream({
+			start(value) {
+				controller = value;
+			},
+		}),
+		closed: new Promise(() => undefined),
+		async cancel() {},
+	};
+	const writes: string[] = [];
+	const native = createNativePort(
+		{ parentPipe },
+		{
+			writeLine: (line) => writes.push(line),
+			createRequestId: () => 'query-1',
+		},
+	);
+	const abort = new AbortController();
+	const query = native.sqlite(
+		{
+			kind: 'query',
+			connection: 'generation:1',
+			statement: { sql: 'SELECT 1', parameters: [] },
+			tables: ['messages'],
+		},
+		abort.signal,
+	);
+	abort.abort();
+	expect(JSON.parse(writes[1]!)).toEqual({
+		type: 'sqlite-cancel',
+		requestId: 'query-1',
+	});
+	controller.enqueue(
+		JSON.stringify({
+			type: 'sqlite-result',
+			requestId: 'query-1',
+			status: 'error',
+			message: 'interrupted',
+		}),
+	);
+	await expect(query).rejects.toThrow('interrupted');
+	controller.close();
+	await native.completed;
+});
+
+test('local frame limits reject only that request while pipe write failure completes the port', async () => {
+	let controller!: ReadableStreamDefaultController<string>;
+	const parentPipe: ParentPipe = {
+		bootLine: Promise.resolve(bootFrame()),
+		frames: new ReadableStream({
+			start(value) {
+				controller = value;
+			},
+		}),
+		closed: new Promise(() => undefined),
+		async cancel() {},
+	};
+	let shouldFail = false;
+	let next = 0;
+	const writes: string[] = [];
+	const native = createNativePort(
+		{ parentPipe },
+		{
+			createRequestId: () => String(++next),
+			writeLine(line) {
+				if (shouldFail) throw new Error('pipe broken');
+				writes.push(line);
+			},
+		},
+	);
+	const active = native.storeAuth('small');
+	await expect(native.storeAuth('x'.repeat(8 * 1024 * 1024))).rejects.toThrow(
+		'frame exceeds',
+	);
+	const emptyFrame = JSON.parse(writes[0]!);
+	emptyFrame.serialized = '';
+	emptyFrame.requestId = '3';
+	const exactPayload = 'x'.repeat(
+		8 * 1024 * 1024 - Buffer.byteLength(JSON.stringify(emptyFrame)),
+	);
+	await expect(native.storeAuth(exactPayload)).rejects.toThrow('frame exceeds');
+	controller.enqueue(
+		JSON.stringify({ type: 'native-result', requestId: '1', status: 'ok' }),
+	);
+	await active;
+	expect(writes.length).toBe(1);
+	shouldFail = true;
+	await expect(native.storeAuth('next')).rejects.toThrow('pipe broken');
+	await native.completed;
+	await expect(native.storeAuth('after')).rejects.toThrow('pipe broken');
 });

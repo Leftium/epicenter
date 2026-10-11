@@ -81,9 +81,9 @@ function createLocalModels() {
 	 * transcription on this device runs on it from the next call onward.
 	 */
 	async function activate(model: ModelInfo) {
-		const result = await commands.setActiveModel(model.id);
-		if (result.status === 'error') {
-			error = result.error.message;
+		const { error: commandError } = await commands.setActiveModel(model.id);
+		if (commandError !== null) {
+			error = commandError.message;
 			return;
 		}
 		error = null;
@@ -124,13 +124,17 @@ function createLocalModels() {
 				transfers.set(model.id, { ...transfer, progress });
 		};
 
-		const result = await commands.downloadModel(model.id, id, channel);
+		const { error: commandError } = await commands.downloadModel(
+			model.id,
+			id,
+			channel,
+		);
 		const wasCancelled = transfers.get(model.id)?.cancelling ?? false;
 		transfers.delete(model.id);
-		if (result.status === 'error') {
+		if (commandError !== null) {
 			// A requested cancel is the cause of this error: a clean stop, not a
 			// failure worth reporting.
-			if (!wasCancelled) error = result.error.message;
+			if (!wasCancelled) error = commandError.message;
 			await refresh();
 			return false;
 		}
@@ -187,9 +191,9 @@ function createLocalModels() {
 		activate,
 
 		async setUnloadPolicy(policy: UnloadPolicy) {
-			const result = await commands.setUnloadPolicy(policy);
-			if (result.status === 'error') {
-				error = result.error.message;
+			const { error: commandError } = await commands.setUnloadPolicy(policy);
+			if (commandError !== null) {
+				error = commandError.message;
 				return;
 			}
 			error = null;
@@ -232,9 +236,9 @@ function createLocalModels() {
 		 * picks again.
 		 */
 		async remove(model: ModelInfo) {
-			const result = await commands.deleteModel(model.id);
-			if (result.status === 'error') {
-				error = result.error.message;
+			const { error: commandError } = await commands.deleteModel(model.id);
+			if (commandError !== null) {
+				error = commandError.message;
 				// The host may have removed the file before failing to clear the
 				// choice, so re-read rather than assuming nothing changed.
 				await refresh();

@@ -1,19 +1,28 @@
 ---
 name: rethink
-description: Pursue the best possible version of a system, API, or abstraction, develop the vision through dialectic, and work backward to make it real. Use when the user asks for greenfield thinking, radical options, a clean break, first-principles design, or says the current abstraction feels wrong.
+description: >
+  Use when the user asks whether there is a better or simpler way,
+  wants to zoom out, questions why existing concepts or boundaries
+  exist, or asks for rethink, redesign, greenfield thinking, first
+  principles, radical alternatives, or a clean break. Also use when
+  repeated complexity suggests the current ownership, lifecycle,
+  representation, or API contract should be reconsidered. Skip routine
+  fixes and local changes within a settled design.
 ---
 
 # Rethink
 
-Pursue the best possible version of what this could be. Suspend inherited
-constraints long enough to discover the strongest shape: question the
-boundaries, assumptions, and promises that make the current system feel
-inevitable.
+Pursue the strongest vision of what this could become. Greenfield discovery is
+the default: start from the desired outcome and actual users and callers, then
+question the inherited boundaries, promises, and organizing idea. Discover what
+deserves to be built before narrowing to whether an emerging proposal works.
 
-Use [dialectic](../../skills/dialectic/SKILL.md) to articulate that vision
-together and give it concrete expression. Push it far enough that we can
-recognize what makes it worth pursuing. Then work backward from that destination,
-distinguishing constraints we must solve from assumptions we can discard.
+Use [dialectic](../dialectic/SKILL.md) to make that vision concrete enough to
+experience and challenge. Make the deletion prize and new complexity explicit:
+what machinery, obligations, or planned work disappears, and what guarantees
+replace it? A better design may introduce an abstraction that earns its place.
+Establish which constraints are real, then work backward from the strongest
+supported destination. Judge the whole bargain rather than the number of parts.
 
 ## Pursue the vision
 
@@ -28,6 +37,10 @@ it need not define the destination before we have seen it.
 that whole out of reach. Use these references as the question calls for them.
 Neither is a requirement to produce a fixed number of alternatives.
 
+When a promise of consistent file data drives coordination, use
+[repairability](references/repairability.md) to distinguish information
+protection from inconsistencies a human or agent could inspect and repair.
+
 Develop the vision through dialectic: articulate what the system could become,
 show how someone would use it, and let reactions to both deepen or revise the
 proposal. Concrete expression makes ambition inspectable. Follow a caller,
@@ -39,6 +52,11 @@ inherited choices from demonstrated constraints. Investigate uncertain limits;
 do not silently turn them into reasons to lower the ambition. Respect the user’s
 explicit requirements, and surface a conflict when pursuing the vision would
 require changing one.
+
+Use independent explorations when they could reveal a better destination,
+different boundary, or neglected caller need. A known blind spot is not required.
+[adversarial-review](../adversarial-review/SKILL.md) owns that search and its
+coordination. Bring discoveries back into the concrete vision through dialectic.
 
 ## Work backward from the destination
 

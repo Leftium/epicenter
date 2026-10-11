@@ -14,8 +14,8 @@ All workflows live flat in `.github/workflows/` (GitHub Actions requirement). We
 | `meta.{name}` | Repo housekeeping | Whole repo |
 
 Tauri desktop apps get **separate per-app workflows** when their native release
-matrix earns one. Whispering no longer owns a desktop workflow: its only native
-host is Epicenter, while its independent browser build stays in Cloudflare CI.
+matrix earns one. Whispering is a standalone Tauri app (`apps/whispering/src-tauri`)
+with no release workflow yet; `bun build:whispering` builds it locally.
 
 Web apps (Cloudflare Workers) deploy **together in one workflow** because deploys are fast (~2 min on a single runner) and share the same runtime setup. Each worker's build lives in its own `wrangler.jsonc` `build.command`, which Wrangler runs for both `deploy` and `versions upload`, so production, previews, and local `wrangler deploy` build through one definition. Repo-wide lint, typecheck, and unrelated package builds belong to CI.
 
@@ -69,8 +69,8 @@ currently runs.
 Some packages WERE published, before 2026-08. Those versions stay available under
 the license they shipped with, which the root [LICENSE](../../LICENSE) records.
 One of them, `@epicenter/field`, no longer exists as a package at all: its field
-palette lives in `packages/data/src/field` and is reached as
-`@epicenter/data/field` (ADR-0309).
+palette lives in `packages/app/src/data/field` and is reached as
+`@epicenter/app/field` (ADR-0309).
 
 ### Fixed version group
 
@@ -152,4 +152,4 @@ keep `changeset version` (it owns version math and changelogs) but replaced
 
 **Web apps**: Revert the commit on `main` and push, or for immediate rollback: `bunx wrangler rollback --name <worker-name>`.
 
-**Desktop releases**: Follow the owning Tauri app's release workflow. Whispering has no independent desktop release to roll back.
+**Desktop releases**: Follow the owning Tauri app's release workflow. Whispering has no desktop release workflow yet, so there is nothing to roll back.

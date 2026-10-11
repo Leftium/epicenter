@@ -1,50 +1,53 @@
 <script lang="ts">
+	import { confirmationDialog } from '@epicenter/ui/confirmation-dialog';
+	import * as Empty from '@epicenter/ui/empty';
 	import { Loading } from '@epicenter/ui/loading';
-	import { authClient } from '#platform/auth';
-	import { epicenter } from '$lib/epicenter.svelte.js';
-	import AccountGate from './components/AccountGate.svelte';
-	import StoreShell from './components/StoreShell.svelte';
+	import { toast } from '@epicenter/ui/sonner';
+	import TriangleAlertIcon from '@lucide/svelte/icons/triangle-alert';
+	import { openNotes } from '#platform/notes-host';
+	import { onDestroy } from 'svelte';
+	import { createNotes } from '$lib/notes.svelte.js';
+	import NotesView from './components/NotesView.svelte';
 
-	// The notes are here, at the one URL this application has. The generation
-	// used to be a route parameter, resolved by `/account` and opened by
-	// `/account/[generation]`; nobody chose that number, no link carried it, and
-	// the handle resolves it now (ADR-0339), so the parameter and both routes
-	// went with it.
-	//
-	// **This is where the notes are opened, and the call is explicit.** It is
-	// this route rather than the layout because the layout also wraps
-	// `/auth/callback`, which must claim no Web Lock, touch no IndexedDB, and
-	// make no round trip on its way through.
-	//
-	// Signed-out is read once, here, rather than tracked, and `authClient` is
-	// what makes that structural: the raw client has no Svelte subscriber on it,
-	// so this read cannot start tracking. A page lifetime is one
-	// auth generation (ADR-0088): the layout's `reloadOnAuthChange` replaces the
-	// document on every transition that invalidates this page, so a second,
-	// competing answer to auth underneath it would be dead for the transitions
-	// that reload and wrong for the one that deliberately does not. A deep link
-	// opened while signed out stays on its URL, and the post-sign-in reload
-	// lands where the link pointed.
-	const signedOut = authClient.state.status === 'signed-out';
+	// The mounted page acquires the folder; importing modules opens nothing.
+	// On the desktop, closing the window or quitting asks this page first.
+	const opening = openNotes({
+		async create(host) {
+			const notes = createNotes(host);
+			await notes.check();
+			return notes;
+		},
+		askToDiscard: (remaining) =>
+			new Promise<boolean>((resolve) => {
+				confirmationDialog.open({
+					title: `${remaining} ${remaining === 1 ? 'change is' : 'changes are'} not saved or not confirmed`,
+					description:
+						'Some text could not be saved to its file, or a change was sent and never confirmed. Quitting now discards unsaved text and stops keeping track of the unconfirmed changes. It does not cancel them: one may still happen afterwards. Keep editing to retry, compare, or copy.',
+					confirm: { text: 'Discard and quit', variant: 'destructive' },
+					cancel: { text: 'Keep editing' },
+					onConfirm: () => resolve(true),
+					onCancel: () => resolve(false),
+				});
+			}),
+		report: (cause) =>
+			toast.error('Could not finish closing', {
+				description: cause instanceof Error ? cause.message : String(cause),
+			}),
+	});
 
-	// Not awaited: what the open reports is `epicenter.state`, which is what
-	// every branch below renders from.
-	if (!signedOut) void epicenter.open();
+	onDestroy(() => {
+		void opening.then((notes) => notes.close()).catch(() => {});
+	});
 </script>
 
-{#if signedOut}
-	<AccountGate />
-{:else if epicenter.state.status === 'ready'}
-	<StoreShell data={epicenter.state.data} />
-{:else if epicenter.state.status === 'failed'}
-	<AccountGate
-		error={epicenter.state.error}
-		erase={epicenter.state.eraseReplica}
-		retry={() => void epicenter.open()}
-	/>
-{:else}
-	<!-- `closed` and `opening` are one screen. A signed-in person meets `closed`
-	     for the one tick between this module evaluating and the open above
-	     starting, and there is nothing for them to do in it. -->
+{#await opening}
 	<Loading class="h-dvh" label="Opening your notes…" />
-{/if}
+{:then notes}
+	<NotesView {notes} />
+{:catch error}
+	<Empty.Root class="h-dvh">
+		<Empty.Media><TriangleAlertIcon class="size-8 text-muted-foreground" /></Empty.Media>
+		<Empty.Title>Could not open the notes folder</Empty.Title>
+		<Empty.Description>{error instanceof Error ? error.message : String(error)}</Empty.Description>
+	</Empty.Root>
+{/await}

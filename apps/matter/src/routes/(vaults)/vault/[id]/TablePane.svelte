@@ -2,9 +2,11 @@
 	import * as Alert from '@epicenter/ui/alert';
 	import * as Empty from '@epicenter/ui/empty';
 	import { Loading } from '@epicenter/ui/loading';
+	import { Textarea } from '@epicenter/ui/textarea';
 	import FolderOpenIcon from '@lucide/svelte/icons/folder-open';
 	import type { ViewSpec } from '@epicenter/matter-core';
 	import BoardView from '$lib/components/BoardView.svelte';
+	import BodyStatus from '$lib/components/BodyStatus.svelte';
 	import TableGrid from '$lib/components/TableGrid.svelte';
 	import type { TableHandle } from '$lib/table.svelte';
 	import { createTableQuery } from '$lib/table-query.svelte';
@@ -51,6 +53,27 @@
 				</Alert.Description>
 			</Alert.Root>
 		{/if}
+		<!-- Retained text needing attention, even when its file is gone or unreadable
+		     and no row dialog can open. -->
+		{#each table.unsavedBodies as editor (editor.fileName)}
+			<section
+				aria-label="Retained body of {editor.fileName}"
+				class="grid gap-2 border-b px-3 py-2"
+			>
+				<BodyStatus {editor} />
+				<details>
+					<summary class="cursor-pointer text-xs text-muted-foreground">
+						Show the retained text
+					</summary>
+					<Textarea
+						readonly
+						value={editor.body}
+						aria-label="Retained body of {editor.fileName}"
+						class="mt-2 max-h-60 font-mono text-xs"
+					/>
+				</details>
+			</section>
+		{/each}
 		{#if projection}
 			<BoardView {table} {projection} {query} />
 		{:else}

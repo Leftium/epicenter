@@ -9,13 +9,13 @@
  * Key behaviors:
  * - The launch token is accepted only by the bootstrap route
  * - Home APIs and WebSockets require an HttpOnly browser session
- * - Home and Whispering serve their builds; Mail and Books stay placeholders
+ * - Home and each compiled application serve their builds; Books stays a placeholder
  * - Unknown, non-canonical, and traversal-shaped app paths stay closed
  * - Host, Origin, CSP, frame, and referrer policies are enforced
  * - Malformed WebSocket frames drop silently without killing the socket
  * - The real vite build emits one document with no external asset references
  * - The spawned `main.ts` sidecar announces versioned readiness, serves the
- *   built SPA, and drives a tool-calling turn against an OpenAI-compatible endpoint
+ *   built SPA, and drives a streamed turn against an OpenAI-compatible endpoint
  *
  * See also:
  * - `host.test.ts` for tool catalog composition and turn execution
@@ -23,7 +23,7 @@
  *   the fake inference endpoint below reuses
  */
 
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, spyOn, test } from 'bun:test';
 import {
 	mkdirSync,
 	mkdtempSync,
@@ -35,31 +35,28 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { AgentEngine, EngineChunk } from '@epicenter/agent';
-import { APP_STORAGE_PATH } from '@epicenter/app/protocol';
-import {
-	type BlobRemote,
-	BlobRemoteError,
-	generateBlobId,
-} from '@epicenter/blobs';
-import { createBunBlobStore } from '@epicenter/blobs/bun';
-import { desktopBlobUrl } from '@epicenter/blobs/webview';
-import { CHECKOUT_PATH } from '@epicenter/data/artifact/checkout';
+import { epicenterCloud } from '@epicenter/auth';
+import { generateBlobId } from '@epicenter/blobs';
+import { type BunBlobStore, createBunBlobStore } from '@epicenter/blobs/bun';
+import { createDesktopSqliteOwner } from '@epicenter/device/desktop';
+import { DEVICE_PATH } from '@epicenter/device/protocol';
 import { LOCAL_MAIL_APP_ID } from '@epicenter/local-mail/storage';
-import { Ok } from 'wellcrafted/result';
+import { expectOk } from 'wellcrafted/testing';
 import {
 	type AppSecretOwner,
 	createProcessMemoryAppSecrets,
 } from './app-secrets.ts';
-import type { BunAppStorage } from './app-storage.ts';
 import { COMPILED_APPLICATIONS } from './applications.ts';
+import { createDesktopAuthAuthority } from './desktop-auth-authority.js';
 import { createHomeHost, type HomeHost, type HomeHostInputs } from './host.ts';
 import { PLACEHOLDER_PAGES } from './placeholder-pages.ts';
 import {
-	ACCOUNT_PROFILE_ROUTE,
 	ACCOUNT_SIGN_OUT_ROUTE,
+	APPLICATIONS_ROUTE,
 	BOOKS_ROUTE,
 	BOOTSTRAP_ROUTE,
 	BUILT_IN_ROUTES,
+	CAPTURE_ROUTE,
 	HOME_ROUTE,
 	HONEYCRISP_ROUTE,
 	MAIL_CALLBACK_ROUTE,
@@ -67,20 +64,199 @@ import {
 	MAIL_ROUTE,
 	SESSION_ROUTE,
 	SESSION_STREAM_ROUTE,
+	TODOS_ROUTE,
 	WHISPERING_ROUTE,
 } from './routes.ts';
 import {
 	createHomeServer,
 	type HomeServerEvent,
+	type HomeServerOptions,
 	type HomeSessionResponse,
 } from './server.ts';
-import type { ReadyFrame } from './sidecar-runtime.ts';
+import {
+	type ReadyFrame,
+	SIDECAR_PROTOCOL_VERSION,
+} from './sidecar-runtime.ts';
 import {
 	type EpicenterStaticAssets,
 	loadStaticAssets,
 } from './static-assets.ts';
 import { writeAppsDist } from './test-apps-dist.ts';
 import { createTestDesktopAuth } from './test-home-host.ts';
+import { type BunDevice, createBunDevice } from './test-sqlite.ts';
+
+test('development browser callback completes the pending sign-in without a Home cookie', async () => {
+	await using host = await createHomeHost({
+		model: 'test',
+		engine: async function* () {},
+	});
+	const origin = 'http://127.0.0.1:49152';
+	const callbackUrl = `${origin}/_epicenter/sign-in/callback`;
+	const opened = Promise.withResolvers<string>();
+	let relaunches = 0;
+	using desktopAuth = createDesktopAuthAuthority({
+		accountManagement: true,
+		server: epicenterCloud('https://api.epicenter.so'),
+		authCell: null,
+		callbackUrl,
+		nativeAuthPort: {
+			async storeAuth() {},
+			async openAuthUrl(url) {
+				opened.resolve(url);
+			},
+			async prepareRelaunch() {
+				return {
+					relaunch() {
+						relaunches++;
+					},
+					abort() {},
+				};
+			},
+			onAuthCallback() {
+				return () => false;
+			},
+			completed: new Promise(() => {}),
+		},
+		async fetch(input) {
+			return new URL(String(input)).pathname === '/api/session'
+				? Response.json({ principalId: 'alice' })
+				: Response.json({ token: 'alice' });
+		},
+	});
+	const options = {
+		host,
+		origin,
+		launchToken: 'launch',
+		staticAssets: await createAppsDistFixture(PAGE),
+		blobs: createTestBlobs(),
+
+		desktopAuth,
+	};
+	const { app } = createHomeServer(options);
+	const pending = desktopAuth.startSignIn();
+	const launch = new URL(await opened.promise);
+	const request = (url: string) =>
+		app.request(url, { headers: { host: new URL(origin).host } });
+	expect((await request(`${callbackUrl}?code=code&state=wrong`)).status).toBe(
+		400,
+	);
+	const params = new URLSearchParams({
+		code: 'code',
+		state: launch.searchParams.get('state')!,
+	});
+	const response = await request(`${callbackUrl}?${params}`);
+	expect(response.status).toBe(200);
+	expect(response.headers.get('set-cookie')).toBeNull();
+	expect(response.headers.get('cache-control')).toBe('no-store');
+	expectOk(await pending);
+	expect(relaunches).toBe(1);
+	expect((await request(`${callbackUrl}?${params}`)).status).toBe(400);
+	using productionAuth = createTestDesktopAuth();
+	const production = createHomeServer({
+		...options,
+		desktopAuth: productionAuth,
+	});
+	expect(
+		(
+			await production.app.request(callbackUrl, {
+				headers: { host: new URL(origin).host },
+			})
+		).status,
+	).toBe(404);
+});
+
+test.each([
+	'restart',
+	'storage',
+	'boot-verification',
+] as const)('failed %s serves restart-required documents without stale boot identity', async (failure) => {
+	await using host = await createHomeHost({
+		model: 'test',
+		engine: async function* () {},
+	});
+	using desktopAuth = createDesktopAuthAuthority({
+		server: epicenterCloud('https://api.epicenter.so'),
+		accountManagement: true,
+		authCell: JSON.stringify({
+			origin: 'https://api.epicenter.so',
+			auth: { token: 'alice-token', principalId: 'alice' },
+		}),
+		nativeAuthPort: {
+			completed: new Promise(() => {}),
+			async storeAuth() {
+				if (failure === 'storage')
+					throw new Error('keychain write acknowledgement failed');
+			},
+			async openAuthUrl() {},
+			onAuthCallback() {
+				return () => false;
+			},
+			async prepareRelaunch() {
+				return {
+					relaunch() {
+						throw new Error('native restart failed');
+					},
+					abort() {},
+				};
+			},
+		},
+		fetch: async () =>
+			failure === 'boot-verification'
+				? Response.json({ principalId: 'other' })
+				: new Response(null),
+	});
+	const origin = 'http://127.0.0.1:49152';
+	const { app } = createHomeServer({
+		host,
+		origin,
+		launchToken: 'launch',
+		staticAssets: await createAppsDistFixture(PAGE),
+		blobs: createTestBlobs(),
+		desktopAuth,
+	});
+	const bootstrap = await app.request(origin + '/_epicenter/bootstrap', {
+		method: 'POST',
+		headers: {
+			host: new URL(origin).host,
+			origin,
+			authorization: 'Bearer launch',
+		},
+	});
+	const cookie = bootstrap.headers.get('set-cookie')!.split(';')[0]!;
+	if (failure === 'boot-verification') {
+		await expect(
+			desktopAuth.account!.fetch('/api/example'),
+		).rejects.toBeDefined();
+		expect(desktopAuth.restartRequired).toBe(true);
+	} else {
+		const signout = await app.request(ACCOUNT_SIGN_OUT_ROUTE.url(origin), {
+			method: 'POST',
+			headers: { host: new URL(origin).host, origin, cookie },
+		});
+		expect(signout.status).toBe(500);
+		expect(signout.headers.get('x-epicenter-auth-state')).toBe('signed-out');
+	}
+
+	for (const route of [
+		HOME_ROUTE.url(origin),
+		WHISPERING_ROUTE.url(origin),
+		MAIL_ROUTE.url(origin),
+	]) {
+		for (const credential of [cookie, '']) {
+			const response = await app.request(route, {
+				headers: { host: new URL(origin).host, cookie: credential },
+			});
+			const html = await response.text();
+			expect(html).toContain('Restart Epicenter to continue');
+			expect(html).not.toContain('epicenter-auth-bootstrap');
+			expect(html).not.toContain('<script');
+			expect(response.headers.get('cache-control')).toBe('no-store');
+		}
+	}
+	await expect(
+		desktopAuth.account!.fetch('/api/example'),
+	).rejects.toBeDefined();
+});
 
 const TOKEN = 'per-launch-secret';
 
@@ -140,8 +316,26 @@ function testDataDir(): string {
 	return mkdtempSync(join(tmpdir(), 'query-server-test-'));
 }
 
-function createTestBlobs() {
-	return createBunBlobStore({ directory: join(testDataDir(), 'blobs') });
+function createTestBlobs(): HomeServerOptions['blobs'] {
+	const directory = testDataDir();
+	const stores = new Map<string, BunBlobStore>();
+	return (appId, owner) => {
+		const key = JSON.stringify([appId, owner]);
+		let store = stores.get(key);
+		if (store === undefined) {
+			store = createBunBlobStore({
+				directory: join(directory, String(stores.size)),
+			});
+			stores.set(key, store);
+		}
+		return store;
+	};
+}
+
+const TEST_APP_ID = 'so.epicenter.whispering';
+
+function testBlobUrl(id: string, appId = TEST_APP_ID) {
+	return `/api/apps/${appId}/blobs/${id}`;
 }
 
 function boundPort(server: { port?: number }): number {
@@ -165,10 +359,10 @@ function createTestHost(
 async function serveHost(
 	host: HomeHost,
 	page: string = PAGE,
-	blobRemote: BlobRemote | null = null,
 	owners: {
-		appStorage?: BunAppStorage;
+		device?: BunDevice;
 		appSecrets?: AppSecretOwner;
+		blobs?: HomeServerOptions['blobs'];
 	} = {},
 ) {
 	const portProbe = Bun.serve({
@@ -184,9 +378,8 @@ async function serveHost(
 		origin,
 		launchToken: TOKEN,
 		staticAssets: await createAppsDistFixture(page),
-		blobs: createTestBlobs(),
+		blobs: owners.blobs ?? createTestBlobs(),
 		desktopAuth: createTestDesktopAuth(),
-		blobRemote,
 		...owners,
 	});
 	const server = Bun.serve({
@@ -331,9 +524,9 @@ describe('loadStaticAssets', () => {
 				applicationPage: ({ title }) => applicationPage(title),
 			});
 			rmSync(join(root, absent.id), { recursive: true });
-			expect(loadStaticAssets(root, COMPILED_APPLICATIONS)).rejects.toThrow(
-				new RegExp(`${absent.title} asset root is missing`),
-			);
+			await expect(
+				loadStaticAssets(root, COMPILED_APPLICATIONS),
+			).rejects.toThrow(new RegExp(`${absent.title} asset root is missing`));
 		}
 
 		const missingHome = writeAppsDist({
@@ -341,7 +534,7 @@ describe('loadStaticAssets', () => {
 			applicationPage: ({ title }) => applicationPage(title),
 		});
 		rmSync(join(missingHome, 'home'), { recursive: true });
-		expect(
+		await expect(
 			loadStaticAssets(missingHome, COMPILED_APPLICATIONS),
 		).rejects.toThrow(/Home index is missing/);
 	});
@@ -416,7 +609,6 @@ describe('createHomeServer', () => {
 				staticAssets,
 				blobs: createTestBlobs(),
 				desktopAuth,
-				blobRemote: null,
 			}),
 		).toThrow(/launch token/);
 		for (const origin of [
@@ -433,7 +625,6 @@ describe('createHomeServer', () => {
 					staticAssets,
 					blobs: createTestBlobs(),
 					desktopAuth,
-					blobRemote: null,
 				}),
 			).toThrow(/exact http:\/\/127\.0\.0\.1/);
 		}
@@ -517,6 +708,51 @@ describe('createHomeServer', () => {
 		}
 	});
 
+	test('nested application APIs reject unauthorized requests before invoking a handler', async () => {
+		await using host = await createTestHost({ engine: scriptedEngine([[]]) });
+		const origin = 'http://127.0.0.1:43127';
+		const { app } = createHomeServer({
+			host,
+			origin,
+			launchToken: TOKEN,
+			staticAssets: await createAppsDistFixture(),
+			blobs: createTestBlobs(),
+			desktopAuth: createTestDesktopAuth(),
+		});
+		let calls = 0;
+		const path = '/api/apps/so.epicenter.test/auth-regression';
+		app.post(path, (c) => {
+			calls += 1;
+			return c.body(null, 204);
+		});
+		const headers = { host: '127.0.0.1:43127', origin };
+		const unauthorized = await app.request(`${origin}${path}`, {
+			method: 'POST',
+			headers,
+		});
+		expect(unauthorized.status).toBe(401);
+		expect(calls).toBe(0);
+		const bootstrap = await app.request(BOOTSTRAP_ROUTE.url(origin), {
+			method: 'POST',
+			headers: { ...headers, authorization: `Bearer ${TOKEN}` },
+		});
+		expect(bootstrap.status).toBe(204);
+		const cookie = bootstrap.headers.get('set-cookie')?.split(';', 1)[0];
+		if (cookie === undefined) throw new Error('test bootstrap set no cookie');
+		const forbidden = await app.request(`${origin}${path}`, {
+			method: 'POST',
+			headers: { ...headers, cookie, origin: 'https://untrusted.example' },
+		});
+		expect(forbidden.status).toBe(403);
+		expect(calls).toBe(0);
+		const authorized = await app.request(`${origin}${path}`, {
+			method: 'POST',
+			headers: { ...headers, cookie },
+		});
+		expect(authorized.status).toBe(204);
+		expect(calls).toBe(1);
+	});
+
 	test('serves Home and every compiled application plus honest placeholders', async () => {
 		await using host = await createTestHost({
 			engine: scriptedEngine([[]]),
@@ -532,7 +768,9 @@ describe('createHomeServer', () => {
 				{ id: 'home', pattern: '/apps/home/' },
 				{ id: 'whispering', pattern: '/apps/whispering/' },
 				{ id: 'honeycrisp', pattern: '/apps/honeycrisp/' },
+				{ id: 'capture', pattern: '/apps/capture/' },
 				{ id: 'mail', pattern: '/apps/mail/' },
+				{ id: 'todos', pattern: '/apps/todos/' },
 				{ id: 'books', pattern: '/apps/books/' },
 			]);
 
@@ -569,22 +807,27 @@ describe('createHomeServer', () => {
 			expect(withoutAuthBootstrap(await clientRoute.text())).toBe(
 				WHISPERING_PAGE,
 			);
-			// The second compiled application takes the same path with no
-			// per-application wiring: its own document, stamped and gated.
+			// Honeycrisp now ships its own desktop shell. The old host route
+			// remains reserved but has no compiled asset tree to serve.
 			const honeycrisp = await fetch(HONEYCRISP_ROUTE.url(server.url.origin), {
 				headers: authenticatedHeaders(server),
 			});
-			const honeycrispPage = await honeycrisp.text();
-			expect(honeycrispPage).toContain('id="epicenter-auth-bootstrap"');
-			expect(withoutAuthBootstrap(honeycrispPage)).toBe(
-				applicationPage('Honeycrisp'),
+			expect(honeycrisp.status).toBe(404);
+
+			const capture = await fetch(CAPTURE_ROUTE.url(server.url.origin), {
+				headers: authenticatedHeaders(server),
+			});
+			const capturePage = await capture.text();
+			expect(capturePage).toContain('id="epicenter-auth-bootstrap"');
+			expect(withoutAuthBootstrap(capturePage)).toBe(
+				applicationPage('Capture'),
 			);
-			const honeycrispRoute = await fetch(
-				`${server.url.origin}/apps/honeycrisp/notes/some-note`,
+			const captureRoute = await fetch(
+				`${server.url.origin}/apps/capture/?capture=example`,
 				{ headers: authenticatedHeaders(server) },
 			);
-			expect(withoutAuthBootstrap(await honeycrispRoute.text())).toBe(
-				applicationPage('Honeycrisp'),
+			expect(withoutAuthBootstrap(await captureRoute.text())).toBe(
+				applicationPage('Capture'),
 			);
 
 			// Mail is a compiled application now, so its route owes the stamped
@@ -595,6 +838,13 @@ describe('createHomeServer', () => {
 			const mailPage = await mail.text();
 			expect(mailPage).toContain('id="epicenter-auth-bootstrap"');
 			expect(withoutAuthBootstrap(mailPage)).toBe(applicationPage('Mail'));
+
+			const todos = await fetch(TODOS_ROUTE.url(server.url.origin), {
+				headers: authenticatedHeaders(server),
+			});
+			expect(withoutAuthBootstrap(await todos.text())).toBe(
+				applicationPage('Todos'),
+			);
 
 			// The page itself, not a phrase inside it: what this route owes is the
 			// release-bundled placeholder rather than an app or a 404, and pinning
@@ -611,9 +861,10 @@ describe('createHomeServer', () => {
 				whisperingAsset,
 				vadAsset,
 				clientRoute,
-				honeycrisp,
-				honeycrispRoute,
+				capture,
+				captureRoute,
 				mail,
+				todos,
 				books,
 			]) {
 				expect(response.status).toBe(200);
@@ -812,9 +1063,21 @@ describe('createHomeServer', () => {
 			expect(missingOrigin.status).toBe(403);
 
 			const profileWithoutSession = await fetch(
-				ACCOUNT_PROFILE_ROUTE.url(origin),
+				`${origin}/_epicenter/account/http?path=%2Fapi%2Fsession`,
 			);
 			expect(profileWithoutSession.status).toBe(401);
+			const obsoleteProfile = await fetch(
+				`${origin}/_epicenter/account/profile`,
+				{ headers: { cookie, origin } },
+			);
+			expect(obsoleteProfile.status).toBe(404);
+
+			const selected = await fetch(`${origin}/_epicenter/account/connect`, {
+				method: 'POST',
+				headers: { cookie, origin, 'content-type': 'application/json' },
+				body: JSON.stringify({ server: 'https://self.example' }),
+			});
+			expect(selected.status).toBe(404);
 
 			const signedOut = await fetch(ACCOUNT_SIGN_OUT_ROUTE.url(origin), {
 				method: 'POST',
@@ -1165,18 +1428,88 @@ describe("Local Mail's desktop authorization callback", () => {
 });
 
 describe('local blob routes', () => {
+	test('the same blob ID reads different bytes for each device owner', async () => {
+		await using host = await createTestHost({ engine: scriptedEngine([[]]) });
+		const blobs = createTestBlobs();
+		const id = generateBlobId('txt');
+		const owners = ['no-account', 'accounts/61/61', 'accounts/61/62'];
+		for (const owner of owners) {
+			expectOk(await blobs(TEST_APP_ID, owner).put(id, new Blob([owner])));
+		}
+		const server = await serveHost(host, PAGE, { blobs });
+		try {
+			for (const owner of owners) {
+				const response = await fetch(
+					`${server.url.origin}${testBlobUrl(id)}?owner=${encodeURIComponent(owner)}`,
+					{ headers: authenticatedHeaders(server) },
+				);
+				expect(response.status).toBe(200);
+				expect(await response.text()).toBe(owner);
+			}
+		} finally {
+			await server.stop(true);
+		}
+	});
+
+	test('GET, range, cancellation and 416 release borrowed files while HEAD opens none', async () => {
+		await using host = await createTestHost({ engine: scriptedEngine([[]]) });
+		const directory = testDataDir();
+		const store = createBunBlobStore({ directory });
+		const id = generateBlobId('bin');
+		expectOk(await store.put(id, new Blob([new Uint8Array(8 * 1024 * 1024)])));
+		let acquired = 0;
+		let closed = 0;
+		const openFile = store.openFile;
+		spyOn(store, 'openFile').mockImplementation(async (key) => {
+			const result = await openFile(key);
+			if (!result.error) {
+				acquired++;
+				const close = result.data.close;
+				result.data.close = async () => {
+					closed++;
+					await close();
+				};
+			}
+			return result;
+		});
+		const server = await serveHost(host, PAGE, { blobs: () => store });
+		const { cookie, origin } = authenticationFor(server);
+		const url = `${origin}${testBlobUrl(id)}`;
+		try {
+			expect(
+				(await fetch(url, { method: 'HEAD', headers: { cookie } })).status,
+			).toBe(200);
+			expect(acquired).toBe(0);
+			for (const range of [undefined, 'bytes=0-7', 'bytes=99999999-']) {
+				const response = await fetch(url, {
+					headers: { cookie, ...(range ? { range } : {}) },
+				});
+				await response.arrayBuffer();
+				expect(closed).toBe(acquired);
+			}
+			const cancelled = await fetch(url, { headers: { cookie } });
+			await cancelled.body!.cancel();
+			const deadline = Date.now() + 2000;
+			while (closed !== acquired && Date.now() < deadline) await Bun.sleep(5);
+			expect(acquired).toBe(4);
+			expect(closed).toBe(4);
+		} finally {
+			await server.stop(true);
+			rmSync(directory, { recursive: true, force: true });
+		}
+	});
+
 	test('session authentication protects every local blob operation', async () => {
 		await using host = await createTestHost({
 			engine: scriptedEngine([[]]),
 		});
 		const server = await serveHost(host);
-		const id = generateBlobId();
+		const id = generateBlobId('bin');
 		try {
 			for (const method of ['GET', 'HEAD', 'PUT', 'DELETE']) {
-				const response = await fetch(
-					`${server.url.origin}${desktopBlobUrl(id)}`,
-					{ method },
-				);
+				const response = await fetch(`${server.url.origin}${testBlobUrl(id)}`, {
+					method,
+				});
 				expect(response.status).toBe(401);
 			}
 		} finally {
@@ -1184,95 +1517,54 @@ describe('local blob routes', () => {
 		}
 	});
 
-	test('remote copy routes take only the blob id and map typed results', async () => {
-		await using host = await createTestHost({
-			engine: scriptedEngine([[]]),
-		});
-		const calls: { operation: string; id: string }[] = [];
-		const stubRemote: BlobRemote = {
-			async upload(id) {
-				calls.push({ operation: 'upload', id });
-				return Ok(undefined);
-			},
-			async download(id) {
-				calls.push({ operation: 'download', id });
-				return BlobRemoteError.RemoteBlobNotFound({ id });
-			},
-			async purge(id) {
-				calls.push({ operation: 'purge', id });
-				return BlobRemoteError.BlobRemoteFailed({
-					id,
-					cause: new Error('remote unreachable'),
-				});
-			},
-		};
-		const server = await serveHost(host, PAGE, stubRemote);
-		const id = generateBlobId();
-		const { cookie, origin } = authenticationFor(server);
-		const session = { headers: { cookie, origin } };
-		try {
-			const unauthenticated = await fetch(
-				`${server.url.origin}${desktopBlobUrl(id)}/upload`,
-				{ method: 'POST' },
-			);
-			expect(unauthenticated.status).toBe(401);
-			expect(calls).toHaveLength(0);
-
-			const invalidId = await fetch(
-				`${server.url.origin}/api/local-blobs/not-a-blob-id/upload`,
-				{ method: 'POST', ...session },
-			);
-			expect(invalidId.status).toBe(400);
-
-			// A caller-supplied body is dead weight, never a transfer target: the
-			// stub still receives only the path id.
-			const uploaded = await fetch(
-				`${server.url.origin}${desktopBlobUrl(id)}/upload`,
-				{
-					method: 'POST',
-					headers: { ...session.headers, 'content-type': 'application/json' },
-					body: JSON.stringify({ uploadUrl: 'https://evil.example/steal' }),
-				},
-			);
-			expect(uploaded.status).toBe(204);
-
-			const downloaded = await fetch(
-				`${server.url.origin}${desktopBlobUrl(id)}/download`,
-				{ method: 'POST', ...session },
-			);
-			expect(downloaded.status).toBe(404);
-
-			const purged = await fetch(
-				`${server.url.origin}${desktopBlobUrl(id)}/purge`,
-				{ method: 'POST', ...session },
-			);
-			expect(purged.status).toBe(502);
-
-			expect(calls).toEqual([
-				{ operation: 'upload', id },
-				{ operation: 'download', id },
-				{ operation: 'purge', id },
-			]);
-		} finally {
-			await server.stop(true);
-		}
-	});
-
-	test('a signed-out generation answers 503 for every remote copy operation', async () => {
-		await using host = await createTestHost({
-			engine: scriptedEngine([[]]),
-		});
+	test('committed local files list in pages and remain isolated by app', async () => {
+		await using host = await createTestHost({ engine: scriptedEngine([[]]) });
 		const server = await serveHost(host);
-		const id = generateBlobId();
 		const { cookie, origin } = authenticationFor(server);
+		const ids = [generateBlobId('wav'), generateBlobId('wav')].sort();
 		try {
-			for (const operation of ['upload', 'download', 'purge']) {
-				const response = await fetch(
-					`${server.url.origin}${desktopBlobUrl(id)}/${operation}`,
-					{ method: 'POST', headers: { cookie, origin } },
-				);
-				expect(response.status).toBe(503);
-			}
+			for (const id of ids)
+				expect(
+					(
+						await fetch(`${origin}${testBlobUrl(id)}`, {
+							method: 'PUT',
+							headers: { cookie, origin, 'content-type': 'audio/wav' },
+							body: 'audio',
+						})
+					).status,
+				).toBe(201);
+			const first = await fetch(
+				`${origin}/api/apps/${TEST_APP_ID}/blobs?limit=1`,
+				{ headers: { cookie } },
+			);
+			expect(first.status).toBe(200);
+			expect(await first.json()).toEqual({
+				items: [{ id: ids[0], size: 5, contentType: 'audio/wav' }],
+				nextCursor: ids[0],
+			});
+			const second = await fetch(
+				`${origin}/api/apps/${TEST_APP_ID}/blobs?limit=1&cursor=${ids[0]}`,
+				{ headers: { cookie } },
+			);
+			expect(await second.json()).toEqual({
+				items: [{ id: ids[1], size: 5, contentType: 'audio/wav' }],
+			});
+			expect(
+				(
+					await fetch(
+						`${origin}${testBlobUrl(ids[0]!, 'so.epicenter.other')}`,
+						{ headers: { cookie } },
+					)
+				).status,
+			).toBe(404);
+			for (const suffix of ['?limit=0', '?cursor=invalid', '?owner=alice'])
+				expect(
+					(
+						await fetch(`${origin}/api/apps/${TEST_APP_ID}/blobs${suffix}`, {
+							headers: { cookie },
+						})
+					).status,
+				).toBe(400);
 		} finally {
 			await server.stop(true);
 		}
@@ -1283,8 +1575,8 @@ describe('local blob routes', () => {
 			engine: scriptedEngine([[]]),
 		});
 		const server = await serveHost(host);
-		const id = generateBlobId();
-		const url = `${server.url.origin}${desktopBlobUrl(id)}`;
+		const id = generateBlobId('bin');
+		const url = `${server.url.origin}${testBlobUrl(id)}`;
 		const { cookie, origin } = authenticationFor(server);
 		try {
 			const put = await fetch(url, {
@@ -1304,7 +1596,7 @@ describe('local blob routes', () => {
 			});
 			expect(head.status).toBe(200);
 			expect(head.headers.get('content-length')).toBe('10');
-			expect(head.headers.get('content-type')).toBe('audio/test');
+			expect(head.headers.get('content-type')).toBe('application/octet-stream');
 			expect(await head.text()).toBe('');
 
 			const range = await fetch(url, {
@@ -1357,8 +1649,8 @@ describe('local blob routes', () => {
 				expect(refused.headers.get('content-range')).toBe('bytes */10');
 			}
 
-			const emptyId = generateBlobId();
-			const emptyUrl = `${server.url.origin}${desktopBlobUrl(emptyId)}`;
+			const emptyId = generateBlobId('txt');
+			const emptyUrl = `${server.url.origin}${testBlobUrl(emptyId)}`;
 			expect(
 				(
 					await fetch(emptyUrl, {
@@ -1400,8 +1692,8 @@ describe('local blob routes', () => {
 			engine: scriptedEngine([[]]),
 		});
 		const server = await serveHost(host);
-		const id = generateBlobId();
-		const url = `${server.url.origin}${desktopBlobUrl(id)}`;
+		const id = generateBlobId('bin');
+		const url = `${server.url.origin}${testBlobUrl(id)}`;
 		const { cookie, origin } = authenticationFor(server);
 		try {
 			expect(
@@ -1430,17 +1722,24 @@ describe('local blob routes', () => {
 		}
 	});
 
-	test('path-hostile and foreign ids are rejected before filesystem access', async () => {
+	test('malformed and former blob ids are rejected before filesystem access', async () => {
 		await using host = await createTestHost({
 			engine: scriptedEngine([[]]),
 		});
 		const server = await serveHost(host);
 		try {
-			const response = await fetch(
-				`${server.url.origin}/api/local-blobs/not-a-blob-id`,
-				{ headers: authenticatedHeaders(server) },
-			);
-			expect(response.status).toBe(400);
+			for (const id of [
+				'not-a-blob-id',
+				'blob_abcdefghijklmnopqrstu',
+				'take.wav',
+				'blob_abcdefghijklmnopqrstu.wav%00',
+			]) {
+				const response = await fetch(
+					`${server.url.origin}/api/apps/so.epicenter.whispering/blobs/${id}`,
+					{ headers: authenticatedHeaders(server) },
+				);
+				expect(response.status).toBe(400);
+			}
 		} finally {
 			await server.stop(true);
 		}
@@ -1562,13 +1861,13 @@ const FINAL_TEXT_TURN = [
  * Rejects with the buffered stdout (or the sidecar's stderr, if it exited)
  * so a failed launch names its cause instead of timing out silently.
  */
-async function readPortAnnouncement(
+async function readReadyFrame(
 	sidecar: {
 		stdout: ReadableStream<Uint8Array>;
 		stderr: ReadableStream<Uint8Array>;
 	},
 	timeoutMs: number,
-): Promise<number> {
+): Promise<ReadyFrame> {
 	const reader = sidecar.stdout.getReader();
 	const decoder = new TextDecoder();
 	let buffer = '';
@@ -1593,10 +1892,12 @@ async function readPortAnnouncement(
 					const ready = JSON.parse(line) as ReadyFrame;
 					expect(ready).toEqual({
 						type: 'ready',
-						protocolVersion: 2,
+						protocolVersion: SIDECAR_PROTOCOL_VERSION,
 						port: ready.port,
+						installedAppIds: ready.installedAppIds,
+						bootAccount: ready.bootAccount,
 					});
-					return ready.port;
+					return ready;
 				}
 			}
 			if (done) {
@@ -1625,13 +1926,52 @@ async function exitWithin(
 }
 
 describe('sidecar end-to-end smoke', () => {
-	test('the spawned entrypoint serves the built SPA and drives a turn', async () => {
+	test('the spawned entrypoint installs and serves an app, then drives a turn', async () => {
 		const page = await buildSpaOnce();
 		const appsDist = writeAppsDistFixture(page);
+		const dataDir = testDataDir();
+		const releaseRoot = testDataDir();
+		const installedAppId = 'so.epicenter.installed-e2e';
+		const installedPage = applicationPage('Installed release');
+		mkdirSync(releaseRoot, { recursive: true });
+		writeFileSync(
+			join(releaseRoot, 'manifest.json'),
+			JSON.stringify({
+				id: installedAppId,
+				title: 'Installed release',
+				version: '1.0.0',
+			}),
+		);
+		writeFileSync(join(releaseRoot, 'index.html'), installedPage);
+		const install = Bun.spawn(
+			[
+				'bun',
+				'run',
+				'scripts/install.ts',
+				'--',
+				releaseRoot,
+				'--data-dir',
+				dataDir,
+			],
+			{
+				cwd: queryDir,
+				stdout: 'pipe',
+				stderr: 'pipe',
+			},
+		);
+		expect(await install.exited).toBe(0);
+		expect(await new Response(install.stdout).text()).toContain(
+			`Installed Installed release (${installedAppId})`,
+		);
+		expect(
+			await Bun.file(
+				join(dataDir, 'apps', installedAppId, 'bundle', 'index.html'),
+			).text(),
+		).toBe(installedPage);
 
 		// The fake OpenAI-compatible backend. One request and one text answer:
 		// the spawned host has no tool catalog to call into, so what this proves
-		// end to end is the sidecar, the SPA, the session, and the socket.
+		// end to end is the installer, sidecar, installed SPA, session, and socket.
 		let inferenceRequests = 0;
 		const inference = Bun.serve({
 			hostname: '127.0.0.1',
@@ -1653,6 +1993,8 @@ describe('sidecar end-to-end smoke', () => {
 		});
 		const port = boundPort(portProbe);
 		await portProbe.stop(true);
+		const folderDir = testDataDir();
+		const ignoredDirectory = testDataDir();
 		const sidecar = Bun.spawn(
 			['bun', 'run', 'src/main.ts', '--runtime-mode=development'],
 			{
@@ -1660,12 +2002,12 @@ describe('sidecar end-to-end smoke', () => {
 				env: {
 					...process.env,
 					EPICENTER_APPS_DIST: appsDist,
+					EPICENTER_DATA_DIR: ignoredDirectory,
+					EPICENTER_FOLDER_DIR: ignoredDirectory,
 					// The engine POSTs `${baseURL}/chat/completions`, so the base
 					// carries the `/v1` prefix.
 					EPICENTER_INFERENCE_URL: `${inference.url.origin}/v1`,
 					EPICENTER_INFERENCE_MODEL: 'fake-model',
-					// Keep the host's replicas out of the real user data directory.
-					EPICENTER_DATA_DIR: testDataDir(),
 				},
 				stdin: 'pipe',
 				stdout: 'pipe',
@@ -1675,12 +2017,15 @@ describe('sidecar end-to-end smoke', () => {
 		try {
 			// The credential and Rust-resolved port travel in the boot frame.
 			sidecar.stdin.write(
-				`${JSON.stringify({ type: 'boot', protocolVersion: 2, token: TOKEN, port, authCell: null })}\n`,
+				`${JSON.stringify({ type: 'boot', protocolVersion: SIDECAR_PROTOCOL_VERSION, token: TOKEN, port, authCell: null, authServer: { baseURL: 'https://api.epicenter.so', authorityId: 'epicenter-api' }, accountManagement: true, dataDir, folderDir })}\n`,
 			);
 			await sidecar.stdin.flush();
-			const announcedPort = await readPortAnnouncement(sidecar, 30_000);
-			expect(announcedPort).toBe(port);
-			const origin = `http://127.0.0.1:${announcedPort}`;
+			const ready = await readReadyFrame(sidecar, 30_000);
+			expect(ready.port).toBe(port);
+			// The membership Rust admits windows and folders for is the list
+			// this generation discovered and serves below.
+			expect(ready.installedAppIds).toEqual([installedAppId]);
+			const origin = `http://127.0.0.1:${ready.port}`;
 
 			const shell = await fetch(HOME_ROUTE.url(origin));
 			expect(shell.status).toBe(200);
@@ -1696,6 +2041,46 @@ describe('sidecar end-to-end smoke', () => {
 			expect(bootstrap.status).toBe(204);
 			const cookie = bootstrap.headers.get('set-cookie')?.split(';', 1)[0];
 			expect(cookie).toBeDefined();
+			// Startup paths win even when the child environment names other roots.
+			const headers = { cookie: cookie ?? '', origin };
+			const applications = await fetch(APPLICATIONS_ROUTE.url(origin), {
+				headers,
+			});
+			expect(applications.status).toBe(200);
+			expect((await applications.json()).apps).toContainEqual({
+				id: installedAppId,
+				title: 'Installed release',
+			});
+			const installed = await fetch(`${origin}/apps/${installedAppId}/`, {
+				headers,
+			});
+			expect(installed.status).toBe(200);
+			expect(withoutAuthBootstrap(await installed.text())).toBe(installedPage);
+
+			const blobId = generateBlobId('txt');
+			const put = await fetch(`${origin}${testBlobUrl(blobId)}`, {
+				method: 'PUT',
+				headers,
+				body: 'native-selected bytes',
+			});
+			expect(put.status).toBe(201);
+			expect(
+				await Bun.file(
+					join(
+						dataDir,
+						'apps',
+						'so.epicenter.whispering',
+						'device',
+						'no-account',
+						'blobs',
+						blobId,
+					),
+				).text(),
+			).toBe('native-selected bytes');
+			expect(
+				await Bun.file(join(ignoredDirectory, 'blobs', blobId)).exists(),
+			).toBe(false);
+
 			const served = await fetch(HOME_ROUTE.url(origin), {
 				headers: { cookie: cookie ?? '' },
 			});
@@ -1762,7 +2147,6 @@ describe('sidecar end-to-end smoke', () => {
 					EPICENTER_APPS_DIST: appsDist,
 					EPICENTER_INFERENCE_URL: 'http://127.0.0.1:1/v1',
 					EPICENTER_INFERENCE_MODEL: 'unused-model',
-					EPICENTER_DATA_DIR: testDataDir(),
 				},
 				stdin: 'pipe',
 				stdout: 'pipe',
@@ -1771,7 +2155,7 @@ describe('sidecar end-to-end smoke', () => {
 		);
 		try {
 			sidecar.stdin.write(
-				`${JSON.stringify({ type: 'boot', protocolVersion: 2, token: TOKEN, port: occupiedPort, authCell: null })}\n`,
+				`${JSON.stringify({ type: 'boot', protocolVersion: SIDECAR_PROTOCOL_VERSION, token: TOKEN, port: occupiedPort, authCell: null, authServer: { baseURL: 'https://api.epicenter.so', authorityId: 'epicenter-api' }, accountManagement: true, dataDir: testDataDir(), folderDir: testDataDir() })}\n`,
 			);
 			await sidecar.stdin.flush();
 			expect(await exitWithin(sidecar, 30_000)).not.toBe(0);
@@ -1803,7 +2187,6 @@ describe('sidecar end-to-end smoke', () => {
 					EPICENTER_APPS_DIST: appsDist,
 					EPICENTER_INFERENCE_URL: 'http://127.0.0.1:1/v1',
 					EPICENTER_INFERENCE_MODEL: 'unused-model',
-					EPICENTER_DATA_DIR: testDataDir(),
 				},
 				stdin: 'pipe',
 				stdout: 'pipe',
@@ -1812,10 +2195,12 @@ describe('sidecar end-to-end smoke', () => {
 		);
 		try {
 			sidecar.stdin.write(
-				`${JSON.stringify({ type: 'boot', protocolVersion: 2, token: TOKEN, port, authCell: null })}\n`,
+				`${JSON.stringify({ type: 'boot', protocolVersion: SIDECAR_PROTOCOL_VERSION, token: TOKEN, port, authCell: null, authServer: { baseURL: 'https://api.epicenter.so', authorityId: 'epicenter-api' }, accountManagement: true, dataDir: testDataDir(), folderDir: testDataDir() })}\n`,
 			);
 			await sidecar.stdin.flush();
-			expect(await readPortAnnouncement(sidecar, 30_000)).toBe(port);
+			const ready = await readReadyFrame(sidecar, 30_000);
+			expect(ready.port).toBe(port);
+			expect(ready.installedAppIds).toEqual([]);
 			sidecar.stdin.end();
 			expect(await exitWithin(sidecar, 30_000)).toBe(0);
 
@@ -1832,208 +2217,271 @@ describe('sidecar end-to-end smoke', () => {
 	}, 60_000);
 });
 
-describe('checkout routes (ADR-0337)', () => {
-	/**
-	 * The seam neither side's tests reach. `packages/data`'s checkout test
-	 * injects a `fetch` and asserts what would have crossed the wire;
-	 * `checkout.test.ts` here calls the host's functions directly. Between them
-	 * sits the routing, and an earlier per-file version declared a bare `*` tail
-	 * that Hono routes but does not capture, so every write arrived with an
-	 * empty path and 400'd. Both suites stayed green and the folder was never
-	 * written once.
-	 *
-	 * A checkout carries its files in the body now, so there is no path in the
-	 * URL to capture wrong. These exist anyway, because "the folder is written"
-	 * and "the folder is read back" are the two facts only a request can
-	 * establish.
-	 */
-	const checkout = (files: object[]) =>
-		files.map((file) => `${JSON.stringify(file)}\n`).join('');
-
-	test('a checkout replaces the folder, and reads back as what was written', async () => {
-		const folderRoot = mkdtempSync(join(tmpdir(), 'checkout-route-test-'));
-		const previousRoot = process.env.EPICENTER_FOLDER_DIR;
-		process.env.EPICENTER_FOLDER_DIR = folderRoot;
+describe('retired store checkout routes', () => {
+	test('GET and PUT no longer expose a store working copy', async () => {
 		await using host = await createTestHost({ engine: scriptedEngine([[]]) });
-		const server = await serveHost(host);
-		const origin = server.url.origin;
-		const url = `${origin}${CHECKOUT_PATH}/so.epicenter.honeycrisp`;
-		const folder = join(folderRoot, 'so.epicenter.honeycrisp');
+		const server = await serveHost(host, PAGE);
 		try {
-			// Session-gated like every other domain API on this origin: these
-			// routes write, delete, and read real files under a person's home
-			// directory.
-			expect((await fetch(url, { method: 'PUT', body: '' })).status).toBe(401);
-			expect((await fetch(url)).status).toBe(401);
-
-			/** The folder as it stands, which every write has to name. */
-			const reading = async () => {
+			const url = `${server.url.origin}/api/checkout/so.epicenter.honeycrisp`;
+			for (const method of ['GET', 'PUT']) {
 				const response = await fetch(url, {
+					method,
 					headers: authenticatedHeaders(server),
 				});
-				const etag = response.headers.get('etag');
-				if (etag === null) throw new Error('the read stated no folder');
-				return { etag, body: await response.text() };
-			};
-
-			// A write with no reading behind it is one nobody approved, and the
-			// wire refuses it rather than trusting the library to have asked.
-			const unprepared = await fetch(url, {
-				method: 'PUT',
-				body: checkout([{ path: 'kv.json', contents: '{}' }]),
-				headers: authenticatedHeaders(server),
-			});
-			expect(unprepared.status).toBe(428);
-
-			const empty = await reading();
-			const wrote = await fetch(url, {
-				method: 'PUT',
-				headers: { ...authenticatedHeaders(server), 'if-match': empty.etag },
-				body: checkout([
-					{
-						path: 'notes/abc.md',
-						contents: '---\npinned: true\n---\n\n# A note\n',
-					},
-					{ path: 'notes/def.md', contents: '---\npinned: false\n---\n' },
-					{ path: 'kv.json', contents: '{}' },
-					{ path: '.epicenter/manifest.json', contents: '{"rows":{}}' },
-				]),
-			});
-			expect(wrote.status).toBe(204);
-			expect(await Bun.file(join(folder, 'notes/abc.md')).text()).toContain(
-				'# A note',
-			);
-
-			// The write it was prepared against is gone now, so sending it again
-			// is refused and the folder is untouched.
-			const replayed = await fetch(url, {
-				method: 'PUT',
-				headers: { ...authenticatedHeaders(server), 'if-match': empty.etag },
-				body: checkout([{ path: 'kv.json', contents: '{}' }]),
-			});
-			expect(replayed.status).toBe(412);
-			expect(await Bun.file(join(folder, 'notes/abc.md')).exists()).toBe(true);
-
-			// A second checkout that no longer names one row takes its file with
-			// it. A checkout is complete by definition, so absence is the answer
-			// rather than a manifest line saying so.
-			const swept = await fetch(url, {
-				method: 'PUT',
-				headers: {
-					...authenticatedHeaders(server),
-					'if-match': (await reading()).etag,
-				},
-				body: checkout([
-					{ path: 'notes/abc.md', contents: '---\npinned: true\n---\n' },
-					{ path: 'kv.json', contents: '{}' },
-					{ path: '.epicenter/manifest.json', contents: '{"rows":{}}' },
-				]),
-			});
-			expect(swept.status).toBe(204);
-			expect(await Bun.file(join(folder, 'notes/def.md')).exists()).toBe(false);
-			expect(await Bun.file(join(folder, 'notes/abc.md')).exists()).toBe(true);
-
-			// And the read hands back exactly what a checkout is responsible for,
-			// which is what `pull` compares against its manifest before it
-			// overwrites anything.
-			writeFileSync(join(folder, 'README.md'), 'mine');
-			const read = await fetch(url, { headers: authenticatedHeaders(server) });
-			expect(read.status).toBe(200);
-			const paths = (await read.text())
-				.split('\n')
-				.filter((line) => line.trim() !== '')
-				.map((line) => (JSON.parse(line) as { path: string }).path)
-				.sort();
-			expect(paths).toEqual([
-				'.epicenter/manifest.json',
-				'kv.json',
-				'notes/abc.md',
-			]);
-			// The person's own file is still there, and was never the host's to
-			// hand over or to sweep.
-			expect(await Bun.file(join(folder, 'README.md')).text()).toBe('mine');
-			// And the read states which folder it handed back, which is the only
-			// thing a write is allowed to name.
-			expect(read.headers.get('etag')).toMatch(/^"[0-9a-f]{64}"$/);
-		} finally {
-			await server.stop(true);
-			if (previousRoot === undefined) delete process.env.EPICENTER_FOLDER_DIR;
-			else process.env.EPICENTER_FOLDER_DIR = previousRoot;
-			rmSync(folderRoot, { recursive: true, force: true });
-		}
-	});
-
-	test('a data id the render never produces is refused', async () => {
-		const folderRoot = mkdtempSync(join(tmpdir(), 'checkout-route-test-'));
-		const previousRoot = process.env.EPICENTER_FOLDER_DIR;
-		process.env.EPICENTER_FOLDER_DIR = folderRoot;
-		await using host = await createTestHost({ engine: scriptedEngine([[]]) });
-		const server = await serveHost(host);
-		const origin = server.url.origin;
-		try {
-			const refused = [
-				`${CHECKOUT_PATH}/so.epicenter.honeycrisp/notes/abc.md`,
-				`${CHECKOUT_PATH}/..%2F..%2Fetc`,
-				`${CHECKOUT_PATH}/not_an_app_id`,
-			];
-			for (const path of refused) {
-				const response = await fetch(`${origin}${path}`, {
-					method: 'PUT',
-					body: checkout([{ path: 'notes/abc.md', contents: 'x' }]),
-					// A path the host cannot name is refused before it looks at
-					// anything else, so this never reaches the folder's identity.
-					headers: { ...authenticatedHeaders(server), 'if-match': '"x"' },
-				});
-				expect([400, 404]).toContain(response.status);
+				expect(response.status).toBe(404);
 			}
-			// A file inside the checkout that would climb out is refused by the
-			// host without costing the checkout its other files.
-			const checkoutUrl = `${origin}${CHECKOUT_PATH}/so.epicenter.honeycrisp`;
-			const fresh = await fetch(checkoutUrl, {
-				headers: authenticatedHeaders(server),
-			});
-			const mixed = await fetch(checkoutUrl, {
-				method: 'PUT',
-				body: checkout([
-					{ path: '../escape.md', contents: 'no' },
-					{ path: 'notes/ok.md', contents: 'yes' },
-				]),
-				headers: {
-					...authenticatedHeaders(server),
-					'if-match': fresh.headers.get('etag') as string,
-				},
-			});
-			expect(mixed.status).toBe(204);
-			expect(await Bun.file(join(folderRoot, 'escape.md')).exists()).toBe(
-				false,
-			);
-			expect(
-				await Bun.file(
-					join(folderRoot, 'so.epicenter.honeycrisp/notes/ok.md'),
-				).exists(),
-			).toBe(true);
 		} finally {
 			await server.stop(true);
-			if (previousRoot === undefined) delete process.env.EPICENTER_FOLDER_DIR;
-			else process.env.EPICENTER_FOLDER_DIR = previousRoot;
-			rmSync(folderRoot, { recursive: true, force: true });
 		}
 	});
 });
 
 describe('the application storage owner', () => {
+	test('desktop SQLite carries binary parameters and results through the actual server socket', async () => {
+		await using host = await createTestHost({ engine: scriptedEngine([[]]) });
+		const root = testDataDir();
+		const server = await serveHost(host, PAGE, {
+			device: createBunDevice(root),
+		});
+		const { cookie, origin } = authenticationFor(server);
+		class AuthenticatedSocket extends BunWebSocket {
+			constructor(url: string) {
+				super(url, { headers: { cookie, origin } });
+			}
+		}
+		const owner = createDesktopSqliteOwner({
+			baseURL: origin,
+			webSocket: AuthenticatedSocket as unknown as typeof WebSocket,
+		});
+		try {
+			const lifetime = await owner.acquire(LOCAL_MAIL_APP_ID);
+			try {
+				const database = await lifetime.open('binary');
+				expectOk(
+					await database.run('CREATE TABLE values_test(bytes BLOB, text TEXT)'),
+				);
+				expectOk(
+					await database.run('INSERT INTO values_test VALUES (?, ?)', [
+						new Uint8Array([0, 1, 255]),
+						'a\0b',
+					]),
+				);
+				expect(
+					expectOk(await database.all('SELECT bytes, text FROM values_test')),
+				).toEqual([{ bytes: new Uint8Array([0, 1, 255]), text: 'a\0b' }]);
+				expect(
+					(await database.run('SELECT ?', [Infinity])).error,
+				).not.toBeNull();
+				expect(
+					expectOk(
+						await database.all('SELECT count(*) AS count FROM values_test'),
+					),
+				).toEqual([{ count: 1 }]);
+			} finally {
+				await lifetime.close();
+			}
+		} finally {
+			await server.stop(true);
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
 	async function post(server: TestServer, body: unknown) {
 		const { cookie, origin } = authenticationFor(server);
-		return fetch(`${server.url.origin}${APP_STORAGE_PATH}`, {
+		return fetch(`${server.url.origin}${DEVICE_PATH}`, {
 			method: 'POST',
 			headers: { cookie, origin, 'content-type': 'application/json' },
 			body: JSON.stringify(body),
 		});
 	}
 
-	test('holds one labeled secret per application account', async () => {
+	test('SQL sockets retire connections on delete and release their lifetime on reload without deleting files', async () => {
 		await using host = await createTestHost({ engine: scriptedEngine([[]]) });
-		const server = await serveHost(host, PAGE, null, {
+		const root = testDataDir();
+		const server = await serveHost(host, PAGE, {
+			device: createBunDevice(root),
+		});
+		const { cookie, origin } = authenticationFor(server);
+		const url = `${server.url.origin}${DEVICE_PATH}/sqlite`;
+		const address = { appId: LOCAL_MAIL_APP_ID };
+		const sockets: WebSocket[] = [];
+		async function connect() {
+			const socket = new BunWebSocket(url.replace('http:', 'ws:'), {
+				headers: { cookie, origin },
+			});
+			sockets.push(socket);
+			await new Promise<void>((resolve, reject) => {
+				socket.addEventListener('open', () => resolve(), { once: true });
+				socket.addEventListener('error', reject, { once: true });
+			});
+			return socket;
+		}
+		let id = 0;
+		async function request(socket: WebSocket, body: unknown) {
+			const requestId = ++id;
+			const reply = new Promise<{
+				response?: Record<string, unknown>;
+				failure?: string;
+			}>((resolve, reject) => {
+				const timer = setTimeout(
+					() => reject(new Error('SQLite reply timed out')),
+					3000,
+				);
+				socket.addEventListener(
+					'message',
+					(event) => {
+						clearTimeout(timer);
+						const frame = JSON.parse(String(event.data));
+						expect(frame.id).toBe(requestId);
+						resolve(frame);
+					},
+					{ once: true },
+				);
+			});
+			socket.send(JSON.stringify({ id: requestId, request: body }));
+			return reply;
+		}
+		async function disconnect(socket: WebSocket) {
+			const closed = new Promise<void>((resolve) =>
+				socket.addEventListener('close', () => resolve(), { once: true }),
+			);
+			socket.close();
+			await closed;
+		}
+		try {
+			expect((await fetch(url)).status).toBe(401);
+			expect((await fetch(url, { headers: { cookie } })).status).toBe(403);
+			expect(
+				(await post(server, { kind: 'sqlite-acquire', ...address })).status,
+			).toBe(400);
+			const socket = await connect();
+			for (const body of [
+				{ kind: 'sqlite-acquire', appId: '../escape' },
+				{
+					kind: 'sqlite-run',
+					...address,
+					name: 'mail',
+					statement: { sql: 'SELECT 1' },
+				},
+				{ kind: 'secret-get', appId: LOCAL_MAIL_APP_ID, label: 'secret' },
+			])
+				expect((await request(socket, body)).failure).toBeDefined();
+			const acquired = await request(socket, {
+				kind: 'sqlite-acquire',
+				...address,
+			});
+			const session = { ...address, lifetimeId: acquired.response?.lifetimeId };
+			expect(typeof session.lifetimeId).toBe('string');
+			expect(
+				(await request(socket, { kind: 'sqlite-acquire', ...address })).failure,
+			).toBeDefined();
+			const opened = await request(socket, {
+				kind: 'sqlite-open',
+				...session,
+				name: 'mail',
+			});
+			const connectionId = opened.response?.connectionId;
+			expect(typeof connectionId).toBe('string');
+			expect(
+				(
+					await request(socket, {
+						kind: 'sqlite-delete',
+						...session,
+						name: 'mail',
+					})
+				).response,
+			).toEqual({ kind: 'sqlite-delete' });
+			const reopened = await request(socket, {
+				kind: 'sqlite-open',
+				...session,
+				name: 'mail',
+			});
+			const freshId = reopened.response?.connectionId;
+			expect(freshId).not.toBe(connectionId);
+			const statement = { sql: 'SELECT name FROM sqlite_master' };
+			expect(
+				(
+					await request(socket, {
+						kind: 'sqlite-all',
+						...session,
+						connectionId,
+						statement,
+					})
+				).failure,
+			).toBeDefined();
+			expect(
+				(
+					await request(socket, {
+						kind: 'sqlite-run',
+						...session,
+						connectionId: freshId,
+						statement: { sql: 'CREATE TABLE kept (value TEXT)' },
+					})
+				).failure,
+			).toBeUndefined();
+			expect(
+				(
+					await request(socket, {
+						kind: 'sqlite-run',
+						...session,
+						connectionId: freshId,
+						statement: { sql: "INSERT INTO kept VALUES ('survives reload')" },
+					})
+				).failure,
+			).toBeUndefined();
+			// Reload loses the document socket without sending sqlite-close.
+			await disconnect(socket);
+			const next = await connect();
+			const reacquired = await request(next, {
+				kind: 'sqlite-acquire',
+				...address,
+			});
+			expect(reacquired.failure).toBeUndefined();
+			const nextSession = {
+				...address,
+				lifetimeId: reacquired.response?.lifetimeId,
+			};
+			expect(
+				(
+					await request(next, {
+						kind: 'sqlite-all',
+						...session,
+						connectionId: freshId,
+						statement,
+					})
+				).failure,
+			).toBeDefined();
+			const nextOpen = await request(next, {
+				kind: 'sqlite-open',
+				...nextSession,
+				name: 'mail',
+			});
+			const rows = await request(next, {
+				kind: 'sqlite-all',
+				...nextSession,
+				connectionId: nextOpen.response?.connectionId,
+				statement: { sql: 'SELECT value FROM kept' },
+			});
+			expect(rows.response).toEqual({
+				kind: 'sqlite-all',
+				rows: [{ value: 'survives reload' }],
+			});
+			expect(
+				(await request(next, { kind: 'sqlite-close', ...nextSession }))
+					.response,
+			).toEqual({ kind: 'sqlite-close' });
+			await disconnect(next);
+		} finally {
+			for (const socket of sockets)
+				if (socket.readyState === 1) await disconnect(socket);
+			await server.stop(true);
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	test('holds one labeled secret per application', async () => {
+		await using host = await createTestHost({ engine: scriptedEngine([[]]) });
+		const server = await serveHost(host, PAGE, {
 			appSecrets: createProcessMemoryAppSecrets(),
 		});
 		try {
@@ -2085,7 +2533,7 @@ describe('the application storage owner', () => {
 
 	test('refuses a label that could name something other than one label', async () => {
 		await using host = await createTestHost({ engine: scriptedEngine([[]]) });
-		const server = await serveHost(host, PAGE, null, {
+		const server = await serveHost(host, PAGE, {
 			appSecrets: createProcessMemoryAppSecrets(),
 		});
 		try {

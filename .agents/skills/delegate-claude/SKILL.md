@@ -45,6 +45,14 @@ changed paths or artifacts, commands and actual results, and unresolved issues.
 It should report a blocker with concrete partial work rather than inventing a
 contract or requesting broader access.
 
+Keep the destination and the reasons it is worth pursuing in the brief. Let
+Claude choose implementation details within the accepted outcome. For greenfield
+experiments, acceptance is evidence that distinguishes designs, not proof that
+the preferred design is right. Claude surfaces discoveries that suggest a better
+destination; Codex owns the resulting decision through
+[rethink](../rethink/SKILL.md). A convenient implementation must not silently
+replace the vision or the assignment.
+
 ## Prepare the workspace
 
 Run the shared launcher from the coordinating repository. Give Claude a
@@ -125,6 +133,14 @@ FOLLOWUP
 Repeat an explicit model and effort choice when continuing work that needs it.
 Missing dependencies and blocked permissions belong to Codex; changing models
 does not repair them. An unresolved product requirement still stops the worker.
+
+Manage the assignment through evidence and acceptance. Send a new brief for new
+facts, corrected misunderstandings, or a focused change in direction as well as
+failed checks. State what remains accepted and what changed, and keep useful
+partial work in the clone. Choose natural assignment boundaries when evidence
+could change substantial work; straightforward tasks need no mandatory
+checkpoints. Keep one writer per clone: parallel workers need separate clones
+and independently reviewable results.
 
 Use `--dry-run` to inspect arguments without calling Claude. Do not switch a
 read-only session into a worker to bypass its assignment scope.

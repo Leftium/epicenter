@@ -34,4 +34,4 @@ We deliberately do not build a general recording-lifecycle layer, and we do not 
 
 ## Reference
 
-- Implemented in `apps/whispering/src/lib/operations/push-to-talk.ts`, `.../operations/recording.ts`, and `.../state/manual-recorder.svelte.ts`; the keyboard backend half lives in `apps/whispering/src-tauri/src/keyboard/`. PR #2175. The design spec was retired on acceptance (recoverable in git history); the remaining hands-on desktop smoke is tracked on the PR.
+- Implemented in `b8251cdb1a:apps/whispering/src/lib/operations/push-to-talk.ts`, `.../operations/recording.ts`, and `.../state/manual-recorder.svelte.ts`; the keyboard backend half lives in `apps/whispering/src-tauri/src/keyboard/`. PR #2175. The design spec was retired on acceptance (recoverable in git history); the remaining hands-on desktop smoke is tracked on the PR.

@@ -28,7 +28,7 @@
 			"!**/build",
 			"!**/dist",
 			// Generated benchmark browser bundles are evidence, not lintable source.
-			"!packages/data/evidence/browser/**/*.html",
+			"!packages/app/evidence/data/browser/**/*.html",
 			"!package-lock.json",
 			"!pnpm-lock.yaml",
 			"!yarn.lock",
@@ -116,6 +116,16 @@
 						"useMediaCaption": "off"
 					}
 				}
+			}
+		},
+		{
+			// `wrangler types` output. Its empty interfaces (`Env`, `GlobalProps`,
+			// `Disposable`, ...) exist so other declarations can merge into them;
+			// the `type X = {}` rewrite this rule suggests cannot merge and
+			// collides with the generated `interface Env` in the same namespace.
+			"includes": ["**/worker-configuration.d.ts"],
+			"linter": {
+				"rules": { "suspicious": { "noEmptyInterface": "off" } }
 			}
 		},
 		{

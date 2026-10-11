@@ -1,8 +1,13 @@
+/**
+ * Conformance tests.
+ * Required and optional nullish values classify separately from invalid values.
+ * Extra keys and unrecognized field schemas preserve row validity and raw data.
+ */
 import { describe, expect, test } from 'bun:test';
 import { expectOk } from 'wellcrafted/testing';
-import { classifyRow, classifyRows } from './conformance';
-import { validateContract } from './contract';
-import type { Row } from './parse';
+import { classifyRow, classifyRows } from './conformance.js';
+import { validateContract } from './contract.js';
+import type { Row } from './parse.js';
 
 function fields(
 	defs: Record<string, Record<string, unknown>>,
@@ -76,28 +81,21 @@ describe('classifyRow (per-cell conformance)', () => {
 			},
 			['reviewBy'],
 		);
-		const absent: Row = {
-			fileName: 'optional-absent.md',
-			frontmatter: { title: 'Alice' },
-			body: '',
-		};
-		const nul: Row = {
-			fileName: 'optional-null.md',
-			frontmatter: { title: 'Bob', reviewBy: null },
-			body: '',
-		};
-		const absentConformance = classifyRow(cols, absent);
-		const nullConformance = classifyRow(cols, nul);
-		expect(absentConformance.cells.map((x) => x.state)).toEqual([
-			'OK',
-			'MISSING_OPTIONAL',
-		]);
-		expect(nullConformance.cells.map((x) => x.state)).toEqual([
-			'OK',
-			'MISSING_OPTIONAL',
-		]);
-		expect(absentConformance.rowValid).toBe(true);
-		expect(nullConformance.rowValid).toBe(true);
+		for (const frontmatter of [
+			{ title: 'Alice' },
+			{ title: 'Alice', reviewBy: null },
+		]) {
+			const conformance = classifyRow(cols, {
+				fileName: 'optional.md',
+				frontmatter,
+				body: '',
+			});
+			expect(conformance.cells.map((cell) => cell.state)).toEqual([
+				'OK',
+				'MISSING_OPTIONAL',
+			]);
+			expect(conformance.rowValid).toBe(true);
+		}
 	});
 
 	// "Must have content" is a value constraint, not a contract flag: minLength rejects

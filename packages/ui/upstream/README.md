@@ -86,6 +86,8 @@ in the refresh PR or an issue, not in this register as accepted behavior.
 | Resizable | Spacing between panes | Adjacent panes need separation in current app layouts. |
 | Tooltip provider | Fixed 300 ms opening delay and 150 ms skip delay | App-root providers share one hover group and timing across controls. |
 | Input | File-input binding alongside normal value binding | File pickers need access to the selected files through the shared component. |
+| Input and Textarea | Value bindings retire on destruction | Capture and Whispering retained DOM controls must never read or overwrite later input. |
+| Tabs.Content | Inactive children unmount; `forceMount` retains them explicitly | Editor panels share one selection and disposable controls; the main app shell preserves its chat and settings state. |
 | Item.Button | A real button using shared Item variants and merged trigger props | Interactive rows use button semantics without repeating Item’s child-snippet composition. |
 | Theme | Geist fonts and seven dark Neutral token adjustments | The accepted soft charcoal direction uses existing semantic variables; component geometry remains Vega’s. |
 

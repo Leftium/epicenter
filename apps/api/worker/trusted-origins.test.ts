@@ -1,3 +1,8 @@
+/**
+ * Hosted trusted-origin tests.
+ * Separates production application trust from local development origins, rejects
+ * extension and wildcard trust, and freezes arrays shared by Worker isolates.
+ */
 import { describe, expect, test } from 'bun:test';
 import { APPS, localUrl } from '@epicenter/constants/apps';
 import { buildEpicenterTrustedOrigins } from './trusted-origins.js';
@@ -30,6 +35,8 @@ describe('buildEpicenterTrustedOrigins', () => {
 	});
 
 	test('a local deployment trusts the localhost dev origins', () => {
+		expect(LOCAL).toContain('http://localhost:5177');
+		expect(PROD).not.toContain('http://localhost:5177');
 		expect(LOCAL).toContain(localUrl(APPS.HONEYCRISP));
 		expect(LOCAL).toContain(localUrl(APPS.API));
 		expect(LOCAL).toContain(`http://${new URL(APPS.API.url).host}`);
@@ -38,6 +45,11 @@ describe('buildEpicenterTrustedOrigins', () => {
 	test('both deployments trust the production app origins', () => {
 		expect(PROD).toContain(APPS.HONEYCRISP.url);
 		expect(LOCAL).toContain(APPS.HONEYCRISP.url);
+		expect(PROD).toContain('https://zhongwen.bradenwong.com');
+		expect(LOCAL).toContain('https://zhongwen.bradenwong.com');
+		expect(PROD).not.toContain('http://localhost:5207');
+		expect(LOCAL).toContain('http://localhost:5207');
+		expect(PROD).not.toContain('https://zhongwen.bradenwong.com.attacker.test');
 	});
 
 	test('is frozen so Cloudflare isolates cannot accumulate mutations', () => {

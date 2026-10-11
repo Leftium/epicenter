@@ -1,3 +1,8 @@
+/**
+ * Subscription adapter tests.
+ * Reads track and return the current source value without eager acquisition.
+ * Active subscriptions deliver invalidations and detach when readers leave.
+ */
 import { expect, mock, test } from 'bun:test';
 
 type SubscriberControl = {
@@ -11,6 +16,7 @@ type SubscriberControl = {
 	 * of check.
 	 */
 	tracked: number;
+	updates: number;
 };
 
 const subscriberControls: SubscriberControl[] = [];
@@ -20,13 +26,16 @@ mock.module('svelte/reactivity', () => ({
 		let stop: (() => void) | undefined;
 		const control = {
 			activate() {
-				stop ??= start(() => {});
+				stop ??= start(() => {
+					control.updates += 1;
+				});
 			},
 			deactivate() {
 				stop?.();
 				stop = undefined;
 			},
 			tracked: 0,
+			updates: 0,
 		};
 		subscriberControls.push(control);
 		return () => {
@@ -41,7 +50,7 @@ import { fromSubscription } from './from-subscription.svelte.js';
 function createSource(initial: string) {
 	let value = initial;
 	const listeners = new Set<() => void>();
-	const calls = { read: 0, subscribe: 0 };
+	const calls = { read: 0, subscribe: 0, unsubscribe: 0 };
 	return {
 		calls,
 		set(next: string) {
@@ -55,7 +64,10 @@ function createSource(initial: string) {
 		subscribe(listener: () => void) {
 			calls.subscribe += 1;
 			listeners.add(listener);
-			return () => listeners.delete(listener);
+			return () => {
+				calls.unsubscribe += 1;
+				listeners.delete(listener);
+			};
 		},
 	};
 }
@@ -98,6 +110,7 @@ test('a live reader sees the source move', () => {
 	expect(source.calls.subscribe).toBe(1);
 
 	source.set('second');
+	expect(control.updates).toBe(1);
 	expect(value.current).toBe('second');
 
 	control.deactivate();
@@ -106,9 +119,10 @@ test('a live reader sees the source move', () => {
 test('the subscription detaches when the last reader goes away', () => {
 	const { source, control } = setup();
 	control.activate();
+	source.set('second');
+	expect(control.updates).toBe(1);
 	control.deactivate();
 	source.set('third');
-	// Nothing to assert about delivery here; what is pinned is that teardown
-	// runs, which is what makes a value nobody is looking at free.
-	expect(source.calls.subscribe).toBe(1);
+	expect(source.calls.unsubscribe).toBe(1);
+	expect(control.updates).toBe(1);
 });

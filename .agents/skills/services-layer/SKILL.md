@@ -8,9 +8,11 @@ metadata:
 
 # Services Layer
 
-Ground service guidance in `apps/whispering/src/lib/services`, its consumers,
-and the `#platform/*` mappings in `apps/whispering/package.json`. Historical
-examples and neighboring skills are leads, not current architecture.
+This skill was grounded in Whispering's `src/lib/services` and its
+`#platform/*` mappings. Both were removed when Whispering became a standalone
+file-folder app, so every `apps/whispering/...` path below is historical. The
+patterns still apply; ground new work in the app you are editing and its own
+`package.json`. Neighboring skills are leads, not current architecture.
 
 ## Product Sentence
 
@@ -57,8 +59,8 @@ export type DownloadService = {
 
 Errors belong to the layer that understands the failure. Preserve lower-layer
 tagged errors when composing services. Define a service-local variant only for
-a failure the service itself owns. Use `define-errors` for variant shape and
-message rules; use `error-handling` for adaptation and propagation.
+a failure the service itself owns. Use `error-handling` for variant shape,
+message rules, adaptation, and propagation.
 
 ## Direct Object Or Factory
 

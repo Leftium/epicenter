@@ -31,6 +31,7 @@ import type { PrincipalId } from '@epicenter/principal';
 import type { CloudEnv } from '@epicenter/server';
 import { Autumn, ConnectionError } from 'autumn-js';
 import { Hono } from 'hono';
+import { expectErr, expectOk } from 'wellcrafted/testing';
 import { FEATURE_IDS, PLAN_IDS, PLANS } from './catalog.js';
 import {
 	chargeOpenAiCreditsWithAutumn,
@@ -195,7 +196,7 @@ test('an unknown active plan leaves storage issuance retryably undecidable', asy
 		subscriptions: [{ planId: 'removed-plan' }],
 	};
 
-	expect(makeService().getStorageIncludedBytes()).rejects.toThrow(
+	await expect(makeService().getStorageIncludedBytes()).rejects.toThrow(
 		"Active subscription plan 'removed-plan' is not in the catalog",
 	);
 });
@@ -369,13 +370,14 @@ test('an async 202 ack carries no balances and the service reads none', async ()
 	// touch a balance, so this resolves Ok regardless of the body.
 	trackImpl = async () => ({ id: 'evt_1', code: 'event_received' });
 
-	const { data, error } = await makeService().trackAiTranscription({
-		seconds: 60,
-		model: 'whisper-1',
-		provider: 'openai',
-	});
+	const data = expectOk(
+		await makeService().trackAiTranscription({
+			seconds: 60,
+			model: 'whisper-1',
+			provider: 'openai',
+		}),
+	);
 
-	expect(error).toBeNull();
 	expect(data).toBeUndefined();
 });
 
@@ -386,12 +388,12 @@ test('a provider failure during metering fails closed as a Result, never a throw
 		throw new ConnectionError('Unable to make request');
 	};
 
-	const { data, error } = await makeService().trackAiTranscription({
-		seconds: 60,
-		model: 'whisper-1',
-		provider: 'openai',
-	});
-
-	expect(data).toBeNull();
+	const error = expectErr(
+		await makeService().trackAiTranscription({
+			seconds: 60,
+			model: 'whisper-1',
+			provider: 'openai',
+		}),
+	);
 	expect(error).toMatchObject({ name: 'ProviderRequestFailed' });
 });

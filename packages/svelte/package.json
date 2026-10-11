@@ -13,10 +13,19 @@
 		"reactive state"
 	],
 	"exports": {
-		".": "./src/index.ts"
+		".": "./src/index.ts",
+		"./edit-session": "./src/edit-session.svelte.ts",
+		"./open-item": "./src/open-item.svelte.ts",
+		"./admissions": "./src/admissions.svelte.ts",
+		"./save-bar": "./src/save-bar.svelte",
+		"./sync": "./src/sync.svelte.ts",
+		"./sync-line": "./src/sync-line.ts",
+		"./sync-review": "./src/sync-review.svelte"
 	},
 	"dependencies": {
 		"@epicenter/agent": "workspace:*",
+		"@epicenter/folder": "workspace:*",
+		"@epicenter/ui": "workspace:*",
 		"arktype": "catalog:",
 		"wellcrafted": "catalog:"
 	},
@@ -29,7 +38,8 @@
 	},
 	"scripts": {
 		"typecheck": "svelte-check --tsconfig ./tsconfig.json",
-		"test": "bun test"
+		"test": "bun test --isolate --conditions=browser --path-ignore-patterns='**/*.mounted.test.ts' && bun run test:mounted",
+		"test:mounted": "bun test --conditions=browser mounted.test"
 	},
 	"license": "AGPL-3.0-or-later"
 }

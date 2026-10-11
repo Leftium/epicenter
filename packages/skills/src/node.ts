@@ -8,7 +8,7 @@
 
 import { mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { InstantString } from '@epicenter/data/field';
+import { InstantString } from '@epicenter/app/field';
 import {
 	defineErrors,
 	extractErrorMessage,
@@ -110,8 +110,11 @@ export async function importSkillsFromDisk({
 		const existing = skillsBySourceId.get(sourceId);
 		let skill: Skill;
 		if (existing) {
-			const written = data.tables.skills.update(existing.id, input);
-			if (written.error !== null) throw written.error;
+			const { error: writtenError } = data.tables.skills.update(
+				existing.id,
+				input,
+			);
+			if (writtenError !== null) throw writtenError;
 			// The write reports only that it landed; the repaired row is `get`'s
 			// answer. The import wrote every declared field, so a row that still
 			// does not read means the repair did not take, which is worth failing
@@ -161,11 +164,11 @@ export async function importSkillsFromDisk({
 				};
 				let referenceId: string;
 				if (existingReference) {
-					const written = data.tables.skillReferences.update(
+					const { error: writtenError } = data.tables.skillReferences.update(
 						existingReference.id,
 						fields,
 					);
-					if (written.error !== null) throw written.error;
+					if (writtenError !== null) throw writtenError;
 					referenceId = existingReference.id;
 				} else {
 					referenceId = data.tables.skillReferences.create(fields).id;
@@ -260,7 +263,7 @@ export async function exportSkillsToDisk({
  * reviving an address that no longer holds a skill.
  */
 function writeContent(table: SkillsTable, rowId: string, value: string): void {
-	const content = table.get(rowId)?.content;
+	const content = table.body(rowId);
 	if (content === undefined) return;
 	content.applyDelta(
 		content.change.delete(content.length).insert(value) as never,
@@ -268,7 +271,7 @@ function writeContent(table: SkillsTable, rowId: string, value: string): void {
 }
 
 function readContent(table: SkillsTable, rowId: string): string {
-	return table.get(rowId)?.content.toString() ?? '';
+	return table.body(rowId)?.toString() ?? '';
 }
 
 function referenceKey(skillId: string, path: string): string {

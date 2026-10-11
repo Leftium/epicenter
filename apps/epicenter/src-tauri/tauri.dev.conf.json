@@ -10,7 +10,11 @@
 				"home-launch-application-development",
 				"trusted-app-windows-development",
 				"trusted-whispering-native-development",
-				"trusted-whispering-overlay-development"
+				"trusted-whispering-overlay-development",
+				"departure-development",
+				"todos-folder-development",
+				"capture-folder-development",
+				"installed-app-folder-development"
 			]
 		}
 	}

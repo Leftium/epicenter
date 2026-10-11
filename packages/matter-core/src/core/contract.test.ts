@@ -1,6 +1,11 @@
+/**
+ * Matter contract tests.
+ * Raw markers classify as typed, untyped, or erroneous. Field recognition,
+ * optional/searchable policy, and view diagnostics retain valid siblings.
+ */
 import { describe, expect, test } from 'bun:test';
-import { expectOk } from 'wellcrafted/testing';
-import { parseContract, validateContract } from './contract';
+import { expectErr, expectOk } from 'wellcrafted/testing';
+import { parseContract, validateContract } from './contract.js';
 
 describe('validateContract (the matter.json gate)', () => {
 	test('accepts the palette subset and derives kinds in declared order', () => {
@@ -31,6 +36,8 @@ describe('validateContract (the matter.json gate)', () => {
 		]);
 		expect(data.untyped).toEqual([]);
 		expect(data.unmatchedOptional).toEqual([]);
+		expect(data.views).toEqual([]);
+		expect(data.viewErrors).toEqual([]);
 	});
 
 	test('top-level optional marks typed fields as not required', () => {
@@ -52,11 +59,11 @@ describe('validateContract (the matter.json gate)', () => {
 
 	test('rejects optional when it is not an array of field names', () => {
 		expect(
-			validateContract({ fields: {}, optional: 'title' }).error?.name,
+			expectErr(validateContract({ fields: {}, optional: 'title' })).name,
 		).toBe('InvalidOptional');
-		expect(validateContract({ fields: {}, optional: [42] }).error?.name).toBe(
-			'InvalidOptional',
-		);
+		expect(
+			expectErr(validateContract({ fields: {}, optional: [42] })).name,
+		).toBe('InvalidOptional');
 	});
 
 	test('searchable defaults to body plus every TEXT-storage field', () => {
@@ -106,11 +113,11 @@ describe('validateContract (the matter.json gate)', () => {
 
 	test('rejects searchable when it is not an array of column names', () => {
 		expect(
-			validateContract({ fields: {}, searchable: 'body' }).error?.name,
+			expectErr(validateContract({ fields: {}, searchable: 'body' })).name,
 		).toBe('InvalidSearchable');
-		expect(validateContract({ fields: {}, searchable: [42] }).error?.name).toBe(
-			'InvalidSearchable',
-		);
+		expect(
+			expectErr(validateContract({ fields: {}, searchable: [42] })).name,
+		).toBe('InvalidSearchable');
 	});
 
 	test('reports optional entries that do not match typed fields', () => {
@@ -154,20 +161,10 @@ describe('validateContract (the matter.json gate)', () => {
 		]);
 	});
 
-	test('no views key means an empty views list, not a diagnostic', () => {
-		const data = expectOk(
-			validateContract({
-				fields: { title: { type: 'string' } },
-			}),
-		);
-		expect(data.views).toEqual([]);
-		expect(data.viewErrors).toEqual([]);
-	});
-
 	test('rejects a non-object top level', () => {
-		expect(validateContract(42).error?.name).toBe('NotAnObject');
-		expect(validateContract(null).error?.name).toBe('NotAnObject');
-		expect(validateContract([]).error?.name).toBe('NotAnObject');
+		expect(expectErr(validateContract(42)).name).toBe('NotAnObject');
+		expect(expectErr(validateContract(null)).name).toBe('NotAnObject');
+		expect(expectErr(validateContract([])).name).toBe('NotAnObject');
 	});
 
 	// No `fields` map is no longer a contract error: it is the untyped marker, classified by
@@ -178,31 +175,19 @@ describe('validateContract (the matter.json gate)', () => {
 		expect(data.untyped).toEqual([]);
 	});
 
-	// Per-field degrade: a field outside the palette does not error the contract. It is
-	// recorded in `untyped` (shown raw), and the rest of the folder stays typed.
-	test('a non-object field is untyped, not a contract error', () => {
-		const data = expectOk(
-			validateContract({
-				fields: { title: { type: 'string' }, bad: 'string' },
-			}),
-		);
-		expect(data.fields.map((c) => c.name)).toEqual(['title']);
-		expect(data.untyped).toEqual(['bad']);
-		expect(data.unmatchedOptional).toEqual([]);
-	});
-
-	test('a shape outside the palette is untyped; the rest stays typed', () => {
+	test('unsupported field schemas stay untyped while valid siblings remain typed', () => {
 		const data = expectOk(
 			validateContract({
 				fields: {
 					title: { type: 'string' },
 					meta: { type: 'object' }, // not a palette shape
 					note: { anyOf: [{ type: 'string' }, { type: 'null' }] }, // nullable: deleted axis
+					bad: 'string',
 				},
 			}),
 		);
 		expect(data.fields.map((c) => c.name)).toEqual(['title']);
-		expect(data.untyped).toEqual(['meta', 'note']);
+		expect(data.untyped).toEqual(['meta', 'note', 'bad']);
 		expect(data.unmatchedOptional).toEqual([]);
 	});
 });

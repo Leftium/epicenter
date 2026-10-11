@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { onDestroy } from 'svelte';
 	import type {
 		HTMLInputAttributes,
 		HTMLInputTypeAttribute,
@@ -24,6 +25,20 @@
 		'data-slot': dataSlot = 'input',
 		...restProps
 	}: Props = $props();
+
+	// Detached inputs keep their native listeners. Retire both reads and writes.
+	let live = true;
+	let shown: typeof value;
+	onDestroy(() => {
+		live = false;
+	});
+	function readValue() {
+		if (live) shown = value;
+		return shown;
+	}
+	function writeValue(next: typeof value) {
+		if (live) value = next;
+	}
 </script>
 
 {#if type === 'file'}
@@ -36,7 +51,7 @@
 		)}
 		type="file"
 		bind:files
-		bind:value
+		bind:value={readValue, writeValue}
 		{...restProps}
 	>
 {:else}
@@ -48,7 +63,7 @@
 			className,
 		)}
 		{type}
-		bind:value
+		bind:value={readValue, writeValue}
 		{...restProps}
 	>
 {/if}

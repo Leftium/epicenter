@@ -1,7 +1,8 @@
 # 0311. A table is a held projection, and everything cheaper than rebuilding is read through
 
-- **Status:** Accepted
+- **Status:** Superseded
 - **Date:** 2026-08-31
+- **Superseded by:** [ADR-0500](0500-svelte-tracks-native-data-reads-without-holding-row-values.md), which reads through native table methods and holds no row values.
 - **Amends:** [ADR-0221](0221-a-table-names-the-rows-a-commit-touched-and-says-so-after-the-projection-commits.md) at nothing it decided: the ids it specified are restored, and this record is the consumer it was written for.
 - **Reopens:** [ADR-0077](0077-parsed-row-memoization-belongs-to-the-table-the-svelte-adapter-is-a-stateless-view.md), whose headline this inverts. Its layering argument is not answered here and stays open, below.
 - **Relates:** [ADR-0187](0187-a-bound-handle-reports-staleness-tables-can-name-rows-values-cannot.md) (a table can name rows and a value cannot), [ADR-0294](0294-a-database-is-sized-against-a-measured-device-budget-not-an-assumed-ceiling.md) (memory is the only constraint, which this record shows was scoped to the document and not to the screen), [ADR-0295](0295-a-database-is-one-yjs-document-and-a-row-holds-its-rich-content.md) (one document, rows nested on a table root), [ADR-0309](0309-a-field-holds-a-value-or-a-node-and-the-retired-words-fail-the-build.md) (the vocabulary this uses)
@@ -13,7 +14,7 @@ something reads each attribute and builds it, and building one costs about two
 microseconds. The Svelte adapter held nothing, so every read built every row.
 
 That is affordable exactly until a list is long. Measured against the real
-store (`packages/data/evidence/bench/list-per-keystroke.ts`):
+store (`packages/app/evidence/data/bench/list-per-keystroke.ts`):
 
 | notes | rows walk | filter | sort | one derive |
 | --- | --- | --- | --- | --- |

@@ -1,119 +1,197 @@
 <script lang="ts">
-	import { createAgentChatState } from '@epicenter/app-shell/agent-chat';
+	import { createBrowserInferenceSelections } from '@epicenter/app-shell/inference-selections';
+	import { createInferenceCatalog } from '@epicenter/app-shell/inference-picker';
+	import { toHostedCatalog } from '@epicenter/constants/ai-providers';
 	import { Button } from '@epicenter/ui/button';
-	import * as Sidebar from '@epicenter/ui/sidebar';
-	import { VOCAB_MODEL, VOCAB_SYSTEM_PROMPT } from '$lib/data';
-	import type { ReactiveData } from '@epicenter/svelte';
-	import type { vocabDefinition } from '$lib/data';
-	import type { ReplicaData } from '@epicenter/data';
+	import { LightSwitch } from '@epicenter/ui/light-switch';
+	import { toast } from '@epicenter/ui/sonner';
+	import BookOpenIcon from '@lucide/svelte/icons/book-open';
+	import MessageCircleIcon from '@lucide/svelte/icons/message-circle';
 	import { onDestroy } from 'svelte';
-	import { runVocabMutation } from '$lib/mutation';
-	import { buildPracticeOpening } from '$lib/practice';
-	import { reportBackgroundError } from '$lib/report';
-	import { createEntriesState } from '$lib/state/entries.svelte';
-	import { inferenceConnections } from '$lib/state/inference-connections.svelte';
-	import { createSettingsState } from '$lib/state/settings.svelte';
-	import { setVocabSurface } from '$lib/surface';
+	import { beforeNavigate } from '$app/navigation';
+	import { page } from '$app/state';
+	import { auth } from '$lib/auth.svelte.js';
+	import type { ChatsState } from '$lib/chat/chats.svelte.js';
+	import { type FocusItem, VOCAB_MODEL, type VocabFolder } from '$lib/data.js';
+	import type { EntriesState } from '$lib/entries.svelte.js';
+	import { openVocabInference } from '$lib/inference.js';
+	import AccountMenu from './AccountMenu.svelte';
 	import ConversationView from './ConversationView.svelte';
-	import VocabSidebar from './VocabSidebar.svelte';
+	import FocusWords from './FocusWords.svelte';
+	import WordsView from './WordsView.svelte';
 
-	// The opened store, awake, and adapted before it was handed over. It arrives
-	// as a prop rather than through a context provider, because there is one
-	// route and this component only mounts under `ready`: the type carries "the
-	// store is open" without a second object to own and dispose.
-	//
-	// One document, because an account is required. Everything below reads
-	// `data` and never asks which one it is.
-	let {
-		data,
-	}: { data: ReactiveData<ReplicaData<typeof vocabDefinition>> } = $props();
-
-	// Read once, not `$derived`: the route mounts this exactly once per opened
-	// store, so `data` never changes while this component lives.
+	let { vocab }: { vocab: { folder: VocabFolder; entries: EntriesState; chats: ChatsState } } = $props();
 	/* svelte-ignore state_referenced_locally */
-	const entries = createEntriesState({ data });
-	setVocabSurface({ entries });
+	const { folder, entries, chats } = vocab;
 
-	// The shared chat registry (ADR-0047/0059) with Vocab's variation injected:
-	// capability-free (no tools, no approval), one general multilingual system
-	// prompt, and the hosted VOCAB_MODEL as the default a new conversation starts
-	// on. The active conversation lives in internal state (Vocab has no URL seam).
-	/* svelte-ignore state_referenced_locally */
-	const chat = createAgentChatState({
-		table: data.tables.conversations,
-		reportBackgroundError,
-		connections: inferenceConnections,
-		agent: {
-			buildSystemPrompts: () => [VOCAB_SYSTEM_PROMPT],
-			defaultModel: VOCAB_MODEL,
-		},
-	});
+	// The account adds hosted models and nothing else. It is read once:
+	// sign-in and sign-out replace this page, and a change made in another tab
+	// is offered as a reload below. The folder, the endpoints connected on this
+	// device, and the chosen model are the same either way.
+	const account = auth.getState().account;
+	const departure = new AbortController();
+	const sources = openVocabInference(account);
+	const catalog = createInferenceCatalog({ ai: sources, signal: departure.signal, hostedModels: toHostedCatalog([VOCAB_MODEL]) });
+	const selections = createBrowserInferenceSelections('vocab');
+	const accountChanged = $derived(auth.state.account?.principalId !== account?.principalId || auth.state.account?.authorityId !== account?.authorityId);
 
-	/* svelte-ignore state_referenced_locally */
-	const settings = createSettingsState({ data });
-
-	onDestroy(() => {
-		chat[Symbol.dispose]();
-		entries[Symbol.dispose]();
-		settings[Symbol.dispose]();
-	});
+	const VIEWS = [
+		{ id: 'words', label: 'Words', icon: BookOpenIcon },
+		{ id: 'chat', label: 'Chat', icon: MessageCircleIcon },
+	] as const;
+	let selectedChatId = $state<string | null>(null);
+	let view = $state<'words' | 'chat'>('words');
+	let historyOpen = $state(false);
+	let focusOpen = $state(false);
+	let openingId = $state<string | null>(null);
+	let starting = $state(false);
+	const selectedChat = $derived(chats.chats.find((chat) => chat.id === selectedChatId));
+	const unreadable = $derived(chats.unreadable);
+	const loadError = $derived(entries.loadError ?? chats.loadError);
+	let conversation = $state<ConversationView>();
+	// A chat switch held back because the open chat has an unsaved message.
+	let heldSwitch = $state<(() => void) | null>(null);
 
 	/**
-	 * Practice opens its own conversation, titled after the chosen entries, and
-	 * the compiled turn is that conversation's first message. Whatever thread was
-	 * open is left exactly as it was and stays there to return to. The passage
-	 * comes back under the tutor system prompt; nothing is written to the
-	 * entries.
+	 * Save the focus as a new chat, then show it. The opening it requests
+	 * starts only once the folder holds the chat's file. Answers whether the
+	 * chat started, so Words keeps the selection when it did not.
 	 */
-	function practice(entryTexts: string[]) {
-		if (entryTexts.length === 0) return;
-		runVocabMutation(
-			() => chat.createConversation(buildPracticeOpening(entryTexts)),
-			'Could not start a practice session',
-		);
+	async function begin(focus: FocusItem[], leaving = false): Promise<boolean> {
+		// Switching chats disposes the open one, so an unsaved message needs a yes first.
+		if (!leaving && conversation?.hasUnsaved()) {
+			heldSwitch = () => void begin(focus, true);
+			return false;
+		}
+		if (starting) return false;
+		starting = true;
+		const { data: chat, error } = await chats.start(focus);
+		starting = false;
+		if (error !== null) {
+			toast.error('The chat was not started', { description: `${error.message} The tutor has not been asked.` });
+			return false;
+		}
+		selectedChatId = chat.id;
+		openingId = chat.id;
+		view = 'chat';
+		return true;
+	}
+	function openChat(id: string) {
+		if (id === selectedChatId) {
+			historyOpen = false;
+			view = 'chat';
+			return;
+		}
+		const open = () => {
+			selectedChatId = id;
+			openingId = null;
+			historyOpen = false;
+			view = 'chat';
+		};
+		if (conversation?.hasUnsaved()) heldSwitch = open;
+		else open();
+	}
+	onDestroy(() => {
+		departure.abort();
+		selections[Symbol.dispose]();
+		void sources.then(({ account, connections }) => Promise.allSettled([account?.close(), connections?.close()]));
+	});
+
+	// The open word holds a save running or one that failed, which may be in
+	// this page alone. Leaving it asks first, and the browser's prompt lets the
+	// learner leave anyway; the open chat's unsaved message asks on its own.
+	beforeNavigate((navigation) => {
+		if (!entries.unsaved && !chats.busy) return;
+		if (navigation.willUnload || navigation.to?.route.id !== page.route.id) navigation.cancel();
+	});
+
+	/** Returning to the window: read the lists again, and take a newer version of the open word when it holds nothing unsaved. */
+	function check() {
+		void entries.check();
+		void chats.refresh();
 	}
 </script>
 
-<Sidebar.Provider>
-	<VocabSidebar
-		conversations={chat.conversations}
-		activeConversationId={chat.activeConversationId}
-		onCreate={() =>
-			runVocabMutation(
-				() => chat.createConversation(),
-				'Could not start a conversation',
-			)}
-		onSwitch={(conversationId) => chat.switchTo(conversationId)}
-		onPractice={practice}
-	/>
+<svelte:window onbeforeunload={(event) => { if (entries.unsaved || chats.busy) event.preventDefault(); }} onfocus={check} />
+<svelte:document onvisibilitychange={() => { if (document.visibilityState === 'visible') check(); }} />
 
-	<main class="flex h-dvh flex-1 flex-col">
-		<header class="flex items-center justify-between border-b px-4 py-3">
-			<div class="flex items-center gap-3">
-				<Sidebar.Trigger />
-				<h1 class="text-lg font-semibold">Vocab</h1>
-			</div>
-
-			<div class="flex items-center gap-2">
+<div class="flex h-dvh min-w-0 flex-col">
+	<!--
+		One nav at every width, moved by CSS alone. Below md the header is
+		`contents`, so the brand row and the nav are rows of this column and the
+		nav is ordered last: a bottom bar in the page flow. From md up the brand
+		row is `contents` instead, so the header is one row: brand, nav, then the
+		theme and account controls.
+	-->
+	<header class="contents md:flex md:items-center md:gap-2 md:border-b md:px-4 md:py-2">
+		<div class="flex items-center justify-between gap-2 border-b px-4 py-2 md:contents">
+			<h1 class="text-lg font-semibold">Vocab</h1>
+			<div class="flex items-center gap-1 md:order-last md:ml-auto"><LightSwitch variant="ghost" /><AccountMenu /></div>
+		</div>
+		<!--
+			Chat resumes the open chat; with none open, the chat view shows the
+			history to pick from. The bottom inset is zero unless the page is laid
+			out under the home indicator.
+		-->
+		<nav class="flex gap-1 max-md:order-last max-md:border-t max-md:border-sidebar-border max-md:bg-sidebar max-md:px-1 max-md:pt-1 max-md:pb-[calc(--spacing(1)+env(safe-area-inset-bottom))]" aria-label="Views">
+			{#each VIEWS as item (item.id)}
 				<Button
-					variant={settings.showReadings ? 'default' : 'outline'}
 					size="sm"
-					onclick={() =>
-						runVocabMutation(
-							() => settings.toggleReadings(),
-							'Could not save your reading preference',
-						)}
-					aria-pressed={settings.showReadings}
-					aria-label="Toggle pronunciation readings"
-				>
-					{settings.showReadings ? 'Hide readings' : 'Show readings'}
-				</Button>
+					variant="ghost"
+					class="aria-[current=page]:bg-sidebar-accent aria-[current=page]:text-sidebar-accent-foreground max-md:h-auto max-md:flex-1 max-md:flex-col max-md:gap-0.5 max-md:py-1.5 max-md:text-xs"
+					aria-current={view === item.id ? 'page' : undefined}
+					disabled={item.id === 'chat' && chats.chats.length === 0}
+					onclick={() => view = item.id}
+				><item.icon class="size-4 max-md:size-5" />{item.label}</Button>
+			{/each}
+		</nav>
+	</header>
+	{#if loadError}
+		<div role="alert" class="flex items-center justify-between gap-2 border-b px-3 py-2 text-xs text-destructive">
+			<span>Vocab could not read its folder in this browser: {loadError}</span>
+			<Button variant="ghost" size="sm" onclick={check}>Read again</Button>
+		</div>
+	{/if}
+	{#if unreadable.length > 0}
+		<details class="border-b px-3 py-2 text-xs">
+			<summary class="cursor-pointer text-destructive">{unreadable.length} saved {unreadable.length === 1 ? 'file is' : 'files are'} not shown because Vocab cannot read {unreadable.length === 1 ? 'it' : 'them'}. Nothing was changed or removed.</summary>
+			<ul class="mt-2 space-y-1">
+				{#each unreadable as file (file.path)}<li class="break-words"><code>{file.path}</code>: {file.reason}</li>{/each}
+			</ul>
+		</details>
+	{/if}
+	{#if accountChanged}
+		<div role="status" class="flex items-center justify-between gap-2 border-b px-3 py-2 text-xs">
+			<span>Your sign-in changed in another tab. Reload to use it for the tutor. Your words and chats are not affected.</span>
+			<Button variant="ghost" size="sm" onclick={() => location.reload()}>Reload</Button>
+		</div>
+	{/if}
+	{#if heldSwitch}
+		<div role="alert" class="flex items-center justify-between gap-2 border-b px-3 py-2 text-xs text-destructive">
+			<span>The open chat has a message that is not saved. Leaving it now can lose that message.</span>
+			<div class="flex gap-1">
+				<Button variant="ghost" size="sm" onclick={() => { heldSwitch = null; view = 'chat'; }}>Stay</Button>
+				<Button variant="ghost" size="sm" onclick={() => { const leave = heldSwitch; heldSwitch = null; leave?.(); }}>Leave anyway</Button>
 			</div>
-		</header>
-
-		<ConversationView
-			active={chat.active}
-			showReadings={settings.showReadings}
-		/>
-	</main>
-</Sidebar.Provider>
+		</div>
+	{/if}
+	<div class="min-h-0 flex-1" class:hidden={view !== 'words'}><WordsView {entries} {starting} onStart={begin} /></div>
+	<div class="flex min-h-0 flex-1" class:hidden={view !== 'chat'}>
+		<aside class="hidden w-56 shrink-0 overflow-y-auto border-r p-3 md:block" aria-label="Chat history">
+			<h2 class="mb-2 text-sm font-semibold">Chats in this browser</h2>
+			{#each chats.chats as chat (chat.id)}<Button class="mb-1 w-full justify-start truncate" variant={chat.id === selectedChatId ? 'secondary' : 'ghost'} onclick={() => openChat(chat.id)}>{chat.title}</Button>{/each}
+		</aside>
+		<div class="flex min-w-0 flex-1 flex-col">
+			<div class="flex items-center gap-2 border-b px-3 py-2 md:hidden"><Button size="sm" variant="outline" onclick={() => historyOpen = !historyOpen}>History</Button><Button size="sm" variant="outline" onclick={() => focusOpen = !focusOpen}>Focus</Button></div>
+			{#if historyOpen || !selectedChatId}<nav class="max-h-44 overflow-y-auto border-b p-2 md:hidden" aria-label="Chat history">{#each chats.chats as chat (chat.id)}<Button class="w-full justify-start" variant="ghost" onclick={() => openChat(chat.id)}>{chat.title}</Button>{/each}</nav>{/if}
+			{#if focusOpen && selectedChat}<div class="border-b p-3 md:hidden"><FocusWords focus={selectedChat.focus} {entries} /></div>{/if}
+			{#if !selectedChatId}<p class="m-auto text-center text-muted-foreground">Choose a chat from history.</p>{/if}
+			{#if selectedChatId && selectedChat}
+				{#key selectedChatId}<ConversationView bind:this={conversation} chatId={selectedChatId} {folder} admit={chats.admit} {catalog} {selections} {entries} focus={selectedChat.focus} visible={view === 'chat'} startOpening={openingId === selectedChatId} onOpeningStarted={() => openingId = null} />{/key}
+			{/if}
+		</div>
+		<aside class="hidden w-60 shrink-0 overflow-y-auto border-l p-3 md:block" aria-label="Focus words">
+			{#if selectedChat}<FocusWords focus={selectedChat.focus} {entries} />{/if}
+		</aside>
+	</div>
+</div>

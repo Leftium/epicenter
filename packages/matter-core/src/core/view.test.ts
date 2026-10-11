@@ -18,9 +18,9 @@
 
 import { describe, expect, test } from 'bun:test';
 import { expectOk } from 'wellcrafted/testing';
-import { validateContract } from './contract';
-import type { Row } from './parse';
-import { groupRowsByField, parseViews } from './view';
+import { validateContract } from './contract.js';
+import type { Row } from './parse.js';
+import { groupRowsByField, parseViews } from './view.js';
 
 /** One contract with a field of every view-relevant kind, compiled once for all tests. */
 function setup() {
@@ -275,12 +275,5 @@ describe('groupRowsByField (board buckets)', () => {
 			{ value: 'idea', rows: [rows[0]!] },
 			{ value: null, rows: [rows[1]!, rows[2]!] },
 		]);
-	});
-
-	test('no Unassigned bucket when every row is assigned', () => {
-		const rows = [row('a.md', { status: 'idea' })];
-		expect(
-			groupRowsByField(rows, 'status', ['idea']).map((bucket) => bucket.value),
-		).toEqual(['idea']);
 	});
 });

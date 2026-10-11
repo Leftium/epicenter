@@ -139,7 +139,7 @@ confirms by design: provider tokens were consumed and cannot be refunded.
 
 Storage is **not metered today**. The old assets surface (a Postgres `asset`
 table + an `ASSETS_BUCKET` R2 binding) was retired into the opaque-ID
-blob store (`packages/server/src/routes/blobs.ts`), which makes **no Autumn
+blob store (`packages/server/src/routes/authority-blobs.ts`), which makes **no Autumn
 call**: there is no upload guard and no usage sync. The asset-table-coupled
 wiring (`syncAssetStorageWithAutumn` policy, `checkAssetStorageUpload` /
 `syncAssetStorageUsageTotal` service methods) is gone.

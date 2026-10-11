@@ -1,4 +1,4 @@
-import * as Y from 'yjs';
+import * as Y from '@y/y';
 
 // UUID polyfill for non-secure contexts (HTTP)
 function generateUUID(): string {
@@ -49,9 +49,7 @@ const elements = {
 };
 
 // Show network URL for phone access
-const host = window.location.hostname;
-const port = window.location.port;
-elements.networkUrl.textContent = `http://${host}:${port}`;
+elements.networkUrl.textContent = window.location.origin;
 
 // Utility functions
 function formatBytes(bytes: number): string {
@@ -223,7 +221,7 @@ async function runBenchmark() {
 			tableIndex++
 		) {
 			const tableName = `table_${tableIndex}`;
-			const tableMap = doc.getMap(tableName);
+			const tableMap = doc.get(tableName);
 
 			log(
 				`Creating table ${tableIndex + 1}/${numTables}: ${tableName}`,
@@ -243,11 +241,11 @@ async function runBenchmark() {
 				doc.transact(() => {
 					for (let i = 0; i < actualBatchSize; i++) {
 						const row = generateRow(fieldsPerRow, fieldSize);
-						const rowMap = new Y.Map();
+						const rowMap = new Y.Node();
 						for (const [key, value] of Object.entries(row)) {
-							rowMap.set(key, value);
+							rowMap.setAttr(key, value);
 						}
-						tableMap.set(row.id as string, rowMap);
+						tableMap.setAttr(row.id as string, rowMap);
 						totalRowsInserted++;
 					}
 				});

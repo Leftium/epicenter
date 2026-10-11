@@ -1,72 +1,77 @@
 <script lang="ts">
+	import { Button } from '@epicenter/ui/button';
+	import { ConfirmationDialog } from '@epicenter/ui/confirmation-dialog';
+	import * as Empty from '@epicenter/ui/empty';
+	import { Loading } from '@epicenter/ui/loading';
 	import { Toaster } from '@epicenter/ui/sonner';
+	import * as Tooltip from '@epicenter/ui/tooltip';
+	import TriangleAlertIcon from '@lucide/svelte/icons/triangle-alert';
 	import { ModeWatcher } from 'mode-watcher';
-	import { onNavigate } from '$app/navigation';
-	import { FlushEditsOnHide } from '@epicenter/svelte';
+	import { onDestroy } from 'svelte';
+	import { mountSession } from '$lib/session.svelte.js';
+	import AppShell from './components/AppShell.svelte';
 	import '@epicenter/ui/app.css';
 	// Whispering's brand overrides, layered after the shared theme so they win.
-	// Keep this import last among the stylesheets.
 	import '../app.css';
 
-	let { children } = $props();
+	let props = $props();
 
-	// The root layout serves every surface: the (app) group, the auth
-	// callback, and the recording-overlay webview. It owns chrome only; the
-	// (app) layout owns the app boot, so the other surfaces never
-	// open SQLite.
+	// The mounted layout acquires the folder, once, and every page below shares
+	// it: a route change renders another page inside the same session. Importing
+	// modules opens nothing, and no page opens a folder of its own. If the
+	// folder cannot be opened, the same holder lets the window be closed.
+	const { opening, quit, release } = mountSession();
 
-	onNavigate((navigation) => {
-		if (!document.startViewTransition) return;
-		// We deliberately lengthen the morph below, so honor reduced-motion by
-		// skipping the transition entirely (snap to the new page) rather than
-		// playing a longer animation for someone who asked for less.
-		if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+	onDestroy(release);
 
-		return new Promise((resolve) => {
-			document.startViewTransition(async () => {
-				resolve();
-				await navigation.complete;
-			});
-		});
-	});
+	// The failed window's own quit, pressed by the person. Nothing answers for
+	// them: a failure that proves nothing about what was left open is never
+	// approved without this press.
+	let quitting = $state(false);
+	let quitProblem = $state<string | undefined>();
+	async function quitApp() {
+		if (quit === undefined) return;
+		quitting = true;
+		quitProblem = await quit();
+		quitting = false;
+	}
 </script>
 
-<svelte:head> <title>Whispering</title> </svelte:head>
+{#snippet failed(message: string)}
+	<Empty.Root class="h-dvh">
+		<Empty.Media><TriangleAlertIcon class="size-8 text-muted-foreground" /></Empty.Media>
+		<Empty.Title>Could not open the recordings folder</Empty.Title>
+		<Empty.Description>{message}</Empty.Description>
+		{#if quit}
+			<Empty.Content>
+				<Button variant="outline" disabled={quitting} onclick={() => void quitApp()} data-testid="failed-quit">
+					Quit Whispering
+				</Button>
+				{#if quitProblem}
+					<p class="text-sm text-muted-foreground" role="status">{quitProblem}</p>
+				{/if}
+			</Empty.Content>
+		{/if}
+	</Empty.Root>
+{/snippet}
 
-{@render children()}
+<svelte:head><title>Whispering</title></svelte:head>
 
-<Toaster
-	offset={16}
-	class="block"
-	duration={5000}
-	visibleToasts={5}
-	closeButton
-	toastOptions={{
-		classes: {
-			toast: 'flex flex-wrap *:data-content:flex-1',
-			icon: 'shrink-0',
-			actionButton: 'w-full mt-3 inline-flex justify-center',
-			closeButton: 'w-full mt-3 inline-flex justify-center',
-		},
-	}}
-/>
+<Tooltip.Provider>
+	{#await opening}
+		<Loading class="h-dvh" label="Opening your recordings…" />
+	{:then { data: session, error: openError }}
+		<!-- A refused folder is shown as refused. No other storage is opened in its place. -->
+		{#if openError !== null}
+			{@render failed(openError.message)}
+		{:else}
+			<AppShell {session}>{@render props.children?.()}</AppShell>
+		{/if}
+	{:catch error}
+		{@render failed(error instanceof Error ? error.message : String(error))}
+	{/await}
+</Tooltip.Provider>
+
+<ConfirmationDialog />
+<Toaster offset={16} closeButton />
 <ModeWatcher defaultMode="dark" track={false} />
-<FlushEditsOnHide />
-
-<style>
-	/* The default UA view-transition runs 0.25s, which is abrupt for the
-	   cross-page glyph morphs (ADR 0014) that fly the hero record control up
-	   into the topbar. Slow every group and its old/new images by the same
-	   amount so the named glyphs and the page crossfade stay in step. This is
-	   the one knob: SvelteKit has no duration setting, it is pure CSS on the
-	   :root view-transition pseudo-elements (hence :global).
-
-	   0.3s is Material's inter-screen standard and sits in the middle of the
-	   100-400ms band research calls responsive (NN/g: 500ms reads as a drag);
-	   a gentle nudge up from the abrupt 0.25s UA default. */
-	:global(::view-transition-group(*)),
-	:global(::view-transition-old(*)),
-	:global(::view-transition-new(*)) {
-		animation-duration: 0.3s;
-	}
-</style>

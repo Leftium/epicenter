@@ -53,6 +53,9 @@ merge splits a path both sides changed into units:
   chooses is written as it is; if it is not a valid row, the table reads it
   as `InvalidRow` and the app opens it for repair as text (ADR-0518).
   `kv.json` deleted on one side or not one JSON object is a `file` unit too.
+- A folder whose first commit the run made adopts the remote's history
+  by merging over an empty base, so a fresh copy can join a remote it did
+  not clone.
 - Any other text file merges by line, so a README both sides edited is one
   `file` unit only when their lines compete.
 - A binary file, a link, executable, or submodule, and a file against a
@@ -96,7 +99,16 @@ type SyncChoices = Partial<Record<string, SyncChoice>>; // keyed by conflict id
 ## Consequences
 
 - Applications get one Sync action. Pull, merge, and commit-and-push remain
-  on `folder.git` for advanced use.
+  on `folder.git`, and an app offers them only where `folder.sync.supported`
+  is false.
+- A conflict is never left in the files. `mergeIncoming({ conflicts: 'leave' })`,
+  its published merge with markers and unmerged index stages, and the
+  `MERGE_HEAD`, `MERGE_MSG`, and `ORIG_HEAD` it wrote are removed, in the
+  browser, Bun, and desktop owners alike, with the staged commit that
+  finished such a merge. A conflicted `git merge` in the folder terminal
+  refuses in both history modes and points to Sync (`CONFLICTS_NEED_SYNC`).
+  A merge another Git program began still blocks commits and incoming
+  updates until it is finished with Git.
 - A row both sides changed is rewritten in the standard form, even when the
   changes were compatible, as the first save of a hand-edited row already is.
 - Open edit sessions are not told: an idle session adopts the new file when
@@ -117,9 +129,11 @@ type SyncChoices = Partial<Record<string, SyncChoice>>; // keyed by conflict id
   is written by `formatRow`.
 - **Replacement as source text in a grammar per unit.** Callers would encode
   JSON and YAML by hand; with one writer, a value is enough.
-- **Leave markers in the files, as `mergeIncoming({ conflicts: 'leave' })`.**
-  Writes conflicted candidates into files apps read, and needs manual
-  history.
+- **Keep leaving markers in the files, as `mergeIncoming({ conflicts: 'leave' })`
+  did.** Writes conflicted candidates into files apps read, needs manual
+  history, and kept a second merge-state machine in three owners (about
+  5,700 lines removed with its tests, Rust included) for what Sync now
+  settles.
 - **Fetch again inside `resolve`.** Changes the inputs the person reviewed.
 - **Whole-file choices only.** A person settling one title would discard the
   other side's independent field changes.
@@ -135,6 +149,6 @@ choices in the standard form, captured units with nothing written or sent,
 settled units with the captured commits as parents, a deleted row and an
 invalid row as whole files, every kind of invalid choice, stale attempts,
 a text file outside a table merged by line or held whole, and an
-unreviewable binary conflict. `packages/folder/src/git/merge-markers.test.ts`
+unreviewable binary conflict. `packages/folder/src/git/merge-lines.test.ts`
 pins that a line merge keeps lone carriage returns, U+2028, and U+2029. `apps/todos/src/lib/sync.test.ts` covers
 the open item afterwards.

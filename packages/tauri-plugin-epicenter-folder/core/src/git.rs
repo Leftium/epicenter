@@ -26,8 +26,6 @@ use std::time::Duration;
 use serde::Serialize;
 use specta::Type;
 
-use crate::history::MergeInProgress;
-use crate::incoming::UnmergedPath;
 use crate::messages::{ChangeKind, PathChange};
 use crate::paths::{is_portable_path, path_problem};
 use crate::transport::Relay;
@@ -39,8 +37,8 @@ const REMOTE_NAME: &str = "origin";
 const PLAIN_ONLY: &str = "automatic commits only write plain files";
 /// Git's empty blob: the base of a file both sides added.
 const EMPTY_BLOB: &str = "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391";
-/// Git operations no commit may run under. A merge in progress is not one of
-/// them: a staged commit is what finishes it (`merge_state`).
+/// Git operations no commit may run under. A merge in progress is checked
+/// on its own (`blocked`), since this folder never finishes one.
 const OPERATION_MARKERS: [&str; 5] = [
     "CHERRY_PICK_HEAD",
     "REVERT_HEAD",
@@ -48,6 +46,9 @@ const OPERATION_MARKERS: [&str; 5] = [
     "rebase-apply",
     "BISECT_LOG",
 ];
+/// Why a merge begun outside this folder blocks its history work.
+const MERGE_IN_PROGRESS: &str =
+    "a Git merge is in progress; finish or abort it with Git outside Epicenter";
 /// Attributes that make Git store different bytes than the working file.
 const NORMALIZING: [&str; 6] = [
     "text",
@@ -615,8 +616,10 @@ impl Git {
         Err(Self::failure(&args, &output))
     }
 
-    /// Why no commit may run now: a wrong or detached HEAD, or a native Git
-    /// operation other than a merge in progress.
+    /// Why no commit or incoming update may run now: a wrong or detached
+    /// HEAD, a native Git operation in progress, or a merge a person's own Git
+    /// began. A merge is in progress while `MERGE_HEAD` exists or the index
+    /// holds unmerged stages; this folder neither finishes nor abandons one.
     pub fn blocked(&self) -> Result<Option<String>, Failure> {
         let head = self.run(&["symbolic-ref", "--quiet", "HEAD"], None, &[])?;
         if head.code != Some(0) {
@@ -629,6 +632,16 @@ impl Git {
             if self.gitdir.join(marker).exists() {
                 return Ok(Some(format!("a Git operation is in progress ({marker})")));
             }
+        }
+        if self.gitdir.join("MERGE_HEAD").exists() {
+            return Ok(Some(MERGE_IN_PROGRESS.to_string()));
+        }
+        let unmerged = self.unmerged_paths()?;
+        if !unmerged.is_empty() {
+            return Ok(Some(format!(
+                "{MERGE_IN_PROGRESS} (unmerged: {})",
+                unmerged.join(", ")
+            )));
         }
         Ok(None)
     }
@@ -1472,46 +1485,25 @@ impl Git {
         Ok(text(&output).trim().to_string())
     }
 
-    /// Commit the index's tree onto parents pinned before anything is
-    /// written: the branch head, or, finishing a merge, `(head, incoming)`
-    /// whatever the branch names now. A merge commit is written even when
-    /// its tree is the head's; otherwise a tree equal to the parent's is
-    /// `Nothing`. The branch moves only from the first parent, by
-    /// compare-and-swap, so a commit it refuses leaves the index, the files,
-    /// and the merge state as they were. `git commit` would take whatever
-    /// `HEAD` names when it runs. Like a whole-folder commit, no commit hook
-    /// runs and nothing is signed.
-    pub fn commit_index(
-        &self,
-        message: &str,
-        author: &Author,
-        merge: Option<(&str, &str)>,
-    ) -> Result<IndexCommit, Failure> {
-        let parent = match merge {
-            Some((head, _)) => Some(head.to_string()),
-            None => self.read_branch()?,
-        };
+    /// Commit the index's tree onto the branch head, pinned before anything
+    /// is written. A tree equal to the parent's is `Nothing`. The branch
+    /// moves only from that parent, by compare-and-swap, so a commit it
+    /// refuses leaves the index and the files as they were. `git commit`
+    /// would take whatever `HEAD` names when it runs. Like a whole-folder
+    /// commit, no commit hook runs and nothing is signed.
+    pub fn commit_index(&self, message: &str, author: &Author) -> Result<IndexCommit, Failure> {
+        let parent = self.read_branch()?;
         let tree = self.index_tree()?;
-        if merge.is_none() {
-            let parent_tree = match &parent {
-                Some(parent) => self.tree_of(parent)?,
-                None => EMPTY_TREE.to_string(),
-            };
-            if tree == parent_tree {
-                return Ok(IndexCommit::Nothing);
-            }
-        }
-        let parents: Vec<&str> = parent
-            .as_deref()
-            .into_iter()
-            .chain(merge.map(|(_, incoming)| incoming))
-            .collect();
-        let oid = self.write_commit_with_parents(&tree, &parents, message, author)?;
-        let reason = match merge {
-            Some(_) => "epicenter: merge",
-            None => "epicenter: commit",
+        let parent_tree = match &parent {
+            Some(parent) => self.tree_of(parent)?,
+            None => EMPTY_TREE.to_string(),
         };
-        match self.move_branch(parent.as_deref(), &oid, reason)? {
+        if tree == parent_tree {
+            return Ok(IndexCommit::Nothing);
+        }
+        let parents: Vec<&str> = parent.as_deref().into_iter().collect();
+        let oid = self.write_commit_with_parents(&tree, &parents, message, author)?;
+        match self.move_branch(parent.as_deref(), &oid, "epicenter: commit")? {
             Cas::Moved => Ok(IndexCommit::Committed { oid, parent }),
             Cas::Lost { actual } => Ok(IndexCommit::BranchMoved {
                 expected: parent,
@@ -1545,16 +1537,14 @@ impl Git {
         Ok(text(&output).trim().to_string())
     }
 
-    /// Git's own three-way line merge of three blobs, written as a blob, and
-    /// whether it left conflict markers. `base` absent is the empty blob.
-    /// The labels follow the markers, as `git merge` writes them.
+    /// Git's own three-way line merge of three blobs, written as a blob, or
+    /// `None` when it conflicts. `base` absent is the empty blob.
     pub fn merge_blobs(
         &self,
         base: Option<&str>,
         ours: &str,
         theirs: &str,
-        labels: (&str, &str),
-    ) -> Result<(String, bool), Failure> {
+    ) -> Result<Option<String>, Failure> {
         let base = match base {
             Some(base) => base.to_string(),
             None => {
@@ -1563,22 +1553,11 @@ impl Git {
                 empty
             }
         };
-        let args = [
-            "merge-file",
-            "--object-id",
-            "-L",
-            labels.0,
-            "-L",
-            "base",
-            "-L",
-            labels.1,
-            ours,
-            &base,
-            theirs,
-        ];
+        let args = ["merge-file", "--object-id", ours, &base, theirs];
         let output = self.run(&args, None, &[])?;
         match output.code {
-            Some(code @ 0..=127) => Ok((text(&output.stdout).trim().to_string(), code > 0)),
+            Some(0) => Ok(Some(text(&output.stdout).trim().to_string())),
+            Some(1..=127) => Ok(None),
             _ => Err(Self::failure(&args, &output)),
         }
     }
@@ -1613,44 +1592,7 @@ impl Git {
         Ok(None)
     }
 
-    /// A commit ID stored in a private file of the Git directory, `None` when
-    /// the file is absent, and an error when it holds anything else.
-    fn private_commit(&self, name: &str) -> Result<Option<String>, Failure> {
-        match fs::read(self.gitdir.join(name)) {
-            Ok(bytes) => {
-                let value = text(&bytes);
-                let first = value.lines().next().unwrap_or("").trim().to_string();
-                if matches!(first.len(), 40 | 64)
-                    && first
-                        .bytes()
-                        .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
-                {
-                    Ok(Some(first))
-                } else {
-                    Err(format!(".git/{name} does not name a commit"))
-                }
-            }
-            Err(cause) if cause.kind() == std::io::ErrorKind::NotFound => Ok(None),
-            Err(cause) => Err(format!(".git/{name} cannot be read: {cause}")),
-        }
-    }
-
-    /// The merge Git records as begun and not committed: `MERGE_HEAD`,
-    /// `ORIG_HEAD`, and the paths still unmerged.
-    pub fn merge_state(&self) -> Result<Option<MergeInProgress>, Failure> {
-        let Some(incoming) = self.private_commit("MERGE_HEAD")? else {
-            return Ok(None);
-        };
-        let head = self.private_commit("ORIG_HEAD").unwrap_or(None);
-        Ok(Some(MergeInProgress {
-            incoming,
-            head,
-            unresolved: self.unmerged_paths()?,
-        }))
-    }
-
-    /// Each path the index holds as unmerged stages, once, in index order,
-    /// whether or not `MERGE_HEAD` exists.
+    /// Each path the index holds as unmerged stages, once, in index order.
     pub fn unmerged_paths(&self) -> Result<Vec<String>, Failure> {
         let listing = self.ok(&["ls-files", "--unmerged", "-z"], None, &[])?;
         let mut unresolved: Vec<String> = Vec::new();
@@ -1662,88 +1604,6 @@ impl Git {
             }
         }
         Ok(unresolved)
-    }
-
-    /// The parents of `commit`, in order.
-    pub fn parents(&self, commit: &str) -> Result<Vec<String>, Failure> {
-        let listed = self.ok(&["log", "-1", "--format=%P", commit], None, &[])?;
-        Ok(text(&listed)
-            .split_whitespace()
-            .map(str::to_string)
-            .collect())
-    }
-
-    /// Replace a private file of the Git directory whole: a scratch file,
-    /// flushed, then renamed into place.
-    fn write_private(&self, name: &str, bytes: &[u8]) -> Result<(), Failure> {
-        let scratch = self.gitdir.join(format!(
-            "{name}.epicenter-{}-{}",
-            std::process::id(),
-            SNAPSHOT_SEQUENCE.fetch_add(1, Ordering::SeqCst)
-        ));
-        let written = (|| {
-            let mut file = fs::File::create(&scratch)?;
-            file.write_all(bytes)?;
-            file.sync_all()?;
-            fs::rename(&scratch, self.gitdir.join(name))
-        })();
-        written.map_err(|cause| {
-            let _ = fs::remove_file(&scratch);
-            format!(".git/{name} could not be written: {cause}")
-        })
-    }
-
-    /// Record a merge in progress over the unmoved branch, as `git merge`
-    /// leaves one: `ORIG_HEAD`, `MERGE_MSG`, and `MERGE_HEAD` last, whose
-    /// presence says the merge began.
-    pub fn write_merge_state(
-        &self,
-        head: &str,
-        incoming: &str,
-        message: &str,
-    ) -> Result<(), Failure> {
-        self.write_private("ORIG_HEAD", format!("{head}\n").as_bytes())?;
-        let mut body = message.as_bytes().to_vec();
-        if !body.ends_with(b"\n") {
-            body.push(b'\n');
-        }
-        self.write_private("MERGE_MSG", &body)?;
-        self.write_private("MERGE_HEAD", format!("{incoming}\n").as_bytes())
-    }
-
-    /// Remove `MERGE_HEAD` first, then `MERGE_MSG` and `MERGE_MODE`. `ORIG_HEAD`
-    /// stays, as Git leaves it. Files already gone are not an error.
-    pub fn clear_merge(&self) -> Result<(), Failure> {
-        for name in ["MERGE_HEAD", "MERGE_MSG", "MERGE_MODE"] {
-            match fs::remove_file(self.gitdir.join(name)) {
-                Ok(()) => {}
-                Err(cause) if cause.kind() == std::io::ErrorKind::NotFound => {}
-                Err(cause) => return Err(format!(".git/{name} could not be removed: {cause}")),
-            }
-        }
-        Ok(())
-    }
-
-    /// Give each unmerged path its stages in place of its index entry,
-    /// through Git's index lock.
-    pub fn stage_unmerged(&self, unmerged: &[UnmergedPath]) -> Result<(), Failure> {
-        if unmerged.is_empty() {
-            return Ok(());
-        }
-        let mut input = Vec::new();
-        for entry in unmerged {
-            // A mode-0 record removes the path's entries before its stages go in.
-            input.extend_from_slice(format!("0 {ZERO}\t{}\0", entry.path).as_bytes());
-            for (stage, oid) in [(1, &entry.base), (2, &entry.ours), (3, &entry.theirs)] {
-                if let Some(oid) = oid {
-                    input.extend_from_slice(
-                        format!("100644 {oid} {stage}\t{}\0", entry.path).as_bytes(),
-                    );
-                }
-            }
-        }
-        self.ok(&["update-index", "-z", "--index-info"], Some(&input), &[])?;
-        Ok(())
     }
 
     /// Every index entry as stage to `(mode, oid)`, by path.

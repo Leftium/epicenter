@@ -27,11 +27,11 @@
  * - Closing stops a terminal command's later steps and waits for the one
  *   already sent
  * - Snapshot events replace the snapshot in order; a stale one is dropped
- * - A merge is one `merge_incoming` with its conflict policy, its
- *   unrelated-history consent, and whether it wants conflict versions; its
- *   outcomes, refusals, the snapshot's merge state, and a staged commit's
- *   merge parent arrive in the shared shapes, conflict versions as
- *   `Uint8Array`, and a lost reply is `Unconfirmed`
+ * - A merge is one `merge_incoming` with its unrelated-history consent and
+ *   whether it wants conflict versions; its outcomes, refusals (a conflict
+ *   among them), and the snapshot's last attempt arrive in the shared
+ *   shapes, conflict versions as `Uint8Array`, and a lost reply is
+ *   `Unconfirmed`
  * - Closing detaches this window once and does not shut the folder down
  *
  * See also:
@@ -113,7 +113,6 @@ const wireSnapshot = (overrides: Record<string, unknown> = {}) => ({
 	lastPull: null,
 	lastMerge: null,
 	pendingIncoming: null,
-	merging: null,
 	closed: false,
 	...overrides,
 });
@@ -148,7 +147,7 @@ async function attached() {
 		withdraw_request: () => null,
 	};
 	const folder = expectOk(await openFolder({ id: 'notes', definition }));
-	expect(sent('attach')[0]?.args).toEqual({ scope: 'notes', protocol: 8 });
+	expect(sent('attach')[0]?.args).toEqual({ scope: 'notes', protocol: 9 });
 	expect(folder.location).toEqual({
 		kind: 'directory',
 		root: '/Users/someone/Epicenter/notes',
@@ -186,7 +185,7 @@ test('the folder opened is the scope the opener names', async () => {
 	);
 	expect(sent('attach')[0]?.args).toEqual({
 		scope: 'so.epicenter.taurifoldertest',
-		protocol: 8,
+		protocol: 9,
 	});
 	expect(folder.git.snapshot.commitOnEdit).toBe(false);
 	await folder.close();
@@ -262,13 +261,13 @@ test('a desktop app that speaks another protocol is refused at attach, before an
 	calls = [];
 	replies = {
 		// A desktop app from before it merged.
-		attach: () => refuse({ name: 'Incompatible', host: 7, page: 8 }),
+		attach: () => refuse({ name: 'Incompatible', host: 8, page: 9 }),
 	};
 	const refused = expectErr(await openFolder({ id: 'notes', definition }));
-	expect(refused).toMatchObject({ name: 'Incompatible', host: 7, page: 8 });
+	expect(refused).toMatchObject({ name: 'Incompatible', host: 8, page: 9 });
 	expect(refused.message).toContain('Update the app');
 	expect(calls).toEqual([
-		{ cmd: 'attach', args: { scope: 'notes', protocol: 8 } },
+		{ cmd: 'attach', args: { scope: 'notes', protocol: 9 } },
 	]);
 });
 
@@ -1029,7 +1028,6 @@ const RECORD = {
 	branch: 'main',
 	expectedHead: null,
 	nextHead: 'b'.repeat(40),
-	merge: null,
 } as const;
 const RECORDED: RecordedIncoming = {
 	state: 'recorded',
@@ -1157,24 +1155,15 @@ const FETCHED = 'd'.repeat(40);
 const MERGED = 'e'.repeat(40);
 const COLOR_CONFLICT = { reason: 'content', path: 'notes/color.txt' } as const;
 
-test('a merge sends one command with its conflict policy and maps each outcome', async () => {
+test('a merge sends one command and maps each outcome', async () => {
 	const folder = await attached();
-	replies.merge_incoming = ({ args }) =>
-		args.conflicts === 'refuse'
-			? {
-					status: 'merged',
-					from: LOCAL,
-					to: MERGED,
-					fetched: FETCHED,
-					changedPaths: ['a.md'],
-				}
-			: {
-					status: 'conflicted',
-					from: LOCAL,
-					fetched: FETCHED,
-					conflicts: [COLOR_CONFLICT],
-					changedPaths: ['notes/color.txt'],
-				};
+	replies.merge_incoming = () => ({
+		status: 'merged',
+		from: LOCAL,
+		to: MERGED,
+		fetched: FETCHED,
+		changedPaths: ['a.md'],
+	});
 
 	expect(expectOk(await folder.git.mergeIncoming())).toEqual({
 		status: 'merged',
@@ -1182,15 +1171,6 @@ test('a merge sends one command with its conflict policy and maps each outcome',
 		to: MERGED,
 		fetched: FETCHED,
 		changedPaths: ['a.md'],
-	});
-	expect(
-		expectOk(await folder.git.mergeIncoming({ conflicts: 'leave' })),
-	).toEqual({
-		status: 'conflicted',
-		from: LOCAL,
-		fetched: FETCHED,
-		conflicts: [COLOR_CONFLICT],
-		changedPaths: ['notes/color.txt'],
 	});
 	replies.merge_incoming = () => ({
 		status: 'fastForwarded',
@@ -1207,9 +1187,8 @@ test('a merge sends one command with its conflict policy and maps each outcome',
 	// Both options are always sent, `false` unless asked for.
 	const defaults = { allowUnrelatedHistories: false, versions: false };
 	expect(sent('merge_incoming').map((call) => call.args)).toEqual([
-		{ session: 7, conflicts: 'refuse', ...defaults },
-		{ session: 7, conflicts: 'leave', ...defaults },
-		{ session: 7, conflicts: 'refuse', ...defaults },
+		{ session: 7, ...defaults },
+		{ session: 7, ...defaults },
 	]);
 	await folder.close();
 });
@@ -1264,13 +1243,11 @@ test('merge options reach the owner, and conflict versions arrive as exact bytes
 	expect(sent('merge_incoming').map((call) => call.args)).toEqual([
 		{
 			session: 7,
-			conflicts: 'refuse',
 			allowUnrelatedHistories: true,
 			versions: true,
 		},
 		{
 			session: 7,
-			conflicts: 'refuse',
 			allowUnrelatedHistories: true,
 			versions: false,
 		},
@@ -1317,15 +1294,8 @@ test('merge refusals keep their names, and a lost reply is Unconfirmed and sent 
 	await folder.close();
 });
 
-test('the snapshot shows a merge in progress, its last attempt, and a pending merge publication', async () => {
+test('the snapshot shows merge activity, its last attempt, and a pending merge publication', async () => {
 	const folder = await attached();
-	expect('merging' in folder.git.snapshot).toBe(false);
-	const unmerged = {
-		path: 'notes/color.txt',
-		base: null,
-		ours: 'f'.repeat(40),
-		theirs: 'a'.repeat(40),
-	};
 	emit('folder-snapshot-changed', {
 		scope: 'notes',
 		sequence: 4,
@@ -1336,7 +1306,6 @@ test('the snapshot shows a merge in progress, its last attempt, and a pending me
 					{ active: name === 'merge' },
 				]),
 			),
-			merging: { incoming: FETCHED, head: LOCAL, unresolved: [] },
 			lastMerge: {
 				at: 5,
 				result: {
@@ -1344,20 +1313,11 @@ test('the snapshot shows a merge in progress, its last attempt, and a pending me
 					error: { name: 'Conflicted', conflicts: [COLOR_CONFLICT] },
 				},
 			},
-			pendingIncoming: {
-				...RECORD,
-				expectedHead: LOCAL,
-				merge: { incoming: FETCHED, message: 'Merge', unmerged: [unmerged] },
-			},
+			pendingIncoming: { ...RECORD, expectedHead: LOCAL, nextHead: MERGED },
 		}),
 	});
 	const snapshot = folder.git.snapshot;
 	expect(snapshot.activity.merge).toEqual({ active: true });
-	expect(snapshot.merging).toEqual({
-		incoming: FETCHED,
-		head: LOCAL,
-		unresolved: [],
-	});
 	expect(snapshot.lastMerge?.result.error).toMatchObject({
 		name: 'Conflicted',
 		conflicts: [COLOR_CONFLICT],
@@ -1365,44 +1325,22 @@ test('the snapshot shows a merge in progress, its last attempt, and a pending me
 	expect(snapshot.pendingIncoming).toEqual({
 		...RECORDED,
 		expectedHead: LOCAL,
-		merge: {
-			incoming: FETCHED,
-			message: 'Merge',
-			unmerged: [{ ...unmerged, base: undefined }],
-		},
+		nextHead: MERGED,
 	});
 	await folder.close();
 });
 
-test('a staged commit names the merge it finished, and an unmerged path refuses it', async () => {
+test('a staged commit names its commit and parent', async () => {
 	const folder = await attached();
-	replies.commit_staged = () => ({
-		oid: MERGED,
-		parent: LOCAL,
-		incoming: FETCHED,
-		mergeStateWarning: 'MERGE_MSG could not be removed',
-	});
-	expect(expectOk(await folder.git.commitStaged('Merge'))).toEqual({
-		oid: MERGED,
-		parent: LOCAL,
-		incoming: FETCHED,
-		mergeStateWarning: 'MERGE_MSG could not be removed',
-	});
-	replies.commit_staged = () => ({
-		oid: MERGED,
-		parent: null,
-		incoming: null,
-		mergeStateWarning: null,
-	});
+	replies.commit_staged = () => ({ oid: MERGED, parent: LOCAL });
 	expect(expectOk(await folder.git.commitStaged('Plain'))).toEqual({
 		oid: MERGED,
-		parent: undefined,
+		parent: LOCAL,
 	});
-	replies.commit_staged = () =>
-		refuse({ name: 'Unmerged', paths: ['notes/color.txt'] });
-	expect(expectErr(await folder.git.commitStaged('Too soon'))).toMatchObject({
-		name: 'Unmerged',
-		paths: ['notes/color.txt'],
+	replies.commit_staged = () => ({ oid: MERGED, parent: null });
+	expect(expectOk(await folder.git.commitStaged('First'))).toEqual({
+		oid: MERGED,
+		parent: undefined,
 	});
 	await folder.close();
 });

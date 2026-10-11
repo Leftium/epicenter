@@ -21,6 +21,7 @@
  *   is written as chosen and reads as `InvalidRow` until repaired
  * - Invalid choices are all reported, write nothing, and keep the attempt
  * - Another run, a save, or a moved branch makes an attempt stale
+ * - A folder with no history adopts the remote on its first sync
  * - A text file outside a table merges by line; competing lines make it
  *   one whole-file unit. A binary conflict is `Unreviewable`
  *
@@ -83,6 +84,7 @@ afterEach(async () => {
 async function setup() {
 	const root = await scratch('folder-sync-');
 	const bare = await createBareRemote(root);
+	const httpFetch = await gitHttpFetch(root);
 	const local = expectOk(
 		await openFolder({
 			id: 'so.epicenter.synctest',
@@ -90,7 +92,7 @@ async function setup() {
 			browser: {
 				author: { name: 'Local', email: 'local@example.test' },
 				remote: { url: 'http://git.test/remote.git', branch: 'main' },
-				httpFetch: await gitHttpFetch(root),
+				httpFetch,
 				...browserStorage(createTestStorage()),
 			},
 		}),
@@ -106,6 +108,7 @@ async function setup() {
 	return {
 		base,
 		local,
+		httpFetch,
 		remoteHead: () => git(bare, 'rev-parse', 'main'),
 		/** `[commit, ...parents]` of the remote branch head. */
 		remoteParents: async () =>
@@ -517,4 +520,29 @@ test('a binary conflict is unreviewable and changes nothing', async () => {
 		new Uint8Array([0, 9, 9]),
 	);
 	expect(await context.remoteHead()).toBe(before);
+});
+
+test('a folder with no history adopts the remote on its first sync, merging over an empty base', async () => {
+	const context = await setup();
+	const fresh = expectOk(
+		await openFolder({
+			id: 'so.epicenter.synctest.fresh',
+			definition,
+			browser: {
+				author: { name: 'Fresh', email: 'fresh@example.test' },
+				remote: { url: 'http://git.test/remote.git', branch: 'main' },
+				httpFetch: context.httpFetch,
+				commitOnEdit: false,
+				...browserStorage(createTestStorage()),
+			},
+		}),
+	);
+	opened.push(fresh);
+	expectOk(await fresh.files.create('notes.txt', 'Fresh\n'));
+
+	const head = synced(expectOk(await fresh.sync.run()));
+	expect(await context.remoteHead()).toBe(head);
+	expect((await context.remoteParents()).length).toBe(3);
+	expect(await text(fresh, TODO)).toBe(SEED);
+	expect(await context.remoteFile('notes.txt')).toBe('Fresh');
 });

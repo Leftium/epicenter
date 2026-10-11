@@ -51,11 +51,6 @@ pub enum GitError {
     IncomingPending {
         pending: PendingIncoming,
     },
-    /// A merge in progress still has paths whose index entries are unmerged
-    /// stages. Nothing was written; stage each resolution, then commit.
-    Unmerged {
-        paths: Vec<String>,
-    },
 }
 
 impl GitError {
@@ -253,29 +248,12 @@ impl From<GitError> for PullError {
     }
 }
 
-/// How `merge_incoming` treats competing changes.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, serde::Deserialize, Type)]
-#[serde(rename_all = "camelCase")]
-pub enum MergeConflicts {
-    /// Write nothing when anything conflicts.
-    Refuse,
-    /// Publish the merge with its conflicts in place, for a person to resolve,
-    /// stage, and commit. Requires `commitOnEdit: false`.
-    Leave,
-}
-
-impl Default for MergeConflicts {
-    fn default() -> Self {
-        Self::Refuse
-    }
-}
-
 /// How `merge_incoming` merges, as `@epicenter/folder`'s
-/// `MergeConflictPolicy` names it. The default refuses every conflict, merges
-/// only over exactly one merge base, and returns no file bytes.
+/// `MergeConflictPolicy` names it. Every conflict is refused, writing
+/// nothing. The default merges only over exactly one merge base and returns
+/// no file bytes.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct MergePolicy {
-    pub conflicts: MergeConflicts,
     /// Merge histories that share no commit over an empty base, as
     /// `git merge --allow-unrelated-histories` does. The merge commit's
     /// parents are both heads, so both roots stay reachable. Without it such
@@ -359,7 +337,7 @@ impl MergeConflict {
 }
 
 /// A merge fast-forwards when it can, and otherwise records a two-parent
-/// commit; asked to leave conflicts, it may stop with them in place.
+/// commit. A conflict is a `MergeError`, never an outcome.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
 #[serde(tag = "status", rename_all = "camelCase")]
 pub enum MergeOutcome {
@@ -381,15 +359,6 @@ pub enum MergeOutcome {
         from: String,
         to: String,
         fetched: String,
-        changed_paths: Vec<String>,
-    },
-    /// Only with `leave`: the files, the index's stages, and Git's merge
-    /// state hold the merge; the branch is still `from`.
-    #[serde(rename_all = "camelCase")]
-    Conflicted {
-        from: String,
-        fetched: String,
-        conflicts: Vec<MergeConflict>,
         changed_paths: Vec<String>,
     },
 }
@@ -433,32 +402,12 @@ impl From<GitError> for MergeError {
     }
 }
 
-/// Git's merge state as the repository holds it: a merge that began and has
-/// not been committed.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
-pub struct MergeInProgress {
-    /// `MERGE_HEAD`: the merge commit's second parent.
-    pub incoming: String,
-    /// `ORIG_HEAD`: the head the merge began from, when recorded.
-    pub head: Option<String>,
-    /// Paths whose index entry is still unmerged stages. Empty once each is
-    /// staged, while the merge waits for its commit.
-    pub unresolved: Vec<String>,
-}
-
 /// A staged commit that landed.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct StagedCommit {
     pub oid: String,
     pub parent: Option<String>,
-    /// Set when the commit finished a merge: its second parent.
-    pub incoming: Option<String>,
-    /// The merge commit landed, but removing its metadata failed. While
-    /// `MERGE_HEAD` remains, the next staged commit retries cleanup if the
-    /// branch names a commit with exactly `ORIG_HEAD` and `MERGE_HEAD` as
-    /// its parents. A leftover `MERGE_MSG` alone does not keep a merge active.
-    pub merge_state_warning: Option<String>,
 }
 
 /// A settled attempt recorded in the snapshot.
@@ -552,10 +501,6 @@ pub struct GitSnapshot {
     /// one, staging, commits, and new incoming updates wait for
     /// `recoverIncoming`; file saves continue.
     pub pending_incoming: Option<PendingIncoming>,
-    /// Git's merge state as last read. It stays after every path is staged,
-    /// until the staged commit records the merge. While it is here,
-    /// whole-folder commits, pulls, and merges are blocked.
-    pub merging: Option<MergeInProgress>,
     pub closed: bool,
 }
 

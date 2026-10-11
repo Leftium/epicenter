@@ -33,15 +33,6 @@
  * the two commits' trees. The record is removed once everything reads back
  * as the published commit; a step whose outcome is unknown leaves it.
  *
- * A merge whose conflicts are left for a person publishes the same way to a
- * different destination, which its record names. Its `nextHead` is a commit
- * no ref names, whose tree is the files with markers. The index takes that
- * tree with each conflicted path's stages in place of its entry; the last
- * step writes `ORIG_HEAD`, `MERGE_MSG`, and then `MERGE_HEAD`, and the branch
- * stays at the head it was admitted over. Recovery treats that merge state
- * as the update's own after state, and another merge's as in the way. It
- * publishes; it never resolves a path, clears a stage, or moves the branch.
- *
  * A record that remains is pending until someone asks to recover it. Nothing
  * resumes it implicitly. Ordinary saves continue; staging, commits, and new
  * incoming updates wait. Recovery removes an empty (never admitted) record,
@@ -85,8 +76,6 @@ import type {
 	PublishResult,
 	RecordedIncoming,
 	RecoverIncomingResult,
-	UnfinishedMerge,
-	UnmergedPath,
 } from './backend.js';
 import {
 	type BrowserGitStore,
@@ -95,8 +84,6 @@ import {
 	indexTo,
 	refValue,
 	sameBytes,
-	stageUnmerged,
-	unmergedEntries,
 	WORKDIR,
 } from './browser-backend.js';
 import { capturedIndexMatchesHead } from './captured-index.js';
@@ -117,9 +104,6 @@ const INCOMING_RECORD = 'epicenter-incoming.json';
 /** Refs that keep both commits of a pending update reachable. */
 const PIN_EXPECTED = 'refs/epicenter/incoming/expected';
 const PIN_NEXT = 'refs/epicenter/incoming/next';
-
-/** Git's merge state, written in this order; `MERGE_HEAD` last says the merge began. */
-const MERGE_STATE = ['ORIG_HEAD', 'MERGE_MSG', 'MERGE_HEAD'] as const;
 
 /** An index, ref, or loose object Git never stores empty: empty is absent. */
 const emptyIsAbsent = (path: string) =>
@@ -417,60 +401,18 @@ export function createOpfsGitSession(
 
 /**
  * The stored record: the four fields of a pending update, `null` for no
- * head, and for a merge left unfinished its destination, `null` for a side
- * without the file.
+ * head. A record an earlier version wrote for a merge left unfinished also
+ * has `merge`; it is no longer read, so it is unreadable and kept for review.
  */
 type StoredRecord = {
 	readonly operationId: string;
 	readonly branch: string;
 	readonly expectedHead: string | null;
 	readonly nextHead: string;
-	readonly merge?: {
-		readonly incoming: string;
-		readonly message: string;
-		readonly unmerged: readonly {
-			readonly path: string;
-			readonly base: string | null;
-			readonly ours: string | null;
-			readonly theirs: string | null;
-		}[];
-	};
+	readonly merge?: unknown;
 };
 
 const OID = /^[0-9a-f]{40}$/;
-
-function parseMerge(value: unknown): UnfinishedMerge {
-	const merge = value as Partial<NonNullable<StoredRecord['merge']>>;
-	const stage = (oid: unknown) =>
-		oid === null || (typeof oid === 'string' && OID.test(oid));
-	if (
-		typeof merge !== 'object' ||
-		merge === null ||
-		!OID.test(merge.incoming ?? '') ||
-		typeof merge.message !== 'string' ||
-		!Array.isArray(merge.unmerged) ||
-		!merge.unmerged.every(
-			(path) =>
-				typeof path?.path === 'string' &&
-				stage(path.base) &&
-				stage(path.ours) &&
-				stage(path.theirs),
-		)
-	)
-		throw new Error('its merge destination is not readable');
-	return {
-		incoming: merge.incoming as string,
-		message: merge.message,
-		unmerged: merge.unmerged.map(
-			(path): UnmergedPath => ({
-				path: path.path,
-				base: path.base ?? undefined,
-				ours: path.ours ?? undefined,
-				theirs: path.theirs ?? undefined,
-			}),
-		),
-	};
-}
 
 function parseRecord(bytes: Uint8Array): RecordedIncoming {
 	const value = JSON.parse(decoder.decode(bytes)) as Partial<StoredRecord>;
@@ -481,13 +423,16 @@ function parseRecord(bytes: Uint8Array): RecordedIncoming {
 		!OID.test(value.nextHead ?? '')
 	)
 		throw new Error('it is not an incoming update record');
+	if (value.merge !== undefined)
+		throw new Error(
+			'it records a merge left unfinished, which this version no longer publishes; remove it with Git',
+		);
 	return {
 		state: 'recorded',
 		operationId: value.operationId,
 		branch: value.branch,
 		expectedHead: value.expectedHead ?? undefined,
 		nextHead: value.nextHead as string,
-		...(value.merge === undefined ? {} : { merge: parseMerge(value.merge) }),
 	};
 }
 
@@ -497,20 +442,6 @@ function storedRecord(pending: RecordedIncoming): StoredRecord {
 		branch: pending.branch,
 		expectedHead: pending.expectedHead ?? null,
 		nextHead: pending.nextHead,
-		...(pending.merge === undefined
-			? {}
-			: {
-					merge: {
-						incoming: pending.merge.incoming,
-						message: pending.merge.message,
-						unmerged: pending.merge.unmerged.map((path) => ({
-							path: path.path,
-							base: path.base ?? null,
-							ours: path.ours ?? null,
-							theirs: path.theirs ?? null,
-						})),
-					},
-				}),
 	};
 }
 
@@ -566,78 +497,12 @@ export function createOpfsGitStore({
 	const branchPath = `${PRIVATE_DIRECTORY}/refs/heads/${branch}`;
 	const recordPath = `${PRIVATE_DIRECTORY}/${INCOMING_RECORD}`;
 	const indexPath = `${PRIVATE_DIRECTORY}/index`;
-	const mergeHeadPath = `${PRIVATE_DIRECTORY}/MERGE_HEAD`;
 	const privatePath = (path: string) => path.slice(GITDIR.length + 1);
 
 	const readPrivate = (path: string) => readGitFile(root, privatePath(path));
 	const readRef = async (path: string) => refValue(await readPrivate(path));
 	const writeRef = (path: string, oid: string) =>
 		writePrivateFile(root, privatePath(path), encoder.encode(`${oid}\n`));
-
-	/**
-	 * Write the merge state an unfinished merge ends in, `MERGE_HEAD` last.
-	 * Throws the first write that failed.
-	 */
-	async function writeMergeState(
-		pending: RecordedIncoming,
-		merge: UnfinishedMerge,
-	) {
-		const values = {
-			ORIG_HEAD: `${pending.expectedHead}\n`,
-			MERGE_MSG: merge.message.endsWith('\n')
-				? merge.message
-				: `${merge.message}\n`,
-			MERGE_HEAD: `${merge.incoming}\n`,
-		};
-		for (const name of MERGE_STATE)
-			await writePrivateFile(root, name, encoder.encode(values[name]));
-	}
-
-	/**
-	 * Whether Git's merge state is the one `merge` writes (`written`), not or
-	 * not wholly written yet (`unwritten`), or another merge's (`other`).
-	 */
-	async function mergeStateOf(
-		pending: RecordedIncoming,
-		merge: UnfinishedMerge,
-	): Promise<'written' | 'unwritten' | 'other'> {
-		const stored = await readGitFile(root, 'MERGE_HEAD');
-		if (stored === undefined) return 'unwritten';
-		if (refValue(stored) !== merge.incoming) return 'other';
-		const origin = refValue(await readGitFile(root, 'ORIG_HEAD'));
-		const message = await readGitFile(root, 'MERGE_MSG');
-		return origin === pending.expectedHead && message !== undefined
-			? 'written'
-			: 'unwritten';
-	}
-
-	/**
-	 * The index an unfinished merge publishes, apart from cached stats: the
-	 * tree of `nextHead`, with each unmerged path's stages in place of its
-	 * entry.
-	 */
-	async function mergeIndex(
-		access: ObjectAccess,
-		pending: RecordedIncoming,
-		merge: UnfinishedMerge,
-	): Promise<string[]> {
-		const unmerged = new Set(merge.unmerged.map((path) => path.path));
-		const files = await treeFiles(access, pending.nextHead);
-		return [
-			...[...files]
-				.filter(([path]) => !unmerged.has(path))
-				.map(([path, file]) =>
-					entryKey({
-						stats: [],
-						mode: Number.parseInt(file.mode, 8),
-						oid: file.oid,
-						stage: 0,
-						path,
-					}),
-				),
-			...unmergedEntries(merge.unmerged).map(entryKey),
-		].sort();
-	}
 
 	async function readRecord(): Promise<PendingIncoming | undefined> {
 		const bytes = await readPrivateFile(root, INCOMING_RECORD);
@@ -803,21 +668,7 @@ export function createOpfsGitStore({
 				return false;
 			}
 		};
-		// An unfinished merge's index is the merged tree with its stages.
-		const merged = async (merge: UnfinishedMerge) => {
-			const entries = index === undefined ? undefined : indexEntries(index);
-			if (entries === undefined) return false;
-			const target = await mergeIndex(access, pending, merge);
-			const sorted = [...entries].sort();
-			return (
-				sorted.length === target.length &&
-				sorted.every((entry, at) => entry === target[at])
-			);
-		};
-		const indexDone =
-			pending.merge === undefined
-				? await matches(pending.nextHead)
-				: await merged(pending.merge);
+		const indexDone = await matches(pending.nextHead);
 		if (!indexDone && !(await matches(pending.expectedHead)))
 			third.push(indexPath);
 		return {
@@ -847,14 +698,7 @@ export function createOpfsGitStore({
 		];
 		if (!now.indexDone && !left.includes(indexPath)) left.push(indexPath);
 		const head = await readRef(branchKey);
-		if (pending.merge === undefined) {
-			if (head !== pending.nextHead) left.push(branchPath);
-		} else {
-			// The branch stays; Git's merge state is the destination instead.
-			if (head !== pending.expectedHead) left.push(branchPath);
-			if ((await mergeStateOf(pending, pending.merge)) !== 'written')
-				left.push(mergeHeadPath);
-		}
+		if (head !== pending.nextHead) left.push(branchPath);
 		return left;
 	}
 
@@ -941,9 +785,7 @@ export function createOpfsGitStore({
 		// The branch moves last, so naming the published commit means the
 		// publication completed. Only the record is left; files are not
 		// rewritten, and their state is observed afresh, not assumed clean.
-		// An unfinished merge never moves the branch, so this never says that
-		// one is complete.
-		if (pending.merge === undefined && head === pending.nextHead) {
+		if (head === pending.nextHead) {
 			await clearRecord();
 			return { status: 'cleared', pending };
 		}
@@ -952,28 +794,8 @@ export function createOpfsGitStore({
 				status: 'refused',
 				pending,
 				paths: [branchPath],
-				reason:
-					pending.merge === undefined
-						? `the branch names ${head ?? 'no commit'}, which is neither the commit the update was admitted over nor the one it publishes`
-						: `the branch names ${head ?? 'no commit'}, not the commit the merge was admitted over`,
+				reason: `the branch names ${head ?? 'no commit'}, which is neither the commit the update was admitted over nor the one it publishes`,
 			};
-		// MERGE_HEAD is written last, after every file, index, and other
-		// merge-state step. Its matching state proves publication completed.
-		// Clear only the leftover record so later resolution edits survive.
-		if (pending.merge !== undefined) {
-			const state = await mergeStateOf(pending, pending.merge);
-			if (state === 'written') {
-				await clearRecord();
-				return { status: 'cleared', pending };
-			}
-			if (state === 'other')
-				return {
-					status: 'refused',
-					pending,
-					paths: [mergeHeadPath],
-					reason: `${mergeHeadPath} names a commit other than ${pending.merge.incoming}, the commit this merge records`,
-				};
-		}
 		const session = createOpfsGitSession(root);
 		const access: ObjectAccess = { fs: session.fs, gitdir: GITDIR, cache: {} };
 		const assessed = await assess(pending, access);
@@ -1021,8 +843,6 @@ export function createOpfsGitStore({
 				assessed.changed,
 				assessed.leaving,
 			);
-			if (pending.merge !== undefined)
-				await stageUnmerged(session.fs, pending.merge.unmerged);
 			const target = session.unflushedIndex();
 			if (target !== undefined)
 				try {
@@ -1031,17 +851,10 @@ export function createOpfsGitStore({
 					return unknown(error, indexPath);
 				}
 		}
-		// Recovery publishes an unfinished merge's state; it never resolves a
-		// path, clears a stage, or moves the branch.
 		try {
-			if (pending.merge === undefined)
-				await writeRef(branchKey, pending.nextHead);
-			else await writeMergeState(pending, pending.merge);
+			await writeRef(branchKey, pending.nextHead);
 		} catch (error) {
-			return unknown(
-				error,
-				pending.merge === undefined ? branchPath : mergeHeadPath,
-			);
+			return unknown(error, branchPath);
 		}
 		const left = await unfinished(pending);
 		if (left.length > 0)
@@ -1140,7 +953,6 @@ export function createOpfsGitStore({
 			branch,
 			expectedHead: plan.expectedHead,
 			nextHead: plan.nextHead,
-			...(plan.merge === undefined ? {} : { merge: plan.merge }),
 		};
 		// Captured files are portable files only. Where a file is to be
 		// written, a directory the update does not empty, or a file in one that
@@ -1234,18 +1046,13 @@ export function createOpfsGitStore({
 			if (cause instanceof UnconfirmedWrite) return unknown(cause, indexPath);
 			return { status: 'indexFailed', error: describe(cause) };
 		}
-		// The last step: the branch, or for a merge left unfinished, Git's merge
-		// state over the unmoved branch.
-		const last =
-			plan.merge === undefined
-				? { path: branchPath, operation: 'move the branch' }
-				: { path: mergeHeadPath, operation: 'record the merge in progress' };
+		// The last step: the branch.
+		const last = { path: branchPath, operation: 'move the branch' };
 		try {
 			const moved = await readRef(branchKey);
 			if (moved !== plan.expectedHead)
 				return { status: 'branchMoved', actual: moved, filesApplied: true };
-			if (plan.merge === undefined) await writeRef(branchKey, plan.nextHead);
-			else await writeMergeState(pending, plan.merge);
+			await writeRef(branchKey, plan.nextHead);
 		} catch (cause) {
 			if (cause instanceof UnconfirmedWrite) return unknown(cause, last.path);
 			return {

@@ -39,48 +39,6 @@ export type CasResult =
 	| { readonly ok: false; readonly actual: string | undefined };
 
 /**
- * A path a merge left for a person, with the blob each side had there:
- * Git's index stages 1 (`base`), 2 (`ours`), and 3 (`theirs`). A side
- * without the file has no stage. Every stage is a plain `100644` file.
- */
-export type UnmergedPath = {
-	readonly path: string;
-	readonly base: string | undefined;
-	readonly ours: string | undefined;
-	readonly theirs: string | undefined;
-};
-
-/**
- * Where an incoming merge with conflicts left in place ends. The branch
- * stays at `expectedHead`; the files and the index take the tree of the
- * plan's `nextHead`, a commit no ref ever names, except that each unmerged
- * path's index entry is its stages; and Git's merge state records
- * `MERGE_HEAD` (`incoming`), `MERGE_MSG` (`message`), and `ORIG_HEAD`
- * (`expectedHead`).
- */
-export type UnfinishedMerge = {
-	readonly incoming: string;
-	readonly message: string;
-	readonly unmerged: readonly UnmergedPath[];
-};
-
-/**
- * Git's merge state as the repository holds it: a merge that began and has
- * not been committed.
- */
-export type MergeInProgress = {
-	/** `MERGE_HEAD`: the pinned incoming commit, the merge commit's second parent. */
-	readonly incoming: string;
-	/** `ORIG_HEAD`: the branch head the merge began from, when recorded. */
-	readonly head: string | undefined;
-	/**
-	 * Paths whose index entry is still unmerged stages, in index order. Empty
-	 * once every one is staged, while the merge waits for its commit.
-	 */
-	readonly unresolved: readonly string[];
-};
-
-/**
  * An incoming fast-forward or merge, prepared against observed files and
  * refs. `nextHead` is the fetched commit or the merge commit; `changes` turn
  * the files of `expectedHead` into its tree.
@@ -88,12 +46,6 @@ export type MergeInProgress = {
 export type IncomingPlan = {
 	readonly expectedHead: string | undefined;
 	readonly nextHead: string;
-	/**
-	 * Present for a merge whose conflicts are left in place: `nextHead` is
-	 * then the unreachable commit of the files with markers, and the branch
-	 * does not move.
-	 */
-	readonly merge?: UnfinishedMerge;
 	readonly changes: readonly FileChange[];
 	readonly paths: readonly string[];
 	/**
@@ -123,10 +75,8 @@ export type PublishResult =
 	/**
 	 * The update stopped after some of it landed, and the step that failed
 	 * certainly wrote nothing; the branch did not move. `applied` names the
-	 * file steps that reached the folder. It may be empty when only Git state
-	 * landed: a Bun directory's unfinished merge prepares its index and merge
-	 * state before any file, and keeps them. A browser keeps its incoming
-	 * record until `recoverIncoming` is asked for.
+	 * file steps that reached the folder. A browser keeps its incoming record
+	 * until `recoverIncoming` is asked for.
 	 */
 	| {
 			readonly status: 'partial';
@@ -158,18 +108,8 @@ export type RecordedIncoming = {
 	readonly branch: string;
 	/** The branch head the update was admitted over; `undefined` for an empty history. */
 	readonly expectedHead: string | undefined;
-	/**
-	 * The fetched commit, or the prepared merge commit. For a merge whose
-	 * conflicts are left in place, the commit of the files with markers,
-	 * which the branch never names.
-	 */
+	/** The fetched commit, or the prepared merge commit. */
 	readonly nextHead: string;
-	/**
-	 * Present when the update ends in an unfinished merge rather than a moved
-	 * branch. Recovery then publishes the files, the index with its stages,
-	 * and the merge state; it never resolves a path or clears a stage.
-	 */
-	readonly merge?: UnfinishedMerge;
 };
 
 /**
@@ -239,27 +179,18 @@ export type GitBackend = {
 	/** Move the branch only if it still names `expected`. */
 	casBranch(expected: string | undefined, next: string): Promise<CasResult>;
 	/**
-	 * Why no commit may run now, such as a detached `HEAD` or a rebase in
-	 * progress. A merge in progress is not reported here: it blocks
-	 * whole-folder work but is what a staged commit finishes (`mergeState`).
+	 * Why no commit or incoming update may run now, such as a detached
+	 * `HEAD`, a rebase in progress, or a merge another Git program began
+	 * (`MERGE_HEAD`). The folder never begins one; that merge is finished or
+	 * abandoned with Git outside it.
 	 */
 	blocked(): Promise<string | undefined>;
-	/**
-	 * The merge Git records as begun and not committed, or `undefined`.
-	 * Throws when `MERGE_HEAD` exists but names no commit.
-	 */
-	mergeState(): Promise<MergeInProgress | undefined>;
-	/**
-	 * Remove `MERGE_HEAD` and `MERGE_MSG`, once the merge commit they describe
-	 * is on the branch. `ORIG_HEAD` stays, as Git leaves it.
-	 */
-	clearMerge(): Promise<void>;
 	/**
 	 * Why a whole-folder commit or fast-forward cannot represent this
 	 * repository faithfully: every file is written as plain `100644` bytes
 	 * with no attribute filters, so symbolic links, executables, submodules,
 	 * nested Git data, and normalizing attributes are refused rather than
-	 * silently rewritten. Unmerged index stages with no `MERGE_HEAD` are
+	 * silently rewritten. Unmerged index stages another Git program left are
 	 * refused too: a checkpoint would reset them and record conflict markers
 	 * as ordinary content. Explicit staging and staged commits are unaffected.
 	 */
@@ -290,26 +221,17 @@ export type GitBackend = {
 	/** The index file's stored bytes, or `undefined` when there is none. */
 	readIndex(): Promise<Uint8Array | undefined>;
 	pathStatus(): Promise<PathStatus[]>;
-	/**
-	 * Stage current contents of `paths`, including deletions; `'all'` stages
-	 * everything. An unmerged path always loses its stages, even when its
-	 * bytes equal one of them.
-	 */
+	/** Stage current contents of `paths`, including deletions; `'all'` stages everything. */
 	stage(paths: readonly string[] | 'all'): Promise<void>;
 	/**
-	 * Commit the index's tree onto a parent pinned before anything is
-	 * written: the branch head when the commit starts, or, with `merge`,
-	 * `merge.head`, the head the merge began from, whatever the branch names
-	 * now. A merge's second parent is `merge.incoming`, and its commit is
-	 * written even when its tree equals the head's; without `merge`, a tree
-	 * equal to the parent's is `nothing`. The branch moves only if it still
-	 * names the pinned parent; otherwise the result is `branchMoved` and no
-	 * ref, index entry, or merge state changes.
+	 * Commit the index's tree onto the branch head pinned when the commit
+	 * starts. A tree equal to the parent's is `nothing`. The branch moves only
+	 * if it still names the pinned parent; otherwise the result is
+	 * `branchMoved` and no ref or index entry changes.
 	 */
 	commitIndex(
 		message: string,
 		author: Author,
-		merge?: { readonly head: string; readonly incoming: string },
 	): Promise<
 		| {
 				readonly status: 'committed';
@@ -329,11 +251,7 @@ export type GitBackend = {
 	push(oid: string, signal: AbortSignal): Promise<void>;
 	/** Fetch the configured remote branch; returns its commit, or undefined if absent. */
 	fetch(signal: AbortSignal): Promise<string | undefined>;
-	/**
-	 * Publish files, index, and branch for an incoming fast-forward or merge;
-	 * for a plan with `merge`, files, the index with its stages, and the merge
-	 * state, leaving the branch.
-	 */
+	/** Publish files, index, and branch for an incoming fast-forward or merge. */
 	publishIncoming(plan: IncomingPlan): Promise<PublishResult>;
 	/**
 	 * Whether incoming publication removes the directories its removals

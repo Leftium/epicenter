@@ -14,7 +14,7 @@
  *   deletions, and staged empty files kept, intent-to-add entries left out
  *
  * See also:
- * - `merge-unfinished-native.test.ts` for a staged commit that finishes a merge
+ * - `merge.test.ts` for a staged commit refused while another program's merge is in progress
  */
 import { afterAll, afterEach, beforeAll, expect, mock, test } from 'bun:test';
 import * as realFs from 'node:fs/promises';

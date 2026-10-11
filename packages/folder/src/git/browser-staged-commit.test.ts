@@ -3,7 +3,6 @@
  * parent's tree, or Git's empty tree before the first commit. An empty
  * index publishes nothing; a staged empty file is a real first commit.
  * Repeating an unchanged staged commit preserves the branch and index.
- * Merge commits with unchanged trees are covered by merge-unfinished.test.ts.
  */
 import { expect, test } from 'bun:test';
 import { expectOk } from 'wellcrafted/testing';

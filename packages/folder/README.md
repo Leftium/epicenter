@@ -482,7 +482,7 @@ successful reading does not mean an application can open the folder.
 | `tables.<name>` | Rows at `<name>/<stem>.md`, read through `parseRow` and written through `formatRow`. `get(stem)` returns a `StoredRow` (`path`, `sha256`, and a complete, caller-owned `row`), `InvalidRow` for readable text that is not a valid row, or `undefined` only for absence. `list()` returns one `{ stem, result }` per row file. `create(row, { stem? })` is exclusive. `replace`, `rename`, and `delete` take a capture and are refused as `Conflict` when its bytes are gone. `autosave(capture)` coordinates one editing session's saves. Each changes exactly one Markdown file. See [Reading a row](#reading-a-row), [Saving a row](#saving-a-row), and [Editing a row](#editing-a-row). |
 | `kv` | Root `kv.json`, independent settings. `get()` returns `{ path, sha256, values, issues }`: every declared value that validated, with each broken one reported at its line, or `InvalidKv` for text that is not one strict JSON object. `set(key, value)` merges one key into the current file, keeps every other key's raw text, creates a missing file, removes a key set to `undefined`, and re-applies itself when another writer got there first. See [Reading and saving kv.json](#reading-and-saving-kvjson). |
 | `files` | Ordinary files at literal paths. See below. |
-| `git` | A status snapshot, `status()`, `commit()`, `commitAndPush()`, `push()`, `fetch()`, `pullFastForward()`, `mergeIncoming({ conflicts? })`, `recoverIncoming()`, and `paths()`, `stage()`, `commitStaged(message)`, `diff()`, `log()`. |
+| `git` | A status snapshot, `status()`, `commit()`, `commitAndPush()`, `push()`, `fetch()`, `pullFastForward()`, `mergeIncoming()`, `recoverIncoming()`, and `paths()`, `stage()`, `commitStaged(message)`, `diff()`, `log()`. |
 | `sync` | `run()` commits saved files, fetches, merges, and pushes; competing settings, row fields, row bodies, and whole row files come back as a `SyncAttempt` that `resolve(attempt, choices)` settles. See [Sync](#sync). |
 | `location` | `{ kind: 'opfs', directory }` or `{ kind: 'directory', root }`. For showing to a person. File paths are never joined onto it. |
 | `onFilesChanged(listener)` | A hint that paths changed, so read again. Returns the function that stops listening. |
@@ -900,12 +900,10 @@ its first command runs. Its `git` command supports `status`, `diff [--cached]`,
 redirection is a deliberate overwrite; a rewrite of a file the same command
 read is conditional on what it read. `add` and staged `commit -m` need
 `commitOnEdit: false`. `git merge` merges the already fetched remote branch
-(`pull --ff-only` fetches first). With `commitOnEdit: false` it leaves
-conflicts in the files and exits 1, as Git does, and the shell's file list
-includes what the merge wrote either way, so `git merge; cat notes/color.txt`
-shows the markers. `git status` then reports `UU` and the other unmerged
-codes, and `git commit -m` refuses while a path is unmerged, naming it,
-until `git add` stages its resolution. A command holds nothing between its steps, in the
+(`pull --ff-only` fetches first) when it fast-forwards or merges cleanly. A
+conflict, in either history mode, writes nothing: it prints Git's
+`CONFLICT` lines and `CONFLICTS_NEED_SYNC`, which points to Sync, and exits
+1. A command holds nothing between its steps, in the
 browser or the desktop app: another tab's or window's save can land between
 them, and a command that stops partway leaves its earlier steps saved. Each
 save follows the folder's automatic history policy. The terminal ends with
@@ -1022,6 +1020,10 @@ if (ran.kind === 'needsChoices') return review(ran); // nothing conflicted was w
 // ran.kind: 'synced', or 'saved' when the push is not confirmed
 ```
 
+A folder that had no history before the run, whose first commit the run
+made, adopts the remote's history by merging over an empty base; two
+different files at one path are then a conflict like any other.
+
 Its merge is `mergeIncoming`'s with two additions for paths both sides
 changed:
 
@@ -1123,8 +1125,7 @@ owner retains its equivalent record at `.git/epicenter/incoming.json` and
 recovers explicitly from pinned commits under the same rules.
 
 The Bun directory opener applies ordered file steps, updates the index, and
-moves the branch last. An unfinished merge instead writes its merge state
-first (see [Unfinished merges](#unfinished-merges)). A failure reports the
+moves the branch last. A failure reports the
 steps that completed, marks the saved-files observation stale, and requests
 no commit. It does not retain an incoming recovery
 record: its `pendingIncoming` is absent and `recoverIncoming()` returns
@@ -1140,9 +1141,9 @@ its own. File saves continue; `stage()` is `IncomingPending`, a commit is
 
 | `pendingIncoming.state` | Meaning |
 | --- | --- |
-| `recorded` | `{ operationId, branch, expectedHead, nextHead, merge? }`: the update was admitted and may have changed files. `merge` is present for a merge left unfinished; see [Unfinished merges](#unfinished-merges). |
+| `recorded` | `{ operationId, branch, expectedHead, nextHead }`: the update was admitted and may have changed files. |
 | `unadmitted` | The record is empty: its admission never finished, so no authored file was changed by it. |
-| `unreadable` | The record holds bytes that are not a record. It is never deleted automatically. |
+| `unreadable` | The record holds bytes that are not a record, including one an earlier version wrote for a merge left unfinished. It is never deleted automatically. |
 
 `git.recoverIncoming()` resolves it explicitly:
 
@@ -1150,8 +1151,8 @@ its own. File saves continue; `stage()` is `IncomingPending`, a commit is
 | --- | --- |
 | `none` | Nothing was pending. |
 | `admissionCleared` | The empty record was removed. Status is observed again. |
-| `cleared` | The branch already names the published commit. The record is removed without writing files; status is observed again, not assumed clean. Never for an unfinished merge, whose branch does not move. |
-| `completed`, with `changedPaths` | The branch is at the admitted head. Each changed path is at its before or after state; those at their before state are written, then the index and the branch, and the record is removed. For an unfinished merge, the index with its stages and the merge state take the branch's place. |
+| `cleared` | The branch already names the published commit. The record is removed without writing files; status is observed again, not assumed clean. |
+| `completed`, with `changedPaths` | The branch is at the admitted head. Each changed path is at its before or after state; those at their before state are written, then the index and the branch, and the record is removed. |
 | `RecoveryRefused`, with `paths` | A path holds a third value (another file, an empty file where there was none, a file where a directory belongs, or a directory where the update writes a file that the update did not empty), or the index, the branch, or the record is not what the update left. A directory counts as emptied by the update only when it, and each directory in it, held a file the update removes. The paths are named, nothing is written, and the record stays. Restore them and recover again. |
 | `Partial` or `Unconfirmed` | A recovery step failed or its outcome is unknown. The record stays. |
 
@@ -1186,8 +1187,9 @@ Competing changes are `Conflicted`, with one entry per reason: `kvKey` with
 the raw base, ours, and theirs values of the key; `kvFile` when one side
 deleted `kv.json` and the other changed it; `kvInvalid`; `content` for
 competing lines; `binary`; `deleted` for a delete against a change; and
-`shape` for a file against a directory. By default a conflict or refusal
-writes no file, index entry, or ref; unreachable objects may remain. With
+`shape` for a file against a directory. A conflict or refusal writes no
+file, index entry, or ref; unreachable objects may remain. A conflict is
+never left in the files: [Sync](#sync) is how a person settles one. With
 `versions: true`, `Conflicted.versions` carries the exact committed bytes of
 both sides at each conflicted file path, with `null` for an absent file. Shape
 conflicts have no file versions. The native snapshot records conflict reasons
@@ -1196,129 +1198,12 @@ without broadcasting these bytes to other windows.
 Browser folders, Bun directory folders, and the desktop app's Rust owner all
 merge under these rules. The desktop owner merges a file both sides changed
 with `git merge-file` and root `kv.json` with `kv_merge`, the Rust
-counterpart of `mergeKv`; its conflict markers are Git's own, so its hunks
-can differ from the browser's line merge.
+counterpart of `mergeKv`.
 
-### Unfinished merges
-
-`mergeIncoming({ conflicts: 'leave' })` needs `commitOnEdit: false`; with
-automatic history it is `AutomaticHistory` before anything is read or
-written. It classifies conflicts the same way and, instead of refusing,
-publishes the merge unfinished as Git leaves one, with the same admission
-and record as any incoming update:
-
-- Each conflicted path holds what a person resolves: ordinary markers
-  (`<<<<<<< HEAD`, `=======`, `>>>>>>> origin/<branch>`) when every version
-  is text the line merge keeps, the changed side's file against a deletion,
-  and otherwise our bytes. A conflicted root `kv.json` gets ordinary markers
-  too, which read as a parse error until it is resolved. Other paths are
-  merged as in a clean merge.
-- The index holds the merged files, and each conflicted path's stages in
-  place of its entry: 1 for the base, 2 for ours, 3 for theirs.
-- `ORIG_HEAD` names the local head, `MERGE_MSG` the merge message, and
-  `MERGE_HEAD` the pinned fetched commit. The branch does not move.
-
-The result is `conflicted`, with the conflicts and the changed paths. A
-file against a directory, and a conflicted path that is a link, executable,
-or submodule in one of its versions, are still refused and write nothing.
-
-This state belongs to the repository and is read again, not remembered: it
-survives closing and reopening, and `git.snapshot.merging` shows
-`{ incoming, head, unresolved }` until the merge commit lands, including
-after every path is staged. `paths()` reports `UU`, `AA`, `DU`, `UD`, `AU`,
-`UA`, and `DD`. Reading status, diffs, or the snapshot never resolves a
-path, and saving a resolution resolves nothing: `stage()` does, always
-clearing that path's stages, whatever bytes it holds, including a deletion.
-
-While the merge state exists, whole-folder commits, automatic commits,
-pulls, and merges are blocked. Fetching still works and may move the tracking
-ref; the merge's second parent stays `MERGE_HEAD`. `commitStaged()` while a
-path is unmerged is `Unmerged`, names the paths, and writes nothing. Once
-none is, it writes one commit whose parents are `ORIG_HEAD` and
-`MERGE_HEAD`, even when the resolved tree equals the local tree, moves the
-branch from `ORIG_HEAD` by compare-and-swap, and then removes `MERGE_HEAD`
-and `MERGE_MSG`. Its result carries `incoming`. A branch that names any
-other commit, before the commit or while it is written, is `BranchMoved`
-with `expected` set to `ORIG_HEAD`: the files, the index, the branch, and
-the merge state stay as they were. Moving the branch back to `ORIG_HEAD`
-lets the merge finish. To abandon it, remove `MERGE_HEAD` and reset the index;
-the working files remain available to repair. Without a readable
-`ORIG_HEAD` the staged commit is refused, because the merge's first parent is
-unknown.
-
-Every built-in staged commit pins its parents, writes the staged tree and
-commit as objects, and moves the branch only if it still names the pinned
-first parent. A concurrent branch move is `BranchMoved` and leaves the index
-unchanged. On disk, Git writes the tree from a private copy of the index:
-intent-to-add placeholders stay out, while staged empty files, modes, and
-deletions remain. Built-in commits run no commit hooks and are unsigned.
-
-If that removal fails, the commit is still reported with `mergeStateWarning`.
-While `MERGE_HEAD` remains, `snapshot.merging` stays visible. The next staged
-commit removes that state when the branch names exactly the merge commit,
-whose parents are `ORIG_HEAD` and `MERGE_HEAD`, so it never becomes the
-second parent of another commit. A branch that only contains the incoming
-commit is not taken for it; that state stays for a person to finish or
-repair. A leftover `MERGE_MSG` alone does not keep a merge in progress.
-There is no abort operation.
-
-Unmerged index stages with no `MERGE_HEAD`, as when merge state was removed
-by hand or damaged, also block whole-folder and automatic commits: a
-checkpoint would reset the stages and record conflict markers as ordinary
-content. The stages keep the base, ours, and theirs blobs. Restoring
-`MERGE_HEAD` and `ORIG_HEAD` lets a staged commit finish the merge; staging
-each resolution without them commits it outside the merge.
-
-A browser or desktop publication that stops partway stays pending like any
-incoming update. Recovery writes the remaining files, the index with its stages, and
-the merge state, treating merge state it wrote itself as its own and any
-other merge's as in the way. It never resolves a path, clears a stage, or
-moves the branch, and a file edited since publication is a third state that
-it names and refuses. Edits to paths the merge does not change survive.
-
-A Bun directory keeps no record. Before any authored file it writes, in
-order:
-
-1. `ORIG_HEAD`, the local head.
-2. `MERGE_MSG`, the merge message with a last line
-   `# Incoming commit: <oid>` naming the fetched commit in full. Git strips
-   `#` lines from a message it edits, as it does its own `# Conflicts:`
-   list.
-3. The whole index: the incoming entries and each conflicted path's
-   stages, in one `git update-index`, so all or none.
-4. `MERGE_HEAD`.
-
-A staged commit with nothing staged is therefore `Unmerged` from the moment
-a file can change, and never records the local tree as the merge. Nothing is
-rolled back. Once the index holds the merge, another program may have staged
-something in it too, and putting older index bytes back would erase that. A
-failure is reported where it stopped instead. `Partial` then means the
-merge's Git state was prepared and kept; its `applied` file steps may be
-none.
-
-- If `ORIG_HEAD`, `MERGE_MSG`, or the index cannot be written, the merge is
-  `Refused` and no file or index entry changed. An `ORIG_HEAD` or
-  `MERGE_MSG` left behind, with no `MERGE_HEAD`, is only a head and a
-  message; no merge is in progress.
-- If `MERGE_HEAD` cannot be written, the result is `Partial` with no file
-  step, and its error names the incoming commit. The index keeps the
-  stages and incoming entries with no `MERGE_HEAD`, and both commits refuse
-  them: a whole-folder commit refuses orphan stages, and a staged commit is
-  refused as unmerged. Before resolving, staging, or committing, use a system
-  shell to write the commit on the `# Incoming commit:` line of `.git/MERGE_MSG` to
-  `.git/MERGE_HEAD`. That line holds it even after a later fetch moves the
-  tracking ref. The merge is then in progress as if it had been written,
-  and a staged commit records `ORIG_HEAD` and that commit as parents.
-- If a file step stops, `Partial` names the file steps that landed, possibly
-  none. The merge stays in progress with its real unresolved paths and the
-  incoming entries of files not yet written. Whole-folder commits stay
-  blocked, and a staged commit records both parents only after each
-  conflict is staged. Before staging everything, compare staged and unstaged
-  differences (`git diff --cached`, `git diff`, `git status`): a file the
-  merge did not get to write differs from its incoming entry, and staging it
-  replaces that entry with what the folder holds, deletion included. Resolve,
-  stage what each path should hold, and commit. To abandon the merge, remove
-  `MERGE_HEAD` and reset the index; keep the working files for repair.
+A merge another Git program began in the repository (`.git/MERGE_HEAD`), or
+unmerged index stages it left, blocks whole-folder commits, staged commits,
+pulls, and merges, writing nothing, until it is finished or abandoned with
+Git. The folder never begins or finishes such a merge.
 
 A whole-folder commit or fast-forward on disk writes every file as plain
 `100644` bytes, so it is refused in a repository it would misrepresent:

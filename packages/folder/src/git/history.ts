@@ -36,15 +36,10 @@
  * `recoverIncoming` is asked for, and nothing else resumes it. File saves
  * are not held back.
  *
- * In manual history, `mergeIncoming({ conflicts: 'leave' })` publishes a
- * conflicted merge unfinished, as Git leaves one: files with markers, the
- * index with unmerged stages, and `MERGE_HEAD`, `MERGE_MSG`, and `ORIG_HEAD`,
- * with the branch where it was. That merge state is the repository's, read
- * again rather than remembered. While it exists, whole-folder commits and
- * incoming updates are blocked; staging continues, and a staged commit
- * finishes the merge with `ORIG_HEAD` and `MERGE_HEAD` as parents once
- * nothing is unmerged, moving the branch only while it still names
- * `ORIG_HEAD`.
+ * A merge with conflicts is never left in the files: `mergeIncoming`
+ * refuses it and writes nothing, and sync captures it for a person to
+ * settle. A merge another Git program began (`MERGE_HEAD`) blocks commits
+ * and incoming updates until it is finished or abandoned with Git.
  *
  * `sync.run()` composes these steps: a checkpoint, a fetch, a merge with
  * sync's own rules for rows and `kv.json` (`syncMerge`), and a push. When
@@ -72,12 +67,10 @@ import type {
 	GitBackend,
 	GitRemote,
 	IncomingPlan,
-	MergeInProgress,
 	PathStatus,
 	PendingIncoming,
 	RecordedIncoming,
 	RecoverIncomingResult,
-	UnfinishedMerge,
 } from './backend.js';
 import {
 	type ConflictVersion,
@@ -98,7 +91,6 @@ import {
 	EMPTY_TREE,
 	hashFiles,
 	isAncestor,
-	logCommits,
 	readBlob,
 	readTreeFiles,
 	type TreeFile,
@@ -177,10 +169,7 @@ export type PullOutcome =
 			readonly changedPaths: readonly string[];
 	  };
 
-/**
- * A merge fast-forwards when it can, and otherwise records a two-parent
- * commit. Asked to leave conflicts, it may instead stop with them in place.
- */
+/** A merge fast-forwards when it can, and otherwise records a two-parent commit. */
 export type MergeOutcome =
 	| PullOutcome
 	| {
@@ -190,30 +179,10 @@ export type MergeOutcome =
 			readonly to: string;
 			readonly fetched: string;
 			readonly changedPaths: readonly string[];
-	  }
-	/**
-	 * Only with `conflicts: 'leave'`. The files hold the merge, with markers
-	 * or one side's bytes where it conflicts; the index holds each conflicted
-	 * path's stages; Git's merge state names `fetched`. The branch is still
-	 * `from`. Resolve, stage, and `commitStaged` to record the merge commit,
-	 * whose parents are `from` and `fetched`.
-	 */
-	| {
-			readonly status: 'conflicted';
-			readonly from: string;
-			readonly fetched: string;
-			readonly conflicts: readonly MergeConflict[];
-			readonly changedPaths: readonly string[];
 	  };
 
-/** How `mergeIncoming` treats competing changes. */
+/** How `mergeIncoming` treats competing changes; a conflict always writes nothing. */
 export type MergeConflictPolicy = {
-	/**
-	 * `refuse` (the default) writes nothing when anything conflicts. `leave`
-	 * publishes the merge with its conflicts in place for a person to resolve
-	 * and commit; it requires `commitOnEdit: false`.
-	 */
-	readonly conflicts?: 'refuse' | 'leave';
 	/**
 	 * Merge histories that share no commit over an empty base, as
 	 * `git merge --allow-unrelated-histories` does. The merge commit's parents
@@ -236,16 +205,6 @@ export type MergeConflictPolicy = {
 export type StagedCommit = {
 	readonly oid: string;
 	readonly parent: string | undefined;
-	/** Set when the commit finished a merge: its second parent, `MERGE_HEAD`. */
-	readonly incoming?: string;
-	/**
-	 * The merge commit landed, but removing its metadata failed. While
-	 * `MERGE_HEAD` remains, `snapshot.merging` shows the merge and the next
-	 * staged commit retries cleanup if the branch names a commit with exactly
-	 * `ORIG_HEAD` and `MERGE_HEAD` as its parents. A leftover `MERGE_MSG` alone
-	 * does not keep a merge in progress.
-	 */
-	readonly mergeStateWarning?: string;
 };
 
 /** What `recoverIncoming` did with a pending incoming update. */
@@ -336,14 +295,6 @@ export type GitSnapshot = {
 	 * none is pending, and on folders that never keep one.
 	 */
 	readonly pendingIncoming?: PendingIncoming;
-	/**
-	 * A merge Git records as begun and not committed, as last read: its
-	 * incoming commit, the head it began from, and the paths still unmerged.
-	 * It stays after every path is staged, until the staged commit records
-	 * the merge. While it is here, whole-folder commits, pulls, and merges
-	 * are blocked. Absent when there is none.
-	 */
-	readonly merging?: MergeInProgress;
 	readonly closed: boolean;
 };
 
@@ -410,7 +361,6 @@ export function createHistory({
 	let lastPull: GitSnapshot['lastPull'];
 	let lastMerge: GitSnapshot['lastMerge'];
 	let pendingIncoming: PendingIncoming | undefined;
-	let merging: MergeInProgress | undefined;
 	let remoteSeq = 0;
 	/** Git work of this handle, other than runner passes, that close waits for. */
 	const admittedWork = new Set<Promise<unknown>>();
@@ -439,7 +389,6 @@ export function createHistory({
 			lastPull,
 			lastMerge,
 			pendingIncoming,
-			merging,
 			closed: closing.signal.aborted,
 		});
 		// A snapshot is published from inside saves and passes. A subscriber
@@ -487,19 +436,8 @@ export function createHistory({
 		}
 	}
 
-	/** Read Git's merge state again. Reading clears nothing. */
-	async function refreshMerge() {
-		try {
-			merging = await backend.mergeState();
-		} catch {
-			// Unreadable merge state keeps the last observation; whole-folder
-			// work names it when it refuses.
-		}
-	}
-
 	async function refreshSync() {
 		await refreshPending();
-		await refreshMerge();
 		try {
 			const [head, remote] = await Promise.all([
 				backend.readBranch(),
@@ -620,88 +558,7 @@ export function createHistory({
 
 	/** Why this folder's history cannot take a whole-folder commit or update now. */
 	async function wholeFolderProblem(): Promise<string | undefined> {
-		return (
-			(await backend.blocked()) ??
-			(await mergeProblem()) ??
-			(await backend.checkpointProblem())
-		);
-	}
-
-	/**
-	 * A merge in progress blocks every whole-folder commit and incoming
-	 * update: either would record the files without the merge's second
-	 * parent, or move the branch under it. Only a staged commit finishes it.
-	 */
-	async function mergeProblem(): Promise<string | undefined> {
-		let state: MergeInProgress | undefined;
-		try {
-			state = await backend.mergeState();
-		} catch (cause) {
-			return `Git's merge state cannot be read: ${describe(cause)}`;
-		}
-		if (state === undefined) return undefined;
-		const unresolved =
-			state.unresolved.length === 0
-				? 'every path is staged'
-				: `unmerged: ${state.unresolved.join(', ')}`;
-		return `a merge of ${state.incoming} is in progress (${unresolved}); stage its resolution and commit it with a staged commit`;
-	}
-
-	/**
-	 * What a staged commit finds of the merge in progress, inside the
-	 * backend's protection. `ORIG_HEAD` is the merge's promised first parent:
-	 * the merge finishes only while the branch still names it. A branch at the
-	 * commit whose parents are exactly `ORIG_HEAD` and `MERGE_HEAD` is the
-	 * merge already committed, with merge state its failed removal left
-	 * behind; that state is removed, so it never becomes the second parent of
-	 * another commit. Any other branch, including one that merely contains
-	 * the incoming commit, is refused and changes nothing: the files, the
-	 * index, the branch, and the merge state stay for a person to inspect.
-	 * Moving the branch back to `ORIG_HEAD` finishes the merge; removing
-	 * `MERGE_HEAD` and resetting the index abandons it; working files remain.
-	 */
-	async function currentMerge(): Promise<
-		| { readonly status: 'none' }
-		| {
-				readonly status: 'finishing';
-				readonly head: string;
-				readonly incoming: string;
-		  }
-		| { readonly status: 'unmerged'; readonly paths: readonly string[] }
-		| {
-				readonly status: 'branchMoved';
-				readonly expected: string;
-				readonly actual: string | undefined;
-		  }
-		| { readonly status: 'unverifiable'; readonly reason: string }
-	> {
-		const state = await backend.mergeState();
-		if (state === undefined) return { status: 'none' };
-		if (state.head === undefined)
-			return {
-				status: 'unverifiable',
-				reason: `a merge of ${state.incoming} is in progress, but ORIG_HEAD does not name the commit it began from; write that commit to .git/ORIG_HEAD to finish the merge, or remove .git/MERGE_HEAD and reset the index to abandon it while keeping the working files`,
-			};
-		const head = await backend.readBranch();
-		if (head === state.head)
-			return state.unresolved.length > 0
-				? { status: 'unmerged', paths: state.unresolved }
-				: { status: 'finishing', head, incoming: state.incoming };
-		if (head !== undefined && state.unresolved.length === 0) {
-			const [latest] = await backend.withObjects((access) =>
-				logCommits(access, head, 1),
-			);
-			const parents = latest?.parents ?? [];
-			if (
-				parents.length === 2 &&
-				parents[0] === state.head &&
-				parents[1] === state.incoming
-			) {
-				await backend.clearMerge();
-				return { status: 'none' };
-			}
-		}
-		return { status: 'branchMoved', expected: state.head, actual: head };
+		return (await backend.blocked()) ?? (await backend.checkpointProblem());
 	}
 
 	/**
@@ -1078,8 +935,7 @@ export function createHistory({
 
 	/**
 	 * Publish `target`, the tree of `nextHead`, over the clean folder at
-	 * `head`. The one publication owner for fast-forwards and merges. With
-	 * `merge`, the branch stays at `head` and the merge is left unfinished.
+	 * `head`. The one publication owner for fast-forwards and merges.
 	 * Returns the paths it changed.
 	 */
 	async function publishIncoming({
@@ -1088,14 +944,12 @@ export function createHistory({
 		nextHead,
 		target,
 		clean,
-		merge,
 	}: {
 		capturedAt: number;
 		head: string | undefined;
 		nextHead: string;
 		target: ReadonlyMap<string, TreeFile>;
 		clean: Clean;
-		merge?: UnfinishedMerge;
 	}): Promise<Result<readonly string[], PullError>> {
 		const { raw, current } = clean;
 		const changes = diffFileMaps(clean.committed, target);
@@ -1157,17 +1011,13 @@ export function createHistory({
 		const published = await backend.publishIncoming({
 			expectedHead: head,
 			nextHead,
-			...(merge === undefined ? {} : { merge }),
 			changes: [...removals, ...writes],
 			paths: changedPaths,
 			baseline: clean.baseline,
 		});
 		switch (published.status) {
 			case 'published':
-				// An unfinished merge leaves files that differ from the branch:
-				// they are observed again, not recorded clean.
-				if (merge === undefined) await observeCommitted(capturedAt, nextHead);
-				else markLanded();
+				await observeCommitted(capturedAt, nextHead);
 				landed(changedPaths);
 				return Ok(changedPaths);
 			case 'refused':
@@ -1269,7 +1119,7 @@ export function createHistory({
 	 * Merge the fetched head into the clean folder: a fast-forward when the
 	 * branch is behind, otherwise one commit whose parents are the pinned head
 	 * and the pinned fetched commit. A refusal writes no file, index entry, or
-	 * ref; so does a conflict, unless `leave` asks to publish it unfinished.
+	 * ref; so does a conflict.
 	 *
 	 * `sync` adds sync's rules for paths both sides changed, and hears the
 	 * commits a diverged merge used. With `captured`, it merges exactly those
@@ -1277,22 +1127,19 @@ export function createHistory({
 	 * names the captured head (`BranchMoved` otherwise, writing nothing). A
 	 * path sync held is reported as a `content` conflict.
 	 */
-	async function merge(
-		conflicts: 'refuse' | 'leave',
-		{
-			allowUnrelatedHistories = false,
-			versions = false,
-			sync,
-		}: {
-			allowUnrelatedHistories?: boolean;
-			versions?: boolean;
-			sync?: {
-				readonly mergePath: MergePath;
-				readonly captured?: SyncCommits;
-				readonly pinned?: (commits: SyncCommits, capturedAt: number) => void;
-			};
-		} = {},
-	): Promise<Result<MergeOutcome, MergeError | PullError | GitError>> {
+	async function merge({
+		allowUnrelatedHistories = false,
+		versions = false,
+		sync,
+	}: {
+		allowUnrelatedHistories?: boolean;
+		versions?: boolean;
+		sync?: {
+			readonly mergePath: MergePath;
+			readonly captured?: SyncCommits;
+			readonly pinned?: (commits: SyncCommits, capturedAt: number) => void;
+		};
+	} = {}): Promise<Result<MergeOutcome, MergeError | PullError | GitError>> {
 		const remote = backend.remote;
 		if (remote === undefined) return GitError.NoRemote();
 		return exclusive(
@@ -1337,8 +1184,7 @@ export function createHistory({
 							bases: bases.length,
 						});
 					base = unrelated ? undefined : bases[0]!;
-					if (base !== undefined)
-						sync?.pinned?.({ base, head, fetched }, capturedAt);
+					sync?.pinned?.({ base, head, fetched }, capturedAt);
 				} else sync.pinned?.(sync.captured, capturedAt);
 				const message = `Merge remote-tracking branch 'origin/${remote.branch}'`;
 				const prepared = await backend.withObjects((access) =>
@@ -1348,9 +1194,6 @@ export function createHistory({
 						fetched,
 						author,
 						message,
-						...(conflicts === 'leave'
-							? { leave: { ours: 'HEAD', theirs: `origin/${remote.branch}` } }
-							: {}),
 						...(sync === undefined ? {} : { mergePath: sync.mergePath }),
 					}),
 				);
@@ -1379,10 +1222,6 @@ export function createHistory({
 					});
 				const merged = await representable(prepared.commit, prepared.files);
 				if (merged.error !== null) return merged;
-				const unfinished =
-					prepared.kind === 'unfinished'
-						? { incoming: fetched, message, unmerged: prepared.unmerged }
-						: undefined;
 				const { data: changedPaths, error: publishError } =
 					await publishIncoming({
 						capturedAt,
@@ -1390,17 +1229,8 @@ export function createHistory({
 						nextHead: prepared.commit,
 						target: prepared.files,
 						clean,
-						...(unfinished === undefined ? {} : { merge: unfinished }),
 					});
 				if (publishError !== null) return Err(publishError);
-				if (prepared.kind === 'unfinished')
-					return Ok({
-						status: 'conflicted',
-						from: head,
-						fetched,
-						conflicts: prepared.conflicts,
-						changedPaths,
-					});
 				return Ok({
 					status: 'merged',
 					from: head,
@@ -1481,19 +1311,14 @@ export function createHistory({
 			lastPull = attempt;
 		});
 	function mergeNow({
-		conflicts = 'refuse',
 		allowUnrelatedHistories,
 		versions,
 	}: MergeConflictPolicy = {}): Promise<
 		Result<MergeOutcome, MergeError | PullError | GitError>
 	> {
-		// Conflicts left in place are finished by staging and a staged commit,
-		// which automatic history does not take. Refused before anything runs.
-		if (conflicts === 'leave' && commitOnEdit && !closing.signal.aborted)
-			return Promise.resolve(GitError.AutomaticHistory());
 		return incomingNow(
 			'merge',
-			() => merge(conflicts, { allowUnrelatedHistories, versions }),
+			() => merge({ allowUnrelatedHistories, versions }),
 			(attempt) => {
 				lastMerge = attempt;
 			},
@@ -1651,13 +1476,9 @@ export function createHistory({
 	}
 
 	/**
-	 * Commit the index. With a merge in progress, the commit finishes it: its
-	 * parents are `ORIG_HEAD` and `MERGE_HEAD`, whatever its tree, and the
-	 * backend moves the branch only from `ORIG_HEAD`. It is refused, writing
-	 * nothing, while any path is still unmerged or while the branch names
-	 * another commit (`currentMerge`). Merge state is removed only after the
-	 * branch moved; a removal that fails is reported with the commit, and the
-	 * next staged commit retries cleanup while `MERGE_HEAD` remains.
+	 * Commit the index onto the branch head. Refused, writing nothing, while
+	 * an incoming update is pending or the repository is blocked, including a
+	 * merge another Git program began.
 	 */
 	async function commitStaged(
 		message: string,
@@ -1671,14 +1492,8 @@ export function createHistory({
 		if (blocked !== undefined)
 			return GitError.Failed({ operation: 'commit', cause: blocked });
 		let changedPaths = 0;
-		let finishing: { head: string; incoming: string } | undefined;
-		let mergeStateWarning: string | undefined;
 		let result:
 			| Awaited<ReturnType<GitBackend['commitIndex']>>
-			| Exclude<
-					Awaited<ReturnType<typeof currentMerge>>,
-					{ status: 'none' | 'finishing' }
-			  >
 			| { readonly status: 'pending'; readonly pending: PendingIncoming }
 			| { readonly status: 'blocked'; readonly reason: string };
 		try {
@@ -1689,25 +1504,10 @@ export function createHistory({
 				const blocked = await backend.blocked();
 				if (blocked !== undefined)
 					return { status: 'blocked', reason: blocked } as const;
-				const merge = await currentMerge();
-				if (merge.status !== 'none' && merge.status !== 'finishing')
-					return merge;
-				const pinned =
-					merge.status === 'finishing'
-						? { head: merge.head, incoming: merge.incoming }
-						: undefined;
-				finishing = pinned;
 				changedPaths = (await backend.pathStatus()).filter(
 					(path) => path.index !== ' ' && path.index !== '?',
 				).length;
-				const committed = await backend.commitIndex(message, author, pinned);
-				if (committed.status === 'committed' && pinned !== undefined)
-					try {
-						await backend.clearMerge();
-					} catch (cause) {
-						mergeStateWarning = describe(cause);
-					}
-				return committed;
+				return backend.commitIndex(message, author);
 			});
 		} catch (cause) {
 			if (refusedByClose(cause)) return GitError.Closed();
@@ -1730,10 +1530,6 @@ export function createHistory({
 				return GitError.IncomingPending({ pending: result.pending });
 			case 'blocked':
 				return GitError.Failed({ operation: 'commit', cause: result.reason });
-			case 'unmerged':
-				return GitError.Unmerged({ paths: result.paths });
-			case 'unverifiable':
-				return GitError.Failed({ operation: 'commit', cause: result.reason });
 			case 'nothing':
 				return GitError.NothingToCommit();
 			case 'branchMoved':
@@ -1742,12 +1538,7 @@ export function createHistory({
 					actual: result.actual,
 				});
 			case 'committed':
-				return Ok({
-					oid: result.oid,
-					parent: result.parent,
-					...(finishing === undefined ? {} : { incoming: finishing.incoming }),
-					...(mergeStateWarning === undefined ? {} : { mergeStateWarning }),
-				});
+				return Ok({ oid: result.oid, parent: result.parent });
 		}
 	}
 
@@ -1833,6 +1624,11 @@ export function createHistory({
 			}
 			let head =
 				checkpoint.status === 'committed' ? checkpoint.oid : checkpoint.head;
+			// A folder this run gave its first commit has no history of its own
+			// yet: its first sync adopts the remote's by merging over an empty
+			// base, where two different files at one path are a conflict.
+			const firstHistory =
+				checkpoint.status === 'committed' && checkpoint.parent === undefined;
 			const { data: fetched, error: fetchError } = await fetchRunner.request();
 			if (fetchError !== null)
 				return fetchError.name === 'Closed'
@@ -1844,7 +1640,8 @@ export function createHistory({
 				const { data: merged, error: mergeError } = await incomingNow(
 					'merge',
 					() =>
-						merge('refuse', {
+						merge({
+							allowUnrelatedHistories: firstHistory,
 							sync: {
 								mergePath: rules.mergePath,
 								pinned: (pinned) => {
@@ -1871,9 +1668,7 @@ export function createHistory({
 				head =
 					merged.status === 'upToDate' || merged.status === 'ahead'
 						? merged.head
-						: merged.status === 'conflicted'
-							? merged.from
-							: merged.to;
+						: merged.to;
 			}
 			return Ok(await settleSync(head, fetched.oid, capturedAt));
 		});
@@ -1902,7 +1697,7 @@ export function createHistory({
 			const { data: merged, error: mergeError } = await incomingNow(
 				'merge',
 				() =>
-					merge('refuse', {
+					merge({
 						sync: {
 							mergePath: syncMerge(definition, settled).mergePath,
 							captured: held.commits,
@@ -1954,8 +1749,8 @@ export function createHistory({
 	// A record or a merge another tab or an earlier opening left is read,
 	// never resumed or cleared.
 	{
-		const read = Promise.all([refreshPending(), refreshMerge()]).then(() => {
-			if (pendingIncoming !== undefined || merging !== undefined) emit();
+		const read = refreshPending().then(() => {
+			if (pendingIncoming !== undefined) emit();
 		});
 		admittedWork.add(read);
 		void read.then(() => admittedWork.delete(read));
@@ -2053,8 +1848,6 @@ export function createHistory({
 						return Ok(undefined);
 					},
 				);
-				// Staging a resolution changes which paths a merge has unmerged.
-				await refreshMerge();
 				emit();
 				return staged;
 			});

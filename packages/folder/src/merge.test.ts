@@ -18,11 +18,14 @@
  * - A save to an unchanged path, a new file at an incoming path, staging, or
  *   a branch move between planning and publication refuses the whole update
  * - A directory folder refuses the same conflicts with its files, index,
- *   and branch untouched
+ *   and branch untouched, and merges independent changes in one commit
+ * - A conflicted `git merge` in the folder terminal writes nothing and
+ *   points to Sync, in either history mode
+ * - A merge another Git program began blocks commits, staged commits, and
+ *   incoming updates until it is finished with Git
  *
  * See also:
- * - `merge-unfinished.test.ts` for conflicts left in place, and a directory
- *   folder's clean merge
+ * - `sync.test.ts` for settling conflicts
  * - `kv-merge.test.ts` for the key-level merge itself
  * - `git/history-ordering.test.ts` for incoming updates that land partly
  */
@@ -46,10 +49,15 @@ import {
 	type TestStorage,
 } from './browser-storage.test-support.js';
 import { hashBytes } from './capture.js';
-import { defineFolder, type Folder, field } from './contract.js';
+import {
+	CONFLICTS_NEED_SYNC,
+	defineFolder,
+	type Folder,
+	field,
+} from './contract.js';
 import { openNativeFolder } from './directory.test-support.js';
 import type { GitBackend } from './git/backend.js';
-import { WORKDIR } from './git/browser-backend.js';
+import { GITDIR, WORKDIR } from './git/browser-backend.js';
 import { createHistory } from './git/history.js';
 import { writeCommitObject, writeFilesTree } from './git/objects.js';
 import {
@@ -767,4 +775,116 @@ test('a directory folder refuses a conflict by default and changes nothing', asy
 	} finally {
 		await directory.close();
 	}
+});
+
+/** A directory folder over a fresh remote, and a clone that pushes to it. */
+async function directoryWithUpstream(commitOnEdit: boolean) {
+	const root = await scratch('merge-directory-');
+	const bare = await createBareRemote(root);
+	const local = join(root, 'local');
+	await mkdir(local);
+	const directory = await openNativeFolder({
+		root: local,
+		definition: defineFolder({ kv: {}, tables: {} }),
+		git: { author, commitOnEdit, remote: { url: bare, branch: 'main' } },
+	});
+	opened.push(directory);
+	expectOk(await directory.files.create('a.md', 'one\ntwo\nthree\n'));
+	expect((await directory.git.commitAndPush()).push.status).toBe('pushed');
+	const upstream = join(root, 'upstream');
+	await git(root, 'clone', '--quiet', bare, upstream);
+	return {
+		directory,
+		local,
+		async push(path: string, text: string) {
+			await writeFile(join(upstream, path), text);
+			await git(upstream, 'commit', '--quiet', '-am', 'Upstream');
+			await git(upstream, 'push', '--quiet', 'origin', 'main');
+		},
+	};
+}
+
+test('a directory folder merges independent changes in one commit with both parents', async () => {
+	const { directory, local, push } = await directoryWithUpstream(false);
+	await push('a.md', 'one\ntwo\nTHREE\n');
+	expectOk(await directory.files.overwrite('a.md', 'ONE\ntwo\nthree\n'));
+	const ours = await directory.git.commit();
+	if (ours.status !== 'committed') throw new Error(ours.status);
+	expectOk(await directory.git.fetch());
+
+	const merged = expectOk(await directory.git.mergeIncoming());
+	if (merged.status !== 'merged') throw new Error(merged.status);
+	expect(await readFile(join(local, 'a.md'), 'utf8')).toBe('ONE\ntwo\nTHREE\n');
+	expect(
+		(await git(local, 'rev-list', '--parents', '-n', '1', 'main')).split(' '),
+	).toEqual([merged.to, ours.oid, merged.fetched]);
+	expect(await git(local, 'status', '--porcelain')).toBe('');
+});
+
+for (const commitOnEdit of [true, false])
+	test(`a conflicted git merge in the terminal writes nothing and points to Sync (commitOnEdit: ${commitOnEdit})`, async () => {
+		const { directory, local, push } =
+			await directoryWithUpstream(commitOnEdit);
+		await push('a.md', 'one\nTWO, theirs\nthree\n');
+		expectOk(
+			await directory.files.overwrite('a.md', 'one\nTWO, ours\nthree\n'),
+		);
+		// Committed now in either mode, so no automatic commit lands later.
+		await directory.git.commit();
+		const shell = directory.terminal();
+		expect((await shell.exec('git fetch')).exitCode).toBe(0);
+		const head = await git(local, 'rev-parse', 'main');
+
+		const merged = await shell.exec('git merge');
+		expect(merged.exitCode).toBe(1);
+		expect(merged.stderr).toContain(
+			'CONFLICT (content): Merge conflict in a.md',
+		);
+		expect(merged.stderr).toContain(CONFLICTS_NEED_SYNC);
+		expect(await readFile(join(local, 'a.md'), 'utf8')).toBe(
+			'one\nTWO, ours\nthree\n',
+		);
+		expect(await git(local, 'rev-parse', 'main')).toBe(head);
+		await expect(readFile(join(local, '.git/MERGE_HEAD'))).rejects.toThrow();
+	});
+
+test('a merge another Git program began blocks commits and updates until Git finishes it', async () => {
+	const { directory, local, push } = await directoryWithUpstream(false);
+	await push('a.md', 'one\ntwo\nTHREE\n');
+	expectOk(await directory.git.fetch());
+	const head = await git(local, 'rev-parse', 'main');
+	await writeFile(join(local, '.git/MERGE_HEAD'), `${head}\n`);
+	expectOk(await directory.files.overwrite('a.md', 'ONE\ntwo\nthree\n'));
+
+	const commit = await directory.git.commit();
+	expect(commit).toMatchObject({ status: 'blocked' });
+	if (commit.status === 'blocked')
+		expect(commit.reason).toContain(
+			'a Git operation is in progress (MERGE_HEAD)',
+		);
+	expect(expectErr(await directory.git.mergeIncoming()).name).toBe('Blocked');
+	expectOk(await directory.git.stage(['a.md']));
+	expect(expectErr(await directory.git.commitStaged('Mine')).message).toContain(
+		'MERGE_HEAD',
+	);
+	expect(await git(local, 'rev-parse', 'main')).toBe(head);
+});
+
+test('a browser folder with a merge left by an earlier version is blocked, not finished', async () => {
+	const made = await folder();
+	await made.write('a.md', 'base\n');
+	const head = await (async () => {
+		const outcome = await made.history.commit();
+		if (outcome.status !== 'committed') throw new Error(outcome.status);
+		return outcome.oid;
+	})();
+	await made.real.withObjects(({ fs }) =>
+		fs.promises.writeFile(`${GITDIR}/MERGE_HEAD`, `${head}\n`),
+	);
+	await made.write('a.md', 'changed\n');
+	const outcome = await made.history.commit();
+	expect(outcome.status).toBe('blocked');
+	if (outcome.status === 'blocked')
+		expect(outcome.reason).toContain('a Git merge is in progress');
+	expect(await made.real.readBranch()).toBe(head);
 });

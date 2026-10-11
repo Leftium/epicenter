@@ -18,9 +18,9 @@ use epicenter_folder_core::files::{
 };
 use epicenter_folder_core::git::{CommitSummary, PathStatus};
 use epicenter_folder_core::history::{
-    CommitOutcome, FetchOutcome, FilesObservation, GitError, GitSnapshot, MergeConflicts,
-    MergeError, MergeOutcome, MergePolicy, OwnerEvent, PullError, PullOutcome, PushOutcome,
-    RecoverOutcome, Settled, StagedCommit,
+    CommitOutcome, FetchOutcome, FilesObservation, GitError, GitSnapshot, MergeError, MergeOutcome,
+    MergePolicy, OwnerEvent, PullError, PullOutcome, PushOutcome, RecoverOutcome, Settled,
+    StagedCommit,
 };
 use epicenter_folder_core::owner::{Caller, FolderOwner};
 use epicenter_folder_core::registry::AttachError;
@@ -54,7 +54,7 @@ pub struct FolderFilesChanged {
 /// The version of this command contract. A page built against another
 /// version is refused at attach, before it can change anything.
 ///
-/// Version 8 is the unreleased command contract. Push and fetch name a
+/// Version 9 is the unreleased command contract. Push and fetch name a
 /// session-owned request that can withdraw before transport admission. No
 /// command holds the folder across calls or names a terminal lease. A read
 /// returns its bytes and their SHA-256, and a file change is one of create,
@@ -67,19 +67,21 @@ pub struct FolderFilesChanged {
 /// made `replace`'s `expectedSha256` optional: a version 5 page would read a
 /// missing unguarded target as `Conflict`, not `NotFound`. Version 7 removed
 /// the number `apply` named and the `Superseded` refusal: saves are no longer
-/// ordered by the page, and the last to land wins. Version 8 adds
-/// `merge_incoming`, unfinished merges (the snapshot's `merging`,
-/// `lastMerge`, and merge activity, a recorded incoming update's `merge`,
-/// the `Unmerged` refusal), and a staged commit's `incoming` and
-/// `mergeStateWarning`; a version 7 page would read a merge in progress as a
-/// clean folder. Any other version is refused at attach.
+/// ordered by the page, and the last to land wins. Version 8 added
+/// `merge_incoming`, with a `conflicts` mode that could leave a merge
+/// unfinished, and the snapshot's `merging`, `lastMerge`, and merge
+/// activity. Within version 8, `merge_incoming` also gained optional
+/// `allowUnrelatedHistories` and `versions`.
 ///
-/// Within version 8, `merge_incoming` also takes optional
-/// `allowUnrelatedHistories` and `versions`, both `false` when absent, and a
-/// refused conflict carries `versions`, `null` unless asked for. A page that
-/// omits them is unchanged. An owner without them ignores both, which still
-/// refuses unrelated histories and returns no bytes.
-pub const PROTOCOL: u32 = 8;
+/// Version 9 removed unfinished merges: `merge_incoming` takes no
+/// `conflicts` and refuses every conflict, its outcome has no `conflicted`
+/// status, and the snapshot's `merging`, a recorded incoming update's
+/// `merge`, the `Unmerged` refusal, and a staged commit's `incoming` and
+/// `mergeStateWarning` are gone. A Git merge a person began outside
+/// Epicenter blocks commits and incoming updates instead. A version 8 page
+/// asking to leave conflicts would get a refusal, and would read the missing
+/// `merging` as no merge in progress. Any other version is refused at attach.
+pub const PROTOCOL: u32 = 9;
 
 /// What a window receives when it attaches to a scope.
 #[derive(Debug, Clone, Serialize, Type)]
@@ -618,10 +620,8 @@ pub async fn pull_fast_forward<R: Runtime>(
 }
 
 /// Merge the fetched remote head: a fast-forward when the branch is behind,
-/// otherwise a two-parent merge. `refuse` writes nothing on a conflict;
-/// `leave`, for a folder that does not commit on edit, publishes the merge
-/// unfinished, with conflict markers, unmerged index stages, and Git's merge
-/// state, for a person to resolve, stage, and commit. Never fetches.
+/// otherwise a two-parent merge. A conflict is refused and writes nothing.
+/// Never fetches.
 ///
 /// `allowUnrelatedHistories` merges histories that share no commit over an
 /// empty base; `versions` asks a refused conflict for each conflicted file's
@@ -631,13 +631,11 @@ pub async fn pull_fast_forward<R: Runtime>(
 pub async fn merge_incoming<R: Runtime>(
     webview: Webview<R>,
     session: u32,
-    conflicts: MergeConflicts,
     allow_unrelated_histories: Option<bool>,
     versions: Option<bool>,
 ) -> Result<MergeOutcome, MergeError> {
     let owner = owner(&webview, session).map_err(|reason| MergeError::from(git_denied(reason)))?;
     let policy = MergePolicy {
-        conflicts,
         allow_unrelated_histories: allow_unrelated_histories.unwrap_or(false),
         versions: versions.unwrap_or(false),
     };

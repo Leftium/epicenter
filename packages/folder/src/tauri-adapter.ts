@@ -41,9 +41,9 @@
  * decides from what the folder holds then.
  *
  * The owner merges like every other folder: `mergeIncoming` sends one
- * command, and with `conflicts: 'leave'` the owner leaves Git's own
- * unfinished merge, which the snapshot reports as `merging` until a staged
- * commit records it.
+ * command, and a conflict is refused with nothing written. A merge a
+ * person's own Git began blocks commits and incoming updates until Git
+ * outside Epicenter finishes or aborts it.
  *
  * This module loads no Git implementation and no browser storage.
  */
@@ -67,11 +67,9 @@ import {
 	type FolderHistory,
 } from './folder.js';
 import type {
-	MergeInProgress,
 	PendingIncoming,
 	RecordedIncoming,
 	StatusCode,
-	UnfinishedMerge,
 } from './git/backend.js';
 import {
 	type ConflictVersion,
@@ -104,14 +102,12 @@ import {
 	type GitSnapshot as WireGitSnapshot,
 	type MergeConflict as WireMergeConflict,
 	type MergeError as WireMergeError,
-	type MergeInProgress as WireMergeInProgress,
 	type MergeOutcome as WireMergeOutcome,
 	type PendingIncoming as WirePendingIncoming,
 	type PullError as WirePullError,
 	type PullOutcome as WirePullOutcome,
 	type PushOutcome as WirePushOutcome,
 	type RecoverOutcome as WireRecoverOutcome,
-	type UnfinishedMerge as WireUnfinishedMerge,
 } from './native/bindings.gen.js';
 import { callObserver } from './observer.js';
 import { publishDefinition } from './publish-definition.js';
@@ -233,8 +229,6 @@ function gitError(error: WireGitError, operation: string): GitError {
 			return GitError.IncomingPending({
 				pending: pendingFromWire(error.pending),
 			}).error;
-		case 'Unmerged':
-			return GitError.Unmerged(error).error;
 	}
 }
 
@@ -243,19 +237,6 @@ function pendingFromWire(pending: WirePendingIncoming): PendingIncoming {
 	return pending.state === 'recorded'
 		? recordedFromWire(pending)
 		: Object.freeze({ state: 'unreadable', reason: pending.reason });
-}
-
-function unfinishedFromWire(merge: WireUnfinishedMerge): UnfinishedMerge {
-	return {
-		incoming: merge.incoming,
-		message: merge.message,
-		unmerged: merge.unmerged.map((path) => ({
-			path: path.path,
-			base: orUndefined(path.base),
-			ours: orUndefined(path.ours),
-			theirs: orUndefined(path.theirs),
-		})),
-	};
 }
 
 function recordedFromWire(
@@ -267,17 +248,6 @@ function recordedFromWire(
 		branch: pending.branch,
 		expectedHead: orUndefined(pending.expectedHead),
 		nextHead: pending.nextHead,
-		...(pending.merge === null
-			? {}
-			: { merge: unfinishedFromWire(pending.merge) }),
-	});
-}
-
-function mergingFromWire(merging: WireMergeInProgress): MergeInProgress {
-	return Object.freeze({
-		incoming: merging.incoming,
-		head: orUndefined(merging.head),
-		unresolved: merging.unresolved,
 	});
 }
 
@@ -322,8 +292,6 @@ function mergeOutcome(outcome: WireMergeOutcome): MergeOutcome {
 			return pullOutcome(outcome);
 		case 'merged':
 			return outcome;
-		case 'conflicted':
-			return { ...outcome, conflicts: conflictsFromWire(outcome.conflicts) };
 	}
 }
 
@@ -530,13 +498,10 @@ function snapshotFromWire(wire: WireGitSnapshot): GitSnapshot {
 								? Ok(mergeOutcome(wire.lastMerge.result.value))
 								: Err(mergeError(wire.lastMerge.result.error)),
 					},
-		// Absent where none is pending or merging, as the shared snapshot has it.
+		// Absent where none is pending, as the shared snapshot has it.
 		...(wire.pendingIncoming === null
 			? {}
 			: { pendingIncoming: pendingFromWire(wire.pendingIncoming) }),
-		...(wire.merging === null
-			? {}
-			: { merging: mergingFromWire(wire.merging) }),
 		closed: wire.closed,
 	});
 }
@@ -949,11 +914,9 @@ function createHistory(
 					return recoverOutcome(result.data);
 				},
 			),
-		// The owner refuses `leave` under automatic history before anything
-		// runs, as every folder does. Both options are sent explicitly, so the
-		// owner never reads a missing one as anything but `false`.
+		// Both options are sent explicitly, so the owner never reads a missing
+		// one as anything but `false`.
 		mergeIncoming: ({
-			conflicts = 'refuse',
 			allowUnrelatedHistories = false,
 			versions = false,
 		} = {}) =>
@@ -963,14 +926,9 @@ function createHistory(
 					Result<MergeOutcome, MergeError | PullError | GitError>
 				> => {
 					const result = await call(
-						commands.mergeIncoming(
-							session,
-							conflicts,
-							allowUnrelatedHistories,
-							versions,
-						),
+						commands.mergeIncoming(session, allowUnrelatedHistories, versions),
 					);
-					// A lost reply may have published the merge, finished or not.
+					// A lost reply may have published the merge.
 					if (!result.sent)
 						return GitError.Unconfirmed({
 							operation: 'merge',
@@ -1008,10 +966,6 @@ function createHistory(
 					(staged) => ({
 						oid: staged.oid,
 						parent: orUndefined(staged.parent),
-						...(staged.incoming === null ? {} : { incoming: staged.incoming }),
-						...(staged.mergeStateWarning === null
-							? {}
-							: { mergeStateWarning: staged.mergeStateWarning }),
 					}),
 				),
 			),

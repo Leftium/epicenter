@@ -87,7 +87,6 @@ const wireSnapshot = (overridden: Partial<GitSnapshot> = {}) =>
 		lastFetch: null,
 		lastPull: null,
 		lastMerge: null,
-		merging: null,
 		closed: false,
 		...overridden,
 	}) satisfies GitSnapshot;
@@ -355,7 +354,7 @@ test('the page names the Capture scope and is told the directory', async () => {
 
 	expect(sent('attach')[0]?.args).toEqual({
 		scope: 'so.epicenter.capture',
-		protocol: 8,
+		protocol: 9,
 	});
 	expect(host.location).toEqual({ kind: 'directory', root: ROOT });
 	await host.close();

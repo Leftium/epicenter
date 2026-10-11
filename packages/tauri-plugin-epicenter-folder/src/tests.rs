@@ -464,22 +464,11 @@ fn a_window_attaches_reads_publishes_and_commits_through_invoke() {
         invoke(&main, "pull_fast_forward", json!({ "session": session })).unwrap_err(),
         json!({ "name": "Git", "error": { "name": "NoRemote" } })
     );
-    // A merge, even one that would leave its conflicts, needs a remote first.
+    // A merge needs a remote first.
     assert_eq!(
-        invoke(
-            &main,
-            "merge_incoming",
-            json!({ "session": session, "conflicts": "leave" })
-        )
-        .unwrap_err(),
+        invoke(&main, "merge_incoming", json!({ "session": session })).unwrap_err(),
         json!({ "name": "Pull", "error": { "name": "Git", "error": { "name": "NoRemote" } } })
     );
-    assert!(invoke(
-        &main,
-        "merge_incoming",
-        json!({ "session": session, "conflicts": "sometimes" })
-    )
-    .is_err());
 
     // Manual staging through invoke, since this scope does not commit on edit.
     apply(&main, session, json!([create("b.md", "B")])).unwrap();
@@ -506,10 +495,10 @@ fn a_window_attaches_reads_publishes_and_commits_through_invoke() {
         json!({ "session": session, "message": "Add b" }),
     )
     .unwrap();
-    assert_eq!(staged["parent"], committed["oid"]);
-    // A staged commit that finished no merge names no incoming parent.
-    assert_eq!(staged["incoming"], serde_json::Value::Null);
-    assert_eq!(staged["mergeStateWarning"], serde_json::Value::Null);
+    assert_eq!(
+        staged,
+        json!({ "oid": staged["oid"], "parent": committed["oid"] })
+    );
     assert_eq!(
         git(&fixture.root, &["rev-parse", "HEAD"]),
         staged["oid"].as_str().unwrap()
@@ -1978,7 +1967,7 @@ fn merge_options_are_optional_arguments_that_reach_the_owner() {
 
     // Neither option: unrelated histories are refused.
     assert_eq!(
-        merge(json!({ "session": session, "conflicts": "refuse" })),
+        merge(json!({ "session": session })),
         json!({ "name": "UnsupportedHistory", "head": ours, "fetched": theirs, "bases": 0 })
     );
     // Consent and versions: the two-sided addition conflicts, with the exact
@@ -1986,7 +1975,6 @@ fn merge_options_are_optional_arguments_that_reach_the_owner() {
     assert_eq!(
         merge(json!({
             "session": session,
-            "conflicts": "refuse",
             "allowUnrelatedHistories": true,
             "versions": true,
         })),
@@ -2000,7 +1988,6 @@ fn merge_options_are_optional_arguments_that_reach_the_owner() {
     assert_eq!(
         merge(json!({
             "session": session,
-            "conflicts": "refuse",
             "allowUnrelatedHistories": true,
             "versions": null,
         })),

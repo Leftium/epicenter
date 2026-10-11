@@ -2,10 +2,18 @@
  * Working-copy editor regressions over a real browser folder and held OPFS writes.
  * Concurrent save waiters share writes, file switches wait for saves, and outside
  * changes cannot replace typed input or silently resolve a failed conditional save.
+ * Two copies on one remote sync: a competing line waits for a modal review that
+ * locks the editor, Cancel forgets it, and an applied choice reaches the remote.
  */
 import { afterEach, expect, test } from 'bun:test';
 import { compileModule } from 'svelte/compiler';
 import { expectOk } from 'wellcrafted/testing';
+import {
+	createBareRemote,
+	git,
+	gitHttpFetch,
+	scratch,
+} from '../../../../packages/folder/src/git-http.test-support.js';
 import { memoryOpfs } from '../../../../packages/folder/src/opfs.test-support.js';
 import { createWebLocks } from '../../../../packages/folder/src/web-locks.test-support.js';
 
@@ -197,4 +205,54 @@ test('switching during explicit replacement keeps its receipt on the original fi
 			expectOk(await workspace.folder.files.read('b.txt')).bytes,
 		),
 	).toBe('edit b\n');
+});
+
+test('two copies sync; a competing line waits for a modal review that Cancel forgets', async () => {
+	const { workspace: unused } = await setup();
+	void unused;
+	const root = await scratch('git-lab-sync-');
+	const bare = await createBareRemote(root);
+	const originalFetch = globalThis.fetch;
+	globalThis.fetch = (await gitHttpFetch(root)) as typeof fetch;
+	try {
+		const remote = 'http://git.test/remote.git';
+		const a = await openWorkingCopy('a', remote);
+		opened.push(a);
+		expectOk(await a.folder.files.create('notes/color.txt', 'color=blue\n'));
+		await a.sync();
+		const b = await openWorkingCopy('b', remote);
+		opened.push(b);
+		await b.sync();
+		await b.select('notes/color.txt');
+		expect(b.buffer).toBe('color=blue\n');
+
+		await a.select('notes/color.txt');
+		a.input('color=yellow\n');
+		await a.sync();
+		b.input('color=green\n');
+		await b.sync();
+		const attempt = b.syncs.attempt;
+		expect(
+			attempt?.conflicts.map(({ kind, path }) => ({ kind, path })),
+		).toEqual([{ kind: 'file', path: 'notes/color.txt' }]);
+		expect(b.locked).toBe(true);
+		b.input('typed during the review\n');
+		expect(b.buffer).toBe('color=green\n');
+
+		b.syncs.cancel();
+		expect(b.syncs.attempt).toBeUndefined();
+		expect(b.locked).toBe(false);
+
+		await b.sync();
+		const again = b.syncs.attempt;
+		if (again === undefined) throw new Error('Expected a review');
+		await b.applySync(again, {
+			[again.conflicts[0]!.id]: { kind: 'take', side: 'local' },
+		});
+		expect(b.syncs.attempt).toBeUndefined();
+		expect(await git(bare, 'show', 'main:notes/color.txt')).toBe('color=green');
+		expect(b.output).toContain('Synced');
+	} finally {
+		globalThis.fetch = originalFetch;
+	}
 });

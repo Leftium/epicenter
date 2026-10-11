@@ -52,7 +52,6 @@ const snapshot = () =>
 		lastFetch: null,
 		lastPull: null,
 		lastMerge: null,
-		merging: null,
 		closed: false,
 	}) satisfies GitSnapshot;
 

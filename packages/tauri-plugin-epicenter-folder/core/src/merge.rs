@@ -19,23 +19,13 @@
 //! bytes conflicts like any competing change, and root `kv.json` merges by key
 //! against no base.
 //!
-//! Asked to leave conflicts for a person, the merge gives each conflicted path
-//! the bytes a person resolves: the changed side's file against a deletion,
-//! Git's conflict markers when every version is text, and otherwise our bytes,
-//! as Git leaves a binary conflict. A conflicted root `kv.json` gets ordinary
-//! markers too, which are not JSON. The tree of every path goes into a commit
-//! whose parents are the head and the fetched commit. That commit is never a
-//! branch head or a merge parent: it names the files and index entries an
-//! unfinished merge publishes, and each conflicted path keeps the base, ours,
-//! and theirs blobs that become its index stages. A shape conflict cannot be
-//! left this way and is refused, as is a conflicted path that is not a plain
-//! file in one of its versions.
+//! A conflict is only ever reported: the merge writes no conflict markers and
+//! no commit for it, and the caller publishes nothing.
 
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::git::{Author, Failure, Git};
 use crate::history::{ConflictVersion, DeletedBy, MergeConflict, MergeSide};
-use crate::incoming::UnmergedPath;
 use crate::kv_merge::{self, KvMerge};
 use crate::paths::ancestors;
 
@@ -57,23 +47,10 @@ pub enum Prepared {
     Conflicted {
         conflicts: Vec<MergeConflict>,
     },
-    /// Conflicts left in place: the commit of the files a person resolves.
-    Unfinished {
-        commit: String,
-        files: Files,
-        conflicts: Vec<MergeConflict>,
-        unmerged: Vec<UnmergedPath>,
-    },
     Unmergeable {
         paths: Vec<String>,
         reason: String,
     },
-}
-
-/// The labels Git writes after the opening and closing markers.
-pub struct Labels<'a> {
-    pub ours: &'a str,
-    pub theirs: &'a str,
 }
 
 /// Whether the browser's line merge reads these bytes back exactly: UTF-8,
@@ -92,19 +69,9 @@ fn merges_as_text(bytes: &[u8]) -> bool {
         .all(|(at, byte)| *byte != b'\r' || bytes.get(at + 1) == Some(&b'\n'))
 }
 
-/// `text`, ending in a line break so a marker after it starts a line.
-fn terminated(text: &str) -> String {
-    if text.is_empty() || text.ends_with('\n') {
-        text.to_string()
-    } else {
-        format!("{text}\n")
-    }
-}
-
 /// Merge `head` and `fetched` over their single merge base `base`, or over an
 /// empty tree when `base` is `None`: histories that share no commit, which a
-/// caller merges only when asked to allow unrelated histories. With `leave`,
-/// conflicts are prepared as files instead of refused.
+/// caller merges only when asked to allow unrelated histories.
 pub fn prepare(
     git: &Git,
     base: Option<&str>,
@@ -112,8 +79,6 @@ pub fn prepare(
     fetched: &str,
     author: &Author,
     message: &str,
-    labels: Labels<'_>,
-    leave: bool,
 ) -> Result<Prepared, Failure> {
     let b = match base {
         Some(base) => git.tree_files(base)?,
@@ -318,121 +283,25 @@ pub fn prepare(
     }
 
     // Git's own line merge, where no file stands against a directory.
-    let markers = (labels.ours, labels.theirs);
-    let mut marked: BTreeMap<String, String> = BTreeMap::new();
     if shapes.is_empty() {
         for path in &as_text {
             let [eb, eo, et] = versions(path);
-            let (oid, conflicted) = git.merge_blobs(
+            let merged = git.merge_blobs(
                 eb.map(|(_, oid)| oid.as_str()),
                 &eo.expect("both sides have a text merge's file").1,
                 &et.expect("both sides have a text merge's file").1,
-                markers,
             )?;
-            if conflicted {
-                conflicts.push(MergeConflict::Content { path: path.clone() });
-                marked.insert(path.clone(), oid);
-            } else {
-                result.insert(path.clone(), (PLAIN.to_string(), oid));
+            match merged {
+                Some(oid) => {
+                    result.insert(path.clone(), (PLAIN.to_string(), oid));
+                }
+                None => conflicts.push(MergeConflict::Content { path: path.clone() }),
             }
         }
     }
     // Stable: a path's reasons keep the order they were found in.
     conflicts.sort_by(|left, right| left.path().cmp(right.path()));
 
-    if !conflicts.is_empty() && leave && shapes.is_empty() {
-        let mut paths: Vec<String> = Vec::new();
-        for conflict in &conflicts {
-            if paths.last().map(String::as_str) != Some(conflict.path()) {
-                paths.push(conflict.path().to_string());
-            }
-        }
-        let unplain: Vec<String> = paths
-            .iter()
-            .filter(|path| {
-                versions(path)
-                    .iter()
-                    .flatten()
-                    .any(|(mode, _)| mode != PLAIN)
-            })
-            .cloned()
-            .collect();
-        if !unplain.is_empty() {
-            return Ok(Prepared::Unmergeable {
-                paths: unplain,
-                reason: "a conflicted path is a symbolic link, executable, or submodule in one of its versions, so it cannot be left as a plain file".to_string(),
-            });
-        }
-        let mut unmerged: Vec<UnmergedPath> = Vec::new();
-        for path in &paths {
-            let [eb, eo, et] = versions(path);
-            let oid = |entry: Option<&Entry>| entry.map(|(_, oid)| oid.clone());
-            let left = match (eo, et) {
-                (None, Some((_, theirs))) => theirs.clone(),
-                (Some((_, ours)), None) => ours.clone(),
-                (Some((_, ours)), Some((_, theirs))) => {
-                    match marked.get(path) {
-                        Some(markers) => markers.clone(),
-                        None => {
-                            let mut text = true;
-                            for (_, oid) in [eb, eo, et].into_iter().flatten() {
-                                if !merges_as_text(&git.read_blob(oid)?) {
-                                    text = false;
-                                    break;
-                                }
-                            }
-                            if !text {
-                                ours.clone()
-                            } else {
-                                let (merged, conflicted) = git.merge_blobs(
-                                    eb.map(|(_, oid)| oid.as_str()),
-                                    ours,
-                                    theirs,
-                                    markers,
-                                )?;
-                                if conflicted {
-                                    merged
-                                } else {
-                                    // The path conflicts by key, not by line: one
-                                    // region spans both whole sides.
-                                    let ours = String::from_utf8(git.read_blob(ours)?)
-                                        .map_err(|_| format!("{path} is not UTF-8"))?;
-                                    let theirs = String::from_utf8(git.read_blob(theirs)?)
-                                        .map_err(|_| format!("{path} is not UTF-8"))?;
-                                    git.write_blob(
-                                        format!(
-                                            "<<<<<<< {}\n{}=======\n{}>>>>>>> {}\n",
-                                            labels.ours,
-                                            terminated(&ours),
-                                            terminated(&theirs),
-                                            labels.theirs
-                                        )
-                                        .as_bytes(),
-                                    )?
-                                }
-                            }
-                        }
-                    }
-                }
-                (None, None) => continue,
-            };
-            result.insert(path.clone(), (PLAIN.to_string(), left));
-            unmerged.push(UnmergedPath {
-                path: path.clone(),
-                base: oid(eb),
-                ours: oid(eo),
-                theirs: oid(et),
-            });
-        }
-        let tree = git.write_entries_tree(&result)?;
-        let commit = git.write_commit_with_parents(&tree, &[head, fetched], message, author)?;
-        return Ok(Prepared::Unfinished {
-            commit,
-            files: result,
-            conflicts,
-            unmerged,
-        });
-    }
     if !conflicts.is_empty() {
         return Ok(Prepared::Conflicted { conflicts });
     }

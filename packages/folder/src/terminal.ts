@@ -11,9 +11,9 @@
  *
  * `git` is a real command over the folder's history: status, diff, log, add,
  * commit -m, push, fetch, pull --ff-only, and merge. Staged authoring requires
- * `commitOnEdit: false`. `git merge` merges the already fetched remote head;
- * in manual history it leaves conflicts in the files and exits 1, as Git
- * does, and `git add` then `git commit -m` finish it. Other Git commands are
+ * `commitOnEdit: false`. `git merge` merges the already fetched remote head
+ * when it fast-forwards or merges cleanly; a conflict writes nothing and
+ * exits 1, pointing to Sync, in either history mode. Other Git commands are
  * refused.
  */
 import { Buffer } from 'buffer/';
@@ -27,6 +27,7 @@ import type { FileChange, FolderStorage } from './boundary.js';
 import { hashBytes, ownBytes } from './capture.js';
 import type { ApplyError, FileError } from './errors.js';
 import type { FolderGit } from './folder.js';
+import { CONFLICTS_NEED_SYNC, type MergeConflict } from './git/errors.js';
 
 export type TerminalResult = {
 	readonly stdout: string;
@@ -447,8 +448,7 @@ export function createTerminal(
 		const result = await runGit(git, args, (path) =>
 			relative(context.fs.resolvePath(context.cwd, path)),
 		);
-		// A merge may publish files whether it succeeds, stops on a conflict
-		// it leaves in place, or fails partway.
+		// A merge may publish files whether it succeeds or fails partway.
 		if ((args[0] === 'pull' && result.exitCode === 0) || args[0] === 'merge')
 			await refresh();
 		return result;
@@ -493,6 +493,35 @@ export function createTerminal(
 			return run;
 		},
 	};
+}
+
+/** Git's own report lines for the conflicts of a refused merge. */
+function conflictLines(
+	conflicts: readonly MergeConflict[],
+	upstream: string,
+): string {
+	const lines: string[] = [];
+	const reported = new Set<string>();
+	for (const conflict of conflicts) {
+		if (reported.has(conflict.path)) continue;
+		reported.add(conflict.path);
+		if (conflict.reason === 'deleted')
+			lines.push(
+				`CONFLICT (modify/delete): ${conflict.path} deleted in ${conflict.deletedBy === 'ours' ? 'HEAD' : upstream} and modified in ${conflict.deletedBy === 'ours' ? upstream : 'HEAD'}.`,
+			);
+		else if (conflict.reason === 'kvFile')
+			lines.push(
+				`CONFLICT (modify/delete): ${conflict.path} deleted on one side and modified on the other.`,
+			);
+		else {
+			if (conflict.reason === 'binary')
+				lines.push(
+					`warning: Cannot merge binary files: ${conflict.path} (HEAD vs. ${upstream})`,
+				);
+			lines.push(`CONFLICT (content): Merge conflict in ${conflict.path}`);
+		}
+	}
+	return lines.join('\n');
 }
 
 const short = (oid: string | undefined) =>
@@ -541,14 +570,6 @@ async function runGit(
 					? `?? ${path.path}`
 					: `${path.index}${path.worktree} ${path.path}`,
 			);
-			const brief = rest.some((arg) =>
-				['-s', '--short', '--porcelain'].includes(arg),
-			);
-			if (snapshot.merging !== undefined && !brief)
-				header +=
-					snapshot.merging.unresolved.length > 0
-						? '\nYou have unmerged paths.\n  (fix conflicts and run "git commit")'
-						: '\nAll conflicts fixed but you are still merging.\n  (use "git commit" to conclude merge)';
 			if (lines.length === 0)
 				return ok(`${header}\nnothing to commit, working tree clean\n`);
 			return ok(`${header}\n${lines.join('\n')}\n`);
@@ -665,26 +686,12 @@ async function runGit(
 			if (commitError !== null) {
 				if (commitError.name === 'NothingToCommit')
 					return error('nothing added to commit', 1);
-				if (commitError.name === 'Unmerged')
-					return error(
-						`error: Committing is not possible because you have unmerged files.\n${commitError.paths
-							.map((path) => `U\t${path}`)
-							.join(
-								'\n',
-							)}\nhint: Fix them up in the work tree, and then use 'git add <file>'\nhint: to mark resolution and make a commit.\nfatal: Exiting because of an unresolved conflict.`,
-						128,
-					);
 				return error(commitError.message);
 			}
 			const subject = messages[0]!.split('\n')[0];
-			return {
-				stdout: `[${git.snapshot.branch} ${short(committed.oid)}] ${subject}\n`,
-				stderr:
-					committed.mergeStateWarning === undefined
-						? ''
-						: `warning: the merge was committed, but Git's merge state could not be removed: ${committed.mergeStateWarning}\n`,
-				exitCode: 0,
-			};
+			return ok(
+				`[${git.snapshot.branch} ${short(committed.oid)}] ${subject}\n`,
+			);
 		}
 		case 'push': {
 			if (rest.length > 0)
@@ -771,12 +778,15 @@ async function runGit(
 					`git merge: only the fetched remote branch can be merged: git merge [${upstream}]`,
 					129,
 				);
-			const { data: merged, error: mergeError } = await git.mergeIncoming({
-				conflicts: git.snapshot.commitOnEdit ? 'refuse' : 'leave',
-			});
+			const { data: merged, error: mergeError } = await git.mergeIncoming();
 			if (mergeError !== null) {
 				if (mergeError.name === 'NoFetchedHead')
 					return error(`merge: ${upstream} - not something we can merge`);
+				if (mergeError.name === 'Conflicted')
+					return error(
+						`${conflictLines(mergeError.conflicts, upstream)}\n${CONFLICTS_NEED_SYNC}`,
+						1,
+					);
 				return error(`fatal: ${mergeError.message}`, 128);
 			}
 			const files = (paths: readonly string[]) =>
@@ -793,36 +803,6 @@ async function runGit(
 					return ok(
 						`Merge made: ${short(merged.to)} (parents ${short(merged.from)} and ${short(merged.fetched)})\n${files(merged.changedPaths)}`,
 					);
-				case 'conflicted': {
-					const lines: string[] = [];
-					const reported = new Set<string>();
-					for (const conflict of merged.conflicts) {
-						if (reported.has(conflict.path)) continue;
-						reported.add(conflict.path);
-						if (conflict.reason === 'deleted')
-							lines.push(
-								`CONFLICT (modify/delete): ${conflict.path} deleted in ${conflict.deletedBy === 'ours' ? 'HEAD' : upstream} and modified in ${conflict.deletedBy === 'ours' ? upstream : 'HEAD'}.`,
-							);
-						else if (conflict.reason === 'kvFile')
-							lines.push(
-								`CONFLICT (modify/delete): ${conflict.path} deleted on one side and modified on the other.`,
-							);
-						else {
-							if (conflict.reason === 'binary')
-								lines.push(
-									`warning: Cannot merge binary files: ${conflict.path} (HEAD vs. ${upstream})`,
-								);
-							lines.push(
-								`CONFLICT (content): Merge conflict in ${conflict.path}`,
-							);
-						}
-					}
-					return {
-						stdout: `${lines.join('\n')}\nAutomatic merge failed; fix conflicts and then commit the result.\n`,
-						stderr: '',
-						exitCode: 1,
-					};
-				}
 			}
 			return error('merge did not complete');
 		}

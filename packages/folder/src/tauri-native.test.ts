@@ -34,9 +34,9 @@
  * - A terminal's rewrite of a file it read is refused when another window
  *   wrote between its steps, and the steps before it stay landed
  * - A terminal `git fetch` in flight at the remote delays no save and no commit
- * - A terminal `git merge` leaves red against green as Git leaves it; the
- *   other window sees the merge, `git commit` refuses until `git add`, and
- *   the merge commit has both original parents
+ * - A terminal `git merge` of red against green is refused and writes
+ *   nothing; a merge the person's own Git begins blocks commits, staged
+ *   commits, and merges until Git outside Epicenter finishes it
  * - Closing a page mid-command stops the command's later steps; the save the
  *   owner already admitted lands and is committed without the page
  * - Closing one window's folder leaves the other window and the owner working,
@@ -830,7 +830,7 @@ describe.skipIf(!enabled)('tauri folder against the native owner', () => {
 		}
 	});
 
-	test('red against green is left for the terminal and finished by a staged commit with both parents', async () => {
+	test('red against green is refused and writes nothing, and a merge begun with Git outside blocks history work', async () => {
 		const remoteRoot = await realpath(await scratch('tauri-folder-merge-'));
 		try {
 			const bare = await createBareRemote(remoteRoot);
@@ -855,42 +855,49 @@ describe.skipIf(!enabled)('tauri folder against the native owner', () => {
 			const red = await a(() => folder.git.commit());
 			if (red.status !== 'committed') throw new Error(red.status);
 			expectOk(await a(() => folder.git.fetch()));
+			const index = await readFile(join(root, '.git/index'));
 
+			// The conflict is refused: no marker, stage, ref, or merge state.
 			const terminal = folder.terminal();
-			const merged = await a(() =>
-				terminal.exec('git merge; cat notes/color.txt'),
+			const merged = await a(() => terminal.exec('git merge'));
+			expect(merged.exitCode).toBe(1);
+			expect(merged.stderr).toContain(
+				'CONFLICT (content): Merge conflict in notes/color.txt',
 			);
-			expect(merged.stdout).toBe(
-				'CONFLICT (content): Merge conflict in notes/color.txt\nAutomatic merge failed; fix conflicts and then commit the result.\n<<<<<<< HEAD\nred\n=======\ngreen\n>>>>>>> origin/main\n',
+			expect(expectErr(await b(() => other.git.mergeIncoming()))).toMatchObject(
+				{
+					name: 'Conflicted',
+					conflicts: [{ reason: 'content', path: 'notes/color.txt' }],
+				},
 			);
-			expect(await git(root, 'status', '--porcelain')).toBe(
-				'UU notes/color.txt',
+			expect(await readFile(join(root, 'notes/color.txt'), 'utf8')).toBe(
+				'red\n',
 			);
+			expect(await readFile(join(root, '.git/index'))).toEqual(index);
+			expect(await git(root, 'status', '--porcelain')).toBe('');
 			expect(await git(root, 'rev-parse', 'main')).toBe(red.oid);
-			expectOk(await b(() => other.git.status()));
-			expect(other.git.snapshot.merging).toEqual({
-				incoming: green,
-				head: red.oid,
-				unresolved: ['notes/color.txt'],
-			});
-
-			expect(
-				(await a(() => terminal.exec("printf 'green\\n' > notes/color.txt")))
-					.exitCode,
-			).toBe(0);
-			const refused = await a(() => terminal.exec('git commit -m Merge'));
-			expect(refused.exitCode).toBe(128);
-			expect(refused.stderr).toContain('U\tnotes/color.txt');
-			expect(
-				(await a(() => terminal.exec('git add notes/color.txt'))).exitCode,
-			).toBe(0);
-			expect(
-				(await a(() => terminal.exec('git commit -m Merge'))).exitCode,
-			).toBe(0);
-			expect(await git(root, 'log', '-1', '--format=%P')).toBe(
-				`${red.oid} ${green}`,
-			);
 			expect(existsSync(join(root, '.git/MERGE_HEAD'))).toBe(false);
+			expect(existsSync(join(root, '.git/ORIG_HEAD'))).toBe(false);
+
+			// The person's own Git merges and stops on the conflict.
+			await expect(
+				git(root, 'merge', '--no-edit', 'origin/main'),
+			).rejects.toThrow();
+			expect(existsSync(join(root, '.git/MERGE_HEAD'))).toBe(true);
+			const blocked =
+				'a Git merge is in progress; finish or abort it with Git outside Epicenter';
+			const committed = await a(() => folder.git.commit());
+			expect(committed).toMatchObject({ status: 'blocked' });
+			if (committed.status !== 'blocked') throw new Error(committed.status);
+			expect(committed.reason).toContain(blocked);
+			const staged = expectErr(await b(() => other.git.commitStaged('Merge')));
+			expect(staged.name).toBe('Failed');
+			expect(staged.message).toContain(blocked);
+			expect(
+				expectErr(await a(() => folder.git.mergeIncoming())),
+			).toMatchObject({ name: 'Blocked' });
+			expect(await git(root, 'rev-parse', 'main')).toBe(red.oid);
+			expect(await git(root, 'rev-parse', 'MERGE_HEAD')).toBe(green);
 		} finally {
 			await bridge?.stop();
 			bridge = undefined;

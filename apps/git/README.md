@@ -26,17 +26,24 @@ the tree and clean editor. The terminal below the editor keeps its session,
 output, and typed command while hidden. Binary files stay visible with an
 explanation. Text editing is limited to UTF-8 files of at most 2 MiB.
 
-Automatic commits are disabled. Use `git add`, `git commit -m`, `git fetch`,
-`git merge`, `git pull --ff-only`, and `git push` explicitly. Fetch updates remote knowledge
-without updating working files. Status separates index and worktree columns;
-ahead and behind are relative to the last fetched head.
+**Sync** brings a working copy and the remote together: it commits what
+the copy saved, fetches, merges, and pushes (`@epicenter/svelte/sync`). Edits
+to different lines combine on their own. When both copies changed the same
+lines, the review shows each version beside a result and replaces the
+editor and terminal until you press **Apply and sync** or **Cancel**;
+nothing is written before you choose, and Cancel forgets the review. A copy
+with no history of its own adopts the remote's on its first Sync. The
+desktop build's folder owner does not sync yet; there the terminal's Merge
+button stays.
 
-Merge uses the last fetched head. Competing changes leave editable conflict
-markers and unmerged index stages. Saving a resolution keeps it unmerged;
-`git add` resolves its index stages. The merge remains in progress after every
-path is staged, including after reopening, until `git commit -m` records both
-original parents. An unresolved commit is refused. If publication stops partway,
-the page shows the pending update and offers explicit recovery.
+Automatic commits are disabled. The terminal still runs `git add`,
+`git commit -m`, `git fetch`, `git merge`, `git pull --ff-only`, and
+`git push` explicitly. Fetch updates remote knowledge without updating
+working files. Status separates index and worktree columns; ahead and behind
+are relative to the last fetched head. `git merge` merges the last fetched
+head when it fast-forwards or merges cleanly; a conflict writes nothing and
+points to Sync. If publication stops partway, the page shows the pending
+update and offers explicit recovery.
 
 Enter an HTTP(S) remote or leave the URL empty for local history. Browser
 transport uses fetch and needs a same-origin endpoint or a server that permits

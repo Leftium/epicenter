@@ -10,43 +10,13 @@
  * onto the branch by compare-and-swap (below). isomorphic-git never writes
  * the native index.
  *
- * A merge left unfinished is Git's own: `ORIG_HEAD`, `MERGE_MSG`, and
- * `MERGE_HEAD` beside the unmoved branch, files with markers, and an index
- * holding the incoming entries and each conflicted path's stages, written by
- * `update-index --index-info`, so `git status`, `git add`, and `git commit`
- * in a terminal see the same merge.
+ * A merge with conflicts is never left in the folder: the folder never
+ * writes `MERGE_HEAD`, and one another Git program began blocks commits and
+ * incoming updates until it is finished or abandoned with Git.
  *
- * Everything that makes the merge commit correct lands before any authored
- * file: `ORIG_HEAD` (the local head) and `MERGE_MSG` (the message, with a
- * `# Incoming commit: <oid>` line naming the fetched commit in full), then
- * the whole index in one `update-index`, then `MERGE_HEAD`, then the files.
- * The index and `MERGE_HEAD` together keep the merge's two parents, the
- * fetched changes it brings, and its unresolved paths, so a staged commit
- * made without staging anything is `Unmerged`, never a commit of the local
- * tree that claims the fetched history.
- *
- * Nothing is rolled back: once the index holds the merge, another program
- * may have staged something in it too, and putting older bytes back would
- * erase that. A failure is reported where it stopped instead:
- * - `ORIG_HEAD`, `MERGE_MSG`, or the index refused: `Refused`, with no file
- *   or index entry changed. An `ORIG_HEAD` or `MERGE_MSG` left behind, with
- *   no `MERGE_HEAD`, is only a head and a message; no merge is in progress.
- * - `MERGE_HEAD` refused: `Partial` with no file step. The index holds the
- *   stages and incoming entries with no `MERGE_HEAD`; whole-folder commits
- *   refuse the stages and `git commit` refuses them as unmerged. Writing the
- *   commit `MERGE_MSG` names to `.git/MERGE_HEAD` makes it the merge again,
- *   whatever the tracking ref names by then.
- * - A file step: `Partial`, with the steps that landed, possibly none. The
- *   merge is in progress; files it did not write differ from their index
- *   entries. A person inspects staged and unstaged differences, resolves,
- *   stages what each path should hold, and commits, or removes `MERGE_HEAD`
- *   and resets the index to abandon the merge while keeping working files.
- * No other record is kept.
- *
- * A staged commit pins its parents first: the branch head, or `ORIG_HEAD`
- * and `MERGE_HEAD` for a commit that finishes a merge. It then writes, as
- * objects, the index's tree and a commit naming exactly those parents, and
- * moves the branch from the first parent by compare-and-swap. `git commit`
+ * A staged commit pins its parent first, the branch head. It then writes, as
+ * objects, the index's tree and a commit naming that parent, and moves the
+ * branch from it by compare-and-swap. `git commit`
  * would take whatever `HEAD` names when it runs. Like a whole-folder commit,
  * a staged commit runs no commit hooks and is not signed.
  */
@@ -63,18 +33,13 @@ import {
 import { dirname, join } from 'node:path';
 import type * as git from 'isomorphic-git';
 import type { FileBoundary } from '../boundary.js';
-import { describe, FileError } from '../errors.js';
 import { byCodePoint, NORMALIZING } from './attributes.js';
 import type {
 	GitBackend,
 	GitRemote,
-	IncomingPlan,
-	MergeInProgress,
 	PathStatus,
 	PublishResult,
 	StatusCode,
-	UnfinishedMerge,
-	UnmergedPath,
 } from './backend.js';
 import { capturedIndexMatchesHead } from './captured-index.js';
 import { createMutex } from './mutex.js';
@@ -84,7 +49,6 @@ import {
 	commitTree,
 	EMPTY_TREE,
 	type ObjectAccess,
-	readTreeFiles,
 	writeCommitObject,
 } from './objects.js';
 
@@ -171,12 +135,6 @@ export function createGitRunner(root: string): GitRun {
 
 const text = (bytes: Uint8Array) => Buffer.from(bytes).toString('utf8');
 
-/**
- * The `MERGE_MSG` line naming a merge's incoming commit in full. Git strips
- * `#` lines from a message it edits, as it does its own `# Conflicts:` list.
- */
-const INCOMING_LINE = '# Incoming commit: ';
-
 /** A node filesystem whose writes land atomically, for isomorphic-git object writes. */
 function atomicObjectFs(): git.PromiseFsClient {
 	const promises = {
@@ -261,17 +219,6 @@ export async function createNativeGitBackend({
 		}
 	}
 
-	/** Replace a private Git file whole, through a scratch file and rename. */
-	async function writePrivate(name: string, value: string) {
-		const temporary = join(gitdir, `${name}.tmp-${crypto.randomUUID()}`);
-		try {
-			await writeFile(temporary, value);
-			await rename(temporary, join(gitdir, name));
-		} finally {
-			await rm(temporary, { force: true }).catch(() => {});
-		}
-	}
-
 	/**
 	 * The tree the index names now, by Git's own rules: an unmerged path
 	 * fails it, and an intent-to-add entry (`git add -N`) is left out.
@@ -294,118 +241,6 @@ export async function createNativeGitBackend({
 		} finally {
 			await rm(copy, { force: true }).catch(() => {});
 		}
-	}
-
-	/**
-	 * Give the changed paths the entries of `commit`'s tree and each unmerged
-	 * path its stages, in one `update-index`: Git writes the index once, so
-	 * it holds either all of these entries or none of them.
-	 */
-	async function indexMerge(
-		commit: string,
-		paths: readonly string[],
-		unmerged: readonly UnmergedPath[],
-	) {
-		const target = await readTreeFiles(
-			access,
-			await commitTree(access, commit),
-		);
-		const conflicted = new Set(unmerged.map((path) => path.path));
-		const removals: string[] = [];
-		const entries: string[] = [];
-		for (const path of paths) {
-			if (conflicted.has(path)) continue;
-			const file = target.get(path);
-			// A mode-0 record removes the path's entries.
-			if (file === undefined) removals.push(`0 ${ZERO}\t${path}`);
-			else entries.push(`${file.mode} ${file.oid} 0\t${path}`);
-		}
-		for (const { path, base, ours, theirs } of unmerged) {
-			// The path's entry goes before its stages go in.
-			removals.push(`0 ${ZERO}\t${path}`);
-			for (const [stage, oid] of [
-				[1, base],
-				[2, ours],
-				[3, theirs],
-			] as const)
-				if (oid !== undefined) entries.push(`100644 ${oid} ${stage}\t${path}`);
-		}
-		const records = [...removals, ...entries];
-		if (records.length === 0) return;
-		await run(['update-index', '-z', '--index-info'], {
-			input: `${records.join('\0')}\0`,
-		});
-	}
-
-	/**
-	 * Publish a merge left unfinished: `ORIG_HEAD` and `MERGE_MSG`, the whole
-	 * index, `MERGE_HEAD`, then the files. See the module comment for why
-	 * that order, and why nothing is rolled back.
-	 */
-	async function publishMerge(
-		plan: IncomingPlan,
-		merge: UnfinishedMerge,
-	): Promise<PublishResult> {
-		const refused = (path: string, operation: string, cause: unknown) =>
-			({
-				status: 'refused',
-				error: FileError.Io({ path, operation, cause }).error,
-			}) as const;
-		const actual = await resolve(branchRef);
-		if (actual !== plan.expectedHead)
-			return { status: 'branchMoved', actual, filesApplied: false };
-		const message = merge.message.endsWith('\n')
-			? merge.message
-			: `${merge.message}\n`;
-		try {
-			await writePrivate('ORIG_HEAD', `${plan.expectedHead}\n`);
-			await writePrivate(
-				'MERGE_MSG',
-				`${message}\n${INCOMING_LINE}${merge.incoming}\n`,
-			);
-		} catch (cause) {
-			return refused('.git/MERGE_MSG', 'prepare the merge message', cause);
-		}
-		try {
-			await indexMerge(plan.nextHead, plan.paths, merge.unmerged);
-		} catch (cause) {
-			// `update-index` replaces the index whole or not at all.
-			return refused('.git/index', 'write the merge into the index', cause);
-		}
-		// From here the index holds the merge. It is never put back: another
-		// program may have staged something in it since.
-		try {
-			await writePrivate('MERGE_HEAD', `${merge.incoming}\n`);
-		} catch (cause) {
-			return {
-				status: 'partial',
-				applied: [],
-				error: FileError.Io({
-					path: '.git/MERGE_HEAD',
-					operation: `record the merge of ${merge.incoming} in`,
-					cause: new Error(
-						`${describe(cause)}. The index already holds the merge's stages and incoming entries, and .git/MERGE_MSG names the incoming commit on its "${INCOMING_LINE.trim()}" line; using a system shell, write that commit to .git/MERGE_HEAD before resolving, staging, or committing`,
-					),
-				}).error,
-			};
-		}
-		const { error: applyError } = await boundary.apply(plan.changes);
-		if (applyError !== null)
-			// The merge is in progress either way: its index and merge state stay.
-			return applyError.name === 'Partial'
-				? {
-						status: 'partial',
-						applied: applyError.applied,
-						error: applyError.error,
-					}
-				: { status: 'partial', applied: [], error: applyError };
-		// Another program may have moved the branch meanwhile. `ORIG_HEAD`
-		// still names the merge's first parent; a staged commit refuses to
-		// finish the merge from anywhere else.
-		const after = await resolve(branchRef);
-		if (after !== plan.expectedHead)
-			return { status: 'branchMoved', actual: after, filesApplied: true };
-		return { status: 'published' };
 	}
 
 	function parsePorcelain(output: Uint8Array): PathStatus[] {
@@ -456,8 +291,10 @@ export async function createNativeGitBackend({
 			if (head.code !== 0) return 'HEAD is detached';
 			if (text(head.stdout).trim() !== branchRef)
 				return `HEAD is not on ${branch}`;
-			// A merge in progress is `mergeState`: a staged commit finishes it.
+			// The folder never begins a merge; one another Git program began is
+			// finished or abandoned with Git.
 			for (const marker of [
+				'MERGE_HEAD',
 				'CHERRY_PICK_HEAD',
 				'REVERT_HEAD',
 				'rebase-merge',
@@ -471,33 +308,6 @@ export async function createNativeGitBackend({
 				if (present) return `a Git operation is in progress (${marker})`;
 			}
 			return undefined;
-		},
-		async mergeState(): Promise<MergeInProgress | undefined> {
-			const stored = await readPrivate('MERGE_HEAD');
-			if (stored === undefined) return undefined;
-			const incoming = text(stored).trim().split('\n')[0] ?? '';
-			if (!/^[0-9a-f]{40}$/.test(incoming))
-				throw new Error('.git/MERGE_HEAD does not name a commit');
-			const origin = text((await readPrivate('ORIG_HEAD')) ?? new Uint8Array())
-				.trim()
-				.split('\n')[0];
-			const listed = await run(['ls-files', '--unmerged', '-z']);
-			const unresolved = new Set<string>();
-			for (const record of text(listed.stdout).split('\0'))
-				if (record.includes('\t'))
-					unresolved.add(record.slice(record.indexOf('\t') + 1));
-			return {
-				incoming,
-				head:
-					origin !== undefined && /^[0-9a-f]{40}$/.test(origin)
-						? origin
-						: undefined,
-				unresolved: [...unresolved],
-			};
-		},
-		async clearMerge() {
-			for (const name of ['MERGE_HEAD', 'MERGE_MSG', 'MERGE_MODE'])
-				await rm(join(gitdir, name), { force: true });
 		},
 		async checkpointProblem() {
 			return nativeCheckpointProblem({
@@ -569,23 +379,19 @@ export async function createNativeGitBackend({
 			if (paths === 'all') await run(['add', '--all']);
 			else await run([...literal, 'add', '--all', '--', ...paths]);
 		},
-		async commitIndex(message, author, merge) {
-			// Every parent is pinned before anything is written; the branch
-			// moves only from the first.
-			const parent = merge?.head ?? (await resolve(branchRef));
+		async commitIndex(message, author) {
+			// The parent is pinned before anything is written; the branch moves
+			// only from it.
+			const parent = await resolve(branchRef);
 			const tree = await indexTree();
 			if (
-				merge === undefined &&
 				tree ===
-					(parent === undefined ? EMPTY_TREE : await commitTree(access, parent))
+				(parent === undefined ? EMPTY_TREE : await commitTree(access, parent))
 			)
 				return { status: 'nothing' };
 			const oid = await writeCommitObject(access, {
 				tree,
-				parents: [
-					...(parent === undefined ? [] : [parent]),
-					...(merge === undefined ? [] : [merge.incoming]),
-				],
+				parents: parent === undefined ? [] : [parent],
 				message,
 				author,
 			});
@@ -671,7 +477,6 @@ export async function createNativeGitBackend({
 		// The baseline is not checked here: each step carries its own file
 		// condition, and other programs are met only at Git's lock files.
 		async publishIncoming(plan): Promise<PublishResult> {
-			if (plan.merge !== undefined) return publishMerge(plan, plan.merge);
 			const { error: applyError } = await boundary.apply(plan.changes);
 			if (applyError !== null) {
 				if (applyError.name === 'Partial')

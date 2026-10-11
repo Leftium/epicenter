@@ -8,6 +8,7 @@
  import * as Item from '@epicenter/ui/item';
  import { Folder, FileText, ChevronDown, ChevronRight, Terminal, GitBranch } from '@lucide/svelte';
  import { visibleRows } from '@epicenter/folder/file-browser';
+ import SyncReview from '@epicenter/svelte/sync-review';
  import { openWorkingCopy, type WorkingCopy } from '$lib/workspace.svelte';
 
  let workspace = $state.raw<WorkingCopy>();
@@ -17,6 +18,7 @@
  let initializing = $state(true);
  let message = $state('');
  let showTerminal = $state(true);
+ let applying = $state(false);
  let showGuide = $state(false);
  let terminalOutput = $state<HTMLDivElement>();
  let followOutput = $state(true);
@@ -104,11 +106,10 @@
  {#if showGuide}
   <section aria-label="Demo guide" class="shrink-0 space-y-2 border-b bg-muted/30 px-4 py-3 text-sm">
    <p>Open A and B on the same remote. Each keeps its own files. In a browser, use a second tab with <code>?copy=b</code>; the desktop app opens two windows.</p>
-   <p>Both start with <code>notes/color.txt</code> containing <code>color=blue</code>. In A, change it to red, then run <code>git add .</code>, <code>git commit -m 'Red'</code>, and <code>git push</code>.</p>
-   <p>In B, run <code>git fetch</code>. Its files stay unchanged until <code>git pull --ff-only</code>. Ahead and behind counts describe the last fetched head.</p>
-   <p>For a conflict, first let B commit green in <code>notes/color.txt</code> while A commits and pushes red. In B, run <code>git fetch</code>, then <code>git merge</code>. Repair the markers in the editor, run <code>git add notes/color.txt</code>, then <code>git commit -m 'Resolve color'</code> and <code>git push</code>. A can pull the resolution.</p>
-   <p>A merge stays unfinished when you close and reopen the copy. Saving a repaired file keeps it unstaged until you add it. Git refuses a commit while any conflicts remain unstaged.</p>
-   <p>Try pulling with an uncommitted edit: the update refuses and your file stays available. Commits and pushes remain explicit.</p>
+   <p>Both start with <code>notes/color.txt</code> containing <code>color=blue</code>. In A, change it to red and press <strong>Sync</strong>: A commits what it saved, brings in the remote, and pushes.</p>
+   <p>In B, press <strong>Sync</strong>: red arrives. Edits to different lines of a file combine on their own.</p>
+   <p>For a conflict, change the same line in both copies, say green in B and yellow in A. Sync A first, then Sync B. B shows its version and the remote's side by side and writes nothing until you choose one, or type your own, and press <strong>Apply and sync</strong>. <strong>Cancel</strong> forgets the review; nothing changed. A can then Sync the result.</p>
+   <p>While the review shows, the editor and terminal wait. The terminal's <code>git merge</code> refuses a conflict and points to Sync; <code>git fetch</code>, <code>git pull --ff-only</code>, and the rest still work.</p>
   </section>
  {/if}
  {#if workspace}
@@ -137,9 +138,23 @@
      <span class="ml-auto text-xs text-muted-foreground">{workspace.saveMessage}</span>
      <Button variant="ghost" size="xs" disabled={workspace.running || !workspace.dirty} onclick={() => act(() => workspace!.flush())}>Save</Button>
     </div>
-    {#if workspace.snapshot.merging}
-     <div role="status" class="shrink-0 border-b px-4 py-2 text-sm"><p class="font-medium">Merge in progress</p><p class="text-muted-foreground">{workspace.snapshot.merging.unresolved.length ? `Repair and stage: ${workspace.snapshot.merging.unresolved.join(', ')}` : 'All conflicts are staged. Commit to finish the merge.'}</p></div>
-    {/if}
+    {#if workspace.syncs.attempt}
+     <!-- The review is modal: it replaces the editor and terminal until it is applied or cancelled. -->
+     <div class="min-h-0 flex-1 overflow-auto p-4">
+      {#key workspace.syncs.attempt.id}
+       <SyncReview
+        attempt={workspace.syncs.attempt}
+        pending={applying}
+        problems={workspace.syncs.problems}
+        onCancel={() => workspace!.syncs.cancel()}
+        onApply={(attempt, choices) => {
+         applying = true;
+         void workspace!.applySync(attempt, choices).finally(() => { applying = false; });
+        }}
+       />
+      {/key}
+     </div>
+    {:else}
     {#if workspace.snapshot.pendingIncoming}
      <div role="status" class="flex shrink-0 flex-wrap items-center gap-2 border-b px-4 py-2 text-sm"><span>An incoming update stopped before it finished. Inspect your files, then recover it explicitly.</span><Button size="xs" variant="outline" disabled={workspace.running} onclick={() => workspace!.recover()}>Recover incoming update</Button></div>
     {/if}
@@ -147,19 +162,20 @@
      <div class="flex shrink-0 flex-wrap items-center gap-2 border-b px-4 py-2 text-sm"><span>Your text is still here.</span><Button size="xs" variant="outline" onclick={() => act(() => workspace!.keepMyText())}>Replace saved file with my text</Button><Button size="xs" variant="outline" onclick={() => act(() => workspace!.useSavedText())}>Discard my edits and reload</Button></div>
     {/if}
     {#if workspace.editable}
-     <textarea aria-label="File text" class="min-h-0 flex-1 resize-none bg-background p-4 font-mono text-sm leading-6 outline-none" spellcheck="false" value={workspace.buffer} disabled={workspace.running} oninput={(event) => workspace!.input(event.currentTarget.value)}></textarea>
+     <textarea aria-label="File text" class="min-h-0 flex-1 resize-none bg-background p-4 font-mono text-sm leading-6 outline-none" spellcheck="false" value={workspace.buffer} disabled={workspace.locked} oninput={(event) => workspace!.input(event.currentTarget.value)}></textarea>
     {:else}<div class="flex min-h-0 flex-1 items-center justify-center p-8 text-sm text-muted-foreground">{workspace.selected ? workspace.saveMessage : 'Select a file to edit its text.'}</div>{/if}
   {#if showTerminal}
    <section class="flex h-64 shrink-0 flex-col border-t" aria-label="Terminal">
-    <div class="flex shrink-0 items-center gap-2 border-b px-4 py-2 text-xs text-muted-foreground"><span>Terminal · files save immediately; commits are explicit</span><div class="ml-auto flex gap-2"><Button size="xs" variant="ghost" disabled={workspace.running} onclick={() => workspace!.run('git status')}>Status</Button><Button size="xs" variant="ghost" disabled={workspace.running || !remote} onclick={() => workspace!.run('git fetch')}>Fetch</Button><Button size="xs" variant="ghost" disabled={workspace.running || !remote} onclick={() => workspace!.run('git pull --ff-only')}>Pull</Button><Button size="xs" variant="ghost" disabled={workspace.running || !remote} onclick={() => workspace!.run('git merge')}>Merge</Button></div></div>
+    <div class="flex shrink-0 items-center gap-2 border-b px-4 py-2 text-xs text-muted-foreground"><span>Terminal · files save immediately; commits are explicit</span><div class="ml-auto flex gap-2"><Button size="xs" variant="ghost" disabled={workspace.running} onclick={() => workspace!.run('git status')}>Status</Button><Button size="xs" variant="ghost" disabled={workspace.running || !remote} onclick={() => workspace!.run('git fetch')}>Fetch</Button><Button size="xs" variant="ghost" disabled={workspace.running || !remote} onclick={() => workspace!.run('git pull --ff-only')}>Pull</Button>{#if workspace.folder.sync.supported}<Button size="xs" disabled={workspace.locked || !remote} onclick={() => workspace!.sync()}>Sync</Button>{:else}<Button size="xs" variant="ghost" disabled={workspace.running || !remote} onclick={() => workspace!.run('git merge')}>Merge</Button>{/if}</div></div>
     <div role="textbox" aria-readonly="true" aria-multiline="true" tabindex="0" bind:this={terminalOutput} onscroll={(event) => { const element = event.currentTarget; followOutput = element.scrollHeight - element.scrollTop - element.clientHeight < 24; }} aria-label="Terminal output" class="min-h-0 flex-1 overflow-auto whitespace-pre-wrap break-all px-4 py-2 font-mono text-xs">{workspace.output}</div>
     <form class="flex shrink-0 items-center gap-2 border-t px-4 py-2" onsubmit={(event) => { event.preventDefault(); void workspace!.run(); }}><span class="font-mono text-muted-foreground">$</span><Input aria-label="Terminal command" class="flex-1 font-mono" spellcheck={false} autocorrect="off" autocapitalize="off" bind:value={() => workspace!.command, (next) => { workspace!.command = String(next ?? ''); }} disabled={workspace.running} placeholder="git status" /><Button size="sm" type="submit" disabled={workspace.running}>{workspace.running ? 'Running…' : 'Run'}</Button></form>
    </section>
+  {/if}
   {/if}
    </main>
   </div>
   <footer class="flex shrink-0 flex-wrap gap-x-4 border-t px-4 py-2 text-xs text-muted-foreground"><span>{workspace.snapshot.branch}</span>{#if !remote}<span>Local history</span>{:else if sync?.state === 'observed' && sync.value.remote !== undefined}<span>{sync.value.ahead} ahead · {sync.value.behind} behind last fetched head{sync.stale ? ' · needs refresh' : ''}</span>{:else}<span>Remote relationship unknown</span>{/if}<span class="ml-auto truncate">{location?.kind === 'directory' ? location.root : location?.directory}</span></footer>
  {:else}
-  <main class="flex flex-1 items-center justify-center p-8"><div class="max-w-lg space-y-3"><h1 class="text-xl font-semibold">Two working copies. One remote.</h1><p class="text-sm text-muted-foreground">Open a working copy to browse files, edit text, and stage, commit, fetch, and push from the terminal. Opening an empty copy fetches the remote's main branch.</p><p class="text-sm text-muted-foreground">Copy A and copy B have separate files and history. Changes arrive only when you ask Git to bring them in.</p></div></main>
+  <main class="flex flex-1 items-center justify-center p-8"><div class="max-w-lg space-y-3"><h1 class="text-xl font-semibold">Two working copies. One remote.</h1><p class="text-sm text-muted-foreground">Open a working copy to browse files and edit text. Sync brings the copies together and asks you before it writes a conflict. The terminal stages, commits, fetches, and pushes by hand. Opening an empty copy fetches the remote's main branch.</p><p class="text-sm text-muted-foreground">Copy A and copy B have separate files and history. Changes arrive only when you Sync or ask Git to bring them in.</p></div></main>
  {/if}
 </div>

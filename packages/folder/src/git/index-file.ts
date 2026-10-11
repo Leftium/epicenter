@@ -124,25 +124,14 @@ export const entryKey = (entry: IndexEntry) =>
 	`${entry.mode.toString(8)} ${entry.oid} ${entry.stage} ${entry.path}`;
 
 /**
- * Why a whole-folder commit refuses unmerged stages that no `MERGE_HEAD`
- * explains. Such a commit would reset the stages to the head and record
- * whatever the files hold, conflict markers included, as one-parent content.
- * The stages keep the base, ours, and theirs blobs for whoever repairs it:
- * restoring `MERGE_HEAD` and `ORIG_HEAD` lets a staged commit finish the
- * merge; staging each resolution without them commits it outside the merge.
+ * Why a whole-folder commit refuses unmerged index stages, which only
+ * another Git program leaves here. Such a commit would reset the stages to
+ * the head and record whatever the files hold, conflict markers included,
+ * as one-parent content. The stages stay for whoever repairs it with Git.
  */
 export function orphanStagesProblem(
 	paths: readonly string[],
 ): string | undefined {
 	if (paths.length === 0) return undefined;
-	return `${paths.join(', ')} ${paths.length === 1 ? 'has' : 'have'} unmerged index stages, but .git/MERGE_HEAD names no merge in progress; restore .git/MERGE_HEAD and .git/ORIG_HEAD to finish the merge, or stage each resolution and use a staged commit`;
-}
-
-/** Each unmerged path once, in index order. */
-export function unmergedPaths(entries: readonly IndexEntry[]): string[] {
-	return [
-		...new Set(
-			entries.filter((entry) => entry.stage !== 0).map((entry) => entry.path),
-		),
-	];
+	return `${paths.join(', ')} ${paths.length === 1 ? 'has' : 'have'} unmerged index stages from a merge begun outside this folder; finish or abandon that merge with Git, then Sync`;
 }

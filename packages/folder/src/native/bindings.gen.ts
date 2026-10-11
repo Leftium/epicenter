@@ -64,16 +64,14 @@ export const commands = {
 	pullFastForward: (session: number) => typedError<PullOutcome, PullError>(__TAURI_INVOKE("plugin:epicenter-folder|pull_fast_forward", { session })),
 	/**
 	 *  Merge the fetched remote head: a fast-forward when the branch is behind,
-	 *  otherwise a two-parent merge. `refuse` writes nothing on a conflict;
-	 *  `leave`, for a folder that does not commit on edit, publishes the merge
-	 *  unfinished, with conflict markers, unmerged index stages, and Git's merge
-	 *  state, for a person to resolve, stage, and commit. Never fetches.
+	 *  otherwise a two-parent merge. A conflict is refused and writes nothing.
+	 *  Never fetches.
 	 *
 	 *  `allowUnrelatedHistories` merges histories that share no commit over an
 	 *  empty base; `versions` asks a refused conflict for each conflicted file's
 	 *  committed bytes on both sides. Both are `false` when absent or `null`.
 	 */
-	mergeIncoming: (session: number, conflicts: MergeConflicts, allowUnrelatedHistories: boolean | null, versions: boolean | null) => typedError<MergeOutcome, MergeError>(__TAURI_INVOKE("plugin:epicenter-folder|merge_incoming", { session, conflicts, allowUnrelatedHistories, versions })),
+	mergeIncoming: (session: number, allowUnrelatedHistories: boolean | null, versions: boolean | null) => typedError<MergeOutcome, MergeError>(__TAURI_INVOKE("plugin:epicenter-folder|merge_incoming", { session, allowUnrelatedHistories, versions })),
 	/**
 	 *  Finish or clear this folder's pending incoming update, only because the
 	 *  page asked. Opening and status report a pending update and never resume
@@ -97,7 +95,7 @@ export const events = {
 };
 
 /* Constants */
-export const FOLDER_PROTOCOL = 8 as const;
+export const FOLDER_PROTOCOL = 9 as const;
 
 /* Types */
 export type Activities = {
@@ -315,12 +313,7 @@ export type GitError =
  *  An incoming update has not finished; staging and staged commits wait
  *  for `recoverIncoming`. Saves continue.
  */
-{ name: "IncomingPending"; pending: PendingIncoming } |
-/**
- *  A merge in progress still has paths whose index entries are unmerged
- *  stages. Nothing was written; stage each resolution, then commit.
- */
-{ name: "Unmerged"; paths: string[] };
+{ name: "IncomingPending"; pending: PendingIncoming };
 
 export type GitSnapshot = {
 	branch: string,
@@ -340,12 +333,6 @@ export type GitSnapshot = {
 	 *  `recoverIncoming`; file saves continue.
 	 */
 	pendingIncoming: PendingIncoming | null,
-	/**
-	 *  Git's merge state as last read. It stays after every path is staged,
-	 *  until the staged commit records the merge. While it is here,
-	 *  whole-folder commits, pulls, and merges are blocked.
-	 */
-	merging: MergeInProgress | null,
 	closed: boolean,
 };
 
@@ -378,16 +365,6 @@ export type MergeConflict =
 /**  Both sides changed `kv.json`, and `side`'s text is not a KV object. */
 { reason: "kvInvalid"; path: string; side: MergeSide };
 
-/**  How `merge_incoming` treats competing changes. */
-export type MergeConflicts =
-/**  Write nothing when anything conflicts. */
-"refuse" |
-/**
- *  Publish the merge with its conflicts in place, for a person to resolve,
- *  stage, and commit. Requires `commitOnEdit: false`.
- */
-"leave";
-
 export type MergeError =
 /**  A refusal every incoming update can report, or a Git failure. */
 { name: "Pull"; error: PullError } |
@@ -410,33 +387,12 @@ export type MergeError =
 { name: "Conflicted"; conflicts: MergeConflict[]; versions: ConflictVersion[] | null };
 
 /**
- *  Git's merge state as the repository holds it: a merge that began and has
- *  not been committed.
- */
-export type MergeInProgress = {
-	/**  `MERGE_HEAD`: the merge commit's second parent. */
-	incoming: string,
-	/**  `ORIG_HEAD`: the head the merge began from, when recorded. */
-	head: string | null,
-	/**
-	 *  Paths whose index entry is still unmerged stages. Empty once each is
-	 *  staged, while the merge waits for its commit.
-	 */
-	unresolved: string[],
-};
-
-/**
  *  A merge fast-forwards when it can, and otherwise records a two-parent
- *  commit; asked to leave conflicts, it may stop with them in place.
+ *  commit. A conflict is a `MergeError`, never an outcome.
  */
 export type MergeOutcome = { status: "upToDate"; head: string | null } | { status: "ahead"; head: string } | { status: "fastForwarded"; from: string | null; to: string; changedPaths: string[] } |
 /**  The merge commit `to` has the parents `from` and `fetched`. */
-{ status: "merged"; from: string; to: string; fetched: string; changedPaths: string[] } |
-/**
- *  Only with `leave`: the files, the index's stages, and Git's merge
- *  state hold the merge; the branch is still `from`.
- */
-{ status: "conflicted"; from: string; fetched: string; conflicts: MergeConflict[]; changedPaths: string[] };
+{ status: "merged"; from: string; to: string; fetched: string; changedPaths: string[] };
 
 /**  Which version of `kv.json` is not a KV object. `ours` is the local branch. */
 export type MergeSide = "base" | "ours" | "theirs";
@@ -469,10 +425,9 @@ export type PathStatus = {
 export type PendingIncoming =
 /**
  *  An update that may have begun changing files. Recovery derives
- *  everything else from the trees of `expectedHead` and `nextHead`, and
- *  for an unfinished merge from `merge`.
+ *  everything else from the trees of `expectedHead` and `nextHead`.
  */
-{ state: "recorded"; operationId: string; branch: string; expectedHead: string | null; nextHead: string; merge: UnfinishedMerge | null } |
+{ state: "recorded"; operationId: string; branch: string; expectedHead: string | null; nextHead: string } |
 /**
  *  The record holds something that is not a record. Nothing reads past
  *  it, acts on it, or removes it.
@@ -549,15 +504,6 @@ export type Settled<T, E> = { status: "ok"; value: T } | { status: "err"; error:
 export type StagedCommit = {
 	oid: string,
 	parent: string | null,
-	/**  Set when the commit finished a merge: its second parent. */
-	incoming: string | null,
-	/**
-	 *  The merge commit landed, but removing its metadata failed. While
-	 *  `MERGE_HEAD` remains, the next staged commit retries cleanup if the
-	 *  branch names a commit with exactly `ORIG_HEAD` and `MERGE_HEAD` as
-	 *  its parents. A leftover `MERGE_MSG` alone does not keep a merge active.
-	 */
-	mergeStateWarning: string | null,
 };
 
 export type SyncObservation = {
@@ -566,32 +512,6 @@ export type SyncObservation = {
 	remote: string | null,
 	ahead: number,
 	behind: number,
-};
-
-/**
- *  Where an incoming merge with conflicts left in place ends: the branch
- *  stays at the head it was admitted over, the files and the index take the
- *  recorded commit's tree with each unmerged path's stages in place of its
- *  entry, and Git's merge state names `incoming` with `message`.
- */
-export type UnfinishedMerge = {
-	/**  The fetched commit: `MERGE_HEAD`, the merge commit's second parent. */
-	incoming: string,
-	/**  `MERGE_MSG`. */
-	message: string,
-	unmerged: UnmergedPath[],
-};
-
-/**
- *  A path a merge left for a person, with the blob each side had there:
- *  Git's index stages 1 (`base`), 2 (`ours`), and 3 (`theirs`). A side
- *  without the file has no stage. Every stage is a plain `100644` file.
- */
-export type UnmergedPath = {
-	path: string,
-	base: string | null,
-	ours: string | null,
-	theirs: string | null,
 };
 
 /* Tauri Specta runtime */

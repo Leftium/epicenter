@@ -162,6 +162,7 @@
       "version": "0.0.1",
       "dependencies": {
         "@epicenter/folder": "workspace:*",
+        "@epicenter/svelte": "workspace:*",
         "@tauri-apps/api": "catalog:",
         "buffer": "^6.0.3",
       },

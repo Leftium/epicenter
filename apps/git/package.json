@@ -35,6 +35,7 @@
 	},
 	"dependencies": {
 		"@epicenter/folder": "workspace:*",
+		"@epicenter/svelte": "workspace:*",
 		"@tauri-apps/api": "catalog:",
 		"buffer": "^6.0.3"
 	},

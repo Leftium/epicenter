@@ -6,6 +6,7 @@
 import { afterAll, beforeAll, expect, test } from 'bun:test';
 import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { CONFLICTS_NEED_SYNC } from '@epicenter/folder';
 import { openFolder } from '@epicenter/folder/browser';
 import { expectOk } from 'wellcrafted/testing';
 import { testBrowserStorage } from '../../../packages/folder/src/browser-storage.test-support.js';
@@ -145,6 +146,39 @@ test('browser push, native pull and push, then browser fast-forward through the 
 	});
 	expect(
 		expectOk(await browser.git.log(5)).map((commit) => commit.message.trim()),
-	).toEqual(['Rename the milk todo', 'Update todos/milk.md', 'Update 2 files']);
+	).toEqual([
+		'Rename the milk todo',
+		'Update todos/milk.md',
+		'Update 2 files',
+	]);
+
+	// Diverged history: the native CLI's pull applies only a fast-forward,
+	// refuses with the folder's pointer to Sync, and writes nothing.
+	expectOk(
+		await browser.tables.todos.create(
+			{ fields: { title: 'Buy bread', done: false }, body: '' },
+			{ stem: 'bread' },
+		),
+	);
+	expect((await browser.git.commitAndPush()).push.status).toBe('pushed');
+	await writeFile(join(native, 'notes.txt'), 'Native only\n');
+	await run(native, ['git', 'add', 'notes.txt']);
+	await run(native, ['git', 'commit', '--quiet', '-m', 'Native only']);
+	const before = await run(native, ['git', 'rev-parse', 'HEAD']);
+	const child = Bun.spawn(['bun', 'scripts/native.ts', native, 'pull'], {
+		cwd: join(import.meta.dir, '..'),
+		env,
+		stdout: 'pipe',
+		stderr: 'pipe',
+	});
+	const [pullOut, pullErr, pullCode] = await Promise.all([
+		new Response(child.stdout).text(),
+		new Response(child.stderr).text(),
+		child.exited,
+	]);
+	expect(pullCode).toBe(1);
+	expect(pullErr).toContain(CONFLICTS_NEED_SYNC);
+	expect(JSON.parse(pullOut).pulled.error.name).toBe('Diverged');
+	expect(await run(native, ['git', 'rev-parse', 'HEAD'])).toBe(before);
 	await browser.close();
 }, 60_000);

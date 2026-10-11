@@ -74,15 +74,13 @@ export type {
 } from './folder.js';
 export type {
 	GitRemote,
-	MergeInProgress,
 	PathStatus,
 	PendingIncoming,
 	RecordedIncoming,
 	StatusCode,
-	UnfinishedMerge,
-	UnmergedPath,
 } from './git/backend.js';
 export {
+	CONFLICTS_NEED_SYNC,
 	type ConflictVersion,
 	GitError,
 	type MergeConflict,

@@ -10,9 +10,12 @@
  *   bun apps/todos/scripts/native.ts <checkout> pull
  *
  * The CLI opens the folder with `commitOnEdit: false`: a command saves files,
- * then `create` and `complete` request one explicit commit and push. A
+ * then `create` and `complete` request one explicit commit and push. `pull`
+ * applies only a fast-forward; diverged history is refused with the folder's
+ * pointer to Sync, and nothing is written. A
  * checkout that cannot be opened prints the refusal and exits 1.
  */
+import { CONFLICTS_NEED_SYNC } from '@epicenter/folder';
 import { openFolder } from '@epicenter/folder/bun';
 import { todosDefinition } from '../src/lib/definition.js';
 
@@ -161,11 +164,14 @@ try {
 			print(await folder.git.fetch());
 			break;
 		case 'pull': {
+			// A fast-forward only. Diverged history is not merged here: the folder
+			// never leaves a conflict in its files, and Sync settles one.
 			const fetched = await folder.git.fetch();
 			const pulled = fetched.error
 				? fetched
 				: await folder.git.pullFastForward();
 			if (pulled.error) exitCode = 1;
+			if (pulled.error?.name === 'Diverged') console.error(CONFLICTS_NEED_SYNC);
 			print({ fetched, pulled });
 			break;
 		}

@@ -92,15 +92,9 @@ export type FolderGit = {
 	 * Merge the fetched remote head into a clean folder: a fast-forward when
 	 * possible, otherwise one commit with the branch head and the fetched head
 	 * as parents. Root `kv.json` merges by key; other files by Git's rules.
-	 * A refusal changes no file, index entry, or ref, and by default so does a
-	 * conflict. Never pushes.
-	 *
-	 * With `{ conflicts: 'leave' }`, which requires `commitOnEdit: false`, a
-	 * conflicted merge is published unfinished instead (`conflicted`): files
-	 * with conflict markers, unmerged index stages, and Git's merge state,
-	 * with the branch unmoved. Stage each resolution, then `commitStaged`
-	 * records the merge commit. A file against a directory is still refused.
-	 * Browser, directory, and desktop folders all merge.
+	 * A refusal or a conflict changes no file, index entry, or ref; `sync`
+	 * is how a person settles a conflict. Never pushes. Browser, directory,
+	 * and desktop folders all merge.
 	 */
 	mergeIncoming(
 		options?: MergeConflictPolicy,
@@ -122,19 +116,13 @@ export type FolderGit = {
 	recoverIncoming(): Promise<Result<RecoverOutcome, PullError | GitError>>;
 	/** Per-path staged and unstaged state, as `git status` reports it. */
 	paths(): Promise<Result<PathStatus[], GitError>>;
-	/**
-	 * Staged authoring requires `commitOnEdit: false`. Staging an unmerged
-	 * path resolves it, whatever its bytes.
-	 */
+	/** Staged authoring requires `commitOnEdit: false`. */
 	stage(paths: readonly string[] | 'all'): Promise<Result<undefined, GitError>>;
 	/**
 	 * Commit staged changes with a user-authored message in manual mode. The
 	 * commit pins its parent and moves the branch only if it still names that
 	 * parent; otherwise it is `BranchMoved` and keeps the index unchanged.
-	 * With a merge in progress, the parents are the head recorded when the
-	 * merge began and `snapshot.merging.incoming`; while a path is still
-	 * unmerged it is `Unmerged` and writes nothing. Built-in commits run no
-	 * commit hooks and are unsigned.
+	 * Built-in commits run no commit hooks and are unsigned.
 	 */
 	commitStaged(message: string): Promise<Result<StagedCommit, GitError>>;
 	diff(options: {

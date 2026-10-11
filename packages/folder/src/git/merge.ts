@@ -27,27 +27,14 @@
  * `merge` attribute, so a path that attribute would merge differently is
  * refused.
  *
- * A merge whose conflicts are left for a person (`leave`) classifies them
- * the same way, then gives each conflicted path, in both children, the bytes
- * a person resolves: the changed side's file against a deletion, ordinary
- * conflict markers when every version is text the line merge keeps, and
- * otherwise our bytes, as Git leaves a binary conflict. A conflicted root
- * `kv.json` gets the same treatment: its markers are ordinary text, not
- * JSON. The merge of those children is clean, and its tree goes into a
- * commit whose parents are the head and the fetched commit. That commit is
- * never a branch head or a merge parent: it names the files and index
- * entries an unfinished merge publishes. Each conflicted path keeps the
- * base, ours, and theirs blobs that become its index stages. A file against
- * a directory cannot be left this way and is refused like any conflict, as
- * is a conflicted path that is not a plain file in one of its versions.
+ * A conflict is never left in the files: the merge is `conflicted` and
+ * nothing is written. Sync is how a person settles one (ADR-0514).
  */
 import * as git from 'isomorphic-git';
 import { mergeKv } from '../kv-merge.js';
 import { ancestors } from '../paths.js';
 import { byCodePoint, isAttributesPath, mergeAttribute } from './attributes.js';
-import type { UnmergedPath } from './backend.js';
 import type { MergeConflict } from './errors.js';
-import { conflictMarkers, type MarkerLabels } from './merge-markers.js';
 import {
 	type Author,
 	commitTree,
@@ -97,15 +84,6 @@ export type PreparedMerge =
 			readonly conflicts: readonly MergeConflict[];
 			/** Paths `mergePath` held; empty without it. */
 			readonly held: readonly string[];
-	  }
-	/** Conflicts left in place: the commit of the files a person resolves. */
-	| {
-			readonly kind: 'unfinished';
-			/** Never a branch head; its parents are the head and the fetched commit. */
-			readonly commit: string;
-			readonly files: ReadonlyMap<string, TreeFile>;
-			readonly conflicts: readonly MergeConflict[];
-			readonly unmerged: readonly UnmergedPath[];
 	  }
 	| {
 			readonly kind: 'unmergeable';
@@ -170,35 +148,6 @@ async function withOverrides(
 }
 
 /**
- * The bytes a person resolves at a conflicted path: the changed side's file
- * against a deletion, conflict markers when every version is text the line
- * merge keeps, and otherwise our bytes.
- */
-async function unresolvedBytes(
-	access: ObjectAccess,
-	[base, ours, theirs]: readonly (TreeFile | undefined)[],
-	labels: MarkerLabels,
-): Promise<Uint8Array> {
-	const bytes = (entry: TreeFile) => readBlob(access, entry.oid);
-	if (ours === undefined) return bytes(theirs!);
-	if (theirs === undefined) return bytes(ours);
-	const texts: (string | undefined)[] = [];
-	for (const entry of [base, ours, theirs]) {
-		if (entry === undefined) {
-			texts.push('');
-			continue;
-		}
-		const read = await bytes(entry);
-		texts.push(mergesAsText(read) ? strictText(read) : undefined);
-	}
-	const [b, o, t] = texts;
-	if (b === undefined || o === undefined || t === undefined) return bytes(ours);
-	return encoder.encode(
-		await conflictMarkers({ base: b, ours: o, theirs: t }, labels),
-	);
-}
-
-/**
  * Merge `head` and `fetched` over their single merge base `base`, or over an
  * empty tree when `base` is undefined: histories that share no commit, which
  * a caller merges only when asked to allow unrelated histories. Objects
@@ -213,7 +162,6 @@ export async function prepareMerge(
 		fetched,
 		author,
 		message,
-		leave,
 		mergePath,
 	}: {
 		/** Undefined: no common commit, so every file of either side is an addition. */
@@ -222,9 +170,7 @@ export async function prepareMerge(
 		fetched: string;
 		author: Author;
 		message: string;
-		/** Leave conflicts for a person, marked with these labels, instead of refusing. */
-		leave?: MarkerLabels;
-		/** Sync's rules for paths both sides changed; not combined with `leave`. */
+		/** Sync's rules for paths both sides changed. */
 		mergePath?: MergePath;
 	},
 ): Promise<PreparedMerge> {
@@ -242,7 +188,7 @@ export async function prepareMerge(
 	// merged bytes or, while held, our file; `null` for no file.
 	const claimed = new Map<string, Uint8Array | null>();
 	const held: string[] = [];
-	if (mergePath !== undefined && leave === undefined)
+	if (mergePath !== undefined)
 		for (const path of new Set([...b.keys(), ...o.keys(), ...t.keys()])) {
 			const sides = [b.get(path), o.get(path), t.get(path)] as const;
 			const [eb, eo, et] = sides;
@@ -489,54 +435,6 @@ export async function prepareMerge(
 	}
 	conflicts.sort((left, right) => byCodePoint(left.path, right.path));
 
-	if (conflicts.length > 0 && leave !== undefined && shapes.size === 0) {
-		const paths = [...new Set(conflicts.map((conflict) => conflict.path))];
-		const unplain = paths.filter((path) =>
-			[b.get(path), o.get(path), t.get(path)].some(
-				(entry) => entry !== undefined && entry.mode !== PLAIN,
-			),
-		);
-		if (unplain.length > 0)
-			return {
-				kind: 'unmergeable',
-				paths: unplain,
-				reason:
-					'a conflicted path is a symbolic link, executable, or submodule in one of its versions, so it cannot be left as a plain file',
-			};
-		const unmerged: UnmergedPath[] = [];
-		for (const path of paths) {
-			const sides = [b.get(path), o.get(path), t.get(path)];
-			overrides.set(
-				path,
-				await git.writeBlob({
-					...access,
-					blob: await unresolvedBytes(access, sides, leave),
-				}),
-			);
-			const [eb, eo, et] = sides;
-			unmerged.push({ path, base: eb?.oid, ours: eo?.oid, theirs: et?.oid });
-		}
-		let left: string | undefined;
-		try {
-			left = await mergeWith(overrides);
-		} catch (cause) {
-			if (cause instanceof git.Errors.MergeNotSupportedError)
-				return unsupported;
-			throw cause;
-		}
-		if (left === undefined) throw new Error('The merge produced no tree');
-		const files = await readTreeFiles(access, left);
-		for (const [path, blob] of overrides)
-			if ((files.get(path)?.oid ?? null) !== blob)
-				throw new Error(`The merged tree does not hold the prepared ${path}`);
-		const commit = await writeCommitObject(access, {
-			tree: left,
-			parents: [head, fetched],
-			message,
-			author,
-		});
-		return { kind: 'unfinished', commit, files, conflicts, unmerged };
-	}
 	if (conflicts.length > 0 || held.length > 0)
 		return { kind: 'conflicted', conflicts, held: held.sort(byCodePoint) };
 	if (tree === undefined) throw new Error('The merge produced no tree');

@@ -38,14 +38,6 @@ export const GitError = defineErrors({
 		reason,
 	}),
 	NothingToCommit: () => ({ message: 'Nothing is staged to commit' }),
-	/**
-	 * A merge in progress still has paths whose index entries are unmerged
-	 * stages. Nothing was written; stage each path's resolution, then commit.
-	 */
-	Unmerged: ({ paths }: { paths: readonly string[] }) => ({
-		message: `Committing is not possible because ${paths.length === 1 ? 'a path is' : `${paths.length} paths are`} unmerged: ${paths.join(', ')}; stage the resolved ${paths.length === 1 ? 'file' : 'files'} first`,
-		paths,
-	}),
 	AutomaticHistory: () => ({
 		message: 'Staged authoring requires commitOnEdit: false',
 	}),
@@ -234,6 +226,14 @@ export type MergeConflict =
 			readonly path: string;
 			readonly side: 'base' | 'ours' | 'theirs';
 	  };
+
+/**
+ * What a terminal or CLI says when a merge or pull refuses competing changes:
+ * the folder never leaves a conflict in its files, and Sync is how a person
+ * settles one.
+ */
+export const CONFLICTS_NEED_SYNC =
+	'Automatic merge failed; nothing was written. Competing changes are settled with Sync, which asks you before it writes them.';
 
 /**
  * One conflicted file's committed bytes on each side of a refused merge, as

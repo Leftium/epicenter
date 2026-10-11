@@ -30,7 +30,7 @@ import { writeRow } from '../row-text.js';
 import { type SyncChoiceProblem, SyncError } from './errors.js';
 import type { PushOutcome } from './history.js';
 import type { MergePath, TextVersions } from './merge.js';
-import { mergeLines } from './merge-markers.js';
+import { mergeLines } from './merge-lines.js';
 
 /** Which captured history a version or a `take` comes from. */
 export type SyncSide = 'local' | 'incoming';
@@ -129,9 +129,9 @@ export type SyncOutcome =
 			readonly changedSince: boolean;
 	  };
 
-/** The commits a merge used. */
+/** The commits a merge used; no `base` for a first sync over unrelated history. */
 export type SyncCommits = {
-	readonly base: string;
+	readonly base: string | undefined;
 	readonly head: string;
 	readonly fetched: string;
 };

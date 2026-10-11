@@ -7,6 +7,8 @@ import {
 	type PathStatus,
 } from '@epicenter/folder';
 import { readTextFile, withFileNewlines } from '@epicenter/folder/file-browser';
+import { createSyncController } from '@epicenter/svelte/sync';
+import { describeSync } from '@epicenter/svelte/sync-line';
 import { invoke, isTauri } from '@tauri-apps/api/core';
 
 const definition = defineFolder({ kv: {}, tables: {} });
@@ -67,6 +69,17 @@ export async function openWorkingCopy(copy: string, remote: string) {
 	let running = $state(false);
 	let output = $state('');
 	const terminal = folder.terminal();
+	/**
+	 * Sync with the remote: commit, fetch, merge, and push, asking before a
+	 * conflict is written. The review is modal: the editor and the terminal
+	 * take no input until it is applied or cancelled.
+	 */
+	const syncs = createSyncController({
+		folder,
+		beforeSync: () => flush(),
+		afterSync: () => refresh(),
+		refused: () => (closed ? 'The working copy is closed.' : undefined),
+	});
 
 	async function readSelected() {
 		const path = selected;
@@ -162,7 +175,7 @@ export async function openWorkingCopy(copy: string, remote: string) {
 		}
 	}
 	async function execute(label: string, work: () => Promise<string>) {
-		if (running || closed) return;
+		if (running || closed || syncs.locked) return;
 		running = true;
 		output += `\n$ ${label}\n`;
 		try {
@@ -237,6 +250,31 @@ export async function openWorkingCopy(copy: string, remote: string) {
 		get running() {
 			return running;
 		},
+		/** The sync controller: its attempt, while one waits, is the modal review. */
+		syncs,
+		/** Whether anything but the review takes input now. */
+		get locked() {
+			return running || syncs.locked;
+		},
+		/** Sync, reporting the result in the terminal output. */
+		async sync() {
+			if (running || closed || syncs.locked) return;
+			running = true;
+			output += '\n$ Sync\n';
+			try {
+				const ran = await syncs.run();
+				const line = describeSync(ran);
+				output += `${line.label}${line.detail ? `\n${line.detail}` : ''}\n`;
+			} finally {
+				running = false;
+			}
+		},
+		/** Apply the review's choices, reporting the result in the terminal output. */
+		async applySync(...[attempt, choices]: Parameters<typeof syncs.apply>) {
+			const resolved = await syncs.apply(attempt, choices);
+			const line = describeSync(resolved);
+			output += `${line.label}${line.detail ? `\n${line.detail}` : ''}\n`;
+		},
 		get output() {
 			return output;
 		},
@@ -252,7 +290,7 @@ export async function openWorkingCopy(copy: string, remote: string) {
 			await readSelected();
 		},
 		input(text: string) {
-			if (closed || !capture) return;
+			if (closed || !capture || syncs.locked) return;
 			buffer = withFileNewlines(text, saved);
 			dirty = buffer !== saved;
 			saveMessage = dirty ? 'Unsaved changes' : 'Saved';

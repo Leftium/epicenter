@@ -40,8 +40,8 @@ export async function nativeCheckpointProblem({
 	/** Untracked candidates that ignore rules exclude from source. */
 	ignored: (paths: readonly string[]) => Promise<ReadonlySet<string>>;
 }): Promise<string | undefined> {
-	// Unmerged stages are only reached here with no `MERGE_HEAD`; the
-	// checkpoint would reset them and record conflict markers as content.
+	// Unmerged stages another Git program left: the checkpoint would reset
+	// them and record conflict markers as content.
 	const staged = records((await run(['ls-files', '--stage', '-z'])).stdout);
 	const unmerged = new Set(
 		staged

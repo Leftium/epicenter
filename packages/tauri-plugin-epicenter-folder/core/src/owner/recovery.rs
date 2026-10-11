@@ -23,19 +23,9 @@
 //! clears the record, and the record goes before its pins. Any step whose
 //! outcome is unknown, or that stops partway, keeps the record. Nothing is
 //! ever rolled back, and nothing here runs unless a pull or a recovery was
-//! asked for.
-//!
-//! An update recorded as an unfinished merge has the same before state and a
-//! different after state. The branch stays at its before commit; the index
-//! holds the recorded commit's tree with each unmerged path's exact stages in
-//! place of its entry; and Git's merge state names the recorded incoming
-//! commit. The last step writes `ORIG_HEAD`, `MERGE_MSG`, and `MERGE_HEAD`
-//! instead of moving the branch, so `MERGE_HEAD` naming the recorded commit,
-//! with `ORIG_HEAD` at the unmoved branch, is the completion proof: the
-//! record is cleared without looking at files or the index again, and edits
-//! a person made to the marked files since stay. Any other merge's state is
-//! in the way.
-//! Nothing here ever resolves a path, clears a stage, or commits the merge.
+//! asked for. A clean merge rolls forward exactly as a fast-forward does:
+//! its target is the merge commit. A Git merge a person began, like any Git
+//! operation in progress, stops the roll-forward before it writes anything.
 //!
 //! What another program does between these checks and the writes stays best
 //! effort, as for every save.
@@ -55,10 +45,9 @@ use crate::paths::{ancestors, path_problem};
 /// written names them.
 pub(super) const RECORD_LABEL: &str = ".git/epicenter/incoming.json";
 const INDEX_LABEL: &str = ".git/index";
-const MERGE_LABEL: &str = ".git/MERGE_HEAD";
 
-/// An index entry as its stages: `{0: entry}` for a merged path, stages 1 to
-/// 3 for an unmerged one, nothing for an absent one.
+/// An index entry as its stages: `{0: entry}` for a merged path, nothing for
+/// an absent one.
 type Stages = BTreeMap<u8, (String, String)>;
 
 fn merged_stage(entry: Option<&(String, String)>) -> Stages {
@@ -102,9 +91,6 @@ enum Kind {
     Branch(Option<String>),
     /// The update's own commit cannot be written as plain files.
     Commit,
-    /// Git's merge state belongs to another merge, or to none the update
-    /// makes.
-    Merge,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -240,13 +226,7 @@ impl Inner {
                 head: Some(record.next_head.clone()),
             }),
             Rolled::Completed { wrote } => {
-                // An unfinished merge leaves files that differ from the
-                // branch: they are observed again, not recorded clean.
-                if record.merge.is_some() {
-                    self.observe_again();
-                } else {
-                    self.observe_committed(captured_at, Some(&record.next_head));
-                }
+                self.observe_committed(captured_at, Some(&record.next_head));
                 let paths = step_paths(&wrote);
                 self.files_changed(paths.clone());
                 Ok(PullOutcome::FastForwarded {
@@ -274,9 +254,6 @@ impl Inner {
                     },
                     Kind::Commit => PullError::Unrepresentable {
                         paths: refusal.paths,
-                        reason: refusal.reason,
-                    },
-                    Kind::Merge => PullError::Blocked {
                         reason: refusal.reason,
                     },
                 })
@@ -332,7 +309,6 @@ impl Inner {
         }
         let result = self.recover(files, git);
         self.read_pending();
-        let _ = self.read_merging();
         self.refresh_sync();
         self.emit();
         result
@@ -374,12 +350,7 @@ impl Inner {
                 ),
             ));
         }
-        for commit in record
-            .expected_head
-            .iter()
-            .chain([&record.next_head])
-            .chain(record.merge.iter().map(|merge| &merge.incoming))
-        {
+        for commit in record.expected_head.iter().chain([&record.next_head]) {
             if !self.git.has_commit(commit).map_err(failed)? {
                 return Err(refuse(
                     Vec::new(),
@@ -434,10 +405,8 @@ impl Inner {
         };
 
         // The branch: already the target, still the start, or someone else's.
-        // An unfinished merge never moves the branch, so this never says one
-        // is complete.
         let head = self.git.read_branch()?;
-        if record.merge.is_none() && head.as_deref() == Some(record.next_head.as_str()) {
+        if head.as_deref() == Some(record.next_head.as_str()) {
             if self.boundary("clear") {
                 return Ok(interrupted(Vec::new(), "clear"));
             }
@@ -458,63 +427,21 @@ impl Inner {
                 ),
             );
         }
+        // The index is read before anything else asks Git about it, so an
+        // index Git cannot read is refused by name.
+        let index = match self.git.index_stages() {
+            Ok(index) => index,
+            Err(cause) => {
+                return refused(
+                    Kind::Index,
+                    vec![INDEX_LABEL.to_string()],
+                    format!("the index cannot be read: {cause}"),
+                )
+            }
+        };
         if let Some(reason) = self.git.blocked()? {
             return refused(Kind::Branch(head), Vec::new(), reason);
         }
-        // Git's merge state: the update's own after state for an unfinished
-        // merge, absent before it, and in the way otherwise.
-        let state = match self.git.merge_state() {
-            Ok(state) => state,
-            Err(cause) => {
-                return refused(
-                    Kind::Merge,
-                    vec![MERGE_LABEL.to_string()],
-                    format!("Git's merge state cannot be read: {cause}"),
-                )
-            }
-        };
-        let merge_written = match (&record.merge, &state) {
-            (_, None) => false,
-            (Some(merge), Some(state)) if state.incoming == merge.incoming => {
-                state.head == record.expected_head
-            }
-            (Some(merge), Some(state)) => {
-                return refused(
-                    Kind::Merge,
-                    vec![MERGE_LABEL.to_string()],
-                    format!(
-                        "{MERGE_LABEL} names {}, not {}, the commit this merge records",
-                        state.incoming, merge.incoming
-                    ),
-                )
-            }
-            (None, Some(state)) => {
-                return refused(
-                    Kind::Merge,
-                    vec![MERGE_LABEL.to_string()],
-                    format!(
-                        "a merge of {} is in progress, which this update does not make",
-                        state.incoming
-                    ),
-                )
-            }
-        };
-        // `MERGE_HEAD` is written last, after every file and the index read
-        // back as published, so finding it over the unmoved branch says the
-        // publication completed and only the record is left. The record goes
-        // without looking at files or the index again: a person may already
-        // have edited the marked files, and the stages stay as published.
-        if merge_written {
-            if self.boundary("clear") {
-                return Ok(interrupted(Vec::new(), "clear"));
-            }
-            incoming::clear(self.git.gitdir())?;
-            if !self.boundary("unpin") {
-                let _ = incoming::unpin(&self.git, record);
-            }
-            return Ok(Rolled::Cleared);
-        }
-
         let plan = Plan::derive(&self.git, record)?;
         let unrepresentable: Vec<String> = plan
             .after
@@ -531,47 +458,13 @@ impl Inner {
             );
         }
 
-        // The index: each changed path, and each path an unfinished merge
-        // leaves unmerged, at its before or its after entry, and nothing else
-        // staged. An unmerged path's after entry is its exact stages.
-        let index = match self.git.index_stages() {
-            Ok(index) => index,
-            Err(cause) => {
-                return refused(
-                    Kind::Index,
-                    vec![INDEX_LABEL.to_string()],
-                    format!("the index cannot be read: {cause}"),
-                )
-            }
-        };
-        let unmerged: BTreeMap<&str, Stages> = record
-            .merge
-            .iter()
-            .flat_map(|merge| merge.unmerged.iter())
-            .map(|path| {
-                let stages = [(1, &path.base), (2, &path.ours), (3, &path.theirs)]
-                    .into_iter()
-                    .filter_map(|(stage, oid)| {
-                        oid.as_ref()
-                            .map(|oid| (stage, ("100644".to_string(), oid.clone())))
-                    })
-                    .collect();
-                (path.path.as_str(), stages)
-            })
-            .collect();
-        let relevant: BTreeSet<&str> = plan
-            .affected
-            .iter()
-            .map(String::as_str)
-            .chain(unmerged.keys().copied())
-            .collect();
+        // The index: each changed path at its before or its after entry, and
+        // nothing else staged.
+        let relevant: BTreeSet<&str> = plan.affected.iter().map(String::as_str).collect();
         let empty = Stages::new();
         let actual = |path: &str| index.get(path).unwrap_or(&empty);
         let before = |path: &str| merged_stage(plan.before.get(path));
-        let after = |path: &str| match unmerged.get(path) {
-            Some(stages) => stages.clone(),
-            None => merged_stage(plan.after.get(path)),
-        };
+        let after = |path: &str| merged_stage(plan.after.get(path));
         let staged = match self.git.staged_against(record.expected_head.as_deref()) {
             Ok(staged) => staged,
             Err(cause) => {
@@ -732,19 +625,13 @@ impl Inner {
             }
         }
 
-        // The index, through Git's lock protocol: the recorded tree, then an
-        // unfinished merge's stages in place of its unmerged paths' entries.
+        // The index, through Git's lock protocol: the recorded tree.
         if !index_done {
             if self.boundary("index") {
                 return Ok(interrupted(wrote, "index"));
             }
             if let Err(error) = self.git.sync_index(&record.next_head, &plan.affected) {
                 return Ok(stop(wrote, Stop::IndexFailed(error)));
-            }
-            if let Some(merge) = &record.merge {
-                if let Err(error) = self.git.stage_unmerged(&merge.unmerged) {
-                    return Ok(stop(wrote, Stop::IndexFailed(error)));
-                }
             }
         }
         match self.git.index_stages() {
@@ -760,55 +647,6 @@ impl Inner {
                 let uncertain = vec![INDEX_LABEL.to_string()];
                 return Ok(stop(wrote, Stop::Unconfirmed { uncertain, error }));
             }
-        }
-
-        // An unfinished merge ends in Git's merge state over the unmoved
-        // branch, written last; it never moves the branch.
-        if let Some(merge) = &record.merge {
-            if self.boundary("merge-state") {
-                return Ok(interrupted(wrote, "merge-state"));
-            }
-            let expected = record
-                .expected_head
-                .as_deref()
-                .expect("a merge record names the head it stays at");
-            match self.git.read_branch() {
-                Ok(actual) if actual.as_deref() == Some(expected) => {}
-                Ok(actual) => return Ok(stop(wrote, Stop::BranchMoved(actual))),
-                Err(error) => {
-                    let uncertain = vec![format!(".git/refs/heads/{}", self.git.branch)];
-                    return Ok(stop(wrote, Stop::Unconfirmed { uncertain, error }));
-                }
-            }
-            if !merge_written {
-                if let Err(error) =
-                    self.git
-                        .write_merge_state(expected, &merge.incoming, &merge.message)
-                {
-                    let uncertain = vec![MERGE_LABEL.to_string()];
-                    return Ok(stop(wrote, Stop::Unconfirmed { uncertain, error }));
-                }
-            }
-            match self.git.merge_state() {
-                Ok(Some(state))
-                    if state.incoming == merge.incoming && state.head == record.expected_head => {}
-                Ok(_) => {
-                    let uncertain = vec![MERGE_LABEL.to_string()];
-                    let error = "Git's merge state did not read back as the merge".to_string();
-                    return Ok(stop(wrote, Stop::Unconfirmed { uncertain, error }));
-                }
-                Err(error) => {
-                    let uncertain = vec![MERGE_LABEL.to_string()];
-                    return Ok(stop(wrote, Stop::Unconfirmed { uncertain, error }));
-                }
-            }
-            if self.boundary("clear") {
-                return Ok(interrupted(wrote, "clear"));
-            }
-            if incoming::clear(self.git.gitdir()).is_ok() && !self.boundary("unpin") {
-                let _ = incoming::unpin(&self.git, record);
-            }
-            return Ok(Rolled::Completed { wrote });
         }
 
         // The branch, by compare-and-swap against the head it was admitted over.

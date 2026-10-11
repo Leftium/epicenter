@@ -15,7 +15,7 @@
  * This module writes nothing and loads no Git implementation.
  */
 import type { PreparedFolderTable } from './definition.js';
-import { mergeLines } from './git/merge-markers.js';
+import { mergeLines } from './git/merge-lines.js';
 import { parseRow, type Row } from './row-text.js';
 
 /** A row with no schema type: what a merge reads and writes. */

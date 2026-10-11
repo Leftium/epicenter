@@ -8,6 +8,7 @@
  * Key behaviors:
  * - `defineFolder` returns an owned, frozen definition of the declared shape,
  *   and preparing it again returns it
+ * - A key other than `title`, `kv`, and `tables` is refused, not dropped
  * - A definition names no folder: an `id` is refused at the declaration and
  *   at the opener, and the opener's ID selects the dataset
  * - One prepared definition opens two folders that stay apart, and another
@@ -124,6 +125,12 @@ test('defineFolder returns the prepared definition in the declared shape', () =>
 			prepareFolderDefinition({ ...declared, kv: { id: field.string() } }),
 		).reason,
 	).toContain("field name 'kv.id' is not usable");
+});
+
+test('an untyped definition with a key other than title, kv, and tables is refused, not dropped', () => {
+	expect(() =>
+		defineFolder({ kv: {}, tables: {}, titel: 'Typo' } as never),
+	).toThrow("also declares 'titel'");
 });
 
 test('a definition names no folder: an id is refused where it is written and where it is opened', async () => {

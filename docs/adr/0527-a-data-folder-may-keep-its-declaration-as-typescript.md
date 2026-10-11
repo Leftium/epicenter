@@ -37,7 +37,6 @@ export default defineFolder({
 
 ```text
 epicenter generate <dir>          write epicenter.json from epicenter.ts
-epicenter generate <dir> --check  write nothing; exit 1 when they differ
 ```
 
 - `epicenter.json` stays the only declaration a reader reads. `check`,
@@ -47,21 +46,31 @@ epicenter generate <dir> --check  write nothing; exit 1 when they differ
   person or agent asks for it on that folder.
 - The file is `epicenter.ts`, not `epicenter.config.ts`: it declares data,
   and "config" names tool settings.
-- `epicenter.ts` may import `@epicenter/folder`, `@epicenter/folder/bun`,
-  `@epicenter/definition`, `@epicenter/definition/field`, `typebox`, and
-  `typebox/compile`, `/format`, and `/value`. `generate` resolves them to the
-  checkout's own packages, so a folder in any repository needs no install,
-  and a copy the folder installed never wins.
-- A default export that is not an object, or that has a key other than
-  `title`, `kv`, and `tables`, is refused rather than dropped.
-- `--check` lets a repository's CI or an agent confirm the JSON matches the
-  source.
+- `epicenter.ts` may import `@epicenter/folder`, `@epicenter/definition`,
+  and `typebox`. `generate` resolves them to the checkout's own packages, so
+  a folder in any repository needs no install, and a copy the folder
+  installed never wins.
+- `defineFolder` refuses a key other than `title`, `kv`, and `tables`, so a
+  misspelling in an untyped `epicenter.ts` is an error rather than dropped.
+- Git says whether the file is current: run `epicenter generate <dir>` and
+  then `git diff --exit-code -- <dir>/epicenter.json`. `generate` has no
+  check mode of its own.
+- When `epicenter.ts` exists, `check` says that `epicenter.json` is generated
+  from it, so a person or agent edits the TypeScript rather than the JSON. It
+  looks only at whether the file exists.
+- The way to keep a folder an app owns in step is for `epicenter.ts` to
+  import the definition the app itself uses. Then the app's publication and
+  `generate` write the same bytes. That needs the app's definition to be an
+  installable package, which nothing publishes yet.
 
 ## Consequences
 
-- When an app opens the folder it replaces `epicenter.json` (ADR-0517), and
-  `epicenter.ts` then describes something else. The TypeScript source is for
-  folders no app owns.
+- When an app opens the folder it replaces `epicenter.json` (ADR-0517),
+  whatever `epicenter.ts` says. Unless `epicenter.ts` imports the app's own
+  definition, the two then describe different things, and running `generate`
+  swaps the declaration back until the app opens again.
+- `generate` replaces a hand edit to `epicenter.json`; Git shows it
+  afterward, and the `check` line says which file to edit.
 - An editor outside this monorepo cannot type-check `epicenter.ts` until the
   folder package is installable; `generate` still runs it.
 - Until the CLI is distributed, `generate` runs from an Epicenter checkout, as
@@ -75,10 +84,19 @@ epicenter generate <dir> --check  write nothing; exit 1 when they differ
   the fields a person meant.
 - **A separate `@epicenter/cli init` scaffold.** Writes the file once and
   leaves later edits to hand-written JSON.
+- **Readers use `epicenter.ts` when it exists and fall back to
+  `epicenter.json`.** `check` and `query` would run code from any repository
+  they are pointed at.
+- **`epicenter.ts` writes the JSON when run directly (`bun epicenter.ts`).**
+  Its import of `@epicenter/folder` resolves only inside this repository until
+  the package is published; then the CLI command could go.
+- **`generate --check`.** Git already answers whether the file changed.
 
 ## Verification
 
-`scripts/epicenter.test.ts` covers writing the JSON from `epicenter.ts`,
-`--check` for a stale and a current file, refusal of a missing source, a
-missing default export, and a declaration preparation refuses, and that
-`check` and `query` never run `epicenter.ts`.
+`scripts/epicenter.test.ts` covers writing the JSON from `epicenter.ts` and
+reporting it unchanged, the `check` line, refusal of a missing source, a
+missing default export, a misspelled key, and a declaration preparation
+refuses, and that `check` and `query` never run `epicenter.ts`.
+`packages/folder/src/definition.test.ts` covers `defineFolder` refusing an
+unknown key.

@@ -217,6 +217,15 @@ export function defineFolder<const TDefinition extends DataSchema>(
 		throw new Error(
 			'A folder definition names no folder. Pass the folder ID to openFolder instead.',
 		);
+	// The types refuse other keys; an untyped caller, such as a generated
+	// epicenter.ts, is refused here rather than having a misspelling dropped.
+	const unknown = Object.keys(schema).filter(
+		(key) => key !== 'title' && key !== 'kv' && key !== 'tables',
+	);
+	if (unknown.length > 0)
+		throw new Error(
+			`A folder definition declares title, kv, and tables; it also declares ${unknown.map((key) => `'${key}'`).join(', ')}`,
+		);
 	const { title, kv, tables } = schema;
 	const declaration: Definition = {
 		...(title === undefined ? {} : { title }),

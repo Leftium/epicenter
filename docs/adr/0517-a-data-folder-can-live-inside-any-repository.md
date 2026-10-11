@@ -34,6 +34,13 @@ field schemas. No tool executes a file to learn a data folder's declaration,
 because a data folder may arrive in any cloned repository. The filename alone
 marks a data folder, the way `package.json` marks a package.
 
+A reader refuses an `epicenter.json` that `exportSchema` could not have
+written after preparation, such as one naming an unknown `format`, and one
+with a top-level key other than `title`, `kv`, `tables`, or `$schema`.
+`$schema` is allowed for editor completion and never interpreted. Readers do
+not check the schema language itself: a misspelled keyword such as `minimun`
+is ignored, as JSON Schema ignores any unknown keyword.
+
 ```text
 vault/                            host repository
   plan/                           data folder
@@ -102,6 +109,9 @@ git submodule add <repository-url> plan
 - The CLI's `check` and `query` read `epicenter.json` (ADR-0520); apps do not
   yet. `prepareSchema` accepts what `exportSchema` writes, so a reader needs no
   new format.
+- The key set and the portable formats are closed, so a reader refuses a
+  declaration from a newer writer that adds either. Adding one is a reader
+  change first.
 - Openers publish `epicenter.json` (ADR-0508), so an app-opened data folder
   is discoverable by it. A `definition.json` left by an older build is an
   ordinary file the folder no longer reads or writes. A hosted data folder

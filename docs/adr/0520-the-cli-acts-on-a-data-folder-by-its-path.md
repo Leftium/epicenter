@@ -3,7 +3,7 @@
 - **Status:** Proposed
 - **Date:** 2026-10-11
 - **Relates:** [ADR-0517](0517-a-data-folder-can-live-inside-any-repository.md) (a data folder is a directory with `epicenter.json`), [ADR-0494](0494-file-folders-reserve-epicenter-for-rebuildable-caches.md) (queries build transient projections), [ADR-0521](0521-a-data-folder-syncs-with-its-git-origin-through-a-provider.md) (the CLI keeps no account system)
-- **Unbuilt:** refusing an `epicenter.json` that does not survive `exportSchema` or has a top-level key other than `title`, `kv`, `tables`, or `$schema`.
+- **Unbuilt:** running the CLI outside an Epicenter checkout.
 
 ## Context
 

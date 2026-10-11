@@ -40,11 +40,20 @@ and its only state is that attempt's `SyncChoices`.**
 - The folder validates and publishes. The review decodes nothing it sends:
   `take` names a side.
 
+**A page keeps the attempt in `createSyncController` from
+`@epicenter/svelte/sync`.** It holds `syncing`, `attempt`, `reviewing`, and
+`problems`, and calls `folder.sync` between the page's `beforeSync` (wait
+for the open item's saves) and `afterSync` (read again). A run that needs
+choices keeps its attempt and shows the review; the next run replaces it.
+Refused choices stay as `problems`; any other result of an Apply ends the
+attempt. `describeSync` in `@epicenter/svelte/sync-line` words each result.
+
 ## Consequences
 
 - A review lost to a reload, another sync, or a new attempt starts empty.
-- Apps own when to show the review, its labels, and what a person is told
-  after `resolve`; they write no comparison or encoding of their own.
+- Apps own when to show the review, its labels, whether input locks while
+  syncing, and any wording beyond `describeSync`; they write no comparison,
+  encoding, or attempt bookkeeping of their own.
 
 ## Considered alternatives
 
@@ -62,3 +71,5 @@ and covers both versions per conflict, Apply waiting for every choice,
 take, text and JSON replacement, removal, a body with no removal, the
 choices handed over once and never changed afterwards, Back keeping
 choices, and refused choices beside their rows.
+`packages/svelte/src/sync.svelte.test.ts` covers the controller's hooks,
+attempt lifetime, refusals, and wording.

@@ -119,8 +119,34 @@ only when every conflict has a choice.
 
 Key it on `attempt.id`, so a new attempt starts with no choices, and hide it
 with `open`, so Back keeps them. Pass the `problems` of an `InvalidChoices`
-refusal back in; they show beside their rows. When to sync, what the
+refusal back in; each shows beside its row until the person changes that
+row's choice. The sides read "This device" and "Remote" unless `labels` says
+otherwise. When to sync, what the
 person is told afterwards, and the side labels stay with the app.
+
+### `createSyncController` (`@epicenter/svelte/sync`)
+
+The page's state around `folder.sync`: `syncing` while a run or an Apply is
+in flight, the `attempt` waiting for choices, whether its review shows
+(`reviewing`), and the `problems` of the last refused Apply. `run()` and
+`apply(attempt, choices)` call the folder between the page's `beforeSync`
+and `afterSync`; `refused` stops either before it starts.
+
+```ts
+const syncs = createSyncController({
+	folder,
+	beforeSync: async () => openItem.session?.settled(), // the checkpoint holds the open item's saves
+	afterSync: () => readEverythingAgain(),
+	refused: () => (quitting ? 'Quitting' : undefined),
+});
+await syncs.run(); // conflicts keep syncs.attempt and set syncs.reviewing
+await syncs.apply(attempt, choices); // refused choices stay as syncs.problems; anything else ends the attempt
+```
+
+`describeSync(result, describePush?)` from `@epicenter/svelte/sync-line`
+words a result for a toast or a status line. It is a plain module, so status
+helpers import it without loading runes. Whether input locks while
+`syncing`, and the rest of what a person is told, stay with the page.
 
 ### `fromData`
 

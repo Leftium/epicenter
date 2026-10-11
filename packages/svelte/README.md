@@ -94,43 +94,43 @@ other failures, and what to fix for a value a row cannot hold.
 
 ### `SyncReview` (`@epicenter/svelte/sync-review`)
 
-The review for one `folder.sync` attempt that needs choices (ADR-0514,
-ADR-0516). It shows each conflicting setting, field, body, or whole file
-with the two captured versions and a result, and holds that attempt's
-`SyncChoices` and nothing else. `Use this` takes a side exactly; typing
-replaces, as text for text values and as JSON, once it parses, for any
-other value; `Leave out` removes. Apply calls `onApply(attempt, choices)`
-only when every conflict has a choice.
+The modal review for one `folder.sync` attempt that needs choices
+(ADR-0514, ADR-0516). It shows each conflicting setting, field, body, or
+whole file with the two captured versions and a result, and holds that
+attempt's `SyncChoices` only while it is shown. `Use this` takes a side
+exactly; typing replaces, as text for text values and as JSON, once it
+parses, for any other value; `Leave out` removes. Apply calls
+`onApply(attempt, choices)` only when every conflict has a choice. Cancel
+calls `onCancel`.
 
 ```svelte
-{#if attempt}
-	{#key attempt.id}
+{#if syncs.attempt}
+	{#key syncs.attempt.id}
 		<SyncReview
-			{attempt}
-			open={reviewing}
+			attempt={syncs.attempt}
 			{pending}
-			problems={refused}
-			onBack={() => (reviewing = false)}
-			onApply={(attempt, choices) => resolve(attempt, choices)}
+			problems={syncs.problems}
+			onCancel={() => syncs.cancel()}
+			onApply={(attempt, choices) => syncs.apply(attempt, choices)}
 		/>
 	{/key}
 {/if}
 ```
 
-Key it on `attempt.id`, so a new attempt starts with no choices, and hide it
-with `open`, so Back keeps them. Pass the `problems` of an `InvalidChoices`
-refusal back in; each shows beside its row until the person changes that
-row's choice. The sides read "This device" and "Remote" unless `labels` says
-otherwise. When to sync, what the
-person is told afterwards, and the side labels stay with the app.
+Show it in place of the page while the attempt waits, keyed on
+`attempt.id`. Pass the `problems` of an `InvalidChoices` refusal back in;
+each shows beside its row until the person changes that row's choice. The
+sides read "This device" and "Remote" unless `labels` says otherwise.
 
 ### `createSyncController` (`@epicenter/svelte/sync`)
 
 The page's state around `folder.sync`: `syncing` while a run or an Apply is
-in flight, the `attempt` waiting for choices, whether its review shows
-(`reviewing`), and the `problems` of the last refused Apply. `run()` and
-`apply(attempt, choices)` call the folder between the page's `beforeSync`
-and `afterSync`; `refused` stops either before it starts.
+in flight, the `attempt` whose review shows, `locked` from the start of a
+run until that attempt ends, and the `problems` of the last refused Apply.
+`run()` and `apply(attempt, choices)` call the folder between the page's
+`beforeSync` and `afterSync`; `refused` stops either before it starts, and
+no run starts while an attempt waits. `cancel()` discards the attempt;
+nothing carries to the next one.
 
 ```ts
 const syncs = createSyncController({
@@ -139,14 +139,16 @@ const syncs = createSyncController({
 	afterSync: () => readEverythingAgain(),
 	refused: () => (quitting ? 'Quitting' : undefined),
 });
-await syncs.run(); // conflicts keep syncs.attempt and set syncs.reviewing
+const locked = () => syncs.locked || quitting; // the open item takes no input during a review
+await syncs.run(); // conflicts keep syncs.attempt
 await syncs.apply(attempt, choices); // refused choices stay as syncs.problems; anything else ends the attempt
+syncs.cancel(); // or discard it
 ```
 
 `describeSync(result, describePush?)` from `@epicenter/svelte/sync-line`
 words a result for a toast or a status line. It is a plain module, so status
-helpers import it without loading runes. Whether input locks while
-`syncing`, and the rest of what a person is told, stay with the page.
+helpers import it without loading runes. The rest of what a person is told
+stays with the page.
 
 ### `fromData`
 

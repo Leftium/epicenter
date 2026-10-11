@@ -11,6 +11,8 @@
  *   holding nothing unsaved takes the merged version
  * - Competing edits keep an attempt for the review and change nothing; the
  *   person's choice is applied, pushed, and shown in the open todo
+ * - The review is modal: the open todo takes no input while it waits, no
+ *   sync starts, and Cancel discards the attempt and gives the todo back
  * - A refused choice keeps the attempt with what to fix
  * - An open todo with a draft it could not save keeps the draft after Sync;
  *   its conflict prompt still decides
@@ -169,7 +171,12 @@ test('competing edits wait for the review, and the choice is applied and shown',
 	if (ran.kind !== 'needsChoices')
 		throw new Error(`Expected choices, got ${ran.kind}`);
 	expect(todos.syncAttempt).toBe(ran);
-	expect(todos.reviewing).toBe(true);
+	// The review is modal: the open todo takes no input while it waits.
+	const typed = todoSession(todos);
+	typed.edit((row) => {
+		row.fields.title = 'Typed during the review';
+	});
+	expect(typed.draft.fields.title).toBe('Buy oat milk');
 	expect(todoSession(todos).draft.fields.title).toBe('Buy oat milk');
 	const [title] = ran.conflicts;
 	expect(title).toMatchObject({
@@ -196,11 +203,31 @@ test('competing edits wait for the review, and the choice is applied and shown',
 	);
 	expect(resolved.kind).toBe('synced');
 	expect(todos.syncAttempt).toBeUndefined();
-	expect(todos.reviewing).toBe(false);
 	expect(todoSession(todos).draft.fields.title).toBe('Buy soy milk');
 	expect(await run(session.bare, ['git', 'show', `main:${MILK}`])).toContain(
 		'title: Buy soy milk',
 	);
+});
+
+test('Cancel discards the attempt and gives the open todo back', async () => {
+	const { todos, session } = await openDemo();
+	await todos.open(MILK, 'todos');
+	const milk = todoSession(todos);
+	milk.edit((row) => {
+		row.fields.title = 'Buy oat milk';
+	});
+	await milk.settled();
+	await pushMilk(session, '---\ntitle: Buy soy milk\ndone: false\n---\nOne carton.\n');
+	expect(expectOk(await todos.sync()).kind).toBe('needsChoices');
+	expect((await todos.sync()).error?.name).toBe('Failed');
+
+	todos.cancelSync();
+	expect(todos.syncAttempt).toBeUndefined();
+	todoSession(todos).edit((row) => {
+		row.fields.title = 'Buy rice milk';
+	});
+	expect(todoSession(todos).draft.fields.title).toBe('Buy rice milk');
+	expect((await todoSession(todos).settled()).status).toBe('saved');
 });
 
 test('an open todo with a draft it could not save keeps it after Sync', async () => {

@@ -2,9 +2,11 @@
 	The review for one `folder.sync` attempt (ADR-0514, ADR-0516): a row per
 	conflict, grouped by file, with the two captured versions and the result.
 
-	It holds that attempt's choices and nothing else. The parent keys it on
-	`attempt.id`, so a new attempt starts with no choices, and hides it with
-	`open` rather than unmounting it, so Back and returning keep them.
+	The review is modal: the page shows it in place of everything else while
+	the attempt waits. It holds that attempt's choices and nothing else, only
+	while it is shown. The parent keys it on `attempt.id`, so a new attempt
+	starts with no choices. Cancel calls `onCancel`, which discards the
+	attempt; nothing is remembered.
 
 	`Use this` takes a captured version exactly. Typing writes a replacement:
 	a body, a whole file, or a field or setting whose versions are all text is
@@ -18,7 +20,7 @@
 	```svelte
 	{#if attempt}
 		{#key attempt.id}
-			<SyncReview {attempt} open={reviewing} {pending} {problems} {onBack} {onApply} />
+			<SyncReview {attempt} {pending} {problems} {onCancel} {onApply} />
 		{/key}
 	{/if}
 	```
@@ -74,24 +76,22 @@
 
 	let {
 		attempt,
-		open = true,
 		pending = false,
 		problems = [],
 		labels = { local: 'This device', incoming: 'Remote' },
-		onBack,
+		onCancel,
 		onApply,
 	}: {
 		/** The captured attempt the choices answer. */
 		attempt: SyncAttempt;
-		/** Whether the review shows. Hidden, it keeps its choices. */
-		open?: boolean;
 		/** A resolution is running: every control waits. */
 		pending?: boolean;
 		/** What the folder refused in the last Apply, shown beside each row. */
 		problems?: readonly SyncChoiceProblem[];
 		/** What a person calls each side. */
 		labels?: { readonly local: string; readonly incoming: string };
-		onBack: () => void;
+		/** Discard the attempt and its choices. */
+		onCancel: () => void;
 		onApply: (attempt: SyncAttempt, choices: SyncChoices) => void;
 	} = $props();
 
@@ -200,112 +200,110 @@
 	);
 </script>
 
-{#if open}
-	<form
-		class="flex flex-col gap-4"
-		aria-label="Review sync changes"
-		onsubmit={(event) => {
-			event.preventDefault();
-			if (pending || !complete) return;
-			submitted = choices;
-			onApply(attempt, choices);
-		}}
-	>
-		<header>
-			<h2 class="text-base font-medium">Choose what to keep</h2>
-			<p class="text-muted-foreground text-sm">
-				These changes conflict with the remote. Nothing is saved until you
-				apply.
-			</p>
-		</header>
+<form
+	class="flex flex-col gap-4"
+	aria-label="Review sync changes"
+	onsubmit={(event) => {
+		event.preventDefault();
+		if (pending || !complete) return;
+		submitted = choices;
+		onApply(attempt, choices);
+	}}
+>
+	<header>
+		<h2 class="text-base font-medium">Choose what to keep</h2>
+		<p class="text-muted-foreground text-sm">
+			These changes conflict with the remote. Nothing is saved until you
+			apply.
+		</p>
+	</header>
 
-		{#each general as problem (problem.message)}
-			<p class="text-destructive text-sm" role="alert">{problem.message}</p>
-		{/each}
+	{#each general as problem (problem.message)}
+		<p class="text-destructive text-sm" role="alert">{problem.message}</p>
+	{/each}
 
-		{#each files as [path, conflicts] (path)}
-			<section class="flex flex-col gap-3" aria-label={path}>
-				<h3 class="font-mono text-sm">{path}</h3>
-				{#each conflicts as conflict (conflict.id)}
-					{@const name = partName(conflict)}
-					{@const shown = result(conflict)}
-					{@const hint = note(conflict)}
-					{@const choice = choices[conflict.id]}
-					<div
-						class="grid gap-2 md:grid-cols-[8rem_repeat(3,minmax(0,1fr))]"
-						role="group"
-						aria-label={name}
-					>
-						<span class="font-mono text-xs break-all">{name}</span>
-						{#each sides as side (side)}
-							{@const version = conflict[side]}
-							<div class="flex flex-col gap-1">
-								<span class="text-muted-foreground text-xs">{labels[side]}</span>
-								<Textarea
-									readonly
-									class="bg-muted max-h-64"
-									value={display(conflict, version)}
-									placeholder={version.present ? 'Empty' : conflict.kind === 'file' ? 'No file' : 'Not set'}
-									aria-label="{name} on {labels[side]}"
-								/>
-								<Button
-									variant="outline"
-									size="sm"
-									class="self-start"
-									aria-pressed={choice?.kind === 'take' && choice.side === side}
-									disabled={pending}
-									onclick={() => choose(conflict.id, { kind: 'take', side })}
-								>
-									Use this
-								</Button>
-							</div>
-						{/each}
+	{#each files as [path, conflicts] (path)}
+		<section class="flex flex-col gap-3" aria-label={path}>
+			<h3 class="font-mono text-sm">{path}</h3>
+			{#each conflicts as conflict (conflict.id)}
+				{@const name = partName(conflict)}
+				{@const shown = result(conflict)}
+				{@const hint = note(conflict)}
+				{@const choice = choices[conflict.id]}
+				<div
+					class="grid gap-2 md:grid-cols-[8rem_repeat(3,minmax(0,1fr))]"
+					role="group"
+					aria-label={name}
+				>
+					<span class="font-mono text-xs break-all">{name}</span>
+					{#each sides as side (side)}
+						{@const version = conflict[side]}
 						<div class="flex flex-col gap-1">
-							<span class="text-muted-foreground text-xs">Result</span>
+							<span class="text-muted-foreground text-xs">{labels[side]}</span>
 							<Textarea
-								class="max-h-64"
-								value={shown.text}
-								placeholder={shown.removed ? 'Left out' : 'Choose a side or type'}
-								aria-label="Result for {name}"
-								aria-invalid={unparsed(conflict.id) ||
-									refusedFor(conflict.id).length > 0 ||
-									undefined}
-								disabled={pending}
-								oninput={(event) => typed(conflict, event.currentTarget.value)}
+								readonly
+								class="bg-muted max-h-64"
+								value={display(conflict, version)}
+								placeholder={version.present ? 'Empty' : conflict.kind === 'file' ? 'No file' : 'Not set'}
+								aria-label="{name} on {labels[side]}"
 							/>
-							{#if conflict.kind !== 'body'}
-								<Button
-									variant="ghost"
-									size="sm"
-									class="self-start"
-									aria-pressed={choice?.kind === 'remove'}
-									disabled={pending}
-									onclick={() => choose(conflict.id, { kind: 'remove' })}
-								>
-									Leave out
-								</Button>
-							{/if}
-							{#if hint !== undefined}
-								<p class="text-muted-foreground text-xs">{hint}</p>
-							{/if}
+							<Button
+								variant="outline"
+								size="sm"
+								class="self-start"
+								aria-pressed={choice?.kind === 'take' && choice.side === side}
+								disabled={pending}
+								onclick={() => choose(conflict.id, { kind: 'take', side })}
+							>
+								Use this
+							</Button>
 						</div>
+					{/each}
+					<div class="flex flex-col gap-1">
+						<span class="text-muted-foreground text-xs">Result</span>
+						<Textarea
+							class="max-h-64"
+							value={shown.text}
+							placeholder={shown.removed ? 'Left out' : 'Choose a side or type'}
+							aria-label="Result for {name}"
+							aria-invalid={unparsed(conflict.id) ||
+								refusedFor(conflict.id).length > 0 ||
+								undefined}
+							disabled={pending}
+							oninput={(event) => typed(conflict, event.currentTarget.value)}
+						/>
+						{#if conflict.kind !== 'body'}
+							<Button
+								variant="ghost"
+								size="sm"
+								class="self-start"
+								aria-pressed={choice?.kind === 'remove'}
+								disabled={pending}
+								onclick={() => choose(conflict.id, { kind: 'remove' })}
+							>
+								Leave out
+							</Button>
+						{/if}
+						{#if hint !== undefined}
+							<p class="text-muted-foreground text-xs">{hint}</p>
+						{/if}
 					</div>
-				{/each}
-			</section>
-		{/each}
+				</div>
+			{/each}
+		</section>
+	{/each}
 
-		<footer class="flex flex-wrap items-center justify-between gap-2">
-			<span class="text-muted-foreground text-sm" role="status">
-				{#if pending}
-					Applying…
-				{:else}
-					{chosen} of {attempt.conflicts.length} chosen
-				{/if}
-			</span>
-			<div class="flex gap-2">
-				<Button variant="outline" disabled={pending} onclick={onBack}>Back</Button>
-				<Button type="submit" disabled={pending || !complete}>Apply and sync</Button>
-			</div>
-		</footer>
-	</form>
-{/if}
+	<footer class="flex flex-wrap items-center justify-between gap-2">
+		<span class="text-muted-foreground text-sm" role="status">
+			{#if pending}
+				Applying…
+			{:else}
+				{chosen} of {attempt.conflicts.length} chosen
+			{/if}
+		</span>
+		<div class="flex gap-2">
+			<Button variant="outline" disabled={pending} onclick={onCancel}>Cancel</Button>
+			<Button type="submit" disabled={pending || !complete}>Apply and sync</Button>
+		</div>
+	</footer>
+</form>

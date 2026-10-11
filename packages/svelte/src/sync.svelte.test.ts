@@ -7,8 +7,8 @@
  * Key behaviors:
  * - A run and an Apply call the folder between `beforeSync` and
  *   `afterSync`, with `syncing` set only in between
- * - A run that needs choices keeps its attempt and shows the review; the
- *   next run replaces it
+ * - A run that needs choices keeps its attempt and locks the page until
+ *   Apply ends it or Cancel discards it; no run starts meanwhile
  * - Refused choices stay with the attempt as `problems`; any other Apply
  *   result ends it
  * - A refusal, or a sync already running, calls nothing
@@ -81,25 +81,26 @@ test('a run calls the folder between the hooks, with syncing set only in between
 	expect((await controller.run()).data).toEqual(SYNCED);
 	expect(log).toEqual(['before', 'run syncing=true', 'after syncing=false']);
 	expect(controller.attempt).toBeUndefined();
-	expect(controller.reviewing).toBe(false);
+	expect(controller.locked).toBe(false);
 });
 
-test('a run that needs choices keeps the attempt and shows the review; the next run replaces it', async () => {
+test('a waiting attempt locks the page until Cancel discards it, and no run starts meanwhile', async () => {
 	let next: Result<SyncOutcome | SyncAttempt, SyncErrorType> = Ok(attempt);
-	const { controller } = setup({ run: () => next });
+	const { controller, log } = setup({ run: () => next });
 	await controller.run();
 	expect(controller.attempt).toBe(attempt);
-	expect(controller.reviewing).toBe(true);
-	controller.reviewing = false;
-	expect(controller.reviewing).toBe(false);
-	controller.reviewing = true;
-	expect(controller.reviewing).toBe(true);
+	expect(controller.locked).toBe(true);
 
 	next = Ok(SYNCED);
-	await controller.run();
+	log.length = 0;
+	expect((await controller.run()).error?.name).toBe('Failed');
+	expect(log).toEqual([]);
+	expect(controller.attempt).toBe(attempt);
+
+	controller.cancel();
 	expect(controller.attempt).toBeUndefined();
-	controller.reviewing = true;
-	expect(controller.reviewing).toBe(false);
+	expect(controller.locked).toBe(false);
+	expect((await controller.run()).data).toEqual(SYNCED);
 });
 
 test('refused choices stay with the attempt; any other Apply result ends it', async () => {
@@ -122,7 +123,7 @@ test('refused choices stay with the attempt; any other Apply result ends it', as
 	resolved = SyncError.Stale({ reason: 'changed' });
 	await controller.apply(attempt, { theme: { kind: 'take', side: 'local' } });
 	expect(controller.attempt).toBeUndefined();
-	expect(controller.reviewing).toBe(false);
+	expect(controller.locked).toBe(false);
 	expect(controller.problems).toEqual([]);
 });
 

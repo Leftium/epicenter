@@ -23,9 +23,9 @@
  * as a conflict, and the person keeps theirs or reloads.
  *
  * Sync (`folder.sync`) waits for the open item's saves, then commits, fetches,
- * merges, and pushes. The open item takes no input while a sync or an Apply
- * runs. Conflicts come back as one attempt, kept here for the review until
- * the person applies choices, syncs again, or the folder closes. Afterward the
+ * merges, and pushes. Conflicts come back as one attempt whose review is
+ * modal: the open item takes no input from the start of a sync until its
+ * attempt is applied or cancelled, and nothing about it is remembered. Afterward the
  * listings and the open item are read again as on return.
  */
 import type { DepartureParticipant } from '@epicenter/epicenter/departure/page';
@@ -295,18 +295,27 @@ export function createTodos(folder: TodosFolder) {
 		folder,
 		beforeSync: async () => slot.session?.settled(),
 		afterSync: () => check(),
-		refused: () => refused(),
+		// Its own state is the controller's to check: an Apply runs while
+		// the review locks everything else.
+		refused: () =>
+			closing !== undefined
+				? CLOSING
+				: departing
+					? DEPARTING
+					: recovering
+						? BUSY
+						: undefined,
 	});
 
 	/** Whether the open item refuses input now. */
 	const locked = () =>
-		departing || recovering || syncs.syncing || closing !== undefined;
+		departing || recovering || syncs.locked || closing !== undefined;
 
 	/** Why no action starts now, if one does not. */
 	function refused(): string | undefined {
 		if (closing !== undefined) return CLOSING;
 		if (departing) return DEPARTING;
-		if (recovering || syncs.syncing) return BUSY;
+		if (recovering || syncs.locked) return BUSY;
 		return undefined;
 	}
 
@@ -885,11 +894,9 @@ export function createTodos(folder: TodosFolder) {
 		get syncAttempt() {
 			return syncs.attempt;
 		},
-		get reviewing() {
-			return syncs.reviewing;
-		},
-		set reviewing(shown: boolean) {
-			syncs.reviewing = shown;
+		/** Discard the waiting attempt and its choices. */
+		cancelSync() {
+			syncs.cancel();
 		},
 		get syncProblems() {
 			return syncs.problems;

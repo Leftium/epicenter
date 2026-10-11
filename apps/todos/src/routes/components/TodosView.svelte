@@ -113,23 +113,18 @@
 	<IncomingBanner {todos} />
 
 	{#if todos.syncAttempt !== undefined}
-		<!-- One review per attempt: hidden, it keeps the person's choices. -->
-		{#key todos.syncAttempt.id}
-			<div class={todos.reviewing ? 'min-h-0 flex-1 overflow-y-auto p-4' : 'hidden'}>
+		<!-- The review is modal: it replaces the workspace until it is applied or cancelled. -->
+		<div class="min-h-0 flex-1 overflow-y-auto p-4">
+			{#key todos.syncAttempt.id}
 				<SyncReview
 					attempt={todos.syncAttempt}
-					open={todos.reviewing}
 					pending={applying}
 					problems={todos.syncProblems}
-					onBack={() => (todos.reviewing = false)}
+					onCancel={() => todos.cancelSync()}
 					onApply={(attempt, choices) => void applySync(attempt, choices)}
 				/>
-			</div>
-		{/key}
-	{/if}
-
-	{#if todos.reviewing}
-		<!-- The review takes the workspace while it shows. -->
+			{/key}
+		</div>
 	{:else if wide.current}
 		<Resizable.PaneGroup direction="vertical" class="min-h-0 flex-1">
 			<Resizable.Pane id="workspace" order={1} minSize={30}>

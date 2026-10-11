@@ -2,8 +2,8 @@
  * Sync Review Mounted Tests
  *
  * Mounts the real `SyncReview` in jsdom over a hand-built attempt, the plain
- * data `folder.sync.run()` returns, inside a host that shows and hides it as
- * an app does. Buttons are clicked and results typed through the DOM.
+ * data `folder.sync.run()` returns, inside a host that shows it while an
+ * attempt waits and drops it on Cancel, as an app does. Buttons are clicked and results typed through the DOM.
  *
  * Key behaviors:
  * - Each conflict shows both captured versions; Apply waits for a choice
@@ -12,7 +12,7 @@
  *   it parses; `Leave out` removes; a body cannot be left out
  * - Apply hands over the attempt and one choice per conflict ID, and later
  *   edits do not change what was handed over
- * - Back hides the review and keeps its choices
+ * - Cancel discards the attempt; a new one starts with no choices
  * - A refused choice shows beside its row until the person changes it
  * - The sides read This device and Remote
  *
@@ -75,7 +75,7 @@ afterEach(() => {
 function setup() {
 	const applied: { attempt: SyncAttempt; choices: SyncChoices }[] = [];
 	const controls: {
-		reopen?: () => void;
+		show?: (attempt: SyncAttempt) => void;
 		refuse?: (problems: readonly SyncChoiceProblem[]) => void;
 	} = {};
 	const target = document.createElement('div');
@@ -179,16 +179,16 @@ test('choices take, replace, and remove, and Apply hands over one per conflict',
 	expect(applied[1]?.choices.title).toEqual({ kind: 'remove' });
 });
 
-test('Back hides the review and keeps its choices', () => {
+test('Cancel discards the attempt, and the next attempt starts with no choices', () => {
 	const { target, controls, row, result } = setup();
 	useThis(row('title'), 0);
-	click(target, 'Back');
+	click(target, 'Cancel');
 	flushSync();
 	expect(target.querySelector('form')).toBeNull();
-	controls.reopen?.();
+	controls.show?.(attempt);
 	flushSync();
-	expect(result('title')?.value).toBe('Evening walk');
-	expect(target.textContent).toContain('1 of 3 chosen');
+	expect(result('title')?.value).toBe('');
+	expect(target.textContent).toContain('0 of 3 chosen');
 });
 
 test('a refused choice shows beside its row until the person changes it', () => {

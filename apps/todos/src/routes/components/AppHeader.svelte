@@ -95,6 +95,7 @@
 	const busy = $derived(
 		working !== undefined ||
 			todos.syncing ||
+			todos.syncAttempt !== undefined ||
 			todos.recovering ||
 			todos.departing ||
 			todos.git.activity.commit.active ||
@@ -268,17 +269,6 @@
 	</Popover.Root>
 
 	<div class="ml-auto flex shrink-0 items-center gap-1.5">
-		{#if todos.syncAttempt !== undefined && !todos.reviewing}
-			<Button
-				variant="outline"
-				size="sm"
-				tooltip="Some synced changes conflict with yours. Choose what to keep."
-				data-testid="review-sync"
-				onclick={() => (todos.reviewing = true)}
-			>
-				<span>Review sync</span>
-			</Button>
-		{/if}
 		<Button
 			variant="outline"
 			size="sm"

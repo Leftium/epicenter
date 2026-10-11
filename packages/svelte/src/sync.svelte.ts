@@ -1,19 +1,19 @@
 /**
  * The state a page keeps around `folder.sync` (ADR-0514, ADR-0516): whether
  * a run or an Apply is in flight, the attempt waiting for the person's
- * choices, whether its review shows, and what the folder refused in the last
- * Apply.
+ * choices, and what the folder refused in the last Apply.
+ *
+ * The review is modal. While an attempt waits, the page shows its review and
+ * nothing else takes input: `locked` is true from the start of a run until
+ * the attempt ends. Apply ends it unless the folder refuses the choices,
+ * which stay as `problems`; Cancel discards it. Nothing outlives an attempt.
  *
  * `run()` and `apply(attempt, choices)` call the folder between the page's
  * `beforeSync` (wait for the open item's saves, so the checkpoint holds
- * them) and `afterSync` (read lists and the open item again). A run that
- * needs choices keeps its attempt and shows the review; a run replaces an
- * earlier attempt. Refused choices stay with the attempt as `problems`; any
- * other result of an Apply ends it.
+ * them) and `afterSync` (read lists and the open item again).
  *
  * `describeSync` (`@epicenter/svelte/sync-line`, re-exported here) words a
- * result for a person. What the page shows, when, and whether input locks
- * while `syncing` stay with the page.
+ * result for a person. What else the page shows stays with the page.
  */
 import type {
 	FolderSync,
@@ -45,20 +45,27 @@ export function createSyncController({
 }) {
 	let syncing = $state(false);
 	let attempt = $state.raw<SyncAttempt | undefined>();
-	let reviewing = $state(false);
 	let problems = $state.raw<readonly SyncChoiceProblem[]>([]);
 
 	/** Why a run or an Apply cannot start now; nothing is called then. */
-	const blocked = () => (syncing ? 'A sync is already running.' : refused());
+	const blocked = () =>
+		syncing ? 'A sync is already running.' : refused();
 
-	/** One folder call with `syncing` set, between the page's hooks. */
+	/**
+	 * One folder call with `syncing` set, between the page's hooks. `settle`
+	 * records the result before `afterSync`, so the page reads again with
+	 * the lock already in its final state.
+	 */
 	async function step<T>(
 		call: () => Promise<Result<T, SyncError>>,
+		settle: (result: Result<T, SyncError>) => void,
 	): Promise<Result<T, SyncError>> {
 		syncing = true;
 		try {
 			await beforeSync();
-			return await call();
+			const result = await call();
+			settle(result);
+			return result;
 		} finally {
 			syncing = false;
 			await afterSync();
@@ -67,7 +74,6 @@ export function createSyncController({
 
 	function end() {
 		attempt = undefined;
-		reviewing = false;
 		problems = [];
 	}
 
@@ -76,32 +82,33 @@ export function createSyncController({
 		get syncing() {
 			return syncing;
 		},
-		/** The attempt waiting for choices, if the last run found conflicts. */
+		/** The attempt whose review shows, if the last run found conflicts. */
 		get attempt() {
 			return attempt;
 		},
-		/** Whether the review shows. Hidden, it keeps its choices. */
-		get reviewing() {
-			return reviewing;
-		},
-		set reviewing(shown: boolean) {
-			reviewing = shown && attempt !== undefined;
+		/** Whether the page takes no other input: a sync runs or a review shows. */
+		get locked() {
+			return syncing || attempt !== undefined;
 		},
 		/** What the folder refused in the last Apply. */
 		get problems() {
 			return problems;
 		},
-		/** Commit, fetch, merge, and push; conflicts keep an attempt and show the review. */
+		/** Commit, fetch, merge, and push; conflicts keep an attempt for the review. */
 		async run(): Promise<Result<SyncOutcome | SyncAttempt, SyncError>> {
-			const why = blocked();
+			const why =
+				attempt !== undefined ? 'Finish or cancel the review first.' : blocked();
 			if (why !== undefined) return SyncError.Failed({ cause: why });
-			end();
-			const ran = await step(() => folder.sync.run());
-			if (ran.data?.kind === 'needsChoices') {
-				attempt = ran.data;
-				reviewing = true;
-			}
-			return ran;
+			return step(
+				() => folder.sync.run(),
+				(ran) => {
+					if (ran.data?.kind === 'needsChoices') attempt = ran.data;
+				},
+			);
+		},
+		/** Discard the waiting attempt and its choices; nothing is written. */
+		cancel() {
+			if (!syncing) end();
 		},
 		/** Resolve with the review's choices. */
 		async apply(
@@ -110,11 +117,14 @@ export function createSyncController({
 		): Promise<Result<SyncOutcome, SyncError>> {
 			const why = blocked();
 			if (why !== undefined) return SyncError.Failed({ cause: why });
-			const resolved = await step(() => folder.sync.resolve(answered, choices));
-			if (resolved.error?.name === 'InvalidChoices')
-				problems = resolved.error.problems;
-			else if (attempt?.id === answered.id) end();
-			return resolved;
+			return step(
+				() => folder.sync.resolve(answered, choices),
+				(resolved) => {
+					if (resolved.error?.name === 'InvalidChoices')
+						problems = resolved.error.problems;
+					else if (attempt?.id === answered.id) end();
+				},
+			);
 		},
 	};
 }

@@ -5,7 +5,7 @@
  * Successful output must be identical when the two editing sides swap.
  */
 import { expect, test } from 'bun:test';
-import { type KvMergeInput, mergeKv } from './kv-merge.js';
+import { type KvMergeInput, mergeKv, reconcileKv } from './kv-merge.js';
 
 const cases: (KvMergeInput & { name: string; expected: unknown })[] =
 	await Bun.file(
@@ -81,5 +81,30 @@ test('mismatched brackets cannot cancel nested arrays during recovery', () => {
 	expect(mergeKv({ base: '{}', ours: source, theirs: '{}' })).toEqual({
 		kind: 'invalid',
 		side: 'ours',
+	});
+});
+
+test('settled keys apply only where they compete, and the rest merges', () => {
+	const input = {
+		base: '{"theme":"light","size":1,"font":"serif"}',
+		ours: '{"theme":"dark","size":2.0,"font":"serif"}',
+		theirs: '{"theme":"sepia","size":3,"font":"mono"}',
+	};
+	expect(reconcileKv(input, new Map([['theme', '"sepia"']]))).toEqual({
+		kind: 'conflict',
+		conflicts: [{ key: 'size', base: '1', ours: '2.0', theirs: '3' }],
+	});
+	expect(
+		reconcileKv(
+			input,
+			new Map([
+				['theme', null],
+				['size', '2.0'],
+				['font', '"ignored"'],
+			]),
+		),
+	).toEqual({
+		kind: 'merged',
+		text: '{\n  "font": "mono",\n  "size": 2.0\n}\n',
 	});
 });

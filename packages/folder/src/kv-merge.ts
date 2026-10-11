@@ -215,7 +215,26 @@ function sameFile(
  * Invalid sources include duplicate keys, unpaired surrogates, and nesting
  * beyond 64 containers. All present sources are checked before merging.
  */
-export function mergeKv({ base, ours, theirs }: KvMergeInput): KvMerge {
+export function mergeKv(input: KvMergeInput): KvMerge {
+	return reconcileKv(input, new Map());
+}
+
+/**
+ * Settled root keys: each key's raw JSON value text, or `null` to leave the
+ * key out. Every text must already be one value a folder can store.
+ */
+export type KvResolutions = ReadonlyMap<string, string | null>;
+
+/**
+ * `mergeKv`, with competing keys settled by `resolutions`. A resolution
+ * applies only to a key that competes; every other key merges as usual, so
+ * an independent change on either side survives. A competing key with no
+ * resolution still conflicts.
+ */
+export function reconcileKv(
+	{ base, ours, theirs }: KvMergeInput,
+	resolutions: KvResolutions,
+): KvMerge {
 	const b = read(base);
 	const o = read(ours);
 	const t = read(theirs);
@@ -257,7 +276,11 @@ export function mergeKv({ base, ours, theirs }: KvMergeInput): KvMerge {
 					: (left ?? right);
 		} else if (equal(left?.value, before?.value)) selected = right;
 		else if (equal(right?.value, before?.value)) selected = left;
-		else {
+		else if (resolutions.has(key)) {
+			const settled = resolutions.get(key) ?? null;
+			if (settled !== null) members.push([key, settled]);
+			continue;
+		} else {
 			conflicts.push({
 				key,
 				base: before?.raw ?? null,

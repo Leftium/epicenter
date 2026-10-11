@@ -273,6 +273,33 @@ function valuesOf<TValues>(
 	return { values: values as Partial<TValues>, issues: Object.freeze(issues) };
 }
 
+/**
+ * One key's change as raw JSON text, or `null` to remove it, refused as
+ * `kv.set` refuses it: undeclared, with no exact JSON form, over the
+ * budget, or not conforming. Prepared synchronously, so a caller that
+ * changes its value afterward changes nothing that is saved. Sync settles a
+ * competing key with the same rules.
+ */
+export function settingText(
+	schemas: FieldMap,
+	key: string,
+	value: unknown,
+): Result<string | null, Extract<TableError, { name: 'InvalidValues' }>> {
+	const refuse = (message: string) =>
+		TableError.InvalidValues({ issues: [{ message, field: key }] });
+	if (!Object.hasOwn(schemas, key)) return refuse(`${key} is not declared`);
+	if (value === undefined) return Ok(null);
+	const json = serialize(value);
+	if (json === undefined)
+		return refuse(`${key} cannot be saved: the value has no exact JSON form`);
+	const copy: unknown = JSON.parse(json);
+	const problem = storedProblem(key, copy);
+	if (problem !== undefined) return refuse(problem);
+	const issues = check(schemas, { [key]: copy }, 'patch').issues;
+	if (issues.length > 0) return TableError.InvalidValues({ issues });
+	return Ok(json);
+}
+
 /** The `kv.json` handle. `schemas` are the prepared definition's `kv` fields. */
 export function createKv<TValues>(
 	{ storage }: { storage: FolderStorage },
@@ -314,30 +341,6 @@ export function createKv<TValues>(
 				issues: refusalOf(text),
 			});
 		return Ok({ text, sha256: read.sha256, members });
-	}
-
-	/**
-	 * One key's change as raw JSON text, or `null` to remove it. Prepared
-	 * synchronously, so a caller that changes its value afterward changes
-	 * nothing that is saved.
-	 */
-	function prepare(
-		key: string,
-		value: unknown,
-	): Result<string | null, Extract<TableError, { name: 'InvalidValues' }>> {
-		const refuse = (message: string) =>
-			TableError.InvalidValues({ issues: [{ message, field: key }] });
-		if (!Object.hasOwn(schemas, key)) return refuse(`${key} is not declared`);
-		if (value === undefined) return Ok(null);
-		const json = serialize(value);
-		if (json === undefined)
-			return refuse(`${key} cannot be saved: the value has no exact JSON form`);
-		const copy: unknown = JSON.parse(json);
-		const problem = storedProblem(key, copy);
-		if (problem !== undefined) return refuse(problem);
-		const issues = check(schemas, { [key]: copy }, 'patch').issues;
-		if (issues.length > 0) return TableError.InvalidValues({ issues });
-		return Ok(json);
 	}
 
 	/**
@@ -423,7 +426,7 @@ export function createKv<TValues>(
 			return Ok(readingOf(current.text, current.sha256, current.members));
 		},
 		set(key, value) {
-			const { data: change, error } = prepare(key, value);
+			const { data: change, error } = settingText(schemas, key, value);
 			if (error !== null) return Promise.resolve(Err(error));
 			pending ??= { changes: new Map(), done: Promise.withResolvers() };
 			pending.changes.set(key, change as string | null);

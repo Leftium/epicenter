@@ -65,6 +65,32 @@ test('both sides changing different body lines merge by line', async () => {
 	expect(merged.kind === 'merged' && merged.row.body).toBe('ONE\ntwo\nTHREE');
 });
 
+test('a body line merge keeps every character of each line', async () => {
+	for (const [base, ours, theirs, merged] of [
+		[
+			'x\u2028y\nmid\nz\n',
+			'X\u2028y\nmid\nz\n',
+			'x\u2028y\nmid\nZ\n',
+			'X\u2028y\nmid\nZ\n',
+		],
+		['x\ry\nmid\nz\n', 'X\ry\nmid\nz\n', 'x\ry\nmid\nZ\n', 'X\ry\nmid\nZ\n'],
+		[
+			'a\u2029b\r\nmid\nend',
+			'a\u2029B\r\nmid\nend',
+			'a\u2029b\r\nmid\nEND',
+			'a\u2029B\r\nmid\nEND',
+		],
+	]) {
+		const at = (body: string) => row(['title: Walk', 'done: false'], body);
+		const result = await mergeRow(todos, {
+			base: at(base!),
+			ours: at(ours!),
+			theirs: at(theirs!),
+		});
+		expect(result.kind === 'merged' && result.row.body).toBe(merged!);
+	}
+});
+
 test('quoting, key order, and comments are spelling, not changes', async () => {
 	const merged = await mergeRow(todos, {
 		base: BASE,

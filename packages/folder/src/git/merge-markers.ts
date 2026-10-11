@@ -33,11 +33,15 @@
  * decoding every file of the folder, audio included, for one text file.
  */
 
-/** isomorphic-git's own line split for a text merge. */
-const LINES = /^.*(\r?\n|$)/gm;
+/**
+ * Lines ending at each line feed, the last without one. Every character
+ * lands in a line, a lone carriage return, U+2028, and U+2029 included. For
+ * text whose only breaks are LF and CRLF, which is all a Git merge here
+ * leaves markers in, these are isomorphic-git's own lines.
+ */
+const LINES = /[^\n]*\n|[^\n]+$/g;
 
-const lines = (text: string) =>
-	(text.match(LINES) ?? []).filter((line) => line !== '');
+const lines = (text: string) => text.match(LINES) ?? [];
 
 /** One run of changed lines of a side, as half-open ranges of the base and the side. */
 type Hunk = {

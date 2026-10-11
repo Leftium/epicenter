@@ -630,7 +630,7 @@ export function syncOutcomeLine(
 				return {
 					label: 'Sync stopped: changes conflict',
 					short: 'Conflicts',
-					detail: `${error.message}. Nothing was changed. Merge them in the terminal with git merge.`,
+					detail: `${error.message}. Nothing was changed. Resolve them with Git outside Todos, then sync again.`,
 					tone: 'error',
 				};
 			case 'Merge':

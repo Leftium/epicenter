@@ -41,7 +41,8 @@ merge splits a path both sides changed into units:
 | root `kv.json` | one root key | `setting` | its JSON value |
 | `<table>/<stem>.md` of a declared table | one frontmatter field | `field` | its JSON value |
 | the same row | the body | `body` | its text |
-| either, when a version is deleted or does not read | the whole file | `file` | its text |
+| any other UTF-8 text file, when lines compete | the whole file | `file` | its text |
+| any of these, when a version is deleted or does not read | the whole file | `file` | its text |
 
 - Rows merge through `parseRow` against their table. For each field, equal
   values agree and a side unchanged from the base yields; values compare as
@@ -52,9 +53,12 @@ merge splits a path both sides changed into units:
   chooses is written as it is; if it is not a valid row, the table reads it
   as `InvalidRow` and the app opens it for repair as text (ADR-0518).
   `kv.json` deleted on one side or not one JSON object is a `file` unit too.
-- Any other conflict (a text file outside a table, a binary file, a file
-  against a directory) is `SyncError.Unreviewable`, listing every conflict.
-  Nothing is written or sent.
+- Any other text file merges by line, so a README both sides edited is one
+  `file` unit only when their lines compete.
+- A binary file, a link, executable, or submodule, and a file against a
+  directory are `SyncError.Unreviewable`, listing every conflict. Nothing is
+  written or sent; the person repairs them with Git outside the app, since
+  `git merge` in the folder terminal needs manual history.
 
 A conflict is reported as `SyncAttempt`:
 
@@ -98,8 +102,7 @@ type SyncChoices = Partial<Record<string, SyncChoice>>; // keyed by conflict id
 - Open edit sessions are not told: an idle session adopts the new file when
   the person returns, and a session with unsaved input meets the existing
   `Conflict` prompt at its next save (ADR-0523).
-- Merge text conflicts outside tables still need `mergeIncoming` or the
-  terminal.
+- Binary conflicts still need Git outside the app.
 - `prepareMerge` offers each path both sides changed to an optional
   `mergePath` (`syncMerge` in `packages/folder/src/git/sync.ts`); a second
   `syncMerge` given the chosen text merges the same commits again.
@@ -131,5 +134,7 @@ browser folder against `git http-backend` and covers merges without
 choices in the standard form, captured units with nothing written or sent,
 settled units with the captured commits as parents, a deleted row and an
 invalid row as whole files, every kind of invalid choice, stale attempts,
-and an unreviewable text conflict. `apps/todos/src/lib/sync.test.ts` covers
+a text file outside a table merged by line or held whole, and an
+unreviewable binary conflict. `packages/folder/src/git/merge-markers.test.ts`
+pins that a line merge keeps lone carriage returns, U+2028, and U+2029. `apps/todos/src/lib/sync.test.ts` covers
 the open item afterwards.

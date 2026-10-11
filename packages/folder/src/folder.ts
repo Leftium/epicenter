@@ -166,11 +166,13 @@ export type FolderSync = {
 	/**
 	 * Commit saved files, fetch the remote branch, merge it, and push.
 	 * One-sided and compatible changes need no choices. Root `kv.json` merges
-	 * by key, and each row of a declared table by field and body, written in
-	 * the standard form. Competing settings, fields, bodies, and deleted or
-	 * unreadable versions of those files return `needsChoices`; nothing
-	 * conflicted is written and nothing is sent. Any other conflict is
-	 * `Unreviewable`. A run retires the attempt before it.
+	 * by key, each row of a declared table by field and body, written in the
+	 * standard form, and any other text file by line. Competing settings,
+	 * fields, bodies, and whole text files (deleted on one side, unreadable as
+	 * a row, or with competing lines) return `needsChoices`; nothing
+	 * conflicted is written and nothing is sent. Binary files and file
+	 * against directory are `Unreviewable`. A run retires the attempt before
+	 * it.
 	 */
 	run(): Promise<Result<SyncOutcome | SyncAttempt, SyncError>>;
 	/**

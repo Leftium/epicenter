@@ -1029,12 +1029,14 @@ changed:
 | --- | --- | --- |
 | root `kv.json` | key (`reconcileKv`) | `setting`: one key, with JSON values |
 | `<table>/<stem>.md` of a declared table | field and body, through `parseRow` (`mergeRow`) | `field`: one field, with JSON values; `body`: the notes, as text |
-| either, when one side deleted it or a version does not read | nothing | `file`: the whole text |
+| any other UTF-8 text file | line | `file`: the whole text, when lines compete |
+| any of these, when one side deleted it or a version does not read | nothing | `file`: the whole text |
 
 Field values compare as JSON, so quoting, key order, and frontmatter
 comments never conflict; the body merges by line. A merged row is written by
-`formatRow`, in the standard form. Any other conflict, such as a text file
-outside a table or a binary file, is `Unreviewable` and nothing is written.
+`formatRow`, in the standard form. A binary file, a link, executable, or
+submodule, and a file against a directory are `Unreviewable` and nothing is
+written; repair them with Git outside the folder.
 
 A `SyncAttempt` is `{ kind: 'needsChoices', id, local, incoming, conflicts }`.
 Each conflict has an opaque `id`, its `kind`, `path`, `key` or `field`, and
@@ -1056,7 +1058,7 @@ const { data: done, error } = await folder.sync.resolve(attempt, choices);
   folder refuses. A replacement setting is checked as `kv.set` checks it, and
   a resolved row must read back through `parseRow`, so removing a required
   field is refused. `InvalidChoices` writes nothing and keeps the attempt.
-- A `file` choice is written exactly as chosen. Text that is not a valid row
+- A `file` choice is written exactly as chosen, or removes the file. Text that is not a valid row
   then reads as `InvalidRow` and is repaired as text, like any other.
 - Otherwise the attempt is spent. `resolve` merges the captured commits
   again, never fetching, publishes the merge like `mergeIncoming`, and pushes.

@@ -2,13 +2,14 @@
  * The plain data `folder.sync` exchanges with its caller, and the merge
  * rules sync adds to a Git merge (ADR-0514).
  *
- * `syncMerge(definition)` merges each path both sides changed, as
- * `prepareMerge` asks: root `kv.json` by key, and each row of a declared
- * table by field and body through `parseRow`, written back with `formatRow`.
- * A unit both sides changed differently is held: both merge children keep
- * our file there, and the merge records a conflict. A deleted or unreadable
- * version holds the whole file as one unit. Every other path is left to
- * Git's rules.
+ * `syncMerge(definition)` merges each text path both sides changed, as
+ * `prepareMerge` asks: root `kv.json` by key, each row of a declared table
+ * by field and body through `parseRow`, written back with `formatRow`, and
+ * any other text file by line. A unit both sides changed differently is
+ * held: both merge children keep our file there, and the merge records a
+ * conflict. A deleted or unreadable version, or a text file whose lines
+ * compete, holds the whole file as one unit. Binary files, modes, and file
+ * against directory are left to Git's rules.
  *
  * `held.attempt(...)` turns what a merge held into a `SyncAttempt`, the
  * frozen report a caller reviews, and `settle(choices)`, which validates
@@ -29,6 +30,7 @@ import { writeRow } from '../row-text.js';
 import { type SyncChoiceProblem, SyncError } from './errors.js';
 import type { PushOutcome } from './history.js';
 import type { MergePath, TextVersions } from './merge.js';
+import { mergeLines } from './merge-markers.js';
 
 /** Which captured history a version or a `take` comes from. */
 export type SyncSide = 'local' | 'incoming';
@@ -58,9 +60,10 @@ type Versions = {
  * - `setting`: one root key of `kv.json`.
  * - `field`: one frontmatter field of a row.
  * - `body`: a row's Markdown body; both sides are present.
- * - `file`: a whole file, when a side deleted it or a version does not read
- *   as a row (or `kv.json` as one JSON object). Its text is written exactly
- *   as chosen; a row that still does not read is repaired as text.
+ * - `file`: a whole text file, when a side deleted it, a version does not
+ *   read as a row (or `kv.json` as one JSON object), or, outside a table,
+ *   both sides changed the same lines. Its text is written exactly as
+ *   chosen; a row that still does not read is repaired as text.
  */
 export type SyncConflict = Versions &
 	(
@@ -146,18 +149,12 @@ export type HeldAttempt = {
 	): Result<ReadonlyMap<string, string | null>, SyncError>;
 };
 
-/** A choice whose shape fits its conflict. */
-type Pick =
-	| { readonly kind: 'take'; readonly side: SyncSide }
-	| { readonly kind: 'replace'; readonly value: unknown }
-	| { readonly kind: 'remove' };
-
 /** One held path: its conflicts, and its text under a pick for each. */
 type Held = {
 	readonly conflicts: readonly SyncConflict[];
 	/** The path's text, or problems keyed by conflict ID. */
 	settle(
-		picks: ReadonlyMap<string, Pick>,
+		picks: ReadonlyMap<string, SyncChoice>,
 	): Result<string | null, readonly SyncChoiceProblem[]>;
 };
 
@@ -399,7 +396,19 @@ export function syncMerge(
 			return { kind: 'held' };
 		}
 		const table = tableAt(definition, path);
-		if (table === undefined) return undefined;
+		if (table === undefined) {
+			// Any other text file merges by line; what does not is one unit.
+			if (texts.ours !== null && texts.theirs !== null) {
+				const text = await mergeLines({
+					base: texts.base ?? '',
+					ours: texts.ours,
+					theirs: texts.theirs,
+				});
+				if (text !== undefined) return { kind: 'merged', text };
+			}
+			held.set(path, heldFile(path, texts));
+			return { kind: 'held' };
+		}
 		const merged = await mergeRow(table, texts);
 		if (merged.kind === 'merged') {
 			const { data: written, error } = writeRow(
@@ -441,11 +450,11 @@ export function syncMerge(
 	};
 }
 
-/** `choice` as a pick its conflict allows, or why it is not one. */
+/** `choice` as a choice its conflict allows, or why it is not one. */
 function pickOf(
 	conflict: SyncConflict,
 	choice: unknown,
-): Pick | 'malformed' | 'disallowed' {
+): SyncChoice | 'malformed' | 'disallowed' {
 	if (typeof choice !== 'object' || choice === null || Array.isArray(choice))
 		return 'malformed';
 	const { kind } = choice as { kind?: unknown };
@@ -499,7 +508,7 @@ function settle(
 	if (typeof choices !== 'object' || choices === null || Array.isArray(choices))
 		return SyncError.InvalidChoices({ problems: [problem('malformed')] });
 	const submitted = choices as Readonly<Record<string, unknown>>;
-	const picks = new Map<string, Pick>();
+	const picks = new Map<string, SyncChoice>();
 	const problems: SyncChoiceProblem[] = [];
 	for (const conflict of conflicts) {
 		const choice = Object.hasOwn(submitted, conflict.id)

@@ -21,7 +21,8 @@
  *   is written as chosen and reads as `InvalidRow` until repaired
  * - Invalid choices are all reported, write nothing, and keep the attempt
  * - Another run, a save, or a moved branch makes an attempt stale
- * - A text conflict outside a table is `Unreviewable`
+ * - A text file outside a table merges by line; competing lines make it
+ *   one whole-file unit. A binary conflict is `Unreviewable`
  *
  * See also:
  * - `row-merge.test.ts` and `kv-merge.test.ts` for the unit merges
@@ -468,19 +469,51 @@ test('another run or a later save makes an attempt stale', async () => {
 	expect(await context.remoteFile('notes.txt')).toBe('Saved while reviewing');
 });
 
-test('a text conflict outside a table is unreviewable and changes nothing', async () => {
+test('a text file outside a table merges by line, or is one unit when lines compete', async () => {
 	const context = await setup();
 	const { local } = context;
-	expectOk(await local.files.create('notes.txt', 'base\n'));
+	expectOk(await local.files.create('README.md', 'one\ntwo\nthree\n'));
 	synced(expectOk(await local.sync.run()));
-	await context.incoming({ 'notes.txt': 'theirs\n' });
-	expectOk(await local.files.overwrite('notes.txt', 'ours\n'));
+	await context.incoming({ 'README.md': 'one\ntwo\nTHREE\n' });
+	expectOk(await local.files.overwrite('README.md', 'ONE\ntwo\nthree\n'));
+	synced(expectOk(await local.sync.run()));
+	expect(await text(local, 'README.md')).toBe('ONE\ntwo\nTHREE\n');
+
+	await context.incoming({ 'README.md': 'ONE\nsecond\nTHREE\n' });
+	expectOk(await local.files.overwrite('README.md', 'ONE\n2\nTHREE\n'));
+	const attempt = await attempted(local);
+	const file = find(attempt, 'file');
+	expect(file).toMatchObject({
+		path: 'README.md',
+		local: { present: true, value: 'ONE\n2\nTHREE\n' },
+		incoming: { present: true, value: 'ONE\nsecond\nTHREE\n' },
+	});
+	expect(await text(local, 'README.md')).toBe('ONE\n2\nTHREE\n');
+	synced(
+		expectOk(
+			await local.sync.resolve(attempt, {
+				[file.id]: { kind: 'replace', value: 'ONE\ntwo, second\nTHREE\n' },
+			}),
+		),
+	);
+	expect(await context.remoteFile('README.md')).toBe('ONE\ntwo, second\nTHREE');
+});
+
+test('a binary conflict is unreviewable and changes nothing', async () => {
+	const context = await setup();
+	const { local } = context;
+	expectOk(await local.files.create('photo.bin', new Uint8Array([0, 1, 2])));
+	synced(expectOk(await local.sync.run()));
+	await context.incoming({ 'photo.bin': '\u0000theirs' });
+	expectOk(await local.files.overwrite('photo.bin', new Uint8Array([0, 9, 9])));
 	const before = await context.remoteHead();
 
 	const error = expectErr(await local.sync.run());
 	expect(error.name).toBe('Unreviewable');
 	if (error.name !== 'Unreviewable') return;
-	expect(error.conflicts).toEqual([{ reason: 'content', path: 'notes.txt' }]);
-	expect(await text(local, 'notes.txt')).toBe('ours\n');
+	expect(error.conflicts).toEqual([{ reason: 'binary', path: 'photo.bin' }]);
+	expect(expectOk(await local.files.read('photo.bin')).bytes).toEqual(
+		new Uint8Array([0, 9, 9]),
+	);
 	expect(await context.remoteHead()).toBe(before);
 });

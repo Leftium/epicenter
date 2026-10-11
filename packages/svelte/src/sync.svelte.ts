@@ -48,8 +48,7 @@ export function createSyncController({
 	let problems = $state.raw<readonly SyncChoiceProblem[]>([]);
 
 	/** Why a run or an Apply cannot start now; nothing is called then. */
-	const blocked = () =>
-		syncing ? 'A sync is already running.' : refused();
+	const blocked = () => (syncing ? 'A sync is already running.' : refused());
 
 	/**
 	 * One folder call with `syncing` set, between the page's hooks. `settle`
@@ -101,7 +100,9 @@ export function createSyncController({
 		/** Commit, fetch, merge, and push; conflicts keep an attempt for the review. */
 		async run(): Promise<Result<SyncOutcome | SyncAttempt, SyncError>> {
 			const why =
-				attempt !== undefined ? 'Finish or cancel the review first.' : blocked();
+				attempt !== undefined
+					? 'Finish or cancel the review first.'
+					: blocked();
 			if (why !== undefined) return SyncError.Failed({ cause: why });
 			return step(
 				() => folder.sync.run(),

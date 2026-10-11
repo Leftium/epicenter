@@ -23,7 +23,9 @@ import type { Todos } from '../../lib/todos.svelte.js';
 
 const { flushSync, mount, unmount } = await import('svelte');
 const { createTodos } = await import('../../lib/todos.svelte.ts');
-const { default: AppHeaderHost } = await import('./fixtures/AppHeaderHost.svelte');
+const { default: AppHeaderHost } = await import(
+	'./fixtures/AppHeaderHost.svelte'
+);
 
 let count = 0;
 const cleanup: (() => unknown)[] = [];

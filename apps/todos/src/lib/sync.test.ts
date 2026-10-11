@@ -217,7 +217,10 @@ test('Cancel discards the attempt and gives the open todo back', async () => {
 		row.fields.title = 'Buy oat milk';
 	});
 	await milk.settled();
-	await pushMilk(session, '---\ntitle: Buy soy milk\ndone: false\n---\nOne carton.\n');
+	await pushMilk(
+		session,
+		'---\ntitle: Buy soy milk\ndone: false\n---\nOne carton.\n',
+	);
 	expect(expectOk(await todos.sync()).kind).toBe('needsChoices');
 	expect((await todos.sync()).error?.name).toBe('Failed');
 

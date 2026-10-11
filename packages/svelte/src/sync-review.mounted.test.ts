@@ -200,7 +200,11 @@ test('a refused choice shows beside its row until the person changes it', () => 
 	click(target, 'Apply and sync');
 	flushSync();
 	controls.refuse?.([
-		{ conflictId: 'size', reason: 'invalid', message: 'size must be at most 3' },
+		{
+			conflictId: 'size',
+			reason: 'invalid',
+			message: 'size must be at most 3',
+		},
 	]);
 	flushSync();
 	expect(row('size').textContent).toContain('size must be at most 3');

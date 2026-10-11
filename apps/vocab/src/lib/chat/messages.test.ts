@@ -32,6 +32,7 @@ import {
 	fileText,
 	gated,
 	gatedMessages,
+	settle,
 	tableFiles,
 } from '../folder.test-support.js';
 import { createChatMessageStore, startChat } from './messages.js';
@@ -64,24 +65,6 @@ async function setup() {
 		folder: await browser.open(),
 		[Symbol.asyncDispose]: () => browser[Symbol.asyncDispose](),
 	};
-}
-
-/** Let one event-loop turn pass, so off-thread work can report back. */
-const nextTurn = () => new Promise<void>((resolve) => setImmediate(resolve));
-
-/**
- * Wait until the conversation has nothing in flight.
- *
- * The folder hashes files with `crypto.subtle`, which answers from a worker
- * thread, so how many turns a write takes depends on machine load. There is
- * no turn budget: a conversation that never settles fails on the test timeout.
- */
-async function settle(conversation: ReturnType<typeof createConversation>) {
-	while (
-		conversation.snapshot().isGenerating ||
-		conversation.snapshot().isSaving
-	)
-		await nextTurn();
 }
 
 /** One chat's messages as a store opened over this folder reads them. */

@@ -345,9 +345,10 @@ test('application startup, draft protection and durable reopen', async ({
 			.waitFor();
 		await sql.fill('an entire explicit-save draft discarded by retirement');
 		const promptsBeforeRetirement = unloadPrompts;
-		await page.evaluate(async () => {
-			const app = await globalThis.observedBoot.opening;
-			void app.close().catch(() => {});
+		// The App's roots have no close of their own; an identity change the
+		// page did not ask for is the retirement AppBoot recovers from.
+		await page.evaluate(() => {
+			void globalThis.observedBoot.auth.signOut();
 		});
 		await page.waitForURL((url) => url.searchParams.has('stopped'));
 		await page
@@ -361,6 +362,17 @@ test('application startup, draft protection and durable reopen', async ({
 		assert(
 			await page.evaluate(() => globalThis.observedBoot?.opening === undefined),
 			'Retirement recovery opened another App',
+		);
+		await page.evaluate(
+			(api) =>
+				localStorage.setItem(
+					`so.epicenter.local-mail.auth.persisted:${api}`,
+					JSON.stringify({
+						token: 'synthetic-route-token',
+						principalId: 'route-smoke-person',
+					}),
+				),
+			api,
 		);
 		await page
 			.getByRole('button', { name: 'Reopen Local Mail', exact: true })
@@ -389,7 +401,7 @@ test('application startup, draft protection and durable reopen', async ({
 			.waitFor({ state: 'attached' });
 		await page.evaluate(async () => {
 			const app = await globalThis.observedBoot.opening;
-			const opened = await app.device.sqlite.open('local');
+			const opened = await app.sqlite.open('local');
 			if (opened.error) throw new Error(opened.error.message);
 			const seeded = await opened.data.batch([
 				{

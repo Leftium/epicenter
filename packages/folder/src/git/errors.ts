@@ -8,6 +8,7 @@
 import { defineErrors, type InferErrors } from 'wellcrafted/error';
 import { describe, type FileError, type FileStep } from '../errors.js';
 import type { PendingIncoming } from './backend.js';
+import type { CommitOutcome } from './history.js';
 
 export const GitError = defineErrors({
 	Unconfirmed: ({
@@ -301,3 +302,114 @@ export const MergeError = defineErrors({
 	}),
 });
 export type MergeError = InferErrors<typeof MergeError>;
+
+/**
+ * Why submitted choices cannot settle an attempt, for one entry or for the
+ * choices as a whole. `message` is for a person fixing the choice:
+ *
+ * - `malformed`: the choices are not an object keyed by conflict ID, or this
+ *   entry is not a choice
+ * - `unknown`: an own key names no conflict of the attempt
+ * - `missing`: no own entry answers this conflict, or it holds `undefined`
+ * - `disallowed`: the conflict does not allow this operation
+ * - `invalid`: the folder refuses the value, as a save would
+ */
+export type SyncChoiceProblem = {
+	/** The entry's key; absent when the choices themselves are malformed. */
+	readonly conflictId?: string;
+	readonly reason:
+		| 'malformed'
+		| 'unknown'
+		| 'missing'
+		| 'disallowed'
+		| 'invalid';
+	readonly message: string;
+};
+
+/**
+ * Why `folder.sync` stopped. Each names the step that stopped it and
+ * carries that step's own result. Only `InvalidChoices` keeps an attempt
+ * current.
+ */
+export const SyncError = defineErrors({
+	Closed: () => ({ message: 'The folder is closed' }),
+	NoRemote: () => ({ message: 'No remote is configured for this folder' }),
+	/** This folder's runtime does not sync yet. Nothing ran. */
+	Unsupported: ({ runtime }: { runtime: string }) => ({
+		message: `Sync is not available for ${runtime} folders yet`,
+		runtime,
+	}),
+	/** Saved files could not be committed first. Nothing was fetched or sent. */
+	Checkpoint: ({
+		outcome,
+	}: {
+		outcome: Exclude<CommitOutcome, { status: 'committed' | 'unchanged' }>;
+	}) => ({
+		message: `Saved files could not be recorded before syncing: ${
+			outcome.status === 'blocked'
+				? outcome.reason
+				: 'error' in outcome
+					? outcome.error
+					: outcome.status
+		}`,
+		outcome,
+	}),
+	/** The checkpoint landed; fetching failed, so nothing was merged or sent. */
+	Fetch: ({ error }: { error: GitError }) => ({
+		message: `Fetching failed: ${error.message}`,
+		error,
+	}),
+	/**
+	 * Merging or publishing stopped. `error` is the merge's own result, so
+	 * `Partial` and `Unconfirmed` say what landed and what is unknown.
+	 * Nothing was sent.
+	 */
+	Merge: ({ error }: { error: MergeError | PullError | GitError }) => ({
+		message: `Incoming changes could not be merged: ${error.message}`,
+		error,
+	}),
+	/**
+	 * Competing changes sync cannot offer for review: a text file outside a
+	 * table, a binary file, or a file against a directory. Nothing was
+	 * written or sent; repair them with `git.mergeIncoming` or the terminal.
+	 */
+	Unreviewable: ({ conflicts }: { conflicts: readonly MergeConflict[] }) => ({
+		message: `${conflicts.length === 1 ? 'A change conflicts' : `${conflicts.length} changes conflict`} in a way sync cannot review: ${[
+			...new Set(conflicts.map((conflict) => conflict.path)),
+		].join(', ')}`,
+		conflicts,
+	}),
+	/** The choices cannot settle the attempt. Nothing was written; the attempt stays current. */
+	InvalidChoices: ({
+		problems,
+	}: {
+		problems: readonly SyncChoiceProblem[];
+	}) => ({
+		message: `${problems.length === 1 ? 'A choice needs' : `${problems.length} choices need`} a fix: ${problems
+			.map(({ message }) => message)
+			.join('; ')}`,
+		problems,
+	}),
+	/**
+	 * The attempt no longer describes the folder. Nothing was written; sync
+	 * again to review the latest changes.
+	 *
+	 * - `replaced`: another run, a resolve, or closing retired it, or it is
+	 *   not this owner's
+	 * - `changed`: the branch moved or saved files changed since it was
+	 *   captured
+	 */
+	Stale: ({ reason }: { reason: 'replaced' | 'changed' }) => ({
+		message:
+			reason === 'replaced'
+				? 'This sync review is no longer current; sync again'
+				: 'Files changed after this sync review was prepared; sync again',
+		reason,
+	}),
+	/** Sync stopped on an unexpected failure. */
+	Failed: ({ cause }: { cause: unknown }) => ({
+		message: `Sync failed: ${describe(cause)}`,
+		cause,
+	}),
+});
+export type SyncError = InferErrors<typeof SyncError>;

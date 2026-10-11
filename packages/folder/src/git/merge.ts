@@ -12,6 +12,13 @@
  * commit takes that tree with the two original parents. The child commits
  * stay unreachable. A nested `kv.json` is an ordinary file.
  *
+ * Sync adds its own rules (`mergePath`). Each path both sides changed
+ * differently, whose versions are all plain UTF-8 text files without a NUL
+ * byte, is offered to it first, root `kv.json` included. Its merged text, or
+ * our file while it holds the path, goes into both children the way merged
+ * `kv.json` does; a held path makes the merge `conflicted`. A path it does
+ * not claim merges as below. `mergeIncoming` passes no `mergePath`.
+ *
  * isomorphic-git 1.38.5 decodes both sides of a two-sided text merge as UTF-8
  * with replacement, and its line split drops a lone carriage return, U+2028,
  * and U+2029. Such a merge is a `binary` conflict before it runs, so a merged
@@ -57,6 +64,27 @@ export const ROOT_KV = 'kv.json';
 
 const PLAIN = '100644';
 
+/** A file's text at the merge base and on each side, `null` for no file. */
+export type TextVersions = {
+	readonly base: string | null;
+	readonly ours: string | null;
+	readonly theirs: string | null;
+};
+
+/**
+ * Rules for one path both sides changed: its merged text (`null` for no
+ * file), `held` for a conflict the caller records, or `undefined` to leave
+ * the path to Git's rules.
+ */
+export type MergePath = (
+	path: string,
+	versions: TextVersions,
+) => Promise<
+	| { readonly kind: 'merged'; readonly text: string | null }
+	| { readonly kind: 'held' }
+	| undefined
+>;
+
 export type PreparedMerge =
 	| {
 			readonly kind: 'merged';
@@ -67,6 +95,8 @@ export type PreparedMerge =
 	| {
 			readonly kind: 'conflicted';
 			readonly conflicts: readonly MergeConflict[];
+			/** Paths `mergePath` held; empty without it. */
+			readonly held: readonly string[];
 	  }
 	/** Conflicts left in place: the commit of the files a person resolves. */
 	| {
@@ -184,6 +214,7 @@ export async function prepareMerge(
 		author,
 		message,
 		leave,
+		mergePath,
 	}: {
 		/** Undefined: no common commit, so every file of either side is an addition. */
 		base: string | undefined;
@@ -193,6 +224,8 @@ export async function prepareMerge(
 		message: string;
 		/** Leave conflicts for a person, marked with these labels, instead of refusing. */
 		leave?: MarkerLabels;
+		/** Sync's rules for paths both sides changed; not combined with `leave`. */
+		mergePath?: MergePath;
 	},
 ): Promise<PreparedMerge> {
 	const [b, o, t] = (await Promise.all(
@@ -205,12 +238,58 @@ export async function prepareMerge(
 	const bytes = (entry: TreeFile) => readBlob(access, entry.oid);
 	const conflicts: MergeConflict[] = [];
 
+	// Paths sync's rules claimed: what both sides' children hold there, the
+	// merged bytes or, while held, our file; `null` for no file.
+	const claimed = new Map<string, Uint8Array | null>();
+	const held: string[] = [];
+	if (mergePath !== undefined && leave === undefined)
+		for (const path of new Set([...b.keys(), ...o.keys(), ...t.keys()])) {
+			const sides = [b.get(path), o.get(path), t.get(path)] as const;
+			const [eb, eo, et] = sides;
+			if (same(eo, et) || same(eo, eb) || same(et, eb)) continue;
+			if (sides.some((entry) => entry !== undefined && entry.mode !== PLAIN))
+				continue;
+			const texts: (string | null)[] = [];
+			for (const entry of sides) {
+				if (entry === undefined) {
+					texts.push(null);
+					continue;
+				}
+				const read = await bytes(entry);
+				const text = read.includes(0) ? undefined : strictText(read);
+				if (text === undefined) break;
+				texts.push(text);
+			}
+			if (texts.length !== 3) continue;
+			const [base, ours, theirs] = texts as [
+				string | null,
+				string | null,
+				string | null,
+			];
+			const merged = await mergePath(path, { base, ours, theirs });
+			if (merged === undefined) continue;
+			if (merged.kind === 'merged')
+				claimed.set(
+					path,
+					merged.text === null ? null : encoder.encode(merged.text),
+				);
+			else {
+				held.push(path);
+				claimed.set(path, eo === undefined ? null : await bytes(eo));
+			}
+		}
+
 	// Root kv.json, when both sides changed it differently. `kv` is what both
 	// sides' children hold: the merged bytes, `null` for no file, or
 	// `undefined` to leave each side's own file to the ordinary merge.
 	let kv: Uint8Array | null | undefined;
 	const [kb, ko, kt] = [b, o, t].map((files) => files.get(ROOT_KV));
-	if (!same(ko, kt) && !same(ko, kb) && !same(kt, kb)) {
+	if (
+		!claimed.has(ROOT_KV) &&
+		!same(ko, kt) &&
+		!same(ko, kb) &&
+		!same(kt, kb)
+	) {
 		const plain =
 			[kb, ko, kt].every(
 				(entry) => entry === undefined || entry.mode === PLAIN,
@@ -279,6 +358,10 @@ export async function prepareMerge(
 			if (kv !== null) present.add(path);
 			continue;
 		}
+		if (claimed.has(path)) {
+			if (claimed.get(path) !== null) present.add(path);
+			continue;
+		}
 		const [eb, eo, et] = [b.get(path), o.get(path), t.get(path)];
 		if (same(eo, et) || same(eo, eb)) {
 			if (et !== undefined) present.add(path);
@@ -323,13 +406,16 @@ export async function prepareMerge(
 		if (text) asText.push(path);
 		else conflicts.push({ reason: 'binary', path });
 	}
-	if (asText.length > 0)
+	// A path sync merged by its own rules is merged as text too, so a `merge`
+	// attribute on it is refused the same way.
+	const textual = [...asText, ...claimed.keys()];
+	if (textual.length > 0)
 		for (const files of [b, o, t]) {
 			const attributeFiles = new Map<string, Uint8Array>();
 			for (const [path, entry] of files)
 				if (isAttributesPath(path))
 					attributeFiles.set(path, await bytes(entry));
-			const declared = mergeAttribute(attributeFiles, asText);
+			const declared = mergeAttribute(attributeFiles, textual);
 			if (declared !== undefined)
 				return {
 					kind: 'unmergeable',
@@ -384,6 +470,11 @@ export async function prepareMerge(
 			overrides.set(
 				ROOT_KV,
 				kv === null ? null : await git.writeBlob({ ...access, blob: kv }),
+			);
+		for (const [path, blob] of claimed)
+			overrides.set(
+				path,
+				blob === null ? null : await git.writeBlob({ ...access, blob }),
 			);
 		try {
 			tree = await mergeWith(overrides);
@@ -446,13 +537,14 @@ export async function prepareMerge(
 		});
 		return { kind: 'unfinished', commit, files, conflicts, unmerged };
 	}
-	if (conflicts.length > 0) return { kind: 'conflicted', conflicts };
+	if (conflicts.length > 0 || held.length > 0)
+		return { kind: 'conflicted', conflicts, held: held.sort(byCodePoint) };
 	if (tree === undefined) throw new Error('The merge produced no tree');
 
 	const files = await readTreeFiles(access, tree);
-	const kvBlob = overrides.get(ROOT_KV);
-	if (kvBlob !== undefined && (files.get(ROOT_KV)?.oid ?? null) !== kvBlob)
-		throw new Error('The merged tree does not hold the merged kv.json');
+	for (const [path, blob] of overrides)
+		if ((files.get(path)?.oid ?? null) !== blob)
+			throw new Error(`The merged tree does not hold the merged ${path}`);
 	const commit = await writeCommitObject(access, {
 		tree,
 		parents: [head, fetched],

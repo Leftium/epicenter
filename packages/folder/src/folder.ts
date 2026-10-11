@@ -22,6 +22,7 @@ import type { FolderStorage } from './boundary.js';
 import type { FolderDefinition, PreparedFolderTable } from './definition.js';
 import { createFiles, type FolderFiles } from './files.js';
 import type { GitRemote, PathStatus } from './git/backend.js';
+import type { SyncError } from './git/errors.js';
 import type {
 	CommitAndPushResult,
 	CommitOutcome,
@@ -39,6 +40,7 @@ import type {
 	StagedCommit,
 } from './git/history.js';
 import type { Author, CommitSummary } from './git/objects.js';
+import type { SyncAttempt, SyncChoices, SyncOutcome } from './git/sync.js';
 import { createKv, type FileKv } from './kv.js';
 import { callObserver } from './observer.js';
 import { fenceStorage } from './storage.js';
@@ -142,6 +144,50 @@ export type FolderGit = {
 	log(depth: number): Promise<Result<CommitSummary[], GitError>>;
 };
 
+/**
+ * Synchronization with the configured remote branch (ADR-0514): `run()`,
+ * then, when it needs choices, `resolve(attempt, choices)` on this same
+ * folder.
+ *
+ * ```ts
+ * const { data: ran, error } = await folder.sync.run();
+ * if (error !== null) return show(error.message);
+ * if (ran.kind === 'needsChoices') {
+ *   // Usually from the shared review (`@epicenter/svelte/sync-review`).
+ *   const choices = { [ran.conflicts[0].id]: { kind: 'take', side: 'incoming' } };
+ *   const { data: done, error: resolveError } = await folder.sync.resolve(ran, choices);
+ * }
+ * ```
+ *
+ * Browser and directory folders implement it. A desktop folder answers
+ * `Unsupported` from both methods.
+ */
+export type FolderSync = {
+	/**
+	 * Commit saved files, fetch the remote branch, merge it, and push.
+	 * One-sided and compatible changes need no choices. Root `kv.json` merges
+	 * by key, and each row of a declared table by field and body, written in
+	 * the standard form. Competing settings, fields, bodies, and deleted or
+	 * unreadable versions of those files return `needsChoices`; nothing
+	 * conflicted is written and nothing is sent. Any other conflict is
+	 * `Unreviewable`. A run retires the attempt before it.
+	 */
+	run(): Promise<Result<SyncOutcome | SyncAttempt, SyncError>>;
+	/**
+	 * Settle this folder's current attempt with one choice per conflict,
+	 * without fetching again. The choices are read before this returns.
+	 * Invalid choices are `InvalidChoices`, writing nothing and keeping the
+	 * attempt current. Otherwise the attempt is spent: the folder must still
+	 * be at the captured head with no saved change since (`Stale` if not),
+	 * the merge of the captured commits is published like an incoming merge,
+	 * and the result is pushed without force.
+	 */
+	resolve(
+		attempt: SyncAttempt,
+		choices: SyncChoices,
+	): Promise<Result<SyncOutcome, SyncError>>;
+};
+
 /** Borrowed data access; the object that opened the folder owns its lifetime. */
 export type FolderAccess<TDefinition extends FolderDefinition> = {
 	readonly tables: {
@@ -167,6 +213,7 @@ export type FolderLocation =
 export type Folder<TDefinition extends FolderDefinition> =
 	FolderAccess<TDefinition> & {
 		readonly location: FolderLocation;
+		readonly sync: FolderSync;
 		/**
 		 * Hear that files changed, as a hint to read again. The paths are the
 		 * ones a change reached. There is not one call per save, calls are not
@@ -192,7 +239,10 @@ export type Folder<TDefinition extends FolderDefinition> =
 	};
 
 /** The history observations and requests the handle exposes. */
-export type FolderHistory = FolderGit & { close(): Promise<void> };
+export type FolderHistory = FolderGit & {
+	readonly sync: FolderSync;
+	close(): Promise<void>;
+};
 
 /** File-change hints for one opened folder. */
 export type FileHints = {
@@ -347,6 +397,7 @@ export function assembleFolder<TDefinition extends FolderDefinition>({
 		files,
 		git,
 		location: Object.freeze(location),
+		sync: history.sync,
 		onFilesChanged: (listener: (paths: readonly string[]) => void) =>
 			hints.subscribe(listener),
 		terminal: (options) =>

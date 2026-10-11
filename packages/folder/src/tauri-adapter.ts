@@ -79,6 +79,7 @@ import {
 	type MergeConflict,
 	MergeError,
 	PullError,
+	SyncError,
 } from './git/errors.js';
 import type {
 	CommitOutcome,
@@ -926,6 +927,11 @@ function createHistory(
 				if (result.settled === 'refused') return Err(pullError(result.error));
 				return Ok(pullOutcome(result.data));
 			}),
+		// The desktop owner merges in Rust and has no sync rules for rows yet.
+		sync: Object.freeze({
+			run: async () => SyncError.Unsupported({ runtime: 'desktop' }),
+			resolve: async () => SyncError.Unsupported({ runtime: 'desktop' }),
+		}),
 		// Only because the page asked: the owner reports a pending update on
 		// opening and in status, and never resumes it by itself.
 		recoverIncoming: () =>

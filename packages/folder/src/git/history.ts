@@ -46,6 +46,14 @@
  * nothing is unmerged, moving the branch only while it still names
  * `ORIG_HEAD`.
  *
+ * `sync.run()` composes these steps: a checkpoint, a fetch, a merge with
+ * sync's own rules for rows and `kv.json` (`syncMerge`), and a push. When
+ * those rules hold a conflict, it returns an attempt and writes nothing
+ * more; the owner keeps that one current attempt until another run, a
+ * resolve, or closing. `sync.resolve()` merges the captured commits again
+ * with the chosen text, publishes through the same incoming publication
+ * over a clean folder still at the captured head, and pushes.
+ *
  * Status scans take no protection. Callers who ask while a scan is running
  * share the one scan that follows it, so a burst of requests costs two scans
  * and the last one reads the folder after every request was made. That shared
@@ -55,9 +63,11 @@
 import { Err, Ok, type Result } from 'wellcrafted/result';
 import type { FileBoundary, FileChange } from '../boundary.js';
 import { hashBytes } from '../capture.js';
+import type { FolderDefinition } from '../definition.js';
 import { describe, UnconfirmedWrite } from '../errors.js';
 import { callObserver } from '../observer.js';
 import { ancestors, collisionKey, pathProblem } from '../paths.js';
+import { byCodePoint } from './attributes.js';
 import type {
 	GitBackend,
 	GitRemote,
@@ -75,8 +85,9 @@ import {
 	type MergeConflict,
 	MergeError,
 	PullError,
+	SyncError,
 } from './errors.js';
-import { mergeBases, prepareMerge } from './merge.js';
+import { type MergePath, mergeBases, prepareMerge } from './merge.js';
 import { commitSubject, messageProblem, type PathChange } from './messages.js';
 import {
 	type Author,
@@ -96,6 +107,14 @@ import {
 } from './objects.js';
 import { createPassRunner, type PassRunner } from './runner.js';
 import { sourceFiles } from './scope.js';
+import {
+	type HeldAttempt,
+	type SyncAttempt,
+	type SyncChoices,
+	type SyncCommits,
+	type SyncOutcome,
+	syncMerge,
+} from './sync.js';
 
 export { GitError, MergeError, PullError };
 
@@ -340,12 +359,15 @@ export function createHistory({
 	boundary,
 	author,
 	commitOnEdit,
+	definition,
 	landed = () => {},
 }: {
 	backend: GitBackend;
 	boundary: FileBoundary;
 	author: Author;
 	commitOnEdit: boolean;
+	/** The prepared definition whose rows sync merges by field; without it, rows merge as text. */
+	definition?: FolderDefinition;
 	/** Paths an incoming update wrote or removed, whether or not it completed. */
 	landed?: (paths: readonly string[]) => void;
 }) {
@@ -689,12 +711,16 @@ export function createHistory({
 	 * finds, they are not asked for again. An automatic checkpoint with no
 	 * request left to answer resolves `undefined` and touches nothing.
 	 */
-	function commitCurrentFiles(trigger: 'explicit'): Promise<CommitOutcome>;
+	function commitCurrentFiles(
+		trigger: 'explicit',
+		onCapture?: (capturedAt: number) => void,
+	): Promise<CommitOutcome>;
 	function commitCurrentFiles(
 		trigger: 'automatic',
 	): Promise<CommitOutcome | undefined>;
 	function commitCurrentFiles(
 		trigger: 'explicit' | 'automatic',
+		onCapture?: (capturedAt: number) => void,
 	): Promise<CommitOutcome | undefined> {
 		return exclusive(async (): Promise<CommitOutcome | undefined> => {
 			const pending = answered < requested;
@@ -709,6 +735,7 @@ export function createHistory({
 			// this point still fails the compare-and-swap below.
 			const parent = await backend.readBranch();
 			const capturedAt = ++clock;
+			onCapture?.(capturedAt);
 			const current = await capture();
 			const committed = await headFiles(parent);
 			const included = await source(current, committed);
@@ -831,13 +858,15 @@ export function createHistory({
 	 * inside it. Closing refuses it while it still waits; once inside, it runs
 	 * to its end and reports what it did.
 	 */
-	function commitNow(): Promise<CommitOutcome> {
+	function commitNow(
+		onCapture?: (capturedAt: number) => void,
+	): Promise<CommitOutcome> {
 		if (closing.signal.aborted) return Promise.resolve({ status: 'closed' });
 		const through = requested;
 		return owned('commit', async (): Promise<CommitOutcome> => {
 			let outcome: CommitOutcome;
 			try {
-				outcome = await commitCurrentFiles('explicit');
+				outcome = await commitCurrentFiles('explicit', onCapture);
 			} catch (cause) {
 				// Refused while waiting: nothing ran, so no attempt is recorded.
 				if (refusedByClose(cause)) return { status: 'closed' };
@@ -940,12 +969,19 @@ export function createHistory({
 				readonly fetched: string;
 		  };
 
-	/** Pin both heads for one incoming update, inside the backend's protection. */
-	async function pinIncoming(): Promise<Result<Pinned, PullError>> {
+	/** Why no incoming update can start now: one is pending, or commits are blocked. */
+	async function incomingRefused() {
 		const pending = await backend.pendingIncoming?.();
 		if (pending !== undefined) return PullError.IncomingPending({ pending });
 		const blocked = await wholeFolderProblem();
 		if (blocked !== undefined) return PullError.Blocked({ reason: blocked });
+		return undefined;
+	}
+
+	/** Pin both heads for one incoming update, inside the backend's protection. */
+	async function pinIncoming(): Promise<Result<Pinned, PullError>> {
+		const refused = await incomingRefused();
+		if (refused !== undefined) return refused;
 		const fetched = await backend.readRemoteTracking();
 		if (fetched === undefined) return PullError.NoFetchedHead();
 		const head = await backend.readBranch();
@@ -1234,13 +1270,28 @@ export function createHistory({
 	 * branch is behind, otherwise one commit whose parents are the pinned head
 	 * and the pinned fetched commit. A refusal writes no file, index entry, or
 	 * ref; so does a conflict, unless `leave` asks to publish it unfinished.
+	 *
+	 * `sync` adds sync's rules for paths both sides changed, and hears the
+	 * commits a diverged merge used. With `captured`, it merges exactly those
+	 * commits instead of the fetched head, and only while the branch still
+	 * names the captured head (`BranchMoved` otherwise, writing nothing). A
+	 * path sync held is reported as a `content` conflict.
 	 */
 	async function merge(
 		conflicts: 'refuse' | 'leave',
 		{
 			allowUnrelatedHistories = false,
 			versions = false,
-		}: { allowUnrelatedHistories?: boolean; versions?: boolean } = {},
+			sync,
+		}: {
+			allowUnrelatedHistories?: boolean;
+			versions?: boolean;
+			sync?: {
+				readonly mergePath: MergePath;
+				readonly captured?: SyncCommits;
+				readonly pinned?: (commits: SyncCommits, capturedAt: number) => void;
+			};
+		} = {},
 	): Promise<Result<MergeOutcome, MergeError | PullError | GitError>> {
 		const remote = backend.remote;
 		if (remote === undefined) return GitError.NoRemote();
@@ -1249,33 +1300,50 @@ export function createHistory({
 				Result<MergeOutcome, MergeError | PullError | GitError>
 			> => {
 				const capturedAt = ++clock;
-				const { data: incoming, error: pinError } = await pinIncoming();
-				if (pinError !== null) return Err(pinError);
-				if (incoming.relation === 'upToDate')
-					return Ok({ status: 'upToDate', head: incoming.head });
-				if (incoming.relation === 'ahead')
-					return Ok({ status: 'ahead', head: incoming.head });
-				if (incoming.relation === 'fastForward')
-					return fastForward(capturedAt, incoming.head, incoming.fetched);
-				const { head, fetched } = incoming;
+				let head: string;
+				let fetched: string;
+				let base: string | undefined;
+				if (sync?.captured !== undefined) {
+					const refused = await incomingRefused();
+					if (refused !== undefined) return refused;
+					const actual = await backend.readBranch();
+					if (actual !== sync.captured.head)
+						return PullError.BranchMoved({ actual, filesApplied: false });
+					({ head, fetched, base } = sync.captured);
+				} else {
+					const { data: incoming, error: pinError } = await pinIncoming();
+					if (pinError !== null) return Err(pinError);
+					if (incoming.relation === 'upToDate')
+						return Ok({ status: 'upToDate', head: incoming.head });
+					if (incoming.relation === 'ahead')
+						return Ok({ status: 'ahead', head: incoming.head });
+					if (incoming.relation === 'fastForward')
+						return fastForward(capturedAt, incoming.head, incoming.fetched);
+					({ head, fetched } = incoming);
+				}
 				const { data: clean, error: cleanError } = await cleanFolder(head);
 				if (cleanError !== null) return Err(cleanError);
 				const refused = await representable(fetched, await headFiles(fetched));
 				if (refused.error !== null) return refused;
-				const bases = await backend.withObjects((access) =>
-					mergeBases(access, head, fetched),
-				);
-				const unrelated = bases.length === 0 && allowUnrelatedHistories;
-				if (bases.length !== 1 && !unrelated)
-					return MergeError.UnsupportedHistory({
-						head,
-						fetched,
-						bases: bases.length,
-					});
+				if (sync?.captured === undefined) {
+					const bases = await backend.withObjects((access) =>
+						mergeBases(access, head, fetched),
+					);
+					const unrelated = bases.length === 0 && allowUnrelatedHistories;
+					if (bases.length !== 1 && !unrelated)
+						return MergeError.UnsupportedHistory({
+							head,
+							fetched,
+							bases: bases.length,
+						});
+					base = unrelated ? undefined : bases[0]!;
+					if (base !== undefined)
+						sync?.pinned?.({ base, head, fetched }, capturedAt);
+				} else sync.pinned?.(sync.captured, capturedAt);
 				const message = `Merge remote-tracking branch 'origin/${remote.branch}'`;
 				const prepared = await backend.withObjects((access) =>
 					prepareMerge(access, {
-						base: unrelated ? undefined : bases[0]!,
+						base,
 						head,
 						fetched,
 						author,
@@ -1283,11 +1351,17 @@ export function createHistory({
 						...(conflicts === 'leave'
 							? { leave: { ours: 'HEAD', theirs: `origin/${remote.branch}` } }
 							: {}),
+						...(sync === undefined ? {} : { mergePath: sync.mergePath }),
 					}),
 				);
 				if (prepared.kind === 'conflicted')
 					return MergeError.Conflicted({
-						conflicts: prepared.conflicts,
+						conflicts: [
+							...prepared.conflicts,
+							...prepared.held.map(
+								(path): MergeConflict => ({ reason: 'content', path }),
+							),
+						].sort((left, right) => byCodePoint(left.path, right.path)),
 						...(versions
 							? {
 									versions: await conflictVersions(
@@ -1677,6 +1751,187 @@ export function createHistory({
 		}
 	}
 
+	/** The one attempt `sync.resolve` accepts now, and how its choices settle. */
+	let current: HeldAttempt | undefined;
+	/** Numbers runs, so a run another one overtook never becomes current. */
+	let runs = 0;
+
+	/**
+	 * Admit one sync call for its whole lifetime: refused once closing
+	 * starts, and drained by `close()`. Each step it composes is admitted on
+	 * its own as well.
+	 */
+	function syncing<T>(
+		work: () => Promise<Result<T, SyncError>>,
+	): Promise<Result<T, SyncError>> {
+		if (closing.signal.aborted) return Promise.resolve(SyncError.Closed());
+		const settled = work().catch(
+			(cause): Result<T, SyncError> => SyncError.Failed({ cause }),
+		);
+		admittedWork.add(settled);
+		void settled.then(() => admittedWork.delete(settled));
+		return settled;
+	}
+
+	/**
+	 * Send `head` unless the remote was just seen there, and say whether the
+	 * remote is confirmed to hold every save captured at `capturedAt`.
+	 */
+	async function settleSync(
+		head: string | undefined,
+		remoteHead: string | undefined,
+		capturedAt: number,
+	): Promise<SyncOutcome> {
+		const push =
+			head === undefined || head === remoteHead
+				? undefined
+				: await pushRunner.request();
+		const changedSince = lastEdit > capturedAt;
+		const sent =
+			push === undefined
+				? head
+				: push.status === 'pushed'
+					? push.oid
+					: undefined;
+		if (!changedSince && head !== undefined && sent === head)
+			return { kind: 'synced', head };
+		return { kind: 'saved', head, push, changedSince };
+	}
+
+	const recordMerge = (
+		attempt: Attempt<{
+			result: Result<MergeOutcome, MergeError | PullError | GitError>;
+		}>,
+	) => {
+		lastMerge = attempt;
+	};
+
+	/**
+	 * Checkpoint saved files, fetch, and merge with sync's rules. Held units
+	 * and nothing else return a new current attempt; any other conflict is
+	 * `Unreviewable`. Anything merged is published and pushed. Starting a run
+	 * retires the previous attempt.
+	 */
+	function runSync(): Promise<Result<SyncOutcome | SyncAttempt, SyncError>> {
+		return syncing<SyncOutcome | SyncAttempt>(async () => {
+			const remote = backend.remote;
+			if (remote === undefined) return SyncError.NoRemote();
+			const run = ++runs;
+			current = undefined;
+			let capturedAt = 0;
+			const checkpoint = await commitNow((at) => {
+				capturedAt = at;
+			});
+			switch (checkpoint.status) {
+				case 'committed':
+				case 'unchanged':
+					break;
+				case 'closed':
+					return SyncError.Closed();
+				default:
+					return SyncError.Checkpoint({ outcome: checkpoint });
+			}
+			let head =
+				checkpoint.status === 'committed' ? checkpoint.oid : checkpoint.head;
+			const { data: fetched, error: fetchError } = await fetchRunner.request();
+			if (fetchError !== null)
+				return fetchError.name === 'Closed'
+					? SyncError.Closed()
+					: SyncError.Fetch({ error: fetchError });
+			if (fetched.oid !== undefined) {
+				const rules = syncMerge(definition);
+				let commits: SyncCommits | undefined;
+				const { data: merged, error: mergeError } = await incomingNow(
+					'merge',
+					() =>
+						merge('refuse', {
+							sync: {
+								mergePath: rules.mergePath,
+								pinned: (pinned) => {
+									commits = pinned;
+								},
+							},
+						}),
+					recordMerge,
+				);
+				if (mergeError?.name === 'Closed') return SyncError.Closed();
+				if (mergeError?.name === 'Conflicted') {
+					const other = mergeError.conflicts.filter(
+						(conflict) => !rules.held.has(conflict.path),
+					);
+					if (other.length > 0 || commits === undefined)
+						return SyncError.Unreviewable({
+							conflicts: other.length > 0 ? other : mergeError.conflicts,
+						});
+					const held = rules.attempt(commits);
+					if (run === runs && !closing.signal.aborted) current = held;
+					return Ok(held.attempt);
+				}
+				if (mergeError !== null) return SyncError.Merge({ error: mergeError });
+				head =
+					merged.status === 'upToDate' || merged.status === 'ahead'
+						? merged.head
+						: merged.status === 'conflicted'
+							? merged.from
+							: merged.to;
+			}
+			return Ok(await settleSync(head, fetched.oid, capturedAt));
+		});
+	}
+
+	/**
+	 * Settle the current attempt with one choice per conflict, then push.
+	 * Invalid choices write nothing and keep the attempt current; past that
+	 * check the attempt is spent, whatever happens next. Nothing here awaits
+	 * before the choices are settled into text, so later edits to the
+	 * caller's object change nothing that is published.
+	 */
+	function resolveSync(
+		attempt: SyncAttempt,
+		choices: SyncChoices,
+	): Promise<Result<SyncOutcome, SyncError>> {
+		return syncing(async () => {
+			const held = current;
+			const id = (attempt as Partial<SyncAttempt> | null | undefined)?.id;
+			if (held === undefined || id !== held.attempt.id)
+				return SyncError.Stale({ reason: 'replaced' });
+			const { data: settled, error: choiceError } = held.settle(choices);
+			if (choiceError !== null) return Err(choiceError);
+			current = undefined;
+			let capturedAt = 0;
+			const { data: merged, error: mergeError } = await incomingNow(
+				'merge',
+				() =>
+					merge('refuse', {
+						sync: {
+							mergePath: syncMerge(definition, settled).mergePath,
+							captured: held.commits,
+							pinned: (_commits, at) => {
+								capturedAt = at;
+							},
+						},
+					}),
+				recordMerge,
+			);
+			if (mergeError !== null)
+				switch (mergeError.name) {
+					case 'Closed':
+						return SyncError.Closed();
+					case 'Dirty':
+					case 'StagedChanges':
+						return SyncError.Stale({ reason: 'changed' });
+					case 'BranchMoved':
+						if ('filesApplied' in mergeError && !mergeError.filesApplied)
+							return SyncError.Stale({ reason: 'changed' });
+						return SyncError.Merge({ error: mergeError });
+					default:
+						return SyncError.Merge({ error: mergeError });
+				}
+			const head = merged.status === 'merged' ? merged.to : undefined;
+			return Ok(await settleSync(head, held.commits.fetched, capturedAt));
+		});
+	}
+
 	/**
 	 * Synchronously: refuse every new request, refuse the ones still waiting
 	 * for the backend's protection, and abort the active push and fetch. Work
@@ -1685,6 +1940,7 @@ export function createHistory({
 	let runners: Promise<unknown> | undefined;
 	function beginClose() {
 		if (closing.signal.aborted) return;
+		current = undefined;
 		closing.abort(new Error('The folder is closed'));
 		runners = Promise.all([
 			pushRunner.close(),
@@ -1736,7 +1992,7 @@ export function createHistory({
 		status: (): Promise<Result<FilesObservation, GitError>> =>
 			scanRunner.follow(),
 		/** Commits the folder's current files without pushing. */
-		commit: commitNow,
+		commit: (): Promise<CommitOutcome> => commitNow(),
 		async commitAndPush({
 			signal,
 		}: {
@@ -1775,6 +2031,7 @@ export function createHistory({
 		pullFastForward: pullNow,
 		mergeIncoming: mergeNow,
 		recoverIncoming: recoverNow,
+		sync: Object.freeze({ run: runSync, resolve: resolveSync }),
 		paths: (): Promise<Result<PathStatus[], GitError>> =>
 			guarded('status', () => exclusive(() => backend.pathStatus())),
 		async stage(

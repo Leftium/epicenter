@@ -70,6 +70,7 @@ export type {
 	FolderGit,
 	FolderGitOptions,
 	FolderLocation,
+	FolderSync,
 } from './folder.js';
 export type {
 	GitRemote,
@@ -87,6 +88,8 @@ export {
 	type MergeConflict,
 	MergeError,
 	PullError,
+	type SyncChoiceProblem,
+	SyncError,
 } from './git/errors.js';
 export type {
 	Activity,
@@ -108,6 +111,15 @@ export type {
 export type { HttpFetch } from './git/http.js';
 export { commitSubject, escapePath, type PathChange } from './git/messages.js';
 export type { Author, CommitSummary } from './git/objects.js';
+export type {
+	SyncAttempt,
+	SyncChoice,
+	SyncChoices,
+	SyncConflict,
+	SyncOutcome,
+	SyncSide,
+	SyncVersion,
+} from './git/sync.js';
 export type { FileKv, KvReading } from './kv.js';
 export { type KvMerge, type KvMergeInput, mergeKv } from './kv-merge.js';
 export { frameRowText, type RowTextFrame } from './markdown.js';

@@ -391,6 +391,7 @@ async function startHistory(
 		readonly remote: GitRemote | undefined;
 		readonly httpFetch: HttpFetch | undefined;
 		readonly commitOnEdit: boolean;
+		readonly definition?: FolderDefinition;
 		readonly relay?: (paths: readonly string[]) => void;
 		readonly landed?: (paths: readonly string[]) => void;
 	},
@@ -421,6 +422,7 @@ async function startHistory(
 		boundary,
 		author: settings.author,
 		commitOnEdit: settings.commitOnEdit,
+		definition: settings.definition,
 		landed: settings.landed,
 	});
 	return { boundary, backend, history };
@@ -537,6 +539,7 @@ async function openOpfsFolder<TDefinition extends FolderDefinition>(
 			remote: captured.remote,
 			httpFetch: captured.httpFetch,
 			commitOnEdit: captured.commitOnEdit,
+			definition: prepared,
 			relay,
 			landed: (paths) => hints.emit(paths),
 		});

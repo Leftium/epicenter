@@ -2031,7 +2031,11 @@ export function createHistory({
 		pullFastForward: pullNow,
 		mergeIncoming: mergeNow,
 		recoverIncoming: recoverNow,
-		sync: Object.freeze({ run: runSync, resolve: resolveSync }),
+		sync: Object.freeze({
+			supported: true,
+			run: runSync,
+			resolve: resolveSync,
+		}),
 		paths: (): Promise<Result<PathStatus[], GitError>> =>
 			guarded('status', () => exclusive(() => backend.pathStatus())),
 		async stage(

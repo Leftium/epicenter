@@ -68,6 +68,8 @@
 	const directory = $derived(
 		todos.folder.location.kind === 'directory' ? todos.folder.location.root : undefined,
 	);
+	/** Whether this folder syncs; a desktop folder offers its Git actions instead. */
+	const syncs = $derived(todos.folder.sync.supported);
 	/** Pull, fetch, and push need a remote; a desktop folder starts without one. */
 	const hasRemote = $derived(todos.git.remote !== undefined);
 	const NO_REMOTE =
@@ -269,63 +271,66 @@
 	</Popover.Root>
 
 	<div class="ml-auto flex shrink-0 items-center gap-1.5">
-		<Button
-			variant="outline"
-			size="sm"
-			disabled={busy || !hasRemote || pending}
-			tooltip={!hasRemote
-				? NO_REMOTE
-				: pending
-					? INCOMING_WAITS
-					: 'Save your changes to history, get the remote, combine them, and push. Conflicts ask you first.'}
-			data-testid="sync"
-			onclick={syncRemote}
-		>
-			{#if working === 'sync'}<Spinner class="size-3.5" />{:else}<RefreshCwIcon />{/if}
-			<span class="max-sm:sr-only">Sync</span>
-		</Button>
-		{#if offerMerge}
+		<!-- Sync replaces Pull, Merge, and Commit and push wherever the folder syncs; a desktop folder keeps them until it does. -->
+		{#if syncs}
+			<Button
+				size="sm"
+				disabled={busy || !hasRemote || pending}
+				tooltip={!hasRemote
+					? NO_REMOTE
+					: pending
+						? INCOMING_WAITS
+						: 'Save your changes to history, get the remote, combine them, and push. Conflicts ask you first.'}
+				data-testid="sync"
+				onclick={syncRemote}
+			>
+				{#if working === 'sync'}<Spinner class="size-3.5" />{:else}<RefreshCwIcon />{/if}
+				<span class="max-sm:sr-only">Sync</span>
+			</Button>
+		{:else}
+			{#if offerMerge}
+				<Button
+					variant="outline"
+					size="sm"
+					disabled={busy || pending}
+					tooltip={pending ? INCOMING_WAITS : "Combine the remote's commits with yours in a new commit. Nothing is pushed."}
+					data-testid="merge-incoming"
+					onclick={mergeRemote}
+				>
+					{#if working === 'merge'}<Spinner class="size-3.5" />{:else}<GitMergeIcon />{/if}
+					<span class="max-sm:sr-only">Merge incoming changes</span>
+				</Button>
+			{/if}
 			<Button
 				variant="outline"
 				size="sm"
-				disabled={busy || pending}
-				tooltip={pending ? INCOMING_WAITS : "Combine the remote's commits with yours in a new commit. Nothing is pushed."}
-				data-testid="merge-incoming"
-				onclick={mergeRemote}
+				disabled={busy || !hasRemote || pending}
+				tooltip={!hasRemote
+					? NO_REMOTE
+					: pending
+						? INCOMING_WAITS
+						: 'Get commits from the remote. Only a clean fast-forward is applied.'}
+				data-testid="pull"
+				onclick={pullRemote}
 			>
-				{#if working === 'merge'}<Spinner class="size-3.5" />{:else}<GitMergeIcon />{/if}
-				<span class="max-sm:sr-only">Merge incoming changes</span>
+				{#if working === 'pull'}<Spinner class="size-3.5" />{:else}<ArrowDownToLineIcon />{/if}
+				<span class="max-sm:sr-only">Pull</span>
+			</Button>
+			<Button
+				size="sm"
+				disabled={busy || pending}
+				tooltip={pending
+					? INCOMING_WAITS
+					: hasRemote
+						? 'Commit the saved files and push to the remote.'
+						: 'Commit the saved files. There is no remote to push to.'}
+				data-testid="commit-and-push"
+				onclick={commitAndPush}
+			>
+				{#if working === 'commit'}<Spinner class="size-3.5" />{:else}<ArrowUpFromLineIcon class="sm:hidden" />{/if}
+				<span class="max-sm:sr-only">{hasRemote ? 'Commit and push' : 'Commit'}</span>
 			</Button>
 		{/if}
-		<Button
-			variant="outline"
-			size="sm"
-			disabled={busy || !hasRemote || pending}
-			tooltip={!hasRemote
-				? NO_REMOTE
-				: pending
-					? INCOMING_WAITS
-					: 'Get commits from the remote. Only a clean fast-forward is applied.'}
-			data-testid="pull"
-			onclick={pullRemote}
-		>
-			{#if working === 'pull'}<Spinner class="size-3.5" />{:else}<ArrowDownToLineIcon />{/if}
-			<span class="max-sm:sr-only">Pull</span>
-		</Button>
-		<Button
-			size="sm"
-			disabled={busy || pending}
-			tooltip={pending
-				? INCOMING_WAITS
-				: hasRemote
-					? 'Commit the saved files and push to the remote.'
-					: 'Commit the saved files. There is no remote to push to.'}
-			data-testid="commit-and-push"
-			onclick={commitAndPush}
-		>
-			{#if working === 'commit'}<Spinner class="size-3.5" />{:else}<ArrowUpFromLineIcon class="sm:hidden" />{/if}
-			<span class="max-sm:sr-only">{hasRemote ? 'Commit and push' : 'Commit'}</span>
-		</Button>
 		<Button
 			variant={terminalOpen ? 'secondary' : 'ghost'}
 			size="icon-sm"

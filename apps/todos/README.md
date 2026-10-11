@@ -224,18 +224,23 @@ reopen it.
 
 ## Controls
 
-Both builds share these. The todo list and its editor fill the window. The
-header holds the rest:
+Both builds share these, except the Git actions: a folder that syncs (the
+browser demo) offers Sync, and one that does not sync yet (the desktop app,
+whose folder owner has no sync) offers Pull, Merge incoming changes, and
+Commit and push instead. Todos asks the folder (`folder.sync.supported`),
+not the build. The todo list and its editor fill the window. The header
+holds the rest:
 
 | Control | What it does |
 | --- | --- |
 | Files button (Ctrl+B) | Shows or hides the file browser: a pane on wide screens, a drawer on narrow ones. |
 | Folder path (desktop) | The directory the todos are in. Click to copy it. |
 | Status button | Shows the most important current fact, shortened on narrow screens. Open it for where the folder is, saved files, uncommitted changes, the last commit, the remote, and the last pull as separate lines with the times they were observed, plus "Check again" and "Fetch". When the last remote check saw commits on both sides, it says the histories diverged; Todos only fast-forwards, so local commits are kept until the histories are resolved. |
-| Sync | Waits for the open todo's saves, commits the saved files, fetches, merges, and pushes (`folder.sync`, ADR-0514). Edits to different fields, or to different lines of the notes, merge on their own; a merged todo is rewritten in the standard form. When both sides changed the same title, done, notes, or a whole todo (one side deleted it, or a version is not a valid todo), the review replaces the workspace and nothing is written until you apply your choices. The review is modal: the open todo and the Git buttons take no input until you apply or cancel, and Cancel forgets the attempt and your choices. Afterwards the lists and the open todo are read again: a todo with nothing unsaved shows the result, and one holding a draft it could not save keeps it until you Keep mine or Reload theirs. Off when the folder has no remote. In the desktop app it says sync is not available yet; use Pull and Commit and push there. |
-| Pull | Fetches, then applies the remote only as a clean fast-forward. A refusal is shown as "Pull stopped" with the reason, and in the status details. Off when the folder has no remote. |
-| Commit and push | Commits the saved files and pushes. Unsaved typing is not included. Reads "Commit" when the folder has no remote. |
-| Recover incoming update | Shown only while an incoming update has not finished; see below. Pull, Merge incoming changes, and Commit and push are off until then, and say why. |
+| Sync | Waits for the open todo's saves, commits the saved files, fetches, merges, and pushes (`folder.sync`, ADR-0514). Edits to different fields, or to different lines of the notes, merge on their own; a merged todo is rewritten in the standard form. When both sides changed the same title, done, notes, or a whole todo (one side deleted it, or a version is not a valid todo), the review replaces the workspace and nothing is written until you apply your choices. The review is modal: the open todo and the Git buttons take no input until you apply or cancel, and Cancel forgets the attempt and your choices. Afterwards the lists and the open todo are read again: a todo with nothing unsaved shows the result, and one holding a draft it could not save keeps it until you Keep mine or Reload theirs. Off when the folder has no remote. |
+| Pull (desktop) | Fetches, then applies the remote only as a clean fast-forward. A refusal is shown as "Pull stopped" with the reason, and in the status details. Off when the folder has no remote. |
+| Merge incoming changes (desktop) | Shown when the last check saw commits on both sides. Merges the fetched remote into the committed folder in one commit; a conflict refuses and writes nothing. Nothing is pushed. |
+| Commit and push (desktop) | Commits the saved files and pushes. Unsaved typing is not included. Reads "Commit" when the folder has no remote. |
+| Recover incoming update | Shown only while an incoming update has not finished; see below. Sync, or Pull, Merge incoming changes, and Commit and push, are off until then, and say why. |
 | Terminal button (Ctrl+\`) | Shows or hides the terminal. It is hidden at first; its output, history, typed command, and working directory stay when it is hidden. |
 
 On narrow screens the list, the editor, and the terminal take turns; the
@@ -280,7 +285,7 @@ keeps you on the item.
 
 ### When an incoming update stops partway
 
-A pull or merge in the browser writes the incoming files one at a time. If it
+A sync in the browser writes the incoming files one at a time. If it
 stops partway (the tab closed, or a file could not be written), the folder
 keeps a record of the update. Todos reports it under the header as "Incoming
 update not finished" (or "never started", or "record unreadable"), and as the
@@ -288,8 +293,8 @@ first line of the status details. It never resumes the update on its own:
 opening the folder, "Check again", and returning to the window only read the
 record.
 
-- Commits, pulls, and merges wait while the update is pending; their buttons
-  are off and say why. Editing, saving, renaming, deleting, and Fetch keep
+- Commits, syncs, pulls, and merges wait while the update is pending; their
+  buttons are off and say why. Editing, saving, renaming, deleting, and Fetch keep
   working.
 - **Recover incoming update** runs only when you press it. The open item's
   saves land first; if its save failed or conflicted, nothing runs and the
@@ -318,7 +323,7 @@ present. On the desktop, steps 1 to 4 work the same over the real directory,
 without the push.
 
 1. Add a todo. The file saves immediately; a local commit follows in the
-   background, and nothing is pushed until you press Commit and push. The
+   background, and nothing is pushed until you press Sync. The
    status details report saved files, uncommitted changes,
    the last commit, and the remote separately. They say "Changes need
    checking" or "Check failed" instead of claiming a clean folder when the last
@@ -347,8 +352,8 @@ without the push.
    `git status`, `git log --oneline`, `git diff`, `git push`. Content writes
    request automatic history; staged authoring is refused in automatic mode.
    Files matched by `.gitignore` stay out of status and automatic commits; a
-   tracked file stays tracked. A later automatic commit or Commit and push
-   resets staged-only changes to the committed state.
+   tracked file stays tracked. A later automatic commit or Sync resets
+   staged-only changes to the committed state.
 5. In the native checkout printed at startup:
 
    ```sh
@@ -357,9 +362,10 @@ without the push.
    git commit -am "Edit natively" && git push
    ```
 
-   Then press **Pull** in the browser. Pull applies only a clean fast-forward;
-   uncommitted changes, divergent history, or an incoming file that would
-   overwrite an ignored or untracked one are reported and nothing is written.
+   Then press **Sync** in the browser. It commits what you saved, brings in the
+   native commit, and pushes. Edit the same todo's title in both places
+   first to see the review; an incoming file that would overwrite an ignored
+   or untracked one is reported and nothing is written.
 6. To see a hand edit from another computer, run the demo fixture against the
    same checkout:
 
@@ -369,10 +375,10 @@ without the push.
 
    It pulls, rewrites `todos/<stem>.md` with a YAML comment, a new title,
    `done: true`, and the keys `owner` and `labels`, which Todos does not
-   declare, then commits and pushes with ordinary Git. Press **Pull** in the
+   declare, then commits and pushes with ordinary Git. Press **Sync** in the
    browser: the list shows the new title, an open todo with nothing unsaved
    shows it, and the file keeps the comment and keys byte for byte until
-   Todos saves it. Any save from Todos, a checkbox included, writes the
+   Todos saves it or merges it with a change of its own. Any save from Todos, a checkbox included, writes the
    standard form: `owner` and `labels` stay, the comment does not.
 7. `bun apps/todos/scripts/native.ts <checkout> status` prints the native
    folder's JSON status through `openFolder` from `@epicenter/folder/bun`.
@@ -460,5 +466,10 @@ several promises of the version before it:
 - Reload theirs of a file that is no longer text opens it again as it is
   now, which ends its conflicted session, instead of keeping the session
   open with a message. Keep mine is offered before you choose.
+- The browser demo no longer has Pull, Merge incoming changes, or Commit and
+  push. Sync replaces them: it merges diverged history that Pull refused,
+  merges a todo both sides changed by field and notes, and asks before
+  writing a conflict. A todo it merges is rewritten in the standard form.
+  The desktop app keeps the three actions until its folder owner syncs.
 - Unconfirmed-delete states are gone: a delete whose reply was lost is
   reported once, and the list reads the folder again.

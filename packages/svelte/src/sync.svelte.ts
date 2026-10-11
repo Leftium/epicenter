@@ -78,6 +78,10 @@ export function createSyncController({
 	}
 
 	return {
+		/** Whether the folder syncs; a desktop folder does not yet. */
+		get supported() {
+			return folder.sync.supported;
+		},
 		/** A run or an Apply is in flight. */
 		get syncing() {
 			return syncing;

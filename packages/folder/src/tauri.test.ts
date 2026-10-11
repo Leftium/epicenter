@@ -1664,3 +1664,13 @@ test('closing detaches this window once and later work is refused as closed', as
 	expect(sent('read')).toHaveLength(1);
 	expect([...listeners.values()].every((set) => set.size === 0)).toBe(true);
 });
+
+test('a desktop folder does not sync yet, and says so before anything is sent', async () => {
+	const folder = await attached();
+	expect(folder.sync.supported).toBe(false);
+	expect(expectErr(await folder.sync.run())).toMatchObject({
+		name: 'Unsupported',
+		runtime: 'desktop',
+	});
+	expect(calls).toEqual([]);
+});

@@ -1068,7 +1068,9 @@ const { data: done, error } = await folder.sync.resolve(attempt, choices);
 - `synced` means the push confirmed the merged head and no save landed after
   the capture. `saved` carries the push's own outcome and `changedSince`.
 
-Browser and Bun folders sync. A desktop folder answers `Unsupported`.
+Browser and Bun folders sync, and `folder.sync.supported` is `true`. A
+desktop folder answers `Unsupported` from both methods and says so with
+`supported: false`, so an app can offer its separate Git actions there.
 
 ### Incoming changes
 

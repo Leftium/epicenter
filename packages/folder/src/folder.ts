@@ -164,6 +164,12 @@ export type FolderGit = {
  */
 export type FolderSync = {
 	/**
+	 * Whether this folder's runtime syncs. False for a desktop folder, whose
+	 * `run` and `resolve` answer `Unsupported`; an app offers its separate
+	 * Git actions there instead.
+	 */
+	readonly supported: boolean;
+	/**
 	 * Commit saved files, fetch the remote branch, merge it, and push.
 	 * One-sided and compatible changes need no choices. Root `kv.json` merges
 	 * by key, each row of a declared table by field and body, written in the

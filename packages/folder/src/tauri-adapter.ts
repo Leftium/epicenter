@@ -929,6 +929,7 @@ function createHistory(
 			}),
 		// The desktop owner merges in Rust and has no sync rules for rows yet.
 		sync: Object.freeze({
+			supported: false,
 			run: async () => SyncError.Unsupported({ runtime: 'desktop' }),
 			resolve: async () => SyncError.Unsupported({ runtime: 'desktop' }),
 		}),

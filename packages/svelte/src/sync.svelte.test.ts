@@ -52,6 +52,7 @@ function setup(answers: {
 	const log: string[] = [];
 	let refusal: string | undefined;
 	const sync: FolderSync = {
+		supported: true,
 		async run() {
 			log.push(`run syncing=${controller.syncing}`);
 			return answers.run?.() ?? Ok(SYNCED);
@@ -139,6 +140,7 @@ test('a refusal, or a sync already running, calls nothing', async () => {
 	const slow = createSyncController({
 		folder: {
 			sync: {
+				supported: true,
 				async run() {
 					calls++;
 					await gate.promise;

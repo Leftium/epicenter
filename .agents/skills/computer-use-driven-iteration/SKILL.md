@@ -50,7 +50,8 @@ replaces it, and any work transferred to a caller or person. A problem observed
 in the UI can justify changing the underlying model when the evidence supports
 that scope. Bring unresolved product tradeoffs to the user.
 
-Use [delegate-claude](../delegate-claude/SKILL.md) for a separable implementation
+When the user explicitly authorizes Claude execution, use
+[delegate-claude](../delegate-claude/SKILL.md) for a separable implementation
 with observable acceptance criteria. Give Opus the relevant baseline, raw
 evidence, affected consumers, allowed changes, and a bounded stop condition.
 The delegation skill owns clone preparation, dispatch, correction, and

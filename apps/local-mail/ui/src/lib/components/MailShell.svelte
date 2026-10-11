@@ -451,7 +451,7 @@
 	open={shortcutsOpen}
 	onOpenChange={(open) => (shortcutsOpen = open)}
 >
-	<Dialog.Content class="max-w-sm sm:max-w-sm">
+	<Dialog.Content>
 		<Dialog.Header>
 			<Dialog.Title>Keyboard shortcuts</Dialog.Title>
 			<Dialog.Description

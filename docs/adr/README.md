@@ -707,7 +707,7 @@ When you add an ADR, add its row here.
 | [0452](0452-vocab-chats-persist-chosen-expressions-before-the-tutor-speaks.md) | Vocab chats persist chosen expressions before the tutor speaks | Accepted (amends 0444 and 0445) |
 | [0453](0453-vocab-batch-additions-share-one-review.md) | Vocab batch additions share one review | Accepted (amends 0102 at entry sources) |
 | [0454](0454-vocab-saves-expressions-from-chat-by-selection.md) | Vocab saves expressions from chat by selection | Accepted |
-| [0455](0455-epicenter-ui-tracks-distributed-shadcn-svelte-components-with-explicit-deltas.md) | Epicenter UI tracks distributed shadcn-svelte components with explicit deltas | Proposed |
+| [0455](0455-epicenter-ui-tracks-distributed-shadcn-svelte-components-with-explicit-deltas.md) | Epicenter UI tracks distributed shadcn-svelte components with explicit deltas | Accepted |
 | [0456](0456-a-markdown-row-owns-at-most-one-same-stem-attachment.md) | A Markdown row owns at most one same-stem attachment | Superseded by 0480 |
 | [0457](0457-a-row-filename-is-its-exact-id-and-a-title-is-a-field.md) | A table and file stem address a row, and a title is a field | Proposed (exact paths and readable-stem policy; file-authoritative creation unbuilt) |
 | [0458](0458-markdown-links-may-cross-data-folders-by-relative-path.md) | Markdown links may cross data folders by relative path | Proposed (cross-folder link resolution unbuilt) |

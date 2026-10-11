@@ -12,7 +12,7 @@ async function main() {
 			resume: { type: 'string' },
 			mode: { type: 'string', default: 'consult' },
 			workspace: { type: 'string' },
-			model: { type: 'string', default: 'claude-opus-5-5' },
+			model: { type: 'string' },
 			effort: { type: 'string' },
 			'dry-run': { type: 'boolean', default: false },
 		},
@@ -23,11 +23,16 @@ async function main() {
 		throw new Error(
 			'--workspace belongs to delegate mode; run consultation from its source checkout.',
 		);
-	if (values.mode === 'delegate' && !values.workspace?.trim())
+	if (values.mode === 'delegate' && values.resume !== undefined)
 		throw new Error(
-			'Delegation requires --workspace pointing to a dedicated clone.',
+			'Delegation starts a fresh session; provide the full assignment and current worker evidence.',
 		);
-	if (!values.model.trim()) throw new Error('Model must not be empty.');
+	if (values.model !== undefined && !values.model.trim())
+		throw new Error('Model must not be empty.');
+	if (values.mode === 'consult' && !values.resume && !values.model)
+		throw new Error(
+			'A new consultation requires --model; choose it for the question.',
+		);
 	if (values.effort !== undefined && !values.effort.trim())
 		throw new Error('Effort must not be empty.');
 	if (
@@ -39,7 +44,7 @@ async function main() {
 		);
 	}
 	const brief = await Bun.stdin.text();
-	if (!brief.trim()) throw new Error('Consultation brief is empty.');
+	if (!brief.trim()) throw new Error('Assignment brief is empty.');
 	const git = spawnSync('git', ['rev-parse', '--show-toplevel'], {
 		encoding: 'utf8',
 	});
@@ -47,8 +52,20 @@ async function main() {
 	if (git.status !== 0) throw new Error(git.stderr.trim());
 	const source = realpathSync(git.stdout.trim());
 	const delegating = values.mode === 'delegate';
-	const cwd = delegating ? realpathSync(resolve(values.workspace!)) : source;
+	// Native sessions retain their model on resume; callers repeat launch-local effort.
+	const model =
+		values.model ??
+		(!values.resume && delegating ? 'claude-sonnet-5-5' : undefined);
+	const effort =
+		values.effort ?? (!values.resume && delegating ? 'medium' : undefined);
+	let cwd = source;
 	if (delegating) {
+		const workspace = values.workspace;
+		if (!workspace?.trim())
+			throw new Error(
+				'Delegation requires --workspace pointing to a disposable clone.',
+			);
+		cwd = realpathSync(resolve(workspace));
 		const inside = relative(source, cwd);
 		const ancestor = relative(cwd, source);
 		if (
@@ -74,13 +91,42 @@ async function main() {
 			throw new Error('Delegate workspace must be a Git clone.');
 		const [root, common] = target.stdout.trim().split('\n');
 		if (
-			realpathSync(root!) !== cwd ||
-			realpathSync(resolve(cwd, common!)) !== resolve(cwd, '.git')
+			!root ||
+			!common ||
+			realpathSync(root) !== cwd ||
+			realpathSync(resolve(cwd, common)) !== resolve(cwd, '.git')
 		)
 			throw new Error(
 				'Delegate workspace must be the root of a standalone clone, not a shared worktree.',
 			);
+		const origin = spawnSync('git', ['remote', 'get-url', 'origin'], {
+			cwd,
+			encoding: 'utf8',
+		});
+		let originRoot: string | undefined;
+		try {
+			const originUrl = origin.stdout.trim();
+			if (isAbsolute(originUrl)) originRoot = realpathSync(originUrl);
+		} catch {
+			// A missing or non-local origin cannot establish source provenance.
+		}
+		if (origin.status !== 0 || originRoot !== source)
+			throw new Error(
+				'Delegate workspace must be cloned from the coordinating checkout using its absolute local path.',
+			);
 	}
+	const shellEnvironment = new Set([
+		'PATH',
+		'HOME',
+		'USER',
+		'LOGNAME',
+		'SHELL',
+		'TMPDIR',
+		'LANG',
+		'LC_ALL',
+		'LC_CTYPE',
+		'TERM',
+	]);
 	const settings = {
 		disableAllHooks: true,
 		permissions: { blockReadsOutsideWorkingDirectories: true },
@@ -94,18 +140,24 @@ async function main() {
 						excludedCommands: [],
 						filesystem: { disabled: false },
 						network: { allowedDomains: [], allowLocalBinding: false },
+						credentials: {
+							envVars: Object.keys(process.env)
+								.filter((name) => !shellEnvironment.has(name))
+								.map((name) => ({ name, mode: 'deny' })),
+						},
 					},
 				}
 			: {}),
 	};
+	const fileTools = delegating ? 'Read,Glob,Grep,Edit,Write' : 'Read,Glob,Grep';
 	const args = [
 		'--print',
 		'--output-format',
 		'json',
 		'--restricted',
 		'--tools',
-		delegating ? 'Read,Glob,Grep,Edit,Write,Bash' : 'Read,Glob,Grep',
-		...(delegating ? ['--allowedTools', 'Read,Glob,Grep,Edit,Write'] : []),
+		delegating ? `${fileTools},Bash` : fileTools,
+		...(delegating ? ['--allowedTools', fileTools] : []),
 		'--disallowedTools',
 		'mcp__*',
 		'--strict-mcp-config',
@@ -113,12 +165,11 @@ async function main() {
 		'dontAsk',
 		'--settings',
 		JSON.stringify(settings),
-		'--model',
-		values.model,
-		...(values.effort ? ['--effort', values.effort] : []),
+		...(model ? ['--model', model] : []),
+		...(effort ? ['--effort', effort] : []),
 		'--append-system-prompt',
 		delegating
-			? "You own the bounded assignment in this dedicated clone. Read AGENTS.md and applicable skills. Implement and run relevant checks within the brief's scope. Do not launch child agents, commit, push, publish, deploy, alter remotes, or change access settings. Stop on missing requirements or blocked access and return concrete partial work. Return the artifact or changed paths, verification commands and results, and unresolved issues. Codex owns acceptance and integration into the live checkout."
+			? "You own the bounded assignment in this dedicated clone. Read AGENTS.md and applicable skills. Implement and run relevant checks within the brief's scope. Do not launch child agents, commit, push, publish, deploy, alter remotes, or change access settings. Resolve implementation choices within the brief. Stop on missing product requirements that would change the accepted outcome or assignment scope, or blocked access and return concrete partial work. Return the artifact or changed paths, verification commands and results, and unresolved issues. Codex owns acceptance and integration into the live checkout."
 			: "You are Codex's read-only consultant. Own the requested investigation, recommendation, or text draft. Return the finished answer, source evidence, and unresolved issues or specific evidence requests. Codex owns edits, tests, benchmarks, and integration. If asked to apply adversarial-review, you are already the delegated reviewer: perform it yourself and launch no child agents.",
 		...(values.resume ? ['--resume', values.resume] : []),
 	];

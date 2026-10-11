@@ -462,9 +462,11 @@
 										<span class="truncate">{chosen?.label ?? (transcripts.length === 0 ? 'No saved transcripts yet' : 'Choose a transcript')}</span>
 									</Select.Trigger>
 									<Select.Content>
-										{#each transcripts as item (item.result.path)}
-											<Select.Item value={item.result.path} label={item.label} />
-										{/each}
+										<Select.Group>
+											{#each transcripts as item (item.result.path)}
+												<Select.Item value={item.result.path} label={item.label} />
+											{/each}
+										</Select.Group>
 									</Select.Content>
 								</Select.Root>
 								<Button

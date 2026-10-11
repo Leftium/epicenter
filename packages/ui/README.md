@@ -1,99 +1,82 @@
-# UI package guide
+# @epicenter/ui
 
-This guide explains the UI package's shared contract, current styling, and
-component update workflow. The proposed distribution baseline is recorded in
-[ADR-0455](../../docs/adr/0455-epicenter-ui-tracks-distributed-shadcn-svelte-components-with-explicit-deltas.md).
+Shared Svelte components for Epicenter apps. This package maintains
+shadcn-svelte component source, selected shadcn-svelte-extras components, and
+Epicenter widgets in one place so apps share fixes and behavior.
 
-## Component library overview
+[shadcn-svelte distributes source](https://www.shadcn-svelte.com/docs), which we
+maintain in `src/`. Bits UI, Vaul, and Paneforge supply installed behavior
+primitives. Updating those dependencies or the shadcn CLI does not refresh our
+copied component files.
 
-This package is a shared, vendored fork of **shadcn-svelte** (1.x) on the
-**Vega** preset, plus selected **shadcn-svelte-extras** and Epicenter-owned
-components. Apps import its public subpaths rather than installing separate
-copies of the same components.
+## Usage
 
-The intended baseline for a shadcn-svelte component is the Vega component a
-developer receives from the CLI. Compare each local component with a recorded
-upstream registry artifact. Keep differences that provide an explicit Epicenter
-contract or fix a demonstrated problem; record those differences here. Source
-import paths change to the package's relative imports. Extras follow the same
-rule using their own distributed components as the baseline.
+Apps import public package subpaths and the shared stylesheet:
 
-The maintained components carry Vega utilities in their own files. The exact
-registry responses and SHA-256 digests used for this migration live under
-[`upstream/`](upstream/README.md). They are comparison inputs, not runtime code.
+```svelte
+<script lang="ts">
+	import { Button } from '@epicenter/ui/button';
+	import '@epicenter/ui/app.css';
+</script>
 
-### Epicenter house style
+<Button>Save</Button>
+```
 
-Vega supplies the component geometry. `app.css` supplies Epicenter's Geist
-fonts and semantic color tokens. Apps compose the same `@epicenter/ui`
-components, adding product-specific layout and behavior at their call sites.
+Every `src/<folder>/index.ts` exposes a public subpath. Raw Svelte files are
+private. Inside this package, use relative imports:
 
-`Button` and `Link` accept `tooltip` for a simple label. Import
-`@epicenter/ui/tooltip` when another element is the trigger or the tooltip
-needs composed content. Each app places one `Tooltip.Provider` around its root
-content. The provider owns the shared 300 ms opening delay and 150 ms skip
-delay. A nested provider creates a separate hover group rather than changing
-the app-wide timing.
+```typescript
+import { Button } from '../button/index.js';
+import { cn } from '../utils.js';
+```
 
-An Epicenter change to an upstream component must have a named caller,
-interaction, or shared theme decision behind it. Current examples include
-Button tooltip composition, Drawer scrolling and focus behavior, and component
-variants listed under
-[Current Epicenter deltas](#current-epicenter-deltas). These are package
-contracts to check during an upstream refresh.
+Do not point app aliases or configuration at `packages/ui/src`.
 
-### Styling
+## Styling
 
-`src/app.css` supplies Geist fonts, semantic tokens, and the upstream data
-variants and animations from `src/styles/shadcn-base.css`. Components own their
-Vega utility classes. Apps import `@epicenter/ui/app.css`; no app root class is
-needed to activate the components.
+Vega is the current component style baseline. It supplies component markup and
+utilities. It is a choice we can revisit, not a restriction on customization.
+Other upstream styles use different distributed component source; switching
+styles requires reviewing and integrating that source.
 
-## Design stance
+`src/app.css` owns Geist fonts and the shared semantic color tokens. Dark mode
+uses Neutral with seven existing token values adjusted for soft charcoal.
+[Theme variables](https://www.shadcn-svelte.com/docs/theming) can change colors
+without replacing the component style. Changing a variable does not switch the
+component markup, spacing, or interaction contract. Components own their utility
+classes; no app root class activates the style.
 
-This package is the shared Epicenter product system, not a place for one-off app
-branding. Its job is to make product UI consistent, accessible, and easy to
-compose across apps. The baseline is intentionally restrained: Vega component
-structure, Geist typography, semantic tokens, and app-level composition for
-character.
+Use existing variants and supported props first, then caller classes for
+app-specific layout. A shared component change needs a demonstrated workflow
+or shared theme decision. Keep app data, persistence, and product policy in the
+app. Add a new shared primitive when the composition is stable and useful across
+apps.
 
-When a screen should feel more designed, improve the workflow first: hierarchy,
-density, copy, loading and empty states, grouping, keyboard affordances, and the
-shape of the user's next action. Add a new global token, font, animation system,
-or component variant only when several apps need the same product concept or the
-variant owns an accessibility or interaction contract.
+## Choosing components
 
-Bespoke visual direction belongs in an app, prototype, landing page, or explicit
-redesign until the pattern proves it is shared. Once it is shared, move the
-stable primitive here and keep app-specific behavior out of it.
+- Use `ConfirmationDialog` for reusable confirmations and `AlertDialog` for
+  composed confirmations. Use `Dialog` for other simple overlays.
+- Use `Modal` for forms and input workflows. It renders a Dialog on desktop
+  and a Drawer below 768px. Use `Sheet` or `Drawer` for secondary panels.
+- Use `Command` or `CommandPalette` for filtered actions and search.
+- Use `Field` and shared input components for forms. Put Select options inside
+  `Select.Group`, which owns their padding.
+- Use `Item`, `SectionHeader`, `ButtonGroup`, `InputGroup`, and `Sidebar` for
+  repeated rows, sections, grouped controls, and navigation.
 
-### Surface Choice
+Dialog, Modal, Sheet, and Drawer need accessible titles. Use an `sr-only` title
+when the visual design already supplies equivalent context. Keep interaction
+policy with the caller: for example, a completed account switch sets
+`closeOnSelect`, while a multi-toggle menu keeps the upstream open behavior.
 
-Use the component whose interaction contract matches the job:
+### Tooltips
 
-- `Dialog` or `AlertDialog`: confirmations, simple yes/no prompts,
-  display-only content, and simple action confirmations.
-- `ConfirmationDialog`: reusable simple confirmations before one-off alert
-  dialog markup.
-- `Modal`: forms, typing, dropdowns, multi-step input, or any workflow that
-  collects user data. `Modal` renders as a dialog on desktop and a drawer on
-  mobile.
-- `Sheet` or `Drawer`: secondary panels, mobile-friendly drawers, and side
-  surfaces.
-- `Command` or `CommandPalette`: command menus, filtered actions, and search
-  empty states.
-- `Item`, `SectionHeader`, `ButtonGroup`, `InputGroup`, `CopyButton`, `Kbd`, and
-  `Sidebar.*`: repeated list rows, page sections, grouped controls, inline input
-  actions, copy actions, keyboard hints, and app chrome.
-- `Field`, `Input`, `Textarea`, `Select`, `Switch`, `Checkbox`, and
-  `RadioGroup`: forms and settings surfaces.
-- `FileDropZone`, `NaturalLanguageDateInput`, `TimezoneCombobox`, `TreeView`,
-  and `Markdown`: stable reusable product widgets. Use them before rebuilding
-  their behavior in an app.
-- `Sonner` and `toastOnError`: toasts and result-aware error notifications.
+Place one `Tooltip.Provider` around each app’s root content. It shares the
+300 ms opening delay and 150 ms skip delay across controls. Nesting another
+provider creates a separate hover group.
 
-Dialog, Modal, Sheet, and Drawer surfaces need accessible titles. Use an
-`sr-only` title when the visual design already supplies equivalent context.
+Use Button or Link’s `tooltip` prop for a simple label. Compose `Tooltip.Root`,
+`Tooltip.Trigger`, and `Tooltip.Content` for other triggers or richer content.
 
 ### Editor control and panel lifetimes
 
@@ -121,257 +104,53 @@ check current row and application eligibility because input may arrive before
 Svelte removes a leaving control. The common ownership pattern is recorded in
 [ADR-0507](../../docs/adr/0507-editor-views-compose-current-input-and-own-only-interaction-state.md).
 
-### Loading and Empty State Guidelines
+### Loading and empty states
 
-Use `Loading` for generic full-surface pending states that only need the
-standard spinner shell and an optional caption:
+Use `Loading` for a page or panel loading state with an optional caption:
 
 ```svelte
-<Loading class="h-dvh" label="Checking session" />
 <Loading class="flex-1" label="Loading tabs..." />
-<Loading class="h-full" />
 ```
 
-`Loading` wraps the local `Empty.Root` plus `Spinner` structure, so it keeps the
-same centering, text alignment, and `aria-live="polite"` behavior without making
-every app hand-compose it.
+Use `Empty` for empty, error, or prompt states, and for pending states that need
+custom media or actions. Use `Spinner` for spinning affordances and `Skeleton`
+for known content shapes rather than rebuilding them in an app.
 
-Use `Empty.Root` directly for actual empty, error, or prompt states. Also keep
-`Empty.Root` for loading states that need a title, description, custom media,
-actions, or exact visual parity with a nearby empty/error branch.
+## Updating upstream components
 
-Use `Spinner` for every spinning affordance. Do not hand-roll `animate-spin`,
-`LoaderCircleIcon`, or `Loader2Icon` in app code. Use `Skeleton` for known
-content shapes instead of raw `animate-pulse` placeholder blocks. A pulsing
-status dot is fine when the pulse is the content, not a fake-content skeleton.
+The [upstream baseline and customization register](upstream/README.md) records
+saved registry responses and intentional differences. The source ownership
+decision is in [ADR-0455](../../docs/adr/0455-epicenter-ui-tracks-distributed-shadcn-svelte-components-with-explicit-deltas.md).
 
-### Tooltips
+1. Fetch the distributed component for the chosen style and save its exact
+   registry response. Extras use their separate registry.
+2. Compare it with the maintained component and real callers. Adapt import
+   and icon placeholders; review requested dependency versions.
+3. Adopt upstream defaults. Retain a local difference only when a workflow or
+   shared decision establishes its need. Record the change and reason in the
+   customization register; track unverified differences in the PR or an issue.
+4. Check a consuming app at desktop and narrow widths, including keyboard
+   behavior and long content. Remove obsolete caller overrides and build the app.
 
-`Button` and `Link` take a `tooltip` prop. Prefer it over hand-wrapping
-`Tooltip.Root`, `Tooltip.Trigger`, and `Tooltip.Content` when the content is a
-simple label:
+Do not run the CLI against the live package as an automatic overwrite or create
+separate component copies in each app. Preserving the previous appearance alone
+is not a reason to reject an upstream update.
 
-```svelte
-<Button size="icon" variant="ghost" tooltip="Delete recording" onclick={deleteRecording}>
-	<TrashIcon />
-</Button>
-```
+## Verification
 
-The prop expects a `Tooltip.Provider` above the trigger. Hand-roll `Tooltip.*`
-only when the trigger is not a `Button` or `Link`, or the content is more than a
-simple label.
-
-### Composition Ladder
-
-Before copying component internals or adding a new package primitive, escalate
-in this order:
-
-1. Use an existing local component and its variants.
-2. Pass a `class` or supported prop.
-3. Add a local variant to the wrapper component.
-4. Wrap the component for a real composition boundary: scroll containment, pane
-   sizing, table cell structure, sticky headers.
-5. Copy upstream component code only when Epicenter needs to own behavior,
-   tokens, persistence, shortcuts, or app state.
-
-A new primitive belongs in `packages/ui` only when it is stable, visual, and
-shared. If it depends on one app's data model, persistence, or product policy,
-keep it in the app and compose UI primitives there.
-
-## Key differences from standard shadcn-svelte
-
-### 1. Import Boundary
-
-Apps import UI through the public package API:
-
-```typescript
-import { Button } from '@epicenter/ui/button';
-import { Loading } from '@epicenter/ui/loading';
-import { cn } from '@epicenter/ui/utils';
-import '@epicenter/ui/app.css';
-```
-
-Files inside `packages/ui/src` import other UI files with relative paths:
-
-```typescript
-import { Button } from '../button/index.js';
-import { cn } from '../utils.js';
-```
-
-Direct raw file imports use the same rule:
-
-```typescript
-import Button from '../button/button.svelte';
-```
-
-Do not add app aliases or tsconfig paths that point to `packages/ui/src`.
-Do not add `kit.alias` entries such as:
-
-```js
-kit: {
-	alias: {
-		'#': '../../packages/ui/src',
-	},
-}
-```
-
-The UI package has no private import aliases. Apps should never define aliases
-for `packages/ui/src`.
-
-### 2. Package Imports and Exports Structure
-
-Our `package.json` exposes only the public API for app consumers:
-
-```json
-{
-	"exports": {
-		"./*": "./src/*/index.ts",
-		"./utils": "./src/utils.ts",
-		"./utils/*": "./src/utils/*.ts",
-		"./app.css": "./src/app.css"
-	}
-}
-```
-
-Consumers import components through the package API; UI source imports siblings
-with relative paths.
-
-Every `packages/ui/src/<folder>/index.ts` file is a public
-`@epicenter/ui/<folder>` subpath. Raw `.svelte` files are private to the package
-and should not be imported by apps.
-
-### 3. Component styling and Epicenter deltas
-
-Keep each component's distributed Vega utilities in its maintained source file.
-Add a local utility or markup change only for a named caller or interaction.
-These differences survive this migration:
-
-| Component | Epicenter difference | Reason |
-| --- | --- | --- |
-| Button and Link | `tooltip` prop and composed trigger props | Apps need one-label tooltips on buttons and links, including controls nested in popovers. Button also keeps anchor and disabled behavior, eight sizes, `ghost-destructive`, and the public `buttonVariants` export. |
-| Dialog and Drawer | Button close control, viewport scrolling, and Drawer content scroll wrapper | Long recording details remain usable, and mobile content can scroll without losing drag behavior. Installed Vaul `1.0.0-next.7` already suppresses autofocus by default. |
-| Input and Textarea | Value bindings retire on destruction | Capture and Whispering retained DOM controls must never read or overwrite later input. |
-| Tabs.Content | Inactive children unmount; `forceMount` retains them explicitly | Editor panels share one selection and disposable controls; the main app shell preserves its chat and settings state. |
-| Modal | One responsive Dialog or Drawer with a shared open state | Forms use Dialog on desktop and a draggable Drawer below 768px. |
-| Menus and Select | Translucent surfaces, menu item state styling, logical submenu slides, and Select's minimum-content width | Shared menu appearance and long, scrollable app menus. |
-| Table | Hover fills cells rather than the row | Svelte's row wrapper and opaque cells otherwise hide the hover fill. |
-| Item and Sidebar | Truncation, icon media, inset shrink behavior, and item actions overlay | Rows and sidebars fit narrow flex layouts while retaining the shared actions control. |
-| Alert and Badge | Warning, ID, status, success, and destructive variants | Apps use these semantic states. |
-| Resizable | Spacing between panes | Adjacent panes need separation in current app layouts. |
-| Extras | Local imports and the same shared tokens; Link's tooltip and Modal's responsive behavior above | Extras ship from a separate registry and keep their own baselines. |
-
-Other structural choices with live callers remain in their components: the
-span-or-anchor Badge, ScrollArea viewport ring, Resizable handle, and the
-standard Loading shell. `switch` and `alert-dialog` emit `data-size`; sidebar
-menu controls emit `data-active` only when active. These attributes feed the
-Vega state selectors.
-
-The distributed registry still includes unresolved `cn-font-heading` and
-`cn-menu-*` hooks in some files. The maintained package omits those inert hooks;
-its menu surface utilities are explicit. `shadcn-base.css` retains the upstream
-data variants, utilities, and animations used by the components.
-
-## Component management workflow
-
-For an upstream refresh, fetch the distributed Vega response, save its exact
-JSON and digest under [`upstream/`](upstream/README.md), and compare it with the
-maintained component and real callers. The registry contains generator imports
-such as `$UTILS$`; normalize them to package-relative imports. Review dependency
-requests and preserve the differences above when they still have callers.
-
-Check a consuming app at desktop and narrow widths. Inline utilities can alter
-which caller width or state class wins. Update the snapshot and the reason for
-any surviving local difference in the same change. Do not add a runtime vendor
-tree, patch generator, or per-app component copy.
-
-### Import Path Convention
-
-```typescript
-// App code
-import { Button } from '@epicenter/ui/button';
-
-// UI package source
-import { Button } from '../button/index.js';
-import { cn } from '../utils.js';
-```
-
-## Component Inventory
-
-Every `src/<folder>/index.ts` is a public `@epicenter/ui/<folder>` subpath. The
-inventory is grouped by job so it does not duplicate `ls`.
-
-- Foundations: `button`, `badge`, `card`, `separator`, `skeleton`, `spinner`,
-  `tooltip`, `sonner`, `utils`, `hooks`.
-- Forms and inputs: `field`, `input`, `textarea`, `select`, `checkbox`,
-  `radio-group`, `switch`, `toggle`, `toggle-group`, `input-group`,
-  `natural-language-date-input`, `timezone-combobox`, `file-drop-zone`.
-- Overlays and menus: `dialog`, `alert-dialog`, `modal`, `drawer`, `sheet`,
-  `popover`, `dropdown-menu`, `context-menu`, `command`, `command-palette`,
-  `confirmation-dialog`.
-- Layout and navigation: `accordion`, `breadcrumb`, `collapsible`, `resizable`,
-  `scroll-area`, `sidebar`, `tabs`, `table`, `tree-view`, `section-header`,
-  `item`, `button-group`.
-- Content and app widgets: `avatar`, `chart`, `chat`, `copy-button`,
-  `emoji-picker`, `github-button`, `kbd`, `light-switch`, `link`, `loading`,
-  `markdown`, `pm-command`, `progress`, `snippet`, `star-rating`.
-- Styles: `styles/shadcn-base.css`, `prose.css`, and `app.css`.
-
-Add a folder only when the component is a shared visual primitive or stable
-product widget. App-owned behavior should stay in the app and compose these
-parts.
-
-## Best Practices
-
-1. **Keep Components Pure**: no business logic in UI components.
-2. **Use Barrel Exports**: each component folder has an `index.ts`.
-3. **Keep the comparison local**: component utilities stay in their source files;
-   record intentional differences from the saved distributed baseline.
-5. **Consistent Imports**: relative inside `packages/ui/src`; `@epicenter/ui`
-   only from consumers outside this package.
-
-## Boundary Check
-
-Run the boundary check after changing UI imports or app config:
+After changing imports or app configuration, run from the repository root:
 
 ```bash
 bun run check:ui-boundary
 ```
 
-The executable source of truth is `scripts/check-ui-boundary.ts`.
-The check fails when app configs point at `packages/ui/src`, when app configs
-or package manifests add private UI import paths, when app source imports
-private UI import names, when app or package source imports `packages/ui/src`
-directly, or when UI source imports itself through private aliases or
-`@epicenter/ui/...`.
+The check in `scripts/check-ui-boundary.ts` enforces the public import boundary.
+For scrolling regression checks, run `bun scripts/ui-scroll.browser.mjs` with
+Playwright’s Chromium installed. It checks chat cleanup, streaming updates,
+reading position, and long folder submenus, and prints its artifact directory.
 
-## Troubleshooting
-
-### Browser regression checks
-
-From the repo root, run `bun scripts/ui-scroll.browser.mjs` with Playwright's
-Chromium installed. The script checks chat listener and observer cleanup,
-streaming updates, preservation of the reading position, and long folder
-submenus. It prints the temporary directory containing screenshots and results.
-
-### Import Resolution Issues
-
-If imports are not resolving:
-
-1. Check that the component is exported by `@epicenter/ui`.
-2. Ensure your IDE recognizes the package's TypeScript config.
-3. Restart the TypeScript language server.
-
-### Style conflicts
-
-Check the component's `cn()` call and the caller's class at the rendered
-viewport and state. Responsive utilities such as `sm:max-w-md` can outrank an
-unprefixed caller class. Put an override in the matching variant when the
-caller owns that width or color.
-
-### Component Updates
-
-When updating breaks functionality:
-
-1. Check the shadcn-svelte changelog.
-2. Compare the saved registry artifact with the component's local behavior and classes.
-3. Build a consuming app before committing.
+For styling conflicts, inspect the component’s `cn()` call and caller classes
+at the rendered viewport and state. A responsive utility such as `sm:max-w-md`
+can outrank an unprefixed override; use the matching variant when the caller
+owns that width. For import failures, check the component’s public export and
+the package TypeScript configuration.

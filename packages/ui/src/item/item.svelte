@@ -2,10 +2,9 @@
 	import { tv, type VariantProps } from 'tailwind-variants';
 
 	export const itemVariants = tv({
-		// Custom overrides preserved inline: `relative` is needed for the
-		// absolute-positioned showOnHover Actions, and `[a]:hover:bg-accent/50`
-		// keeps the Epicenter accent hover color.
-		base: '[a]:hover:bg-muted rounded-md border text-sm group/item relative [a]:hover:bg-accent/50 focus-visible:border-ring focus-visible:ring-ring/50 flex flex-wrap items-center transition-colors duration-100 outline-none focus-visible:ring-[3px] [a]:transition-colors',
+		// Honeycrisp positions note controls inside the item.
+		// Keep their containing block.
+		base: '[a]:hover:bg-muted rounded-md border text-sm group/item relative focus-visible:border-ring focus-visible:ring-ring/50 flex w-full flex-wrap items-center transition-colors duration-100 outline-none focus-visible:ring-[3px] [a]:transition-colors',
 		variants: {
 			variant: {
 				default: 'border-transparent',
@@ -15,6 +14,7 @@
 			size: {
 				default: 'gap-3.5 px-4 py-3.5',
 				sm: 'gap-2.5 px-3 py-2.5',
+				xs: 'gap-2 px-2.5 py-2 in-data-[slot=dropdown-menu-content]:p-0',
 			},
 		},
 		defaultVariants: {

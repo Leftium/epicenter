@@ -72,17 +72,26 @@
 
 	/** Status sorts in the order its labels are listed. */
 	const statusLabels = Object.values(STATUS_LABELS);
-	/** Every order the columns can be sorted in, in words: the narrow list's sort, without its column headers. */
-	const orders: { sort: RecordingSort; label: string }[] = [
-		{ sort: { key: 'recordedAt', direction: 'desc' }, label: 'Newest first' },
-		{ sort: { key: 'recordedAt', direction: 'asc' }, label: 'Oldest first' },
-		{ sort: { key: 'title', direction: 'asc' }, label: 'Title A to Z' },
-		{ sort: { key: 'title', direction: 'desc' }, label: 'Title Z to A' },
-		{ sort: { key: 'durationMs', direction: 'desc' }, label: 'Longest first' },
-		{ sort: { key: 'durationMs', direction: 'asc' }, label: 'Shortest first' },
-		{ sort: { key: 'status', direction: 'asc' }, label: `${statusLabels[0]} first` },
-		{ sort: { key: 'status', direction: 'desc' }, label: `${statusLabels[statusLabels.length - 1]} first` },
+	/** Every order the columns can be sorted in, in words, one group per column: the narrow list's sort, without its column headers. */
+	const orderGroups: { sort: RecordingSort; label: string }[][] = [
+		[
+			{ sort: { key: 'recordedAt', direction: 'desc' }, label: 'Newest first' },
+			{ sort: { key: 'recordedAt', direction: 'asc' }, label: 'Oldest first' },
+		],
+		[
+			{ sort: { key: 'title', direction: 'asc' }, label: 'Title A to Z' },
+			{ sort: { key: 'title', direction: 'desc' }, label: 'Title Z to A' },
+		],
+		[
+			{ sort: { key: 'durationMs', direction: 'desc' }, label: 'Longest first' },
+			{ sort: { key: 'durationMs', direction: 'asc' }, label: 'Shortest first' },
+		],
+		[
+			{ sort: { key: 'status', direction: 'asc' }, label: `${statusLabels[0]} first` },
+			{ sort: { key: 'status', direction: 'desc' }, label: `${statusLabels[statusLabels.length - 1]} first` },
+		],
 	];
+	const orders = orderGroups.flat();
 	const orderValue = ({ key, direction }: RecordingSort) => `${key} ${direction}`;
 	const order = $derived(orders.find(({ sort }) => orderValue(sort) === orderValue(view.recordingSort)));
 
@@ -200,9 +209,13 @@
 					{order?.label}
 				</Select.Trigger>
 				<Select.Content align="end" class="whitespace-nowrap">
-					{#each orders as { sort, label }, i (orderValue(sort))}
-						{#if i > 0 && orders[i - 1]?.sort.key !== sort.key}<Select.Separator />{/if}
-						<Select.Item value={orderValue(sort)} {label} />
+					{#each orderGroups as group, i (group[0]?.sort.key)}
+						{#if i > 0}<Select.Separator />{/if}
+						<Select.Group>
+							{#each group as { sort, label } (orderValue(sort))}
+								<Select.Item value={orderValue(sort)} {label} />
+							{/each}
+						</Select.Group>
 					{/each}
 				</Select.Content>
 			</Select.Root>
@@ -363,8 +376,8 @@
 									</span>
 								</div>
 							</Table.Cell>
-							<Table.Cell variant="muted" class={wideColumn}>{recorded}</Table.Cell>
-							<Table.Cell variant="muted" class={cn('tabular-nums', wideColumn)}>{duration}</Table.Cell>
+							<Table.Cell class={cn('text-muted-foreground', wideColumn)}>{recorded}</Table.Cell>
+							<Table.Cell class={cn('text-muted-foreground tabular-nums', wideColumn)}>{duration}</Table.Cell>
 							<Table.Cell class={cn('truncate', statusTone[row.status], wideColumn)} data-testid="row-status">
 								{#if row.status === 'transcribing'}<Spinner class="mr-1 inline size-3.5" />{/if}
 								{STATUS_LABELS[row.status]}

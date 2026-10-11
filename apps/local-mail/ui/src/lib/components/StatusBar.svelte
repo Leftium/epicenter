@@ -114,7 +114,7 @@
 						onValueChange={onSelectAccount}
 					>
 						{#each accounts as account (account.sub)}
-							<DropdownMenu.RadioItem value={account.sub}>
+							<DropdownMenu.RadioItem value={account.sub} closeOnSelect>
 								<span class="truncate font-mono text-xs">{account.email}</span>
 								{#if blocked.has(account.sub)}
 									<span class="ml-auto size-1.5 rounded-full bg-muted-foreground" role="img" aria-label="Sync needs attention"></span>

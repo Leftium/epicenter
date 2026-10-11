@@ -93,7 +93,8 @@ outcome and actual callers if the current abstraction did not exist. All
 reviewers apply this review method themselves without launching more reviewers.
 They may propose follow-up investigations; the coordinator commissions them.
 Codex owns verification and can assign bounded experiments through
-[delegate-claude](../delegate-claude/SKILL.md) within existing authorization.
+[delegate-claude](../delegate-claude/SKILL.md) when the user explicitly
+authorizes Claude execution.
 
 For a proposal without implementation, supply the proposal and any existing
 system it would replace. Distinguish observed behavior from design assumptions;

@@ -183,7 +183,7 @@
 							</ContextMenu.Item>
 							<ContextMenu.Sub>
 								<ContextMenu.SubTrigger>Move to folder</ContextMenu.SubTrigger>
-								<ContextMenu.SubContent class="w-48">
+								<ContextMenu.SubContent class="w-48 max-h-(--bits-menu-content-available-height) overflow-y-auto">
 									<ContextMenu.Item
 										onSelect={() => void report('move the note', notes.patchNote(note.path, { folderId: null }))}
 									>

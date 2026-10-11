@@ -152,15 +152,15 @@ only once that visibility and repair path are established. See [the repairabilit
 
 ## Agent collaboration
 
-Codex owns continuity, decisions, acceptance, and integration into the live
-checkout. Use `consult-claude` for a bounded read-only investigation,
-recommendation, or draft. Use `delegate-claude` for separable implementation or
-experimental execution within the user's authorized task. Claude can own the
-assignment in a dedicated clone; Codex verifies the artifact and integrates it.
-Choose delegation when its result advances the task and earns the coordination
-cost. Advice-only requests stay read-only. `adversarial-review` owns independent
-reviewer setup when that workflow is requested or needed; a worker result does
-not automatically trigger another panel.
+Codex owns continuity, decisions, live-checkout edits, testing, and integration.
+Claude provides a read-only second opinion when the user requests it or a
+workflow the user chose includes it. `adversarial-review` owns the reviewer
+setup for that workflow; complexity alone does not enlist Claude.
+Follow `consult-claude` for briefing and follow-ups and `adversarial-review`
+for the review method. Use `delegate-claude` only when the user explicitly
+authorizes Claude to own implementation or experimental execution. Authorization
+for the parent task alone does not authorize that delegation. Codex verifies
+the returned work, applies accepted changes, and reruns verification.
 
 ## Review routing
 

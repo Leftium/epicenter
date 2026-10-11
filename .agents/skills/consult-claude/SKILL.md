@@ -11,7 +11,8 @@ conversation, execution, verification, and integration. Use
 [delegate-claude](../delegate-claude/SKILL.md) when Claude should own edits or
 run an experiment.
 
-Choose a consultation when its result advances a named decision or replaces
+When the user's request or chosen workflow includes Claude, choose a
+consultation whose result advances a named decision or replaces
 work Codex would otherwise do. Give Claude enough work to finish the answer;
 available capacity alone does not justify another opinion. A standalone
 consultation does not automatically launch the adversarial reviewer pair.
@@ -63,14 +64,17 @@ place. A narrow question does not require a full architectural report.
 ## Send a brief
 
 Requires Bun, Git, and authenticated Claude Code 2.1.280 or later with access to
-the selected model. Use `--effort high` for an adversarial architecture review,
-including follow-ups. Use `xhigh` only for a focused unresolved decision, then
-return to high. For narrower consultations, omit `--effort` and let Claude Code
-select its configured or model default. Run from the checkout containing the
-evidence; supply the brief directly on stdin:
+the selected model. A new consultation requires an explicit `--model`. Choose
+`claude-sonnet-5-5` with `--effort medium` for a bounded caller map, ordinary bug
+investigation, or draft. Choose `claude-opus-5-5` with `--effort high` for an
+open-ended design question or consequential judgment. Adversarial architecture
+reviews explicitly use Opus high, including follow-ups. Use `xhigh` only for a
+focused unresolved decision, then return to high. Run from the checkout
+containing the evidence; supply the brief directly on stdin:
 
 ```bash
-bun .agents/skills/consult-claude/scripts/consult-claude.ts --effort high <<'BRIEF'
+bun .agents/skills/consult-claude/scripts/consult-claude.ts \
+  --model claude-opus-5-5 --effort high <<'BRIEF'
 [Concrete question, code blocks, source paths, diagram, reasoning, uncertainties.]
 BRIEF
 ```
@@ -95,6 +99,8 @@ Read the native JSON result, including `result`, `session_id`, `is_error`, and
 any permission denials. A process starting or exiting successfully is not proof
 of a successful consultation. Preserve the session ID for follow-ups.
 
+For an architecture-review follow-up, repeat high effort:
+
 ```bash
 bun .agents/skills/consult-claude/scripts/consult-claude.ts --effort high --resume <session_id> <<'EVIDENCE'
 [Requested evidence, commands and relevant raw output, changed source, next question.]
@@ -102,10 +108,13 @@ EVIDENCE
 ```
 
 Resume a completed consultation for the same assignment in the same checkout.
-Supply changed source, new evidence, and the next question explicitly. Use a
-fresh session for independent exploration, review of Claude-authored work, or a
-materially different frame. Resuming retains context: a challenge to another
-proposal or Codex's synthesis is an informed follow-up, not blind discovery.
+Supply changed source, new evidence, and the next question explicitly. The
+launcher reapplies read-only tools but does not verify the native session's
+assignment or original workspace; verify that identity before resuming. Use a
+fresh session for independent exploration, an independent review, or a
+materially different frame. See `delegate-claude` for reviewing a worker's
+result. Resuming retains context: a challenge to another proposal or Codex's
+synthesis is an informed follow-up, not blind discovery.
 
 The launcher sends one fixed brief per turn, reapplies the access boundary on
 every turn, and provides no mid-turn instruction channel or interactive attach.
@@ -114,9 +123,9 @@ Steer at completed-turn boundaries using
 design investigations. If the shell tool yields a running process, monitor it
 and keep the user informed.
 
-`--model` selects a model; the default is `claude-opus-5-5`.
-`--effort` selects the effort for this launch; omitting it leaves effort selection
-to Claude Code.
+A new consultation requires `--model`. On resume the launcher supplies no model
+or effort default: Claude Code restores the session's model, while command-line
+effort must be repeated. Explicit `--model` overrides that session's model.
 `--dry-run` previews launch arguments without invoking Claude. Consult the native
 result or transcript before attributing findings to a model: access restrictions
 and fallback can change the model used.
@@ -129,8 +138,8 @@ results, and source state. An advice-only request does not authorize edits.
 Ask before materially expanding the task; prior authorization still applies.
 
 This route remains read-only. When the assignment requires Claude to own
-implementation or experimental execution, use delegate-claude within the
-user's authorized scope. Do not turn an advice-only request into execution.
+implementation or experimental execution, use delegate-claude only with the
+user's explicit authorization for Claude execution.
 Return artifacts and evidence, including limitations. A longer report or more
 objections does not establish that a consultation was useful.
 

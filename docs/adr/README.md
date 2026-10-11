@@ -734,7 +734,6 @@ When you add an ADR, add its row here.
 | [0483](0483-honeycrisp-shares-one-canonical-editor-per-open-row.md) | Honeycrisp shares one canonical editor per open row | Superseded by 0523 |
 | [0484](0484-conflict-presentation-follows-the-edit-being-resolved.md) | Conflict presentation follows the edit being resolved | Proposed (consistent editor presentation unbuilt) |
 | [0486](0486-folder-domain-methods-share-accounted-storage.md) | Folder domain methods share accounted storage | Proposed |
-| [0487](0487-kv-commands-distinguish-creation-from-current-source-updates.md) | One KV file exposes stored values; applications own defaults | Proposed |
 | [0488](0488-cloud-folders-use-independent-git-histories.md) | Cloud folders pair with independent private GitHub repositories | Proposed (unbuilt; GitHub connection, private creation, account pairing, credential and browser gates; first-party hosting evidence retained) |
 | [0489](0489-cloud-folder-transfers-are-explicit-and-bootstrap-before-opening.md) | Account identity selects local folders and cloud transfers are explicit | Proposed (local history and Local CLI locks implemented; account setup, managed Sync, unrelated-history combination, and save/adoption/refresh coordination unbuilt) |
 | [0490](0490-the-cli-discovers-folders-and-delegates-history-to-git.md) | The CLI discovers folders and delegates history to Git | Proposed (Local CLI and source account commands implemented; cloud folders and transfers unbuilt) |
@@ -760,8 +759,8 @@ When you add an ADR, add its row here.
 | [0519](0519-row-frontmatter-is-yaml-every-common-reader-reads-identically.md) | Row frontmatter is YAML every common reader reads identically | Accepted (continuous cross-reader check unbuilt) |
 | [0520](0520-the-cli-acts-on-a-data-folder-by-its-path.md) | The CLI acts on a data folder by its path | Accepted (running outside an Epicenter checkout unbuilt) |
 | [0521](0521-a-data-folder-syncs-with-its-git-origin-through-a-provider.md) | A data folder syncs with its Git origin through a provider | Proposed (provider interface, repository-addressed GitHub transfers, listing by epicenter.json, and Artifacts provider unbuilt) |
-| [0522](0522-settings-are-independent-keys-set-one-at-a-time.md) | Settings are independent keys set one at a time | Proposed (application adoption and amending 0487 unbuilt) |
+| [0522](0522-settings-are-independent-keys-set-one-at-a-time.md) | Settings are independent keys set one at a time | Proposed (application adoption unbuilt) |
 | [0523](0523-applications-own-drafts-in-edit-sessions-and-leave-one-open-item.md) | Applications own drafts in edit sessions and leave one open item | Accepted (keyed slot for several open items unbuilt) |
 | [0525](0525-a-field-is-plain-json-schema.md) | A field is plain JSON Schema | Accepted |
 | [0526](0526-a-field-is-required-unless-declared-optional.md) | A field is required unless declared optional | Accepted |
-| [0527](0527-a-data-folder-may-keep-its-declaration-as-typescript.md) | A data folder may keep its declaration as TypeScript | Proposed |
+| [0527](0527-a-data-folder-may-keep-its-declaration-as-typescript.md) | A data folder may keep its declaration as TypeScript | Accepted |

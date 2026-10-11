@@ -66,6 +66,24 @@ async function setup() {
 	};
 }
 
+/** Let one event-loop turn pass, so off-thread work can report back. */
+const nextTurn = () => new Promise<void>((resolve) => setImmediate(resolve));
+
+/**
+ * Wait until the conversation has nothing in flight.
+ *
+ * The folder hashes files with `crypto.subtle`, which answers from a worker
+ * thread, so how many turns a write takes depends on machine load. There is
+ * no turn budget: a conversation that never settles fails on the test timeout.
+ */
+async function settle(conversation: ReturnType<typeof createConversation>) {
+	while (
+		conversation.snapshot().isGenerating ||
+		conversation.snapshot().isSaving
+	)
+		await nextTurn();
+}
+
 /** One chat's messages as a store opened over this folder reads them. */
 async function transcript(folder: VocabFolder, chatId: string) {
 	const store = createChatMessageStore(folder, chatId);
@@ -417,17 +435,12 @@ test('a tutor conversation over a folder that refuses writes asks nothing, then 
 		engine,
 		generateId: () => crypto.randomUUID(),
 	});
-	const settle = async () => {
-		const isActive = () =>
-			conversation.snapshot().isGenerating || conversation.snapshot().isSaving;
-		for (let count = 0; count < 200 && isActive(); count++) await Bun.sleep(0);
-	};
 	const roles = () =>
 		conversation.snapshot().messages.map((message) => message.role);
 
 	gate.failing = true;
 	expectErr(await conversation.send('What does "lucid" mean?'));
-	await settle();
+	await settle(conversation);
 	expect(calls).toBe(0);
 	expect(roles()).toEqual(['user']);
 	expect(await tableFiles(folder, 'messages')).toEqual([]);
@@ -438,7 +451,7 @@ test('a tutor conversation over a folder that refuses writes asks nothing, then 
 	expect(await tableFiles(folder, 'messages')).toHaveLength(1);
 
 	conversation.retry();
-	await settle();
+	await settle(conversation);
 	expect(calls).toBe(1);
 	const unsavedAnswer = conversation.snapshot().unsaved;
 	expect(unsavedAnswer.map((message) => message.role)).toEqual(['assistant']);
@@ -488,12 +501,10 @@ test('a listing delivered after a newer message was saved does not remove that m
 	gate.heldListing = delivery.promise;
 	const stale = store.load();
 	gate.heldListing = undefined;
-	await Bun.sleep(5);
+	await gate.listingRead.promise;
 
 	expectOk(await conversation.send('Is "lucid" formal?'));
-	const isActive = () =>
-		conversation.snapshot().isGenerating || conversation.snapshot().isSaving;
-	for (let count = 0; count < 200 && isActive(); count++) await Bun.sleep(0);
+	await settle(conversation);
 	expect(roles()).toEqual(['assistant', 'user', 'assistant']);
 	expect([...store.entries()]).toHaveLength(3);
 
@@ -522,7 +533,7 @@ test('an older listing delivered after a newer one does not replace it', async (
 	gate.heldListing = delivery.promise;
 	const older = store.load();
 	gate.heldListing = undefined;
-	await Bun.sleep(5);
+	await gate.listingRead.promise;
 
 	// Another tab saves a message, and a second load reads it.
 	const otherTab = createChatMessageStore(folder, 'chat-a');

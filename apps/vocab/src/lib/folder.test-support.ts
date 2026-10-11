@@ -123,6 +123,8 @@ export function gated<TTable extends VocabTables[keyof VocabTables]>(
 		heldList: undefined as Promise<void> | undefined,
 		/** A listing is read at once and delivered only after this resolves. */
 		heldListing: undefined as Promise<void> | undefined,
+		/** Settles once a held listing has been read, before it is delivered. */
+		listingRead: Promise.withResolvers<void>(),
 		creates: 0,
 		lists: 0,
 	};
@@ -155,6 +157,7 @@ export function gated<TTable extends VocabTables[keyof VocabTables]>(
 				await gate.heldList;
 				if (gate.failing) return refused('list');
 				const listed = await table.list();
+				if (heldListing) gate.listingRead.resolve();
 				await heldListing;
 				return listed;
 			},
@@ -182,6 +185,7 @@ export function gatedMessages(folder: VocabFolder) {
 					cause: new Error('storage refused'),
 				});
 			const listed = await folder.files.children(directory);
+			if (heldListing) gate.listingRead.resolve();
 			await heldListing;
 			return listed;
 		},

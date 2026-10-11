@@ -139,6 +139,33 @@ test('a missing or unusable epicenter.json is a tool failure with exit 2', async
 	expect(run('check', folder).exitCode).toBe(2);
 });
 
+test('a typo epicenter.json would otherwise ignore is refused, and $schema is allowed', async () => {
+	const { folder, write, run } = await setup();
+	const declare = (value: object) =>
+		write('epicenter.json', JSON.stringify(value));
+
+	await declare({ ...declaration, tabels: {} });
+	const extraKey = run('check', folder);
+	expect(extraKey.exitCode).toBe(2);
+	expect(extraKey.stderr).toContain("unknown top-level key 'tabels'");
+
+	await declare({
+		kv: {},
+		tables: {
+			posts: { fields: { due: { type: 'string', format: 'date-tme' } } },
+		},
+	});
+	const format = run('query', folder);
+	expect(format.exitCode).toBe(2);
+	expect(format.stderr).toContain('tables.posts.fields.due.format');
+
+	await declare({
+		$schema: 'https://example.test/epicenter.schema.json',
+		...declaration,
+	});
+	expect(run('check', folder).exitCode).toBe(0);
+});
+
 test('query refuses fields it cannot project: case duplicates, stem, and body', async () => {
 	const { folder, write, run } = await setup();
 	for (const [fields, message] of [

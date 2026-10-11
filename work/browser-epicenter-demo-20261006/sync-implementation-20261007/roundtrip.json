@@ -1,9 +1,0 @@
-{
-	"steps": [
-		"Browser downloaded the desktop edit through app Sync",
-		"Sync navigation preserved unsaved vocabulary input",
-		"Real local Ollama tutor reply saved to a conversation file",
-		"Actual app synchronized the saved tutor conversation to private GitHub"
-	],
-	"errors": []
-}

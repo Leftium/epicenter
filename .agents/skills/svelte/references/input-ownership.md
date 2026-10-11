@@ -101,7 +101,7 @@ triaging, then read tests for the candidate's behavior.
 
 ```sh
 # Copied editor content and synchronization effects.
-rg -n -g '*.svelte' -g '*.svelte.ts' '\$state(\.raw)?|\$effect|syncedBody|localTitle|localBody|acceptedBody|fromRowEditor' apps
+rg -n -g '*.svelte' -g '*.svelte.ts' '\$state(\.raw)?|\$effect|syncedBody|localTitle|localBody|acceptedBody' apps
 
 # Explicit submission events and candidate draft/payload owners.
 rg -n -g '*.svelte' -g '*.svelte.ts' 'onsubmit=|on:submit|onblur=|handleSubmit|submitForm|initialValues|defaultValues|\b(draft|form|payload|submitted)\b' apps

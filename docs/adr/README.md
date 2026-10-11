@@ -733,7 +733,7 @@ When you add an ADR, add its row here.
 | [0479](0479-file-mutation-methods-express-publication-intent.md) | File mutation methods express publication intent | Accepted |
 | [0480](0480-file-tables-own-only-their-markdown-row-files.md) | File tables own only their Markdown row files | Accepted (supersedes 0456) |
 | [0482](0482-folder-mutations-publish-one-file-at-a-time.md) | Folder mutations publish one file at a time | Accepted |
-| [0483](0483-honeycrisp-shares-one-canonical-editor-per-open-row.md) | Honeycrisp shares one canonical editor per open row | Accepted |
+| [0483](0483-honeycrisp-shares-one-canonical-editor-per-open-row.md) | Honeycrisp shares one canonical editor per open row | Superseded by 0523 |
 | [0484](0484-conflict-presentation-follows-the-edit-being-resolved.md) | Conflict presentation follows the edit being resolved | Proposed (consistent editor presentation unbuilt) |
 | [0485](0485-applications-choose-editor-observation-and-save-policies.md) | Applications choose editor observation and save policies | Proposed |
 | [0486](0486-folder-domain-methods-share-accounted-storage.md) | Folder domain methods share accounted storage | Proposed |
@@ -757,10 +757,11 @@ When you add an ADR, add its row here.
 | [0507](0507-editor-views-compose-current-input-and-own-only-interaction-state.md) | Editor views compose current input and own only interaction state | Proposed |
 | [0509](0509-folder-remotes-and-http-fetch-have-separate-contracts.md) | Folder remotes and HTTP fetch have separate contracts | Proposed |
 | [0512](0512-ai-reply-is-independent-of-openai-protocol-compatibility.md) | AI reply is independent of OpenAI protocol compatibility | Proposed (Zhongwen adoption and authenticated browser bridge unbuilt) |
-| [0515](0515-snapshot-saves-serialize-writes-and-retain-only-the-latest-pending-text.md) | Snapshot saves serialize writes and retain only the latest pending text | Proposed (application adoption and commits for late-confirmed saves unbuilt) |
+| [0515](0515-snapshot-saves-serialize-writes-and-retain-only-the-latest-pending-text.md) | Snapshot saves serialize writes and retain only the latest pending text | Proposed (commits for late-confirmed saves unbuilt) |
 | [0517](0517-a-data-folder-can-live-inside-any-repository.md) | A data folder can live inside any repository | Proposed (epicenter.json discovery in apps, opener refusal inside a host, extraction tooling, and submodule-hosted opening unbuilt) |
-| [0518](0518-a-row-is-read-through-one-pipeline-and-repaired-as-text.md) | A row is read through one pipeline and repaired as text | Proposed (application migration and kv.json unbuilt) |
+| [0518](0518-a-row-is-read-through-one-pipeline-and-repaired-as-text.md) | A row is read through one pipeline and repaired as text | Proposed (kv.json unbuilt) |
 | [0519](0519-row-frontmatter-is-yaml-every-common-reader-reads-identically.md) | Row frontmatter is YAML every common reader reads identically | Proposed (continuous cross-reader check unbuilt) |
 | [0520](0520-the-cli-acts-on-a-data-folder-by-its-path.md) | The CLI acts on a data folder by its path | Accepted (running outside an Epicenter checkout unbuilt) |
 | [0521](0521-a-data-folder-syncs-with-its-git-origin-through-a-provider.md) | A data folder syncs with its Git origin through a provider | Proposed (provider interface, repository-addressed GitHub transfers, listing by epicenter.json, and Artifacts provider unbuilt) |
 | [0522](0522-settings-are-independent-keys-set-one-at-a-time.md) | Settings are independent keys set one at a time | Proposed (application adoption and amending 0487 and 0499 unbuilt) |
+| [0523](0523-applications-own-drafts-in-edit-sessions-and-leave-one-open-item.md) | Applications own drafts in edit sessions and leave one open item | Proposed (keyed slot for several open items unbuilt) |

@@ -3,7 +3,7 @@
 - **Status:** Proposed
 - **Date:** 2026-10-11
 - **Relates:** [ADR-0518](0518-a-row-is-read-through-one-pipeline-and-repaired-as-text.md) (what a session reads and writes), [ADR-0519](0519-row-frontmatter-is-yaml-every-common-reader-reads-identically.md) (the text each save writes), [ADR-0464](0464-file-table-updates-conditionally-replace-the-captured-whole-file.md) (conditional replacement without retry)
-- **Unbuilt:** application adoption (todos, honeycrisp, capture, whispering, vocab), an automatic commit for a save a host reported `Unconfirmed` that a read then proved landed, and acceptance on a real storage host with a person editing.
+- **Unbuilt:** an automatic commit for a save a host reported `Unconfirmed` that a read then proved landed, and acceptance on a real storage host with a person editing.
 
 ## Context
 

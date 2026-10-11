@@ -152,30 +152,24 @@ Invalid files have a visible reason and an explicit repair route to Files;
 repairing text does not switch a mounted editor's interpretation. Do not add
 per-record Source/Fields tabs, raw mode, or automatic Source fallback.
 
-One accepted-content owner publishes each file. Read its current row through
-`fromRowEditor`; do not mirror its body, fields, validity or save state into
-component runes. A field replacement preserves current fields and body through
-`editor.set({ ...editor.row, fields: { ...editor.row.fields, key: input } })`.
-A body replacement uses `editor.set({ ...editor.row, body: input })`. Files uses
-`setText` or the raw-file owner's text setter. Preserve file newlines. Add a
+The app owns each open file's draft in an edit session from
+`@epicenter/svelte/edit-session`: `createRowSession` for a valid row,
+`createTextSession` for text. Read `session.draft` and `session.state`; change
+the draft only through `session.edit((row) => { row.fields.title = input; })`
+or `session.input(text)`, which save at once. Do not mirror the draft, fields,
+validity, or save state into component runes, and preserve file newlines. Add a
 codec when controls represent the body differently, such as text and thoughts.
 
-Key the detail by acquired editor identity, including a new editor at the same
-path. Read that owner once at mount; another owner gets another view. Do not key
-by changing content. A validity condition protects structured field reads;
-invalidity shows a reason and repair action rather than invented empty fields.
-The setter reads the current owner, not a render-time copy.
-
-Keep accepted input whose publication failed with the editor. An unfinished Add,
-Send or Save form owns a separate explicit-submission draft. Refused input follows
-the app's visible refusal policy. A rich widget keeps its document, selection and
-history without an extra mirrored application body.
-
-Workspaces sharing one canonical publisher need no publisher handoff. When
-navigation changes publishers, settle or explicitly resolve the retained owner
-before acquiring another. Failed saves and late accepted input keep that owner
-accessible; a handoff can stop instead of losing text. Keying retires a view,
-not admitted writes or callbacks held elsewhere.
+Keep the open item in `@epicenter/svelte/open-item` and key the detail by the
+item, so another item mounts another view. A row whose text is not valid opens
+as text with its issues, and opens as a row again once repaired. Disable
+inputs while `session.locked`. Leaving an item settles and releases its
+session; a failed save answers `unsaved` and the view asks before discarding
+that session. Show the save state and conflict prompt with
+`@epicenter/svelte/save-bar`. A rich widget keeps its document, selection, and
+history; saves never assign the draft, and only a read that replaces it
+(`session.generation`) remounts the widget. An unfinished Add, Send, or Save
+form owns a separate explicit-submission draft.
 
 Tabs may select actual workspaces or workflows. Shared `Tabs.Content` owns panel
 mounting, so do not repeat `tab === value` inside each panel. A disabled trigger
@@ -188,10 +182,11 @@ controls and delayed commands retain their own lifetime and current-data checks.
 Inline components that only forward bindings; keep substantial UI, resources,
 format rules and real editing lifetimes.
 
-For a hunt, trace table `.edit`, `fromRowEditor` and `ReactiveRowEditor` callers.
-Classify state by its actual owner before removing it. Use the
-[search recipes](input-ownership.md#search-recipes), then verify repair navigation,
-current-owner replacement, failed-save retention and retired-control delivery.
+For a hunt, trace `createRowSession`, `createTextSession`, and `createOpenItem`
+callers. Classify state by its actual owner before removing it. Use the
+[search recipes](input-ownership.md#search-recipes), then verify repair
+navigation, the conflict prompt, failed-save discard, and that a released
+session changes nothing.
 
 ## Inline Simple Props Types
 

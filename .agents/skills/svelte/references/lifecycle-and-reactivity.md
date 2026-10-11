@@ -227,32 +227,26 @@ adapter whose getters participate in Svelte reactivity, construct it once when
 the source owner is fixed for the component instance:
 
 ```svelte
-<!-- Parent: owner changes recreate the child. -->
-{#key rowEditor}
-	<RowView {rowEditor} />
+<!-- Parent: a new open item recreates the child. -->
+{#key item}
+	<RowView session={item.session} />
 {/key}
 ```
 
 ```svelte
 <!-- RowView.svelte -->
 <script lang="ts">
-	import { untrack } from 'svelte';
-	let { rowEditor } = $props();
-	// The parent keys this child on rowEditor; capture this instance's owner.
-	const editor = fromRowEditor(untrack(() => rowEditor));
+	let { session } = $props();
 </script>
 
-{#if editor.row.status === 'valid'}
-	<p>{editor.row.fields.title}</p>
-{/if}
+<p>{session.draft.fields.title}</p>
 ```
 
-Changes to the row do not require reconstructing the adapter. If `rowEditor`
-can be replaced while this component stays mounted, a plain initialization
-would retain the old owner. For a side-effect-free read-through adapter, use
-`const editor = $derived(fromRowEditor(rowEditor))` in that case. For an adapter
-that owns a disposable resource, use an explicit lifecycle boundary instead;
-`$derived` does not supply cleanup.
+The session's getters are reactive, so changes to the draft or save state need
+no reconstruction. If the owner can be replaced while this component stays
+mounted, key the component on the owner, or derive from the prop. For an
+adapter that owns a disposable resource, use an explicit lifecycle boundary
+instead; `$derived` does not supply cleanup.
 
 Confirm owner stability at the caller before removing the wrapper. A keyed
 child can establish that stability when the key tracks the owner identity.

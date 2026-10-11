@@ -482,8 +482,9 @@ saves land.
 
 - Every save is guarded by the version this window last saved. When the file
   changed elsewhere, nothing is written and the save line asks: **Reload
-  theirs** shows the file as it is now, **Keep mine** saves your version over
-  it. When the file was deleted elsewhere, **Keep mine** creates it again from
+  theirs** shows the file as it is now (a text file that is no longer text
+  opens as what it is), **Keep mine** saves your version over it. When the
+  file was deleted elsewhere, **Keep mine** creates it again from
   your version and **Discard** closes it. A recording deleted elsewhere offers
   only **Discard**, because its audio may be gone too.
 - A save that failed, or whose reply never arrived, keeps your edits on screen.

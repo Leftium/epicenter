@@ -1,8 +1,8 @@
 /**
  * Open Item and Admissions Tests
  *
- * Drives the one-open-item slot over stand-in sessions, and admissions over
- * plain promises.
+ * Drives the one-open-item slot and the keyed slots over stand-in sessions,
+ * and admissions over plain promises.
  *
  * Key behaviors:
  * - Opening the item already shown does nothing
@@ -10,6 +10,12 @@
  * - A failed save answers `unsaved` with its session; only that session's discard proceeds
  * - Reload theirs closes a gone file and reopens one that cannot be shown
  * - `removeOpen` releases first, removes what the last save confirmed, and reopens when refused
+ * - Keyed slots open and leave independently; a slot is dropped once it shows
+ *   nothing and no command on it runs, and a late load is released even when
+ *   its slot is opened again
+ * - Conflict commands find the slot holding their session, and act only
+ *   while it is open there
+ * - A slot moves to a new key only when that key is free
  * - A command counts from its call, before its first await
  */
 import './svelte-modules.test-support.js';
@@ -19,7 +25,9 @@ import { Err, Ok } from 'wellcrafted/result';
 import type { Reread } from './edit-session.svelte.js';
 import type { OpenSession } from './open-item.svelte.js';
 
-const { createOpenItem } = await import('./open-item.svelte.ts');
+const { createOpenItem, createOpenItems } = await import(
+	'./open-item.svelte.ts'
+);
 const { createAdmissions } = await import('./admissions.svelte.ts');
 
 type Failure = { readonly name: string; readonly message: string };
@@ -236,4 +244,141 @@ test('the key follows an item renamed in place, so a reload reads the new path',
 	expect(await open.open('new')).toEqual({ kind: 'done', left: false });
 	await open.reload();
 	expect(loads).toEqual(['old', 'new']);
+});
+
+/** Keyed slots over stand-in sessions; `hold(key)` holds that key's load. */
+function slots() {
+	const loads: string[] = [];
+	const gates = new Map<string, PromiseWithResolvers<void>>();
+	const items = createOpenItems<string, string, Item, Session>({
+		async load(key) {
+			loads.push(key);
+			await gates.get(key)?.promise;
+			return { key, session: fakeSession(key) };
+		},
+		sessionOf: (item) => item.session,
+	});
+	return {
+		items,
+		loads,
+		hold(key: string) {
+			const gate = Promise.withResolvers<void>();
+			gates.set(key, gate);
+			return () => {
+				gates.delete(key);
+				gate.resolve();
+			};
+		},
+	};
+}
+
+test('keyed slots open and leave independently', async () => {
+	const { items } = slots();
+	await items.slot('left').open('a');
+	await items.slot('right').open('b');
+	const a = items.slot('left').session!;
+	expect(items.keys().sort()).toEqual(['left', 'right']);
+	expect(items.sessions().map((session) => session.path).sort()).toEqual([
+		'a',
+		'b',
+	]);
+
+	// Opening in one slot leaves only that slot's item.
+	await items.slot('right').open('c');
+	expect(items.slot('left').session).toBe(a);
+	expect(a.released).toBe(false);
+	expect(items.slot('right').item?.key).toBe('c');
+
+	// A failed save holds its own slot only.
+	a.fail();
+	expect(items.slot('left').unsaved).toBe(true);
+	expect(items.slot('right').unsaved).toBe(false);
+	expect(await items.slot('left').leave()).toEqual({
+		kind: 'unsaved',
+		session: a,
+	});
+	expect(await items.slot('right').leave()).toEqual({
+		kind: 'done',
+		left: true,
+	});
+	expect(items.keys()).toEqual(['left']);
+	expect(await items.slot('left').leave({ discard: a })).toEqual({
+		kind: 'done',
+		left: true,
+	});
+	expect(items.keys()).toEqual([]);
+	expect(items.slot('left').item).toBeUndefined();
+});
+
+test('a slot with a load running is kept, and a load left behind is released even when the slot opens again', async () => {
+	const { items, hold, loads } = slots();
+	const release = hold('a');
+	const late = items.slot('pane').open('a');
+	expect(items.keys()).toEqual(['pane']);
+	await Bun.sleep(0);
+	// Loading: forgetting it drops what loads, and the slot stays while it runs.
+	expect(items.slot('pane').shown).toEqual({ status: 'loading', key: 'a' });
+	items.slot('pane').forget();
+	expect(items.keys()).toEqual(['pane']);
+	await items.slot('pane').open('b');
+	release();
+	expect(await late).toEqual({ kind: 'superseded' });
+	expect(items.slot('pane').item?.key).toBe('b');
+	expect(loads).toEqual(['a', 'b']);
+
+	// Nothing shown and nothing running: the slot is dropped.
+	await items.slot('pane').leave();
+	expect(items.keys()).toEqual([]);
+});
+
+test('conflict commands find the slot holding their session, and act only while it is open there', async () => {
+	const { items, loads } = slots();
+	await items.slot('left').open('a');
+	await items.slot('right').open('b');
+	const b = items.slot('right').session!;
+	expect(items.holding(b)).toBe('right');
+	b.willReread({
+		kind: 'other',
+		file: { path: 'b', sha256: 'b'.repeat(64) },
+		detail: 'binary',
+	});
+	expect((await items.reloadTheirs(b))?.data).toBe('reopened');
+	expect(b.released).toBe(true);
+	expect(loads).toEqual(['a', 'b', 'b']);
+	// No longer open anywhere: not acted on.
+	expect(items.holding(b)).toBeUndefined();
+	expect(await items.reloadTheirs(b)).toBeUndefined();
+	expect(await items.keepMine(b)).toBeUndefined();
+	expect(await items.slot('right').keepMine(b)).toBeUndefined();
+
+	const reopened = items.slot('right').session!;
+	reopened.willReread({ kind: 'gone' });
+	expect((await items.reloadTheirs(reopened))?.data).toBe('closed');
+	expect(items.keys()).toEqual(['left']);
+	expect((await items.keepMine(items.slot('left').session!))?.error).toBeNull();
+});
+
+test('a slot moves to a free key with its item and session, and refuses a taken one', async () => {
+	const { items } = slots();
+	await items.slot('old').open('a');
+	await items.slot('other').open('b');
+	const a = items.slot('old').session!;
+	expect(items.move('old', 'other')).toBe(false);
+	expect(items.move('old', 'new')).toBe(true);
+	expect(items.slot('old').session).toBeUndefined();
+	expect(items.slot('new').session).toBe(a);
+	expect(items.holding(a)).toBe('new');
+	expect(items.keys().sort()).toEqual(['new', 'other']);
+});
+
+test('closing waits for every slot and names each draft that could not be saved', async () => {
+	const { items } = slots();
+	await items.slot('left').open('a');
+	await items.slot('right').open('b');
+	const a = items.slot('left').session!;
+	const b = items.slot('right').session!;
+	a.fail();
+	expect(await items.close()).toEqual(['a']);
+	expect(a.released).toBe(true);
+	expect(b.released).toBe(true);
 });

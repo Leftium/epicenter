@@ -4,7 +4,7 @@
 - **Date:** 2026-10-11
 - **Supersedes:** [ADR-0483](0483-honeycrisp-shares-one-canonical-editor-per-open-row.md) (one retained canonical editor per open row)
 - **Relates:** [ADR-0515](0515-snapshot-saves-serialize-writes-and-retain-only-the-latest-pending-text.md) (the autosave each session runs), [ADR-0518](0518-a-row-is-read-through-one-pipeline-and-repaired-as-text.md) (what a session reads and repairs)
-- **Unbuilt:** a keyed slot for pages with several items open at once (Whispering keeps its own map), and acceptance on a real storage host with a person editing.
+- **Unbuilt:** acceptance on a real storage host with a person editing. The keyed slot for pages with several items open at once is built (`createOpenItems`); Whispering keeps a slot per open file on it.
 
 ## Context
 
@@ -22,7 +22,8 @@ conflict prompt copied five times.
 
 **An application owns each open file's draft in an edit session from
 `@epicenter/svelte/edit-session`, and a page that shows one file at a time
-keeps it in the slot from `@epicenter/svelte/open-item`.**
+keeps it in the slot from `@epicenter/svelte/open-item`; a page with several
+open at once keeps a slot per key (`createOpenItems`).**
 
 - A session saves each edit at once through the folder's autosave and never
   assigns the draft. A change made elsewhere, or a deleted file, is a conflict

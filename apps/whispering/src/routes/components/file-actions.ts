@@ -7,7 +7,7 @@ import { basename } from '@epicenter/folder/file-browser';
 import { confirmationDialog } from '@epicenter/ui/confirmation-dialog';
 import { toast } from '@epicenter/ui/sonner';
 import { describeDeletion } from '$lib/deletion.js';
-import type { Library } from '$lib/library.svelte.js';
+import type { DraftSession, Library } from '$lib/library.svelte.js';
 
 export { recordingTitle } from '$lib/deletion.js';
 
@@ -79,7 +79,7 @@ export async function confirmDelete(library: Library, path: string) {
 export async function openItem(
 	library: Library,
 	path: string,
-	discard?: unknown,
+	discard?: DraftSession,
 ): Promise<boolean> {
 	const opened = await library.open(path, { discard });
 	if (opened === undefined) return true;

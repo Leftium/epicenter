@@ -38,7 +38,6 @@ import type {
 import { parseRow, rowPath, rowStemOf } from '@epicenter/folder';
 import { ancestorsOf, dirname, joinPath } from '@epicenter/folder/file-browser';
 import { createAdmissions } from '@epicenter/svelte/admissions';
-import type { Reread } from '@epicenter/svelte/edit-session';
 import { customAlphabet } from 'nanoid';
 import { createSubscriber, SvelteSet } from 'svelte/reactivity';
 import { Err, Ok, type Result } from 'wellcrafted/result';
@@ -74,7 +73,6 @@ import {
 	createDrafts,
 	type Draft,
 	type DraftSession,
-	pathOf,
 	RECORDING_GONE,
 	rowTableOf,
 	sessionOf,
@@ -168,9 +166,6 @@ const TRANSFORMATION_NAME =
 const TRANSCRIPT_NAME = 'A transcript file keeps its .md extension.';
 const STILL_TEXT =
 	'Its text still does not read as a row. Fix what the notice names first.';
-/** Why Reload theirs showed nothing: the file is there but is not text. */
-const NOT_TEXT =
-	'This file is no longer text, so it cannot be shown here. Keep mine saves your version over it.';
 
 const suffix = customAlphabet('0123456789abcdefghijklmnopqrstuvwxyz', 4);
 
@@ -288,8 +283,6 @@ export function createLibrary(workspace: Workspace) {
 
 	let selectedPath = $state<string | undefined>();
 	let selectedTransformationPath = $state<string | undefined>();
-	/** Advanced by every open of a pane, so an open that answers late changes nothing. */
-	const openSequence = { recordings: 0, transformations: 0 };
 
 	let pending = $state.raw<PendingRecording[]>([]);
 	let recorder = $state.raw<RecorderState>({ phase: 'idle' });
@@ -473,42 +466,41 @@ export function createLibrary(workspace: Workspace) {
 
 	/**
 	 * Show `path`: a transformation on its page, anything else beside the
-	 * recordings. The drafts it replaces are left first: their saves land and
-	 * the listings are read again. Answers the session that holds a draft it
-	 * could not save, opening nothing; the view asks the person, and
-	 * `discard` names the session whose draft they chose to let go.
+	 * recordings. The drafts it replaces in that pane are left first: their
+	 * saves land and the listings are read again. Answers the session that
+	 * holds a draft it could not save, opening nothing; the view asks the
+	 * person, and `discard` names the session whose draft they chose to let
+	 * go. A newer open of the same pane, which leaves the same drafts, takes
+	 * over, and this one opens nothing.
 	 */
 	async function open(
 		path: string,
-		{ discard }: { discard?: unknown } = {},
+		{ discard }: { discard?: DraftSession } = {},
 	): Promise<{ readonly unsaved: DraftSession } | undefined> {
 		if (closing) return undefined;
 		const pane =
 			rowTableOf(path) === TRANSFORMATIONS ? 'transformations' : 'recordings';
-		const sequence = ++openSequence[pane];
 		let left = false;
-		for (const other of drafts.paths()) {
+		for (const other of drafts.keys()) {
 			if (other === path || paneOf(other) !== pane) continue;
-			const unsaved = await drafts.leave(other, discard);
-			if (unsaved !== undefined) return { unsaved };
-			left = true;
+			const leaving = await drafts.slot(other).leave({ discard });
+			if (leaving.kind === 'unsaved') return { unsaved: leaving.session };
+			if (leaving.kind === 'superseded') return undefined;
+			left ||= leaving.left;
 		}
 		if (left) void refresh();
-		if (sequence !== openSequence[pane] || closing) return undefined;
+		if (closing) return undefined;
 		for (const ancestor of ancestorsOf(path)) expanded.add(ancestor);
 		if (pane === 'transformations') selectedTransformationPath = path;
 		else selectedPath = path;
-		await drafts.open(path);
+		await drafts.show(path);
 		return undefined;
 	}
 
 	/** The open draft whose session is `session`. */
 	function draftWith(session: DraftSession): Draft | undefined {
-		for (const path of drafts.paths()) {
-			const draft = drafts.get(path);
-			if (draft !== undefined && sessionOf(draft) === session) return draft;
-		}
-		return undefined;
+		const path = drafts.holding(session);
+		return path === undefined ? undefined : drafts.get(path);
 	}
 
 	/**
@@ -731,7 +723,7 @@ export function createLibrary(workspace: Workspace) {
 		 */
 		async openTranscript(path: string) {
 			if (closing || rowStemOf(TRANSCRIPTIONS, path) === undefined) return;
-			await drafts.open(path);
+			await drafts.show(path);
 		},
 		get closing() {
 			return closing;
@@ -936,29 +928,17 @@ export function createLibrary(workspace: Workspace) {
 		}),
 		/**
 		 * Reload theirs for `session`: show the file as it is now. A row whose
-		 * text is no longer valid opens as text; a file that is gone closes.
-		 * Answers what the person is told, if anything.
+		 * text is no longer valid opens as text, a file that is no longer text
+		 * opens as what it is, and a file that is gone closes. Answers what the
+		 * person is told, if anything.
 		 */
 		reloadTheirs: command(
 			async (session: DraftSession): Promise<string | undefined> => {
 				const why = refused();
 				if (why !== undefined) return why;
-				const draft = draftWith(session);
-				if (draft === undefined) return undefined;
-				const path = pathOf(draft);
-				// Each kind of session answers its own kind of read; only its kind matters here.
-				const reloading = session.reloadTheirs() as Promise<
-					Result<Reread<unknown, unknown>, { name: string; message: string }>
-				>;
-				const { data: found, error } = await reloading;
-				if (error !== null) return describeError(error);
-				if (found.kind === 'gone') drafts.forget(path);
-				else if (found.kind === 'other') {
-					if (draft.kind === 'text') return NOT_TEXT;
-					// The row's text is no longer valid: it opens as text, for repair.
-					drafts.forget(path);
-					await drafts.open(path);
-				}
+				const reloaded = await drafts.reloadTheirs(session);
+				if (reloaded === undefined) return undefined;
+				if (reloaded.error !== null) return describeError(reloaded.error);
 				await refresh();
 				return undefined;
 			},
@@ -972,12 +952,12 @@ export function createLibrary(workspace: Workspace) {
 			async (session: DraftSession): Promise<string | undefined> => {
 				const why = refused();
 				if (why !== undefined) return why;
-				if (draftWith(session) === undefined) return undefined;
 				// A recording's session refuses to create its file again; see `drafts.svelte.ts`.
-				const { error } = await session.keepMine();
-				if (error?.name === RECORDING_GONE.name) gone.add(session);
+				const kept = await drafts.keepMine(session);
+				if (kept === undefined) return undefined;
+				if (kept.error?.name === RECORDING_GONE.name) gone.add(session);
 				await refresh();
-				return error === null ? undefined : describeError(error);
+				return kept.error === null ? undefined : describeError(kept.error);
 			},
 		),
 		/** Whether Keep mine is offered for `session`: not for a recording known to be deleted elsewhere. */
@@ -986,8 +966,8 @@ export function createLibrary(workspace: Workspace) {
 		},
 		/** Discard `session`'s draft and close it. Nothing is written. */
 		discard(session: DraftSession) {
-			const draft = draftWith(session);
-			if (draft !== undefined) drafts.forget(pathOf(draft));
+			const path = drafts.holding(session);
+			if (path !== undefined) drafts.slot(path).forget(session);
 		},
 
 		async startRecording() {
@@ -1178,7 +1158,7 @@ export function createLibrary(workspace: Workspace) {
 				else if (session !== undefined) {
 					moved = await session.rename(move);
 					if (moved.error === null) {
-						drafts.moved(path, to);
+						drafts.move(path, to);
 						if (selectedPath === path) selectedPath = to;
 					}
 				} else {
@@ -1190,7 +1170,7 @@ export function createLibrary(workspace: Workspace) {
 					if (moved.error === null && selectedPath === path) {
 						drafts.forget(path);
 						selectedPath = to;
-						await drafts.open(to);
+						await drafts.show(to);
 					}
 				}
 				await refreshAll();
@@ -1286,7 +1266,7 @@ export function createLibrary(workspace: Workspace) {
 			await admissions.quiet();
 			await input.saved();
 			await Promise.all(drafts.sessions().map((session) => session.settled()));
-			for (const path of drafts.paths()) drafts.forget(path);
+			for (const path of drafts.keys()) drafts.forget(path);
 			recordingsListed.clear();
 			await workspace.close();
 		},

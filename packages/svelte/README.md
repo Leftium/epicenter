@@ -58,8 +58,25 @@ answers after a newer open is released. `keepMine` and `reloadTheirs` act
 only on the session given while it is open; Reload theirs closes a gone file
 and reopens one that cannot be shown through `load`. `removeOpen(session, remove)`
 releases, waits for the saves, and removes what the last one confirmed. What an
-item is, listings, refusals, and wording stay with the app. A page with
-several drafts open at once keeps its own map.
+item is, listings, refusals, and wording stay with the app.
+
+`createOpenItems(options)` keeps a slot per key, for a page with several
+items open at once. `slot(key)` has the same commands as `createOpenItem`,
+which is one such slot; `keys()`, `sessions()`, `holding(session)`,
+`keepMine(session)`, `reloadTheirs(session)`, `adopt()`, and `close()` act
+across slots, and `move(from, to)` follows a renamed file. A slot exists while
+it shows something or a command on it runs, so a late load is always released
+by the slot it started in.
+
+```ts
+const drafts = createOpenItems<string, { path: string; as: 'row' | 'text' }, Draft, Session>({
+	load,
+	sessionOf,
+	sameKey: (a, b) => a.path === b.path && a.as === b.as,
+});
+const opened = await drafts.slot(path).open({ path, as: 'row' });
+if (opened.kind === 'unsaved') ask(opened.session); // then open again with { discard }
+```
 
 ### `admissions` (`@epicenter/svelte/admissions`)
 

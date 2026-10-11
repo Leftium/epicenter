@@ -281,7 +281,7 @@ async function deleteOne(
 		({ error } = await remove(saved));
 	drafts.forget(capture.path);
 	if (error === null) return undefined;
-	if (draft !== undefined) await drafts.open(capture.path);
+	if (draft !== undefined) await drafts.show(capture.path);
 	return describeError(error);
 }
 

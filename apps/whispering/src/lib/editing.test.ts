@@ -435,6 +435,41 @@ test('opening another item waits for saves, and a failed save answers unsaved un
 	expect(await text(library, firstPath)).not.toContain('Not saved');
 });
 
+test('an open that a newer open of the same pane overtakes shows nothing, and the other pane keeps its draft', async () => {
+	const { library } = await open();
+	const recording = await record(library);
+	expect(
+		await library.createTransformation({ title: 'Tidy', prompt: 'Tidy.\n' }),
+	).toBeUndefined();
+	const transformation = library.selectedTransformation!;
+	expectOk(await library.folder.files.create('notes.txt', 'notes'));
+	expectOk(await library.folder.files.create('other.txt', 'other'));
+
+	// Both leave the recording; the later one takes the recordings pane.
+	const first = library.open('notes.txt');
+	const second = library.open('other.txt');
+	expect(await first).toBeUndefined();
+	expect(await second).toBeUndefined();
+	expect(library.selectedPath).toBe('other.txt');
+	expect(library.draftAt('other.txt')?.kind).toBe('text');
+	expect(library.draftAt('notes.txt')).toBeUndefined();
+	expect(library.draftAt(recording.path)).toBeUndefined();
+	expect(recording.locked).toBe(true);
+
+	// A load still running when its pane opens something else installs nothing.
+	const loading = library.open('notes.txt');
+	await Bun.sleep(0);
+	await library.open(recording.path);
+	await loading;
+	expect(library.selectedPath).toBe(recording.path);
+	expect(library.draftAt('notes.txt')).toBeUndefined();
+	expect(library.draftAt('other.txt')).toBeUndefined();
+
+	// The transformations pane was never left.
+	expect(library.selectedTransformation?.draft).toBe(transformation.draft);
+	expect(library.draftAt(transformation.path)).toBe(transformation.draft);
+});
+
 test('returning adopts a newer version of an open draft that holds nothing unsaved', async () => {
 	const { library } = await open();
 	const session = await record(library);

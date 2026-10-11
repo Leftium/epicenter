@@ -9,10 +9,12 @@
  * text open as what they are, with nothing to save.
  *
  * Several drafts can be open at once: the selected recording with its
- * transcripts beside it, and the selected transformation. The library decides
- * which; leaving a draft waits for its saves and releases its session. A
- * draft whose save failed or conflicted is left only when the person
- * discards that session's draft.
+ * transcripts beside it, and the selected transformation. Each path is its
+ * own slot of `@epicenter/svelte/open-item`, keyed by the path and opened as
+ * a row or as text. The library decides which are open; leaving a draft
+ * waits for its saves and releases its session, a load that answers after
+ * its draft was left is released, and a draft whose save failed or
+ * conflicted is left only when the person discards that session's draft.
  */
 import {
 	type FileTable,
@@ -28,7 +30,7 @@ import {
 	rowSource,
 	type TextSession,
 } from '@epicenter/svelte/edit-session';
-import { SvelteMap } from 'svelte/reactivity';
+import { createOpenItems } from '@epicenter/svelte/open-item';
 import { Err } from 'wellcrafted/result';
 import { audioMimeTypeOf } from './audio-format.js';
 import {
@@ -49,8 +51,10 @@ export type RowTable =
 	| typeof TRANSFORMATIONS;
 
 /** One open file, as its view shows it. */
-export type Draft =
-	| { readonly kind: 'loading'; readonly path: string }
+export type Draft = { readonly kind: 'loading'; readonly path: string } | Loaded;
+
+/** What a file opens as once read. */
+type Loaded =
 	| {
 			readonly kind: 'row';
 			readonly table: typeof RECORDINGS;
@@ -94,6 +98,9 @@ export const RECORDING_GONE = {
 /** How a row file opens: as fields when its text reads as a row, or as text. */
 export type OpenAs = 'row' | 'text';
 
+/** What a slot shows: the file at `path`, opened `as`. */
+type DraftKey = { readonly path: string; readonly as: OpenAs };
+
 /** The row table a path is a row of, if it is one this window edits. */
 export function rowTableOf(path: string): RowTable | undefined {
 	for (const table of [RECORDINGS, TRANSCRIPTIONS, TRANSFORMATIONS] as const)
@@ -105,7 +112,7 @@ export function sessionOf(draft: Draft | undefined): DraftSession | undefined {
 	return draft !== undefined && 'session' in draft ? draft.session : undefined;
 }
 
-export function pathOf(draft: Draft): string {
+function pathOf(draft: Draft): string {
 	return 'session' in draft ? draft.session.path : draft.path;
 }
 
@@ -121,15 +128,13 @@ export function createDrafts(
 		sizeOf: (path: string) => number;
 	},
 ) {
-	const drafts = new SvelteMap<string, Draft>();
-
 	/** Read one row: a row session when its text reads as a row, else its text. */
 	async function readRow<TFields>(
 		rows: FileTable<TFields>,
 		table: RowTable,
 		stem: string,
-		asRow: (stored: StoredRow<TFields>) => Draft,
-	): Promise<Draft> {
+		asRow: (stored: StoredRow<TFields>) => Loaded,
+	): Promise<Loaded> {
 		const path = rowPath(table, stem);
 		const { data: stored, error } = await rows.get(stem);
 		if (error?.name === 'InvalidRow')
@@ -145,7 +150,7 @@ export function createDrafts(
 	}
 
 	/** Read `path` the way `as` opens it. */
-	async function load(path: string, as: OpenAs): Promise<Draft> {
+	async function load({ path, as }: DraftKey): Promise<Loaded> {
 		const table = rowTableOf(path);
 		const stem = table && rowStemOf(table, path);
 		if (stem !== undefined && as === 'row')
@@ -203,89 +208,49 @@ export function createDrafts(
 		};
 	}
 
-	/**
-	 * Open `path` as `as`, keeping a draft already open there. A draft that
-	 * failed to open is read again. A load that answers after the draft was
-	 * left installs nothing.
-	 */
-	async function open(path: string, as: OpenAs = 'row'): Promise<Draft> {
-		const known = drafts.get(path);
-		if (known !== undefined && known.kind !== 'failed') return known;
-		const loading: Draft = { kind: 'loading', path };
-		drafts.set(path, loading);
-		const draft = await load(path, as);
-		if (drafts.get(path) !== loading) {
-			sessionOf(draft)?.release();
-			return drafts.get(path) ?? draft;
-		}
-		drafts.set(path, draft);
-		return draft;
-	}
-
-	/**
-	 * Leave the draft at `path`: wait for its saves, then release its session.
-	 * Answers the session, leaving it open, when its save failed or conflicted
-	 * and the person did not choose to discard that session's draft.
-	 */
-	async function leave(
-		path: string,
-		discard?: unknown,
-	): Promise<DraftSession | undefined> {
-		const draft = drafts.get(path);
-		const session = sessionOf(draft);
-		if (session !== undefined) {
-			const settled = await session.settled();
-			if (settled.status === 'error' && discard !== session) return session;
-			session.release();
-		}
-		if (drafts.get(path) === draft) drafts.delete(path);
-		return undefined;
-	}
-
-	/** Drop the draft at `path` now, without waiting for its saves. */
-	function forget(path: string) {
-		sessionOf(drafts.get(path))?.release();
-		drafts.delete(path);
-	}
+	const items = createOpenItems<string, DraftKey, Loaded, DraftSession>({
+		load,
+		sessionOf,
+		// A row whose text is not valid opens as text, and is shown as text
+		// until it opens as a row again; a renamed draft follows its session.
+		keyOf: (draft, asked) => ({
+			path: pathOf(draft),
+			as: draft.kind === 'text' ? 'text' : asked.as,
+		}),
+		sameKey: (a, b) => a.path === b.path && a.as === b.as,
+	});
 
 	return {
+		...items,
+		/** The draft at `path`, loading or open. */
 		get(path: string): Draft | undefined {
-			return drafts.get(path);
+			const shown = items.slot(path).shown;
+			if (shown === undefined) return undefined;
+			return shown.status === 'loading' ? { kind: 'loading', path } : shown.item;
 		},
-		paths(): string[] {
-			return [...drafts.keys()];
+		/**
+		 * Show the file at `path`, keeping a draft already open there. A draft
+		 * that failed to open is read again.
+		 */
+		async show(path: string): Promise<void> {
+			const slot = items.slot(path);
+			const shown = slot.shown;
+			if (shown === undefined) await slot.open({ path, as: 'row' });
+			else if (shown.status === 'open' && shown.item.kind === 'failed')
+				await slot.reload();
 		},
-		sessions(): DraftSession[] {
-			return [...drafts.values()].flatMap((draft) => {
-				const session = sessionOf(draft);
-				return session === undefined ? [] : [session];
-			});
-		},
-		open,
 		/**
 		 * Open the file at `path` again as `as`: leave its draft, then read it.
-		 * Refused, keeping the draft, while its save failed or conflicted.
+		 * Answers the session, keeping its draft, while its save failed or
+		 * conflicted.
 		 */
 		async reopen(path: string, as: OpenAs): Promise<DraftSession | undefined> {
-			const unsaved = await leave(path);
-			if (unsaved !== undefined) return unsaved;
-			await open(path, as);
-			return undefined;
+			const opened = await items.slot(path).open({ path, as });
+			return opened.kind === 'unsaved' ? opened.session : undefined;
 		},
-		leave,
-		forget,
-		/** The draft at `from` now edits the file at `to`, after its session moved it. */
-		moved(from: string, to: string) {
-			const draft = drafts.get(from);
-			if (draft === undefined) return;
-			drafts.delete(from);
-			drafts.set(to, draft);
-		},
-		/** Take a newer version of each open file whose session holds nothing unsaved. */
-		async adopt() {
-			await Promise.all(
-				[...drafts.values()].map((draft) => sessionOf(draft)?.adopt()),
-			);
+		/** Drop the draft at `path` now, without waiting for its saves. */
+		forget(path: string) {
+			items.slot(path).forget();
 		},
 	};
 }

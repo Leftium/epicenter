@@ -17,7 +17,8 @@
 		"./edit-session": "./src/edit-session.svelte.ts",
 		"./open-item": "./src/open-item.svelte.ts",
 		"./admissions": "./src/admissions.svelte.ts",
-		"./save-bar": "./src/save-bar.svelte"
+		"./save-bar": "./src/save-bar.svelte",
+		"./sync-review": "./src/sync-review.svelte"
 	},
 	"dependencies": {
 		"@epicenter/agent": "workspace:*",
@@ -35,7 +36,8 @@
 	},
 	"scripts": {
 		"typecheck": "svelte-check --tsconfig ./tsconfig.json",
-		"test": "bun test --isolate --conditions=browser"
+		"test": "bun test --isolate --conditions=browser --path-ignore-patterns='**/*.mounted.test.ts' && bun run test:mounted",
+		"test:mounted": "bun test --conditions=browser mounted.test"
 	},
 	"license": "AGPL-3.0-or-later"
 }

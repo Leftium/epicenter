@@ -92,6 +92,36 @@ Keep mine for a change made elsewhere, Discard or Keep mine for a file deleted
 elsewhere (Discard only without `onKeepMine`), Try again or Save again for
 other failures, and what to fix for a value a row cannot hold.
 
+### `SyncReview` (`@epicenter/svelte/sync-review`)
+
+The review for one `folder.sync` attempt that needs choices (ADR-0514,
+ADR-0516). It shows each conflicting setting, field, body, or whole file
+with the two captured versions and a result, and holds that attempt's
+`SyncChoices` and nothing else. `Use this` takes a side exactly; typing
+replaces, as text for text values and as JSON, once it parses, for any
+other value; `Leave out` removes. Apply calls `onApply(attempt, choices)`
+only when every conflict has a choice.
+
+```svelte
+{#if attempt}
+	{#key attempt.id}
+		<SyncReview
+			{attempt}
+			open={reviewing}
+			{pending}
+			problems={refused}
+			onBack={() => (reviewing = false)}
+			onApply={(attempt, choices) => resolve(attempt, choices)}
+		/>
+	{/key}
+{/if}
+```
+
+Key it on `attempt.id`, so a new attempt starts with no choices, and hide it
+with `open`, so Back keeps them. Pass the `problems` of an `InvalidChoices`
+refusal back in; they show beside their rows. When to sync, what the
+person is told afterwards, and the side labels stay with the app.
+
 ### `fromData`
 
 Adapts one opened `@epicenter/app/store` handle into Svelte reactivity, mirroring

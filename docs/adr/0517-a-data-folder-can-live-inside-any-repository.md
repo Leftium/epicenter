@@ -2,6 +2,7 @@
 
 - **Status:** Proposed
 - **Date:** 2026-10-11
+- **Amended by:** [ADR-0527](0527-a-data-folder-may-keep-its-declaration-as-typescript.md) at executing a declaration: `epicenter generate` may run a folder's `epicenter.ts` on request; readers still read only `epicenter.json`.
 - **Relates:** [ADR-0494](0494-file-folders-reserve-epicenter-for-rebuildable-caches.md) (queries build transient projections), [ADR-0488](0488-cloud-folders-use-independent-git-histories.md) (a private repository per synced folder), [ADR-0521](0521-a-data-folder-syncs-with-its-git-origin-through-a-provider.md) (sync with the Git origin), [ADR-0490](0490-the-cli-discovers-folders-and-delegates-history-to-git.md) (discovery lists repositories), [ADR-0508](0508-folder-opening-overwrites-root-definition-json.md) (opening publishes the declaration), [ADR-0510](0510-authored-dataset-locations-are-independent-of-sign-in.md) (stable authored locations)
 - **Unbuilt:** discovering data folders by `epicenter.json` in apps, opener refusal of a root inside another repository, extraction tooling, and opening a submodule-hosted data folder in the native engine.
 
@@ -28,7 +29,7 @@ it. It claims nothing else: other files and directories beside it are ordinary
 files. A Git repository may contain any number of data folders at any depth.
 A directory declared as a table must not contain its own `epicenter.json`.
 
-**`epicenter.json` is JSON and is only read.** No tool executes a file to
+**`epicenter.json` is JSON and is only read.** No reader executes a file to
 learn a data folder's declaration, because a data folder may arrive in any
 cloned repository. The filename alone marks a data folder, the way
 `package.json` marks a package.
@@ -188,5 +189,7 @@ git submodule add <repository-url> plan
 - **`epicenter.config.ts` or `epicenter.config.json`.** An executable
   declaration runs a cloned repository's code to read its data, and "config"
   names tool settings rather than a data declaration.
+  ADR-0527 keeps `epicenter.ts` as a source that `epicenter generate` runs on
+  request; readers still read only the JSON.
 - **A separate repository from the start.** It requires a pointer, a setup
   step, and engine support for submodules before any app needs them.

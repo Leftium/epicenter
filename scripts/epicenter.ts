@@ -1,19 +1,36 @@
 #!/usr/bin/env -S bun --no-install
 /**
- * The Epicenter CLI: `check` and `query` a data folder by its path (ADR-0520).
+ * The Epicenter CLI: `check` and `query` a data folder by its path (ADR-0520),
+ * and `generate` its `epicenter.json` from `epicenter.ts` (ADR-0527).
  *
- * Both read the folder through `@epicenter/folder`'s `readFolder`, the same
- * reading apps use. `check` reports files that do not conform. `query` answers
- * one read-only SQL statement over an in-memory projection (ADR-0494), and
- * only when `check` passes: a broken file is fixed first. Nothing here writes
- * a file, executes the folder's code, reads Git, or contacts a network.
+ * `check` and `query` read the folder through `@epicenter/folder`'s
+ * `readFolder`, the same reading apps use. `check` reports files that do not
+ * conform. `query` answers one read-only SQL statement over an in-memory
+ * projection (ADR-0494), and only when `check` passes: a broken file is fixed
+ * first. Neither writes a file, executes the folder's code, reads Git, or
+ * contacts a network.
+ *
+ * `generate` is the one command that runs the folder's code: it imports the
+ * `epicenter.ts` its author wrote and writes the `epicenter.json` it
+ * declares. Run it only on a folder whose code you trust, as you would any
+ * script.
  */
 import { Database } from 'bun:sqlite';
-import { readFolder } from '../packages/folder/src/bun.js';
+import { existsSync } from 'node:fs';
+import { readFile, writeFile } from 'node:fs/promises';
+import { join, resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
+import {
+	DECLARATION_PATH,
+	defineFolder,
+	formatDeclaration,
+	readFolder,
+} from '../packages/folder/src/bun.js';
 
 const usage = `Usage:
   epicenter check <dir> [--json]
   epicenter query <dir> [<sql>] [--json]
+  epicenter generate <dir> [--check] [--json]
 
 check prints one line per file that does not conform. query without a
 statement describes the folder's tables; with one, it runs that single
@@ -21,7 +38,14 @@ read-only statement and prints tab-separated rows. query answers only when
 check passes; otherwise fix the files that check names.
 
 Both exit 0 on success, 1 when a file does not conform, and 2 when the folder,
-the declaration, or the statement cannot be used.`;
+the declaration, or the statement cannot be used.
+
+generate runs <dir>/epicenter.ts, whose default export is defineFolder({...})
+from @epicenter/folder, and writes the epicenter.json it declares. It may
+import @epicenter/folder, @epicenter/definition, typebox, and their subpaths
+from this checkout. With
+--check it writes nothing and exits 1 when epicenter.json differs. It is the
+only command that runs a folder's code.`;
 
 /** One finding, located as precisely as the source allows. */
 type Finding = { path: string; line?: number; field?: string; message: string };
@@ -353,11 +377,111 @@ async function query(dir: string, sql: string | undefined, json: boolean) {
 	}
 }
 
+// ============================================================================
+// generate
+// ============================================================================
+
+/** The authored TypeScript declaration `generate` reads (ADR-0527). */
+const SOURCE_PATH = 'epicenter.ts';
+
+/**
+ * What a folder's `epicenter.ts` may import without installing anything: a
+ * data folder lives in any repository, so these names resolve to this
+ * checkout's packages, and a copy the folder installed itself never wins.
+ */
+const DECLARATION_IMPORTS = [
+	'@epicenter/folder',
+	'@epicenter/folder/bun',
+	'@epicenter/definition',
+	'@epicenter/definition/field',
+	'typebox',
+	'typebox/compile',
+	'typebox/format',
+	'typebox/value',
+];
+
+function resolveEpicenterImports() {
+	const folder = resolve(import.meta.dir, '../packages/folder');
+	const definition = resolve(import.meta.dir, '../packages/definition');
+	Bun.plugin({
+		name: 'epicenter-declaration-imports',
+		setup(build) {
+			for (const specifier of DECLARATION_IMPORTS) {
+				const path = Bun.resolveSync(
+					specifier,
+					specifier.startsWith('@epicenter/folder') ? folder : definition,
+				);
+				build.module(specifier, () => ({
+					contents: `export * from ${JSON.stringify(path)};`,
+					loader: 'ts',
+				}));
+			}
+		},
+	});
+}
+
+async function generate(dir: string, checkOnly: boolean, json: boolean) {
+	const source = resolve(dir, SOURCE_PATH);
+	if (!existsSync(source))
+		throw new Error(`'${dir}' has no ${SOURCE_PATH} to generate from`);
+	resolveEpicenterImports();
+	let declared: unknown;
+	try {
+		declared = (await import(pathToFileURL(source).href)).default;
+	} catch (error) {
+		throw new Error(`${source} could not run: ${messageOf(error)}`);
+	}
+	if (typeof declared !== 'object' || declared === null)
+		throw new Error(
+			`${SOURCE_PATH} has no default export; write \`export default defineFolder({ kv, tables })\``,
+		);
+	// defineFolder keeps title, kv, and tables; a misspelled key would vanish.
+	const unknown = Object.keys(declared).filter(
+		(key) => !['title', 'kv', 'tables'].includes(key),
+	);
+	if (unknown.length)
+		throw new Error(
+			`${SOURCE_PATH} declares unknown key ${unknown.map((key) => `'${key}'`).join(', ')}; expected title, kv, and tables`,
+		);
+	// defineFolder prepares a declaration and returns a prepared one as it is.
+	const text = formatDeclaration(
+		defineFolder(declared as Parameters<typeof defineFolder>[0]),
+	);
+	const target = resolve(dir, DECLARATION_PATH);
+	const current = existsSync(target)
+		? await readFile(target, 'utf8')
+		: undefined;
+	const status =
+		current === text
+			? 'current'
+			: !checkOnly
+				? 'written'
+				: current === undefined
+					? 'missing'
+					: 'stale';
+	if (status === 'written') await writeFile(target, text);
+	const message = {
+		current: `${DECLARATION_PATH} matches ${SOURCE_PATH}`,
+		missing: `${DECLARATION_PATH} is missing; run \`epicenter generate ${dir}\``,
+		stale: `${DECLARATION_PATH} does not match ${SOURCE_PATH}; run \`epicenter generate ${dir}\``,
+		written: `wrote ${DECLARATION_PATH} from ${SOURCE_PATH}`,
+	}[status];
+	process.stdout.write(
+		json
+			? `${JSON.stringify({ status, path: target }, null, 2)}\n`
+			: `${message}\n`,
+	);
+	return status === 'stale' || status === 'missing' ? 1 : 0;
+}
+
 if (import.meta.main) {
 	// Options are matched exactly, so a statement that starts with `--` stays a statement.
 	const args = Bun.argv.slice(2);
 	const json = args.includes('--json');
-	const [command, dir, sql, ...extra] = args.filter((arg) => arg !== '--json');
+	const checkOnly = args[0] === 'generate' && args.includes('--check');
+	const [command, dir, sql, ...extra] = args.filter(
+		(arg) => arg !== '--json' && !(checkOnly && arg === '--check'),
+	);
 	try {
 		if (command === '--help' || command === '-h' || command === undefined)
 			process.stdout.write(`${usage}\n`);
@@ -365,6 +489,8 @@ if (import.meta.main) {
 			process.exitCode = await check(dir, json);
 		else if (command === 'query' && dir && !extra.length)
 			process.exitCode = await query(dir, sql, json);
+		else if (command === 'generate' && dir && sql === undefined)
+			process.exitCode = await generate(dir, checkOnly, json);
 		else throw new Error(usage);
 	} catch (error) {
 		// A thrown error is the tool failing: a bad declaration, statement, or command.

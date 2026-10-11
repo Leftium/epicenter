@@ -7,41 +7,62 @@ export type AdaptableKv = {
 	subscribe(listener: () => void): () => void;
 };
 
-const projections = new WeakMap<AdaptableKv, AdaptableKv>();
+const wrappers = new WeakMap<AdaptableKv, AdaptableKv>();
 
-/** Adapt KV reads without projecting tables from a store the UI does not display. */
+/**
+ * Track KV reads and call the native handle; writes keep their identities.
+ *
+ * Holds no values. The KV subscription attaches on the first reactive reader
+ * and detaches after the last, so a remounted reader reads current values.
+ * Repeated calls with the same handle return the same wrapper.
+ */
 export function fromKv<TKv extends AdaptableKv>(kv: TKv): TKv {
-	// Read through, unlike a table, and the rule is the same one: hold what is
-	// expensive to rebuild. Ten keys and ten validations is not, so there is
-	// nothing here to hold, nothing to keep current, and no `keys()` verb the
-	// handle would have to grow so this could seed itself.
-	const existing = projections.get(kv);
+	const existing = wrappers.get(kv);
 	if (existing) return existing as TKv;
-	const subscribe = createSubscriber((update) => kv.subscribe(update));
-	// Descriptors for the same reason a table needs them: `nonconforming` is a
-	// getter, and a spread would invoke it.
-	const reactive = Object.freeze(
-		Object.defineProperties(
-			{},
-			{
-				...Object.getOwnPropertyDescriptors(kv),
-				get: {
-					enumerable: true,
-					value: (key: never) => {
-						subscribe();
-						return kv.get(key);
-					},
-				},
-				nonconforming: {
-					enumerable: true,
-					get() {
-						subscribe();
-						return kv.nonconforming;
-					},
-				},
+	const track = createSubscriber((update) => kv.subscribe(update));
+	const reactive = overrideMembers(kv, {
+		get: {
+			value: (key: never) => {
+				track();
+				return kv.get(key);
 			},
-		),
-	) as TKv;
-	projections.set(kv, reactive);
+		},
+		nonconforming: {
+			get() {
+				track();
+				return kv.nonconforming;
+			},
+		},
+	});
+	wrappers.set(kv, reactive);
 	return reactive;
+}
+
+/**
+ * Replace selected members of a native plain-object, closure-bound handle.
+ *
+ * Copies own descriptors onto a fresh object, so getters are not invoked at
+ * wrap time, non-enumerable members stay where they were, and members of a
+ * frozen source can still be replaced. Class instances are rejected: own
+ * descriptors cannot carry their prototype methods.
+ */
+export function overrideMembers<TSource extends object>(
+	source: TSource,
+	overrides: Record<
+		string,
+		{ value: unknown; get?: never } | { get(): unknown; value?: never }
+	>,
+): TSource {
+	const prototype = Object.getPrototypeOf(source);
+	if (prototype !== null && prototype !== Object.prototype) {
+		throw new TypeError(
+			'Reactive adapters require plain-object, closure-bound handles',
+		);
+	}
+	const descriptors: PropertyDescriptorMap =
+		Object.getOwnPropertyDescriptors(source);
+	for (const [key, override] of Object.entries(overrides)) {
+		descriptors[key] = { enumerable: true, ...override };
+	}
+	return Object.freeze(Object.defineProperties({}, descriptors)) as TSource;
 }

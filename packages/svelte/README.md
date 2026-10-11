@@ -96,30 +96,31 @@ other failures, and what to fix for a value a row cannot hold.
 
 Adapts one opened `@epicenter/app/store` handle into Svelte reactivity, mirroring
 the declaration: `tables.<name>`, `kv`, and `persistence`, with the same verbs
-and the same types. Other handle members pass through unchanged. Reads are reactive; writes pass through unchanged. Repeated
-calls with the same raw store return the same wrapper without reseeding tables
-or adding subscriptions, so route components can remount over one open store.
+and the same types. Other handle members keep their descriptors and identities.
+Reads are reactive; writes pass through unchanged. Repeated calls with the same
+raw store return the same wrapper, so route components can remount over one
+open store.
 
-A table is HELD as a `SvelteMap` projection keyed by row id, seeded when
-`fromData` is called and patched with the row ids each commit names, because
-building a row out of CRDT structs costs about two microseconds and rebuilding
-ten thousand of them per keystroke does not. `kv` and `persistence` stay
-read-through: ten keys and one enum are not worth holding.
+Each read registers a Svelte dependency and calls the native method. The adapter
+holds no row values or diagnostics, so a read sees the same transaction writes,
+validation, and closed-store rejection as the native read (ADR-0500). One
+subscription per table wakes its readers on each table commit; it attaches on
+the first reactive reader and detaches after the last. Body text edits are not
+table commits: listen to them with the table's `watch`.
 
-Nothing is disposed by hand. The projection and its subscription live as long
-as the document they mirror, deliberately: one detached from its source stays
-alive and stops being true.
+Inputs must be plain-object handles with closure-bound methods. A class
+instance is rejected, because its prototype methods would not survive wrapping.
 
 ```ts
 const app = fromData(data);
 const active = $derived(app.tables.notes.rows.filter((n) => !n.deletedAt));
-const note = app.tables.notes.get(id);   // wakes only when THAT row moves
+const note = app.tables.notes.get(id);   // wakes on any notes commit
 app.persistence.get() === 'blocked';     // this device stopped saving
 ```
 
 ### `fromKv`
 
-Adapts KV reads without building table projections. Use it when a view needs
+Adapts KV reads without wrapping a store's tables. Use it when a view needs
 device settings while displaying another store. Repeated calls reuse the same
 wrapper, including calls through `fromData`. Writes pass through unchanged.
 

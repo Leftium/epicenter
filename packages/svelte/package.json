@@ -35,7 +35,7 @@
 	},
 	"scripts": {
 		"typecheck": "svelte-check --tsconfig ./tsconfig.json",
-		"test": "bun test"
+		"test": "bun test --isolate --conditions=browser"
 	},
 	"license": "AGPL-3.0-or-later"
 }

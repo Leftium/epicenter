@@ -148,15 +148,29 @@ git submodule add <repository-url> plan
 - Openers publish `epicenter.json` (ADR-0508), so an app-opened data folder
   is discoverable by it. A `definition.json` left by an older build is an
   ordinary file the folder no longer reads or writes. A hosted data folder
-  that no app opens keeps the `epicenter.json` its authors wrote; opening
-  replaces it. Whether opening should read an authored declaration rather
-  than replace it is undecided.
+  that no app opens keeps the `epicenter.json` its authors wrote. Opening
+  an app replaces it: the app that opens the folder is assumed to hold the
+  current definition, and the file always describes the last opener. A
+  hand-written declaration is for folders that no app owns, read through
+  `readFolder`.
+- Two builds that declare differently rewrite the file each time either
+  opens, so the history shows the declaration moving back and forth. No
+  version number keeps the newer one; if that churn appears in practice, a
+  monotonic declaration version is the first fix to consider.
 - `readFolder(root)` from `@epicenter/folder/bun` reads a data folder without
   opening it: the prepared declaration, each table's `list()`, and
   `kv.get()`, through the opener's native file boundary. It writes nothing,
   so it reads a folder nested in any repository.
 
 ## Considered alternatives
+
+- **Opening reads an authored `epicenter.json` and refuses or goes read-only
+  when the app cannot read the folder.** Protects a hand-written declaration,
+  but makes the file a second authority beside the app's code and adds a
+  compatibility verdict to every open.
+- **A declaration version, where the higher one wins.** Stops an older build
+  from rewriting a newer declaration, at the cost of a version every app
+  must bump correctly. Deferred until the churn is real.
 
 - **One definition per directory of rows.** Each `epicenter.json` would
   describe only the `.md` files beside it. Related tables would split across

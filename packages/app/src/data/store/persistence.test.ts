@@ -119,7 +119,7 @@ async function reopen(sqlite: ReturnType<typeof createBunSqliteAdapter>) {
 
 function titles(db: Awaited<ReturnType<typeof openFailable>>['db']): string[] {
 	return db.tables.notes
-		.rows()
+		.rows
 		.map((row) => row.title as string)
 		.sort();
 }
@@ -287,7 +287,7 @@ describe('acceptance is live, durability is a visible debt', () => {
 		expect(store.persistence.get()).toBe('pending');
 		// Acceptance is not waiting on the flight: live reads already hold the
 		// row.
-		expect(db.tables.notes.rows().map((row) => row.title)).toEqual(['a']);
+		expect(db.tables.notes.rows.map((row) => row.title)).toEqual(['a']);
 
 		await new Promise<void>((resolve) => setImmediate(resolve));
 		// Two more accepted mid-flight; they must ride the NEXT batch together.
@@ -344,7 +344,7 @@ describe('owed work collapses so an offline chain stays bounded (ADR-0301)', () 
 		// And the document is intact across a restart, which is the only thing
 		// the merge is allowed to preserve.
 		const restarted = await reopen(replica.sqlite);
-		expect(restarted.db.tables.notes.rows().length).toBe(80);
+		expect(restarted.db.tables.notes.rows.length).toBe(80);
 	});
 
 	test('work already handed to the sender is not replaced under it', async () => {

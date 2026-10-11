@@ -95,8 +95,8 @@ describe('readArtifact (ADR-0267/0268)', () => {
 		expectOk(syncEngineOf(restored).applyRemote(state));
 
 		// Every value, at the same id, read through the same lens.
-		expect(restored.tables.notes.rows()).toHaveLength(1);
-		expect(restored.tables.folders.rows()).toHaveLength(1);
+		expect(restored.tables.notes.rows).toHaveLength(1);
+		expect(restored.tables.folders.rows).toHaveLength(1);
 		expect(restored.kv.get('theme')).toBe('dark');
 		expect(restored.stored().kv).toEqual(data.stored().kv);
 		// Compared through `stored()` rather than `rows`, and the reason is the
@@ -196,7 +196,7 @@ describe('readArtifact (ADR-0267/0268)', () => {
 		expectOk(syncEngineOf(restored).applyRemote(state));
 		expect(restored.stored().kv).toEqual(values);
 		expect(restored.kv.get('theme')).toBeUndefined();
-		expect(restored.kv.nonconforming().map(({ field }) => field)).toEqual([
+		expect(restored.kv.nonconforming.map(({ field }) => field)).toEqual([
 			'theme',
 		]);
 	});

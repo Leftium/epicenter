@@ -101,7 +101,7 @@ test('reactive skill and reference views follow native edits and selection', asy
 			selected: 'Zulu',
 			paths: [],
 		});
-		expect(runtime.data.tables.skillReferences.rows()).toEqual([]);
+		expect(runtime.data.tables.skillReferences.rows).toEqual([]);
 	} finally {
 		stop();
 	}
@@ -124,7 +124,7 @@ test('imperative deletion sees skills and references created in the same transac
 			expect(runtime.state.selectedSkillId).toBe(alpha);
 		});
 		expect(runtime.data.tables.skills.get(id)).toBeUndefined();
-		expect(runtime.data.tables.skillReferences.rows()).toEqual([]);
+		expect(runtime.data.tables.skillReferences.rows).toEqual([]);
 	} finally {
 		stop();
 	}
@@ -187,7 +187,7 @@ test('aborting during bootstrap closes the App before another opening', async ()
 	release.resolve();
 	await expect(opening).rejects.toThrow('root unmounted');
 	await using retry = await openSkillsRuntime({ account });
-	expect(retry.data.tables.skills.rows()).toHaveLength(0);
+	expect(retry.data.tables.skills.rows).toHaveLength(0);
 });
 
 test('disposing retires retained data handles and repeated disposal joins closure', async () => {
@@ -200,5 +200,5 @@ test('disposing retires retained data handles and repeated disposal joins closur
 	]);
 	expect(() => read('retained')).toThrow('disposed');
 	await using retry = await openSkillsRuntime({ account });
-	expect(retry.data.tables.skills.rows()).toHaveLength(0);
+	expect(retry.data.tables.skills.rows).toHaveLength(0);
 });

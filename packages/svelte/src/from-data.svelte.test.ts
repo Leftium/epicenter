@@ -52,9 +52,9 @@ test('native names, row types, writes, and capability identities survive wrappin
 	await using data = await setup();
 	const ui = fromData(data);
 	expect(Object.keys(ui.tables).sort()).toEqual(['folders', 'notes']);
-	const titles: string[] = ui.tables.notes.rows().map((row) => row.title);
+	const titles: string[] = ui.tables.notes.rows.map((row) => row.title);
 	expect(titles).toEqual(['first']);
-	expect(ui.tables.folders.rows()).toEqual([]);
+	expect(ui.tables.folders.rows).toEqual([]);
 	expect(ui.transact).toBe(data.transact);
 	expect(ui.onCommitted).toBe(data.onCommitted);
 	expect(ui.persistence.flush).toBe(data.persistence.flush);
@@ -71,13 +71,13 @@ test('native names, row types, writes, and capability identities survive wrappin
 test('all table reads follow edits, unreadable rows, repair, and deletion', async () => {
 	await using data = await setup();
 	const raw = data.tables.notes;
-	const note = raw.rows()[0];
+	const note = raw.rows[0];
 	assert(note);
 	const table = fromData(data).tables.notes;
 	using ids = observe(() => table.ids());
-	using rows = observe(() => table.rows().map((row) => row.title));
+	using rows = observe(() => table.rows.map((row) => row.title));
 	using point = observe(() => table.get(note.id)?.title);
-	using issues = observe(() => table.nonconforming().map((row) => row.id));
+	using issues = observe(() => table.nonconforming.map((row) => row.id));
 	using body = observe(() => table.body(note.id));
 	const original = body.last();
 	assert(original);
@@ -109,7 +109,7 @@ test('all table reads follow edits, unreadable rows, repair, and deletion', asyn
 test('an already unreadable row remains visible to IDs, diagnostics, and body reads', async () => {
 	await using data = await setup();
 	const raw = data.tables.notes;
-	const note = raw.rows()[0];
+	const note = raw.rows[0];
 	assert(note);
 	const original = raw.body(note.id);
 	assert(original);
@@ -118,8 +118,8 @@ test('an already unreadable row remains visible to IDs, diagnostics, and body re
 	const table = fromData(data).tables.notes;
 	using ids = observe(() => table.ids());
 	expect(ids.last()).toEqual([note.id]);
-	expect(table.rows()).toEqual([]);
-	expect(table.nonconforming().map((row) => row.id)).toEqual([note.id]);
+	expect(table.rows).toEqual([]);
+	expect(table.nonconforming.map((row) => row.id)).toEqual([note.id]);
 	expect(table.body(note.id)).toBe(original);
 	raw.delete(note.id);
 	flushSync();
@@ -129,7 +129,7 @@ test('an already unreadable row remains visible to IDs, diagnostics, and body re
 test('native malformed body structure and repair wake body readers', async () => {
 	await using data = await setup();
 	const raw = data.tables.notes;
-	const note = raw.rows()[0];
+	const note = raw.rows[0];
 	assert(note);
 	const table = fromData(data).tables.notes;
 	const body = raw.body(note.id);
@@ -147,7 +147,7 @@ test('KV value and diagnostic readers follow valid and invalid writes', async ()
 	await using data = await setup();
 	const kv = fromKv(data.kv);
 	using theme = observe(() => kv.get('theme'));
-	using issues = observe(() => kv.nonconforming().length);
+	using issues = observe(() => kv.nonconforming.length);
 	kv.update({ theme: 'light' });
 	flushSync();
 	expect(theme.seen).toEqual(['dark', 'light']);
@@ -181,9 +181,9 @@ test('table subscriptions are lazy, shared, and detached across reader lifetimes
 			...data.tables,
 			notes: {
 				...raw,
-				rows() {
+				get rows() {
 					reads += 1;
-					return raw.rows();
+					return raw.rows;
 				},
 				subscribe(listener: Parameters<typeof raw.subscribe>[0]) {
 					active += 1;
@@ -198,10 +198,10 @@ test('table subscriptions are lazy, shared, and detached across reader lifetimes
 	});
 	expect(reads).toBe(0);
 	expect(active).toBe(0);
-	ui.tables.notes.rows();
+	ui.tables.notes.rows;
 	expect(reads).toBe(1);
 	expect(active).toBe(0);
-	const first = observe(() => ui.tables.notes.rows().length);
+	const first = observe(() => ui.tables.notes.rows.length);
 	const second = observe(() => ui.tables.notes.ids());
 	expect(active).toBe(1);
 	first.stop();
@@ -211,7 +211,7 @@ test('table subscriptions are lazy, shared, and detached across reader lifetimes
 	await tick();
 	expect(active).toBe(0);
 	raw.create({ title: 'while away' });
-	using remounted = observe(() => ui.tables.notes.rows().length);
+	using remounted = observe(() => ui.tables.notes.rows.length);
 	expect(remounted.last()).toBe(2);
 	expect(active).toBe(1);
 });
@@ -273,10 +273,10 @@ test('stores opened from one definition have independent reactive values and sub
 	const localUi = fromData(local);
 	const otherUi = fromData(other);
 	using localRows = observe(() =>
-		localUi.tables.notes.rows().map((row) => row.title),
+		localUi.tables.notes.rows.map((row) => row.title),
 	);
 	using otherRows = observe(() =>
-		otherUi.tables.notes.rows().map((row) => row.title),
+		otherUi.tables.notes.rows.map((row) => row.title),
 	);
 	using localTheme = observe(() => localUi.kv.get('theme'));
 	using otherTheme = observe(() => otherUi.kv.get('theme'));
@@ -292,7 +292,7 @@ test('stores opened from one definition have independent reactive values and sub
 test('reactive reads share native transaction and commit-callback visibility', async () => {
 	await using data = await setup();
 	const raw = data.tables.notes;
-	const note = raw.rows()[0];
+	const note = raw.rows[0];
 	assert(note);
 	const table = fromData(data).tables.notes;
 	const seen: (string | undefined)[] = [];
@@ -317,13 +317,13 @@ test('all reactive read methods preserve native closed-store rejection', async (
 	assert(id);
 	await data[Symbol.asyncDispose]();
 	for (const read of [
-		() => ui.tables.notes.rows(),
+		() => ui.tables.notes.rows,
 		() => ui.tables.notes.ids(),
 		() => ui.tables.notes.get(id),
 		() => ui.tables.notes.body(id),
-		() => ui.tables.notes.nonconforming(),
+		() => ui.tables.notes.nonconforming,
 		() => ui.kv.get('theme'),
-		() => ui.kv.nonconforming(),
+		() => ui.kv.nonconforming,
 		() => ui.persistence.get(),
 	])
 		expect(read).toThrow();
@@ -349,7 +349,7 @@ test('own descriptors survive and unsupported class handles fail explicitly', as
 		get(_key: never) {
 			return undefined;
 		}
-		nonconforming() {
+		get nonconforming() {
 			return [];
 		}
 		subscribe(_listener: () => void) {

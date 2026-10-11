@@ -14,13 +14,13 @@ export type SkillMetadataUpdate = Partial<
 export function createSkillsState({ data }: { data: SkillsData }) {
 	let selectedSkillId = $state<string | null>(null);
 	const nonconforming = $derived([
-		...data.tables.skills.nonconforming(),
-		...data.tables.skillReferences.nonconforming(),
+		...data.tables.skills.nonconforming,
+		...data.tables.skillReferences.nonconforming,
 	]);
 
 	function readSkillsByName() {
 		return data.tables.skills
-			.rows()
+			.rows
 			.toSorted((left, right) => left.name.localeCompare(right.name));
 	}
 	const sortedSkills = $derived(readSkillsByName());
@@ -30,7 +30,7 @@ export function createSkillsState({ data }: { data: SkillsData }) {
 	const selectedReferences = $derived(
 		selectedSkillId
 			? data.tables.skillReferences
-					.rows()
+					.rows
 					.filter((reference) => reference.skillId === selectedSkillId)
 					.toSorted((left, right) => left.path.localeCompare(right.path))
 			: [],
@@ -81,7 +81,7 @@ export function createSkillsState({ data }: { data: SkillsData }) {
 		},
 
 		deleteSkill(id: string): void {
-			for (const reference of data.tables.skillReferences.rows()) {
+			for (const reference of data.tables.skillReferences.rows) {
 				if (reference.skillId !== id) continue;
 				data.tables.skillReferences.delete(reference.id);
 			}

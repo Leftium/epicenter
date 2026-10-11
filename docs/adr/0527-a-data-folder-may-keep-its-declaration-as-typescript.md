@@ -47,16 +47,20 @@ epicenter generate <dir>          write epicenter.json from epicenter.ts
 - The file is `epicenter.ts`, not `epicenter.config.ts`: it declares data,
   and "config" names tool settings.
 - `epicenter.ts` may import `@epicenter/folder`, `@epicenter/definition`,
-  and `typebox`. `generate` resolves them to the checkout's own packages, so
-  a folder in any repository needs no install, and a copy the folder
-  installed never wins.
+  `typebox` (default export included), and their subpaths
+  (`@epicenter/folder/bun`, `@epicenter/definition/field`, and
+  `typebox/compile`, `/format`, `/schema`, `/system`, `/value`). `generate`
+  resolves each to the checkout's own packages, so a folder in any repository
+  needs no install, and a copy the folder installed never wins. Bun ignores a
+  runtime redirect of a bare specifier, so each name is listed.
 - `defineFolder` refuses a key other than `title`, `kv`, and `tables`, so a
   misspelling in an untyped `epicenter.ts` is an error rather than dropped.
 - Git says whether the file is current: run `epicenter generate <dir>` and
   then `git diff --exit-code -- <dir>/epicenter.json`. `generate` has no
   check mode of its own.
-- When `epicenter.ts` exists, `check` says that `epicenter.json` is generated
-  from it, so a person or agent edits the TypeScript rather than the JSON. It
+- When `epicenter.ts` is a file, `check` says that `epicenter.json` is
+  generated from it, so a person or agent edits the TypeScript rather than the
+  JSON, and a folder missing `epicenter.json` is told to run `generate`. It
   looks only at whether the file exists.
 - The way to keep a folder an app owns in step is for `epicenter.ts` to
   import the definition the app itself uses. Then the app's publication and

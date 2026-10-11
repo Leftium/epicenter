@@ -200,6 +200,15 @@ test('query refuses fields it cannot project: case duplicates, stem, and body', 
 	}
 });
 
+test('a directory named epicenter.ts is not a declaration source', async () => {
+	const { folder, run } = await setup();
+	await mkdir(join(folder, 'epicenter.ts'));
+	const checked = run('check', folder);
+	expect(checked.exitCode).toBe(0);
+	expect(checked.stdout).not.toContain('generated from');
+	expect(run('generate', folder).stderr).toContain('has no epicenter.ts');
+});
+
 test("check and query never run a folder's code", async () => {
 	const { folder, write, run } = await setup();
 	await write(
@@ -378,7 +387,10 @@ test('the CLI rejects missing or extra arguments', async () => {
 
 const source = `import { defineFolder, defineTable, field } from '@epicenter/folder';
 import { isOptional } from '@epicenter/definition';
-import { Type } from 'typebox';
+import Type from 'typebox';
+import { Compile } from 'typebox/compile';
+
+if (!Compile(Type.String()).Check('x')) throw new Error('typebox did not resolve');
 
 if (!isOptional(field.optional(field.string())))
 	throw new Error('imports did not resolve');
@@ -425,7 +437,11 @@ test('generate writes the epicenter.json that epicenter.ts declares, and check r
 	expect(JSON.parse(run('check', folder, '--json').stdout).source).toBe(
 		'epicenter.ts',
 	);
-	expect(run('generate', folder, '--check').exitCode).toBe(2);
+	expect(run('generate', folder, '--check').stderr).toContain(
+		'generate takes only a directory',
+	);
+	await rm(join(folder, 'epicenter.json'));
+	expect(run('check', folder).stderr).toContain('run `epicenter generate');
 });
 
 test('generate refuses a folder with no epicenter.ts, no default export, or a declaration that cannot be kept', async () => {
@@ -433,7 +449,9 @@ test('generate refuses a folder with no epicenter.ts, no default export, or a de
 	expect(run('generate', folder).exitCode).toBe(2);
 
 	await write('epicenter.ts', 'export default null;\n');
-	expect(run('generate', folder).stderr).toContain('no default export');
+	expect(run('generate', folder).stderr).toContain(
+		'must `export default defineFolder',
+	);
 	await write(
 		'epicenter.ts',
 		'export default { kv: {}, tables: {}, titel: "Typo" };\n',
@@ -442,7 +460,7 @@ test('generate refuses a folder with no epicenter.ts, no default export, or a de
 	await write('epicenter.ts', 'export const nothing = 1;\n');
 	const missing = run('generate', folder);
 	expect(missing.exitCode).toBe(2);
-	expect(missing.stderr).toContain('no default export');
+	expect(missing.stderr).toContain('must `export default defineFolder');
 
 	await write(
 		'epicenter.ts',

@@ -16,9 +16,9 @@
  * script.
  */
 import { Database } from 'bun:sqlite';
-import { existsSync } from 'node:fs';
+import { statSync } from 'node:fs';
 import { readFile, writeFile } from 'node:fs/promises';
-import { join, resolve } from 'node:path';
+import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import {
 	DECLARATION_PATH,
@@ -30,6 +30,11 @@ import {
 /** The authored TypeScript declaration `generate` reads (ADR-0527). */
 const SOURCE_PATH = 'epicenter.ts';
 
+/** Whether `path` is a file; only that is ever asked of `epicenter.ts` outside `generate`. */
+function isFile(path: string) {
+	return statSync(path, { throwIfNoEntry: false })?.isFile() ?? false;
+}
+
 const usage = `Usage:
   epicenter check <dir> [--json]
   epicenter query <dir> [<sql>] [--json]
@@ -40,14 +45,16 @@ statement describes the folder's tables; with one, it runs that single
 read-only statement and prints tab-separated rows. query answers only when
 check passes; otherwise fix the files that check names.
 
-Both exit 0 on success, 1 when a file does not conform, and 2 when the folder,
-the declaration, or the statement cannot be used.
+check and query exit 0 on success, 1 when a file does not conform, and 2 when
+the folder, the declaration, or the statement cannot be used.
 
 generate runs <dir>/epicenter.ts, whose default export is defineFolder({...})
 from @epicenter/folder, and writes the epicenter.json it declares. It is the
 only command that runs a folder's code; check and query read only
-epicenter.json. To confirm the file is current, run generate and then
-git diff --exit-code -- <dir>/epicenter.json.`;
+epicenter.json. It may import @epicenter/folder, @epicenter/definition,
+typebox, and their subpaths from this checkout. It exits 0, or 2 when
+epicenter.ts cannot be used. To confirm the file is current, run generate and
+then git diff --exit-code -- <dir>/epicenter.json.`;
 
 /** One finding, located as precisely as the source allows. */
 type Finding = { path: string; line?: number; field?: string; message: string };
@@ -93,7 +100,12 @@ function count(n: number, noun: string) {
  */
 async function readDataFolder(dir: string) {
 	const { data: folder, error } = await readFolder(dir);
-	if (error !== null) throw new Error(error.message);
+	if (error !== null)
+		throw new Error(
+			error.name === 'NotDataFolder' && isFile(resolve(dir, SOURCE_PATH))
+				? `${error.message}; run \`epicenter generate ${dir}\` to write it from ${SOURCE_PATH}`
+				: error.message,
+		);
 	const invalid: Finding[] = [];
 	const unreadable: Finding[] = [];
 	function report(path: string, failure: ReadError) {
@@ -167,15 +179,14 @@ async function check(dir: string, json: boolean) {
 	const rows = tables.reduce((sum, table) => sum + table.rows.length, 0);
 	const exitCode = unreadable.length ? 2 : invalid.length ? 1 : 0;
 	// Only whether the file exists: check never runs it.
-	const generated = existsSync(resolve(dir, SOURCE_PATH));
-	const source = generated
+	const note = isFile(resolve(dir, SOURCE_PATH))
 		? `${DECLARATION_PATH} is generated from ${SOURCE_PATH}; edit the .ts and run \`epicenter generate ${dir}\`, not the .json.`
 		: undefined;
 	process.stdout.write(
 		json
-			? `${JSON.stringify({ rows, invalid, unreadable, exitCode, ...(source ? { source: SOURCE_PATH } : {}) }, null, 2)}\n`
+			? `${JSON.stringify({ rows, invalid, unreadable, exitCode, ...(note ? { source: SOURCE_PATH } : {}) }, null, 2)}\n`
 			: `${[
-					...(source ? [source] : []),
+					...(note ? [note] : []),
 					...unreadable.map(formatFinding),
 					...invalid.map(formatFinding),
 					`${count(rows, 'row')} ${rows === 1 ? 'conforms' : 'conform'}; ${count(fileCount(invalid), 'file')} invalid; ${unreadable.length} unreadable.`,
@@ -390,14 +401,26 @@ async function query(dir: string, sql: string | undefined, json: boolean) {
 // ============================================================================
 
 /**
- * What a folder's `epicenter.ts` may import without installing anything: a
- * data folder lives in any repository, so these names resolve to this
- * checkout's packages, and a copy the folder installed itself never wins.
+ * What a folder's `epicenter.ts` may import without installing anything, and
+ * whether the module has a default export. A data folder lives in any
+ * repository, so these names resolve to this checkout's packages, and a copy
+ * the folder installed never wins. Bun ignores a runtime redirect of a bare
+ * specifier, so each name is listed.
  */
-const DECLARATION_IMPORTS = [
-	'@epicenter/folder',
-	'@epicenter/definition',
-	'typebox',
+const DECLARATION_IMPORTS: readonly [
+	specifier: string,
+	withDefault: boolean,
+][] = [
+	['@epicenter/folder', false],
+	['@epicenter/folder/bun', false],
+	['@epicenter/definition', false],
+	['@epicenter/definition/field', false],
+	['typebox', true],
+	['typebox/compile', false],
+	['typebox/format', false],
+	['typebox/schema', false],
+	['typebox/system', false],
+	['typebox/value', false],
 ];
 
 function resolveEpicenterImports() {
@@ -406,13 +429,15 @@ function resolveEpicenterImports() {
 	Bun.plugin({
 		name: 'epicenter-declaration-imports',
 		setup(build) {
-			for (const specifier of DECLARATION_IMPORTS) {
-				const path = Bun.resolveSync(
-					specifier,
-					specifier.startsWith('@epicenter/folder') ? folder : definition,
+			for (const [specifier, withDefault] of DECLARATION_IMPORTS) {
+				const path = JSON.stringify(
+					Bun.resolveSync(
+						specifier,
+						specifier.startsWith('@epicenter/folder') ? folder : definition,
+					),
 				);
 				build.module(specifier, () => ({
-					contents: `export * from ${JSON.stringify(path)};`,
+					contents: `export * from ${path};${withDefault ? ` export { default } from ${path};` : ''}`,
 					loader: 'ts',
 				}));
 			}
@@ -422,7 +447,7 @@ function resolveEpicenterImports() {
 
 async function generate(dir: string) {
 	const source = resolve(dir, SOURCE_PATH);
-	if (!existsSync(source))
+	if (!isFile(source))
 		throw new Error(`'${dir}' has no ${SOURCE_PATH} to generate from`);
 	resolveEpicenterImports();
 	let declared: unknown;
@@ -433,7 +458,7 @@ async function generate(dir: string) {
 	}
 	if (typeof declared !== 'object' || declared === null)
 		throw new Error(
-			`${SOURCE_PATH} has no default export; write \`export default defineFolder({ kv, tables })\``,
+			`${SOURCE_PATH} must \`export default defineFolder({ kv, tables })\``,
 		);
 	// defineFolder refuses what a folder cannot keep, and returns a prepared
 	// definition as it is.
@@ -441,8 +466,7 @@ async function generate(dir: string) {
 		defineFolder(declared as Parameters<typeof defineFolder>[0]),
 	);
 	const target = resolve(dir, DECLARATION_PATH);
-	const unchanged =
-		existsSync(target) && (await readFile(target, 'utf8')) === text;
+	const unchanged = isFile(target) && (await readFile(target, 'utf8')) === text;
 	if (!unchanged) await writeFile(target, text);
 	process.stdout.write(
 		`${unchanged ? 'unchanged' : 'wrote'} ${DECLARATION_PATH} from ${SOURCE_PATH}\n`,
@@ -464,6 +488,10 @@ if (import.meta.main) {
 			process.exitCode = await query(dir, sql, json);
 		else if (command === 'generate' && dir && sql === undefined && !json)
 			process.exitCode = await generate(dir);
+		else if (command === 'generate' && dir)
+			throw new Error(
+				'generate takes only a directory; run `git diff --exit-code` on epicenter.json to see whether it changed',
+			);
 		else throw new Error(usage);
 	} catch (error) {
 		// A thrown error is the tool failing: a bad declaration, statement, or command.

@@ -8,7 +8,7 @@ import type { GitHttpRequest, HttpClient } from 'isomorphic-git';
 
 /** HTTP capability used for this folder's Git requests. */
 export type HttpFetch = (
-	input: RequestInfo | URL,
+	input: Request | string | URL,
 	init?: RequestInit,
 ) => Promise<Response>;
 

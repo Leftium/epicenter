@@ -10,55 +10,25 @@ import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow';
 import { unwrap } from 'wellcrafted/result';
 import { probeDeparture } from './departure-probe.ts';
 
-try {
-	const { cycle, document } = await invoke<{ cycle: number; document: number }>(
-		'evidence_boot',
-	);
-	const app = await openLocal(
-		defineStore({
-			id: 'so.epicenter.runtimeevidence',
-			kv: {},
-			tables: { markers: defineTable({ fields: { value: field.number() } }) },
-		}),
-	);
-	const values = app.tables.markers.rows
-		.map((row) => row.value)
-		.sort((a, b) => a - b);
-	const expected = cycle + (document === 1 ? 1 : 0);
-	if (
-		values.length !== expected ||
-		values.some((value, index) => value !== index)
-	)
-		throw new Error(
-			`cycle=${cycle} document=${document}: expected ${expected} committed markers, got ${JSON.stringify(values)}`,
+const label = getCurrentWebviewWindow().label;
+if (label === 'capture' || label === 'todos') {
+	await probeDeparture();
+} else {
+	try {
+		const { cycle, document } = await invoke<{
+			cycle: number;
+			document: number;
+		}>('evidence_boot');
+		const app = await openLocal(
+			defineStore({
+				id: 'so.epicenter.runtimeevidence',
+				kv: {},
+				tables: {
+					markers: defineTable({ fields: { value: field.number() } }),
+				},
+			}),
 		);
-	if (document === 0 && cycle < 20) {
-		app.tables.markers.create({ value: cycle });
-		await app.persistence.flush();
-		if (app.persistence.get() !== 'saved')
-			throw new Error('marker was not committed');
-	}
-	const sqlite = app.sqlite;
-	const database = unwrap(await sqlite.open('lifetime'));
-	unwrap(
-		await database.run(
-			'CREATE TABLE IF NOT EXISTS markers (value INTEGER PRIMARY KEY)',
-		),
-	);
-	const sqlValues = unwrap(
-		await database.all<{ value: number }>(
-			'SELECT value FROM markers ORDER BY value',
-		),
-	);
-	if (
-		sqlValues.length !== expected ||
-		sqlValues.some((row, index) => row.value !== index)
-	)
-		throw new Error(
-			'Native SQL did not preserve committed markers across document replacement',
-		);
-		const values = app.tables.markers
-			.rows
+		const values = app.tables.markers.rows
 			.map((row) => row.value)
 			.sort((a, b) => a - b);
 		const expected = cycle + (document === 1 ? 1 : 0);

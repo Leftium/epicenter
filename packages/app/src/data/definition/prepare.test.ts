@@ -12,14 +12,15 @@
  * - An opened store's `definition` is that same prepared definition
  * - A schema reused in a second store after an edit reads apart from the first
  * - A malformed codec and a schema TypeBox cannot compile report errors
- * - Stored fields must be present; a nullable field accepts an explicit null
+ * - A nullable field accepts an explicit null; a required row field must be
+ *   present, and every KV field may be absent
  *
  * See also:
  * - `packages/definition/src/prepare.test.ts` for the shared preparation
  */
 import { expect, test } from 'bun:test';
 import { defineStore } from '@epicenter/app';
-import { accepts, conformance, fieldEditorOf } from '@epicenter/definition';
+import { check, type FieldMap, fieldEditorOf } from '@epicenter/definition';
 import { Type } from 'typebox';
 import { expectErr, expectOk } from 'wellcrafted/testing';
 import { openMemory } from '../store/memory.js';
@@ -27,6 +28,11 @@ import { plainText } from './body.js';
 import { field } from './declaration.js';
 import { defineTable } from './define.js';
 import { prepareData } from './index.js';
+
+/** Whether one prepared field admits a present value. */
+const accepts = (schema: FieldMap[string] | undefined, value: unknown) =>
+	schema !== undefined &&
+	check({ value: schema }, { value }, 'patch').issues.length === 0;
 
 const body = plainText();
 const declared = {
@@ -242,19 +248,24 @@ test('a schema TypeBox cannot compile identifies the table and field', () => {
 	).toThrow('regular expression');
 });
 
-test('nullable fields accept explicit null but still require stored presence', () => {
-	const { kv } = expectOk(
+test('nullable fields accept explicit null; a row field must be present, a KV field need not be', () => {
+	const { kv, tables } = expectOk(
 		prepareData({
 			id: 'test.nullable',
 			kv: { title: field.nullable(field.string()) },
-			tables: {},
+			tables: {
+				notes: defineTable({
+					fields: { title: field.nullable(field.string()) },
+				}),
+			},
 		}),
 	);
-	expect(conformance(kv, { title: null })).toEqual({
+	expect(check(kv, { title: null }, 'read')).toEqual({
 		conforming: { title: null },
 		issues: [],
 	});
-	expect(conformance(kv, {}).issues).toEqual([
+	expect(check(kv, {}, 'read').issues).toEqual([]);
+	expect(check(tables.notes.fields, {}, 'read').issues).toEqual([
 		{ field: 'title', message: 'title is missing' },
 	]);
 });
@@ -272,6 +283,6 @@ test('trusted JSON fields keep TypeBox support for local schema references', () 
 			tables: {},
 		}),
 	);
-	expect(conformance(kv, { value: 'yes' }).issues).toEqual([]);
-	expect(conformance(kv, { value: 'x' }).issues).toHaveLength(1);
+	expect(check(kv, { value: 'yes' }, 'read').issues).toEqual([]);
+	expect(check(kv, { value: 'x' }, 'read').issues).toHaveLength(1);
 });

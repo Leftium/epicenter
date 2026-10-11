@@ -43,13 +43,11 @@ export {
 } from './field/index.js';
 export * from './json.js';
 export {
-	accepts,
+	type CheckMode,
 	type Conformance,
-	conformance,
+	check,
 	DataDefinitionParseError,
-	inputIssues,
+	isOptional,
 	prepareData,
 	prepareSchema,
 } from './prepare.js';
-
-export { exportSchema, DefinitionExportError } from './export.js';

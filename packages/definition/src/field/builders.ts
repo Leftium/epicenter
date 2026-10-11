@@ -9,14 +9,15 @@
  *   field.reference('pages')   Type.String({ minLength: 1 })      { kind: 'reference', target: 'pages' }
  *   field.json(schema)         a copy of schema                   { kind: 'json' }
  *   field.nullable(inner)      Type.Union([inner, Type.Null()])   no hint of its own
+ *   field.optional(inner)      Type.Optional(inner)               inner's hint
  *
  * A helper is a convenience, not a gate. A declaration takes any native
  * schema, and a bare `Type.Object(...)` is a field with the JSON editor.
  *
- * Helpers add portable keywords and editor hints, without introducing a
- * refinement callback or codec. These additions survive JSON serialization.
- * Native callbacks supplied to a helper or composed over its result run
- * locally and are not part of the schema's JSON form.
+ * Helpers add portable keywords and editor hints, and nothing else. A field
+ * is JSON: preparation refuses a native callback, a codec, or a refinement,
+ * because a declaration is also written to a file that must validate the same
+ * way.
  *
  * A helper takes only the options listed in its type and refuses any other
  * key, so an option cannot replace the `type`, `format`, or hint the helper
@@ -40,6 +41,7 @@ import {
 	type TInteger,
 	type TNull,
 	type TNumber,
+	type TOptional,
 	type TSchema,
 	type TString,
 	type TUnion,
@@ -328,8 +330,8 @@ function isSchema(value: unknown): value is TSchema & object {
  * `inner`, edited as JSON: a copy of the schema with the JSON editor hint.
  *
  * `inner` is any native schema and `Static<>` is `Static<inner>`. The copy
- * keeps every keyword, hidden ones included, so `inner`'s own errors are
- * reported and a native refinement on it still runs. Another field works too:
+ * keeps every keyword, so `inner`'s own errors are reported. Another field
+ * works too:
  * `field.json(field.select([...]))` keeps the select's check and swaps its
  * editor for the JSON one.
  *
@@ -341,6 +343,10 @@ function json<S extends TSchema & object>(
 	inner: S,
 ): Annotated<TUnsafe<Static<S>>, Hint<'json'>> {
 	if (!isSchema(inner)) throw new TypeError('field.json needs a schema');
+	if (Type.IsOptional(inner))
+		throw new TypeError(
+			'field.json takes a required schema; write field.optional(field.json(inner))',
+		);
 	return annotate(inner, { kind: 'json' });
 }
 
@@ -350,12 +356,31 @@ function json<S extends TSchema & object>(
  *
  * `inner` is any native schema. The union carries no hint of its own: `inner`
  * keeps its hint as a member, and the editor is resolved through the union, so
- * a nullable select is still a select. A stored field is still always
- * present; `null` is a value, not absence.
+ * a nullable select is still a select. `null` is a stored value; absence is
+ * {@link optional}. Optionality belongs to the field, so wrap
+ * `field.optional` outside: `field.optional(field.nullable(inner))`.
  */
 function nullable<S extends TSchema & object>(inner: S): TUnion<[S, TNull]> {
 	if (!isSchema(inner)) throw new TypeError('field.nullable needs a schema');
+	if (Type.IsOptional(inner))
+		throw new TypeError(
+			'field.nullable takes a required schema; write field.optional(field.nullable(inner))',
+		);
 	return Type.Union([Memory.Clone(inner) as S, Type.Null()]);
+}
+
+/**
+ * A field a row may leave out: `Type.Optional(inner)`, read as `field?:` by
+ * `RowOf` and `CreateRowOf`, and left out of the declaration's `required`
+ * list. An absent optional field is not an issue; a present one is checked
+ * against `inner`. `undefined` is absence, never a stored value.
+ *
+ * Absent and `null` stay distinct: `field.optional(field.nullable(inner))`
+ * allows both. Every KV field is optional already, so this is for rows.
+ */
+function optional<S extends TSchema & object>(inner: S): TOptional<S> {
+	if (!isSchema(inner)) throw new TypeError('field.optional needs a schema');
+	return Type.Optional(Memory.Clone(inner) as S) as TOptional<S>;
 }
 
 /** The field namespace: the helpers for declaring a field. */
@@ -374,4 +399,5 @@ export const field = Object.freeze({
 	tags,
 	json,
 	nullable,
+	optional,
 });

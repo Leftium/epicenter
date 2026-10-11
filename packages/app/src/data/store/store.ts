@@ -5,7 +5,7 @@ import {
 	type JsonValue,
 	prepareData,
 } from '@epicenter/app/definition';
-import { accepts, conformance, type FieldMap } from '@epicenter/definition';
+import { check, type FieldMap } from '@epicenter/definition';
 import type { SqliteDatabase } from '@epicenter/sqlite';
 import * as Y from '@y/y';
 import { customAlphabet } from 'nanoid';
@@ -1125,21 +1125,19 @@ export function createStoreOverPort<
 				// absent for a third reason. The caller falls back the same way for
 				// all three, which is why they are not told apart.
 				//
-				// `nonconforming` still conforms the whole object, because that is
+				// `nonconforming` still checks the whole object, because that is
 				// what it reports: every declared key this release cannot read.
-				// The prepared record has no prototype, so a key it does not
-				// declare reads as `undefined`, which accepts nothing.
-				const field = declared[key];
-				if (field === undefined) return undefined;
+				// A key the definition does not declare is absent here.
+				if (!Object.hasOwn(declared, key)) return undefined;
 				const value = kvRoot(database).getAttr(key as never) as
 					| JsonValue
 					| undefined;
-				if (value === undefined || !accepts(field, value)) return undefined;
-				return value;
+				const { conforming } = check(declared, { [key]: value }, 'patch');
+				return conforming[key];
 			},
 			get nonconforming(): ConformanceIssue[] {
 				assertUsable();
-				return conformance(declared, storedKv()).issues;
+				return check(declared, storedKv(), 'read').issues;
 			},
 			subscribe(listener: () => void): () => void {
 				assertUsable();
@@ -1196,9 +1194,10 @@ export function createStoreOverPort<
 			rowId: string,
 			payload: JsonObject,
 		): Result<Row, NonconformingRow> {
-			const { conforming, issues: fieldIssues } = conformance(
+			const { conforming, issues: fieldIssues } = check(
 				declared,
 				payload,
+				'read',
 			);
 			const issues = [...fieldIssues];
 			if (readRowBody(root, rowId) === undefined) {

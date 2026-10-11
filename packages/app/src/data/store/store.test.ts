@@ -421,15 +421,16 @@ describe("a row's body node lives on the row (ADR-0295)", () => {
 });
 
 describe('kv is where anything two devices both write belongs', () => {
-	test('an unwritten key reads as undefined and is reported', async () => {
-		// The application falls back; the platform says which keys it could not
-		// read. Never defaulted here, because a default in a definition would be
-		// a value nothing stored (ADR-0255).
+	test('an unwritten key reads as undefined and is not a problem', async () => {
+		// The application falls back. Never defaulted here, because a default in
+		// a definition would be a value nothing stored (ADR-0255). Every setting
+		// may be unset, so only a stored value that does not conform is
+		// reported.
 		expect(db.kv.get('theme')).toBeUndefined();
-		expect(db.kv.nonconforming.map(({ field }) => field)).toEqual([
-			'theme',
-			'fontSize',
-		]);
+		expect(db.kv.nonconforming).toEqual([]);
+		db.kv.update({ theme: 'sepia' } as never);
+		expect(db.kv.get('theme')).toBeUndefined();
+		expect(db.kv.nonconforming.map(({ field }) => field)).toEqual(['theme']);
 	});
 
 	test('a write touches only the keys it names', async () => {
@@ -870,14 +871,12 @@ describe('kv survives a declaration upgrade (ADR-0240)', () => {
 			}),
 			record,
 		);
-		// The stored write survives the upgrade. The newly declared field remains
-		// missing, so recovery belongs to the application that opened the data.
+		// The stored write survives the upgrade. The newly declared field is
+		// unset, which the application's own default covers.
 		expect(second.kv.get('theme')).toBe('dark');
 		expect(second.kv.get('future' as never) as unknown).toBe('kept');
 		expect(second.kv.get('added' as never) as unknown).toBeUndefined();
-		expect(second.kv.nonconforming.map(({ field }) => field)).toEqual([
-			'added',
-		]);
+		expect(second.kv.nonconforming).toEqual([]);
 		await second[Symbol.asyncDispose]();
 	});
 });

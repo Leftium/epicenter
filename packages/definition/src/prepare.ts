@@ -7,17 +7,21 @@
  * names, an owned frozen snapshot of each schema, and TypeBox's compiled
  * validator for that snapshot, held privately beside it.
  *
- * The reads are {@link accepts}, {@link conformance}, and {@link inputIssues}.
- * Each asks whether a value is JSON before the schema's validator sees it, and
- * none changes the value it is given. A `default` annotation in a schema is
- * inert: nothing fills a missing value, and a missing declared field is still
- * an issue. A native callback in a schema is held to the same rule: it is
- * given a frozen copy.
+ * A prepared field is plain JSON: the schema a file holds, frozen, so a
+ * declaration in code and the same declaration read from a file validate
+ * alike. Preparation refuses what JSON cannot hold, including native
+ * callbacks.
+ *
+ * The one read is {@link check}. It asks whether a value is JSON before the
+ * schema's validator sees it, and never changes the value it is given. A
+ * `default` annotation is inert: nothing fills a missing value. Absence is an
+ * issue only for a required field; `field.optional` and every KV field may be
+ * absent.
  */
 
-import type { TSchema } from 'typebox';
+import { type TSchema, Type } from 'typebox';
 import { Compile } from 'typebox/compile';
-import { Memory } from 'typebox/system';
+import { Format } from 'typebox/format';
 import { defineErrors, type InferErrors } from 'wellcrafted/error';
 import { Ok, type Result, trySync } from 'wellcrafted/result';
 import { DATA_ADDRESS_CEILINGS, isDataId, isTableName } from './addresses.js';
@@ -67,21 +71,13 @@ type Memo = WeakMap<object, Result<DataSchema, DataDefinitionParseError>>;
 const preparedDefinitions: Memo = new WeakMap();
 const preparedSchemas: Memo = new WeakMap();
 
-/** Internal export boundary: only the owned result, never its raw memo key. */
-export function isPreparedSchema(value: DataSchema): boolean {
-	return [preparedDefinitions, preparedSchemas].some((memo) => {
-		const result = memo.get(value);
-		return result?.error === null && result.data === value;
-	});
-}
-
 /**
  * Check one definition and return the copy every read uses (ADR-0266).
  *
  * The result has the declared shape and the declared type: `id`, an optional
  * `title`, `kv`, and `tables`, each table holding `fields` and its optional
- * `body`. It is owned here. Every field is a frozen snapshot of the declared
- * schema (see `snapshot`). `kv`, `tables`, and each `fields` are frozen
+ * `body`. It is owned here. Every field is the declared schema's frozen JSON
+ * (see `plainSchema`). `kv`, `tables`, and each `fields` are frozen
  * records without a prototype, so a name like `constructor` reads as its own
  * entry or as nothing. A body conversion is carried by reference and never
  * read.
@@ -97,8 +93,6 @@ export function isPreparedSchema(value: DataSchema): boolean {
  *
  * Identity keying means a declaration MUTATED IN PLACE reads back its old
  * preparation. That is the intent: the prepared definition is a snapshot.
- * Guard-bearing nodes are retained by reference by TypeBox and remain
- * author-owned; see `snapshot` for that exception.
  */
 export function prepareData<TDefinition extends DataDefinition>(
 	value: TDefinition,
@@ -199,7 +193,8 @@ function prepareShape(
 			reason: 'it declares no tables',
 		});
 
-	const preparedKv = prepareFields(KV_ROOT, kv);
+	// Every KV field is optional: an unset key means the application's default.
+	const preparedKv = prepareFields(KV_ROOT, kv, { allOptional: true });
 	if (preparedKv.error !== null) return preparedKv;
 	const preparedTables: Record<string, TableDeclaration> = Object.create(null);
 	const foldedNames = new Set<string>();
@@ -235,7 +230,9 @@ function prepareShape(
 				reason: `table '${tableName}' declares an invalid body codec`,
 			});
 		}
-		const fields = prepareFields(tableName, table.fields);
+		const fields = prepareFields(tableName, table.fields, {
+			allOptional: false,
+		});
 		if (fields.error !== null) return fields;
 		// One declared table reused under two names is prepared once per name.
 		preparedTables[tableName] = Object.freeze({
@@ -256,6 +253,7 @@ function prepareShape(
 function prepareFields(
 	tableName: string,
 	declaration: unknown,
+	{ allOptional }: { allOptional: boolean },
 ): Result<FieldMap, DataDefinitionParseError> {
 	if (!isPlainObject(declaration))
 		return DataDefinitionParseError.Malformed({
@@ -271,25 +269,26 @@ function prepareFields(
 				reason: `field name '${tableName}.${fieldName}' is not usable`,
 			});
 		}
-		if (!isPlainObject(declared)) {
-			return DataDefinitionParseError.UnrecognizedField({
+		const unrecognized = (reason: string) =>
+			DataDefinitionParseError.UnrecognizedField({
 				table: tableName,
 				field: fieldName,
-				reason: 'a field is a TypeBox schema',
+				reason,
 			});
-		}
+		if (!isPlainObject(declared))
+			return unrecognized('a field is a TypeBox schema');
+		const problem = schemaProblem(declared);
+		if (problem !== undefined) return unrecognized(problem);
 		const field = trySync({
 			try: () => {
-				const { schema, callbacks } = snapshot(declared);
-				validations.set(schema, { validator: Compile(schema), callbacks });
+				const schema = plainSchema(
+					declared,
+					allOptional || Type.IsOptional(declared),
+				);
+				validators.set(schema, Compile(schema));
 				return schema;
 			},
-			catch: (cause) =>
-				DataDefinitionParseError.UnrecognizedField({
-					table: tableName,
-					field: fieldName,
-					reason: String(cause),
-				}),
+			catch: (cause) => unrecognized(String(cause)),
 		});
 		if (field.error) return field;
 		fields[fieldName] = field.data;
@@ -298,128 +297,104 @@ function prepareFields(
 }
 
 /**
- * A prepared schema's compiled validator, and whether the schema holds a
- * native callback.
+ * The compiled validator of each prepared field, keyed on the field itself.
+ * Every preparation makes a fresh field, so a declared schema reused under
+ * two names or in two definitions has two entries.
  */
-type Validation = {
-	validator: ReturnType<typeof Compile>;
-	callbacks: boolean;
-};
+const validators = new WeakMap<object, ReturnType<typeof Compile>>();
 
 /**
- * The validation of each schema this module owns, keyed on the snapshot.
- *
- * A snapshot is a fresh copy for every field of every preparation. So a
- * declared schema reused in two definitions, or under two names, has two
- * entries, and an edit between two preparations reaches only the second. The
- * author's own schema is never a key. A schema whose ROOT has a `~guard` is
- * the exception `snapshot` documents: TypeBox hands that node back itself, so
- * the key is the author's object and it reads through the latest
- * preparation's validator.
+ * The validator of a prepared field. A schema this module did not prepare
+ * has none; that is a programmer error and throws.
  */
-const validations = new WeakMap<object, Validation>();
-
-/** Export must remember guards even if an author later removes their marker. */
-export function hasSchemaCallbacks(schema: TSchema & object): boolean {
-	return validationOf(schema).callbacks;
-}
-
-/**
- * The validation of a prepared schema.
- *
- * A schema this module did not prepare has none. That is a programmer error
- * and throws: compiling it here would validate against a schema nothing
- * froze, and answering `false` would report the mistake as a refused value.
- */
-function validationOf(schema: TSchema & object): Validation {
-	const validation = validations.get(schema);
-	if (validation === undefined)
+function validatorOf(schema: TSchema & object): ReturnType<typeof Compile> {
+	const validator = validators.get(schema);
+	if (validator === undefined)
 		throw new Error(
 			'This schema was not prepared. Read fields from the definition that prepareData, prepareSchema, defineStore, or defineFolder returned.',
 		);
-	return validation;
+	return validator;
+}
+
+/** Whether a row may leave this prepared field out (`field.optional`). */
+export function isOptional(schema: TSchema & object): boolean {
+	return Type.IsOptional(schema);
 }
 
 /**
- * What a validator is given for `value`: a frozen copy when the schema holds a
- * native callback, so the callback cannot write to what the caller holds (see
- * {@link frozenCopy}), and the value itself when the schema is keywords alone.
+ * What {@link check} asks of the values it is given:
+ *
+ * - `read`: a stored payload. A key the fields do not declare is ignored.
+ * - `input`: a whole row being written. An undeclared key is an issue.
+ * - `patch`: some fields being written. An undeclared key is an issue and an
+ *   absent field is not.
+ *
+ * In every mode an absent required field is an issue, except `patch`, and an
+ * absent optional field is not. A top-level key holding `undefined` is
+ * absent; inside a value, `undefined` is not JSON and is an issue.
  */
-function readable({ callbacks }: Validation, value: unknown): unknown {
-	return callbacks ? frozenCopy(value) : value;
-}
+export type CheckMode = 'read' | 'input' | 'patch';
 
 /**
- * Whether a value is JSON and the prepared schema's compiled check admits it.
- * This is the only decision about a value.
+ * Check values against prepared fields, one field at a time, so a field that
+ * fails never takes a valid one with it. `conforming` holds each present
+ * field whose value is JSON and passes its own validator, as the caller's own
+ * values; `issues` holds everything else, field by field.
  *
- * A schema can be structural about what it admits (`Type.Any()` admits a
- * `Date`, `undefined`, and a cycle), and none of those survives being stored.
- * So the JSON question is asked of every field, before its schema and
- * whatever the schema says. Before, because a recursive schema
- * (`Type.Cyclic`) follows a cyclic value until the stack overflows; it must
- * never see one.
- *
- * `isJsonSafe` sets no depth or width limit. A storage that has a budget
- * applies it itself. A native validator can throw on a refinement or deep
- * recursion: that value is then not accepted.
- *
- * `schema` is a field of a prepared definition. `undefined` stands for a name
- * the definition does not declare, which accepts nothing. A schema that was
- * never prepared throws; see `validationOf`.
- *
- * Whether a field admits `null` is this same question, asked where it is
- * needed: `accepts(schema, null)`. It is not read off the schema's keywords,
- * because `Type.Any()` admits `null` and a refinement may refuse it or throw
- * on it. Asking can invoke callbacks, and `inputIssues` runs `Check` and then
- * `Errors`, so a callback may be called more than once for one read. When and
- * how often is not promised: a callback is a deterministic predicate over the
- * content it is given.
+ * A value is asked whether it is JSON before its schema sees it: a schema can
+ * be structural about what it admits (`Type.Any()` admits a `Date`), and a
+ * recursive schema would follow a cyclic value until the stack overflows.
+ * `Check` decides validity; `Errors` only describes a failure.
  */
-export function accepts(
-	schema: (TSchema & object) | undefined,
-	value: unknown,
-): boolean {
-	if (schema === undefined) return false;
-	const validation = validationOf(schema);
-	return trySync({
-		try: () => {
-			const json = readable(validation, value);
-			return isJsonSafe(json) && validation.validator.Check(json);
-		},
-		catch: () => Ok(false),
-	}).data;
+export function check(
+	fields: FieldMap,
+	values: Readonly<Record<string, unknown>>,
+	mode: CheckMode,
+): Conformance {
+	const conforming: JsonObject = {};
+	const issues: ConformanceIssue[] = [];
+	for (const [fieldName, schema] of Object.entries(fields)) {
+		const value = Object.hasOwn(values, fieldName)
+			? values[fieldName]
+			: undefined;
+		if (value === undefined) {
+			if (mode !== 'patch' && !isOptional(schema))
+				issues.push({ field: fieldName, message: `${fieldName} is missing` });
+			continue;
+		}
+		const found = fieldIssues(fieldName, schema, value);
+		if (found.length === 0) conforming[fieldName] = value as JsonValue;
+		else issues.push(...found);
+	}
+	if (mode !== 'read')
+		// An own entry only: a prototype declares nothing.
+		for (const key of Object.keys(values))
+			if (!Object.hasOwn(fields, key) && values[key] !== undefined)
+				issues.push({ field: key, message: `${key} is not declared` });
+	return { conforming, issues };
 }
 
 /**
- * Why a value fails {@link accepts}: that it is not JSON, TypeBox's own errors
- * with the paths that can be walked in the value, or that schema validation
- * threw. Empty when the value is accepted. An exception stays with this
- * field, so sibling fields and the source remain readable.
- *
- * `Check` decides validity. `Errors` only describes a failure, so a value
- * `Check` refuses is an issue even when `Errors` reports nothing.
- *
- * `name` is the declaration key, held for the diagnostics. The subject names
- * the field and not its editor: a hint never changes what conformance reports.
+ * Why one present value fails its field: that it is not JSON, or TypeBox's
+ * own errors with the paths that can be walked in the value. Empty when the
+ * value conforms.
  */
 function fieldIssues(
 	name: string,
 	schema: TSchema & object,
 	value: unknown,
 ): ConformanceIssue[] {
-	const validation = validationOf(schema);
+	const validator = validatorOf(schema);
 	const subject = `${name} does not conform`;
+	if (!isJsonSafe(value))
+		return [{ field: name, message: `${subject}: must be a JSON value` }];
 	return trySync({
 		try: (): ConformanceIssue[] => {
-			const json = readable(validation, value);
-			if (!isJsonSafe(json))
-				return [{ field: name, message: `${subject}: must be a JSON value` }];
-			if (validation.validator.Check(json)) return [];
-			const errors = validation.validator.Errors(json);
+			if (validator.Check(value)) return [];
+			const errors = validator.Errors(value);
 			if (errors.length === 0) return [{ field: name, message: subject }];
 			return errors.map((error) => {
-				const path = verifiedPointer(json, error.instancePath);
+				const path = verifiedPointer(value, error.instancePath);
 				return path === undefined
 					? { field: name, message: `${subject}: ${error.message}` }
 					: {
@@ -429,169 +404,186 @@ function fieldIssues(
 						};
 			});
 		},
+		// Deep recursion can still exhaust the stack; it stays with this field.
 		catch: () =>
 			Ok([{ field: name, message: `${subject}: schema validation threw` }]),
 	}).data;
 }
 
-/**
- * Read a stored payload through prepared fields: the declared fields that
- * validated, beside the issues of the ones that did not.
- *
- * Every declared field is required and checked by itself, so a field that
- * fails does not take a valid one with it. A conforming value is the payload's
- * own object. A key the fields do not declare is neither conforming nor an
- * issue.
- */
-export function conformance(
-	fields: FieldMap,
-	payload: Readonly<Record<string, unknown>>,
-): Conformance {
-	const conforming: JsonObject = {};
-	const issues: ConformanceIssue[] = [];
-	for (const [fieldName, schema] of Object.entries(fields)) {
-		if (!Object.hasOwn(payload, fieldName)) {
-			issues.push({ field: fieldName, message: `${fieldName} is missing` });
-			continue;
-		}
-		const found = fieldIssues(fieldName, schema, payload[fieldName]);
-		if (found.length === 0)
-			conforming[fieldName] = payload[fieldName] as JsonValue;
-		else issues.push(...found);
-	}
-	return { conforming, issues };
-}
+// Compare against TypeBox's stock handlers, not a registry that an
+// application may have changed before this module was imported.
+const PORTABLE_FORMATS = new Map<string, (value: string) => boolean>([
+	['date-time', Format.IsDateTime],
+	['date', Format.IsDate],
+	['duration', Format.IsDuration],
+	['email', Format.IsEmail],
+	['hostname', Format.IsHostname],
+	['idn-email', Format.IsIdnEmail],
+	['idn-hostname', Format.IsIdnHostname],
+	['ipv4', Format.IsIPv4],
+	['ipv6', Format.IsIPv6],
+	['iri-reference', Format.IsIriReference],
+	['iri', Format.IsIri],
+	['json-pointer-uri-fragment', Format.IsJsonPointerUriFragment],
+	['json-pointer', Format.IsJsonPointer],
+	['regex', Format.IsRegex],
+	['relative-json-pointer', Format.IsRelativeJsonPointer],
+	['time', Format.IsTime],
+	['uri-reference', Format.IsUriReference],
+	['uri-template', Format.IsUriTemplate],
+	['uri', Format.IsUri],
+	['url', Format.IsUrl],
+	['uuid', Format.IsUuid],
+]);
+
+/** Keywords whose value is data, never a schema. */
+const DATA_KEYWORDS = new Set(['default', 'const', 'enum', 'examples']);
+/** Keywords whose value maps names to schemas. */
+const SCHEMA_MAP_KEYWORDS = new Set([
+	'properties',
+	'patternProperties',
+	'$defs',
+	'definitions',
+	'dependentSchemas',
+	'dependencies',
+]);
+/** Keywords whose value is a schema or a list of schemas. */
+const SCHEMA_KEYWORDS = new Set([
+	'items',
+	'prefixItems',
+	'additionalItems',
+	'additionalProperties',
+	'unevaluatedItems',
+	'unevaluatedProperties',
+	'contains',
+	'propertyNames',
+	'not',
+	'if',
+	'then',
+	'else',
+	'anyOf',
+	'allOf',
+	'oneOf',
+]);
 
 /**
- * Check supplied values against prepared fields and, for a complete row,
- * required field presence. An undeclared key is an issue here.
+ * Why a declared schema cannot be a field, or `undefined` when it can. A field
+ * is JSON, so the file it is written to validates exactly as the field does:
+ *
+ * - no function anywhere, which is how a refinement, guard, or codec is held;
+ * - only plain objects and dense arrays, with enumerable data properties and
+ *   no symbol keys, because anything else would not survive being written;
+ * - finite numbers;
+ * - a `format` only from the portable set, at a schema position. TypeBox
+ *   passes every value for a format it does not know, so a misspelled format
+ *   would check nothing.
+ *
+ * TypeBox's own hidden `~` keywords are allowed and left behind; a visible
+ * `~` key is refused, so optionality has one spelling in a file: `required`.
  */
-export function inputIssues(
-	fields: FieldMap,
-	values: Readonly<Record<string, unknown>>,
-	{ complete }: { complete: boolean },
-): ConformanceIssue[] {
-	const issues: ConformanceIssue[] = [];
-	for (const [key, value] of Object.entries(values)) {
-		// An own entry only: a prototype declares nothing.
-		const schema = Object.hasOwn(fields, key) ? fields[key] : undefined;
-		if (schema === undefined)
-			issues.push({ field: key, message: `${key} is not declared` });
-		else issues.push(...fieldIssues(key, schema, value));
-	}
-	if (complete)
-		for (const fieldName of Object.keys(fields))
-			if (!Object.hasOwn(values, fieldName))
-				issues.push({ field: fieldName, message: `${fieldName} is missing` });
-	return issues;
-}
-
-/**
- * A deeply frozen copy of a value's arrays and plain objects, for a native
- * callback to read. `undefined`, which is not JSON, when the value holds any
- * other kind of object: a class instance that is not an array is refused,
- * never flattened. An array subclass passes `Array.isArray`, as it does in
- * `isJsonSafe`, and its copy is a plain array.
- *
- * The caller's value is read and never frozen. The copy keeps what makes the
- * value JSON or not: each object's prototype (plain or null), own enumerable
- * keys including `__proto__`, array order, and shared nodes, which stay
- * shared. A cycle is copied as a cycle, and `isJsonSafe` refuses the copy
- * before a validator sees it.
- *
- * The copy holds stored JSON content: array elements and own enumerable
- * string-keyed properties, each read once. A non-enumerable, accessor,
- * symbol-keyed, or inherited property is outside that. A keyword-only schema
- * reads the caller's value and can see one; a schema with a callback reads
- * this copy and cannot, so the two can differ on such a value. Nothing
- * normalizes it away.
- *
- * It walks with its own stack, like `isJsonSafe`, so depth has no limit.
- * `structuredClone` recurses and overflows on a deep value.
- */
-function frozenCopy(value: unknown): unknown {
-	const copies = new Map<object, object>();
-	const pending: object[] = [];
-	let copyable = true;
-	const copyOf = (node: unknown): unknown => {
-		if (typeof node !== 'object' || node === null) return node;
-		const known = copies.get(node);
-		if (known !== undefined) return known;
-		if (!Array.isArray(node) && !isPlainObject(node)) {
-			copyable = false;
-			return undefined;
+function schemaProblem(declared: object): string | undefined {
+	const seen = new Set<object>();
+	const visit = (
+		node: unknown,
+		path: string,
+		position: 'schema' | 'data',
+	): string | undefined => {
+		if (typeof node === 'function') return `${path} holds a runtime callback`;
+		if (typeof node === 'number' && !Number.isFinite(node))
+			return `${path} is not a finite number`;
+		if (typeof node !== 'object' || node === null) return undefined;
+		if (seen.has(node)) return `${path} refers back to itself`;
+		if (!Array.isArray(node) && !isPlainObject(node))
+			return `${path} is not plain JSON`;
+		if (Object.getOwnPropertySymbols(node).length > 0)
+			return `${path} has symbol keys`;
+		seen.add(node);
+		try {
+			const array = Array.isArray(node);
+			for (const key of Object.getOwnPropertyNames(node)) {
+				if (array && key === 'length') continue;
+				const descriptor = Object.getOwnPropertyDescriptor(node, key)!;
+				const at = `${path}.${key}`;
+				if (!('value' in descriptor)) return `${at} is an accessor`;
+				if (key.startsWith('~')) {
+					if (key === '~guard' || key === '~refine' || key === '~codec')
+						return `${at} is a runtime callback`;
+					// TypeBox keeps its own `~` keywords hidden. A visible one in a
+					// schema, such as a hand-written "~optional", would mean
+					// something only here. In data it is an ordinary key.
+					if (descriptor.enumerable && position === 'schema' && !array)
+						return `${at} is not a JSON Schema keyword`;
+					if (descriptor.enumerable) {
+						const problem = visit(descriptor.value, at, 'data');
+						if (problem !== undefined) return problem;
+						continue;
+					}
+					// A hidden keyword is dropped, so it may not hide a callback.
+					const hidden = visit(descriptor.value, at, 'data');
+					if (hidden !== undefined) return hidden;
+					continue;
+				}
+				if (!descriptor.enumerable) return `${at} is hidden`;
+				if (array && !/^(0|[1-9][0-9]*)$/.test(key))
+					return `${path} holds a non-index property`;
+				const value = descriptor.value;
+				// JSON drops an `undefined` member and writes `null` for an
+				// `undefined` element, either of which would change the check.
+				if (value === undefined && (array || key === 'const'))
+					return `${at} is undefined, which JSON cannot hold`;
+				let next: 'schema' | 'data' = 'data';
+				let children: 'self' | 'values' = 'self';
+				if (position === 'schema' && !array) {
+					if (key === 'format' && typeof value === 'string') {
+						const stock = PORTABLE_FORMATS.get(value);
+						if (stock === undefined || Format.Get(value) !== stock)
+							return `${at} is not a portable format: '${value}'`;
+					}
+					if (SCHEMA_KEYWORDS.has(key)) next = 'schema';
+					else if (SCHEMA_MAP_KEYWORDS.has(key)) {
+						next = 'schema';
+						children = 'values';
+					} else if (DATA_KEYWORDS.has(key)) next = 'data';
+				} else if (position === 'schema' && array) next = 'schema';
+				const problem =
+					children === 'values' && isPlainObject(value)
+						? Object.keys(value)
+								.map((name) => visit(value[name], `${at}.${name}`, next))
+								.find((found) => found !== undefined)
+						: visit(value, at, next);
+				if (problem !== undefined) return problem;
+			}
+			if (array && Object.keys(node).length !== (node as unknown[]).length)
+				return `${path} is sparse`;
+		} finally {
+			seen.delete(node);
 		}
-		const copy = Array.isArray(node)
-			? []
-			: Object.create(Object.getPrototypeOf(node));
-		copies.set(node, copy);
-		pending.push(node);
-		return copy;
+		return undefined;
 	};
-	const root = copyOf(value);
-	while (copyable && pending.length > 0) {
-		const node = pending.pop() as object;
-		const copy = copies.get(node);
-		if (Array.isArray(node)) {
-			for (let index = 0; index < node.length; index++)
-				(copy as unknown[]).push(copyOf(node[index]));
-			continue;
-		}
-		// Defined, not assigned: assigning `__proto__` would set the prototype.
-		for (const key of Object.keys(node))
-			Object.defineProperty(copy, key, {
-				value: copyOf((node as Record<string, unknown>)[key]),
-				enumerable: true,
-			});
-	}
-	if (!copyable) return undefined;
-	for (const copy of copies.values()) Object.freeze(copy);
-	return root;
+	return visit(declared, '$', 'schema');
 }
 
 /**
- * A native copy of a declared schema, frozen where it is a copy: the field a
- * prepared definition holds, and what its validator is compiled from.
- *
- * `Memory.Clone` is TypeBox's own clone. It copies own string-keyed data
- * properties, hidden ones included, so every native constraint and the
- * `x-field` hint come along. It passes a function through by reference. It
- * also passes through, whole and by reference, any node that has a `~guard`
- * key: the guard and every keyword beside it, at the root or nested. Those
- * stay as they are here, unfrozen, because freezing one would freeze the
- * author's object. So a field with a `~guard` node is not held still by this
- * snapshot at that node, and editing it after preparation is the author's to
- * avoid. Symbol keys, accessors, and what a callback or a guard closes over
- * are also outside what it holds.
- *
- * `callbacks` is whether the walk met a function, which is what `Type.Refine`
- * stores under `~refine`, or a `~guard` node. TypeBox calls those with the
- * value being validated, so the field validates a copy. Any function counts.
- * A codec's `decode` and `encode` are functions that `Check` and `Errors`
- * never call, so a codec costs a copy and transforms nothing here.
+ * The field a declaration's schema prepares to: its JSON, deeply frozen, so
+ * what is validated in memory is exactly what a file holds. TypeBox's hidden
+ * keywords are dropped, except that an optional field keeps `~optional`, the
+ * one marker `isOptional` reads, hidden as TypeBox keeps it.
  */
-function snapshot(declared: object): {
-	schema: TSchema & object;
-	callbacks: boolean;
-} {
-	const schema = Memory.Clone(declared) as TSchema & object;
-	let callbacks = false;
-	const pending: unknown[] = [schema];
+function plainSchema(declared: object, optional: boolean): TSchema & object {
+	const plain = JSON.parse(JSON.stringify(declared)) as TSchema & object;
+	if (optional)
+		Object.defineProperty(plain, '~optional', {
+			value: true,
+			enumerable: false,
+		});
+	const pending: unknown[] = [plain];
 	while (pending.length > 0) {
 		const value = pending.pop();
-		if (typeof value === 'function') callbacks = true;
 		if (typeof value !== 'object' || value === null) continue;
-		if ('~guard' in value) {
-			callbacks = true;
-			continue;
-		}
-		if (Object.isFrozen(value)) continue;
-		if (!Array.isArray(value) && !isPlainObject(value)) continue;
 		Object.freeze(value);
-		for (const key of Object.getOwnPropertyNames(value))
-			pending.push(Object.getOwnPropertyDescriptor(value, key)?.value);
+		pending.push(...Object.values(value));
 	}
-	return { schema, callbacks };
+	return plain;
 }
 
 /** Check both conversion verbs at the runtime definition boundary. */

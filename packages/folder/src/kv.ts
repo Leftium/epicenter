@@ -21,8 +21,8 @@
  */
 
 import {
+	check,
 	type FieldMap,
-	inputIssues,
 	isJsonValue,
 	JSON_BUDGET,
 } from '@epicenter/definition';
@@ -261,7 +261,7 @@ function valuesOf<TValues>(
 		const found =
 			problem !== undefined
 				? [{ field: key, message: problem }]
-				: inputIssues(schemas, { [key]: value }, { complete: false });
+				: check(schemas, { [key]: value }, 'patch').issues;
 		if (found.length === 0) values[key] = value;
 		for (const { message } of found)
 			issues.push(
@@ -335,7 +335,7 @@ export function createKv<TValues>(
 		const copy: unknown = JSON.parse(json);
 		const problem = storedProblem(key, copy);
 		if (problem !== undefined) return refuse(problem);
-		const issues = inputIssues(schemas, { [key]: copy }, { complete: false });
+		const issues = check(schemas, { [key]: copy }, 'patch').issues;
 		if (issues.length > 0) return TableError.InvalidValues({ issues });
 		return Ok(json);
 	}

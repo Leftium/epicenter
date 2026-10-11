@@ -10,7 +10,8 @@
  * - A valid row has every field, unknown keys included, as mutable values
  * - Text with no canonical form has exactly one issue, at its line
  * - A schema failure has one issue per problem, at its key's line
- * - A missing declared field is the only issue without a line
+ * - A missing required field is the only issue without a line; an absent
+ *   `field.optional` field is no issue, and one set to `undefined` is left out
  * - Lines count the whole text; CRLF and a byte-order mark do not shift them
  * - Formatting writes plain block YAML, quoting exactly the strings a YAML
  *   1.1 reader would read as something else, and reads back as the row
@@ -21,8 +22,8 @@ import {
 	defineTable,
 	field,
 	formatRow,
-	parseRow,
 	type Issue,
+	parseRow,
 	wellFormed,
 } from '@epicenter/folder/browser';
 import { expectErr, expectOk } from 'wellcrafted/testing';
@@ -229,52 +230,6 @@ test('CRLF line breaks and a byte-order mark do not shift lines', () => {
 	expect(issuesOf(`﻿${text}`)).toEqual(expected);
 });
 
-const refined = <TSchema extends object>(
-	schema: TSchema,
-	refine: (value: unknown) => boolean,
-) => ({ ...schema, '~refine': [{ refine, message: 'refused' }] });
-
-test('a field callback judges a frozen copy, never the row it returns', () => {
-	let seen: unknown;
-	const observing = defineFolder({
-		kv: {},
-		tables: {
-			notes: defineTable({
-				fields: {
-					data: refined({ type: 'object' }, (value) => {
-						seen = value;
-						return true;
-					}),
-				},
-			}),
-			mutating: defineTable({
-				fields: {
-					data: refined({ type: 'object' }, (value) => {
-						if (value !== null) (value as { answer: number }).answer = 99;
-						return true;
-					}),
-				},
-			}),
-		},
-	});
-	const text = lines('---', 'data: {answer: 42}', '---', '');
-
-	const row = expectOk(parseRow(observing.tables.notes, text));
-	expect(seen).toEqual({ answer: 42 });
-	expect(seen).not.toBe(row.fields.data);
-	expect(Object.isFrozen(seen)).toBe(true);
-	expect(Object.isFrozen(row.fields.data)).toBe(false);
-
-	// The attempted write throws on the frozen copy, which is reported as an issue.
-	expect(expectErr(parseRow(observing.tables.mutating, text))).toEqual([
-		{
-			message: 'data does not conform: schema validation threw',
-			line: 2,
-			field: 'data',
-		},
-	]);
-});
-
 test('a row formats as plain block YAML and reads back as the same row', () => {
 	const row = {
 		fields: {
@@ -344,6 +299,36 @@ test('an undefined field is an absent key', () => {
 	expect(text).toBe(
 		lines('---', 'title: T', 'done: false', 'tags: []', '---', ''),
 	);
+});
+
+test('an optional field may be absent, and is checked when present', () => {
+	const pages = defineFolder({
+		kv: {},
+		tables: {
+			pages: defineTable({
+				fields: {
+					title: field.string(),
+					queuedAt: field.optional(field.date()),
+				},
+			}),
+		},
+	}).tables.pages;
+	expect(
+		expectOk(parseRow(pages, lines('---', 'title: A', '---', ''))).fields,
+	).toEqual({ title: 'A' });
+	expect(
+		expectErr(
+			parseRow(pages, lines('---', 'title: A', 'queuedAt: soon', '---', '')),
+		).map(({ field, line }) => [field, line]),
+	).toEqual([['queuedAt', 3]]);
+	expect(
+		expectOk(
+			formatRow(pages, {
+				fields: { title: 'A', queuedAt: undefined },
+				body: '',
+			}),
+		),
+	).toBe(lines('---', 'title: A', '---', ''));
 });
 
 test('a float is written with a decimal point, which every YAML version reads as the same number', () => {

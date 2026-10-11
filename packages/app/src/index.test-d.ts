@@ -13,7 +13,9 @@ const notes = defineStore({
 });
 expectTypeOf(notes.id).toEqualTypeOf<'test.notes'>();
 expectTypeOf(notes.title).toEqualTypeOf<'Notes'>();
-expectTypeOf<KvOf<typeof notes>['language']>().toEqualTypeOf<string>();
+expectTypeOf<KvOf<typeof notes>['language']>().toEqualTypeOf<
+	string | undefined
+>();
 expectTypeOf<
 	RowOf<typeof notes.tables.notes>['title']
 >().toEqualTypeOf<string>();

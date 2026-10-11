@@ -7,7 +7,8 @@
  *
  * What these prove: a helper's return is a native schema whose `Static<>` is the
  * authored type, brands and literal unions included; its hint is typed as
- * what the helper was told; and `nullable` and `json` take any native schema.
+ * what the helper was told; `nullable` and `json` take any native schema; and
+ * `optional` keeps its inner `Static<>` and is marked optional.
  *
  * See `../declaration.test-d.ts` for raw native schemas in a declaration.
  */
@@ -253,11 +254,22 @@ const nullablePlain = field.nullable(Type.Object({ a: Type.Number() }));
 export type _NullablePlainStatic = Expect<
 	Equal<Static<typeof nullablePlain>, { a: number } | null>
 >;
-const refined = Type.Refine(field.string<NoteId>(), (value) => value !== '');
-const nullableRefined = field.nullable(refined);
-export type _NullableRefinedStatic = Expect<
-	Equal<Static<typeof nullableRefined>, NoteId | null>
+const nullableBranded = field.nullable(field.string<NoteId>());
+export type _NullableBrandedStatic = Expect<
+	Equal<Static<typeof nullableBranded>, NoteId | null>
 >;
+
+// field.optional keeps the inner Static and is a native optional, outside
+// nullable as well.
+const optionalNote = field.optional(field.nullable(field.string<NoteId>()));
+export type _OptionalStatic = Expect<
+	Equal<Static<typeof optionalNote>, NoteId | null>
+>;
+export type _OptionalMarked = Expect<
+	Equal<(typeof optionalNote)['~optional'], true>
+>;
+// @ts-expect-error a primitive is not a schema
+field.optional('string');
 export type _JsonHint = Expect<
 	Equal<(typeof sizes)['x-field'], { readonly kind: 'json' }>
 >;

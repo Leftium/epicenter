@@ -15,7 +15,7 @@
  * `formatRow` writes always reads back through `parseRow` as the same row.
  */
 
-import { type CreateRowOf, conformance } from '@epicenter/definition';
+import { type CreateRowOf, check } from '@epicenter/definition';
 import { Err, Ok, type Result } from 'wellcrafted/result';
 import {
 	type CanonicalDocument,
@@ -66,8 +66,7 @@ export type Issues = readonly [Issue, ...Issue[]];
  *
  * A valid row's values are this parse's own: mutable, shared with nothing,
  * and with unknown keys still on `fields`, so a caller can edit them and save
- * the complete row. Validation cannot change them: a field's callback is
- * shown a frozen copy.
+ * the complete row. Validation never changes them.
  */
 export function parseRow<const TTable extends PreparedFolderTable>(
 	table: TTable,
@@ -81,7 +80,7 @@ export function parseRow<const TTable extends PreparedFolderTable>(
 			]),
 		);
 	const { document, lineOf } = parsed;
-	const { issues } = conformance(table.fields, document.fields);
+	const { issues } = check(table.fields, document.fields, 'read');
 	if (issues.length > 0)
 		return Err(
 			issueList(
@@ -136,7 +135,7 @@ export function writeRow<const TTable extends PreparedFolderTable>(
 		Object.keys(table.fields),
 	);
 	if (refusal !== null) return Err(issueList([writeIssue(refusal)]));
-	const { issues } = conformance(table.fields, written.document.fields);
+	const { issues } = check(table.fields, written.document.fields, 'read');
 	if (issues.length > 0)
 		return Err(
 			issueList(issues.map(({ field, message }) => ({ message, field }))),

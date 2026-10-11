@@ -36,7 +36,6 @@
  * stream through the folder itself. The Bun suites cover interruption at
  * each step, and that removal, over an in-memory model of Chrome's OPFS.
  */
-import { exportSchema } from '@epicenter/definition';
 import type { Result } from 'wellcrafted/result';
 import {
 	DECLARATION_PATH,
@@ -44,6 +43,7 @@ import {
 	defineTable,
 	type Folder,
 	field,
+	formatDeclaration,
 	hashBytes,
 	openFolder,
 } from '../../src/browser.js';
@@ -317,7 +317,7 @@ async function publication(id: string) {
 		'opening publishes the prepared definition before returning, without manual-mode history',
 		async () => {
 			const folder = await open(id);
-			const expected = ok(exportSchema(definition));
+			const expected = formatDeclaration(definition);
 			const stored = decoder.decode(await rawRead(id, DECLARATION_PATH));
 			assert(stored === expected, `stored ${stored}`);
 			assert(
@@ -348,7 +348,7 @@ async function publication(id: string) {
 			const reopened = await open(id);
 			assert(
 				decoder.decode(await rawRead(id, DECLARATION_PATH)) ===
-					ok(exportSchema(definition)),
+					formatDeclaration(definition),
 				'manual description stayed',
 			);
 			await reopened.close();
@@ -359,7 +359,7 @@ async function publication(id: string) {
 			await open(id, { definition: changed });
 			assert(
 				decoder.decode(await rawRead(id, DECLARATION_PATH)) ===
-					ok(exportSchema(changed)),
+					formatDeclaration(changed),
 				'changed declaration was not published',
 			);
 			assert(
@@ -1120,7 +1120,7 @@ async function reloadCheck(stage: string) {
 			await rawRead(id, DECLARATION_PATH),
 		);
 		assert(
-			persistedDefinition === ok(exportSchema(definition)),
+			persistedDefinition === formatDeclaration(definition),
 			'definition did not persist across page reload',
 		);
 		const folder = await open(id);

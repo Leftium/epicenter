@@ -26,9 +26,8 @@ import {
 } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { formatDeclaration, openFolder } from '@epicenter/folder/bun';
 import { expectOk } from 'wellcrafted/testing';
-import { exportSchema } from '@epicenter/definition';
-import { openFolder } from '@epicenter/folder/bun';
 import { honeycrispDefinition } from '../data.js';
 import { setUpFolder } from './first-open.js';
 import type { NotesFolder } from './types.js';
@@ -129,8 +128,7 @@ describe('an existing folder', () => {
 		const prior = git('rev-parse', 'HEAD').stdout.trim();
 		const savedFiles = async () =>
 			(await fingerprint(root)).filter(
-				(line) =>
-					!line.includes('/.git') && !line.includes('/epicenter.json '),
+				(line) => !line.includes('/.git') && !line.includes('/epicenter.json '),
 			);
 		const before = await savedFiles();
 		const folder = await open(root);
@@ -145,7 +143,7 @@ describe('an existing folder', () => {
 			'Add epicenter.json',
 		);
 		expect(await readFile(join(root, 'epicenter.json'), 'utf8')).toBe(
-			expectOk(exportSchema(honeycrispDefinition)),
+			formatDeclaration(honeycrispDefinition),
 		);
 		expect(await readFile(join(root, 'notes', 'old.md'), 'utf8')).toBe(NOTE);
 		expect(await readFile(join(root, 'kv.json'), 'utf8')).toBe(KV);
@@ -167,8 +165,7 @@ describe('an existing folder', () => {
 		expect(git('status', '--porcelain').stdout).toBe('');
 		expect(
 			(await fingerprint(root)).filter(
-				(line) =>
-					!line.includes('/.git') && !line.includes('/epicenter.json '),
+				(line) => !line.includes('/.git') && !line.includes('/epicenter.json '),
 			),
 		).toEqual(files);
 	});
@@ -218,7 +215,7 @@ describe('a new folder', () => {
 		);
 		expect(git('show', 'HEAD:kv.json').stdout).toBe('{}\n');
 		expect(git('show', 'HEAD:epicenter.json').stdout).toBe(
-			expectOk(exportSchema(honeycrispDefinition)),
+			formatDeclaration(honeycrispDefinition),
 		);
 		const head = git('rev-parse', 'HEAD').stdout;
 		const reopened = await open(root);

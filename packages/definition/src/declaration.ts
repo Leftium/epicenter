@@ -12,7 +12,7 @@
  * checked in `prepare.ts`.
  */
 
-import type { Static, TSchema } from 'typebox';
+import type { Static, TObject, TSchema } from 'typebox';
 
 export { field } from './field/index.js';
 
@@ -22,10 +22,11 @@ export const RESERVED_TABLE_NAMES: readonly string[] = [KV_ROOT];
 /**
  * The fields of one bucket, by name.
  *
- * A field is any native TypeBox schema. The `field.*` helpers build common
- * ones and annotate them with an editor; a bare `Type.Object(...)`,
- * `Type.Enum(...)`, `Type.Any()`, or `Type.Refine(...)` is a field too, and
- * gets the JSON editor.
+ * A field is any native TypeBox schema that is plain JSON. The `field.*`
+ * helpers build common ones and annotate them with an editor; a bare
+ * `Type.Object(...)`, `Type.Enum(...)`, or `Type.Any()` is a field too, and
+ * gets the JSON editor. A refinement or codec is refused: it cannot be
+ * written to a file.
  */
 export type FieldMap = {
 	// TypeBox's `TSchema` is an empty interface, which a string or a number
@@ -101,8 +102,8 @@ export type DataSchema<TBody extends TableBody = TableBody> = {
  *
  * A declaration and the prepared definition `prepareData` returns for it have
  * this one shape. The prepared one is an owned, frozen snapshot whose fields
- * `accepts`, `conformance`, and `inputIssues` read; a field of a declaration
- * that was never prepared is refused by them.
+ * `check` reads; a field of a declaration that was never prepared is refused
+ * by it.
  */
 export type DataDefinition<TBody extends TableBody = TableBody> =
 	DataSchema<TBody> & { readonly id: string };
@@ -115,10 +116,13 @@ export type ConformanceIssue = {
 	message: string;
 };
 
-/** What one bucket's fields read as, once the schemas are resolved. */
-type FieldsOut<TFields extends FieldMap> = {
-	[K in keyof TFields]: Static<TFields[K]>;
-};
+/**
+ * What one bucket's fields read as: the bucket as one `Type.Object`, so a
+ * `field.optional` field is `name?:`.
+ */
+type FieldsOut<TFields extends FieldMap> = Static<
+	TObject<{ -readonly [K in keyof TFields]: TFields[K] }>
+>;
 
 /** A value snapshot. A storage with live bodies reaches them through its own handle. */
 export type RowOf<T extends TableDeclaration> = { id: string } & FieldsOut<
@@ -128,4 +132,7 @@ export type RowOf<T extends TableDeclaration> = { id: string } & FieldsOut<
 /** Values supplied when creating a row. */
 export type CreateRowOf<T extends TableDeclaration> = FieldsOut<T['fields']>;
 
-export type KvOf<TDatabase extends DataSchema> = FieldsOut<TDatabase['kv']>;
+/** Settings as read: every KV field may be unset. */
+export type KvOf<TDatabase extends DataSchema> = Partial<
+	FieldsOut<TDatabase['kv']>
+>;

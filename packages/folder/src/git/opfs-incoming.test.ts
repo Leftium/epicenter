@@ -32,9 +32,9 @@
 import { afterEach, expect, test } from 'bun:test';
 import * as isogit from 'isomorphic-git';
 import { expectErr, expectOk } from 'wellcrafted/testing';
-import { exportSchema } from '@epicenter/definition';
 import { defineFolder, type Folder, openFolder } from '../browser.js';
 import { hashBytes } from '../capture.js';
+import { formatDeclaration } from '../declaration.js';
 import {
 	type MemoryOpfs,
 	memoryOpfs,
@@ -66,7 +66,7 @@ const address = JSON.stringify(['release', 'local', null, 'merge']);
 const FILES_LOCK = `epicenter-folder-opfs-files:${address}`;
 const GIT_LOCK = `epicenter-folder-opfs-git:${address}`;
 const definition = defineFolder({ kv: {}, tables: {} });
-const discovery = expectOk(exportSchema(definition));
+const discovery = formatDeclaration(definition);
 
 type Tree = Record<string, string>;
 
@@ -205,7 +205,12 @@ function clearFaults(opfs: MemoryOpfs) {
 	opfs.faults.remove = undefined;
 }
 
-const MERGED = { 'epicenter.json': discovery, 'a.md': '2', 'b.md': '2', 'c.md': 'new' };
+const MERGED = {
+	'epicenter.json': discovery,
+	'a.md': '2',
+	'b.md': '2',
+	'c.md': 'new',
+};
 
 function folderFiles(opfs: MemoryOpfs) {
 	return Object.fromEntries(
@@ -316,7 +321,11 @@ test('while pending, saves land; staging, commits, and new incoming updates wait
 	const commit = await folder.git.commit();
 	expect(commit.status).toBe('blocked');
 	expect(stored(opfs, RECORD)).toBeDefined();
-	expect(folderFiles(opfs)).toEqual({ 'epicenter.json': discovery, 'a.md': '2', 'b.md': '2' });
+	expect(folderFiles(opfs)).toEqual({
+		'epicenter.json': discovery,
+		'a.md': '2',
+		'b.md': '2',
+	});
 	expect(expectOk(await folder.git.log(1))[0]?.oid).toBe(ours);
 	expectOk(await folder.files.create('notes.md', 'mine'));
 	expectOk(await folder.files.mkdir('drafts'));
@@ -454,7 +463,11 @@ test('a branch already at the published commit clears the record without writing
 		pending,
 	});
 	expect(stored(opfs, RECORD)).toBeUndefined();
-	expect(folderFiles(opfs)).toEqual({ 'epicenter.json': discovery, 'a.md': '2', 'b.md': '2' });
+	expect(folderFiles(opfs)).toEqual({
+		'epicenter.json': discovery,
+		'a.md': '2',
+		'b.md': '2',
+	});
 	expect(expectOk(await folder.git.status()).changes).toEqual([
 		{ path: 'c.md', kind: 'delete' },
 	]);
@@ -562,7 +575,11 @@ test('a record whose creation never published is unadmitted: no authored file ch
 	clearFaults(opfs);
 	expect(halted).toMatchObject({ name: 'Unconfirmed', uncertain: [RECORD] });
 	expect(stored(opfs, RECORD)).toEqual(new Uint8Array());
-	expect(folderFiles(opfs)).toEqual({ 'epicenter.json': discovery, 'a.md': '1', 'b.md': '2' });
+	expect(folderFiles(opfs)).toEqual({
+		'epicenter.json': discovery,
+		'a.md': '1',
+		'b.md': '2',
+	});
 	expect(history.snapshot.pendingIncoming).toEqual({ state: 'unadmitted' });
 	await history.close();
 	opened.length = 0;

@@ -51,11 +51,11 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 import { existsSync } from 'node:fs';
 import { readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { exportSchema } from '@epicenter/definition';
 import type { FileSink } from 'bun';
 import { expectErr, expectOk } from 'wellcrafted/testing';
 import { hashBytes } from './capture.js';
 import { defineFolder, defineTable, field } from './contract.js';
+import { formatDeclaration } from './declaration.js';
 import {
 	createBareRemote,
 	git,
@@ -406,7 +406,7 @@ describe.skipIf(!enabled)('tauri folder against the native owner', () => {
 	test('opening publishes root discovery JSON and identical reopening creates no additional native commit', async () => {
 		const { root, settled } = await setup();
 		expect(await readFile(join(root, 'epicenter.json'), 'utf8')).toBe(
-			expectOk(exportSchema(definition)),
+			formatDeclaration(definition),
 		);
 		await settled();
 		const before = await git(root, 'rev-parse', 'HEAD');
@@ -437,7 +437,7 @@ describe.skipIf(!enabled)('tauri folder against the native owner', () => {
 			await a(() => openFolder({ id: 'notes', definition: changed })),
 		);
 		expect(await readFile(join(root, 'epicenter.json'), 'utf8')).toBe(
-			expectOk(exportSchema(changed)),
+			formatDeclaration(changed),
 		);
 		expect(await readFile(join(root, 'todos/kept.md'), 'utf8')).toBe(before);
 		expect(await a(() => reopened.git.log(10))).toEqual({

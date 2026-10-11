@@ -14,8 +14,11 @@
  *   about `null`, which is what the check admits
  * - A hint that is absent, unknown, malformed, or wrong for the schema's shape
  *   or `format` resolves to the JSON editor
- * - `field.nullable` and `field.json` take any native schema and keep its
- *   hidden keywords
+ * - `field.nullable` and `field.json` take any native schema and copy it
+ * - `field.optional` is `Type.Optional` over a copy: the same JSON and the
+ *   same check, marked absentable; `field.nullable` refuses an optional schema
+ * - A native refinement is not part of a schema's JSON form, which is why
+ *   preparation refuses one (see `../prepare.test.ts`)
  * - A helper copies its arguments and returns an ordinary mutable schema
  *
  * See also:
@@ -160,7 +163,7 @@ describe('a helper schema is the same schema after a JSON round trip', () => {
 		}
 	});
 
-	test('the control: a native refinement is not part of the JSON form', () => {
+	test('the control: a native refinement is not part of the JSON form, so a field cannot hold one', () => {
 		const short = Type.Refine(field.string(), (value) => value.length < 3);
 		expect(check(short, 'abc')).toBe(false);
 		expect(check(roundTrip(short), 'abc')).toBe(true);
@@ -605,29 +608,6 @@ describe('a frozen schema can be annotated again', () => {
 		expect(editorOf(frozen).kind).toBe('select');
 	});
 
-	test('a frozen refined helper keeps its refinement and its keywords', () => {
-		const refined = Object.freeze(
-			Type.Refine(field.select(['draft', 'done']), (value) => value !== 'done'),
-		);
-		for (const wrapped of [
-			field.json(refined),
-			field.json(field.json(Object.freeze(field.json(refined)))),
-		]) {
-			expect(wrapped[FIELD_KEYWORD]).toEqual({ kind: 'json' });
-			expect(check(wrapped, 'draft')).toBe(true);
-			// The refinement, then the enum.
-			expect(check(wrapped, 'done')).toBe(false);
-			expect(check(wrapped, 'archived')).toBe(false);
-		}
-		expect(refined[FIELD_KEYWORD]).toEqual({ kind: 'select' });
-		expect(check(refined, 'done')).toBe(false);
-
-		const optional = field.nullable(refined);
-		expect(editorOf(optional).kind).toBe('select');
-		expect(check(optional, null)).toBe(true);
-		expect(check(optional, 'done')).toBe(false);
-	});
-
 	test('a deeply frozen nullable helper is wrapped without losing a check', () => {
 		const inner = field.nullable(field.string({ minLength: 2 }));
 		Object.freeze(inner.anyOf[0]);
@@ -703,20 +683,63 @@ describe('nullable', () => {
 		field.nullable(status);
 		expect(check(status, null)).toBe(false);
 
-		const refined = Type.Refine(field.string(), (value) => value !== '');
-		const wrapped = field.nullable(refined);
-		expect(Object.isFrozen(refined)).toBe(false);
-		Object.assign(refined, { maxLength: 1 });
-		// The nullable field was built from what `refined` was at the call,
-		// hidden refinement included.
+		const text = field.string({ minLength: 1 });
+		const wrapped = field.nullable(text);
+		expect(Object.isFrozen(text)).toBe(false);
+		Object.assign(text, { maxLength: 1 });
+		// The nullable field was built from what `text` was at the call.
 		expect(check(wrapped, 'ab')).toBe(true);
 		expect(check(wrapped, '')).toBe(false);
 		expect(editorOf(wrapped)).toEqual({ kind: 'string', nullable: true });
 	});
 
-	test('it needs a schema', () => {
+	test('it needs a schema, and a required one', () => {
 		// @ts-expect-error null is not a schema
 		expect(() => field.nullable(null)).toThrow('needs a schema');
+		for (const optional of [
+			field.optional(field.string()),
+			Type.Optional(Type.String()),
+		])
+			expect(() => field.nullable(optional)).toThrow(
+				'write field.optional(field.nullable(inner))',
+			);
+	});
+});
+
+describe('optional', () => {
+	test('it is the native optional over a copy: the same JSON, check, and editor', () => {
+		const inner = field.select(['draft', 'published']);
+		const optional = field.optional(inner);
+		expect(optional).not.toBe(inner);
+		expect(Type.IsOptional(optional)).toBe(true);
+		expect(Type.IsOptional(inner)).toBe(false);
+		// The marker is hidden: a file holds the inner schema's JSON.
+		expect(roundTrip(optional)).toEqual(roundTrip(inner));
+		expect(Type.IsOptional(roundTrip(optional))).toBe(false);
+		expect(editorOf(optional)).toEqual(editorOf(inner));
+		for (const value of ['draft', 'archived', null, 1])
+			expect(check(optional, value)).toBe(check(inner, value));
+	});
+
+	test('it composes outside nullable, and absence and null stay apart', () => {
+		const note = field.optional(field.nullable(field.string()));
+		expect(Type.IsOptional(note)).toBe(true);
+		expect(editorOf(note)).toEqual({ kind: 'string', nullable: true });
+		expect(check(note, null)).toBe(true);
+		expect(check(note, 'x')).toBe(true);
+		expect(check(note, 1)).toBe(false);
+	});
+
+	test('the schema it wraps is copied, not changed', () => {
+		const text = field.string();
+		field.optional(text);
+		expect(Type.IsOptional(text)).toBe(false);
+		expect(Object.getOwnPropertyNames(text)).not.toContain('~optional');
+	});
+
+	test('it needs a schema', () => {
+		// @ts-expect-error null is not a schema
+		expect(() => field.optional(null)).toThrow('needs a schema');
 	});
 });
 
@@ -725,7 +748,6 @@ describe('json copies the schema it is given and hints at the JSON editor', () =
 		{ author: Type.String() },
 		{ additionalProperties: false },
 	);
-	const never = () => false;
 
 	test('it is the schema itself plus the hint: no conditional, no gate', () => {
 		const wrapped = field.json(Author);
@@ -767,25 +789,7 @@ describe('json copies the schema it is given and hints at the JSON editor', () =
 		]);
 	});
 
-	test('a refinement on the schema survives, at the root and nested', () => {
-		const refused = Type.Refine(Type.Object({ a: Type.String() }), never);
-		// The control: copying only enumerable keywords loses the refinement.
-		expect(check(Type.Options(refused, {}), { a: 'x' })).toBe(true);
-
-		expect(check(field.json(refused), { a: 'x' })).toBe(false);
-		expect(check(field.json(Type.Array(refused)), [{ a: 'x' }])).toBe(false);
-		expect(check(field.nullable(field.json(refused)), { a: 'x' })).toBe(false);
-		expect(
-			check(field.json(Type.Object({ inner: refused })), { inner: { a: 'x' } }),
-		).toBe(false);
-		expect(check(field.nullable(field.json(refused)), null)).toBe(true);
-	});
-
 	test('a frozen schema works and is left as it was', () => {
-		const refused = Object.freeze(
-			Type.Refine(Type.Object({ a: Type.String() }), never),
-		);
-		expect(check(field.json(refused), { a: 'x' })).toBe(false);
 		const plain = Object.freeze(Type.Object({ a: Type.String() }));
 		expect(check(field.json(plain), { a: 'x' })).toBe(true);
 		expect(FIELD_KEYWORD in plain).toBe(false);
@@ -826,40 +830,6 @@ describe('json copies the schema it is given and hints at the JSON editor', () =
 	});
 });
 
-describe('a native refinement over a helper', () => {
-	const short = (value: string) => value.length < 3;
-
-	test('keeps the hint and what the helper built, and adds to the check', () => {
-		for (const [inner, editor] of [
-			[field.string(), { kind: 'string', nullable: false }],
-			[
-				field.reference('pages'),
-				{ kind: 'reference', nullable: false, target: 'pages' },
-			],
-		] as const) {
-			const refined = Type.Refine(inner, short);
-			expect(editorOf(refined)).toEqual(editor);
-			expect(check(refined, 'ab')).toBe(true);
-			expect(check(refined, 'abc')).toBe(false);
-			expect(check(refined, 3)).toBe(false);
-		}
-		expect(check(Type.Refine(field.reference('pages'), short), '')).toBe(false);
-	});
-
-	test('works over a json field and under nullable', () => {
-		const refined = field.nullable(
-			Type.Refine(
-				field.json(Type.Array(Type.String())),
-				(list) => list.length < 2,
-			),
-		);
-		expect(editorOf(refined)).toEqual({ kind: 'json', nullable: true });
-		expect(check(refined, ['a'])).toBe(true);
-		expect(check(refined, ['a', 'b'])).toBe(false);
-		expect(check(refined, null)).toBe(true);
-	});
-});
-
 describe('being JSON has no size', () => {
 	test('wide, deep, and shared values are JSON; a cycle is not', () => {
 		const wide = Object.fromEntries(
@@ -887,4 +857,10 @@ describe('being JSON has no size', () => {
 		expect(isJsonObject(wide)).toBe(false);
 		expect(isJsonValue([[[[[[[[[[[[[[[[[1]]]]]]]]]]]]]]]]])).toBe(false);
 	});
+});
+
+test('field.json refuses an optional inner, so optionality stays outermost', () => {
+	expect(() => field.json(field.optional(field.string()))).toThrow(
+		'field.optional(field.json(inner))',
+	);
 });

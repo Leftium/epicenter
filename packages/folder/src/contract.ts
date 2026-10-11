@@ -38,6 +38,7 @@ export {
 	submittedText,
 	type TextCapture,
 } from './capture.js';
+export { formatDeclaration, parseDeclaration } from './declaration.js';
 export {
 	defineFolder,
 	type FolderDefinition,
@@ -124,10 +125,10 @@ export {
 } from './paths.js';
 export {
 	formatRow,
-	parseRow,
-	type Row,
 	type Issue,
 	type Issues,
+	parseRow,
+	type Row,
 	wellFormed,
 } from './row-text.js';
 export type { FileTable, StoredRow, TableListing } from './table.js';

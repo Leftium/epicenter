@@ -13,8 +13,7 @@
  * the JSON editor. It never changes validation.
  *
  * Whether a field admits `null` is not here. Only a validator can say, so a
- * reader asks `accepts(schema, null)` of the prepared field where it needs to
- * know.
+ * reader checks `null` against the prepared field where it needs to know.
  */
 
 import type { TSchema } from 'typebox';
@@ -55,9 +54,8 @@ export type FieldHint =
  * field admits `null` is asked of its validator, not recorded here.
  *
  * `options` is the schema's declared `enum`. The check never admits a value
- * outside it, but it may admit fewer: another keyword or a native refinement
- * on the same schema can refuse an option, and nothing filters the list by
- * running them.
+ * outside it, but it may admit fewer: another keyword on the same schema can
+ * refuse an option, and nothing filters the list by running the check.
  */
 export type FieldEditor =
 	| { readonly kind: Exclude<Kind, 'select' | 'multiSelect' | 'reference'> }
@@ -223,8 +221,8 @@ function formatAllows(schema: Keywords, expected: string): boolean {
  * These are conservative shape checks for the widgets that exist, not a schema
  * recognizer. Each asks a keyword or two of one uncomposed schema node, and
  * anything composed or exotic fails them and gets the JSON editor. They do not
- * decide what the schema admits: other keywords and native refinements on the
- * same node can narrow it further.
+ * decide what the schema admits: other keywords on the same node can narrow
+ * it further.
  */
 function hinted(hint: unknown, subject: Keywords): FieldEditor | undefined {
 	if (!isKeywords(hint)) return undefined;
@@ -289,15 +287,14 @@ function hinted(hint: unknown, subject: Keywords): FieldEditor | undefined {
  * other composition is looked into, and a schema without a hint is never
  * guessed at.
  *
- * This reads keywords and nothing else: it keeps no state, runs no validator,
- * and calls no callback. So it does not say whether the field admits `null`.
- * Reading through the union finds the hint; it is not evidence about `null`,
- * which a refinement beside the union may still refuse. A reader that needs
- * to know asks `accepts(schema, null)` of the prepared field.
+ * This reads keywords and nothing else: it keeps no state and runs no
+ * validator. So it does not say whether the field admits `null`. Reading
+ * through the union finds the hint; it is not evidence about `null`, which a
+ * keyword beside the union may still refuse. A reader that needs to know
+ * checks `null` against the prepared field.
  *
- * Any schema can be read, prepared or not. A prepared field is a frozen
- * snapshot, so the editor read from one agrees with what its validator
- * checks.
+ * Any schema can be read, prepared or not. A prepared field is frozen JSON,
+ * so the editor read from one agrees with what its validator checks.
  */
 export function fieldEditorOf(schema: TSchema & object): FieldEditor {
 	const member = nullableMember(schema);

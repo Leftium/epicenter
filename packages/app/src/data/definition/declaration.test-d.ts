@@ -105,10 +105,10 @@ export type _NullableStatic = Expect<
 	Equal<Static<Values['optional']>, string | null>
 >;
 export type _NativeObjectStatic = Expect<
-	Equal<KvOf<typeof definition>['window'], { width: number }>
+	Equal<KvOf<typeof definition>['window'], { width: number } | undefined>
 >;
 export type _NullableNativeStatic = Expect<
-	Equal<KvOf<typeof definition>['theme'], 'light' | 'dark' | null>
+	Equal<KvOf<typeof definition>['theme'], 'light' | 'dark' | null | undefined>
 >;
 export type _RowStatusStatic = Expect<
 	Equal<Item['status'], 'draft' | 'published'>

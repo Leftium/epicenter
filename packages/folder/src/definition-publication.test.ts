@@ -6,7 +6,6 @@
 import { afterEach, expect, test } from 'bun:test';
 import { mkdir, rm } from 'node:fs/promises';
 import { join } from 'node:path';
-import { exportSchema } from '@epicenter/definition';
 import { expectErr, expectOk } from 'wellcrafted/testing';
 import {
 	defineFolder,
@@ -15,6 +14,7 @@ import {
 	type FolderDefinition,
 	field,
 } from './contract.js';
+import { formatDeclaration } from './declaration.js';
 import { events } from './publication-log.test-support.js';
 
 afterEach(() => {
@@ -118,7 +118,7 @@ for (const adapter of ['browser', 'bun'] as const) {
 		try {
 			expect(
 				decode(expectOk(await folder.files.read('epicenter.json')).bytes),
-			).toBe(expectOk(exportSchema(definition)));
+			).toBe(formatDeclaration(definition));
 			expectOk(
 				await folder.tables.notes!.create(
 					{ fields: { title: 'Saved' }, body: 'Body stays\n' },
@@ -138,7 +138,7 @@ for (const adapter of ['browser', 'bun'] as const) {
 			folder = await open(definition);
 			expect(
 				decode(expectOk(await folder.files.read('epicenter.json')).bytes),
-			).toBe(expectOk(exportSchema(definition)));
+			).toBe(formatDeclaration(definition));
 			await folder.close();
 			const changed = defineFolder({
 				...definition,
@@ -148,7 +148,7 @@ for (const adapter of ['browser', 'bun'] as const) {
 			folder = await open(changed);
 			expect(
 				decode(expectOk(await folder.files.read('epicenter.json')).bytes),
-			).toBe(expectOk(exportSchema(changed)));
+			).toBe(formatDeclaration(changed));
 			expect(expectOk(await folder.files.read('notes/kept.md')).bytes).toEqual(
 				row.bytes,
 			);
@@ -216,45 +216,16 @@ test('Bun publication failure leaves the folder usable and reports the actual de
 	}
 });
 
-test('unsupported export leaves an existing description and the acquired folder usable', async () => {
-	const root = await scratch('definition-unsupported-');
-	const initial = expectOk(
-		await openBun({ root, definition, git: { author, commitOnEdit: false } }),
-	);
-	expectOk(
-		await initial.files.overwrite('epicenter.json', 'previous description'),
-	);
-	await initial.close();
-	const unsupported = defineFolder({
-		kv: {
-			value: {
-				type: 'string',
-				'~refine': [{ refine: () => true, message: 'local validation' }],
+test('a definition with a runtime callback is refused before any folder opens, so nothing unpublishable is ever published', () => {
+	expect(() =>
+		defineFolder({
+			kv: {
+				value: {
+					type: 'string',
+					'~refine': [{ refine: () => true, message: 'local validation' }],
+				},
 			},
-		},
-		tables: {},
-	});
-	const folder = expectOk(
-		await openBun({
-			root,
-			definition: unsupported,
-			git: { author, commitOnEdit: false },
+			tables: {},
 		}),
-	);
-	try {
-		expect(
-			decode(expectOk(await folder.files.read('epicenter.json')).bytes),
-		).toBe('previous description');
-		expectOk(await folder.files.create('usable.txt', 'usable'));
-		expect(
-			events.find((event) => event.source === 'folder/definition')?.data,
-		).toMatchObject({
-			name: 'DefinitionExportFailed',
-			path: 'epicenter.json',
-			cause: { name: 'Unsupported' },
-		});
-	} finally {
-		await folder.close();
-		await rm(root, { recursive: true, force: true });
-	}
+	).toThrow('runtime callback');
 });

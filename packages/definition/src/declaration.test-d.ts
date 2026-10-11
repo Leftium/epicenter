@@ -4,9 +4,15 @@
  *
  * What these prove: a field map takes any native TypeBox schema, annotated or
  * not, and the row and KV lenses read each one's exact `Static<>`. Helpers and
- * raw schemas sit side by side. The reserved-name rule holds for both, a
- * primitive is not a schema, and a native `default` annotation is admitted.
- * `prepareData` returns the type it was given.
+ * raw schemas sit side by side. A `field.optional` field is `name?:` in a row
+ * and in the values that create one; every KV field is `name?:`, since an
+ * unset key means the application's default. The reserved-name rule holds for
+ * both, a primitive is not a schema, and a native `default` annotation is
+ * admitted without making a field optional. `prepareData` returns the type it
+ * was given.
+ *
+ * A refinement or codec still type-checks as a schema; preparation refuses it
+ * at run time (see `prepare.test.ts`), so none is declared here.
  *
  * See `./field/field.test-d.ts` for the helpers' own types.
  */
@@ -55,14 +61,13 @@ const mixed = defineTable({
 		size: Type.Enum(['small', 'large']),
 		anything: Type.Any(),
 		open: jsonValue,
-		short: Type.Refine(Type.String(), (value) => value.length < 3),
 		pair: Type.Tuple([Type.String(), Type.Number()]),
 		maybe: Type.Union([Type.Number(), Type.Null()]),
 		chain: Node,
 		// Helpers, and native composition over them.
 		title: field.string(),
 		due: field.nullable(field.instant()),
-		owner: Type.Refine(field.string<NoteId>(), (value) => value !== ''),
+		owner: field.string<NoteId>(),
 		status: field.nullable(Type.Enum(['draft', 'published'])),
 	},
 });
@@ -77,7 +82,6 @@ export type _RowKeys = Expect<
 		| 'size'
 		| 'anything'
 		| 'open'
-		| 'short'
 		| 'pair'
 		| 'maybe'
 		| 'chain'
@@ -94,13 +98,12 @@ export type _RawEnum = Expect<Equal<Row['size'], 'small' | 'large'>>;
 // biome-ignore lint/suspicious/noExplicitAny: the type under test is `any`
 export type _RawAny = Expect<Equal<Row['anything'], any>>;
 export type _RawJsonValue = Expect<Equal<Row['open'], JsonValue>>;
-export type _RawRefine = Expect<Equal<Row['short'], string>>;
 export type _RawTuple = Expect<Equal<Row['pair'], [string, number]>>;
 export type _RawUnion = Expect<Equal<Row['maybe'], number | null>>;
 export type _RawCyclic = Expect<Equal<Row['chain'], Static<typeof Node>>>;
 export type _Helper = Expect<Equal<Row['title'], string>>;
 export type _NullableHelper = Expect<Equal<Row['due'], InstantString | null>>;
-export type _RefinedHelper = Expect<Equal<Row['owner'], NoteId>>;
+export type _BrandedHelper = Expect<Equal<Row['owner'], NoteId>>;
 export type _NullableRaw = Expect<
 	Equal<Row['status'], 'draft' | 'published' | null>
 >;
@@ -108,7 +111,7 @@ export type _CreateHasNoId = Expect<
 	Equal<keyof CreateRowOf<typeof mixed>, Exclude<keyof Row, 'id'>>
 >;
 
-// KV takes the same schemas.
+// KV takes the same schemas, and every setting may be unset.
 const definition = {
 	id: 'so.epicenter.raw',
 	kv: {
@@ -122,11 +125,60 @@ export type _KvRaw = Expect<
 	Equal<
 		KvOf<typeof definition>,
 		{
-			theme: 'light' | 'dark';
-			window: { width: number; height: number };
-			name: string;
+			theme?: 'light' | 'dark';
+			window?: { width: number; height: number };
+			name?: string;
 		}
 	>
+>;
+
+// field.optional makes a row field `name?:`, in a row and in its create values,
+// and composes outside field.nullable.
+const optionalFields = defineTable({
+	fields: {
+		title: field.string(),
+		note: field.optional(field.string()),
+		due: field.optional(field.nullable(field.instant())),
+		raw: Type.Optional(Type.Integer()),
+	},
+});
+export type _OptionalRow = Expect<
+	Equal<
+		RowOf<typeof optionalFields>,
+		{ id: string } & {
+			title: string;
+			note?: string;
+			due?: InstantString | null;
+			raw?: number;
+		}
+	>
+>;
+export type _OptionalCreate = Expect<
+	Equal<
+		CreateRowOf<typeof optionalFields>,
+		{
+			title: string;
+			note?: string;
+			due?: InstantString | null;
+			raw?: number;
+		}
+	>
+>;
+export const _withoutOptional: CreateRowOf<typeof optionalFields> = {
+	title: 't',
+};
+// @ts-expect-error title is required; only the optional fields may be left out
+export const _withoutRequired: CreateRowOf<typeof optionalFields> = {
+	note: 'n',
+};
+// A KV field declared optional reads the same as any other setting.
+const optionalKv = {
+	id: 'so.epicenter.optional',
+	kv: { note: field.optional(field.string()), width: Type.Integer() },
+	tables: {},
+} satisfies DataDefinition;
+export type _OptionalKv = Expect<
+	Equal<KvOf<typeof optionalKv>, { note?: string; width?: number }>
 >;
 
 // Every schema above is a field, with or without a hint.
@@ -209,9 +261,9 @@ export type _PreparedKv = Expect<
 	Equal<
 		KvOf<NonNullable<typeof prepared>>,
 		{
-			theme: 'light' | 'dark';
-			window: { width: number; height: number };
-			name: string;
+			theme?: 'light' | 'dark';
+			window?: { width: number; height: number };
+			name?: string;
 		}
 	>
 >;

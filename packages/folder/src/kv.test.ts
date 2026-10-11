@@ -262,34 +262,6 @@ test('set refuses a file that cannot be read as settings, and writes nothing', a
 	expect(await s.source()).toBe(text);
 });
 
-test('a refinement is shown a copy: the caller’s value is never frozen or changed', async () => {
-	const refined = defineFolder({
-		kv: {
-			data: {
-				type: 'object',
-				'~refine': [
-					{
-						refine: (value: unknown) => {
-							if (value !== null) (value as { x?: number }).x = 99;
-							return true;
-						},
-						message: 'refused',
-					},
-				],
-			},
-		},
-		tables: {},
-	});
-	const base = (await rawBrowserFolder({ id: 'kv-refined' })).boundary;
-	const kv = createKv<{ data: { x?: number } }>({ storage: base }, refined.kv);
-	const supplied = { x: 1 };
-	const result = await kv.set('data', supplied);
-	expect(supplied).toEqual({ x: 1 });
-	expect(Object.isFrozen(supplied)).toBe(false);
-	// The refinement's attempted write throws on its frozen copy: an issue.
-	expect(expectErr(result).name).toBe('InvalidValues');
-});
-
 test('text nested too deep is InvalidKv, and a set refused by it leaves the handle usable', async () => {
 	const s = await setup(`{"layout": ${'['.repeat(100_000)}`);
 	expect(expectErr(await s.kv.get()).name).toBe('InvalidKv');

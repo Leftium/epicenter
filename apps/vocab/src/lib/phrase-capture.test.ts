@@ -30,6 +30,7 @@ import {
 function exchange() {
 	const { window } = new JSDOM(
 		'<!doctype html><body><div id="list">' +
+			// vocab-check: ignore-next-line (Tailwind typography class)
 			'<div class="bubble"><div data-phrase-source="one"><div class="prose">' +
 			'<p>A <strong>laconic</strong> reply is <a href="https://example.invalid">brief</a>, not rude.</p>' +
 			'<p>Café and café differ; 顺便 too.<br>Third line \u{1F600} here</p>' +
@@ -37,6 +38,7 @@ function exchange() {
 			'</div></div>' +
 			'<button data-capture-skip data-save-phrase="one">Save a phrase</button></div>\n' +
 			'<div class="bubble"><div id="learner">Is "terse" the same?</div></div>' +
+			// vocab-check: ignore-next-line (Tailwind typography class)
 			'<div class="bubble"><div data-phrase-source="two"><div class="prose"><p>  by and large  </p></div></div></div>' +
 			'<div class="bubble"><div id="unsaved"><p>an unsaved answer</p></div></div>' +
 			'<div class="bubble"><div id="streaming">a partial rep</div></div>' +

@@ -42,6 +42,7 @@ type Value =
 	| { kind: 'object'; members: ReadonlyMap<string, Value> };
 type Member = { raw: string; value: Value };
 
+// vocab-check: ignore-next-line (Unicode scalar value is the Unicode standard term)
 /** Unicode scalar order matches Rust's UTF-8 string ordering. */
 function compareText(left: string, right: string) {
 	const a = [...left];
@@ -289,6 +290,7 @@ export function readKvMembers(
 }
 
 /**
+ // vocab-check: ignore-next-line (Unicode scalar value is the Unicode standard term)
  * The `kv.json` text of root members: keys in Unicode scalar order, two-space
  * indentation, and each value's raw text as given. Every value must already
  * be one JSON value a folder can store.

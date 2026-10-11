@@ -10,7 +10,7 @@ earlier implementation, not the current Whispering UI.
 
 Date: 2026-09-23. Task baseline: `f6e51408a5c811c34e1adb0321c28639ffd6200a`.
 Decision foundation: `8e02241510`. The foundation documented the design; it did not
-implement it. The continuation narrowed copying to declared scalar values and
+implement it. The continuation narrowed copying to declared single values and
 omission of Whispering's unused content node.
 
 ## Implemented boundary
@@ -43,7 +43,7 @@ The player owns one source, disposal, loading/error state and explicit reopening
 
 Replaced two stale selected-library browser scripts with the current product-flow
 harness. Native recorder and direct runtime-transcriber implementations remain.
-The generic content node API/storage key/codec and transcript scalar schema remain.
+The generic content node API/storage key/codec and transcript value schema remain.
 ADR-0425 and other Proposed schema changes were not adopted.
 
 ## Review adjudication

@@ -104,6 +104,7 @@
 				<p>{chat.isReading ? 'Reading this chat…' : 'The tutor is ready to open this conversation.'}</p>
 			</div>
 		{:else}
+			<!-- vocab-check: ignore-next-line (Tailwind max-w-prose class) -->
 			<Chat.List class="mx-auto max-w-prose">
 				{#each chat.messages as msg (msg.id)}
 					<Chat.Bubble variant={msg.role === 'user' ? 'sent' : 'received'} style={msg.role === 'user' ? undefined : 'max-width: 100%'}>

@@ -8,6 +8,8 @@
 - **Unbuilt:** A Mistral preset requires verification of the application's full request, including `prompt`; it is not a prerequisite for using a custom compatible endpoint.
 - **Amended by:** [ADR-0424](0424-runtime-transcription-calls-the-host-directly.md) withdraws the native synthetic HTTP transport; network inference continues to use actual OpenAI SDK clients.
 
+<!-- doc-path-check: ignore-file (Accepted record; its Decision names paths as they were when it was accepted) -->
+
 ## Context
 
 ADR-0060 retained bespoke transcription adapters for Deepgram and ElevenLabs.

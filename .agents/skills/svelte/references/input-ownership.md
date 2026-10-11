@@ -61,7 +61,7 @@ Clear the draft after success only if it is still that submission, or disable
 editing during the request. Never erase newer typing when an older request ends.
 Keep failed unsubmitted input until retry or deliberate discard.
 
-A single-field form may use a scalar `$state`. Do not manufacture an object
+A single-field form may use a single-value `$state`. Do not manufacture an object
 only to wrap one string, or combine unrelated forms and visibility flags into
 one object. An explicit-submit form editing an existing record may initialize
 from it once for that form lifetime. Cancel discards that draft. Reopening or

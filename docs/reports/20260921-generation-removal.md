@@ -325,7 +325,7 @@ Remaining implementation stragglers:
 Recovery evidence is still required: flush failure before baseline advancement,
 crash after new-row creation before file rename, baseline-write failure followed
 by a remote edit, and concurrent file changes during Push. Repeating an equal
-scalar assignment is not sufficient proof of retry safety across these cases.
+single-value assignment is not sufficient proof of retry safety across these cases.
 
 The follow-up documentation pass passed `git diff --check` and checked local
 links in rewritten records. The hygiene script currently reports 62 findings,

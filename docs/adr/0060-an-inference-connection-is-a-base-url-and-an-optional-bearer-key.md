@@ -7,6 +7,8 @@
 - **Amends:** [ADR-0059](0059-an-inference-connection-is-a-capability-orthogonal-device-endpoint.md) (collapses the hosted/custom `kind` discriminant into one flat connection; specifies the model-id tie-break and that capability metadata is read-side decoration)
 - **Relates:** [ADR-0053](0053-the-epicenter-bearer-is-an-audience-scoped-credential.md) (the audience-scoped bearer that makes the injected hosted transport safe), [ADR-0054](0054-an-inference-backend-is-the-metered-gateway-or-a-custom-server.md) (the metered house-key gateway hosted points at), [ADR-0050](0050-the-inference-contract-is-openai-compatible.md) (the OpenAI-compatible wire every connection speaks), [ADR-0022](0022-rust-owns-the-models-folder-the-webview-owns-the-catalog.md) (the downloaded-binary engine kind that is *not* a connection)
 
+<!-- doc-path-check: ignore-file (Accepted record; its Decision names paths as they were when it was accepted) -->
+
 ## Context
 
 [ADR-0059](0059-an-inference-connection-is-a-capability-orthogonal-device-endpoint.md) modeled an inference connection as `{ kind: 'hosted' } | { kind: 'custom'; preset?; baseUrl; apiKey? }`. Two seams show the `kind` discriminant is not the real axis:

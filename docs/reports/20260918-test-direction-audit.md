@@ -189,7 +189,7 @@ This checkout continued changing during the review. Findings and line numbers de
 | [apps/local-books/test/books-cli.test.ts](../../apps/local-books/test/books-cli.test.ts) | 84 | Retain at triage | Representative behavior: CLI: `query` returns mirror rows as JSON |
 | [apps/local-books/test/cli-e2e.test.ts](../../apps/local-books/test/cli-e2e.test.ts) | 114 | Retain at triage | Representative behavior: CLI: `sync --full` then `sync` runs incremental, advances the cursor, no re-pull |
 | [apps/local-books/test/db.test.ts](../../apps/local-books/test/db.test.ts) | 202 | Retain at triage | Representative behavior: a newer object overwrites an older row |
-| [apps/local-books/test/entities.test.ts](../../apps/local-books/test/entities.test.ts) | 173 | Retain at triage | Representative behavior: lifts the header scalars from a live-shaped object |
+| [apps/local-books/test/entities.test.ts](../../apps/local-books/test/entities.test.ts) | 173 | Retain at triage | Representative behavior: lifts the header values from a live-shaped object |
 | [apps/local-books/test/env-example.test.ts](../../apps/local-books/test/env-example.test.ts) | 40 | Retain at triage | Representative behavior: .env.example lists exactly QB_SPEC's qualified names |
 | [apps/local-books/test/grill-e2e.test.ts](../../apps/local-books/test/grill-e2e.test.ts) | 134 | Retain at triage | Representative behavior: sync --full then query: grill the mirror the pipeline produced |
 | [apps/local-books/test/mcp-server.test.ts](../../apps/local-books/test/mcp-server.test.ts) | 242 | Retain at triage | Representative behavior: mcp: tools/list, query rows, the two error channels, and a clean stream |
@@ -383,7 +383,7 @@ This checkout continued changing during the review. Findings and line numbers de
 | [packages/device/src/secrets.test.ts](../../packages/device/src/secrets.test.ts) | 137 | Retain at triage | Representative behavior: browser secrets survive reopening and isolate applications and labels |
 | [packages/matter-core/src/core/conformance.test.ts](../../packages/matter-core/src/core/conformance.test.ts) | 162 | Retain at triage | Representative behavior: a present valid value is OK; the row is valid when every cell is OK |
 | [packages/matter-core/src/core/contract.test.ts](../../packages/matter-core/src/core/contract.test.ts) | 255 | Retain at triage | Representative behavior: accepts the palette subset and derives kinds in declared order |
-| [packages/matter-core/src/core/expected.test.ts](../../packages/matter-core/src/core/expected.test.ts) | 57 | Retain at triage | Representative behavior: a scalar kind reduces to its name |
+| [packages/matter-core/src/core/expected.test.ts](../../packages/matter-core/src/core/expected.test.ts) | 57 | Retain at triage | Representative behavior: a single-value kind reduces to its name |
 | [packages/matter-core/src/core/integrity.test.ts](../../packages/matter-core/src/core/integrity.test.ts) | 380 | Retain at triage | Representative behavior: a present, valid non-reference value is ok |
 | [packages/matter-core/src/core/parse.test.ts](../../packages/matter-core/src/core/parse.test.ts) | 75 | Retain at triage | Representative behavior: splits frontmatter from body |
 | [packages/matter-core/src/core/query.test.ts](../../packages/matter-core/src/core/query.test.ts) | 130 | Trim/replace | Prefer executed SQLite semantics over duplicate SQL text; first preserve explicit-sort-over-FTS behavior. |
@@ -395,7 +395,7 @@ This checkout continued changing during the review. Findings and line numbers de
 | [packages/matter-core/src/field/field.test.ts](../../packages/matter-core/src/field/field.test.ts) | 459 | Retain at triage | Representative behavior: field.${kind} recognizes back as ${kind} and matches exactly one meta |
 | [packages/matter-core/src/load/fs.test.ts](../../packages/matter-core/src/load/fs.test.ts) | 242 | Retain at triage | Representative behavior: reads a typed folder into a readable table named for its basename |
 | [packages/matter-core/src/report/exit-code.test.ts](../../packages/matter-core/src/report/exit-code.test.ts) | 115 | Retain at triage | Representative behavior: 0 when every row is healthy |
-| [packages/matter-core/src/report/format.test.ts](../../packages/matter-core/src/report/format.test.ts) | 106 | Retain at triage | Representative behavior: scalar kinds render their phrase |
+| [packages/matter-core/src/report/format.test.ts](../../packages/matter-core/src/report/format.test.ts) | 106 | Retain at triage | Representative behavior: single-value kinds render their phrase |
 | [packages/principal/src/device-owner.test.ts](../../packages/principal/src/device-owner.test.ts) | 44 | Retain at triage | Representative behavior: account identity encodes without case folding or separator collisions |
 | [packages/recorder/src/vad-recorder.test.ts](../../packages/recorder/src/vad-recorder.test.ts) | 61 | Retain at triage | Representative behavior: failed VAD destruction stops tracks but retains ownership until a successful retry |
 | [packages/server/evidence/enrollment/passkey-hooks.test.ts](../../packages/server/evidence/enrollment/passkey-hooks.test.ts) | 121 | Archive research | Reproduces rejected enrollment design; preserve shared authenticator fixture used by actual self-host tests. |

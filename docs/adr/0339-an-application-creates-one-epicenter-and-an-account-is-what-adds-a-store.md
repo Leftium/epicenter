@@ -11,6 +11,8 @@
 - **2026-09-02, amended in place:** every handle now states its opening `appId` explicitly, including when it matches `definition.id`. The one-handle and one-store decisions stand; only the constructor convenience default is withdrawn.
 - **2026-09-03, amended in place:** the browser and desktop subpaths export a binding, which is a function of `appId`, and an application composes the handle in one file. Two other shapes were built and withdrawn the same day; the amendment records both.
 
+<!-- doc-path-check: ignore-file (Accepted record; its Decision names paths as they were when it was accepted) -->
+
 ## Context
 
 The original handle asked an application to state its identity twice. Every

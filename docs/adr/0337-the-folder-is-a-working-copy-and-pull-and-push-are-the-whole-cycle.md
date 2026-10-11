@@ -12,6 +12,8 @@
 - **Amended by:** [ADR-0394](0394-materialization-contains-documents-and-blob-references.md) at recovery: a saved folder is readable source material, not a historical generation or exact backup; document-only materialization retains the Pull/Push comparison baseline.
 - **Built**, in `1e3101d842:packages/app/src/data/artifact/checkout.ts` and `1e3101d842:apps/epicenter/src/checkout.ts`: all three verbs, the manifest, and the `AGENTS.md` a pull generates. What is not is named at "What a push refuses" below, and each line there waits on its own record.
 
+<!-- doc-path-check: ignore-file (Accepted record; its Decision names paths as they were when it was accepted) -->
+
 ## Context
 
 `~/Epicenter` was asked to be four things at once: a durable copy, a place to

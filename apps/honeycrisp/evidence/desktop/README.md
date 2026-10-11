@@ -54,7 +54,7 @@ IndexedDB folder; native acceptance did not use that adapter.
 | 3. Formatting and reopen | Exercised bold, italic, strike, inline code, link, headings 1 through 3, bullet, numbered and checked task lists, quote, fenced code, divider, Undo and Redo. Native Markdown and reopened rich text retained them. |
 | 4. Source and rich text | Held a save, changed Source, and switched to rich text. Both displayed the same current draft, including later typing. |
 | 5. Untouched bytes | Opened and switched views on the saved formatted note without editing. Native bytes equaled the captured before-image. |
-| 6. Frontmatter preservation | An external edit inserted an unknown scalar, map, and comment. A subsequent body edit preserved their exact source strings. |
+| 6. Frontmatter preservation | An external edit inserted an unknown value, map, and comment. A subsequent body edit preserved their exact source strings. |
 | 7. Outside edits | Ran real `pwd`, `git status`, and `git log` in Terminal, appended a body through the shell, and separately edited through an external process. Clean UI refreshed without import or restart. Reveal opened the same root in Finder. Terminal state remained while hidden. |
 | 8. Dirty conflict | Failed a save, changed the file externally, and observed paused autosave, retained draft, Compare, and explicit overwrite. Switching notes retained the conflict draft. |
 | 9. In-flight typing | Held the captured save, added newer text, released it with delay, and saw the in-flight status. Git recorded captured text first, then newer typing in the next commit. |

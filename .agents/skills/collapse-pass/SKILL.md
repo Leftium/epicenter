@@ -72,7 +72,7 @@ For input consumers, distinguish
 [immediate editing from explicit submission](../svelte/references/input-ownership.md).
 Immediate controls read the current editor and submit replacements. Explicit
 forms own unfinished input, preferably one replace-only raw draft object for
-fields submitted together. Scalars and intentionally mutable proxied forms are
+fields submitted together. Single values and intentionally mutable proxied forms are
 valid when they fit the interaction; rune count is not the target. Hunt mirrored
 editor values, effect-driven synchronization, parallel draft/payload copies,
 unnecessary snapshot or clone layers, raw-state property mutation, and late

@@ -192,7 +192,7 @@ For when a single-use handler should be inlined at its call site versus kept as 
 
 # Commit-on-Blur for Workspace String Fields
 
-This section describes existing Y.Map-backed scalar fields. It does not govern
+This section describes existing Y.Map-backed value fields. It does not govern
 Folder row editors: their immediate setters own accepted input and publication.
 An onblur commit is an explicit submission event with the DOM holding unfinished
 input. See [immediate editing and explicit submission](input-ownership.md).

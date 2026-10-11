@@ -1,3 +1,4 @@
+// vocab-check: ignore-file (YAML's own term: a plain or quoted scalar is a YAML node kind)
 /**
  * The row codec under `parseRow` and `formatRow`: complete fields and the
  * Markdown body, with no schema.

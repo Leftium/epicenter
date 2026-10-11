@@ -100,8 +100,10 @@ type SyncChoices = Partial<Record<string, SyncChoice>>; // keyed by conflict id
   `Conflict` prompt at its next save (ADR-0523).
 - Merge text conflicts outside tables still need `mergeIncoming` or the
   terminal.
-- `prepareMerge` takes a path merger and settled paths; `mergeIncoming` passes
-  neither and behaves as before.
+- `prepareMerge` offers each path both sides changed to an optional
+  `mergePath` (`syncMerge` in `packages/folder/src/git/sync.ts`); a second
+  `syncMerge` given the chosen text merges the same commits again.
+  `mergeIncoming` passes none and behaves as before.
 
 ## Considered alternatives
 
@@ -118,3 +120,16 @@ type SyncChoices = Partial<Record<string, SyncChoice>>; // keyed by conflict id
 - **Fetch again inside `resolve`.** Changes the inputs the person reviewed.
 - **Whole-file choices only.** A person settling one title would discard the
   other side's independent field changes.
+
+## Verification
+
+`packages/folder/src/row-merge.test.ts` covers independent field and body
+changes, spelling that is not a change, two edits of one field, a removed
+field against a changed one, competing body lines, added rows with no base,
+and deleted or unreadable versions. `packages/folder/src/sync.test.ts` runs a
+browser folder against `git http-backend` and covers merges without
+choices in the standard form, captured units with nothing written or sent,
+settled units with the captured commits as parents, a deleted row and an
+invalid row as whole files, every kind of invalid choice, stale attempts,
+and an unreviewable text conflict. `apps/todos/src/lib/sync.test.ts` covers
+the open item afterwards.

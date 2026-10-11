@@ -52,3 +52,11 @@ and its only state is that attempt's `SyncChoices`.**
   different captured value in the next attempt.
 - **A larger editor dialog per row.** Text areas grow and scroll; the dialog
   added focus and cancel rules for little gain.
+
+## Verification
+
+`packages/svelte/src/sync-review.mounted.test.ts` mounts the review in jsdom
+and covers both versions per conflict, Apply waiting for every choice,
+take, text and JSON replacement, removal, a body with no removal, the
+choices handed over once and never changed afterwards, Back keeping
+choices, and refused choices beside their rows.

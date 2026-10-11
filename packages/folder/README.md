@@ -483,6 +483,7 @@ successful reading does not mean an application can open the folder.
 | `kv` | Root `kv.json`, independent settings. `get()` returns `{ path, sha256, values, issues }`: every declared value that validated, with each broken one reported at its line, or `InvalidKv` for text that is not one strict JSON object. `set(key, value)` merges one key into the current file, keeps every other key's raw text, creates a missing file, removes a key set to `undefined`, and re-applies itself when another writer got there first. See [Reading and saving kv.json](#reading-and-saving-kvjson). |
 | `files` | Ordinary files at literal paths. See below. |
 | `git` | A status snapshot, `status()`, `commit()`, `commitAndPush()`, `push()`, `fetch()`, `pullFastForward()`, `mergeIncoming({ conflicts? })`, `recoverIncoming()`, and `paths()`, `stage()`, `commitStaged(message)`, `diff()`, `log()`. |
+| `sync` | `run()` commits saved files, fetches, merges, and pushes; competing settings, row fields, row bodies, and whole row files come back as a `SyncAttempt` that `resolve(attempt, choices)` settles. See [Sync](#sync). |
 | `location` | `{ kind: 'opfs', directory }` or `{ kind: 'directory', root }`. For showing to a person. File paths are never joined onto it. |
 | `onFilesChanged(listener)` | A hint that paths changed, so read again. Returns the function that stops listening. |
 | `terminal({ cwd })` | A shell over the folder's files and history. |
@@ -856,6 +857,10 @@ nesting beyond 64 containers return `kind: 'invalid'` and the first invalid
 `side` in base, ours, theirs order. A leading BOM is accepted and removed from
 output. Callers must decode bytes without replacing invalid UTF-8.
 
+Sync settles competing keys through the same merge (`reconcileKv` in
+`kv-merge.ts`): each settled key is its raw value text, or `null` to leave
+it out, and applies only where the key competes.
+
 The function does not apply field schemas, write files, or choose a winner for
 competing edits. Its module owns `kv.json` text: `kv.set` writes through the same
 formatter, so a local save and a merge produce the same file. A browser folder's `git.mergeIncoming()` uses it for root
@@ -1003,6 +1008,65 @@ had already started for the page, and serves every other window. A push or fetch
 the owner had not started is withdrawn and never starts. The owner makes no
 commit because a page closed or the app quit: a save whose request was still
 waiting when the app quit stays uncommitted there too.
+
+### Sync
+
+`folder.sync` is the one action an application offers for "bring this folder
+and its remote together" (ADR-0514). `run()` commits the saved files, fetches
+the remote branch, merges, and pushes without force:
+
+```ts
+const { data: ran, error } = await folder.sync.run();
+if (error !== null) return show(error.message);
+if (ran.kind === 'needsChoices') return review(ran); // nothing conflicted was written or sent
+// ran.kind: 'synced', or 'saved' when the push is not confirmed
+```
+
+Its merge is `mergeIncoming`'s with two additions for paths both sides
+changed:
+
+| Path | Merged by | A conflict is |
+| --- | --- | --- |
+| root `kv.json` | key (`reconcileKv`) | `setting`: one key, with JSON values |
+| `<table>/<stem>.md` of a declared table | field and body, through `parseRow` (`mergeRow`) | `field`: one field, with JSON values; `body`: the notes, as text |
+| either, when one side deleted it or a version does not read | nothing | `file`: the whole text |
+
+Field values compare as JSON, so quoting, key order, and frontmatter
+comments never conflict; the body merges by line. A merged row is written by
+`formatRow`, in the standard form. Any other conflict, such as a text file
+outside a table or a binary file, is `Unreviewable` and nothing is written.
+
+A `SyncAttempt` is `{ kind: 'needsChoices', id, local, incoming, conflicts }`.
+Each conflict has an opaque `id`, its `kind`, `path`, `key` or `field`, and
+`base`, `local`, and `incoming` versions, each `{ present: false }` or
+`{ present: true, value }`. `resolve` takes one choice per conflict ID:
+
+```ts
+const choices = {
+	[title.id]: { kind: 'take', side: 'incoming' }, // the captured version; an absent side removes
+	[theme.id]: { kind: 'replace', value: 'dark' }, // JSON for a setting or field, text for a body or file
+	[tags.id]: { kind: 'remove' },                  // not for a body; replace it with ''
+};
+const { data: done, error } = await folder.sync.resolve(attempt, choices);
+```
+
+- Choices are read before `resolve` first awaits. Every problem is reported
+  at once as `InvalidChoices`, each `{ conflictId?, reason, message }`: a
+  missing or unknown entry, a malformed or disallowed choice, or a value the
+  folder refuses. A replacement setting is checked as `kv.set` checks it, and
+  a resolved row must read back through `parseRow`, so removing a required
+  field is refused. `InvalidChoices` writes nothing and keeps the attempt.
+- A `file` choice is written exactly as chosen. Text that is not a valid row
+  then reads as `InvalidRow` and is repaired as text, like any other.
+- Otherwise the attempt is spent. `resolve` merges the captured commits
+  again, never fetching, publishes the merge like `mergeIncoming`, and pushes.
+  An attempt replaced by another `run()`, or a folder whose branch moved or
+  whose saved files changed since the attempt, is `Stale` and nothing is
+  written.
+- `synced` means the push confirmed the merged head and no save landed after
+  the capture. `saved` carries the push's own outcome and `changedSince`.
+
+Browser and Bun folders sync. A desktop folder answers `Unsupported`.
 
 ### Incoming changes
 

@@ -88,7 +88,7 @@ for (const successor of ['bob', 'alice']) {
 					path.includes('list-') ? [{ id: 'current' }] : { marker: 'current' },
 				);
 			}
-			(await currentWork).forEach((result) => expectOk<unknown>(result));
+			for (const result of await currentWork) expectOk<unknown>(result);
 			const cacheBefore = current.queryClient
 				.getQueryCache()
 				.getAll()
@@ -153,7 +153,7 @@ test('management reads and mutations force the captured principal and omit cooki
 			expect(credentials).toBe('omit');
 			complete({ status: true });
 		}
-		(await work).forEach((result) => expect(result.error).toBeNull());
+		for (const result of await work) expect(result.error).toBeNull();
 	} finally {
 		dashboard[Symbol.dispose]();
 	}

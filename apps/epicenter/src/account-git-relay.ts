@@ -124,6 +124,11 @@ function refusal(
 	return { status, error, message, ...(code === undefined ? {} : { code }) };
 }
 
+/** The refusal for a native control request whose body is not the expected shape. */
+export function refuseInvalidNativeGitRequest(): NativeGitRefusal {
+	return refusal(400, 'invalid-request', MESSAGES.invalid);
+}
+
 const isObject = (value: unknown): value is Record<string, unknown> =>
 	typeof value === 'object' && value !== null && !Array.isArray(value);
 const isId = (value: unknown): value is number =>

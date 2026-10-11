@@ -221,7 +221,7 @@ try {
 	);
 	app.get('/api/billing/overview', (c) => {
 		if (balanceUnavailable)
-			return c.json({ message: 'Balance fixture unavailable' }, 503);
+			return c.text('Balance fixture unavailable', 503);
 		return c.json({
 			planDisplayName: 'Free',
 			trial: null,
@@ -278,7 +278,7 @@ try {
 	app.post('/api/billing/events', (c) => c.json({ events: [] }));
 	app.post('/api/billing/preview', (c) =>
 		previewUnavailable
-			? c.json({ message: 'Preview fixture unavailable' }, 503)
+			? c.text('Preview fixture unavailable', 503)
 			: c.json({ displayedSummary: 'Your new plan costs $20 per month.' }),
 	);
 	app.post('/api/billing/checkout/top-up', async (c) => {

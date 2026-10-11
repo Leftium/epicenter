@@ -24,9 +24,9 @@ export function createAccountManagementClient(account: Account) {
 				const headers = new Headers(
 					input instanceof Request ? input.headers : undefined,
 				);
-				new Headers(init?.headers).forEach((value, key) =>
-					headers.set(key, value),
-				);
+				new Headers(init?.headers).forEach((value, key) => {
+					headers.set(key, value);
+				});
 				headers.delete('cookie');
 				headers.set('x-epicenter-principal', account.principalId);
 				return account.fetch(input, { ...init, headers, credentials: 'omit' });

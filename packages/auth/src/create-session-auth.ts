@@ -268,9 +268,9 @@ function createBearerAuth(
 				const headers = new Headers(
 					input instanceof Request ? input.headers : undefined,
 				);
-				new Headers(init?.headers).forEach((value, key) =>
-					headers.set(key, value),
-				);
+				new Headers(init?.headers).forEach((value, key) => {
+					headers.set(key, value);
+				});
 				headers.set('authorization', `Bearer ${credential.value.token}`);
 				headers.delete('cookie');
 				const response = await whileActive(

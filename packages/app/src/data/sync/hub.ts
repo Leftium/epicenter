@@ -295,7 +295,10 @@ export function createSyncHub({
 				refuse(connection, frame.submission, admissionError.message);
 			return;
 		}
-		if (frame.kind === 'offer') return takeOffer(connection, collector, frame);
+		if (frame.kind === 'offer') {
+			takeOffer(connection, collector, frame);
+			return;
+		}
 		if (frame.kind !== 'push') return;
 
 		// The only refusal about CONTENT that survives, and it is about framing

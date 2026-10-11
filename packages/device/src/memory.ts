@@ -12,7 +12,8 @@ export function createMemorySqliteOwner() {
 	let disposed = false;
 	const backend = createSqliteOwner({
 		async open(appId, name, account) {
-			const sqlite = await (module ??= initialize());
+			module ??= initialize();
+			const sqlite = await module;
 			const filename = `/${prefix}/${JSON.stringify([appId, deviceOwnerPath(account), name])}`;
 			if (!anchors.has(filename))
 				anchors.set(filename, new sqlite.oo1.DB(filename, 'c', 'memdb'));
@@ -41,9 +42,10 @@ export function createMemorySqliteOwner() {
 				return {
 					...lifetime,
 					close() {
-						return (closing ??= lifetime.close().then(() => {
+						closing ??= lifetime.close().then(() => {
 							leases--;
-						}));
+						});
+						return closing;
 					},
 				};
 			} catch (cause) {

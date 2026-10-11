@@ -551,13 +551,14 @@ export async function createAiCatalog({
 			}
 		},
 		close() {
-			return (closing ??= (async () => {
+			closing ??= (async () => {
 				lifetime.abort();
 				listeners.clear();
 				for (const controller of active.keys()) controller.abort();
 				await queue;
 				await Promise.all([...active.values()].map((request) => request.done));
-			})());
+			})();
+			return closing;
 		},
 	};
 }

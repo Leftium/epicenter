@@ -111,7 +111,8 @@ async function openStore<
 	let sqlClosing: Promise<void> | undefined;
 	function closeSqlite() {
 		if (!sqlite) return;
-		return (sqlClosing ??= (async () => sqlite.close())());
+		sqlClosing ??= (async () => sqlite.close())();
+		return sqlClosing;
 	}
 	// SQL crosses worker/native transports; never pass Account methods to that boundary.
 	const sqlAcquisition = Promise.resolve()
@@ -142,7 +143,8 @@ async function openStore<
 	let blobClosing: Promise<void> | undefined;
 	function closeBlobs() {
 		if (!blobs) return;
-		return (blobClosing ??= (async () => blobs.close())());
+		blobClosing ??= (async () => blobs.close())();
+		return blobClosing;
 	}
 	const blobAcquisition =
 		acquireBlobs &&

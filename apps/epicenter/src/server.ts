@@ -44,6 +44,7 @@ import {
 	isGitService,
 	NATIVE_GIT_ROUTE,
 	parseAccountIdentity,
+	refuseInvalidNativeGitRequest,
 } from './account-git-relay.ts';
 import { createAccountRelay } from './account-relay.ts';
 import type { AppSecretOwner } from './app-secrets.ts';
@@ -241,7 +242,7 @@ export function createHomeServer({
 				typeof body.folderId !== 'string' ||
 				Object.keys(body).length !== 2
 			)
-				return c.json({ error: 'invalid-request' }, 400);
+				return c.json(refuseInvalidNativeGitRequest(), 400);
 			const result = await gitRelay.pairing(account, body.folderId, {
 				signal: c.req.raw.signal,
 			});
@@ -260,7 +261,7 @@ export function createHomeServer({
 				!isGitService(body.service) ||
 				Object.keys(body).length !== 4
 			)
-				return c.json({ error: 'invalid-request' }, 400);
+				return c.json(refuseInvalidNativeGitRequest(), 400);
 			const result = gitRelay.start({
 				account,
 				folderId: body.folderId,

@@ -145,6 +145,9 @@ let page;
 let operator;
 let operatorAuth;
 let proxy;
+// A cleanup failure must not replace the journey's own failure, so it is
+// raised only after a passing run has finished cleaning up.
+let cleanupFailure;
 function grantUrl(grant) {
 	return grant.url ?? `${origin}/sign-in#enroll=${grant.token}`;
 }
@@ -281,7 +284,7 @@ try {
 		try {
 			process.kill(-child.pid, 'SIGTERM');
 		} catch (error) {
-			if (error?.code !== 'ESRCH') throw error;
+			if (error?.code !== 'ESRCH') cleanupFailure ??= error;
 		}
 		await Bun.sleep(250);
 		// The development watcher can outlive its server and wrapper processes.
@@ -296,7 +299,7 @@ try {
 					error.code === 'ESRCH'
 				)
 			)
-				throw error;
+				cleanupFailure ??= error;
 		}
 	}
 	await exited;
@@ -304,3 +307,4 @@ try {
 	await app.stop(true);
 	rmSync(directory, { recursive: true, force: true });
 }
+if (cleanupFailure) throw cleanupFailure;

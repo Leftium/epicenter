@@ -2,7 +2,7 @@
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { chromium, webkit } from 'playwright';
+import { type BrowserContext, chromium, webkit } from 'playwright';
 import { build } from 'vite';
 
 const temporary = await mkdtemp(join(tmpdir(), 'epicenter-query-'));
@@ -24,7 +24,7 @@ const server = Bun.serve({
 	},
 });
 const engine = process.argv.includes('--webkit') ? webkit : chromium;
-let browser;
+let browser: BrowserContext | undefined;
 try {
 	browser = await engine.launchPersistentContext(join(temporary, 'profile'));
 	const page = await browser.newPage();

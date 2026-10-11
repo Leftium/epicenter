@@ -50,7 +50,8 @@ export function createDesktopSqliteOwner(
 					open: lifetime.open,
 					delete: lifetime.delete,
 					close() {
-						return (closing ??= lifetime.close().finally(() => socket.close()));
+						closing ??= lifetime.close().finally(() => socket.close());
+						return closing;
 					},
 				};
 			} catch (cause) {
@@ -85,7 +86,7 @@ function createSqliteSocket({
 		socket?.close();
 	}
 	function ready() {
-		return (opening ??= new Promise<void>((resolve, reject) => {
+		opening ??= new Promise<void>((resolve, reject) => {
 			rejectOpen = reject;
 			if (!baseURL || !Socket)
 				throw new Error('Desktop SQLite needs an origin and WebSocket.');
@@ -123,7 +124,8 @@ function createSqliteSocket({
 					fail(cause);
 				}
 			};
-		}));
+		});
+		return opening;
 	}
 	const request: AppSqliteTransport = async (message) => {
 		if (failed) return { error: failed, data: null };
@@ -272,11 +274,12 @@ export function createDesktopSecrets(
 		close(): Promise<void> {
 			if (closing) return closing;
 			closed = true;
-			return (closing = operations
+			closing = operations
 				? new Promise<void>((resolve) => {
 						drained = resolve;
 					})
-				: Promise.resolve());
+				: Promise.resolve();
+			return closing;
 		},
 	};
 }

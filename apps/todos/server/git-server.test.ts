@@ -78,7 +78,7 @@ test('browser push, native pull and push, then browser fast-forward through the 
 	const first = await browser.git.commitAndPush();
 	expect(first.commit.status).toBe('committed');
 	expect(first.push.status).toBe('pushed');
-	// Opening the folder published its definition.json beside the new row.
+	// Opening the folder published its epicenter.json beside the new row.
 	expect(await run(session.bare, ['git', 'log', '--format=%s', 'main'])).toBe(
 		'Update 2 files',
 	);

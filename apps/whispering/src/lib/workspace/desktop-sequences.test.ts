@@ -86,10 +86,10 @@ const type = (
 		row.body = body;
 	});
 
-/** The changes the owner applied to the data; opening publishes `definition.json` first. */
+/** The changes the owner applied to the data; opening publishes `epicenter.json` first. */
 const changes = () =>
 	owner.applied.filter(
-		(change) => !('path' in change) || change.path !== 'definition.json',
+		(change) => !('path' in change) || change.path !== 'epicenter.json',
 	);
 const kinds = () => changes().map((change) => change.kind);
 

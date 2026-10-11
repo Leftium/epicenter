@@ -30,7 +30,7 @@ import type {
 	CommitOutcome,
 	FileCapture,
 	FileListing,
-	KvSnapshot,
+	KvReading,
 	RowReadError,
 	StoredRow,
 	TableListing,
@@ -279,7 +279,7 @@ export function createLibrary(workspace: Workspace) {
 	let textResultsError = $state<string | undefined>();
 	let listing = $state.raw<FileListing | undefined>();
 	let listingError = $state<string | undefined>();
-	let kv = $state.raw<KvSnapshot<LegacySettings> | undefined>();
+	let kv = $state.raw<KvReading<LegacySettings> | undefined>();
 	let settingsError = $state<string | undefined>();
 	/** What the device has set up, never a key; undefined until read or when the read failed. */
 	let connections = $state.raw<ConnectionsInfo | undefined>();
@@ -687,7 +687,6 @@ export function createLibrary(workspace: Workspace) {
 		get settingsProblem() {
 			if (settingsError !== undefined) return settingsError;
 			if (kv === undefined) return undefined;
-			if (kv.parseError !== undefined) return kv.parseError.message;
 			if (kv.issues.length === 0) return undefined;
 			return kv.issues.map((issue) => issue.message).join('; ');
 		},

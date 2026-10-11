@@ -273,7 +273,7 @@ test('a row that fails after the audio landed leaves the audio, and a retry crea
 	expect(
 		git(root, 'ls-tree', '-r', '--name-only', 'HEAD').trim().split('\n').sort(),
 	).toEqual([
-		'definition.json',
+		'epicenter.json',
 		`recordings/${pending.id}.md`,
 		`recordings/${pending.id}.wav`,
 	]);

@@ -506,7 +506,7 @@ test('a locked branch fails the commit and never the save; unlocking lets it com
 	expect(
 		git('ls-tree', '-r', '--name-only', 'HEAD').trim().split('\n').sort(),
 	).toEqual([
-		'definition.json',
+		'epicenter.json',
 		`recordings/${pending.id}.md`,
 		`recordings/${pending.id}.wav`,
 	]);
@@ -905,7 +905,7 @@ test('a connection’s key is kept out of the versioned folder and out of every 
 		).not.toContain('secret-key');
 	// The folder's published definition is the only change, and holds no key.
 	const status = expectOk(await folder.git.status());
-	expect(status?.changes).toEqual([{ kind: 'add', path: 'definition.json' }]);
+	expect(status?.changes).toEqual([{ kind: 'add', path: 'epicenter.json' }]);
 	expect(
 		await readFile(
 			join(root, '.git', 'epicenter', 'whispering', 'device.json'),

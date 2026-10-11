@@ -444,7 +444,7 @@ test('saves and history go to the shell’s owner and never to the host', async 
 				(call.args.changes as { path: string }[]).map((change) => change.path),
 			)
 			// Attaching publishes the folder's definition first.
-			.filter((paths) => !paths.includes('definition.json')),
+			.filter((paths) => !paths.includes('epicenter.json')),
 	).toEqual([['recordings/a.wav'], ['notes.md']]);
 	expect(sent('commit')).toHaveLength(1);
 	// The host was asked who it is, and for its event stream. Nothing else.

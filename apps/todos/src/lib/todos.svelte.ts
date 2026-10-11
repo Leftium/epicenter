@@ -21,6 +21,12 @@
  * Returning to the window takes a newer version of the open item when its
  * session holds nothing unsaved. Otherwise the next save reports the change
  * as a conflict, and the person keeps theirs or reloads.
+ *
+ * Sync (`folder.sync`) waits for the open item's saves, then commits, fetches,
+ * merges, and pushes. The open item takes no input while a sync or an Apply
+ * runs. Conflicts come back as one attempt, kept here for the review until
+ * the person applies choices, syncs again, or the folder closes. Afterward the
+ * listings and the open item are read again as on return.
  */
 import type { DepartureParticipant } from '@epicenter/epicenter/departure/page';
 import type {
@@ -36,9 +42,19 @@ import type {
 	RecoverOutcome,
 	RowReadError,
 	StoredRow,
+	SyncAttempt,
+	SyncChoiceProblem,
+	SyncChoices,
+	SyncOutcome,
 	TableError,
 } from '@epicenter/folder';
-import { GitError, MergeError, rowPath, rowStemOf } from '@epicenter/folder';
+import {
+	GitError,
+	MergeError,
+	rowPath,
+	rowStemOf,
+	SyncError,
+} from '@epicenter/folder';
 import {
 	ancestorsOf,
 	basename,
@@ -270,16 +286,39 @@ export function createTodos(folder: TodosFolder) {
 	let departing = $state(false);
 	/** The title typed for a new todo and not yet added. */
 	let newTitle = $state('');
+	/** A sync run or an Apply is running. */
+	let syncing = $state(false);
+	/** The attempt waiting for the person's choices, and whether its review shows. */
+	let syncAttempt = $state.raw<SyncAttempt | undefined>();
+	let reviewing = $state(false);
+	/** What the folder refused in the last Apply, for the review to show. */
+	let syncProblems = $state.raw<readonly SyncChoiceProblem[]>([]);
 
 	/** Whether the open item refuses input now. */
-	const locked = () => departing || recovering || closing !== undefined;
+	const locked = () =>
+		departing || recovering || syncing || closing !== undefined;
 
 	/** Why no action starts now, if one does not. */
 	function refused(): string | undefined {
 		if (closing !== undefined) return CLOSING;
 		if (departing) return DEPARTING;
-		if (recovering) return BUSY;
+		if (recovering || syncing) return BUSY;
 		return undefined;
+	}
+
+	/** Run one sync step with input locked, then read everything again. */
+	async function syncStep<T>(
+		step: () => Promise<Result<T, SyncError>>,
+	): Promise<Result<T, SyncError>> {
+		syncing = true;
+		try {
+			// The open item's saves land first, so the checkpoint holds them.
+			await slot.session?.settled();
+			return await step();
+		} finally {
+			syncing = false;
+			await check();
+		}
 	}
 
 	function openRow(stored: StoredRow<TodoFields>): Item {
@@ -848,6 +887,67 @@ export function createTodos(folder: TodosFolder) {
 				const merged = await folder.git.mergeIncoming();
 				await check();
 				return merged;
+			},
+		),
+		get syncing() {
+			return syncing;
+		},
+		/** The attempt waiting for choices, if a sync found conflicts. */
+		get syncAttempt() {
+			return syncAttempt;
+		},
+		get reviewing() {
+			return reviewing;
+		},
+		set reviewing(shown: boolean) {
+			reviewing = shown && syncAttempt !== undefined;
+		},
+		get syncProblems() {
+			return syncProblems;
+		},
+		/**
+		 * Commit saved files, fetch, merge, and push. Conflicts become the
+		 * attempt the review shows; a new sync replaces an earlier one.
+		 */
+		sync: admissions.command(
+			async (): Promise<Result<SyncOutcome | SyncAttempt, SyncError>> => {
+				if (closing !== undefined) return SyncError.Closed();
+				if (departing || recovering || syncing)
+					return SyncError.Failed({ cause: departing ? DEPARTING : BUSY });
+				syncAttempt = undefined;
+				reviewing = false;
+				syncProblems = [];
+				const ran = await syncStep(() => folder.sync.run());
+				if (ran.data?.kind === 'needsChoices') {
+					syncAttempt = ran.data;
+					reviewing = true;
+				}
+				return ran;
+			},
+		),
+		/**
+		 * Apply the review's choices. Refused choices stay in the review with
+		 * what to fix; any other result ends this attempt.
+		 */
+		resolveSync: admissions.command(
+			async (
+				attempt: SyncAttempt,
+				choices: SyncChoices,
+			): Promise<Result<SyncOutcome, SyncError>> => {
+				if (closing !== undefined) return SyncError.Closed();
+				if (departing || recovering || syncing)
+					return SyncError.Failed({ cause: departing ? DEPARTING : BUSY });
+				const resolved = await syncStep(() =>
+					folder.sync.resolve(attempt, choices),
+				);
+				if (resolved.error?.name === 'InvalidChoices')
+					syncProblems = resolved.error.problems;
+				else if (syncAttempt?.id === attempt.id) {
+					syncAttempt = undefined;
+					reviewing = false;
+					syncProblems = [];
+				}
+				return resolved;
 			},
 		),
 		get recovering() {

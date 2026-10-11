@@ -1,9 +1,12 @@
 <script lang="ts">
 	import * as Resizable from '@epicenter/ui/resizable';
 	import * as Sheet from '@epicenter/ui/sheet';
+	import { toast } from '@epicenter/ui/sonner';
+	import SyncReview from '@epicenter/svelte/sync-review';
 	import { tick } from 'svelte';
 	import { MediaQuery } from 'svelte/reactivity';
 	import { beforeNavigate } from '$app/navigation';
+	import { syncOutcomeLine } from '$lib/status.js';
 	import type { Todos } from '$lib/todos.svelte.js';
 	import AppHeader from './AppHeader.svelte';
 	import Detail from './Detail.svelte';
@@ -57,6 +60,21 @@
 		terminalOpen = false;
 	}
 
+	let applying = $state(false);
+
+	/** Apply the review's choices; refused ones stay in the review, marked. */
+	async function applySync(...[attempt, choices]: Parameters<Todos['resolveSync']>) {
+		applying = true;
+		try {
+			const resolved = await todos.resolveSync(attempt, choices);
+			const line = syncOutcomeLine(resolved, todos.git);
+			const notify = line.tone === 'good' ? toast.success : line.tone === 'error' ? toast.error : toast.warning;
+			notify(line.label, { description: line.detail });
+		} finally {
+			applying = false;
+		}
+	}
+
 	async function back() {
 		const path = todos.current?.path;
 		showingDetail = false;
@@ -94,7 +112,25 @@
 	{/if}
 	<IncomingBanner {todos} />
 
-	{#if wide.current}
+	{#if todos.syncAttempt !== undefined}
+		<!-- One review per attempt: hidden, it keeps the person's choices. -->
+		{#key todos.syncAttempt.id}
+			<div class={todos.reviewing ? 'min-h-0 flex-1 overflow-y-auto p-4' : 'hidden'}>
+				<SyncReview
+					attempt={todos.syncAttempt}
+					open={todos.reviewing}
+					pending={applying}
+					problems={todos.syncProblems}
+					onBack={() => (todos.reviewing = false)}
+					onApply={(attempt, choices) => void applySync(attempt, choices)}
+				/>
+			</div>
+		{/key}
+	{/if}
+
+	{#if todos.reviewing}
+		<!-- The review takes the workspace while it shows. -->
+	{:else if wide.current}
 		<Resizable.PaneGroup direction="vertical" class="min-h-0 flex-1">
 			<Resizable.Pane id="workspace" order={1} minSize={30}>
 				<Resizable.PaneGroup direction="horizontal">

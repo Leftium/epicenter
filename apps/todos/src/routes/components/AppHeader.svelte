@@ -9,6 +9,7 @@
 	import FolderIcon from '@lucide/svelte/icons/folder';
 	import GitMergeIcon from '@lucide/svelte/icons/git-merge';
 	import PanelLeftIcon from '@lucide/svelte/icons/panel-left';
+	import RefreshCwIcon from '@lucide/svelte/icons/refresh-cw';
 	import SquareTerminalIcon from '@lucide/svelte/icons/square-terminal';
 	import {
 		commitAndPushToast,
@@ -23,6 +24,7 @@
 		pushLine,
 		type StatusLine,
 		summaryLine,
+		syncOutcomeLine,
 		uncommittedLine,
 	} from '$lib/status.js';
 	import type { Todos } from '$lib/todos.svelte.js';
@@ -89,9 +91,10 @@
 		error: 'bg-destructive',
 	};
 
-	let working = $state<'commit' | 'pull' | 'fetch' | 'merge' | undefined>();
+	let working = $state<'commit' | 'pull' | 'fetch' | 'merge' | 'sync' | undefined>();
 	const busy = $derived(
 		working !== undefined ||
+			todos.syncing ||
 			todos.recovering ||
 			todos.departing ||
 			todos.git.activity.commit.active ||
@@ -141,6 +144,17 @@
 		working = 'pull';
 		try {
 			show(pullOutcomeLine(await todos.pull()));
+		} finally {
+			working = undefined;
+		}
+	}
+
+	/** Sync; conflicts open the review instead of a toast. */
+	async function syncRemote() {
+		working = 'sync';
+		try {
+			const ran = await todos.sync();
+			if (ran.data?.kind !== 'needsChoices') show(syncOutcomeLine(ran, todos.git));
 		} finally {
 			working = undefined;
 		}
@@ -254,6 +268,32 @@
 	</Popover.Root>
 
 	<div class="ml-auto flex shrink-0 items-center gap-1.5">
+		{#if todos.syncAttempt !== undefined && !todos.reviewing}
+			<Button
+				variant="outline"
+				size="sm"
+				tooltip="Some synced changes conflict with yours. Choose what to keep."
+				data-testid="review-sync"
+				onclick={() => (todos.reviewing = true)}
+			>
+				<span>Review sync</span>
+			</Button>
+		{/if}
+		<Button
+			variant="outline"
+			size="sm"
+			disabled={busy || !hasRemote || pending}
+			tooltip={!hasRemote
+				? NO_REMOTE
+				: pending
+					? INCOMING_WAITS
+					: 'Save your changes to history, get the remote, combine them, and push. Conflicts ask you first.'}
+			data-testid="sync"
+			onclick={syncRemote}
+		>
+			{#if working === 'sync'}<Spinner class="size-3.5" />{:else}<RefreshCwIcon />{/if}
+			<span class="max-sm:sr-only">Sync</span>
+		</Button>
 		{#if offerMerge}
 			<Button
 				variant="outline"

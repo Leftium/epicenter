@@ -16,6 +16,9 @@ import type {
 	PullError,
 	PullOutcome,
 	PushOutcome,
+	SyncAttempt,
+	SyncError,
+	SyncOutcome,
 } from '@epicenter/folder';
 import { Ok, type Result } from 'wellcrafted/result';
 import type { RecoveryAttempt } from './todos.svelte.js';
@@ -597,6 +600,75 @@ export function recoveryLine(attempt: RecoveryAttempt): StatusLine {
 				detail: `${error.message}\nThe update is still pending.`,
 				tone: 'error',
 			};
+	}
+}
+
+/**
+ * One Sync or one Apply in the sync review. Conflicts are the review's to
+ * show; every other result is said here.
+ */
+export function syncOutcomeLine(
+	{ data: outcome, error }: Result<SyncOutcome | SyncAttempt, SyncError>,
+	git: GitSnapshot,
+): StatusLine {
+	if (error) {
+		switch (error.name) {
+			case 'InvalidChoices':
+				return {
+					label: 'Some choices need a fix',
+					detail:
+						'Nothing was changed. Fix the marked results and apply again.',
+					tone: 'warning',
+				};
+			case 'Stale':
+				return {
+					label: 'Sync again to review',
+					detail: `${error.message}. Nothing was changed.`,
+					tone: 'warning',
+				};
+			case 'Unreviewable':
+				return {
+					label: 'Sync stopped: changes conflict',
+					short: 'Conflicts',
+					detail: `${error.message}. Nothing was changed. Merge them in the terminal with git merge.`,
+					tone: 'error',
+				};
+			case 'Merge':
+				return error.error.name === 'IncomingPending'
+					? { label: 'Sync waits', detail: INCOMING_WAITS, tone: 'warning' }
+					: { label: 'Sync stopped', detail: error.message, tone: 'error' };
+			default:
+				return { label: 'Sync stopped', detail: error.message, tone: 'error' };
+		}
+	}
+	switch (outcome.kind) {
+		case 'needsChoices':
+			return {
+				label: `${outcome.conflicts.length} ${outcome.conflicts.length === 1 ? 'change needs' : 'changes need'} your choice`,
+				detail: 'Nothing was changed yet.',
+				tone: 'warning',
+			};
+		case 'synced':
+			return { label: 'Synced', detail: short(outcome.head), tone: 'good' };
+		case 'saved': {
+			const push =
+				outcome.push === undefined
+					? undefined
+					: pushOutcomeLine(outcome.push, git);
+			return {
+				label: 'Merged here, not synced yet',
+				detail: [
+					push?.label,
+					push?.detail,
+					outcome.changedSince
+						? 'Files were saved during the sync. Sync again to send them.'
+						: 'Sync again to send it.',
+				]
+					.filter(Boolean)
+					.join('\n'),
+				tone: 'warning',
+			};
+		}
 	}
 }
 

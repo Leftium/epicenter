@@ -69,7 +69,6 @@ async function open() {
 			definition: whisperingDefinition,
 			browser: {
 				author: { name: 'Test', email: 'test@example.test' },
-				commitOnEdit: false,
 				opfs: {
 					locks: testLocks,
 					getDirectory: async () =>

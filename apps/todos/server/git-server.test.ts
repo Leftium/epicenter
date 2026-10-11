@@ -146,11 +146,7 @@ test('browser push, native pull and push, then browser fast-forward through the 
 	});
 	expect(
 		expectOk(await browser.git.log(5)).map((commit) => commit.message.trim()),
-	).toEqual([
-		'Rename the milk todo',
-		'Update todos/milk.md',
-		'Update 2 files',
-	]);
+	).toEqual(['Rename the milk todo', 'Update todos/milk.md', 'Update 2 files']);
 
 	// Diverged history: the native CLI's pull applies only a fast-forward,
 	// refuses with the folder's pointer to Sync, and writes nothing.

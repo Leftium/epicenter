@@ -1,4 +1,5 @@
 <script lang="ts">
+	import type { Departure } from '@epicenter/epicenter/departure/page';
 	import * as Alert from '@epicenter/ui/alert';
 	import { Button } from '@epicenter/ui/button';
 	import * as Dialog from '@epicenter/ui/dialog';
@@ -8,7 +9,6 @@
 	import { beforeNavigate } from '$app/navigation';
 	import type { Captures } from '$lib/captures.svelte.js';
 	import { backToTimeline, openItem } from '$lib/item-actions.js';
-	import type { Departure } from '$lib/platform/departure.svelte.js';
 	import CaptureDetail from './CaptureDetail.svelte';
 	import Recovery from './Recovery.svelte';
 	import TechnicalDetails from './TechnicalDetails.svelte';
@@ -42,7 +42,11 @@
 	$effect(() => departure?.onHostStopped(() => captures.markServiceStopped()));
 
 	/** Quitting or restarting, in the words the person chose. */
-	const leaving = $derived(departure?.intent === 'restart' ? 'restart' : 'quit');
+	const leaving = $derived(departure?.notice?.intent === 'restart' ? 'restart' : 'quit');
+	/** The open question, while the person is asked. */
+	const prompt = $derived(
+		departure?.notice?.stage === 'choose' ? departure.notice : undefined,
+	);
 
 	const commitProblem = $derived.by(() => {
 		const last = captures.git.lastCommit;
@@ -128,21 +132,21 @@
 </header>
 
 <main class="mx-auto flex w-full max-w-3xl flex-col gap-4 px-4 pb-16 pt-6 sm:px-6">
-	{#if departure?.fenced && !departure.prompt}
+	{#if departure?.notice && !prompt}
 		<Alert.Root aria-label={leaving === 'restart' ? 'Restarting' : 'Quitting'}>
 			<Alert.Title>{leaving === 'restart' ? 'Epicenter is restarting' : 'Epicenter is quitting'}</Alert.Title>
 			<Alert.Description>
-				{#if departure.answered === 'cancel'}
+				{#if departure.notice.stage === 'keeping'}
 					You chose to keep working. Your text is kept; editing resumes once Epicenter confirms it is staying open.
-				{:else if departure.answered === 'ready' || departure.vote === 'discarded'}
+				{:else if departure.notice.stage === 'ready' || departure.notice.stage === 'leaving'}
 					Waiting for Epicenter to {leaving}. Nothing here is changed or discarded unless it does.
 				{:else}
 					Saving what saves on its own. Editing is paused until Epicenter {leaving === 'restart' ? 'restarts' : 'quits'} or stays open.
 				{/if}
 			</Alert.Description>
-			{#if departure.answerProblem}
-				<p role="status" class="mt-2 text-foreground">Epicenter did not receive this window's answer, so editing stays paused: {departure.answerProblem}</p>
-				<div class="mt-2"><Button variant="outline" size="sm" onclick={() => departure.retry()}>Check again</Button></div>
+			{#if departure.problem}
+				<p role="status" class="mt-2 text-foreground">Epicenter did not receive this window's answer, so editing stays paused: {departure.problem}</p>
+				<div class="mt-2"><Button variant="outline" size="sm" onclick={() => void departure.start()}>Check again</Button></div>
 			{/if}
 		</Alert.Root>
 	{/if}
@@ -221,9 +225,9 @@
 
 {#if departure}
 	<!-- One question per round. Closing it is Keep working. -->
-	<Dialog.Root open={departure.prompt !== undefined} onOpenChange={(open) => { if (!open) departure.keepWorking(); }}>
+	<Dialog.Root open={prompt !== undefined} onOpenChange={(open) => { if (!open && prompt) departure.keepWorking(prompt.id); }}>
 		<Dialog.Content class="sm:max-w-md">
-			{@const held = departure.prompt?.held ?? 0}
+			{@const held = prompt?.held ?? 0}
 			<Dialog.Header>
 				<Dialog.Title>{held} {held === 1 ? 'thing is' : 'things are'} not saved</Dialog.Title>
 				<Dialog.Description>
@@ -235,8 +239,8 @@
 				</Dialog.Description>
 			</Dialog.Header>
 			<Dialog.Footer>
-				<Button variant="outline" onclick={() => departure.keepWorking()}>Keep working</Button>
-				<Button variant="destructive" onclick={() => departure.discard()}>{leaving === 'restart' ? 'Discard and restart' : 'Discard and quit'}</Button>
+				<Button variant="outline" onclick={() => prompt && departure.keepWorking(prompt.id)}>Keep working</Button>
+				<Button variant="destructive" onclick={() => prompt && departure.leaveAnyway(prompt.id)}>{leaving === 'restart' ? 'Discard and restart' : 'Discard and quit'}</Button>
 			</Dialog.Footer>
 		</Dialog.Content>
 	</Dialog.Root>

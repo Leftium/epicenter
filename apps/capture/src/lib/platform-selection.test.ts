@@ -9,8 +9,8 @@
  * - The host leaf opens through the desktop folder adapter only: the browser
  *   leaf, the browser adapter and its OPFS store, any Git implementation,
  *   the directory opener, and every Node module are absent from its bundle
- * - The host leaf carries the departure client and, of the host package, only
- *   its browser-safe wire module
+ * - The host leaf carries, of the host package, only its departure wire,
+ *   the shared page client, and the window port
  * - The browser leaf carries the browser adapter and no desktop adapter, no
  *   generated native bindings, and no departure gate
  * - Neither folder leaf loads the account recovery store
@@ -49,7 +49,8 @@ describe('#platform/folder', () => {
 		const modules = await inputs(SEAM_ENTRY, 'epicenter-host');
 		for (const required of [
 			'platform/folder.epicenter-host.ts',
-			'platform/departure.svelte.ts',
+			'epicenter/src/departure-page.svelte.ts',
+			'epicenter/src/departure-window.ts',
 			'epicenter/src/departure-wire.ts',
 			'folder/src/tauri.ts',
 			'folder/src/tauri-adapter.ts',
@@ -66,12 +67,15 @@ describe('#platform/folder', () => {
 		expect(
 			modules.filter((path) => /legacy\/|open-store\.ts$|@y[+/]/.test(path)),
 		).toEqual([]);
-		// Of the host package, only its browser-safe wire module: never the Bun host.
-		expect(modules.filter((path) => /epicenter\/src\//.test(path))).toEqual(
-			modules.filter((path) =>
-				path.endsWith('epicenter/src/departure-wire.ts'),
+		// Of the host package, only its departure wire, page client, and window
+		// port: never the Bun host.
+		expect(
+			modules.filter(
+				(path) =>
+					/epicenter\/src\//.test(path) &&
+					!/epicenter\/src\/departure-(wire|window|page\.svelte)\.ts$/.test(path),
 			),
-		);
+		).toEqual([]);
 	});
 
 	test('the browser build opens through the browser adapter, with no desktop adapter and no departure gate', async () => {
@@ -92,7 +96,7 @@ describe('#platform/folder', () => {
 			modules.filter((path) =>
 				// The browser adapter asks `isTauri()` so it can refuse there; that one
 				// module of the Tauri API is its only use of it.
-				/platform\/(folder\.epicenter-host\.ts|departure\.svelte\.ts)$|epicenter\/src\/|folder\/src\/(tauri|tauri-adapter|bun|native-store)\.ts$|folder\/src\/native\/|@tauri-apps\/api\/(event|webviewWindow)|^bun:/.test(
+				/platform\/folder\.epicenter-host\.ts$|epicenter\/src\/|folder\/src\/(tauri|tauri-adapter|bun|native-store)\.ts$|folder\/src\/native\/|@tauri-apps\/api\/(event|webviewWindow)|^bun:/.test(
 					path,
 				),
 			),

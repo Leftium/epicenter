@@ -62,23 +62,24 @@ describe('#platform/folder', () => {
 		expect(modules.some(folderModule('tauri.ts'))).toBe(true);
 		expect(modules.some(folderModule('tauri-adapter.ts'))).toBe(true);
 		expect(modules.some(folderModule('native/bindings.gen.ts'))).toBe(true);
-		// The departure leaf reaches the host's published wire and this
-		// window's Tauri API, never the host's Bun entry.
+		// The departure leaf reaches the host's published wire, its window
+		// port, and this window's Tauri API, never the host's Bun entry.
 		expect(
 			modules.some((path) =>
 				path.endsWith('platform/departure.epicenter-host.ts'),
 			),
 		).toBe(true);
-		expect(
-			modules.some((path) => path.endsWith('apps/epicenter/src/departure-wire.ts')),
-		).toBe(true);
+		for (const published of ['departure-wire.ts', 'departure-window.ts'])
+			expect(
+				modules.some((path) => path.endsWith(`apps/epicenter/src/${published}`)),
+			).toBe(true);
 		expect(modules.some((path) => /@tauri-apps\/api\/.*webviewWindow/.test(path))).toBe(
 			true,
 		);
 		expect(
 			modules.filter(
 				(path) =>
-					/apps\/epicenter\/src\/(?!departure-wire\.ts$)/.test(path) ||
+					/apps\/epicenter\/src\/(?!departure-(wire|window)\.ts$)/.test(path) ||
 					/platform\/departure\.browser\.ts$/.test(path),
 			),
 		).toEqual([]);

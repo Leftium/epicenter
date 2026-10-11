@@ -1,9 +1,9 @@
 /**
  * Departure Notice Mounted Tests
  *
- * Mounts the real `DepartureNotice` in jsdom over the real departure answer
- * (`createDeparture`) and the real Todos owner on the in-memory OPFS
- * stand-in, with a stand-in for the host's side of the wire. The buttons are
+ * Mounts the real `DepartureNotice` in jsdom over the shared departure client
+ * (`@epicenter/epicenter/departure/page`) and the real Todos owner on the
+ * in-memory OPFS stand-in, with a stand-in for the host's side of the wire. The buttons are
  * clicked through the DOM.
  *
  * Key behaviors:
@@ -21,13 +21,15 @@ import { openFolder } from '@epicenter/folder/browser';
 import { expectOk } from 'wellcrafted/testing';
 import { testBrowserStorage } from '../../../../../packages/folder/src/browser-storage.test-support.js';
 import { todosDefinition } from '../../lib/definition.js';
-import { createFakeHost } from '../../lib/departure.test-support.js';
+import { createFakeHost } from '../../../../epicenter/src/departure-page.test-support.js';
 import { click } from '../../lib/svelte-dom.test-support.js';
 import type { Todos } from '../../lib/todos.svelte.js';
 
 const { flushSync, mount, unmount } = await import('svelte');
 const { createTodos } = await import('../../lib/todos.svelte.ts');
-const { createDeparture } = await import('../../lib/departure.svelte.ts');
+const { createDeparture } = await import(
+	'@epicenter/epicenter/departure/page'
+);
 const { default: DepartureNotice } = await import('./DepartureNotice.svelte');
 
 let count = 0;
@@ -52,10 +54,10 @@ async function setup() {
 	const departure = createDeparture(host.port);
 	cleanup.push(() => departure.destroy());
 	await departure.start();
-	departure.attach(todos);
+	departure.attach(todos.departure);
 	const target = document.createElement('div');
 	document.body.append(target);
-	const view = mount(DepartureNotice, { target, props: { departure } });
+	const view = mount(DepartureNotice, { target, props: { departure, todos } });
 	flushSync();
 	cleanup.push(() => {
 		void unmount(view);

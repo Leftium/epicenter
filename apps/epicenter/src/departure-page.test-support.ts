@@ -1,6 +1,7 @@
 /**
  * Test helper: a departure port over a stand-in for the Epicenter host's side
- * of the wire, for one window. It keeps the rules the wire states: every
+ * of the wire, for one window. Capture and Todos drive their owners through
+ * it too. It keeps the rules the wire states: every
  * change raises `version`; a stale `generation` or `round` changes nothing and
  * returns the current status; `asking` and `ready` record this window's vote,
  * while the other participant has not answered, so the round stays
@@ -14,53 +15,62 @@ import {
 	type DepartureStatus,
 	type DepartureVote,
 	parseDepartureStatus,
-} from '@epicenter/epicenter/departure';
-import type { DeparturePort } from './platform/types.js';
+} from './departure-wire.js';
+import type { DeparturePort } from './departure-page.svelte.js';
 
 export function createFakeHost() {
 	let status: DepartureStatus = { version: 1, generation: 7, phase: 'idle' };
 	let round = 0;
 	let onChange: (() => void) | undefined;
 	let onFocus: (() => void) | undefined;
+	let onHostStopped: (() => void) | undefined;
 	let listening = Promise.resolve();
 	let focusRegistration = Promise.resolve();
 	let loseAnswers = 0;
 	let refuseListening = 0;
 	/** The next status reads: rejected, or answered with a malformed status. */
 	const statusFaults: ('reject' | 'malformed')[] = [];
+	/** The next status read waits for this, then answers what was current when it began. */
+	let heldRead: Promise<void> | undefined;
 	/** What the page did, in order: `listen`, `listening`, `status`, `answer:<answer>`, `unlisten`. */
 	const calls: string[] = [];
 	const answers: DepartureAnswerArgs[] = [];
 
 	const port: DeparturePort = {
-		async listen(change, focus) {
+		async listen({ changed, focused, hostStopped }) {
 			calls.push('listen');
 			await listening;
-			// As the host leaf does: the change listener first, then focus. A
-			// nudge can reach the page while focus registration is still
-			// pending, and a focus registration that fails unregisters both.
-			onChange = change;
+			// As the window port does: the change listener first, then the
+			// rest. A nudge can reach the page while the rest is still
+			// pending, and a registration that fails unregisters all of it.
+			onChange = changed;
 			await focusRegistration;
 			if (refuseListening > 0) {
 				refuseListening -= 1;
 				onChange = undefined;
 				throw new Error('The window could not listen');
 			}
-			onFocus = focus;
+			onFocus = focused;
+			onHostStopped = hostStopped;
 			calls.push('listening');
 			return () => {
 				calls.push('unlisten');
 				onChange = undefined;
 				onFocus = undefined;
+				onHostStopped = undefined;
 			};
 		},
 		async status() {
 			calls.push('status');
+			const seen = status;
+			const held = heldRead;
+			heldRead = undefined;
+			await held;
 			const fault = statusFaults.shift();
 			if (fault === 'reject') throw new Error('The status read failed');
 			// What the host leaf does with what Tauri answers: read it strictly.
 			return parseDepartureStatus(
-				fault === 'malformed' ? { ...status, extra: true } : status,
+				fault === 'malformed' ? { ...seen, extra: true } : seen,
 			);
 		},
 		async answer(args) {
@@ -121,6 +131,12 @@ export function createFakeHost() {
 		refuseListening(count: number) {
 			refuseListening = count;
 		},
+		/** Hold the next status read until the returned function runs; it answers the status it began with. */
+		holdRead() {
+			const held = Promise.withResolvers<void>();
+			heldRead = held.promise;
+			return held.resolve;
+		},
 		/** Fault the next status reads, in order. */
 		faultStatus(...faults: ('reject' | 'malformed')[]) {
 			statusFaults.push(...faults);
@@ -168,6 +184,10 @@ export function createFakeHost() {
 		/** This window gained focus. */
 		focus() {
 			onFocus?.();
+		},
+		/** The Bun host that served this window stopped. */
+		stopHost() {
+			onHostStopped?.();
 		},
 		get listening() {
 			return onChange !== undefined;

@@ -1,29 +1,22 @@
 /**
  * Departure Tests
  *
- * Drives this page's departure answer (`createDeparture`) over a stand-in for
- * the Epicenter host's side of the wire, with the real Todos owner over a real
- * browser folder on the in-memory OPFS stand-in. The host stand-in keeps the
- * wire's rules: versions rise, stale answers change nothing, `cancel` ends the
- * round. It does not run the native dialog, show or hide windows, or quit.
+ * The real Todos owner behind the shared departure client
+ * (`@epicenter/epicenter/departure/page`), over a real browser folder on the
+ * in-memory OPFS stand-in and a stand-in for the host's side of the wire. The
+ * client's own rules (listening first, version order, prompt identity, lost
+ * answers, destroy) are tested beside it in `apps/epicenter`; these tests
+ * cover what this owner fences, waits for, counts, and gives back.
  *
  * Key behaviors:
- * - Listening is registered before the first status read; a round that
- *   arrives while the folder opens is answered once it has opened, and the
- *   owner is fenced as it opens
- * - Statuses apply in version order; only a newer `idle` lifts the fence
- * - A page holding nothing answers `ready` at once; a todo write still
- *   running is waited for before `ready`
- * - What cannot be saved is shown for the person's choice; a round cancelled
- *   elsewhere, or by "Keep working", gives back failed saves, newer input,
- *   and a new todo's typed title exactly as they were
+ * - A todo write, a pull, a merge, or a terminal command still running is
+ *   waited for before `ready`
+ * - What cannot be saved, and a new todo's typed title, are counted for the
+ *   person's choice; a round cancelled elsewhere, or by "Keep working", gives
+ *   them back exactly as they were
  * - Leaving anyway is a `ready` vote only: nothing is discarded, and an
  *   `idle` that follows gives everything back
- * - The same round asked again re-sends `asking` without a second prompt
  * - `granted`, `leaving`, and a `discarded` vote stay fenced
- * - A page whose folder did not open answers `ready` and has nothing to lift
- * - A lost answer lifts nothing; the next read re-sends it
- * - After `destroy`, nothing is read or answered
  * - While fenced, every action, Git command, terminal command, and editing
  *   input is refused, and resuming gives them back
  */
@@ -35,12 +28,11 @@ import { expectErr, expectOk } from 'wellcrafted/testing';
 import {
 	createTestStorage,
 	opfsOf,
-	testBrowserStorage,
 	testLocks,
 } from '../../../../packages/folder/src/browser-storage.test-support.js';
 import { todosDefinition } from './definition.js';
-import type { Departure } from './departure.svelte.js';
-import { createFakeHost } from './departure.test-support.js';
+import type { Departure } from '@epicenter/epicenter/departure/page';
+import { createFakeHost } from '../../../epicenter/src/departure-page.test-support.js';
 import { holdCloses } from './opfs-holds.test-support.js';
 import type { TodosFolder } from './platform/types.js';
 import type { RowSession } from '@epicenter/svelte/edit-session';
@@ -50,8 +42,9 @@ import type { Todos } from './todos.svelte.js';
 type TodoSession = RowSession<TodoFields>;
 
 const { createTodos } = await import('./todos.svelte.ts');
-const { createDeparture } = await import('./departure.svelte.ts');
-const { openTodosPage } = await import('./open-todos-page.ts');
+const { createDeparture } = await import(
+	'@epicenter/epicenter/departure/page'
+);
 const { DEPARTING } = await import('./todos.svelte.ts');
 
 let count = 0;
@@ -171,7 +164,7 @@ async function started(
 	const departure = track(createDeparture(host.port));
 	await departure.start();
 	const opened = await openTodos(adapt);
-	departure.attach(opened.todos);
+	departure.attach(opened.todos.departure);
 	return { host, departure, ...opened };
 }
 
@@ -243,214 +236,6 @@ function heldTerminal(exec: ReturnType<typeof gate>) {
 	});
 }
 
-test('listening is registered before the first status read, and a round that arrives while the folder opens is answered once the owner has opened, fenced', async () => {
-	const host = createFakeHost();
-	const release = host.holdListening();
-	const departure = track(createDeparture(host.port));
-	const starting = departure.start();
-	await settle();
-	expect(host.calls).toEqual(['listen']);
-	release();
-	await starting;
-	expect(host.calls).toEqual(['listen', 'listening', 'status']);
-
-	// A quit begins while the folder is still opening: nothing is answered yet.
-	host.begin('quit');
-	host.nudge();
-	await settle();
-	expect(host.answers).toEqual([]);
-	expect(departure.notice).toEqual({ stage: 'saving', intent: 'quit' });
-
-	const { todos } = await openTodos();
-	departure.attach(todos);
-	// Fenced as it opens, before anything is awaited.
-	expect(todos.departing).toBe(true);
-	await settle();
-	// It holds nothing, so it answers ready, and stays fenced.
-	expect(host.answers.map((answer) => answer.answer)).toEqual(['ready']);
-	expect(host.status).toMatchObject({ phase: 'collecting', vote: 'ready' });
-	expect(todos.departing).toBe(true);
-
-	host.set({ phase: 'idle' });
-	host.nudge();
-	await settle();
-	expect(todos.departing).toBe(false);
-	expect(departure.notice).toBeUndefined();
-});
-
-/**
- * A folder opener for `openTodosPage` that counts its calls and can be held,
- * so a test sees whether, and when, the page opened anything.
- */
-function folderOpener() {
-	let gate: Promise<void> | undefined;
-	const opener = {
-		calls: 0,
-		/** Hold the next open until the returned function runs. */
-		hold() {
-			const held = Promise.withResolvers<void>();
-			gate = held.promise;
-			return held.resolve;
-		},
-		open: async () => {
-			opener.calls += 1;
-			const opened = await openFolder({
-				id: `departure-open-${count++}`,
-				definition: todosDefinition,
-				browser: { commitOnEdit: false, ...testBrowserStorage() },
-			});
-			await gate;
-			return opened;
-		},
-	};
-	return opener;
-}
-
-/** Open the page as `+page.svelte` does, keeping the owner for cleanup. */
-function openPage(departure: Departure, opener: ReturnType<typeof folderOpener>) {
-	const opening = openTodosPage(departure, opener.open).then((opened) => {
-		if (opened.data !== null) cleanup.push(() => opened.data.close());
-		return opened;
-	});
-	// A page that leaves first rejects; the test checks that itself.
-	opening.catch(() => {});
-	return opening;
-}
-
-test('a listener that could not register leaves the page unopened; Retry registers once and opens it', async () => {
-	const host = createFakeHost();
-	host.refuseListening(1);
-	const departure = track(createDeparture(host.port));
-	const opener = folderOpener();
-	const opening = openPage(departure, opener);
-	await expect(departure.start()).rejects.toThrow('could not listen');
-	await settle();
-	expect(opener.calls).toBe(0);
-	expect(host.calls).toEqual(['listen']);
-
-	await departure.start();
-	const todos = expectOk(await opening);
-	expect(opener.calls).toBe(1);
-	expect(host.calls).toEqual(['listen', 'listen', 'listening', 'status']);
-	expect(todos.departing).toBe(false);
-	// One listener: a nudge reads once.
-	host.nudge();
-	await settle();
-	expect(host.calls.filter((call) => call === 'status')).toHaveLength(2);
-});
-
-test('a first status read that failed or was malformed is not idle: nothing opens until a read succeeds, and Retry does not listen again', async () => {
-	const host = createFakeHost();
-	host.faultStatus('reject', 'malformed');
-	const departure = track(createDeparture(host.port));
-	const opener = folderOpener();
-	const opening = openPage(departure, opener);
-	await expect(departure.start()).rejects.toThrow('status read failed');
-	await settle();
-	expect(opener.calls).toBe(0);
-	await expect(departure.start()).rejects.toThrow();
-	await settle();
-	expect(opener.calls).toBe(0);
-
-	await departure.start();
-	expectOk(await opening);
-	expect(opener.calls).toBe(1);
-	expect(host.calls.filter((call) => call === 'listen')).toHaveLength(1);
-	expect(host.calls.filter((call) => call === 'status')).toHaveLength(3);
-});
-
-test('after a failed first read, a nudge for a running round opens the page fenced, and it answers for the owner', async () => {
-	const host = createFakeHost();
-	host.faultStatus('reject');
-	const departure = track(createDeparture(host.port));
-	const opener = folderOpener();
-	const opening = openPage(departure, opener);
-	await expect(departure.start()).rejects.toThrow();
-	expect(opener.calls).toBe(0);
-
-	host.begin('quit');
-	host.nudge();
-	const todos = expectOk(await opening);
-	// Fenced from the moment it was attached; it never took input.
-	expect(todos.departing).toBe(true);
-	todos.newTitle = 'Typed';
-	expect(todos.newTitle).toBe('');
-	await settle();
-	expect(host.answers.map((answer) => answer.answer)).toEqual(['ready']);
-});
-
-test('after a failed first read, a focus gain reads again and opens the page', async () => {
-	const host = createFakeHost();
-	host.faultStatus('reject');
-	const departure = track(createDeparture(host.port));
-	const opener = folderOpener();
-	const opening = openPage(departure, opener);
-	await expect(departure.start()).rejects.toThrow();
-	await settle();
-	expect(opener.calls).toBe(0);
-	host.focus();
-	const todos = expectOk(await opening);
-	expect(todos.departing).toBe(false);
-});
-
-test('a round that begins while the folder opens fences the owner as it is attached, before anything else', async () => {
-	const host = createFakeHost();
-	const departure = track(createDeparture(host.port));
-	const opener = folderOpener();
-	const release = opener.hold();
-	const opening = openPage(departure, opener);
-	await departure.start();
-	await eventually(() => opener.calls === 1);
-	host.begin('restart');
-	host.nudge();
-	await settle();
-	expect(host.answers).toEqual([]);
-	release();
-	const todos = expectOk(await opening);
-	expect(todos.departing).toBe(true);
-	await settle();
-	expect(host.answers.map((answer) => answer.answer)).toEqual(['ready']);
-});
-
-test('a page that leaves during a failed startup opens nothing and answers nothing', async () => {
-	const host = createFakeHost();
-	host.faultStatus('reject');
-	const departure = track(createDeparture(host.port));
-	const opener = folderOpener();
-	const opening = openPage(departure, opener);
-	await expect(departure.start()).rejects.toThrow();
-	departure.destroy();
-	await expect(opening).rejects.toThrow('left');
-	expect(host.calls.at(-1)).toBe('unlisten');
-	host.begin('quit');
-	host.nudge();
-	host.focus();
-	await settle();
-	expect(opener.calls).toBe(0);
-	expect(host.answers).toEqual([]);
-	await expect(departure.start()).rejects.toThrow('left');
-});
-
-test('statuses apply in version order: an older idle read after a newer round lifts nothing, and a newer idle does', async () => {
-	const { host, todos } = await started();
-	host.begin();
-	const round = host.status.version;
-	host.nudge();
-	await settle();
-	expect(todos.departing).toBe(true);
-
-	// A read that answers with an older version: ignored.
-	host.set({ phase: 'idle' }, round - 1);
-	host.nudge();
-	await settle();
-	expect(todos.departing).toBe(true);
-
-	host.set({ phase: 'idle' }, round + 10);
-	host.nudge();
-	await settle();
-	expect(todos.departing).toBe(false);
-});
-
 test('a todo write still running is waited for before the page answers ready', async () => {
 	const { host, departure, todos, text } = await started();
 	await todos.create('Milk');
@@ -493,9 +278,9 @@ test('a round cancelled elsewhere gives back a failed save and the newer input t
 		stage: 'choose',
 		id: expect.any(Number),
 		intent: 'quit',
-		paths: [path],
-		newTitle: false,
+		held: 1,
 	});
+	expect(todos.failedSavePath).toBe(path);
 	expect(host.answers.map((answer) => answer.answer)).toEqual(['asking']);
 	// Nothing was retried for the failed save.
 	expect(await text(path)).toBe(saved);
@@ -547,66 +332,6 @@ test('leaving anyway is a ready vote only: the failed save and its input stay fe
 	expect(await text(path)).toBe(saved);
 });
 
-test('the same round asked again while the drain hangs re-sends asking, with no second prompt', async () => {
-	const { host, departure, todos, holdNextSave, text } = await started();
-	await todos.create('Milk');
-	const path = todos.current!.path;
-	const editor = todoSession(todos);
-	const { held, release } = holdNextSave();
-	typeTitle(editor, 'Slow');
-	host.begin('quit');
-	host.nudge();
-	await held;
-	await settle();
-	expect(host.answers.map((answer) => answer.answer)).toEqual(['asking']);
-	expect(departure.notice?.stage).toBe('saving');
-
-	// The person quits again: the host shows the round with no vote.
-	host.set({ phase: 'collecting', vote: 'none' });
-	host.nudge();
-	await settle();
-	expect(host.answers.map((answer) => answer.answer)).toEqual([
-		'asking',
-		'asking',
-	]);
-	expect(departure.notice?.stage).toBe('saving');
-
-	release();
-	await eventually(() => host.answers.length >= 3);
-	expect(host.answers.at(-1)?.answer).toBe('ready');
-	expect(await text(path)).toContain('title: Slow');
-});
-
-test('a newer round that arrives while the person chooses is handled from the start, fenced throughout', async () => {
-	const { host, departure, todos } = await started();
-	todos.newTitle = 'Buy milk';
-	host.begin('quit');
-	host.nudge();
-	await eventually(() => departure.notice?.stage === 'choose');
-	const first = host.status;
-	expect(first.phase === 'idle' ? undefined : first.round).toBe(1);
-
-	// The round ends and a restart round begins before this page reads idle.
-	host.begin('restart');
-	host.nudge();
-	await eventually(
-		() =>
-			departure.notice?.stage === 'choose' &&
-			departure.notice.intent === 'restart',
-	);
-	expect(todos.departing).toBe(true);
-	expect(host.answers.map((answer) => [answer.round, answer.answer])).toEqual([
-		[1, 'asking'],
-		[2, 'asking'],
-	]);
-	// The person's choice answers the newer round only.
-	departure.keepWorking(shownPrompt(departure));
-	await settle();
-	expect(host.answers.at(-1)).toMatchObject({ round: 2, answer: 'cancel' });
-	expect(todos.departing).toBe(false);
-	expect(todos.newTitle).toBe('Buy milk');
-});
-
 test('granted, leaving, and a discarded vote stay fenced: nothing is edited or started', async () => {
 	for (const next of [
 		{ phase: 'granted' },
@@ -634,44 +359,6 @@ test('granted, leaving, and a discarded vote stay fenced: nothing is edited or s
 	}
 });
 
-test('a page whose folder did not open answers ready, and an idle that follows has nothing to give back', async () => {
-	const host = createFakeHost();
-	const departure = track(createDeparture(host.port));
-	await departure.start();
-	departure.attach(undefined);
-	host.begin('restart');
-	host.nudge();
-	await settle();
-	expect(host.answers.map((answer) => answer.answer)).toEqual(['ready']);
-	host.set({ phase: 'idle' });
-	host.nudge();
-	await settle();
-	expect(departure.notice).toBeUndefined();
-	// A later round is answered the same way.
-	host.begin('quit');
-	host.nudge();
-	await settle();
-	expect(host.answers.map((answer) => answer.answer)).toEqual([
-		'ready',
-		'ready',
-	]);
-});
-
-test('a lost answer lifts nothing, and the next read re-sends it', async () => {
-	const { host, todos } = await started();
-	host.loseAnswers(1);
-	host.begin('quit');
-	host.nudge();
-	await settle();
-	// The ready answer was lost; the page read again and sent it again.
-	expect(host.answers.map((answer) => answer.answer)).toEqual([
-		'ready',
-		'ready',
-	]);
-	expect(host.status).toMatchObject({ phase: 'collecting', vote: 'ready' });
-	expect(todos.departing).toBe(true);
-});
-
 test('a new todo title typed and not added counts: the page asks, and Keep working cancels the round and gives it back', async () => {
 	const { host, departure, todos } = await started();
 	todos.newTitle = 'Buy milk';
@@ -682,9 +369,9 @@ test('a new todo title typed and not added counts: the page asks, and Keep worki
 		stage: 'choose',
 		id: expect.any(Number),
 		intent: 'quit',
-		paths: [],
-		newTitle: true,
+		held: 1,
 	});
+	expect(todos.failedSavePath).toBeUndefined();
 	departure.keepWorking(shownPrompt(departure));
 	await settle();
 	expect(host.answers.map((answer) => answer.answer)).toEqual([
@@ -698,18 +385,6 @@ test('a new todo title typed and not added counts: the page asks, and Keep worki
 	expect(todos.entries).toEqual([]);
 });
 
-test('after destroy, nudges read nothing and nothing is answered', async () => {
-	const { host, departure } = await started();
-	departure.destroy();
-	expect(host.calls.at(-1)).toBe('unlisten');
-	const reads = host.calls.length;
-	host.begin('quit');
-	host.nudge();
-	await settle();
-	expect(host.calls.length).toBe(reads);
-	expect(host.answers).toEqual([]);
-});
-
 test('while fenced, every action, Git command, terminal command, and editing input is refused; resuming gives them back', async () => {
 	const { todos, text } = await openTodos();
 	await todos.create('Milk');
@@ -720,7 +395,7 @@ test('while fenced, every action, Git command, terminal command, and editing inp
 	const saved = await text(path);
 	const entry = todos.entries[0]!;
 
-	todos.prepareDeparture();
+	todos.departure.fence();
 	// The open todo refuses input; Try again requests nothing.
 	typeTitle(milk, 'Late');
 	typeNotes(milk, 'late\n');
@@ -770,7 +445,7 @@ test('while fenced, every action, Git command, terminal command, and editing inp
 	expect(await text('notes.txt')).toBe('saved');
 	expect(todos.entries).toHaveLength(1);
 
-	todos.resumeDeparture();
+	todos.departure.resume();
 	expect(todos.departing).toBe(false);
 	notes.input('after');
 	expect((await notes.settled()).status).toBe('saved');
@@ -780,82 +455,6 @@ test('while fenced, every action, Git command, terminal command, and editing inp
 	typeTitle(reopened, 'After');
 	expect((await reopened.settled()).status).toBe('saved');
 	expect(await text(path)).toContain('title: After');
-});
-
-// ============================================================================
-// Registration, prompt identity, admitted operations, the terminal, and
-// lagging votes
-// ============================================================================
-
-test('a nudge during a listener registration that then fails reads nothing and opens nothing; Retry recovers', async () => {
-	const host = createFakeHost();
-	const releaseFocus = host.holdFocusRegistration();
-	host.refuseListening(1);
-	const departure = track(createDeparture(host.port));
-	const opener = folderOpener();
-	const opening = openPage(departure, opener);
-	const starting = departure.start();
-	await settle();
-	// The change listener is registered; focus registration is not done.
-	host.begin('quit');
-	host.nudge();
-	await settle();
-	expect(host.calls).toEqual(['listen']);
-	releaseFocus();
-	await expect(starting).rejects.toThrow('could not listen');
-	host.nudge();
-	await settle();
-	expect(host.calls.filter((call) => call === 'status')).toEqual([]);
-	expect(opener.calls).toBe(0);
-
-	await departure.start();
-	const todos = expectOk(await opening);
-	expect(opener.calls).toBe(1);
-	expect(todos.departing).toBe(true);
-	await settle();
-	expect(host.answers.map((answer) => answer.answer)).toEqual(['ready']);
-});
-
-test('a nudge during a registration that then succeeds reads nothing itself; the read after registering covers it', async () => {
-	const host = createFakeHost();
-	const releaseFocus = host.holdFocusRegistration();
-	const departure = track(createDeparture(host.port));
-	const starting = departure.start();
-	await settle();
-	host.nudge();
-	await settle();
-	expect(host.calls).toEqual(['listen']);
-	releaseFocus();
-	await starting;
-	expect(host.calls).toEqual(['listen', 'listening', 'status']);
-});
-
-test("a choice from an earlier round's prompt answers nothing in a later round", async () => {
-	const { host, departure, todos } = await started();
-	todos.newTitle = 'Buy milk';
-	host.begin('quit');
-	host.nudge();
-	await eventually(() => departure.notice?.stage === 'choose');
-	const first = shownPrompt(departure);
-	// Another window ends the quit; a restart begins.
-	host.set({ phase: 'idle' });
-	host.begin('restart');
-	host.nudge();
-	await eventually(
-		() =>
-			departure.notice?.stage === 'choose' &&
-			departure.notice.intent === 'restart',
-	);
-	expect(shownPrompt(departure)).not.toBe(first);
-	departure.leaveAnyway(first);
-	departure.keepWorking(first);
-	await settle();
-	expect(host.answers.map((answer) => [answer.round, answer.answer])).toEqual([
-		[1, 'asking'],
-		[2, 'asking'],
-	]);
-	expect(departure.notice?.stage).toBe('choose');
-	expect(todos.departing).toBe(true);
 });
 
 for (const ending of [
@@ -888,105 +487,6 @@ for (const ending of [
 		expect(departure.notice).toEqual({ stage: 'leaving', intent: 'quit' });
 		expect(todos.departing).toBe(true);
 	});
-
-test('a ready answer lost before the host recorded it, with asking recorded, is sent again on the next read', async () => {
-	const { host, todos, holdNextSave } = await started();
-	await todos.create('Milk');
-	const { held, release } = holdNextSave();
-	typeTitle(todoSession(todos), 'Slow');
-	host.begin('quit');
-	host.nudge();
-	await held;
-	await settle();
-	expect(host.status).toMatchObject({ phase: 'collecting', vote: 'asking' });
-	host.loseAnswers(1);
-	release();
-	await eventually(() => host.answers.length >= 3);
-	expect(host.answers.map((answer) => answer.answer)).toEqual([
-		'asking',
-		'ready',
-		'ready',
-	]);
-	expect(host.status).toMatchObject({ phase: 'collecting', vote: 'ready' });
-	// A repeated Quit for the same round re-sends ready, not asking.
-	host.set({ phase: 'collecting', vote: 'none' });
-	host.nudge();
-	await settle();
-	expect(host.answers.at(-1)?.answer).toBe('ready');
-	expect(todos.departing).toBe(true);
-});
-
-test('Keep working whose answer was lost is sent again, and a repeated Quit does not turn it back into asking', async () => {
-	const { host, departure, todos } = await started();
-	todos.newTitle = 'Buy milk';
-	host.begin('quit');
-	host.nudge();
-	await eventually(() => departure.notice?.stage === 'choose');
-	host.loseAnswers(1);
-	departure.keepWorking(shownPrompt(departure));
-	await settle();
-	// Lost, then read again with asking still recorded: cancel again.
-	expect(host.answers.map((answer) => answer.answer)).toEqual([
-		'asking',
-		'cancel',
-		'cancel',
-	]);
-	expect(host.status.phase).toBe('idle');
-	expect(todos.departing).toBe(false);
-	expect(todos.newTitle).toBe('Buy milk');
-});
-
-test('answers that keep failing while reads succeed stop after one recovery read, and each nudge or focus tries again once', async () => {
-	const { host, todos } = await started();
-	host.loseAnswers(1000);
-	host.begin('quit');
-	host.nudge();
-	await settle();
-	await Bun.sleep(30);
-	await settle();
-	// The answer, then one recovery read and its resend; then nothing.
-	expect(host.answers.map((answer) => answer.answer)).toEqual(['ready', 'ready']);
-	const reads = host.calls.filter((call) => call === 'status').length;
-	await Bun.sleep(30);
-	await settle();
-	expect(host.answers).toHaveLength(2);
-	expect(host.calls.filter((call) => call === 'status').length).toBe(reads);
-	expect(todos.departing).toBe(true);
-
-	// The host's nudge reads and resends; lost, it recovers once more.
-	host.nudge();
-	await settle();
-	expect(host.answers).toHaveLength(4);
-	// Focus while fenced does the same.
-	host.focus();
-	await settle();
-	expect(host.answers).toHaveLength(6);
-
-	// Answers reach the host again: the next nudge settles the vote.
-	host.loseAnswers(0);
-	host.nudge();
-	await settle();
-	expect(host.answers).toHaveLength(7);
-	expect(host.status).toMatchObject({ phase: 'collecting', vote: 'ready' });
-	host.nudge();
-	await settle();
-	expect(host.answers).toHaveLength(7);
-	expect(todos.departing).toBe(true);
-});
-
-test('a granted round re-sends nothing, whatever reads follow', async () => {
-	const { host, todos } = await started();
-	host.begin('quit');
-	host.nudge();
-	await settle();
-	expect(host.answers.map((answer) => answer.answer)).toEqual(['ready']);
-	host.set({ phase: 'granted', vote: 'none' });
-	host.nudge();
-	host.focus();
-	await settle();
-	expect(host.answers.map((answer) => answer.answer)).toEqual(['ready']);
-	expect(todos.departing).toBe(true);
-});
 
 test('a pull admitted before a departure is waited for, and its apply step is withdrawn and says so', async () => {
 	const fetch = gate();

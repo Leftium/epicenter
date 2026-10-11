@@ -273,8 +273,13 @@ and admitted apps hold no file-backed drafts.
 [`src/departure-wire.ts`](src/departure-wire.ts), exported as
 `@epicenter/epicenter/departure`, is the published shape, with a strict reader
 the native harness uses. It imports nothing, so a browser bundle can take it.
-The app's own page code implements the rules there; the host ships no page
-framework.
+[`src/departure-page.svelte.ts`](src/departure-page.svelte.ts), exported as
+`@epicenter/epicenter/departure/page`, is the one page client that follows the
+rules below; Capture and Todos each attach their owner to it as a participant
+(`holdsUnsaved`, `fence`, `settle`, `resume`) and word the notice themselves.
+[`src/departure-window.ts`](src/departure-window.ts), exported as
+`@epicenter/epicenter/departure/window`, binds the client to the Tauri window;
+only a page's host build imports it.
 
 ```text
 Rust -> page   emit_to(label, "departure-changed", ())     no payload

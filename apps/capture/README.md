@@ -252,9 +252,11 @@ shows the reason.
 Epicenter asks its windows before it quits, or restarts for an account
 change, over the departure wire that `@epicenter/epicenter/departure`
 publishes (`apps/epicenter/src/departure-wire.ts`). That module states the
-wire and its page rules; this page imports its names and its status parser,
-and nothing else from the host package. The host runs one round for every
-window it serves and decides; this page answers only for its own drafts.
+wire and its page rules. The page answers through the shared client
+`@epicenter/epicenter/departure/page`, bound to this window by
+`@epicenter/epicenter/departure/window`, and attaches the store's
+`captures.departure` to it. The host runs one round for every window it
+serves and decides; this page answers only for its own drafts.
 
 | Host to page | Page to host |
 | --- | --- |
@@ -262,20 +264,21 @@ window it serves and decides; this page answers only for its own drafts.
 | | `invoke('departure_answer', { generation, round, answer })`: `asking`, then `ready` or `cancel` |
 | Event `host-stopped`, sent to this window | None. The page shows the notice above. |
 
-The page side is `src/lib/platform/departure.svelte.ts`:
+What the shared client does for this page:
 
-- It registers its listener on this window, then reads the status. Until a
-  status is `idle` the page shows no input; if registration or that read
-  fails, it says so and offers Try again.
+- It registers its listener on this window, then reads the status. The folder
+  opens only once a status is known; if registration or that read fails, the
+  page says so and offers Try again.
 - A round it has not handled fences every input and action before anything
-  is awaited, answers `asking`, then settles: every admitted save and action
-  finishes, and a failed save is not sent again. With nothing
-  left, it answers `ready`. Otherwise the person chooses Keep working
-  (`cancel`) or Discard and quit, or restart (`ready`). Neither choice
-  closes, discards, or changes what the page holds.
-- A round that arrives while the folder opens waits for it; a page whose
-  folder did not open answers `ready`, and its Try again stays disabled until
-  the round ends.
+  is awaited. With nothing unsaved, it answers `ready`. Otherwise it answers
+  `asking`, then settles: every admitted save and action finishes, and a
+  failed save is not sent again. With nothing left, it answers `ready`.
+  Otherwise the person chooses Keep working (`cancel`) or Discard and quit,
+  or restart (`ready`). Neither choice closes, discards, or changes what the
+  page holds.
+- A round that arrives while the folder opens fences the store as it
+  attaches; a page whose folder did not open answers `ready`, and its Try
+  again stays disabled until the round ends.
 - The same round with no vote means Quit was pressed again: a page still
   deciding sends `asking` again, and never asks the person a second time. A
   newer round is taken up while the page stays fenced.
@@ -298,7 +301,7 @@ window that stays silent, are the host's; see `apps/epicenter`.
 
 | Path | Role |
 | --- | --- |
-| `src/lib/platform/` | The `#platform/folder` seam: `types.ts` is its contract, `folder.browser.ts` opens the OPFS folder, `folder.epicenter-host.ts` attaches to the shell's directory and its departure wire, and `departure.svelte.ts` is the page's side of that wire. `auth.*.ts` is used only by the old-data export. |
+| `src/lib/platform/` | The `#platform/folder` seam: `types.ts` is its contract, `folder.browser.ts` opens the OPFS folder, `folder.epicenter-host.ts` attaches to the shell's directory and opens the shared departure client over this window's port. `auth.*.ts` is used only by the old-data export. |
 | `src/lib/captures.svelte.ts` | The store: the timeline and its repair list, how a capture loads, the one open capture in the shared open-item slot (`@epicenter/svelte/open-item`) with its edit session, refusals, the conflict commands, create, delete, import, and commit counted by the shared admissions (`@epicenter/svelte/admissions`), departure, and close. |
 | `src/lib/capture-form.svelte.ts` | The capture view's form over an open capture's row session: the body read as text and thoughts, each change encoded over the body and saved, and the new thought and thought edit not saved yet. |
 | `src/lib/item-actions.ts` | Opening, leaving, and deleting with the confirmation each may need. A discard names the session the store answered `unsaved` with. |
@@ -329,8 +332,8 @@ them.
 | --- | --- |
 | `src/lib/captures.test.ts` | The store over a real browser folder: creating and listing, whole-row saves that keep undeclared metadata, rapid typing writing only the latest draft, a draft that is not a valid capture never written, a change the body cannot hold refused, the conflict prompt (Reload theirs, Keep mine) and deleted elsewhere (Keep mine recreates, Discard closes), repair as text and reopening as a capture, leaving with a failed save or an unadded thought, guarded delete after the saves land, adopting on return, a stale thought edit, departure, close, and import. |
 | `src/lib/platform/folder.epicenter-host.test.ts` | The desktop leaf over the real folder adapter and the real store, with the shell's `invoke` and events scripted: refusals fail the open, departure is heard on this window only, closing detaches once and waits for saves, a save is one guarded replacement, an outside edit is a conflict, a lost reply is checked by a read, a failed commit and a closed folder are reported, and an interrupted import is finished by a retry. It does not run the Rust owner. |
-| `src/lib/platform/departure.test.ts` | The departure wire against a scripted host: registration before the first read, rounds that arrive while the folder opens, repeated and newer rounds, lost and reset answers sent again until idle, out-of-order statuses, discarded votes, and a real store whose open capture comes back unchanged after another page cancels. |
-| `src/lib/platform-selection.test.ts` | Which leaf each build bundles: the desktop bundle has the desktop adapter, the departure client, and of the host package only its wire module, and no browser adapter, browser storage, Git implementation, or Node module; the browser bundle has the browser adapter and no desktop adapter, generated bindings, or departure gate. |
+| `src/lib/platform/departure.test.ts` | The real store behind the shared departure client: a ready vote or a discard changes nothing it holds, and its open capture comes back unchanged after another page cancels. The client's own rules are tested in `apps/epicenter/src/departure-page.test.ts`. |
+| `src/lib/platform-selection.test.ts` | Which leaf each build bundles: the desktop bundle has the desktop adapter, of the host package only its departure wire, page client, and window port, and no browser adapter, browser storage, Git implementation, or Node module; the browser bundle has the browser adapter and no desktop adapter, generated bindings, or departure gate. |
 | `src/lib/components/capture-detail.mounted.test.ts`, `timeline.mounted.test.ts` | The real views mounted in jsdom over the real store: text and thoughts save, the conflict prompt's buttons, Discard and Keep mine after a delete elsewhere, repair as text with live issues and Open as capture, input refused while quitting, the New capture text box, and the repair list's Edit as text. jsdom has no layout, focus, selection, or IME. |
 
 The Rust owner, its watcher, its lock, and its history are tested in

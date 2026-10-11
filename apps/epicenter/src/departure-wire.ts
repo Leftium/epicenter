@@ -5,7 +5,10 @@
  * the host serves. Rust (`src-tauri/src/departure.rs`) runs one round and asks
  * both windows; a page owns its drafts and answers for them. This module is the
  * published shape of that wire, imported as `@epicenter/epicenter/departure`.
- * It holds no runtime but a strict reader. Each app owns its page code over it.
+ * It holds no runtime but a strict reader. The one page client over it is
+ * `./departure-page.svelte.ts` (`@epicenter/epicenter/departure/page`), bound
+ * to the Tauri window by `./departure-window.ts`; each app keeps its own owner
+ * behind the client's participant and its own words.
  *
  *   event   departure-changed   targeted at the window's label, no payload
  *   invoke  departure_status    () -> DepartureStatus

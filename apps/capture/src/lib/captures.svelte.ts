@@ -20,6 +20,7 @@
  * session holds nothing unsaved. Otherwise the next save reports the change
  * as a conflict, and the person keeps theirs or reloads.
  */
+import type { DepartureParticipant } from '@epicenter/epicenter/departure/page';
 import {
 	CAPTURES_TABLE,
 	type CaptureFields,
@@ -557,6 +558,10 @@ export function createCaptures(host: Pick<CaptureHost, 'folder' | 'location'>) {
 		 * how many things would be lost; `resume` gives everything back.
 		 */
 		departure: {
+			/** Whether leaving would lose anything: the open capture, the New capture text, running actions. */
+			get holdsUnsaved() {
+				return slot.unsaved || newCapture !== '' || admissions.busy;
+			},
 			fence() {
 				departing = true;
 			},
@@ -568,7 +573,7 @@ export function createCaptures(host: Pick<CaptureHost, 'folder' | 'location'>) {
 			resume() {
 				departing = false;
 			},
-		},
+		} satisfies DepartureParticipant,
 
 		/**
 		 * Let running actions and the open capture's saves finish before the

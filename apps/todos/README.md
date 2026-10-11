@@ -114,7 +114,8 @@ failed save, or a save still running.
 - Closing the Todos window hides it. The page stays loaded, so unsaved input
   and the terminal's output are still there when you open Todos again.
 - Quitting Epicenter, or restarting it for an account change, asks this page
-  first, over the host's departure wire (`@epicenter/epicenter/departure`).
+  first, over the host's departure wire (`@epicenter/epicenter/departure`),
+  through the shared page client (`@epicenter/epicenter/departure/page`).
   From that moment the page takes no typing and starts no action, Git
   command, or terminal command. A page holding nothing unsaved answers at
   once. Otherwise it shows its window, saves what typing would have saved,
@@ -400,9 +401,8 @@ todo; `todos/a.MD` is an ordinary file.
 | Path | Role |
 | --- | --- |
 | `src/lib/definition.ts` | The inert `defineFolder` declaration, written with the shared `defineTable` and `field` vocabulary. It names no folder. |
-| `src/lib/open-todos-page.ts` | How the mounted page opens its Todos owner: inside Epicenter only after a departure status is known, attached the moment it exists. |
-| `src/lib/departure.svelte.ts` | This page's answer when Epicenter asks to quit or restart: listens first, applies statuses in version order, fences the Todos owner, asks it to save, and answers or asks the person. It discards nothing. |
-| `src/lib/platform/` | The `#platform/departure` seam: the host leaf talks to this window over the departure wire and Tauri; the browser leaf has no port. And the `#platform/folder` seam: `types.ts` is its contract and holds `TODOS_FOLDER_ID`, `folder.browser.ts` opens the OPFS folder through `@epicenter/folder/browser`, and `folder.epicenter-host.ts` opens the host's directory through `@epicenter/folder/tauri`. Each returns the folder or the refusal. The mounted page calls it; importing it opens nothing. |
+| `src/routes/+page.svelte` | Opens the Todos owner. Inside Epicenter it starts the shared departure client (`@epicenter/epicenter/departure/page`) and opens the folder only once a status is known, attaching `todos.departure` the moment it exists (`openForDeparture`). |
+| `src/lib/platform/` | The `#platform/departure` seam: the host leaf is the shared Tauri window port (`@epicenter/epicenter/departure/window`); the browser leaf has no port. And the `#platform/folder` seam: `types.ts` is its contract and holds `TODOS_FOLDER_ID`, `folder.browser.ts` opens the OPFS folder through `@epicenter/folder/browser`, and `folder.epicenter-host.ts` opens the host's directory through `@epicenter/folder/tauri`. Each returns the folder or the refusal. The mounted page calls it; importing it opens nothing. |
 | `src/lib/files.ts` | File browser rows, and which files open as editable text. |
 | `src/lib/todos.svelte.ts` | Todo and folder listings, the rows named for repair, the one open item (`@epicenter/svelte/open-item`) and its edit session (`@epicenter/svelte/edit-session`), conflict choices, and file actions, each counted by `@epicenter/svelte/admissions` so close and departure wait for it. |
 | `src/lib/terminal.svelte.ts` | The terminal session that outlives the terminal pane, over the folder's own `folder.terminal()`. |

@@ -12,14 +12,14 @@
  * browser folder to fall back to in this build.
  *
  * Quitting or restarting Epicenter asks this window first, through the
- * host's departure wire, bound to this window: its events are heard only
- * when sent to this window, and the host knows the caller by its window.
+ * shared departure client over this window's Tauri port: its events are
+ * heard only when sent to this window, and the host knows the caller by its
+ * window.
  */
 import { captureDefinition } from '@epicenter/capture';
 import { openFolder } from '@epicenter/folder/tauri';
-import { invoke } from '@tauri-apps/api/core';
-import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow';
-import { createDeparture } from './departure.svelte.js';
+import { createDeparture } from '@epicenter/epicenter/departure/page';
+import { createWindowDeparturePort } from '@epicenter/epicenter/departure/window';
 import {
 	CAPTURE_FOLDER_ID,
 	type OpenCaptureHost,
@@ -41,14 +41,5 @@ export const openCaptureHost: OpenCaptureHost = async () => {
 };
 
 /** Called from a mounted component, before the folder opens. */
-export const openDeparture: OpenDeparture = () => {
-	const window = getCurrentWebviewWindow();
-	return createDeparture({
-		listen: (event, handler) => window.listen(event, () => handler()),
-		invoke: (command, args) => invoke(command, args),
-		onFocus(listener) {
-			globalThis.addEventListener('focus', listener);
-			return () => globalThis.removeEventListener('focus', listener);
-		},
-	});
-};
+export const openDeparture: OpenDeparture = () =>
+	createDeparture(createWindowDeparturePort());

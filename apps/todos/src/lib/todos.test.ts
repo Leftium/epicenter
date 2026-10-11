@@ -888,7 +888,7 @@ test('close waits for a closed-file rename whose read is still running', async (
 	const release = hold.resolve;
 	const renaming = todos.rename('notes.txt', 'renamed.txt');
 	await reading.promise;
-	expect(todos.holdsUnsaved).toBe(true);
+	expect(todos.departure.holdsUnsaved).toBe(true);
 	let closed = false;
 	const closing = todos.close().then(() => {
 		closed = true;

@@ -12,7 +12,7 @@
 	import FolderTerminal from './FolderTerminal.svelte';
 	import TodoList from './TodoList.svelte';
 	import DepartureNotice from './DepartureNotice.svelte';
-	import type { Departure } from '$lib/departure.svelte.js';
+	import type { Departure } from '@epicenter/epicenter/departure/page';
 
 	let { todos, departure }: { todos: Todos; departure?: Departure } = $props();
 
@@ -90,7 +90,7 @@
 		onToggleTerminal={() => void toggleTerminal()}
 	/>
 	{#if departure}
-		<DepartureNotice {departure} />
+		<DepartureNotice {departure} {todos} />
 	{/if}
 	<IncomingBanner {todos} />
 

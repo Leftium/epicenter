@@ -55,6 +55,8 @@ let calls: Call[] = [];
 let overrides: Record<string, (call: Call, reply: () => unknown) => unknown> =
 	{};
 const listeners = new Map<string, Set<(event: { payload: unknown }) => void>>();
+/** This window's focus listeners, kept beside its events. */
+const FOCUS = 'focus-changed';
 /** Events heard through this window only, by event name. */
 const windowListeners = new Map<string, Set<() => void>>();
 const files = new Map<string, Uint8Array>();
@@ -214,6 +216,13 @@ mock.module('@tauri-apps/api/webviewWindow', () => ({
 			set.add(callback);
 			return Promise.resolve(() => set.delete(callback));
 		},
+		onFocusChanged(callback: (event: { payload: boolean }) => void) {
+			const set = windowListeners.get(FOCUS) ?? new Set();
+			windowListeners.set(FOCUS, set);
+			const listener = () => callback({ payload: true });
+			set.add(listener);
+			return Promise.resolve(() => set.delete(listener));
+		},
 	}),
 }));
 
@@ -356,21 +365,22 @@ test('the page names the Capture scope and is told the directory', async () => {
 test('departure is heard on this window only, registered before its first status read', async () => {
 	const departure = openDeparture();
 	if (!departure) throw new Error('the desktop leaf has a departure gate');
-	await departure.ready;
+	await departure.start();
 	// Targeted at this window, not any window's global listener.
 	expect([...windowListeners.keys()].sort()).toEqual(
-		[DEPARTURE_CHANGED_EVENT, HOST_STOPPED_EVENT].sort(),
+		[DEPARTURE_CHANGED_EVENT, FOCUS, HOST_STOPPED_EVENT].sort(),
 	);
 	expect(listeners.has(DEPARTURE_CHANGED_EVENT)).toBe(false);
 	expect(calls.map((call) => call.cmd)).toEqual([DEPARTURE_STATUS_COMMAND]);
-	expect(departure.everIdle).toBe(true);
+	expect(departure.known).toBe(true);
+	expect(departure.fenced).toBe(false);
 
 	let stopped = 0;
 	departure.onHostStopped(() => stopped++);
 	for (const listener of windowListeners.get(HOST_STOPPED_EVENT) ?? [])
 		listener();
 	expect(stopped).toBe(1);
-	departure.close();
+	departure.destroy();
 	expect(
 		[...windowListeners.values()].reduce((count, set) => count + set.size, 0),
 	).toBe(0);

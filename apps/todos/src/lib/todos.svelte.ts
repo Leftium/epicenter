@@ -22,6 +22,7 @@
  * session holds nothing unsaved. Otherwise the next save reports the change
  * as a conflict, and the person keeps theirs or reloads.
  */
+import type { DepartureParticipant } from '@epicenter/epicenter/departure/page';
 import type {
 	AutosaveError,
 	CommitAndPushResult,
@@ -255,8 +256,8 @@ export function createTodos(folder: TodosFolder) {
 		(RecoveryAttempt & { readonly at: number }) | undefined
 	>();
 	/**
-	 * Epicenter asks to quit or restart. From `prepareDeparture` until
-	 * `resumeDeparture`, no action starts and the open item takes no input;
+	 * Epicenter asks to quit or restart. From `departure.fence` until
+	 * `departure.resume`, no action starts and the open item takes no input;
 	 * saves already requested go on.
 	 */
 	let departing = $state(false);
@@ -510,22 +511,37 @@ export function createTodos(folder: TodosFolder) {
 		get departing() {
 			return departing;
 		},
-		/** Whether a departure would lose anything: an unsaved draft, a typed title, or running work. */
-		get holdsUnsaved() {
-			return slot.unsaved || newTitle.trim() !== '' || admissions.busy;
+		/** The open item's path while its draft holds a save that failed. */
+		get failedSavePath() {
+			const state = slot.session?.state;
+			return state?.status === 'error' ? state.file.path : undefined;
 		},
-		prepareDeparture() {
-			departing = true;
-		},
-		/** Let running work and saves finish. Answers the path still holding a draft it could not save. */
-		async drainDeparture(): Promise<readonly string[]> {
-			await admissions.quiet();
-			const state = await slot.session?.settled();
-			return state?.status === 'error' ? [state.file.path] : [];
-		},
-		resumeDeparture() {
-			departing = false;
-		},
+		/**
+		 * The page's part in leaving Epicenter
+		 * (`@epicenter/epicenter/departure/page`). `fence` runs before anything
+		 * is awaited; `settle` lets running work and saves finish and answers
+		 * how many things would be lost: a draft it could not save, and a typed
+		 * title; `resume` gives everything back.
+		 */
+		departure: {
+			/** Whether leaving would lose anything: an unsaved draft, a typed title, or running work. */
+			get holdsUnsaved() {
+				return slot.unsaved || newTitle.trim() !== '' || admissions.busy;
+			},
+			fence() {
+				departing = true;
+			},
+			async settle(): Promise<number> {
+				await admissions.quiet();
+				const state = await slot.session?.settled();
+				return (
+					(state?.status === 'error' ? 1 : 0) + (newTitle.trim() === '' ? 0 : 1)
+				);
+			},
+			resume() {
+				departing = false;
+			},
+		} satisfies DepartureParticipant,
 		refresh,
 		/** The person's "Check again", and returning to the window. */
 		check,

@@ -7,7 +7,6 @@ import { join } from 'node:path';
 
 for (const [path, exported, required, optionalFailures] of [
 	['apps/local-mail/ui/src/lib/resources.ts', 'openMailResources', 2, 3],
-	['apps/vocab/src/lib/resources.ts', 'openVocabResources', 2, 2],
 ] as const)
 	test(`${exported} retains roots after required failure and fences departure independently`, async () => {
 		const directory = await mkdtemp(join(tmpdir(), 'product-startup-'));

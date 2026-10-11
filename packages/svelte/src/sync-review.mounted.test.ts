@@ -13,7 +13,8 @@
  * - Apply hands over the attempt and one choice per conflict ID, and later
  *   edits do not change what was handed over
  * - Back hides the review and keeps its choices
- * - Refused choices show beside their rows
+ * - A refused choice shows beside its row until the person changes it
+ * - The sides read This device and Remote
  *
  * Run with `bun run test:mounted`.
  */
@@ -190,17 +191,30 @@ test('Back hides the review and keeps its choices', () => {
 	expect(target.textContent).toContain('1 of 3 chosen');
 });
 
-test('refused choices show beside their rows', () => {
-	const { controls, row, result } = setup();
+test('a refused choice shows beside its row until the person changes it', () => {
+	const { target, controls, row, result } = setup();
+	useThis(row('Body'), 0);
+	type(result('title'), 'Walk');
+	type(result('size'), '9');
+	flushSync();
+	click(target, 'Apply and sync');
+	flushSync();
 	controls.refuse?.([
-		{
-			conflictId: 'size',
-			reason: 'invalid',
-			message: 'size must be at most 3',
-		},
+		{ conflictId: 'size', reason: 'invalid', message: 'size must be at most 3' },
 	]);
 	flushSync();
 	expect(row('size').textContent).toContain('size must be at most 3');
 	expect(result('size')?.getAttribute('aria-invalid')).toBe('true');
 	expect(row('title').textContent).not.toContain('at most');
+
+	type(result('size'), '3');
+	flushSync();
+	expect(row('size').textContent).not.toContain('at most');
+	expect(result('size')?.getAttribute('aria-invalid')).toBeNull();
+});
+
+test('the sides read This device and Remote', () => {
+	const { row } = setup();
+	expect(row('title').textContent).toContain('This device');
+	expect(row('title').textContent).toContain('Remote');
 });

@@ -34,7 +34,9 @@ and its only state is that attempt's `SyncChoices`.**
 - Apply calls `onApply(attempt, choices)` once per press with a snapshot the
   review never changes, and only when every conflict has a choice. The app
   calls `folder.sync.resolve`. `problems` from `SyncError.InvalidChoices`
-  show beside their rows; the choices stay for the person to fix.
+  show beside their rows while each row still holds the submitted choice
+  object; changing the choice clears its note.
+- The sides read "This device" and "Remote" unless the app passes `labels`.
 - The folder validates and publishes. The review decodes nothing it sends:
   `take` names a side.
 

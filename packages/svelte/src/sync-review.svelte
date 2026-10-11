@@ -12,7 +12,8 @@
 	it parses. `Leave out` removes a setting, a field, or a file. Apply calls
 	`onApply(attempt, choices)` once per press, only when every conflict has a
 	choice; the app calls `folder.sync.resolve` and passes back the problems an
-	`InvalidChoices` refusal names, which show beside their rows.
+	`InvalidChoices` refusal names, which show beside their rows until the
+	person changes that row's choice.
 
 	```svelte
 	{#if attempt}
@@ -76,7 +77,7 @@
 		open = true,
 		pending = false,
 		problems = [],
-		labels = { local: 'This device', incoming: 'Synced copy' },
+		labels = { local: 'This device', incoming: 'Remote' },
 		onBack,
 		onApply,
 	}: {
@@ -97,6 +98,20 @@
 	// Replace-only: every edit assigns a new object, so a submitted object
 	// never changes afterwards.
 	let choices = $state.raw<SyncChoices>({});
+	/**
+	 * The choices the last Apply handed over. A refused choice's note shows
+	 * only while that conflict still holds the same choice object.
+	 */
+	let submitted = $state.raw<SyncChoices>({});
+
+	/** What the folder refused for this conflict's submitted choice, if it still stands. */
+	function refusedFor(id: string): string[] {
+		if (choices[id] === undefined || choices[id] !== submitted[id]) return [];
+		return problems
+			.filter((problem) => problem.conflictId === id)
+			.map((problem) => problem.message);
+	}
+
 	/**
 	 * JSON as a person typed it, by conflict ID, so the result shows their
 	 * text rather than reformatted JSON. A choice exists only while it parses.
@@ -169,9 +184,7 @@
 
 	/** What the person needs to know about a row's result, if anything. */
 	function note(conflict: SyncConflict): string | undefined {
-		const refused = problems
-			.filter((problem) => problem.conflictId === conflict.id)
-			.map((problem) => problem.message);
+		const refused = refusedFor(conflict.id);
 		if (refused.length > 0) return refused.join(' ');
 		if (unparsed(conflict.id))
 			return 'Not a value yet. Write JSON, such as "text", 42, or true, or use a side.';
@@ -194,13 +207,14 @@
 		onsubmit={(event) => {
 			event.preventDefault();
 			if (pending || !complete) return;
+			submitted = choices;
 			onApply(attempt, choices);
 		}}
 	>
 		<header>
 			<h2 class="text-base font-medium">Choose what to keep</h2>
 			<p class="text-muted-foreground text-sm">
-				These changes conflict with the synced copy. Nothing is saved until you
+				These changes conflict with the remote. Nothing is saved until you
 				apply.
 			</p>
 		</header>
@@ -254,7 +268,7 @@
 								placeholder={shown.removed ? 'Left out' : 'Choose a side or type'}
 								aria-label="Result for {name}"
 								aria-invalid={unparsed(conflict.id) ||
-									problems.some((problem) => problem.conflictId === conflict.id) ||
+									refusedFor(conflict.id).length > 0 ||
 									undefined}
 								disabled={pending}
 								oninput={(event) => typed(conflict, event.currentTarget.value)}

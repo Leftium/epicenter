@@ -195,11 +195,9 @@ History is ordinary Git in `<root>/.git`. A successful content save from an
 editor or the file browser is committed, and the save does not wait for the
 commit. A commit that fails is reported under **Git history** and leaves the
 saved file saved; it is never shown as a save error. The browser terminal
-follows the same automatic history policy. Desktop terminal commands and other
-programs edit disk directly; their changes enter the next commit, automatic or
-explicit. In the browser terminal, automatic history refuses `git add` and
-`git commit`; staged authoring requires a folder opened with
-`commitOnEdit: false`.
+commits each save the same way, and has no `git add` or `git commit`. Desktop
+terminal commands and other programs edit disk directly; their changes enter
+the next commit, automatic or explicit.
 
 Each note has a **History** button listing its commits. Choosing a version
 puts it in the open note, which saves it like any edit. A version that

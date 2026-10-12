@@ -69,9 +69,8 @@ prompt described under "Editing and conflicts".
   directory. It is not `/bin/sh`: it has the listed file commands and
   `git status`, `diff`, `log`, `push`, `fetch`, and
   `pull --ff-only`, and it cannot reach outside the folder. For anything else,
-  use your own terminal in the directory. Automatic history refuses staged
-  authoring through `git add` and `git commit`; those commands require a folder
-  opened with `commitOnEdit: false`.
+  use your own terminal in the directory. Every save commits on its own, so
+  there is no `git add` or `git commit`.
 
 ### What is and is not protected
 
@@ -350,7 +349,7 @@ without the push.
      old name in other files.
 4. In the terminal: `ls todos`, `cat todos/<stem>.md`, `echo '...' > note.md`,
    `git status`, `git log --oneline`, `git diff`, `git push`. Content writes
-   request automatic history; staged authoring is refused in automatic mode.
+   commit on their own; there is no `git add` or `git commit`.
    Files matched by `.gitignore` stay out of status and automatic commits; a
    tracked file stays tracked. A later automatic commit or Sync resets
    staged-only changes to the committed state.

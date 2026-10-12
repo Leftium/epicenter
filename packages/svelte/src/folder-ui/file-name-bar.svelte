@@ -1,3 +1,7 @@
+<!--
+	The open file's name, with Rename and Delete. The folder part and a fixed
+	extension show beside the editable name.
+-->
 <script lang="ts">
 	import { Button } from '@epicenter/ui/button';
 	import { Input } from '@epicenter/ui/input';
@@ -12,8 +16,6 @@
 		onDelete,
 		disabled = false,
 	}: {
-		/** Renaming and deleting wait, as while Epicenter asks to quit or restart; a typed name stays. */
-		disabled?: boolean;
 		/** The fixed folder part shown before the editable name, such as `todos/`. */
 		prefix: string;
 		name: string;
@@ -22,6 +24,8 @@
 		/** Returns a problem to show, or undefined when the rename is done. */
 		onRename: (name: string) => Promise<string | undefined>;
 		onDelete: () => void;
+		/** Renaming and deleting wait, as while the app asks to quit or restart; a typed name stays. */
+		disabled?: boolean;
 	} = $props();
 
 	const id = $props.id();
@@ -44,9 +48,16 @@
 		if (!bar.mounted || disabled) return;
 		if ((suffix === '' && value === '') || value === name || renaming) return;
 		renaming = true;
-		const problem = await onRename(value);
-		renaming = false;
-		if (problem) toast.error('Could not rename the file', { description: problem });
+		try {
+			const problem = await onRename(value);
+			if (problem) toast.error('Could not rename the file', { description: problem });
+		} catch (cause) {
+			toast.error('Could not rename the file', {
+				description: cause instanceof Error ? cause.message : String(cause),
+			});
+		} finally {
+			renaming = false;
+		}
 	}
 </script>
 

@@ -11,8 +11,9 @@
 	import AppHeader from './AppHeader.svelte';
 	import Detail from './Detail.svelte';
 	import IncomingBanner from './IncomingBanner.svelte';
-	import FileBrowser from './FileBrowser.svelte';
-	import FolderTerminal from './FolderTerminal.svelte';
+	import { FileBrowser, FolderTerminal } from '@epicenter/svelte/folder-ui';
+	import ListTodoIcon from '@lucide/svelte/icons/list-todo';
+	import { confirmDelete, openItem } from './file-actions.js';
 	import TodoList from './TodoList.svelte';
 	import DepartureNotice from './DepartureNotice.svelte';
 	import type { Departure } from '@epicenter/epicenter/departure/page';
@@ -29,6 +30,9 @@
 
 	const directory = $derived(
 		todos.folder.location.kind === 'directory' ? todos.folder.location.root : undefined,
+	);
+	const terminalDescription = $derived(
+		`${directory === undefined ? 'Same files as the app' : `Files in ${directory}`} · git status, diff, log, push, fetch, pull --ff-only`,
 	);
 
 	/** The shared Modal's breakpoint: below it, the list, editor, and terminal take turns. */
@@ -99,6 +103,31 @@
 	}}
 />
 
+{#snippet files()}
+	<FileBrowser
+		listing={todos.listing}
+		listingError={todos.listingError}
+		expanded={todos.expanded}
+		selected={(path) => todos.current?.workspace === 'files' && todos.current.path === path}
+		icon={(path) => (todos.isTodo(path) ? ListTodoIcon : undefined)}
+		emptyDescription="Add a todo, or create a file or folder above."
+		disabled={todos.departing}
+		onRefresh={() => void todos.refresh()}
+		onOpen={(path) => {
+			void openItem(todos, path, 'files');
+			showDetail();
+		}}
+		onCreate={async (directory, name, type) => {
+			const problem =
+				type === 'file' ? await todos.createFile(directory, name) : await todos.createFolder(directory, name);
+			if (problem === undefined && type === 'file') showDetail();
+			return problem;
+		}}
+		onRename={(path, name) => todos.rename(path, name)}
+		onDelete={(path) => void confirmDelete(todos, path)}
+	/>
+{/snippet}
+
 <div class="flex h-dvh flex-col overflow-hidden">
 	<AppHeader
 		{todos}
@@ -131,7 +160,7 @@
 				<Resizable.PaneGroup direction="horizontal">
 					{#if filesPane}
 						<Resizable.Pane id="files" order={1} defaultSize={22} minSize={14} maxSize={40}>
-							<FileBrowser {todos} />
+							{@render files()}
 						</Resizable.Pane>
 						<Resizable.Handle />
 					{/if}
@@ -147,14 +176,14 @@
 			{#if terminalOpen}
 				<Resizable.Handle />
 				<Resizable.Pane id="terminal" order={2} defaultSize={32} minSize={15} maxSize={70}>
-					<FolderTerminal session={todos.terminal} {directory} onClose={() => void toggleTerminal()} />
+					<FolderTerminal session={todos.terminal} description={terminalDescription} onClose={() => void toggleTerminal()} />
 				</Resizable.Pane>
 			{/if}
 		</Resizable.PaneGroup>
 	{:else}
 		<main class="min-h-0 flex-1">
 			{#if terminalOpen}
-				<FolderTerminal session={todos.terminal} {directory} onClose={() => void toggleTerminal()} />
+				<FolderTerminal session={todos.terminal} description={terminalDescription} onClose={() => void toggleTerminal()} />
 			{:else if showingDetail}
 				<Detail {todos} onBack={back} />
 			{:else}
@@ -164,7 +193,7 @@
 		<Sheet.Root bind:open={filesSheet}>
 			<!-- Named directly: the browser's own visible heading is the only "Files" heading. -->
 			<Sheet.Content side="left" class="gap-0 p-0" aria-label="Files">
-				<FileBrowser {todos} onOpen={showDetail} />
+				{@render files()}
 			</Sheet.Content>
 		</Sheet.Root>
 	{/if}

@@ -411,10 +411,9 @@ todo; `todos/a.MD` is an ordinary file.
 | `src/routes/+page.svelte` | Opens the Todos owner. Inside Epicenter it starts the shared departure client (`@epicenter/epicenter/departure/page`) and opens the folder only once a status is known, attaching `todos.departure` the moment it exists (`openForDeparture`). |
 | `src/lib/platform/` | The `#platform/departure` seam: the host leaf is the shared Tauri window port (`@epicenter/epicenter/departure/window`); the browser leaf has no port. And the `#platform/folder` seam: `types.ts` is its contract and holds `TODOS_FOLDER_ID`, `folder.browser.ts` opens the OPFS folder through `@epicenter/folder/browser`, and `folder.epicenter-host.ts` opens the host's directory through `@epicenter/folder/tauri`. Each returns the folder or the refusal. The mounted page calls it; importing it opens nothing. |
 | `src/lib/files.ts` | File browser rows, and which files open as editable text. |
-| `src/lib/todos.svelte.ts` | Todo and folder listings, the rows named for repair, the one open item (`@epicenter/svelte/open-item`) and its edit session (`@epicenter/svelte/edit-session`), conflict choices, and file actions, each counted by `@epicenter/svelte/admissions` so close and departure wait for it. |
-| `src/lib/terminal.svelte.ts` | The terminal session that outlives the terminal pane, over the folder's own `folder.terminal()`. |
+| `src/lib/todos.svelte.ts` | Todo and folder listings, the terminal session over the folder's own `folder.terminal()` (`@epicenter/svelte/terminal-session`), the rows named for repair, the one open item (`@epicenter/svelte/open-item`) and its edit session (`@epicenter/svelte/edit-session`), conflict choices, and file actions, each counted by `@epicenter/svelte/admissions` so close and departure wait for it. |
 | `src/lib/status.ts` | Plain-language status lines and the header summary. |
-| `src/routes/components/` | Header, file browser, list, the detail pane (`Detail`: `TodoDetail` or `FileView`, each with the shared `SaveBar` from `@epicenter/svelte/save-bar`), and terminal. |
+| `src/routes/components/` | Header, list, the detail pane (`Detail`: `TodoDetail`, or the shared `FileView` with Open as todo for a todo file), and the shared `FileBrowser` and `FolderTerminal` from `@epicenter/svelte/folder-ui`, given todo icons and todo actions. |
 | `server/git-server.ts` | `git http-backend` over a bare repository, plus the native checkout. |
 | `apps/todos/scripts/dev.ts` | Starts the backend and Vite together. |
 | `apps/todos/scripts/native.ts` | JSON CLI over the native checkout. |
